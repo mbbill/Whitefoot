@@ -82,8 +82,8 @@ fn fold['b](node: &uniq 'b box<Node>) -> result: own u64 reads(node), writes(nod
       return deref(leaf_w);
     }
     Branch(left: l, right: r, w: slot) => {
-      let a = fold<'b>(node: move l);
-      let b = fold<'b>(node: move r);
+      let a = fold::<'b>(node: move l);
+      let b = fold::<'b>(node: move r);
       let mixed = mix(a: a, b: b);
       set deref(slot) = mixed;
       return mixed;
@@ -93,7 +93,7 @@ fn fold['b](node: &uniq 'b box<Node>) -> result: own u64 reads(node), writes(nod
 
 fn low_byte(v: own u64) -> result: own u8 pure {
   let low = iand(v, 255_u64);
-  match cvt<u64, u8>(low) {
+  match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -108,12 +108,12 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
   let rest = value;
   loop @octets {
     let limit = at +wrap 8_u64;
-    let done = ige(cursor, limit);
+    let done = cursor >= limit;
     if done {
       break @octets;
     }
     let room = len(deref(destination));
-    let writable = ilt(cursor, room);
+    let writable = cursor < room;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -134,14 +134,14 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let root = branch(left: move half0, right: move half1);
   let report = buffer_new(8_u64, 0_u8);
   region 'tree {
-    let value = fold<'tree>(node: &uniq 'tree root);
+    let value = fold::<'tree>(node: &uniq 'tree root);
     region 'r {
-      let filled = spell<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
+      let filled = spell::<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
     }
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -177,8 +177,8 @@ fn lane_frame_program(length: u64) -> Vec<u8> {
          let right_values = array_new<u8, {length}>(9_u8);\n  \
          let left = first(values: move left_values);\n  \
          let right = first(values: move right_values);\n  \
-         if ine(left, 7_u8) {{\n    return exit_status(code: 1_u8);\n  }}\n  \
-         if ine(right, 9_u8) {{\n    return exit_status(code: 2_u8);\n  }}\n  \
+         if left != 7_u8 {{\n    return exit_status(code: 1_u8);\n  }}\n  \
+         if right != 9_u8 {{\n    return exit_status(code: 2_u8);\n  }}\n  \
          return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
@@ -206,12 +206,12 @@ const IF_CONDITION_SIBLING: &[u8] = br#"fn mixdown(a: own u64, b: own u64) -> re
 
 fn odd(v: own u64) -> result: own Bool pure {
   let low = iand(v, 1_u64);
-  return ieq(low, 1_u64);
+  return low == 1_u64;
 }
 
 fn last_byte(v: own u64) -> result: own u8 pure {
   let low = iand(v, 255_u64);
-  match cvt<u64, u8>(low) {
+  match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -232,7 +232,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   set report[0_u64] = byte;
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 2_u64) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 2_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -616,7 +616,7 @@ const DEEP_RECURSION: &str = r#"fn leaf(v: own f64) -> result: own f64 pure {
 }
 
 fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
-  let done = ieq(depth, 0_u64);
+  let done = depth == 0_u64;
   if done {
     return v;
   }
@@ -629,9 +629,9 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
-  let bits = reinterpret<f64, u64>(total);
+  let bits = reinterpret::<f64, u64>(total);
   let low = iand(bits, 1_u64);
-  match cvt<u64, u8>(low) {
+  match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
       return exit_status(code: byte);
     }
@@ -996,7 +996,7 @@ const DEEP_OVERLAPPED_SPINE: &str = r#"fn leafval(v: own f64) -> result: own f64
 }
 
 fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
-  let done = ieq(depth, 0_u64);
+  let done = depth == 0_u64;
   if done {
     return v;
   }
@@ -1009,7 +1009,7 @@ fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
 
 fn low_byte(v: own u64) -> result: own u8 pure {
   let nibble = iand(v, 255_u64);
-  match cvt<u64, u8>(nibble) {
+  match cvt::<u64, u8>(nibble) {
     Ok(value: byte) => {
       return byte;
     }
@@ -1023,12 +1023,12 @@ fn spell['d](destination: &uniq 'd buffer<u8>, value: own u64) -> result: own u6
   let cursor = 0_u64;
   let rest = value;
   loop @octets {
-    let done = ige(cursor, 8_u64);
+    let done = cursor >= 8_u64;
     if done {
       break @octets;
     }
     let room = len(deref(destination));
-    let writable = ilt(cursor, room);
+    let writable = cursor < room;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -1041,14 +1041,14 @@ fn spell['d](destination: &uniq 'd buffer<u8>, value: own u64) -> result: own u6
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
-  let bits = reinterpret<f64, u64>(total);
+  let bits = reinterpret::<f64, u64>(total);
   let report = buffer_new(8_u64, 0_u8);
   region 'r {
-    let filled = spell<'r>(destination: &uniq 'r report, value: bits);
+    let filled = spell::<'r>(destination: &uniq 'r report, value: bits);
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -1155,7 +1155,7 @@ command fn main() -> status: own ExitStatus pure {
   let first = make();
   let second = make();
   region 'r {
-    let seen = peek<'r>(v: &'r first);
+    let seen = peek::<'r>(v: &'r first);
   }
   return exit_status(code: 0_u8);
 }
@@ -1181,7 +1181,7 @@ command fn main() -> status: own ExitStatus pure {
   let first = make();
   let second = make();
   region 'r {
-    let seen = peek<'r>(v: &'r second);
+    let seen = peek::<'r>(v: &'r second);
   }
   return exit_status(code: 0_u8);
 }
@@ -1824,8 +1824,8 @@ pub(super) fn function_body<'module>(module: &'module str, symbol: &str) -> &'mo
 /// reads, so the window is permitted.
 fn windowed_fold() -> Vec<u8> {
     let source = std::str::from_utf8(OVERLAPPING_FOLD).expect("the fixture is UTF-8");
-    let original = "      let a = fold<'b>(node: move l);\n      let b = fold<'b>(node: move r);\n      let mixed = mix(a: a, b: b);\n";
-    let windowed = "      let a = fold<'b>(node: move l);\n      let seed = irotl(deref(slot), 3_u32);\n      let b = fold<'b>(node: move r);\n      let blended = mix(a: a, b: b);\n      let mixed = ixor(blended, seed);\n";
+    let original = "      let a = fold::<'b>(node: move l);\n      let b = fold::<'b>(node: move r);\n      let mixed = mix(a: a, b: b);\n";
+    let windowed = "      let a = fold::<'b>(node: move l);\n      let seed = irotl(deref(slot), 3_u32);\n      let b = fold::<'b>(node: move r);\n      let blended = mix(a: a, b: b);\n      let mixed = ixor(blended, seed);\n";
     assert!(
         source.contains(original),
         "the windowed fixture must be an edit of the adjacent one"

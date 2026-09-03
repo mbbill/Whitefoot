@@ -37,10 +37,10 @@ fn bs_len['a](s: &'a ByteString) -> result: own u64 reads(s.fill) {
 fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).fill;
-  let within = ilt(index, stored);
+  let within = index < stored;
   if within {
     let capacity = len(deref(s).buf);
-    let addressable = ilt(index, capacity);
+    let addressable = index < capacity;
     if addressable {
       let value = deref(s).buf[index];
       return Some<u8>(value: value);
@@ -53,12 +53,12 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
-  let headroom = ile(capacity, 9223372036854775799_u64);
+  let headroom = capacity <= 9223372036854775799_u64;
   if headroom {
   } else {
     return unit;
   }
-  let full = ige(count, capacity);
+  let full = count >= capacity;
   if full {
     let grown = capacity + 8_u64;
     let fresh = buffer_new(grown, value);
@@ -83,7 +83,7 @@ fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> r
   for @append (at in 0_u64..count) {
     let byte = text[at];
     region 'push {
-      bs_push<'push>(s: &uniq 'push deref(s), value: byte);
+      bs_push::<'push>(s: &uniq 'push deref(s), value: byte);
     }
   }
   return unit;
@@ -93,14 +93,14 @@ fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -
   doc "Appends every byte of one byte string to another.";
   let count = 0_u64;
   region 'measure {
-    set count = bs_len<'measure>(s: &'measure deref(source));
+    set count = bs_len::<'measure>(s: &'measure deref(source));
   }
   for @concat (at in 0_u64..count) {
     region 'read {
-      match bs_byte<'read>(s: &'read deref(source), index: at) {
+      match bs_byte::<'read>(s: &'read deref(source), index: at) {
         Some(value: byte) => {
           region 'push {
-            bs_push<'push>(s: &uniq 'push deref(destination), value: byte);
+            bs_push::<'push>(s: &uniq 'push deref(destination), value: byte);
           }
         }
         None() => {
@@ -115,33 +115,33 @@ fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: 
   doc "Reports the first position where the needle bytes occur, by the naive left-to-right scan.";
   let hay_length = deref(haystack).fill;
   let needle_length = deref(needle).fill;
-  let longer = igt(needle_length, hay_length);
+  let longer = needle_length > hay_length;
   if longer {
     return None<u64>();
   }
   let last = hay_length -wrap needle_length;
   let start = 0_u64;
   loop @scan {
-    let past = igt(start, last);
+    let past = start > last;
     if past {
       break @scan;
     }
     let same = True();
     let offset = 0_u64;
     loop @compare {
-      let done = ige(offset, needle_length);
+      let done = offset >= needle_length;
       if done {
         break @compare;
       }
       let position = start +wrap offset;
       let equal = False();
       region 'hay {
-        match bs_byte<'hay>(s: &'hay deref(haystack), index: position) {
+        match bs_byte::<'hay>(s: &'hay deref(haystack), index: position) {
           Some(value: left) => {
             region 'needle {
-              match bs_byte<'needle>(s: &'needle deref(needle), index: offset) {
+              match bs_byte::<'needle>(s: &'needle deref(needle), index: offset) {
                 Some(value: right) => {
-                  set equal = ieq(left, right);
+                  set equal = left == right;
                 }
                 None() => {
                 }
@@ -175,9 +175,9 @@ fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own un
   loop @extract {
     let digit = rest % 10_u64;
     let glyphs = len(digit_glyphs);
-    let known = ilt(digit, glyphs);
+    let known = digit < glyphs;
     let capacity = len(scratch);
-    let room = ilt(written, capacity);
+    let room = written < capacity;
     if known {
       if room {
         let glyph = digit_glyphs[digit];
@@ -190,24 +190,24 @@ fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own un
       break @extract;
     }
     set rest = rest / 10_u64;
-    let finished = ieq(rest, 0_u64);
+    let finished = rest == 0_u64;
     if finished {
       break @extract;
     }
   }
   let index = written;
   loop @emit {
-    let done = ieq(index, 0_u64);
+    let done = index == 0_u64;
     if done {
       break @emit;
     }
     set index = index -wrap 1_u64;
     let capacity = len(scratch);
-    let inside = ilt(index, capacity);
+    let inside = index < capacity;
     if inside {
       let glyph = scratch[index];
       region 'digit {
-        bs_push<'digit>(s: &uniq 'digit deref(s), value: glyph);
+        bs_push::<'digit>(s: &uniq 'digit deref(s), value: glyph);
       }
     }
   }
@@ -216,18 +216,18 @@ fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own un
 
 fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
-  requires ile(length, source_length);
+  requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
-    let pending = ilt(sent, length);
+    let pending = sent < length;
     if pending {
     } else {
       break @publish;
     }
     region 'attempt {
-      match write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -246,31 +246,31 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region 'head_view {
     let view = slice_of(&'head_view subject_head);
     region 'head_append {
-      bs_append_slice<'head_append, 'head_view>(s: &uniq 'head_append subject, text: move view);
+      bs_append_slice::<'head_append, 'head_view>(s: &uniq 'head_append subject, text: move view);
     }
   }
   let tail = bs_new();
   region 'tail_view {
     let view = slice_of(&'tail_view subject_tail);
     region 'tail_append {
-      bs_append_slice<'tail_append, 'tail_view>(s: &uniq 'tail_append tail, text: move view);
+      bs_append_slice::<'tail_append, 'tail_view>(s: &uniq 'tail_append tail, text: move view);
     }
   }
   region 'join {
-    bs_concat<'join, 'join>(destination: &uniq 'join subject, source: &'join tail);
+    bs_concat::<'join, 'join>(destination: &uniq 'join subject, source: &'join tail);
   }
   let total = 0_u64;
   region 'measure {
-    set total = bs_len<'measure>(s: &'measure subject);
+    set total = bs_len::<'measure>(s: &'measure subject);
   }
-  if ieq(total, 43_u64) {
+  if total == 43_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   region 'probe_head {
-    match bs_byte<'probe_head>(s: &'probe_head subject, index: 10_u64) {
+    match bs_byte::<'probe_head>(s: &'probe_head subject, index: 10_u64) {
       Some(value: observed) => {
-        if ieq(observed, 98_u8) {
+        if observed == 98_u8 {
         } else {
           return exit_status(code: 1_u8);
         }
@@ -281,7 +281,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     }
   }
   region 'probe_past {
-    match bs_byte<'probe_past>(s: &'probe_past subject, index: 43_u64) {
+    match bs_byte::<'probe_past>(s: &'probe_past subject, index: 43_u64) {
       Some(value: observed) => {
         return exit_status(code: 1_u8);
       }
@@ -293,20 +293,20 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region 'present_view {
     let view = slice_of(&'present_view needle_present);
     region 'present_append {
-      bs_append_slice<'present_append, 'present_view>(s: &uniq 'present_append present, text: move view);
+      bs_append_slice::<'present_append, 'present_view>(s: &uniq 'present_append present, text: move view);
     }
   }
   let absent = bs_new();
   region 'absent_view {
     let view = slice_of(&'absent_view needle_absent);
     region 'absent_append {
-      bs_append_slice<'absent_append, 'absent_view>(s: &uniq 'absent_append absent, text: move view);
+      bs_append_slice::<'absent_append, 'absent_view>(s: &uniq 'absent_append absent, text: move view);
     }
   }
   let present_at = 0_u64;
   let present_found = 0_u8;
   region 'search_present {
-    match bs_find<'search_present, 'search_present>(haystack: &'search_present subject, needle: &'search_present present) {
+    match bs_find::<'search_present, 'search_present>(haystack: &'search_present subject, needle: &'search_present present) {
       Some(value: at) => {
         set present_at = at;
         set present_found = 1_u8;
@@ -315,17 +315,17 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
       }
     }
   }
-  if ieq(present_found, 1_u8) {
+  if present_found == 1_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(present_at, 10_u64) {
+  if present_at == 10_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let absent_found = 0_u8;
   region 'search_absent {
-    match bs_find<'search_absent, 'search_absent>(haystack: &'search_absent subject, needle: &'search_absent absent) {
+    match bs_find::<'search_absent, 'search_absent>(haystack: &'search_absent subject, needle: &'search_absent absent) {
       Some(value: at) => {
         set absent_found = 1_u8;
       }
@@ -333,7 +333,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
       }
     }
   }
-  if ieq(absent_found, 0_u8) {
+  if absent_found == 0_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
@@ -341,58 +341,58 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region 'length_view {
     let view = slice_of(&'length_view label_length);
     region 'length_append {
-      bs_append_slice<'length_append, 'length_view>(s: &uniq 'length_append report, text: move view);
+      bs_append_slice::<'length_append, 'length_view>(s: &uniq 'length_append report, text: move view);
     }
   }
   region 'length_digits {
-    bs_push_decimal<'length_digits>(s: &uniq 'length_digits report, value: total);
+    bs_push_decimal::<'length_digits>(s: &uniq 'length_digits report, value: total);
   }
   region 'present_label {
     let view = slice_of(&'present_label label_present);
     region 'present_label_append {
-      bs_append_slice<'present_label_append, 'present_label>(s: &uniq 'present_label_append report, text: move view);
+      bs_append_slice::<'present_label_append, 'present_label>(s: &uniq 'present_label_append report, text: move view);
     }
   }
   region 'present_digits {
-    bs_push_decimal<'present_digits>(s: &uniq 'present_digits report, value: present_at);
+    bs_push_decimal::<'present_digits>(s: &uniq 'present_digits report, value: present_at);
   }
   region 'absent_label {
     let view = slice_of(&'absent_label label_absent);
     region 'absent_label_append {
-      bs_append_slice<'absent_label_append, 'absent_label>(s: &uniq 'absent_label_append report, text: move view);
+      bs_append_slice::<'absent_label_append, 'absent_label>(s: &uniq 'absent_label_append report, text: move view);
     }
   }
-  if ieq(absent_found, 0_u8) {
+  if absent_found == 0_u8 {
     region 'none_view {
       let view = slice_of(&'none_view word_none);
       region 'none_append {
-        bs_append_slice<'none_append, 'none_view>(s: &uniq 'none_append report, text: move view);
+        bs_append_slice::<'none_append, 'none_view>(s: &uniq 'none_append report, text: move view);
       }
     }
   } else {
     region 'absent_digits {
-      bs_push_decimal<'absent_digits>(s: &uniq 'absent_digits report, value: 0_u64);
+      bs_push_decimal::<'absent_digits>(s: &uniq 'absent_digits report, value: 0_u64);
     }
   }
   region 'end_view {
     let view = slice_of(&'end_view line_end);
     region 'end_append {
-      bs_append_slice<'end_append, 'end_view>(s: &uniq 'end_append report, text: move view);
+      bs_append_slice::<'end_append, 'end_view>(s: &uniq 'end_append report, text: move view);
     }
   }
   let published = 0_u64;
   region 'report_measure {
-    set published = bs_len<'report_measure>(s: &'report_measure report);
+    set published = bs_len::<'report_measure>(s: &'report_measure report);
   }
-  if ieq(published, 28_u64) {
+  if published == 28_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let report_capacity = len(report.buf);
-  let report_within_capacity = ile(published, report_capacity);
+  let report_within_capacity = published <= report_capacity;
   if report_within_capacity {
     region 'publish {
-      match publish_all<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
+      match publish_all::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
         Ok(value: done) => {
         }
         Err(error: problem) => {

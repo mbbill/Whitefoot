@@ -72,57 +72,57 @@ const NUMERIC_TYPES: [NumericType; 10] = [
 #[test]
 fn every_total_conversion_with_a_float_endpoint_executes() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let i8_f32 = cvt<i8, f32>(-8_i8);
+  let i8_f32 = cvt::<i8, f32>(-8_i8);
   if feq(i8_f32, -8.0_f32) {
   } else {
     return exit_status(code: 1_u8);
   }
-  let i16_f32 = cvt<i16, f32>(32767_i16);
+  let i16_f32 = cvt::<i16, f32>(32767_i16);
   if feq(i16_f32, 32767.0_f32) {
   } else {
     return exit_status(code: 2_u8);
   }
-  let u8_f32 = cvt<u8, f32>(8_u8);
+  let u8_f32 = cvt::<u8, f32>(8_u8);
   if feq(u8_f32, 8.0_f32) {
   } else {
     return exit_status(code: 3_u8);
   }
-  let u16_f32 = cvt<u16, f32>(65535_u16);
+  let u16_f32 = cvt::<u16, f32>(65535_u16);
   if feq(u16_f32, 65535.0_f32) {
   } else {
     return exit_status(code: 4_u8);
   }
-  let i8_f64 = cvt<i8, f64>(-8_i8);
+  let i8_f64 = cvt::<i8, f64>(-8_i8);
   if feq(i8_f64, -8.0_f64) {
   } else {
     return exit_status(code: 5_u8);
   }
-  let i16_f64 = cvt<i16, f64>(-16_i16);
+  let i16_f64 = cvt::<i16, f64>(-16_i16);
   if feq(i16_f64, -16.0_f64) {
   } else {
     return exit_status(code: 6_u8);
   }
-  let i32_f64 = cvt<i32, f64>(2147483647_i32);
+  let i32_f64 = cvt::<i32, f64>(2147483647_i32);
   if feq(i32_f64, 2147483647.0_f64) {
   } else {
     return exit_status(code: 7_u8);
   }
-  let u8_f64 = cvt<u8, f64>(8_u8);
+  let u8_f64 = cvt::<u8, f64>(8_u8);
   if feq(u8_f64, 8.0_f64) {
   } else {
     return exit_status(code: 8_u8);
   }
-  let u16_f64 = cvt<u16, f64>(16_u16);
+  let u16_f64 = cvt::<u16, f64>(16_u16);
   if feq(u16_f64, 16.0_f64) {
   } else {
     return exit_status(code: 9_u8);
   }
-  let u32_f64 = cvt<u32, f64>(4294967295_u32);
+  let u32_f64 = cvt::<u32, f64>(4294967295_u32);
   if feq(u32_f64, 4294967295.0_f64) {
   } else {
     return exit_status(code: 10_u8);
   }
-  let f32_f64 = cvt<f32, f64>(1.5_f32);
+  let f32_f64 = cvt::<f32, f64>(1.5_f32);
   if feq(f32_f64, 1.5_f64) {
   } else {
     return exit_status(code: 11_u8);
@@ -203,7 +203,7 @@ fn partial_conversion_boundaries_never_execute_poisoning_llvm_casts() {
   let value = 1.0_f32;
   let counter = 0_u32;
   loop @powers {
-    let done = ieq(counter, exponent);
+    let done = counter == exponent;
     if done {
       break @powers;
     }
@@ -217,7 +217,7 @@ fn power_f64(exponent: own u32) -> result: own f64 pure {
   let value = 1.0_f64;
   let counter = 0_u32;
   loop @powers {
-    let done = ieq(counter, exponent);
+    let done = counter == exponent;
     if done {
       break @powers;
     }
@@ -229,7 +229,7 @@ fn power_f64(exponent: own u32) -> result: own f64 pure {
 
 fn reject_f32_i32(value: own f32) -> result: own Bool pure {
   let rejected = False();
-  match cvt<f32, i32>(value) {
+  match cvt::<f32, i32>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -241,7 +241,7 @@ fn reject_f32_i32(value: own f32) -> result: own Bool pure {
 
 fn reject_f32_u32(value: own f32) -> result: own Bool pure {
   let rejected = False();
-  match cvt<f32, u32>(value) {
+  match cvt::<f32, u32>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -253,7 +253,7 @@ fn reject_f32_u32(value: own f32) -> result: own Bool pure {
 
 fn reject_f64_i64(value: own f64) -> result: own Bool pure {
   let rejected = False();
-  match cvt<f64, i64>(value) {
+  match cvt::<f64, i64>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -265,7 +265,7 @@ fn reject_f64_i64(value: own f64) -> result: own Bool pure {
 
 fn reject_f64_u64(value: own f64) -> result: own Bool pure {
   let rejected = False();
-  match cvt<f64, u64>(value) {
+  match cvt::<f64, u64>(value) {
     Ok(value: converted) => {
     }
     Err(error: narrow) => {
@@ -300,19 +300,19 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 4_u8);
   }
-  let nan_f32 = fnan<f32>();
+  let nan_f32 = fnan::<f32>();
   let rejected_nan_f32 = reject_f32_i32(value: nan_f32);
   if rejected_nan_f32 {
   } else {
     return exit_status(code: 5_u8);
   }
-  let infinity_f32 = finf<f32>();
+  let infinity_f32 = finf::<f32>();
   let rejected_infinity_f32 = reject_f32_i32(value: infinity_f32);
   if rejected_infinity_f32 {
   } else {
     return exit_status(code: 6_u8);
   }
-  let infinity_f64 = finf<f64>();
+  let infinity_f64 = finf::<f64>();
   let negative_infinity = fneg(infinity_f64);
   let rejected_negative_infinity = reject_f64_u64(value: negative_infinity);
   if rejected_negative_infinity {
@@ -322,15 +322,15 @@ command fn main() -> status: own ExitStatus pure {
   let two_to_52 = power_f64(exponent: 52_u32);
   let one_ulp = fdiv.strict(1.0_f64, two_to_52);
   let not_f32 = fadd.strict(1.0_f64, one_ulp);
-  match cvt<f64, f32>(not_f32) {
+  match cvt::<f64, f32>(not_f32) {
     Ok(value: rounded) => {
       return exit_status(code: 8_u8);
     }
     Err(error: narrow) => {
     }
   }
-  let nan_f64 = fnan<f64>();
-  match cvt<f64, f32>(nan_f64) {
+  let nan_f64 = fnan::<f64>();
+  match cvt::<f64, f32>(nan_f64) {
     Ok(value: narrow_nan) => {
       if fne(narrow_nan, narrow_nan) {
       } else {
@@ -341,10 +341,10 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 10_u8);
     }
   }
-  let narrowable_infinity = finf<f64>();
-  match cvt<f64, f32>(narrowable_infinity) {
+  let narrowable_infinity = finf::<f64>();
+  match cvt::<f64, f32>(narrowable_infinity) {
     Ok(value: narrow_infinity) => {
-      let expected_infinity = finf<f32>();
+      let expected_infinity = finf::<f32>();
       if feq(narrow_infinity, expected_infinity) {
       } else {
         return exit_status(code: 11_u8);
@@ -354,8 +354,8 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 12_u8);
     }
   }
-  let narrow_nan_source = fnan<f32>();
-  let wide_nan = cvt<f32, f64>(narrow_nan_source);
+  let narrow_nan_source = fnan::<f32>();
+  let wide_nan = cvt::<f32, f64>(narrow_nan_source);
   if fne(wide_nan, wide_nan) {
   } else {
     return exit_status(code: 13_u8);

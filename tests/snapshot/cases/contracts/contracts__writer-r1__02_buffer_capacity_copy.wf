@@ -1,7 +1,7 @@
 fn fill_prefix['o](out: &uniq 'o buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
   define room = len(deref(out));
   define amount = len(source);
-  requires ile(amount, room);
+  requires amount <= room;
 } {
   let amount = len(source);
   for (offset in 0_u64..amount) {
@@ -17,14 +17,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let target = buffer_new(5_u64, 0_u8);
   region 'fill_region {
     let handle = &uniq 'fill_region target;
-    let written = fill_prefix<'fill_region>(out: move handle, source: move source);
-    if ieq(written, 3_u64) {
+    let written = fill_prefix::<'fill_region>(out: move handle, source: move source);
+    if written == 3_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
   }
   let last = target[2_u64];
-  if ieq(last, 9_u8) {
+  if last == 9_u8 {
   } else {
     return exit_status(code: 2_u8);
   }

@@ -1,9 +1,9 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   region 'a {
-    let index = args_count<'a>(args: &'a args);
+    let index = args_count::<'a>(args: &'a args);
     let bytes = buffer_new(4_u64, 0_u8);
     let room = len(bytes);
-    if ilt(index, room) {
+    if index < room {
       let value = bytes[index];
       return exit_status(code: value);
     } else {

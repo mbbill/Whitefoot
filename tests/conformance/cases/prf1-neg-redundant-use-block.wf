@@ -1,8 +1,8 @@
 fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {
-  requires ile(value, limit);
+  requires value <= limit;
 } {
-  invariant upper_bound: ile(value, limit) {
-    use ile(value, limit);
+  invariant upper_bound: value <= limit {
+    use value <= limit;
   }
   return unit;
 }

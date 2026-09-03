@@ -13,8 +13,8 @@ fn explicit_int_generic_function_builds_each_reachable_concrete_instance() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let first = identity<u32>(value: 7_u32);
-  let second = identity<i64>(value: -9_i64);
+  let first = identity::<u32>(value: 7_u32);
+  let second = identity::<i64>(value: -9_i64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -34,8 +34,8 @@ fn int_bound_selects_the_same_operation_row_for_every_concrete_instance() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small = maximum<u8>(left: 4_u8, right: 9_u8);
-  let signed = maximum<i64>(left: -7_i64, right: -2_i64);
+  let small = maximum::<u8>(left: 4_u8, right: 9_u8);
+  let signed = maximum::<i64>(left: -7_i64, right: -2_i64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -57,8 +57,8 @@ fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let single = affine<f32>(value: 2.0_f32);
-  let double = affine<f64>(value: 4.0_f64);
+  let single = affine::<f32>(value: 2.0_f32);
+  let double = affine::<f64>(value: 4.0_f64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -77,7 +77,7 @@ fn float_bound_rejects_a_non_float_explicit_argument_under_fn3() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let invalid = identity<u32>(value: 7_u32);
+  let invalid = identity::<u32>(value: 7_u32);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -108,7 +108,7 @@ fn int_bound_identity_is_concretized_before_lowering() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let value = one<u16>();
+  let value = one::<u16>();
   return exit_status(code: 0_u8);
 }
 "#;
@@ -123,7 +123,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_conversion_is_reported_as_unsupported_instead_of_invalid_source() {
     let source = br#"fn convert<T: Int>(value: own T) -> result: own unit pure {
-  cvt<T, u64>(value);
+  cvt::<T, u64>(value);
   return unit;
 }
 
@@ -142,7 +142,7 @@ fn int_bound_rejects_a_non_integer_explicit_argument_under_fn3() {
 
 command fn main() -> status: own ExitStatus pure {
   let input = True();
-  let invalid = identity<Bool>(value: input);
+  let invalid = identity::<Bool>(value: input);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -159,7 +159,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_call_cycle_stops_before_concrete_instance_enumeration() {
     let source = br#"fn recursive<T: Int>(value: own T) -> result: own T pure {
-  return recursive<T>(value: value);
+  return recursive::<T>(value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -191,7 +191,7 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
     // instance would demand a strictly larger one.
     assert_rule(
         br#"fn poly<T>(x: own T) -> result: own T pure {
-  let y = poly<array<T, 2>>(x: x);
+  let y = poly::<array<T, 2>>(x: x);
   return x;
 }
 
@@ -206,12 +206,12 @@ command fn main() -> status: own ExitStatus pure {
     // finiteness requires, so it is rejected all the same.
     assert_rule(
         br#"fn left<A, B>(first: own A, second: own B) -> result: own A pure {
-  let swapped = right<B, A>(first: second, second: first);
+  let swapped = right::<B, A>(first: second, second: first);
   return first;
 }
 
 fn right<A, B>(first: own A, second: own B) -> result: own A pure {
-  let back = left<A, B>(first: first, second: second);
+  let back = left::<A, B>(first: first, second: second);
   return first;
 }
 
@@ -240,7 +240,7 @@ fn a_cycle_through_a_nongeneric_caller_is_not_polymorphic_recursion() {
 }
 
 fn trampoline() -> result: own i32 pure {
-  let forward = poly<i32>(x: 0_i32);
+  let forward = poly::<i32>(x: 0_i32);
   return forward;
 }
 
@@ -271,7 +271,7 @@ fn concretely_invalid_generic_body_is_rejected_during_instance_rechecking() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let copied = transfer<u8>(value: 7_u8);
+  let copied = transfer::<u8>(value: 7_u8);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -291,12 +291,12 @@ fn nested_generic_calls_discover_reachable_instances_after_template_checking() {
 }
 
 fn forward<T: Int>(value: own T) -> result: own T pure {
-  return select<T>(value: value);
+  return select::<T>(value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small = forward<u8>(value: 7_u8);
-  let signed = forward<i64>(value: -9_i64);
+  let small = forward::<u8>(value: 7_u8);
+  let signed = forward::<i64>(value: -9_i64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -317,14 +317,14 @@ fn const_parameters_forward_symbolically_and_instantiate_at_reachable_sizes() {
 }
 
 fn forward<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
-  return preserve<n>(value: move value);
+  return preserve::<n>(value: move value);
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small_input = array_new<u8, 2>(7_u8);
-  let small = forward<2>(value: move small_input);
-  let large_input = array_new<u8, 5>(9_u8);
-  let large = forward<5>(value: move large_input);
+  let small_input = array_new::<u8, 2>(7_u8);
+  let small = forward::<2>(value: move small_input);
+  let large_input = array_new::<u8, 5>(9_u8);
+  let large = forward::<5>(value: move large_input);
   let first = small[1_u64];
   let second = large[4_u64];
   return exit_status(code: 0_u8);
@@ -345,8 +345,8 @@ fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  marker<u8>();
-  marker<Bool>();
+  marker::<u8>();
+  marker::<Bool>();
   return exit_status(code: 0_u8);
 }
 "#;
@@ -373,7 +373,7 @@ fn generic_argument_kinds_and_const_parameter_types_are_checked() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  marker<4>();
+  marker::<4>();
   return exit_status(code: 0_u8);
 }
 "#,
@@ -386,7 +386,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  sized<u8>();
+  sized::<u8>();
   return exit_status(code: 0_u8);
 }
 "#,
@@ -419,8 +419,8 @@ fn duplicate<T: Int>(value: own T) -> result: own Pair<T> pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small = duplicate<u8>(value: 7_u8);
-  let wide = duplicate<i64>(value: -9_i64);
+  let small = duplicate::<u8>(value: 7_u8);
+  let wide = duplicate::<i64>(value: -9_i64);
   let small_left = small.left;
   let wide_right = wide.right;
   return exit_status(code: 0_u8);
@@ -498,9 +498,9 @@ struct Holder<T> {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let short_bytes = array_new<u8, 2>(7_u8);
+  let short_bytes = array_new::<u8, 2>(7_u8);
   let short = Packet<2>(bytes: move short_bytes);
-  let long_bytes = array_new<u8, 5>(11_u8);
+  let long_bytes = array_new::<u8, 5>(11_u8);
   let long = Packet<5>(bytes: move long_bytes);
   let held = Holder<Packet<2>>(value: move short);
   return exit_status(code: 0_u8);
@@ -561,7 +561,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let bytes = array_new<u8, 1>(0_u8);
+  let bytes = array_new::<u8, 1>(0_u8);
   let invalid = Packet<u8>(bytes: move bytes);
   return exit_status(code: 0_u8);
 }
@@ -643,8 +643,8 @@ fn checked_integer_results_are_available_during_template_and_concrete_rechecking
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let small = checked_sum<u8>(left: 1_u8, right: 2_u8);
-  let wide = checked_sum<i64>(left: -3_i64, right: 5_i64);
+  let small = checked_sum::<u8>(left: 1_u8, right: 2_u8);
+  let wide = checked_sum::<i64>(left: -3_i64, right: 5_i64);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -659,43 +659,43 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn numeric_and_const_parameters_flow_through_flat_storage_operations() {
     let source = br#"fn filled_array<T: Int, const n: u64>(value: own T) -> result: own array<T, n> pure {
-  return array_new<T, n>(value);
+  return array_new::<T, n>(value);
 }
 
 fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
-  requires buffer_fits<T>(length);
+  requires buffer_fits::<T>(length);
 } {
   return buffer_new(length, value);
 }
 
 fn filled_float_array<T: Float, const n: u64>(value: own T) -> result: own array<T, n> pure {
-  return array_new<T, n>(value);
+  return array_new::<T, n>(value);
 }
 
 fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
-  requires buffer_fits<T>(length);
+  requires buffer_fits::<T>(length);
 } {
   return buffer_new(length, value);
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  let bytes = filled_array<u8, 2>(value: 7_u8);
-  let words = filled_array<i64, 3>(value: -5_i64);
+  let bytes = filled_array::<u8, 2>(value: 7_u8);
+  let words = filled_array::<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];
   let word = words[2_u64];
-  let storage = filled_buffer<u16>(length: 2_u64, value: 9_u16);
+  let storage = filled_buffer::<u16>(length: 2_u64, value: 9_u16);
   let storage_room = len(storage);
-  let storage_ok = ilt(1_u64, storage_room);
+  let storage_ok = 1_u64 < storage_room;
   if storage_ok {
   } else {
     return exit_status(code: 1_u8);
   }
   let buffered = storage[1_u64];
-  let samples = filled_float_array<f32, 2>(value: 1.5_f32);
+  let samples = filled_float_array::<f32, 2>(value: 1.5_f32);
   let sample = samples[1_u64];
-  let weights = filled_float_buffer<f64>(length: 2_u64, value: 2.5_f64);
+  let weights = filled_float_buffer::<f64>(length: 2_u64, value: 2.5_f64);
   let weights_room = len(weights);
-  let weights_ok = ilt(1_u64, weights_room);
+  let weights_ok = 1_u64 < weights_room;
   if weights_ok {
   } else {
     return exit_status(code: 2_u8);
@@ -723,7 +723,7 @@ fn region_bearing_function_and_nominal_arguments_reject_under_fn2() {
 }
 
 fn invalid['r]() -> result: own unit pure {
-  instantiate<slice<'r, u8>>();
+  instantiate::<slice<'r, u8>>();
   return unit;
 }
 
@@ -767,7 +767,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn invalid['r]() -> result: own unit pure {
-  instantiate<arena<'r, u8>>();
+  instantiate::<arena<'r, u8>>();
   return unit;
 }
 
@@ -795,7 +795,7 @@ fn consume<T>(value: own T) -> result: own unit pure {
 
 fn wrapper<U>() -> result: own unit pure {
   let pair = Pair<u8>(value: 1_u8);
-  consume<Pair<u8>>(value: move pair);
+  consume::<Pair<u8>>(value: move pair);
   return unit;
 }
 
@@ -838,12 +838,12 @@ fn sink<T>() -> result: own unit pure {
 }
 
 fn middle<A: Int, B>() -> result: own unit pure {
-  sink<Pair<A>>();
+  sink::<Pair<A>>();
   return unit;
 }
 
 fn wrapper<U>() -> result: own unit pure {
-  middle<u8, U>();
+  middle::<u8, U>();
   return unit;
 }
 
@@ -902,12 +902,12 @@ fn sink<T>() -> result: own unit pure {
 }
 
 fn next<X, Y>() -> result: own unit pure {
-  sink<Y>();
+  sink::<Y>();
   return unit;
 }
 
 fn middle<A: Int>() -> result: own unit pure {
-  next<Pair<A>, u8>();
+  next::<Pair<A>, u8>();
   return unit;
 }
 
@@ -962,9 +962,9 @@ fn later(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let first_values = array_new<u8, 4>(0_u8);
-  let second_values = array_new<u8, 4>(0_u8);
-  earlier<u8>(values: move first_values, index: 5_u64);
+  let first_values = array_new::<u8, 4>(0_u8);
+  let second_values = array_new::<u8, 4>(0_u8);
+  earlier::<u8>(values: move first_values, index: 5_u64);
   later(values: move second_values, index: 5_u64);
   return exit_status(code: 0_u8);
 }

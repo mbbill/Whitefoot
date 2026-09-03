@@ -1,11 +1,11 @@
 fn narrow(x: own u16, mid: own u16) -> result: own u16 pure contract {
-  requires ile(x, mid);
-  requires ile(mid, 60000_u16);
+  requires x <= mid;
+  requires mid <= 60000_u16;
 } {
   doc "REJECT [PRF-1]: the summed premises only bound x by 60000, two above too_tight's stated 59998, so DIRECT(T - S) cannot succeed.";
-  invariant too_tight: ile(x, 59998_u16) {
-    use ile(x, mid);
-    use ile(mid, 60000_u16);
+  invariant too_tight: x <= 59998_u16 {
+    use x <= mid;
+    use mid <= 60000_u16;
   }
   return x;
 }

@@ -13,7 +13,7 @@ fn constants_fill_length_and_index_share_exact_array_types() {
 const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<i32, count>(7_i32);
+  let values = array_new::<i32, count>(7_i32);
   let length = len(values);
   let local = values[2_u64];
   let stored = table[2_u64];
@@ -119,7 +119,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let items = array_new<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let items = array_new::<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -172,7 +172,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   set values[1_u64] = 9_u8;
   let stored = values[1_u64];
   return exit_status(code: 0_u8);
@@ -211,7 +211,7 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
     // A discharged subscript adds no runtime effect: the indexed set with a
     // constant in-range offset is accepted in a `pure` function.
     with_semantics(
-        b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new::<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
@@ -220,12 +220,12 @@ fn indexed_set_rechecks_type_effect_and_root_liveness() {
         },
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new::<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn consume(values: own array<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(values: own array<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let values = array_new::<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -244,7 +244,7 @@ struct Outer {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   let length = len(outer.inner.values);
@@ -291,7 +291,7 @@ fn replacement(value: own Outer) -> result: own u8 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   set outer.inner.values[1_u64] = replacement(value: move outer);
@@ -314,7 +314,7 @@ struct Outer {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new<u8, 2>(0_u8);
+  let values = array_new::<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
   region 'view {
@@ -348,7 +348,7 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_rule(
         br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit pure {
-  array_new<slice<'r, u8>, 1>(move value);
+  array_new::<slice<'r, u8>, 1>(move value);
   return unit;
 }
 

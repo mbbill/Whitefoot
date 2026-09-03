@@ -10,12 +10,12 @@ fn shrink['a](c: &uniq 'a Cursor) -> unused: own unit writes(c.limit) {
 
 fn read_after_shrink(table: own buffer<u8>, cursor: own Cursor) -> value: own u8 reads(table, cursor.idx), writes(cursor.limit) contract {
   define room = len(table);
-  requires ilt(cursor.idx, cursor.limit);
-  requires ile(cursor.limit, room);
+  requires cursor.idx < cursor.limit;
+  requires cursor.limit <= room;
 } {
-  doc "expect ACCEPT: shrink writes cursor.limit through the uniq ref, but cursor.idx and room=len(table) are never touched, so the transitively derived ilt(cursor.idx, room) fact survives the write and table[cursor.idx] with idx=3 into a 4-slot table stays in bounds; sanity check that a kill on one chain member does not over-kill an independent downstream fact.";
+  doc "expect ACCEPT: shrink writes cursor.limit through the uniq ref, but cursor.idx and room=len(table) are never touched, so the transitively derived cursor.idx < room fact survives the write and table[cursor.idx] with idx=3 into a 4-slot table stays in bounds; sanity check that a kill on one chain member does not over-kill an independent downstream fact.";
   region 'r {
-    let done = shrink<'r>(c: &uniq 'r cursor);
+    let done = shrink::<'r>(c: &uniq 'r cursor);
   }
   return table[cursor.idx];
 }
@@ -23,13 +23,13 @@ fn read_after_shrink(table: own buffer<u8>, cursor: own Cursor) -> value: own u8
 command fn main() -> status: own ExitStatus allocates(heap) {
   let table = buffer_new(4_u64, 7_u8);
   let start = Cursor(idx: 3_u64, limit: 4_u64);
-  let ok = ilt(start.idx, start.limit);
+  let ok = start.idx < start.limit;
   if ok {
   } else {
     return exit_status(code: 1_u8);
   }
   let room = len(table);
-  let fits = ile(start.limit, room);
+  let fits = start.limit <= room;
   if fits {
   } else {
     return exit_status(code: 1_u8);

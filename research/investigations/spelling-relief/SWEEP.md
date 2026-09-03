@@ -166,3 +166,89 @@ selection by the objective tiebreaks)
   deleting Bool-match legality text.
 - Grammar verification: every change through the native grammar verifier
   before proposal, per WORKFLOW.
+
+## Comparison respelling: rulings of 2026-09-03
+
+Status: owner rulings, recorded here because this file is the C1 row's home.
+The candidate that carries them into the specification is
+`governance/spec-evolution/comparison-symbols-v041-candidate.md`; this
+section is superseded when that candidate activates or is rejected.
+
+C1 was re-examined after v0.40. The six integer comparisons stayed named in
+v0.23 on the owner's whole-class ruling, not on evidence against symbols, and
+the four-of-six asymmetry that ruling rejected was forced by the `<`
+collision alone. Two statements in the record above were imprecise:
+
+- Only `<` collides. `IDENT >` begins no other arm at the `expr` decision, so
+  `>` never needed a marker.
+- The collision is bounded. The token after `<` separates a type-argument
+  list from a comparison operand in every case but a const-generic IDENT
+  argument (`preserve<n>`, two sites in `tests/`), and one further token
+  separates that; strong-LL(4) decides it. The "closing `>` at unbounded
+  distance" framing looked for the wrong signal.
+
+What changed since v0.23 and bears on the row:
+
+- v0.40 gave `ile`, `ilt`, `ige`, and `igt` a second grammar role: the
+  relation of a `header_invariant`, an `invariant_stmt`, and a relation-form
+  `proof_use`, over `affine_expr` operands that are themselves infix with
+  `+`, `-`, `*`, and parentheses. `ile(sum, 255_u32 * i)` is a prefix
+  relation over infix arithmetic; `sum <= 255_u32 * i` is one grammar.
+- Integer comparison is the most frequent table operation in the gate corpus
+  (`ieq` 1276, `ile` 960, `ilt` 805, `ige` 245, `igt` 97, `ine` 61 sites
+  under `tests/`), ahead of every arithmetic operator.
+- A positional `ile(end, room)` was the one remaining direction-sensitive
+  positional form; GRAM-8/10/11 keep names for exactly that transposition
+  class (R4). `end <= room` puts the direction in the byte order.
+
+Rulings (owner, 2026-09-03):
+
+1. The six integer comparisons are respelled `==`, `!=`, `<`, `<=`, `>`,
+   `>=` as one `compare_op` class of `infix_tail`. The symbols are
+   integer-only table rows exactly as `+` is; `feq`..`fge` and `eeq`/`ene`
+   keep their prefixed names (OP-7). In proof position the four ordered
+   symbols replace `ile`/`ilt`/`ige`/`igt`; `==` and `!=` stay outside the
+   invariant surface (INV-1).
+2. The `<` collision is dissolved by a delimiter on call-site type
+   application: `call := callee ("::" targs)? "(" ...`, spelled
+   `cvt::<u8, u32>(w)` and `open_file::<'f, 'n>(...)`. `::` is one compound
+   token in both attachment sets. It delimits the expression-position
+   argument list and is admitted on the ground the `for (` parentheses are:
+   T1 governs elements, not delimiters. Constructors (`Some<T>(x)`) and type
+   position stay unmarked — neither collides, and `construct` is its own
+   production (T4). The `expr` decision stays two-token. Strong-LL(4) was
+   weighed and rejected for the diagnostics it costs: a comparison whose
+   right operand is a nested expression (`a < b + 1_u64`, `i < len(p)`) —
+   the first errors an ANF-unaware writer makes — is either committed to
+   the call arm or reported as the union of two constructs' continuations,
+   and DIAG-1's two-token GRAM-9 attribution becomes a four-token case
+   analysis. Rust met the identical collision and keeps the turbofish for
+   the same two reasons. Parsing measures 0.13–2.5% of compile time across
+   `tests/programs`, so lookahead cost decided nothing.
+3. Inequality is `!=`; the byte `!` enters the token alphabet only inside
+   that compound. `<>` was rejected as a third meaning for the angle pair
+   and a minority spelling; `/=` diverges from C's compound assignment
+   (LEX-1).
+4. The `proof_use` multiplier is retained. A multiplied relation-form source
+   is parenthesized — `use 3 * (a <= b);` — and a bare relation source is
+   not; `use 3 * name;` is unchanged. The parentheses delimit the multiplied
+   premise so `*` does not carry two precedences on one line. Deleting the
+   multiplied relation form was rejected: its rewrite through a named
+   invariant changes proof structure (a factor-2 block becomes
+   AUTO-redundant and must be dropped), which makes it a semantic change,
+   not a spelling one.
+5. Everything else stays named. Bool logic: `&&` and `||` short-circuit in
+   every source language and Whitefoot's `band`/`bor` are eager, the LEX-1
+   divergence `docs/bargain.md` records as a live W1 pitfall, and `&` is the
+   borrow sigil. The bit family: `<<`/`>>` collide with a nested `>>` and
+   GRAM-1 forbids a grammar-consulting lexer; shifts carry modes and
+   obligations. Float and enum comparison keep their domain prefix. Every
+   unary operation (`ineg`, `iabs`, `inot`, `bnot`) stays a call: the
+   language has no prefix-operator position, and `-x` lexes as an operator
+   form with an illegal suffix, so unary minus could never follow.
+6. `infix_op` remains the arithmetic list and `const` keeps reusing it;
+   `compare_op` is a separate production so `f::<n > 1>` cannot derive.
+
+Migration cost was not a criterion (owner instruction). The tiebreaks were
+the rule's own: token counts, rule-count delta, LL(2) preservation, and the
+simplicity of the uniqueness argument.

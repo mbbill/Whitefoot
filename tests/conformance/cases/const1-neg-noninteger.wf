@@ -2,6 +2,6 @@ const name: unit = unit;
 
 command fn main() -> status: own ExitStatus pure {
   doc "A non-integer const in a const-expr position is rejected [CONST-1].";
-  let xs = array_new<i32, name>(0_i32);
+  let xs = array_new::<i32, name>(0_i32);
   return exit_status(code: 0_u8);
 }

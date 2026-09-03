@@ -2,26 +2,26 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   doc "expected: ACCEPT -- P16: an element write never kills the buffer's length fact, so `room` stays live across every set into the buffer.";
   let line = buffer_new(6_u64, 0_u8);
   let room = len(line);
-  let fits_first = ilt(0_u64, room);
+  let fits_first = 0_u64 < room;
   if fits_first {
   } else {
     return exit_status(code: 1_u8);
   }
   set line[0_u64] = 10_u8;
-  let fits_second = ilt(1_u64, room);
+  let fits_second = 1_u64 < room;
   if fits_second {
   } else {
     return exit_status(code: 1_u8);
   }
   set line[1_u64] = 20_u8;
-  let fits_third = ilt(2_u64, room);
+  let fits_third = 2_u64 < room;
   if fits_third {
   } else {
     return exit_status(code: 1_u8);
   }
   set line[2_u64] = 30_u8;
   let end = 3_u64;
-  let fits = ile(end, room);
+  let fits = end <= room;
   if fits {
   } else {
     return exit_status(code: 1_u8);
@@ -29,12 +29,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let a = line[0_u64];
   let b = line[1_u64];
   let c = line[2_u64];
-  let a_wide = cvt<u8, u32>(a);
-  let b_wide = cvt<u8, u32>(b);
-  let c_wide = cvt<u8, u32>(c);
+  let a_wide = cvt::<u8, u32>(a);
+  let b_wide = cvt::<u8, u32>(b);
+  let c_wide = cvt::<u8, u32>(c);
   let ab = a_wide + b_wide;
   let total = ab + c_wide;
-  let correct = ieq(total, 60_u32);
+  let correct = total == 60_u32;
   if correct {
   } else {
     return exit_status(code: 1_u8);

@@ -8,7 +8,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     set step = step +wrap 1_u32;
   }
   let last = marks[4_u64];
-  let evens_ok = ieq(last, 104_u32);
+  let evens_ok = last == 104_u32;
   if evens_ok {
   } else {
     return exit_status(code: 1_u8);

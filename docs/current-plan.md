@@ -107,17 +107,17 @@ multiline and has no trailing comma:
 fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32
     reads(weights) contract {
   define room = len(deref(weights));
-  requires ile(count, room);
-  requires ile(count, 1000_u64);
-  ensures ile(total, 255000_u32);
+  requires count <= room;
+  requires count <= 1000_u64;
+  ensures total <= 255000_u32;
 } {
   let sum = 0_u32;
   for (
     i in 0_u64..count,
-    invariant per_byte: ile(sum, 255_u32 * i)
+    invariant per_byte: sum <= 255_u32 * i
   ) {
     let w = deref(weights)[i];
-    let wide = cvt<u8, u32>(w);
+    let wide = cvt::<u8, u32>(w);
     set sum = sum + wide;
   }
   return sum;
@@ -147,7 +147,7 @@ contracts it uses the same closed header, containing invariants only:
 
 ```wf
 loop (
-  invariant cursor_in_range: ile(cursor, limit)
+  invariant cursor_in_range: cursor <= limit
 ) {
   advance(cursor);
 }
@@ -188,10 +188,10 @@ premises outside the final fixed L0-image route, state it at the program point
 where all ingredients exist:
 
 ```wf
-invariant combined_limit: ile(first + second + third, first_limit + second_limit + third_limit) {
-  use ile(first, first_limit);
-  use ile(second, second_limit);
-  use ile(third, third_limit);
+invariant combined_limit: first + second + third <= first_limit + second_limit + third_limit {
+  use first <= first_limit;
+  use second <= second_limit;
+  use third <= third_limit;
 }
 ```
 
@@ -205,14 +205,14 @@ author can see what needs to be established before the edge.
 A local invariant may have no block:
 
 ```wf
-invariant ordered: ile(lo, hi);
+invariant ordered: lo <= hi;
 ```
 
 or a finite explicit certificate:
 
 ```wf
-invariant pair_bound: ile(first + second, first_limit + second_limit);
-invariant scaled_bound: ile(3_u64 * first + 3_u64 * second, 3_u64 * first_limit + 3_u64 * second_limit) {
+invariant pair_bound: first + second <= first_limit + second_limit;
+invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
   use 3 * pair_bound;
 }
 ```

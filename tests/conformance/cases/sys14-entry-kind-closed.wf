@@ -4,13 +4,13 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let room = len(entries);
   let status = 0_u8;
   region 'c {
-    let permit = reserve_file<'c>(factory: &uniq 'c files);
-    match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
+    let permit = reserve_file::<'c>(factory: &uniq 'c files);
+    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
         let produced = 0_u64;
         let announced = 0_u64;
         region 'b {
-          match directory_next<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 4096_u64) {
+          match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 4096_u64) {
             ListBytes(next: bytes, entries: reported) => {
               set produced = bytes;
               set announced = reported;
@@ -26,42 +26,42 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         let seen = 0_u64;
         loop @entry {
           let header_end = at +wrap 3_u64;
-          let complete = ile(header_end, produced);
+          let complete = header_end <= produced;
           if complete {
           } else {
             break @entry;
           }
-          let kind_readable = ilt(at, room);
+          let kind_readable = at < room;
           if kind_readable {
           } else {
             break @entry;
           }
           let kind = entries[at];
-          let closed = ile(kind, 4_u8);
+          let closed = kind <= 4_u8;
           if closed {
           } else {
             set status = 9_u8;
             break @entry;
           }
           let length_low_at = at +wrap 1_u64;
-          let length_low_readable = ilt(length_low_at, room);
+          let length_low_readable = length_low_at < room;
           if length_low_readable {
           } else {
             break @entry;
           }
           let length_high_at = at +wrap 2_u64;
-          let length_high_readable = ilt(length_high_at, room);
+          let length_high_readable = length_high_at < room;
           if length_high_readable {
           } else {
             break @entry;
           }
           let length_low = entries[length_low_at];
           let length_high = entries[length_high_at];
-          let length_low_wide = cvt<u8, u64>(length_low);
-          let length_high_wide = cvt<u8, u64>(length_high);
+          let length_low_wide = cvt::<u8, u64>(length_low);
+          let length_high_wide = cvt::<u8, u64>(length_high);
           let length_high_shifted = ishl.wrap(length_high_wide, 8_u32);
           let name_count = ior(length_low_wide, length_high_shifted);
-          let named = igt(name_count, 0_u64);
+          let named = name_count > 0_u64;
           if named {
           } else {
             set status = 10_u8;
@@ -69,7 +69,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
           }
           let name_at = at +wrap 3_u64;
           let name_end = name_at +wrap name_count;
-          let bounded = ile(name_end, produced);
+          let bounded = name_end <= produced;
           if bounded {
           } else {
             break @entry;
@@ -77,7 +77,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
           set at = name_end;
           set seen = seen +wrap 1_u64;
         }
-        let counted = ieq(seen, announced);
+        let counted = seen == announced;
         if counted {
         } else {
           set status = 12_u8;

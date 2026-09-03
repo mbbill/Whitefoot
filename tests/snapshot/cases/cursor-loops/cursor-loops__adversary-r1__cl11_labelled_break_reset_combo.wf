@@ -1,15 +1,15 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: an outer counted for resets an inner cursor each pass and a labelled break from the inner loop skips to the next outer row on sentinel";
-  let grid = array_new<u8, 12>(1_u8);
+  let grid = array_new::<u8, 12>(1_u8);
   set grid[9_u64] = 0_u8;
   let zero_row = 0_u64;
   let found_zero_row = False();
   for @rows (row in 0_u64..3_u64) {
     let col = 0_u64;
     loop @cols (
-      invariant bounded: ile(col, 4_u64)
+      invariant bounded: col <= 4_u64
     ) {
-      let in_range = ilt(col, 4_u64);
+      let in_range = col < 4_u64;
       if in_range {
       } else {
         break @cols;
@@ -17,7 +17,7 @@ command fn main() -> status: own ExitStatus pure {
       let scaled_row = row * 4_u64;
       let index = scaled_row + col;
       let value = grid[index];
-      let hit = ieq(value, 0_u8);
+      let hit = value == 0_u8;
       if hit {
         set zero_row = row;
         set found_zero_row = True();
@@ -30,7 +30,7 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(zero_row, 2_u64) {
+  if zero_row == 2_u64 {
   } else {
     return exit_status(code: 2_u8);
   }

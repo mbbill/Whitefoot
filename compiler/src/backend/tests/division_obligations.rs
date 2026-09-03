@@ -11,9 +11,9 @@ use super::{emit, emit_division_obligations};
 /// quotient check is an ordinary test oracle.
 const PROVED_UNSIGNED: &[u8] =
     br#"fn reviewed_positive(value: own u64) -> result: own u64 pure contract {
-  ensures igt(result, 0_u64);
+  ensures result > 0_u64;
 } {
-  if igt(value, 0_u64) {
+  if value > 0_u64 {
     return value;
   } else {
     return 1_u64;
@@ -28,7 +28,7 @@ fn ratio(n: own u64, d: own u64) -> result: own u64 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let total = ratio(n: 12_u64, d: 4_u64);
-  if ine(total, 3_u64) {
+  if total != 3_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -109,7 +109,7 @@ fn a_constant_divisor_site_emits_one_plain_instruction() {
 
 command fn main() -> status: own ExitStatus pure {
   let half = halve(n: 9_i32);
-  if ine(half, 4_i32) {
+  if half != 4_i32 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -139,8 +139,8 @@ fn generic_exact_division_emits_no_runtime_guards() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let unsigned = divide<u32>(n: 12_u32, d: 1_u32);
-  let signed = divide<i32>(n: 9_i32, d: 1_i32);
+  let unsigned = divide::<u32>(n: 12_u32, d: 1_u32);
+  let signed = divide::<i32>(n: 9_i32, d: 1_i32);
   return exit_status(code: 0_u8);
 }
 "#;

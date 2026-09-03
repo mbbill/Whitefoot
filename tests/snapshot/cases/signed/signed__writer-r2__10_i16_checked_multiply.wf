@@ -13,11 +13,11 @@ fn scale(x: own i16, factor: own i16) -> scaled: own i16 pure {
 command fn main() -> status: own ExitStatus pure {
   let fits = scale(x: 100_i16, factor: 3_i16);
   let overflows = scale(x: 1000_i16, factor: 1000_i16);
-  if ieq(fits, 300_i16) {
+  if fits == 300_i16 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(overflows, 0_i16) {
+  if overflows == 0_i16 {
     return exit_status(code: 0_u8);
   } else {
     return exit_status(code: 2_u8);

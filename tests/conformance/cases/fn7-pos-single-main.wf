@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus pure {
   doc "Exactly one command main with a named ExitStatus result [FN-7].";
-  if ieq(2_i32, 2_i32) {
+  if 2_i32 == 2_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

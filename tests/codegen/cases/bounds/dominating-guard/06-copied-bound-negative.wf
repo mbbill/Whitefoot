@@ -5,11 +5,11 @@ fn probe(b: own buffer<u8>) -> result: own u64 pure {
   let i = 0_u64;
   let sum = 0_u64;
   loop @scan {
-    if ige(i, limit) {
+    if i >= limit {
       break @scan;
     }
     let x = b[i];
-    let x64 = cvt<u8, u64>(x);
+    let x64 = cvt::<u8, u64>(x);
     set sum = sum +wrap x64;
     set i = i +wrap 1_u64;
   }

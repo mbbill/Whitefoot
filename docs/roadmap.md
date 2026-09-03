@@ -764,23 +764,25 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### outline:FLOOR-5 — Spelling rule and surface relief
 
-`[research: complete]` `[next: spec batch after outline:PROOF-8 slice 1]`
+`[v0.23: class deletions and infix arithmetic]` `[next: v0.41 candidate — comparison symbols]`
 
 - **Goal:** every surface byte carries a decision the checker cannot
   reconstruct (tests T1 decision / T2 boundary / T3 uniqueness / T4
   globality, plus no-optionality); relieve ceremony strictly per grammar
   class while boundaries stay fully explicit.
-- **Current:** rule agreed and the full v0.20 surface sweep recorded:
-  whole-class deletions (value-op type args, `index` type, body-let
-  annotations, Bool-match arm ceremony → `if`/mandatory `else if`
-  flattening, all auto-migratable by the canonical printer), whole-class
-  keeps (literal suffixes, loop labels, the three named-argument
-  disciplines, signatures), per-operation respellings (precedence-free
-  infix — safe exactly because GRAM-9 ANF is retained), ANF relaxation
-  deferred indefinitely.
-- **Missing / next:** one spelling batch (deletions + respellings), native
-  grammar-verifier pass, mechanical corpus migration in the same change.
-- **Facts:** [sweep](../research/investigations/spelling-relief/SWEEP.md).
+- **Current:** v0.23 landed the sweep's whole-class deletions and infix
+  arithmetic; its comparison row was cancelled on the `<` collision with
+  call-site type arguments. Owner rulings of 2026-09-03 reopen that row: the
+  six integer comparisons become `== != < <= > >=`, call-site type
+  application takes the `::` delimiter (`cvt::<u8, u32>(w)`) so `IDENT <`
+  is always a comparison and the parser stays two-token, `!` enters the
+  alphabet only inside `!=`, and a multiplied `use` relation is
+  parenthesized. Bool logic, the bit family, float and enum comparison, and
+  every unary operation stay named; ANF relaxation stays deferred.
+- **Missing / next:** the v0.41 candidate specification, the compiler front
+  end and checker sites, and the mechanical corpus respelling, in one batch.
+- **Facts:** [sweep and rulings](../research/investigations/spelling-relief/SWEEP.md) ·
+  [candidate](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
 
 ## Storage, ownership, and representation
 

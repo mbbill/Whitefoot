@@ -1,6 +1,6 @@
 fn scaled_area(side: own u16) -> result: own Result<u32, Overflow> pure {
   doc "expect ACCEPT: checked multiplication by a small literal handles overflow through the ordinary Ok/Err arms of +checked's sibling *checked [OP-1].";
-  let wide = cvt<u16, u32>(side);
+  let wide = cvt::<u16, u32>(side);
   match wide *checked 4_u32 {
     Ok(value: product) => {
       return Ok<u32, Overflow>(value: product);
@@ -14,7 +14,7 @@ fn scaled_area(side: own u16) -> result: own Result<u32, Overflow> pure {
 command fn main() -> status: own ExitStatus pure {
   match scaled_area(side: 100_u16) {
     Ok(value: v) => {
-      if ieq(v, 400_u32) {
+      if v == 400_u32 {
       } else {
         return exit_status(code: 1_u8);
       }

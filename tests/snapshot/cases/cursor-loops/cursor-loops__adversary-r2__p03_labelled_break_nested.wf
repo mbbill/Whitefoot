@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: labelled break from inner loop exits both loops when target 7 is found";
-  let data = array_new<u8, 4>(0_u8);
+  let data = array_new::<u8, 4>(0_u8);
   set data[0_u64] = 1_u8;
   set data[1_u64] = 7_u8;
   set data[2_u64] = 3_u8;
@@ -8,36 +8,36 @@ command fn main() -> status: own ExitStatus pure {
   let outer = 0_u64;
   let found = 0_u8;
   loop @scan (
-    invariant outer_bound: ile(outer, 2_u64)
+    invariant outer_bound: outer <= 2_u64
   ) {
-    let outer_ok = ilt(outer, 2_u64);
+    let outer_ok = outer < 2_u64;
     if outer_ok {
       let inner = 0_u64;
       loop (
-        invariant inner_bound: ile(inner, 4_u64)
+        invariant inner_bound: inner <= 4_u64
       ) {
-        let inner_ok = ilt(inner, 4_u64);
+        let inner_ok = inner < 4_u64;
         if inner_ok {
           let byte = data[inner];
-          let hit = ieq(byte, 7_u8);
+          let hit = byte == 7_u8;
           if hit {
             set found = 1_u8;
             break @scan;
           } else {
-            invariant inner_adv: ilt(inner, 4_u64);
+            invariant inner_adv: inner < 4_u64;
             set inner = inner + 1_u64;
           }
         } else {
           break;
         }
       }
-      invariant outer_adv: ilt(outer, 2_u64);
+      invariant outer_adv: outer < 2_u64;
       set outer = outer + 1_u64;
     } else {
       break;
     }
   }
-  let correct = ieq(found, 1_u8);
+  let correct = found == 1_u8;
   if correct {
   } else {
     return exit_status(code: 1_u8);

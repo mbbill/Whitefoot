@@ -2,7 +2,7 @@ fn sum_labeled(limit: own u64) -> total: own u64 pure {
   let sum = 0_u64;
   for @scan (
     i in 0_u64..limit,
-    invariant sum_bound: ile(sum, i)
+    invariant sum_bound: sum <= i
   ) {
     set sum = sum + 1_u64;
   }
@@ -12,7 +12,7 @@ fn sum_labeled(limit: own u64) -> total: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- counted for carries both a LABEL and a header invariant [INV-1].";
   let total = sum_labeled(limit: 5_u64);
-  if ieq(total, 5_u64) {
+  if total == 5_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

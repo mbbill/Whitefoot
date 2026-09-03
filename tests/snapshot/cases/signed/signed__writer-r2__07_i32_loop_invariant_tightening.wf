@@ -3,10 +3,10 @@ fn alternate_sum(count: own u64) -> total: own i32 pure {
   let total = 0_i32;
   for (
     i in 0_u64..count,
-    invariant index_bound: ile(i, count)
+    invariant index_bound: i <= count
   ) {
     let remainder = i % 2_u64;
-    let is_even = ieq(remainder, 0_u64);
+    let is_even = remainder == 0_u64;
     if is_even {
       set total = total +wrap 1_i32;
     } else {
@@ -18,7 +18,7 @@ fn alternate_sum(count: own u64) -> total: own i32 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let result = alternate_sum(count: 7_u64);
-  if ieq(result, 1_i32) {
+  if result == 1_i32 {
     return exit_status(code: 0_u8);
   } else {
     return exit_status(code: 1_u8);

@@ -9,7 +9,7 @@ command fn main() -> status: own ExitStatus pure {
   region 'a {
     let ha = &uniq 'a v;
     let hb = &uniq 'a w;
-    let r = pick<'a>(a: &uniq 'a deref(ha), b: &uniq 'a deref(hb));
+    let r = pick::<'a>(a: &uniq 'a deref(ha), b: &uniq 'a deref(hb));
   }
   return exit_status(code: 0_u8);
 }

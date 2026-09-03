@@ -1,11 +1,11 @@
 fn scan_pair(data: own array<i16, 8>, start: own u64) -> result: own i16 pure contract {
-  requires ilt(start, 8_u64);
+  requires start < 8_u64;
 } {
   doc "expect ACCEPT: set start = start +wrap 3 kills the requires-proved bound entirely, since the new value has no relation to the old one; a fresh real branch proves the new offset's own bound before the second index.";
   let first = data[start];
   let jumped = start +wrap 3_u64;
   set start = jumped;
-  let jumped_in_range = ilt(start, 8_u64);
+  let jumped_in_range = start < 8_u64;
   if jumped_in_range {
   } else {
     return first;
@@ -15,9 +15,9 @@ fn scan_pair(data: own array<i16, 8>, start: own u64) -> result: own i16 pure co
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let data = array_new<i16, 8>(2_i16);
+  let data = array_new::<i16, 8>(2_i16);
   let picked = scan_pair(data: move data, start: 4_u64);
-  if ieq(picked, 4_i16) {
+  if picked == 4_i16 {
   } else {
     return exit_status(code: 1_u8);
   }

@@ -7,15 +7,15 @@ struct Mixed {
 command fn main() -> status: own ExitStatus pure {
   doc "TYPE-2: mixed-width integer fields (i32/u8/u64) exercise per-field load/store widths.";
   let m = Mixed(a: 100_i32, b: 5_u8, c: 1000_u64);
-  if ieq(m.a, 100_i32) {
+  if m.a == 100_i32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(m.b, 5_u8) {
+  if m.b == 5_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
-  if ieq(m.c, 1000_u64) {
+  if m.c == 1000_u64 {
   } else {
     return exit_status(code: 3_u8);
   }

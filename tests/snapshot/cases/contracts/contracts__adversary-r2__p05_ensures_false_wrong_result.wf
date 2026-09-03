@@ -1,13 +1,13 @@
 fn bad_identity(value: own i32) -> result: own i32 pure contract {
-  ensures ieq(result, value);
+  ensures result == value;
 } {
   return 0_i32;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "EXPECT REJECT: ensures claims result == value but the body always returns 0, so for value = 9 the claimed postcondition ieq(0, 9) is false and unprovable.";
+  doc "EXPECT REJECT: ensures claims result == value but the body always returns 0, so for value = 9 the claimed postcondition 0 == 9 is false and unprovable.";
   let observed = bad_identity(value: 9_i32);
-  if ieq(observed, 9_i32) {
+  if observed == 9_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

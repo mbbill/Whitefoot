@@ -1,7 +1,7 @@
 fn first_double(limit: own u64) -> found: own u64 pure {
   let cursor = 0_u64;
   loop @walk {
-    let done = ige(cursor, limit);
+    let done = cursor >= limit;
     if done {
       break @walk;
     }
@@ -13,7 +13,7 @@ fn first_double(limit: own u64) -> found: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: labeled ordinary loop with no header parentheses keeps the one-line introducer [FORM-2].";
   let found = first_double(limit: 3_u64);
-  if ieq(found, 3_u64) {
+  if found == 3_u64 {
   } else {
     let failed = exit_status(code: 1_u8);
     return move failed;

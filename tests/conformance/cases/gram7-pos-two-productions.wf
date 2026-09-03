@@ -11,7 +11,7 @@ fn classify(x: own i32) -> return_value: own Sign pure {
 command fn main() -> return_value: own ExitStatus pure {
   doc "GRAM-7: match as a let-initializer (value, give) AND as a statement (effect); one arm shape, two distinct node kinds.";
   let v = 21_i32;
-  let d = if igt(v, 0_i32) {
+  let d = if v > 0_i32 {
     give 42_i32;
   } else {
     give 0_i32;
@@ -25,7 +25,7 @@ command fn main() -> return_value: own ExitStatus pure {
       return exit_status(code: 2_u8);
     }
     Pos() => {
-      if ieq(d, 42_i32) {
+      if d == 42_i32 {
       } else {
         return exit_status(code: 3_u8);
       }

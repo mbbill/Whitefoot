@@ -1,21 +1,21 @@
 fn fetch(b: own buffer<u8>, i: own u64, outer: own Bool, inner: own Bool) -> result: own u8 reads(b) {
-  doc "expected ACCEPT: the outer true arm nests its own if/else join, so ilt(i, room) must survive an inner join before it can survive the outer join that reaches the subscript.";
+  doc "expected ACCEPT: the outer true arm nests its own if/else join, so i < room must survive an inner join before it can survive the outer join that reaches the subscript.";
   let room = len(b);
   if outer {
     if inner {
-      let a = ilt(i, room);
+      let a = i < room;
       if a {
       } else {
         return 0_u8;
       }
     } else {
-      let far = ige(i, room);
+      let far = i >= room;
       if far {
         return 0_u8;
       }
     }
   } else {
-    let d = ilt(i, room);
+    let d = i < room;
     if d {
     } else {
       return 0_u8;

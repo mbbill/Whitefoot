@@ -266,14 +266,14 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
   doc "Publishes the portable record prefix of one enumeration batch.";
   let entries = buffer_new(4096_u64, 0_u8);
   region 'listing {
-    let permit = reserve_file<'listing>(factory: &uniq 'listing files);
-    match open_directory_source<'listing>(permit: move permit, directory: &'listing cwd) {
+    let permit = reserve_file::<'listing>(factory: &uniq 'listing files);
+    match open_directory_source::<'listing>(permit: move permit, directory: &'listing cwd) {
       Ok(value: list) => {
         region 'batch {
-          match directory_next<'batch, 'batch>(source: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
+          match directory_next::<'batch, 'batch>(source: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
             ListBytes(next: endpoint, entries: reported) => {
               region 'publish {
-                match write_once<'publish, 'publish>(output: &uniq 'publish out, source: &'publish entries, start: 0_u64, end: endpoint) {
+                match write_once::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish entries, start: 0_u64, end: endpoint) {
                   Ok(value: written) => {
                   }
                   Err(error: problem) => {

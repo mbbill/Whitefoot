@@ -4,22 +4,22 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let count = 0_u64;
   for (
     i in 0_u64..5_u64,
-    invariant bound: ile(count, i)
+    invariant bound: count <= i
   ) {
     let byte = data[i];
-    let matches = ieq(byte, 7_u8);
+    let matches = byte == 7_u8;
     if matches {
       set count = count + 1_u64;
     }
   }
   let data_len = len(data);
-  let in_bounds = ilt(count, data_len);
+  let in_bounds = count < data_len;
   if in_bounds {
   } else {
     return exit_status(code: 2_u8);
   }
   let value = data[count];
-  if ieq(value, 7_u8) {
+  if value == 7_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

@@ -50,7 +50,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<StatementResult, CheckStop> {
         let declaration = self.declaration_at(node, crate::DeclarationRole::Invariant)?;
         let identifiers = self.tree.direct_identifiers(node)?;
-        let [name_token, relation_token] = identifiers.as_slice() else {
+        let [name_token] = identifiers.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };
         let name = std::str::from_utf8(self.tree.token_bytes(*name_token)?)
@@ -63,7 +63,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let allowed_values = bindings.keys().copied().collect::<HashSet<_>>();
         let target = self.check_ordered_affine_relation(
             node,
-            *relation_token,
             bindings,
             &allowed_values,
             AffineProofOwner::InvariantTarget,
@@ -72,10 +71,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut uses = Vec::with_capacity(premise_nodes.len());
         for premise_node in premise_nodes {
             let factor = self.invariant_use_factor(premise_node)?;
-            let identifiers = self.tree.direct_identifiers(premise_node)?;
-            let [carrier_token] = identifiers.as_slice() else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
+            // [GRAM-4] a relation-form use carries its relation as two affine
+            // expressions around a `compare_op` and has no direct IDENT; a
+            // named use has exactly the one IDENT it cites.
             let relation_form = !self
                 .tree
                 .children_with(premise_node, Production::AffineExpr)?
@@ -83,7 +81,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let source = if relation_form {
                 CheckedProofUseSource::Relation(self.check_ordered_affine_relation(
                     premise_node,
-                    *carrier_token,
                     bindings,
                     &allowed_values,
                     AffineProofOwner::ProofUse,
@@ -170,26 +167,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(factor)
     }
 
+    /// [INV-1] the `compare_op` between the two affine expressions selects
+    /// the proof-domain relation: the four ordered symbols normalize to one
+    /// bounded `<=`, and equality or disequality is not an invariant relation.
     fn ordered_relation_normalization(
         &self,
         owner: AffineProofOwner,
         node: NodeId,
-        relation_token: usize,
     ) -> Result<OrderedRelationNormalization, CheckStop> {
-        let normalization = match self.tree.token_bytes(relation_token)? {
-            b"ile" => OrderedRelationNormalization {
+        let operator = self
+            .tree
+            .first_child_with(node, Production::CompareOp)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let [relation_token] = self.tree.direct_token_indices(operator)? else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        let normalization = match self.tree.token_bytes(*relation_token)? {
+            b"<=" => OrderedRelationNormalization {
                 reverse: false,
                 bound: 0,
             },
-            b"ilt" => OrderedRelationNormalization {
+            b"<" => OrderedRelationNormalization {
                 reverse: false,
                 bound: -1,
             },
-            b"ige" => OrderedRelationNormalization {
+            b">=" => OrderedRelationNormalization {
                 reverse: true,
                 bound: 0,
             },
-            b"igt" => OrderedRelationNormalization {
+            b">" => OrderedRelationNormalization {
                 reverse: true,
                 bound: -1,
             },
@@ -197,8 +203,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return self.invalid_affine_proof(
                     owner,
                     node,
-                    "the invariant root is not an admitted ordered integer relation",
-                    "write `ile`, `ilt`, `ige`, or `igt` at the invariant root; equality and disequality are not invariant roots",
+                    "the invariant relation is not an admitted ordered integer relation",
+                    "write `<=`, `<`, `>=`, or `>` between the two affine expressions; equality and disequality are not invariant relations",
                 );
             }
         };
@@ -208,12 +214,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn check_ordered_affine_relation(
         &self,
         node: NodeId,
-        relation_token: usize,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
         owner: AffineProofOwner,
     ) -> Result<CheckedAffineRelation, CheckStop> {
-        let normalization = self.ordered_relation_normalization(owner, node, relation_token)?;
+        let normalization = self.ordered_relation_normalization(owner, node)?;
         let mut relation = self.form_affine_relation(node, bindings, allowed_values, owner)?;
         if normalization.reverse {
             std::mem::swap(&mut relation.left, &mut relation.right);

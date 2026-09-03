@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
   doc "Caller passes an own value where the signature declares a shared borrow [FN-1].";
   let a = 5_i32;
   region 'r {
-    let r = takesref<'r>(x: a);
+    let r = takesref::<'r>(x: a);
   }
   return exit_status(code: 0_u8);
 }

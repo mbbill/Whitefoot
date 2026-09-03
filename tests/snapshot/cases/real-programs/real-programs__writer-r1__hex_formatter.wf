@@ -14,18 +14,18 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let byte = input[i];
     let high_nibble = ishr.wrap(byte, 4_u32);
     let low_nibble = iand(byte, 15_u8);
-    let high_index = cvt<u8, u64>(high_nibble);
-    let low_index = cvt<u8, u64>(low_nibble);
-    let high_ok = ilt(high_index, digit_room);
-    let low_ok = ilt(low_index, digit_room);
+    let high_index = cvt::<u8, u64>(high_nibble);
+    let low_index = cvt::<u8, u64>(low_nibble);
+    let high_ok = high_index < digit_room;
+    let low_ok = low_index < digit_room;
     if band(high_ok, low_ok) {
     } else {
       return exit_status(code: 1_u8);
     }
     let out_high = i *wrap 2_u64;
     let out_low = out_high +wrap 1_u64;
-    let out_high_ok = ilt(out_high, output_room);
-    let out_low_ok = ilt(out_low, output_room);
+    let out_high_ok = out_high < output_room;
+    let out_low_ok = out_low < output_room;
     if band(out_high_ok, out_low_ok) {
     } else {
       return exit_status(code: 2_u8);
@@ -33,11 +33,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     set output[out_high] = hex_digits[high_index];
     set output[out_low] = hex_digits[low_index];
   }
-  let zero_ok = ieq(output[0_u64], 48_u8);
-  let one_ok = ieq(output[1_u64], 48_u8);
-  let two_ok = ieq(output[2_u64], 97_u8);
-  let three_ok = ieq(output[3_u64], 102_u8);
-  let five_ok = ieq(output[5_u64], 102_u8);
+  let zero_ok = output[0_u64] == 48_u8;
+  let one_ok = output[1_u64] == 48_u8;
+  let two_ok = output[2_u64] == 97_u8;
+  let three_ok = output[3_u64] == 102_u8;
+  let five_ok = output[5_u64] == 102_u8;
   let low_pair_ok = band(zero_ok, one_ok);
   let high_pair_ok = band(two_ok, three_ok);
   let tail_ok = band(low_pair_ok, high_pair_ok);

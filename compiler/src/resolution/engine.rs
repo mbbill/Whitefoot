@@ -60,9 +60,6 @@ enum RawRoleKind {
     /// name domain; its FN-7 kind-table judgment is an unimplemented compiler
     /// capability, so classification produces no retained record yet.
     TableChecked,
-    /// One INV-1 direct IDENT whose spelling is judged by the semantic
-    /// invariant checker rather than entered into a lexical domain.
-    InvariantCarrier,
 }
 
 impl RawRoleKind {
@@ -73,7 +70,6 @@ impl RawRoleKind {
             Self::LexicalUse(_) => 2,
             Self::DeferredUse(_) => 3,
             Self::TableChecked => 4,
-            Self::InvariantCarrier => 5,
         }
     }
 }
@@ -298,9 +294,7 @@ fn build_tables(
                 origin: role.origin.clone(),
             }),
             // Table-checked carriers await the FN-7 kind-table capability, and
-            RawRoleKind::Selector(_)
-            | RawRoleKind::TableChecked
-            | RawRoleKind::InvariantCarrier => {}
+            RawRoleKind::Selector(_) | RawRoleKind::TableChecked => {}
         }
     }
 

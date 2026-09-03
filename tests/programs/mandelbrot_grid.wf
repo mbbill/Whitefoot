@@ -4,7 +4,7 @@ fn mandelbrot_escapes(cx: own f64, cy: own f64) -> result: own Bool pure {
   let iteration = 0_u32;
   let escaped = False();
   loop @orbit {
-    let exhausted = ieq(iteration, 64_u32);
+    let exhausted = iteration == 64_u32;
     if exhausted {
       break @orbit;
     }
@@ -34,18 +34,18 @@ command fn main() -> status: own ExitStatus pure {
   let y = 0_u32;
   let escaped_points = 0_u32;
   loop @rows {
-    let rows_done = ieq(y, 48_u32);
+    let rows_done = y == 48_u32;
     if rows_done {
       break @rows;
     }
     let x = 0_u32;
     loop @columns {
-      let columns_done = ieq(x, 64_u32);
+      let columns_done = x == 64_u32;
       if columns_done {
         break @columns;
       }
-      let x_float = cvt<u32, f64>(x);
-      let y_float = cvt<u32, f64>(y);
+      let x_float = cvt::<u32, f64>(x);
+      let y_float = cvt::<u32, f64>(y);
       let scaled_x = fmul.strict(x_float, 0.05_f64);
       let scaled_y = fmul.strict(y_float, 0.05_f64);
       let cx = fsub.strict(scaled_x, 2.0_f64);
@@ -58,7 +58,7 @@ command fn main() -> status: own ExitStatus pure {
     }
     set y = y +wrap 1_u32;
   }
-  if ieq(escaped_points, 2437_u32) {
+  if escaped_points == 2437_u32 {
   } else {
     return exit_status(code: 1_u8);
   }

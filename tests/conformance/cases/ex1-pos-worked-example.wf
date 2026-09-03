@@ -6,9 +6,9 @@ enum Sign {
 
 fn sign_of(x: own i32) -> result: own Sign pure {
   doc "Conditional value produced by returning from branches (canonical for return position).";
-  if ilt(x, 0_i32) {
+  if x < 0_i32 {
     return Neg();
-  } else if ieq(x, 0_i32) {
+  } else if x == 0_i32 {
     return Zero();
   } else {
     return Pos();
@@ -29,7 +29,7 @@ command fn main() -> status: own ExitStatus pure {
         return move failed;
       }
     }
-    let expected = ieq(v, 42_i32);
+    let expected = v == 42_i32;
     if expected {
     } else {
       let failed = exit_status(code: 1_u8);

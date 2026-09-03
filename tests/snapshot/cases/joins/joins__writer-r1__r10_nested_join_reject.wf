@@ -1,28 +1,28 @@
 fn pick_byte(b: own buffer<u8>, i: own u64, outer: own Bool, inner: own Bool) -> result: own u8 reads(b) {
-  doc "REJECT: three of the four flattened leaves prove ilt(i, room) but the final else-branch proves only the non-strict ile(i, room), so the outer ENT-5 join keeps the weakest bound and the trailing subscript's OP-4 is undischarged.";
+  doc "REJECT: three of the four flattened leaves prove i < room but the final else-branch proves only the non-strict i <= room, so the outer ENT-5 join keeps the weakest bound and the trailing subscript's OP-4 is undischarged.";
   let room = len(b);
   if outer {
     if inner {
-      let a_bound = ilt(i, room);
+      let a_bound = i < room;
       if a_bound {
       } else {
         return 0_u8;
       }
     } else {
-      let b_bound = ilt(i, room);
+      let b_bound = i < room;
       if b_bound {
       } else {
         return 0_u8;
       }
     }
   } else if inner {
-    let c_bound = ilt(i, room);
+    let c_bound = i < room;
     if c_bound {
     } else {
       return 0_u8;
     }
   } else {
-    let d_bound = ile(i, room);
+    let d_bound = i <= room;
     if d_bound {
     } else {
       return 0_u8;

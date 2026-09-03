@@ -75,12 +75,12 @@ fn retains_the_complete_nonfloating_integer_family() {
 #[test]
 fn exhaustion_invariant_proves_exact_shift_counts_below_the_value_width() {
     let source = br#"fn shift_prefix(limit: own u64) -> result: own unit pure contract {
-  requires ile(limit, 31_u64);
+  requires limit <= 31_u64;
 } {
   let amount = 0_u32;
   for @items (
     i in 0_u64..limit,
-    invariant consumed: ile(amount, i)
+    invariant consumed: amount <= i
   ) {
     set amount = amount + 1_u32;
   }

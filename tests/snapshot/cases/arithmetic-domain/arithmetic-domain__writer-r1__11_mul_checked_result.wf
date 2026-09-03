@@ -14,7 +14,7 @@ fn checked_scale(count: own u32, factor: own u32) -> result: own u32 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let scaled = checked_scale(count: 6_u32, factor: 7_u32);
-  if ieq(scaled, 42_u32) {
+  if scaled == 42_u32 {
   } else {
     return exit_status(code: 201_u8);
   }

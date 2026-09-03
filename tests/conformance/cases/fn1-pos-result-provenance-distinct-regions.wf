@@ -8,11 +8,11 @@ command fn main() -> status: own ExitStatus pure {
   let w = 2_i32;
   region 'a {
     region 'b {
-      let r = pick<'a, 'b>(a: &uniq 'a v, b: &uniq 'b w);
+      let r = pick::<'a, 'b>(a: &uniq 'a v, b: &uniq 'b w);
       set deref(r) = 7_i32;
     }
   }
-  if ieq(v, 7_i32) {
+  if v == 7_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

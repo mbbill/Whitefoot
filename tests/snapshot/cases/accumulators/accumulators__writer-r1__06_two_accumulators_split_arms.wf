@@ -8,22 +8,22 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let clear_count = 0_u64;
   for (
     i in 0_u64..6_u64,
-    invariant set_bound: ile(set_count, i),
-    invariant clear_bound: ile(clear_count, i)
+    invariant set_bound: set_count <= i,
+    invariant clear_bound: clear_count <= i
   ) {
     let byte = data[i];
-    let is_set = ieq(byte, 1_u8);
+    let is_set = byte == 1_u8;
     if is_set {
       set set_count = set_count + 1_u64;
     } else {
       set clear_count = clear_count + 1_u64;
     }
   }
-  if ieq(set_count, 3_u64) {
+  if set_count == 3_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(clear_count, 3_u64) {
+  if clear_count == 3_u64 {
   } else {
     return exit_status(code: 2_u8);
   }

@@ -8,11 +8,11 @@ command fn main() -> return_value: own ExitStatus pure {
     set deref(ua) = 5_i32;
     set deref(ub) = 6_i32;
   }
-  if ieq(a, 5_i32) {
+  if a == 5_i32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(b, 6_i32) {
+  if b == 6_i32 {
   } else {
     return exit_status(code: 2_u8);
   }

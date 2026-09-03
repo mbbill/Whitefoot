@@ -485,7 +485,7 @@ impl Analyzer<'_, '_> {
 
     /// [ENT-3] S5: `let x: own T = lit;` establishes x = value(lit);
     /// `let x: own T = p;` with p a term establishes x = p; and
-    /// `let y: own Dst = cvt<Src, Dst>(p);` over a total [OP-6] pair
+    /// `let y: own Dst = cvt::<Src, Dst>(p);` over a total [OP-6] pair
     /// establishes y = p, the conversion being exactly value-preserving.
     fn establish_copy_fact(
         &mut self,
@@ -529,8 +529,8 @@ impl Analyzer<'_, '_> {
         self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
-    /// [ENT-3] S6: `buffer_new<T>(n, v)` establishes len(b) = n;
-    /// `len<T>(P)` for a tracked P establishes m = len(P); and
+    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len(b) = n;
+    /// `len::<T>(P)` for a tracked P establishes m = len(P); and
     /// `slice_of…(&'r P)` for a tracked P establishes len(s) = len(P).
     ///
     /// An `array<T, N>` allocation needs no clause here: its length equality
@@ -636,7 +636,7 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The length term one `len<T>(P)` call reads, over the same place the
+    /// The length term one `len::<T>(P)` call reads, over the same place the
     /// obligation judgment forms for P, so both name one term [ENT-2].
     pub(super) fn length_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
         let (place, array_length) = match value {

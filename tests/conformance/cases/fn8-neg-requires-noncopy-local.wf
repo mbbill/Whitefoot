@@ -1,6 +1,6 @@
 fn bounded(a: own u64) -> result: own u64 pure contract {
-  define xs = array_new<u64, 4>(0_u64);
-  requires ilt(a, 8_u64);
+  define xs = array_new::<u64, 4>(0_u64);
+  requires a < 8_u64;
 } {
   doc "A requirement local is a fresh own copy value, so an aggregate-typed local is rejected even though array_new is a pure, total row [FN-8].";
   return a;

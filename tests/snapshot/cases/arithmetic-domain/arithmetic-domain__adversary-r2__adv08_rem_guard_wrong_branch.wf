@@ -1,6 +1,6 @@
 fn safe_mod(n: own u64, d: own u64) -> result: own u64 pure {
   doc "Expected ACCEPT [OP-2]: the d==0 branch returns early, so control only reaches n % d when d != 0 by dominating-branch negation; this is a sound guard pattern despite the guard being an early-return rather than a wrapping if.";
-  if ieq(d, 0_u64) {
+  if d == 0_u64 {
     return 0_u64;
   }
   let r = n % d;
@@ -9,7 +9,7 @@ fn safe_mod(n: own u64, d: own u64) -> result: own u64 pure {
 
 fn safe_mod_wrapped(n: own u64, d: own u64) -> result: own u64 pure {
   doc "Contrast: the equivalent wrapping-if style, matching the existing conformance corpus pattern, for the same property.";
-  if igt(d, 0_u64) {
+  if d > 0_u64 {
     let r = n % d;
     return r;
   }

@@ -1,14 +1,14 @@
 fn mixed_sum(p: own u16, p_cap: own u16, q: own u16, q_cap: own u16, r: own u16, r_cap: own u16) -> result: own unit pure contract {
-  requires ile(p, p_cap);
-  requires ile(q, q_cap);
-  requires ile(r, r_cap);
+  requires p <= p_cap;
+  requires q <= q_cap;
+  requires r <= r_cap;
 } {
   doc "ACCEPT: combined mixes one named earlier invariant with two fresh relation-form premises, again beyond AUTO's pair family.";
-  invariant base_p: ile(p, p_cap);
-  invariant combined: ile(p + q + r, p_cap + q_cap + r_cap) {
+  invariant base_p: p <= p_cap;
+  invariant combined: p + q + r <= p_cap + q_cap + r_cap {
     use base_p;
-    use ile(q, q_cap);
-    use ile(r, r_cap);
+    use q <= q_cap;
+    use r <= r_cap;
   }
   return unit;
 }

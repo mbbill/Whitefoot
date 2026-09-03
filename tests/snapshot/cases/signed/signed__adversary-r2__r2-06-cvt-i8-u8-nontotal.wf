@@ -1,11 +1,11 @@
 fn resign(x: own i8) -> result: own u8 pure {
   doc "expect REJECT: iN->uM is never a total cvt pair [OP-6] (negative Src values have no unsigned image), so cvt<i8, u8> must return Result<u8, NarrowError>, not own u8 directly.";
-  return cvt<i8, u8>(x);
+  return cvt::<i8, u8>(x);
 }
 
 fn resign_checked(x: own i8) -> result: own u8 pure {
   doc "The Result-matching form is the only sound shape for this non-total pair.";
-  match cvt<i8, u8>(x) {
+  match cvt::<i8, u8>(x) {
     Ok(value: v) => {
       return v;
     }
@@ -17,7 +17,7 @@ fn resign_checked(x: own i8) -> result: own u8 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let checked_value = resign_checked(x: -1_i8);
-  if ieq(checked_value, 0_u8) {
+  if checked_value == 0_u8 {
   } else {
     return exit_status(code: 2_u8);
   }

@@ -1,10 +1,10 @@
 fn double_report(alpha: own u32, alpha_cap: own u32, beta: own u32, beta_cap: own u32) -> result: own unit pure contract {
-  requires ile(alpha, alpha_cap);
-  requires ile(beta, beta_cap);
+  requires alpha <= alpha_cap;
+  requires beta <= beta_cap;
 } {
   doc "REJECT [PRF-1]: tripled_bound lists the named premise pair_bound three times instead of one use with an explicit combined factor.";
-  invariant pair_bound: ile(alpha + beta, alpha_cap + beta_cap);
-  invariant tripled_bound: ile(3_u32 * alpha + 3_u32 * beta, 3_u32 * alpha_cap + 3_u32 * beta_cap) {
+  invariant pair_bound: alpha + beta <= alpha_cap + beta_cap;
+  invariant tripled_bound: 3_u32 * alpha + 3_u32 * beta <= 3_u32 * alpha_cap + 3_u32 * beta_cap {
     use pair_bound;
     use pair_bound;
     use pair_bound;

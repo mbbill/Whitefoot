@@ -23,7 +23,7 @@ fn consume(owner: own Owner) -> result: own u8 pure {
     }
     Full(value: pair) => {
       let room = len(pair.left);
-      let ok = ilt(0_u64, room);
+      let ok = 0_u64 < room;
       let byte = if ok {
         give pair.left[0_u64];
       } else {
@@ -47,7 +47,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let consumed_pair = PairBuffers(left: move consumed_left, right: move consumed_right);
   let consumed = Full(value: move consumed_pair);
   let consumed_byte = consume(owner: move consumed);
-  if ine(consumed_byte, 11_u8) {
+  if consumed_byte != 11_u8 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -131,7 +131,7 @@ fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
     }
     Some(value: bytes) => {
       let room = len(bytes);
-      let ok = ilt(0_u64, room);
+      let ok = 0_u64 < room;
       let byte = if ok {
         give bytes[0_u64];
       } else {
@@ -151,7 +151,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let consumed_bytes = buffer_new(1_u64, 17_u8);
   let consumed_some = Some<buffer<u8>>(value: move consumed_bytes);
   let consumed_byte = consume(value: move consumed_some);
-  if ine(consumed_byte, 17_u8) {
+  if consumed_byte != 17_u8 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);

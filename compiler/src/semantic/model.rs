@@ -736,12 +736,12 @@ impl CheckedIntegerOperation {
             Self::MultiplySaturating => "*sat",
             Self::Minimum => "imin",
             Self::Maximum => "imax",
-            Self::Equal => "ieq",
-            Self::NotEqual => "ine",
-            Self::Less => "ilt",
-            Self::LessEqual => "ile",
-            Self::Greater => "igt",
-            Self::GreaterEqual => "ige",
+            Self::Equal => "==",
+            Self::NotEqual => "!=",
+            Self::Less => "<",
+            Self::LessEqual => "<=",
+            Self::Greater => ">",
+            Self::GreaterEqual => ">=",
         }
     }
 
@@ -1346,7 +1346,7 @@ pub(crate) enum CheckedExpression {
         layout_ceiling: CheckedLayoutCeiling,
         target_domains: CheckedRuntimeTargetObligations,
     },
-    /// One `buffer_vacant<T>(n)` allocation [OP-1, OP-9]: a flat buffer of
+    /// One `buffer_vacant::<T>(n)` allocation [OP-1, OP-9]: a flat buffer of
     /// the u64 length whose every element is the compiler-minted `None()`
     /// of the named `Option<T>` instance; no source value is duplicated.
     BufferVacant {
@@ -1404,7 +1404,7 @@ pub(crate) enum CheckedExpression {
         referent: CheckedType,
         value: Box<CheckedExpression>,
     },
-    /// One `arena_new<'r, T>(v)` allocation [STOR-2]: the content moves into
+    /// One `arena_new::<'r, T>(v)` allocation [STOR-2]: the content moves into
     /// region-owned storage registered on the region's allocation list, and
     /// the whole list is released with the region [STOR-3, STOR-4].
     ArenaNew {

@@ -1,11 +1,11 @@
 fn selected(value: own i32) -> result: own Result<i32, Overflow> pure contract {
-  ensures when Ok(value: result): ieq(result, value);
+  ensures when Ok(value: result): result == value;
 } {
   return Ok<i32, Overflow>(value: value);
 }
 
 fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
-  requires ieq(left, right);
+  requires left == right;
 } {
   return unit;
 }

@@ -217,7 +217,7 @@ fn dotted_override(
             && fixed(&window[1], FixedTerminal::Dot)
             && has(&window[2], TerminalPredicate::Identifier)
             && (fixed(&window[3], FixedTerminal::LeftParen)
-                || fixed(&window[3], FixedTerminal::LeftAngle))
+                || fixed(&window[3], FixedTerminal::ColonColon))
         {
             return Ok(Some(SyntaxIssue {
                 rule: SyntaxRule::Form3,
@@ -247,12 +247,17 @@ fn forbidden_atom_override(
     }
     let first = tokens.get(cursor)?;
     let second = tokens.get(cursor.checked_add(1)?)?;
-    let call_head = has(first, TerminalPredicate::Identifier)
-        || has(first, TerminalPredicate::OperationName)
-        || has(first, TerminalPredicate::TypeIdentifier);
-    if call_head
-        && (fixed(second, FixedTerminal::LeftParen) || fixed(second, FixedTerminal::LeftAngle))
-    {
+    // [DIAG-1] row 2: a `call` start is a name followed by `(` or by the
+    // `::` type-application delimiter; a `construct` start is a TYPEID
+    // followed by `(` or `<`. `IDENT <` is a comparison, never a call.
+    let named_head =
+        has(first, TerminalPredicate::Identifier) || has(first, TerminalPredicate::OperationName);
+    let construct_head = has(first, TerminalPredicate::TypeIdentifier);
+    let call_start = named_head
+        && (fixed(second, FixedTerminal::LeftParen) || fixed(second, FixedTerminal::ColonColon));
+    let construct_start = construct_head
+        && (fixed(second, FixedTerminal::LeftParen) || fixed(second, FixedTerminal::LeftAngle));
+    if call_start || construct_start {
         return Some(SyntaxIssue {
             rule: SyntaxRule::Gram9,
             coordinate: SyntaxCoordinate::new(

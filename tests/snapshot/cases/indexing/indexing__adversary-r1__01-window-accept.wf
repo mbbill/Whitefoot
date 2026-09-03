@@ -1,7 +1,7 @@
 fn window_last(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
   define room = len(buf);
-  requires ilt(start, end);
-  requires ile(end, room);
+  requires start < end;
+  requires end <= room;
 } {
   doc "expect ACCEPT: start < end <= len(buf), so end - 1 (the window's last position) is a valid buffer index";
   let last_index = end - 1_u64;
@@ -12,7 +12,7 @@ fn window_last(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(8_u64, 5_u8);
   let value = window_last(buf: move buf, start: 2_u64, end: 5_u64);
-  if ieq(value, 5_u8) {
+  if value == 5_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

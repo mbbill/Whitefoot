@@ -1,6 +1,6 @@
 fn first(row: own buffer<i32>) -> value: own i32 reads(row) contract {
   define count = len(row);
-  requires ige(count, 1_u64);
+  requires count >= 1_u64;
 } {
   return row[0_u64];
 }

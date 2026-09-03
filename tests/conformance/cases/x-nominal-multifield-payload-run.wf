@@ -6,11 +6,11 @@ enum Packet {
 fn score(packet: own Packet) -> function_result: own i32 pure {
   match move packet {
     Data(left: left_value, right: right_value, ready: ready_value) => {
-      if ieq(left_value, 20_i32) {
+      if left_value == 20_i32 {
       } else {
         return 0_i32;
       }
-      if ieq(right_value, 22_u64) {
+      if right_value == 22_u64 {
       } else {
         return 0_i32;
       }
@@ -31,7 +31,7 @@ command fn main() -> status: own ExitStatus pure {
   let ready = True();
   let packet = Data(left: 20_i32, right: 22_u64, ready: ready);
   let result = score(packet: move packet);
-  if ieq(result, 42_i32) {
+  if result == 42_i32 {
   } else {
     return exit_status(code: 201_u8);
   }

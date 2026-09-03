@@ -107,12 +107,12 @@ fn main() -> result: own unit pure {
 let atom = 0_i32;
 let positional = user(atom);
 let named = user(arg: atom);
-let generic = user<i32>(atom);
+let generic = user::<i32>(atom);
 let made = Value(field: atom);
 let selected = match atom { Some(value: payload) => { give payload; } }
 let infix = atom + positional;
 let suffixed = made.field * named;
-let compared = ile(atom, generic);
+let compared = atom <= generic;
 let chosen = if compared { give atom; } else { give named; }
 return unit;
 }
@@ -133,6 +133,71 @@ return unit;
     assert!(
         matches!(outcome, ParseOutcome::Complete(_)),
         "every shared-prefix form must parse deterministically: {outcome:?}"
+    );
+}
+
+/// [GRAM-5] `IDENT "<"` begins a comparison and nothing else, because a
+/// call writes its type arguments after the `::` delimiter; the `expr`
+/// decision therefore still falls at the second token. A type-argument list
+/// spelled without the delimiter parses as a comparison and fails at the
+/// TYPEID, where an atom was expected.
+#[test]
+fn bare_angle_after_a_name_is_a_comparison_and_type_application_needs_its_delimiter() {
+    let source = br#"
+fn main() -> result: own unit pure {
+let lt = atom < other;
+let gt = atom > other;
+let le = atom <= other;
+let ne = atom != other;
+let call = user::<i32>(atom);
+let regions = walk::<'r, 's>(atom);
+let both = pick::<i32, 'r>(atom);
+return unit;
+}
+"#;
+    let inputs = [SourceInput::new("angles.wf", source)];
+    let spaced = bundle(&inputs);
+    let LexOutcome::Complete(lexed) = lex(&spaced, LEX_LIMITS) else {
+        panic!("angle fixture must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 256 },
+    ) else {
+        panic!("angle fixture must classify");
+    };
+    let outcome = parse(&classified, PARSE_LIMITS);
+    assert!(
+        matches!(outcome, ParseOutcome::Complete(_)),
+        "comparisons and delimited type application must parse: {outcome:?}"
+    );
+
+    let undelimited =
+        b"fn main() -> result: own unit pure {\nlet bad = user<i32>(atom);\nreturn unit;\n}\n";
+    let inputs = [SourceInput::new("undelimited.wf", undelimited)];
+    let attached = bundle(&inputs);
+    let LexOutcome::Complete(lexed) = lex(&attached, LEX_LIMITS) else {
+        panic!("undelimited fixture must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits { max_tokens: 64 },
+    ) else {
+        panic!("undelimited fixture must classify");
+    };
+    let ParseOutcome::SourceIssue(issue) = parse(&classified, PARSE_LIMITS) else {
+        panic!("a type-argument list without `::` must fail to derive");
+    };
+    let type_argument = undelimited
+        .windows(4)
+        .position(|window| window == b"i32>")
+        .expect("the fixture spells the type argument");
+    assert_eq!(
+        usize::try_from(issue.coordinate().start().value()).expect("offset"),
+        type_argument,
+        "the rejection is at the TYPEID where the comparison expected an atom: {issue:?}"
     );
 }
 
@@ -523,22 +588,22 @@ let moved = move ordinary;
 let borrowed = &'r ordinary;
 let unique_borrow = &uniq 'r ordinary;
 let loaded = table[ordinary];
-let compared = ilt(ordinary, moved);
+let compared = ordinary < moved;
 let chosen = if compared { give ordinary; } else { give moved; }
 set deref(pointer).field = ordinary;
 let previous = replace deref(pointer).field = ordinary;
-user<T, 'r, 2>(arg: ordinary);
+user::<T, 'r, 2>(arg: ordinary);
 return unit;
 loop @again { break @again; }
 for @range (
 index in 0_u64..1_u64,
-invariant limit: ile(index + 1_u64 * (1_u64), 2_u64)
+invariant limit: index + 1_u64 * (1_u64) <= 2_u64
 ) {
 break @range;
 }
-invariant parser_proof: ile(ordinary + 1_i32, moved + 1_i32) {
-use ile(ordinary, moved);
-use ile(0_i32, 0_i32);
+invariant parser_proof: ordinary + 1_i32 <= moved + 1_i32 {
+use ordinary <= moved;
+use 0_i32 <= 0_i32;
 }
 region 'inner { give ordinary; }
 let named = ordinary;
@@ -624,11 +689,11 @@ const RETIRED_DENY_CLAIMS_MARKER: &[u8] =
 const BODY_CHECK_STATEMENT: &[u8] =
     b"fn probe() -> result: own unit pure {\n  let flag = True();\n  check flag;\n  return unit;\n}\n";
 
-const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: own i32) -> result: own i32 pure contract {\n  define admitted = ieq(value, value);\n  requires admitted;\n  ensures ieq(result, value);\n} {\n  return value;\n}\n";
+const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: own i32) -> result: own i32 pure contract {\n  define admitted = value == value;\n  requires admitted;\n  ensures result == value;\n} {\n  return value;\n}\n";
 
-const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: ile(index + 1_u64 * (1_u64), upper)\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
+const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: index + 1_u64 * (1_u64) <= upper\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
 
-const LOCAL_INVARIANT_STATEMENT: &[u8] = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: ile(left + 1_i32, right + 1_i32) {\n    use 2 * ile(left, right);\n    use prior_order;\n  }\n  return unit;\n}\n";
+const LOCAL_INVARIANT_STATEMENT: &[u8] = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 * (left <= right);\n    use prior_order;\n  }\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
@@ -872,34 +937,34 @@ fn retired_prove_spelling_is_an_identifier_but_use_remains_reserved() {
 fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary() {
     for (source, boundary) in [
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant empty: ile(left, right) {\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant empty: left <= right {\n  }\n  return unit;\n}\n".as_slice(),
             b"}".as_slice(),
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_semicolon: ile(left, right) {\n    use ile(left, right)\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_semicolon: left <= right {\n    use left <= right\n  }\n  return unit;\n}\n",
             b"}",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_comma: ile(left right) {\n    use ile(left, right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_comma: ile(left right) {\n    use left <= right;\n  }\n  return unit;\n}\n",
             b"right",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_open: ile(left, right)\n    use ile(left, right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_open: left <= right\n    use left <= right;\n  }\n  return unit;\n}\n",
             b"use",
         ),
         (
-            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: ile(value, limit) {\n    use ile(value.field, limit);\n  }\n  return unit;\n}\n",
+            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use value.field <= limit;\n  }\n  return unit;\n}\n",
             b".",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  assert disguised: ile(left, right) {\n    use ile(left, right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  assert disguised: left <= right {\n    use left <= right;\n  }\n  return unit;\n}\n",
             // `assert` remains a legal IDENT and therefore starts an
             // expression statement. `disguised` is the first token that
             // cannot continue that statement; the parser must stop there.
             b"disguised",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant disguised_premise: ile(left, right) {\n    Bogus ile(left, right);\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant disguised_premise: left <= right {\n    Bogus left <= right;\n  }\n  return unit;\n}\n",
             b"Bogus",
         ),
     ] {
@@ -910,7 +975,7 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
         assert_eq!(issue_bytes(source, issue), boundary);
     }
 
-    let source = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  use ile(left, right);\n  return unit;\n}\n";
+    let source = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  use left <= right;\n  return unit;\n}\n";
     let outcome = parse_active("stray-use.wf", source);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("a use step outside an invariant block must reject: {outcome:?}");
@@ -929,12 +994,12 @@ fn loop_labels_and_break_labels_are_independently_optional() {
   }
   for (
     index in 0_u64..1_u64,
-    invariant within_range: ile(index, 1_u64)
+    invariant within_range: index <= 1_u64
   ) {
     break;
   }
   loop @checked (
-    invariant nonnegative: ile(0_u64, 1_u64)
+    invariant nonnegative: 0_u64 <= 1_u64
   ) {
     break @checked;
   }
@@ -967,7 +1032,7 @@ fn counted_range_fixed_words_are_not_identifier_spellings() {
 fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
     for (source, boundary) in [
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    invariant wrong_first: ile(lower, upper),\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    invariant wrong_first: lower <= upper,\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
             b"invariant".as_slice(),
         ),
         (
@@ -995,7 +1060,7 @@ fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
             b")",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant blocked: ile(lower, upper) {\n      use ile(lower, upper);\n    },\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant blocked: lower <= upper {\n      use lower <= upper;\n    },\n  ) {\n  }\n  return unit;\n}\n",
             b"{",
         ),
     ] {
@@ -1010,8 +1075,8 @@ fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
 #[test]
 fn loop_headers_reject_a_trailing_comma_at_the_closing_delimiter() {
     for source in [
-        b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    index in lower..upper,\n    invariant stable: ile(index, upper),\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
-        b"fn probe(value: own i32) -> result: own unit pure {\n  loop (\n    invariant stable: ile(value, value),\n  ) {\n    break;\n  }\n  return unit;\n}\n",
+        b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for (\n    index in lower..upper,\n    invariant stable: index <= upper,\n  ) {\n  }\n  return unit;\n}\n".as_slice(),
+        b"fn probe(value: own i32) -> result: own unit pure {\n  loop (\n    invariant stable: value <= value,\n  ) {\n    break;\n  }\n  return unit;\n}\n",
     ] {
         let outcome = parse_active("trailing-loop-header-comma.wf", source);
         let ParseOutcome::SourceIssue(issue) = outcome else {

@@ -30,8 +30,8 @@ fn retains_the_complete_direct_float_operation_family() {
   let t = frem(a, b);
   let u = fsqrt.strict(a);
   let v = ffma.strict(a, b, c);
-  let w = finf<f32>();
-  let x = fnan<f32>();
+  let w = finf::<f32>();
+  let x = fnan::<f32>();
   return exit_status(code: 0_u8);
 }
 "#;

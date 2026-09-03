@@ -74,8 +74,8 @@ fn recognize_byte_walk(
     })
 }
 
-/// The exit guard: `let done = ige<u64>(i, bound)` with `True => break L`,
-/// or `let more = ilt<u64>(i, bound)` with `False => break L`, the other
+/// The exit guard: `let done = ige::<u64>(i, bound)` with `True => break L`,
+/// or `let more = ilt::<u64>(i, bound)` with `False => break L`, the other
 /// arm empty, both over bindings declared outside the loop.
 fn recognize_guard(
     loop_id: CheckedLoopId,
@@ -269,7 +269,7 @@ fn expression_is_pure(expression: &CheckedExpression) -> bool {
     }
 }
 
-/// The needle-registering shape: `ieq<u8>(b, k)` in either argument
+/// The needle-registering shape: `ieq::<u8>(b, k)` in either argument
 /// order, with `k` a `u8` literal or a `u8` binding declared outside.
 fn needle_test(
     expression: &CheckedExpression,

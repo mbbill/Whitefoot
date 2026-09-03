@@ -3,7 +3,7 @@ enum MyErr {
 }
 
 fn step(x: own i32) -> result: own Result<i32, MyErr> pure {
-  if ilt(x, 0_i32) {
+  if x < 0_i32 {
     let bad_atom_0001 = Bad();
     return Err<i32, MyErr>(error: bad_atom_0001);
   } else {

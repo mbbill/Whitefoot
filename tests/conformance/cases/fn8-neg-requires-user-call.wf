@@ -4,7 +4,7 @@ fn identity(x: own i32) -> result: own i32 pure {
 
 fn user_call(x: own i32) -> result: own i32 pure contract {
   define copied = identity(x: x);
-  define permitted = ieq(copied, x);
+  define permitted = copied == x;
   requires permitted;
 } {
   doc "User-function calls are forbidden in a requirement clause even when the callee is pure [FN-8].";

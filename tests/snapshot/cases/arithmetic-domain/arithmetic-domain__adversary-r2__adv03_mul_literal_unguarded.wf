@@ -5,7 +5,7 @@ fn triple(x: own u8) -> result: own u8 pure {
 }
 
 fn triple_guarded(x: own u8) -> result: own u8 pure contract {
-  requires ile(x, 85_u8);
+  requires x <= 85_u8;
 } {
   doc "Contrast: this sibling correctly bounds x to 85_u8 so 3 * 85 = 255 stays within u8::MAX; included only to show the guard style that adv04 gets wrong.";
   let tripled = x * 3_u8;

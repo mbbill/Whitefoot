@@ -279,6 +279,55 @@ pub(super) fn build_gap_styles(
     Ok(gaps)
 }
 
+/// How one terminal takes part in the [FORM-2] inline gap on each side: a
+/// member of the left-attachment set emits no byte after itself, a member of
+/// the right-attachment set none before itself.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct Attachment {
+    left: bool,
+    right: bool,
+}
+
+/// The attachment of the terminal at `ordinal`, by its predicate and its
+/// owning production.
+///
+/// [FORM-2] makes `<` and `>` members of both sets, which renders a
+/// type-argument list compact, and then states that a `<` or `>` selected by
+/// `compare_op` belongs to neither, so a comparison is `a < b`. The owner
+/// production is the whole of that distinction: the same two bytes, the same
+/// predicates, and a different node.
+pub(super) fn attachment(
+    topology: &FinalizedTopology,
+    ordinal: usize,
+    predicate: TerminalPredicate,
+) -> Result<Attachment, Stop> {
+    let compare_angle = matches!(
+        predicate,
+        TerminalPredicate::Fixed(FixedTerminal::LeftAngle | FixedTerminal::RightAngle)
+    ) && {
+        let owner = topology
+            .terminals
+            .get(ordinal)
+            .and_then(|record| record.owner)
+            .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+        topology
+            .node(owner)
+            .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?
+            .production
+            == Production::CompareOp
+    };
+    if compare_angle {
+        return Ok(Attachment {
+            left: false,
+            right: false,
+        });
+    }
+    Ok(Attachment {
+        left: left_attaches(predicate),
+        right: right_attaches(predicate),
+    })
+}
+
 fn left_attaches(predicate: TerminalPredicate) -> bool {
     matches!(
         predicate,
@@ -289,6 +338,7 @@ fn left_attaches(predicate: TerminalPredicate) -> bool {
                 | FixedTerminal::Ampersand
                 | FixedTerminal::Dot
                 | FixedTerminal::DotDot
+                | FixedTerminal::ColonColon
         )
     )
 }
@@ -308,6 +358,7 @@ fn right_attaches(predicate: TerminalPredicate) -> bool {
                 | FixedTerminal::LeftAngle
                 | FixedTerminal::LeftBracket
                 | FixedTerminal::DotDot
+                | FixedTerminal::ColonColon
         )
     )
 }
@@ -363,12 +414,13 @@ impl CanonicalGap {
 pub(super) fn canonical_gap(
     style: GapStyle,
     depth: u32,
-    left: Option<TerminalPredicate>,
-    right: Option<TerminalPredicate>,
+    left: Option<Attachment>,
+    right: Option<Attachment>,
 ) -> Result<CanonicalGap, Stop> {
     Ok(match style {
         GapStyle::Inline => {
-            let space = matches!((left, right), (Some(left), Some(right)) if !left_attaches(left) && !right_attaches(right));
+            let space =
+                matches!((left, right), (Some(left), Some(right)) if !left.left && !right.right);
             CanonicalGap {
                 newlines: 0,
                 spaces: usize::from(space),
@@ -407,8 +459,8 @@ pub(super) fn gap_matches(
     actual: &[u8],
     style: GapStyle,
     depth: u32,
-    left: Option<TerminalPredicate>,
-    right: Option<TerminalPredicate>,
+    left: Option<Attachment>,
+    right: Option<Attachment>,
     work: &mut AuditWork,
 ) -> Result<(bool, u64, CanonicalGap), Stop> {
     let gap = canonical_gap(style, depth, left, right)?;

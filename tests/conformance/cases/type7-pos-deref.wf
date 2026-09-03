@@ -4,7 +4,7 @@ command fn main() -> status: own ExitStatus pure {
   region 'r {
     let p = &'r a;
     let v = deref(p);
-    if ieq(v, 42_i32) {
+    if v == 42_i32 {
     } else {
       return exit_status(code: 1_u8);
     }

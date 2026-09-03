@@ -7,7 +7,7 @@ command fn main() -> status: own ExitStatus pure {
     let byte = samples[i];
     set sum = sum + byte;
   }
-  if ieq(sum, 0_u8) {
+  if sum == 0_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

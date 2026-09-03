@@ -1,7 +1,7 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   doc "EXPECT REJECT under Op4: the write position comes from args_count, a genuinely external world value the compiler cannot bound at compile time, so an invariant could never honestly be written here; the correct repair is a real dominating branch testing the position against the buffer length.";
   region 'a {
-    let position = args_count<'a>(args: &'a args);
+    let position = args_count::<'a>(args: &'a args);
     let bytes = buffer_new(8_u64, 0_u8);
     let room = len(bytes);
     let head = bytes[0_u64];

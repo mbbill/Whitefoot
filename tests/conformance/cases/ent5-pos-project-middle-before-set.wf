@@ -1,6 +1,6 @@
 fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
-  requires ile(x, middle);
-  requires ile(middle, 254_u8);
+  requires x <= middle;
+  requires middle <= 254_u8;
 } {
   set middle = replacement;
   let result = x + 1_u8;
@@ -9,7 +9,7 @@ fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 p
 
 command fn main() -> status: own ExitStatus pure {
   let result = increment(x: 2_u8, middle: 10_u8, replacement: 0_u8);
-  if ieq(result, 3_u8) {
+  if result == 3_u8 {
   } else {
     return exit_status(code: 201_u8);
   }

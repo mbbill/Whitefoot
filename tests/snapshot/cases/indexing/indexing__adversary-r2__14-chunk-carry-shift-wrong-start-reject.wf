@@ -1,14 +1,14 @@
 fn shift_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: own u64) -> moved: own u64 reads(input), writes(input) {
   doc "expect REJECT: moved starts at scan+1 instead of 0, so moved can exceed source_index and the write deref(input)[moved] runs past available; scan=6,available=16 makes moved reach 17 on a 16-slot buffer";
   let room = len(deref(input));
-  let available_fits = ile(available, room);
-  let scan_fits = ile(scan, available);
+  let available_fits = available <= room;
+  let scan_fits = scan <= available;
   let moved = scan +wrap 1_u64;
   if available_fits {
     if scan_fits {
       for (
         source_index in scan..available,
-        invariant destination_precedes_source: ile(moved, available)
+        invariant destination_precedes_source: moved <= available
       ) {
         let byte = deref(input)[source_index];
         set deref(input)[moved] = byte;
@@ -22,8 +22,8 @@ fn shift_tail['i](input: &uniq 'i buffer<u8>, available: own u64, scan: own u64)
 command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(16_u64, 5_u8);
   region 'r {
-    let moved = shift_tail<'r>(input: &uniq 'r buf, available: 16_u64, scan: 6_u64);
-    if ieq(moved, 17_u64) {
+    let moved = shift_tail::<'r>(input: &uniq 'r buf, available: 16_u64, scan: 6_u64);
+    if moved == 17_u64 {
     } else {
       return exit_status(code: 1_u8);
     }

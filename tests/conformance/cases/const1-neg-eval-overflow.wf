@@ -1,9 +1,9 @@
 fn doubled<const n: u64>(fill: own u64) -> result: own array<u64, n * 2> pure {
-  return array_new<u64, n * 2>(fill);
+  return array_new::<u64, n * 2>(fill);
 }
 
 command fn main() -> status: own ExitStatus pure {
   doc "CONST-1 const evaluation is exact in the unsigned 64-bit domain under the const-eval overflow policy named const-reject. This instantiation makes `n * 2` leave that domain, which is a compile-time rejection citing CONST-1 at the complete const node. An accepted const-expression executes no runtime operation.";
-  let cells = doubled<9223372036854775808>(fill: 7_u64);
+  let cells = doubled::<9223372036854775808>(fill: 7_u64);
   return exit_status(code: 0_u8);
 }

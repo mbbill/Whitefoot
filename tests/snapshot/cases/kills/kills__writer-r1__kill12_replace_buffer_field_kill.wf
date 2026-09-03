@@ -15,25 +15,25 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let staged = Staged(active: move first_active, pending: move idle);
   let second_active = buffer_new(3_u64, 9_u8);
   region 'swap {
-    let old_active = swap_in<'swap>(s: &uniq 'swap staged, fresh: move second_active);
+    let old_active = swap_in::<'swap>(s: &uniq 'swap staged, fresh: move second_active);
     let old_room = len(old_active);
-    let old_ok = ilt(0_u64, old_room);
+    let old_ok = 0_u64 < old_room;
     if old_ok {
     } else {
       return exit_status(code: 1_u8);
     }
-    if ieq(old_active[0_u64], 1_u8) {
+    if old_active[0_u64] == 1_u8 {
     } else {
       return exit_status(code: 1_u8);
     }
   }
   let active_room = len(staged.active);
-  let active_ok = ilt(0_u64, active_room);
+  let active_ok = 0_u64 < active_room;
   if active_ok {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(staged.active[0_u64], 9_u8) {
+  if staged.active[0_u64] == 9_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

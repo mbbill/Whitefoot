@@ -1,6 +1,6 @@
 fn ident(x: own i32) -> return_value: own i32 pure {
   doc "cvt<T, T> is not an operation [OP-6]; a same-type conversion must be rejected.";
-  return cvt<i32, i32>(x);
+  return cvt::<i32, i32>(x);
 }
 
 command fn main() -> return_value: own ExitStatus pure {

@@ -5,9 +5,9 @@ command fn main() -> status: own ExitStatus pure {
   let sum = 0_u32;
   for (i in 0_u64..6_u64) {
     let byte = packet[i];
-    let wide = cvt<u8, u32>(byte);
+    let wide = cvt::<u8, u32>(byte);
     let parity = iand(wide, 1_u32);
-    let is_odd = ieq(parity, 1_u32);
+    let is_odd = parity == 1_u32;
     if is_odd {
       let doubled = ishl.wrap(wide, 1_u32);
       set sum = sum +wrap doubled;
@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus pure {
     }
   }
   let folded = iand(sum, 65535_u32);
-  if ieq(folded, 946_u32) {
+  if folded == 946_u32 {
   } else {
     return exit_status(code: 1_u8);
   }

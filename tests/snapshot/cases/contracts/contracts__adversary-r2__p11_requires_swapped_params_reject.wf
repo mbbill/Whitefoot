@@ -1,14 +1,14 @@
 fn slice_span(lo: own u64, hi: own u64, room: own u64) -> width: own u64 pure contract {
-  requires ile(lo, hi);
-  requires ile(hi, room);
+  requires lo <= hi;
+  requires hi <= room;
 } {
   return hi - lo;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "EXPECT REJECT: caller passes lo = 6, hi = 2, room = 10; the second requires ile(hi, room) trivially holds (2 <= 10) but the first requires ile(lo, hi) is ile(6, 2), which is false, so hi - lo would wrap past zero in the unsigned domain.";
+  doc "EXPECT REJECT: caller passes lo = 6, hi = 2, room = 10; the second requires hi <= room trivially holds (2 <= 10) but the first requires lo <= hi is 6 <= 2, which is false, so hi - lo would wrap past zero in the unsigned domain.";
   let width = slice_span(lo: 6_u64, hi: 2_u64, room: 10_u64);
-  if ieq(width, 4_u64) {
+  if width == 4_u64 {
   } else {
     return exit_status(code: 201_u8);
   }

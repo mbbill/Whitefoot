@@ -71,10 +71,10 @@ The canonical counted shape has no trailing comma:
 ```wf
 for (
   i in 0_u64..count,
-  invariant per_byte: ile(sum, 255_u32 * i)
+  invariant per_byte: sum <= 255_u32 * i
 ) {
   let w = deref(weights)[i];
-  let wide = cvt<u8, u32>(w);
+  let wide = cvt::<u8, u32>(w);
   set sum = sum + wide;
 }
 ```

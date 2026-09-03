@@ -1,18 +1,18 @@
 fn replace_component(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8, replacement: own u8) -> result: own u8 pure contract {
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(third, third_limit);
-  requires ile(first_limit, 80_u8);
-  requires ile(second_limit, 80_u8);
-  requires ile(third_limit, 93_u8);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 80_u8;
+  requires second_limit <= 80_u8;
+  requires third_limit <= 93_u8;
 } {
-  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit + 1_u8) {
-    use ile(first, first_limit);
-    use ile(second, second_limit);
-    use ile(third, third_limit);
+  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {
+    use first <= first_limit;
+    use second <= second_limit;
+    use third <= third_limit;
   }
-  invariant limit_sum: ile(first_limit + second_limit + third_limit, 253_u8);
-  invariant total_bound: ile(first + second + third, 254_u8);
+  invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
+  invariant total_bound: first + second + third <= 254_u8;
   set first = replacement;
   let result = first + second;
   return result;

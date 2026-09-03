@@ -226,22 +226,22 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   region 'empty_text_view {{
     let text = slice_of(&'empty_text_view empty_text);
     region 'empty_destination_view {{
-      let result = append_slice<'empty_destination_view, 'empty_text_view>(destination: &uniq 'empty_destination_view empty_destination, filled: 4_u64, text: move text);
-      if ieq(result, 4_u64) {{
+      let result = append_slice::<'empty_destination_view, 'empty_text_view>(destination: &uniq 'empty_destination_view empty_destination, filled: 4_u64, text: move text);
+      if result == 4_u64 {{
       }} else {{
         return exit_status(code: 1_u8);
       }}
     }}
   }}
-  if ieq(empty_destination[0_u64], 9_u8) {{
+  if empty_destination[0_u64] == 9_u8 {{
   }} else {{
     return exit_status(code: 2_u8);
   }}
-  if ieq(empty_destination[1_u64], 9_u8) {{
+  if empty_destination[1_u64] == 9_u8 {{
   }} else {{
     return exit_status(code: 3_u8);
   }}
-  if ieq(empty_destination[2_u64], 9_u8) {{
+  if empty_destination[2_u64] == 9_u8 {{
   }} else {{
     return exit_status(code: 4_u8);
   }}
@@ -250,22 +250,22 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   region 'nonempty_text_view {{
     let text = slice_of(&'nonempty_text_view nonempty_text);
     region 'nonempty_destination_view {{
-      let result = append_slice<'nonempty_destination_view, 'nonempty_text_view>(destination: &uniq 'nonempty_destination_view nonempty_destination, filled: 4_u64, text: move text);
-      if ieq(result, 4_u64) {{
+      let result = append_slice::<'nonempty_destination_view, 'nonempty_text_view>(destination: &uniq 'nonempty_destination_view nonempty_destination, filled: 4_u64, text: move text);
+      if result == 4_u64 {{
       }} else {{
         return exit_status(code: 5_u8);
       }}
     }}
   }}
-  if ieq(nonempty_destination[0_u64], 9_u8) {{
+  if nonempty_destination[0_u64] == 9_u8 {{
   }} else {{
     return exit_status(code: 6_u8);
   }}
-  if ieq(nonempty_destination[1_u64], 9_u8) {{
+  if nonempty_destination[1_u64] == 9_u8 {{
   }} else {{
     return exit_status(code: 7_u8);
   }}
-  if ieq(nonempty_destination[2_u64], 9_u8) {{
+  if nonempty_destination[2_u64] == 9_u8 {{
   }} else {{
     return exit_status(code: 8_u8);
   }}

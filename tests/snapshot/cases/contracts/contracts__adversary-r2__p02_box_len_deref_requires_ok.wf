@@ -1,6 +1,6 @@
 fn get_borrowed['r](holder: &'r buffer<u8>, i: own u64) -> value: own u8 reads(holder) contract {
   define room = len(deref(holder));
-  requires ilt(i, room);
+  requires i < room;
 } {
   return deref(holder)[i];
 }
@@ -10,8 +10,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(6_u64, 9_u8);
   region 'r {
     let p = &'r buf;
-    let value = get_borrowed<'r>(holder: p, i: 5_u64);
-    if ieq(value, 9_u8) {
+    let value = get_borrowed::<'r>(holder: p, i: 5_u64);
+    if value == 9_u8 {
     } else {
       return exit_status(code: 1_u8);
     }

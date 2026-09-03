@@ -10,11 +10,11 @@ command fn main() -> status: own ExitStatus pure {
   let hi = 2147483647_i32;
   let lo_back = wrap_and_back(value: lo);
   let hi_back = wrap_and_back(value: hi);
-  if ieq(lo_back, lo) {
+  if lo_back == lo {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(hi_back, hi) {
+  if hi_back == hi {
   } else {
     return exit_status(code: 2_u8);
   }

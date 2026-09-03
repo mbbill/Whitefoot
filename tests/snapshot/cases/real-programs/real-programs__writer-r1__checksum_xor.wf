@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let byte = message[i];
     set checksum = ixor(checksum, byte);
   }
-  if ieq(checksum, 0_u8) {
+  if checksum == 0_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

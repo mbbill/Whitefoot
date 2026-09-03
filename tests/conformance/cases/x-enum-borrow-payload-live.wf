@@ -26,7 +26,7 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
     let t = a +wrap b;
-    if ieq(t, 61_i32) {
+    if t == 61_i32 {
     } else {
       return exit_status(code: 201_u8);
     }

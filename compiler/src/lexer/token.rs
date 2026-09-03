@@ -93,13 +93,13 @@ pub enum TokenKind {
     LeftBracket,
     /// `]`.
     RightBracket,
-    /// `<`.
+    /// `<` when it is not part of `<=`.
     LeftAngle,
-    /// `>`.
+    /// `>` when it is not part of `>=`.
     RightAngle,
     /// `,`.
     Comma,
-    /// `:`.
+    /// `:` when it is not part of `::`.
     Colon,
     /// `;`.
     Semicolon,
@@ -107,12 +107,22 @@ pub enum TokenKind {
     Dot,
     /// `..`.
     DotDot,
-    /// `=` when it is not part of a fat arrow.
+    /// `=` when it is not part of a fat arrow or of `==`.
     Equal,
     /// `->`.
     ThinArrow,
     /// `=>`.
     FatArrow,
+    /// `==`.
+    EqualEqual,
+    /// `!=`.
+    BangEqual,
+    /// `<=`.
+    LessEqual,
+    /// `>=`.
+    GreaterEqual,
+    /// `::`.
+    ColonColon,
     /// `&`.
     Ampersand,
 }

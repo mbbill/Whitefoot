@@ -10,7 +10,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let value = values[fold_index];
     set total = total +wrap value;
   }
-  if ieq(total, 36_u64) {
+  if total == 36_u64 {
   } else {
     return exit_status(code: 201_u8);
   }

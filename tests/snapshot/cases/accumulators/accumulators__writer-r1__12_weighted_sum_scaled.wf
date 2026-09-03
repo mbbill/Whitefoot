@@ -4,14 +4,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let sum = 0_u64;
   for (
     i in 0_u64..5_u64,
-    invariant scaled_bound: ile(sum, 510_u64 * i)
+    invariant scaled_bound: sum <= 510_u64 * i
   ) {
     let byte = data[i];
-    let wide = cvt<u8, u64>(byte);
+    let wide = cvt::<u8, u64>(byte);
     let scaled = wide * 2_u64;
     set sum = sum + scaled;
   }
-  if ieq(sum, 30_u64) {
+  if sum == 30_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

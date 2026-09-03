@@ -1,6 +1,6 @@
 fn safe_divide(n: own u64, d: own u64) -> result: own u64 pure {
-  doc "ACCEPT: an igt branch establishes a nonzero divisor, so the division obligation discharges [OP-2, ENT-6].";
-  if igt(d, 0_u64) {
+  doc "ACCEPT: a `>` branch establishes a nonzero divisor, so the division obligation discharges [OP-2, ENT-6].";
+  if d > 0_u64 {
     let q = n / d;
     return q;
   }
@@ -9,7 +9,7 @@ fn safe_divide(n: own u64, d: own u64) -> result: own u64 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let q = safe_divide(n: 20_u64, d: 4_u64);
-  if ieq(q, 5_u64) {
+  if q == 5_u64 {
   } else {
     return exit_status(code: 201_u8);
   }

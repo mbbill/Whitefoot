@@ -1,7 +1,7 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   doc "PATH-1: a Unix-family leading separator is a member of that target's target-root prefix set, so construction fails and yields no path value. This is a runtime PathInvalid outcome the program matches, not a compile-time rejection: PathError is an ordinary outcome type [SYS-6], and it never substitutes for IoError's InvalidPath.";
   region 'a {
-    match arg_get<'a>(args: &'a args, position: 1_u64) {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {

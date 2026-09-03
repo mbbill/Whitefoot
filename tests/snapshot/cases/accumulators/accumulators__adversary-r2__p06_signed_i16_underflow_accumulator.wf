@@ -3,7 +3,7 @@ command fn main() -> status: own ExitStatus pure {
   let sum = 0_i16;
   for (
     i in 0_u64..12_u64,
-    invariant bound: ige(sum, -32768_i16)
+    invariant bound: sum >= -32768_i16
   ) {
     set sum = sum - 3000_i16;
   }

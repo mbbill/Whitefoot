@@ -8,29 +8,29 @@ struct HuffmanTable {
 const code_length_order: array<u8, 19> =[16_u8, 17_u8, 18_u8, 0_u8, 8_u8, 7_u8, 9_u8, 6_u8, 10_u8, 5_u8, 11_u8, 4_u8, 12_u8, 3_u8, 13_u8, 2_u8, 14_u8, 1_u8, 15_u8];
 
 fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, symbol: own u64) -> result: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input), writes(state.input_offset, state.hold, state.bits) {
-  let before_lengths = ilt(symbol, 257_u64);
-  let after_lengths = ige(symbol, 286_u64);
+  let before_lengths = symbol < 257_u64;
+  let after_lengths = symbol >= 286_u64;
   let invalid_symbol = bor(before_lengths, after_lengths);
   if invalid_symbol {
     let error = InvalidHuffmanCode();
     return Err<u64, InflateError>(error: error);
   }
   let length_index = symbol -wrap 257_u64;
-  let length_in_tables = ilt(length_index, 29_u64);
+  let length_in_tables = length_index < 29_u64;
   if length_in_tables {
   } else {
     let error = InvalidHuffmanCode();
     return Err<u64, InflateError>(error: error);
   }
   let length_base_word = length_bases[length_index];
-  let length_base = cvt<u16, u64>(length_base_word);
+  let length_base = cvt::<u16, u64>(length_base_word);
   let length_extra_byte = length_extras[length_index];
-  let length_extra_count = cvt<u8, u32>(length_extra_byte);
+  let length_extra_count = cvt::<u8, u32>(length_extra_byte);
   let length_extra_high = ishl.wrap(1_u64, length_extra_count);
   let length_extra_mask = length_extra_high -wrap 1_u64;
   let length_extra = 0_u64;
   region 'length_extra_call {
-    match read_bits<'length_extra_call, 'length_extra_call>(state: &uniq 'length_extra_call deref(state), input: &'length_extra_call deref(input), count: length_extra_count, mask: length_extra_mask) {
+    match read_bits::<'length_extra_call, 'length_extra_call>(state: &uniq 'length_extra_call deref(state), input: &'length_extra_call deref(input), count: length_extra_count, mask: length_extra_mask) {
       Ok(value: extra) => {
         set length_extra = extra;
       }
@@ -44,20 +44,20 @@ fn decode_length['s, 'i](state: &uniq 's InflateState, input: &'i buffer<u8>, sy
 }
 
 fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>, out: &uniq 'o buffer<u8>, copy_length: own u64, distance_symbol: own u64) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out) {
-  let invalid_distance_symbol = ige(distance_symbol, 30_u64);
+  let invalid_distance_symbol = distance_symbol >= 30_u64;
   if invalid_distance_symbol {
     let error = InvalidDistance();
     return Err<unit, InflateError>(error: error);
   }
   let distance_base_word = distance_bases[distance_symbol];
-  let distance_base = cvt<u16, u64>(distance_base_word);
+  let distance_base = cvt::<u16, u64>(distance_base_word);
   let distance_extra_byte = distance_extras[distance_symbol];
-  let distance_extra_count = cvt<u8, u32>(distance_extra_byte);
+  let distance_extra_count = cvt::<u8, u32>(distance_extra_byte);
   let distance_extra_high = ishl.wrap(1_u64, distance_extra_count);
   let distance_extra_mask = distance_extra_high -wrap 1_u64;
   let distance_extra = 0_u64;
   region 'distance_extra_call {
-    match read_bits<'distance_extra_call, 'distance_extra_call>(state: &uniq 'distance_extra_call deref(state), input: &'distance_extra_call deref(input), count: distance_extra_count, mask: distance_extra_mask) {
+    match read_bits::<'distance_extra_call, 'distance_extra_call>(state: &uniq 'distance_extra_call deref(state), input: &'distance_extra_call deref(input), count: distance_extra_count, mask: distance_extra_mask) {
       Ok(value: extra) => {
         set distance_extra = extra;
       }
@@ -67,20 +67,20 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
     }
   }
   let distance = distance_base +wrap distance_extra;
-  let before_history = ilt(deref(state).output_offset, distance);
+  let before_history = deref(state).output_offset < distance;
   if before_history {
     let error = InvalidDistance();
     return Err<unit, InflateError>(error: error);
   }
   let copied = 0_u64;
   loop @copy_match {
-    let copy_done = ieq(copied, copy_length);
+    let copy_done = copied == copy_length;
     if copy_done {
       break @copy_match;
     } else {
       let source_index = deref(state).output_offset -wrap distance;
       let history_room = len(deref(out));
-      let source_in_history = ilt(source_index, history_room);
+      let source_in_history = source_index < history_room;
       if source_in_history {
       } else {
         let error = InvalidDistance();
@@ -88,7 +88,7 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
       }
       let byte = deref(out)[source_index];
       region 'match_emit {
-        match emit_byte<'match_emit, 'match_emit>(state: &uniq 'match_emit deref(state), out: &uniq 'match_emit deref(out), value: byte) {
+        match emit_byte::<'match_emit, 'match_emit>(state: &uniq 'match_emit deref(state), out: &uniq 'match_emit deref(out), value: byte) {
           Ok(value: emitted) => {
           }
           Err(error: emit_error) => {
@@ -104,12 +104,12 @@ fn copy_distance['s, 'i, 'o](state: &uniq 's InflateState, input: &'i buffer<u8>
 
 fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> reads(lengths), allocates(heap) contract {
   define lengths_room = len(lengths);
-  define symbol_limit = ile(symbol_count, 286_u64);
-  requires buffer_fits<u64>(symbol_count);
-  requires ile(symbol_count, lengths_room);
+  define symbol_limit = symbol_count <= 286_u64;
+  requires buffer_fits::<u64>(symbol_count);
+  requires symbol_count <= lengths_room;
   requires symbol_limit;
 } {
-  let count_slots_word = cvt<u32, u64>(max_bits);
+  let count_slots_word = cvt::<u32, u64>(max_bits);
   let count_slots = count_slots_word +wrap 1_u64;
   let counts = buffer_new(count_slots, 0_u64);
   let symbols = buffer_new(symbol_count, 0_u64);
@@ -117,15 +117,15 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
   let sole_length = 0_u32;
   for @count_lengths (symbol in 0_u64..symbol_count) {
     let length_byte = lengths[symbol];
-    let length = cvt<u8, u32>(length_byte);
-    let too_long = igt(length, max_bits);
+    let length = cvt::<u8, u32>(length_byte);
+    let too_long = length > max_bits;
     if too_long {
       let error = InvalidHuffmanTree();
       return Err<HuffmanTable, InflateError>(error: error);
     }
-    let present = igt(length, 0_u32);
+    let present = length > 0_u32;
     if present {
-      let count_index = cvt<u32, u64>(length);
+      let count_index = cvt::<u32, u64>(length);
       let previous_count = counts[count_index];
       set counts[count_index] = previous_count +wrap 1_u64;
       set nonzero = nonzero +wrap 1_u64;
@@ -135,14 +135,14 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
   let left = 1_u64;
   let length = 1_u32;
   loop @validate_lengths {
-    let validation_done = igt(length, max_bits);
+    let validation_done = length > max_bits;
     if validation_done {
       break @validate_lengths;
     } else {
       set left = ishl.wrap(left, 1_u32);
-      let count_index = cvt<u32, u64>(length);
+      let count_index = cvt::<u32, u64>(length);
       let count = counts[count_index];
-      let oversubscribed = igt(count, left);
+      let oversubscribed = count > left;
       if oversubscribed {
         let error = InvalidHuffmanTree();
         return Err<HuffmanTable, InflateError>(error: error);
@@ -151,14 +151,14 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       set length = length +wrap 1_u32;
     }
   }
-  let incomplete = igt(left, 0_u64);
+  let incomplete = left > 0_u64;
   if incomplete {
-    let one_symbol = ieq(nonzero, 1_u64);
-    let one_bit = ieq(sole_length, 1_u32);
+    let one_symbol = nonzero == 1_u64;
+    let one_bit = sole_length == 1_u32;
     let permitted_single = band(allow_single, one_symbol);
     let permitted_one_bit = band(permitted_single, one_bit);
-    let no_symbols = ieq(nonzero, 0_u64);
-    let one_declared_symbol = ieq(symbol_count, 1_u64);
+    let no_symbols = nonzero == 0_u64;
+    let one_declared_symbol = symbol_count == 1_u64;
     let permitted_empty_tree = band(allow_empty, no_symbols);
     let permitted_empty = band(permitted_empty_tree, one_declared_symbol);
     let permitted_incomplete = bor(permitted_one_bit, permitted_empty);
@@ -172,11 +172,11 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
   let offset = 0_u64;
   set length = 1_u32;
   loop @build_offsets {
-    let offsets_done = igt(length, max_bits);
+    let offsets_done = length > max_bits;
     if offsets_done {
       break @build_offsets;
     } else {
-      let count_index = cvt<u32, u64>(length);
+      let count_index = cvt::<u32, u64>(length);
       set offsets[count_index] = offset;
       let count = counts[count_index];
       set offset = offset +wrap count;
@@ -185,12 +185,12 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
   }
   for @order_symbols (symbol in 0_u64..symbol_count) {
     let length_byte = lengths[symbol];
-    let symbol_length = cvt<u8, u32>(length_byte);
-    let present = igt(symbol_length, 0_u32);
+    let symbol_length = cvt::<u8, u32>(length_byte);
+    let present = symbol_length > 0_u32;
     if present {
-      let count_index = cvt<u32, u64>(symbol_length);
+      let count_index = cvt::<u32, u64>(symbol_length);
       let order_offsets_room = len(offsets);
-      let order_slot_ok = ilt(count_index, order_offsets_room);
+      let order_slot_ok = count_index < order_offsets_room;
       if order_slot_ok {
       } else {
         let error = InvalidHuffmanTree();
@@ -198,7 +198,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
       }
       let destination = offsets[count_index];
       let order_symbols_room = len(symbols);
-      let destination_ok = ilt(destination, order_symbols_room);
+      let destination_ok = destination < order_symbols_room;
       if destination_ok {
       } else {
         let error = InvalidHuffmanTree();
@@ -213,7 +213,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
 }
 
 fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buffer<u8>, table: &'t HuffmanTable) -> result: own Result<u64, InflateError> reads(state.input_offset, state.hold, state.bits, input, table.counts, table.symbols, table.max_bits, table.used_symbols), writes(state.input_offset, state.hold, state.bits) {
-  let empty = ieq(deref(table).used_symbols, 0_u64);
+  let empty = deref(table).used_symbols == 0_u64;
   if empty {
     let error = InvalidHuffmanCode();
     return Err<u64, InflateError>(error: error);
@@ -226,7 +226,7 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
   loop @table_code_lengths {
     let bit = 0_u64;
     region 'table_bit_call {
-      match read_bits<'table_bit_call, 'table_bit_call>(state: &uniq 'table_bit_call deref(state), input: &'table_bit_call deref(input), count: 1_u32, mask: 1_u64) {
+      match read_bits::<'table_bit_call, 'table_bit_call>(state: &uniq 'table_bit_call deref(state), input: &'table_bit_call deref(input), count: 1_u32, mask: 1_u64) {
         Ok(value: read_bit) => {
           set bit = read_bit;
         }
@@ -236,9 +236,9 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
       }
     }
     set code = ior(code, bit);
-    let count_index = cvt<u32, u64>(bit_length);
+    let count_index = cvt::<u32, u64>(bit_length);
     let table_counts_room = len(deref(table).counts);
-    let table_count_ok = ilt(count_index, table_counts_room);
+    let table_count_ok = count_index < table_counts_room;
     if table_count_ok {
     } else {
       let error = InvalidHuffmanTree();
@@ -246,14 +246,14 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
     }
     let count = deref(table).counts[count_index];
     let first_after_count = first +wrap count;
-    let at_or_after_first = ige(code, first);
-    let before_end = ilt(code, first_after_count);
+    let at_or_after_first = code >= first;
+    let before_end = code < first_after_count;
     let found = band(at_or_after_first, before_end);
     if found {
       let offset = code -wrap first;
       let ordered = symbol_index +wrap offset;
       let table_symbols_room = len(deref(table).symbols);
-      let ordered_ok = ilt(ordered, table_symbols_room);
+      let ordered_ok = ordered < table_symbols_room;
       if ordered_ok {
       } else {
         let error = InvalidHuffmanTree();
@@ -265,7 +265,7 @@ fn decode_table_symbol['s, 'i, 't](state: &uniq 's InflateState, input: &'i buff
     set symbol_index = symbol_index +wrap count;
     set first = ishl.wrap(first_after_count, 1_u32);
     set code = ishl.wrap(code, 1_u32);
-    let last_length = ieq(bit_length, deref(table).max_bits);
+    let last_length = bit_length == deref(table).max_bits;
     if last_length {
       let error = InvalidHuffmanCode();
       return Err<u64, InflateError>(error: error);

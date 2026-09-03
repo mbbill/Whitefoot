@@ -1,17 +1,17 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "expected: ACCEPT -- counter increments by at most 1 per iteration in one branch only; ile(count, i) is the tight coefficient-one bound AUTO/DIRECT discharge at every backedge.";
+  doc "expected: ACCEPT -- counter increments by at most 1 per iteration in one branch only; count <= i is the tight coefficient-one bound AUTO/DIRECT discharge at every backedge.";
   let count = 0_u64;
   for (
     i in 0_u64..10_u64,
-    invariant bound: ile(count, i)
+    invariant bound: count <= i
   ) {
     let parity = iand(i, 1_u64);
-    let is_even = ieq(parity, 0_u64);
+    let is_even = parity == 0_u64;
     if is_even {
       set count = count + 1_u64;
     }
   }
-  if ieq(count, 5_u64) {
+  if count == 5_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

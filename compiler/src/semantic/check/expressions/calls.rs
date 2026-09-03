@@ -145,12 +145,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             "imul.sat" => CheckedIntegerOperation::MultiplySaturating,
             "imin" => CheckedIntegerOperation::Minimum,
             "imax" => CheckedIntegerOperation::Maximum,
-            "ieq" => CheckedIntegerOperation::Equal,
-            "ine" => CheckedIntegerOperation::NotEqual,
-            "ilt" => CheckedIntegerOperation::Less,
-            "ile" => CheckedIntegerOperation::LessEqual,
-            "igt" => CheckedIntegerOperation::Greater,
-            "ige" => CheckedIntegerOperation::GreaterEqual,
             _ => {
                 return self.unsupported(UnsupportedSemanticFeature::OperationFamily, node);
             }
@@ -360,7 +354,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .map_err(|_| SemanticCompilerFailure::InvalidCanonicalTree.into())
     }
 
-    /// [STOR-2] `arena_new<'r, T>(v)` returns `own arena<'r, T>`: the content
+    /// [STOR-2] `arena_new::<'r, T>(v)` returns `own arena<'r, T>`: the content
     /// moves into storage owned by region `'r` and registered on that
     /// region's allocation list, which the region's exits release [STOR-3].
     fn check_arena_new(

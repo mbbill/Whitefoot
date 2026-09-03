@@ -4,7 +4,7 @@ command fn main() -> status: own ExitStatus pure {
   for (i in 0_u64..300_u64) {
     set count = count + 1_u8;
   }
-  if ieq(count, 44_u8) {
+  if count == 44_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

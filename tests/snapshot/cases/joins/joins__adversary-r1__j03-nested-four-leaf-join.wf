@@ -6,32 +6,32 @@ enum Combo {
 }
 
 fn get(b: own buffer<u8>, i: own u64, combo: own Combo) -> result: own u8 reads(b) {
-  doc "expect ACCEPT: a four-variant match stands in for a nested if/if join; every one of the four leaves independently checks ilt(i, room) before falling through, so the join keeps the common bound and b[i] discharges.";
+  doc "expect ACCEPT: a four-variant match stands in for a nested if/if join; every one of the four leaves independently checks i < room before falling through, so the join keeps the common bound and b[i] discharges.";
   let room = len(b);
   match combo {
     BothTrue() => {
-      let inside_a = ilt(i, room);
+      let inside_a = i < room;
       if inside_a {
       } else {
         return 0_u8;
       }
     }
     FirstTrue() => {
-      let inside_b = ilt(i, room);
+      let inside_b = i < room;
       if inside_b {
       } else {
         return 0_u8;
       }
     }
     SecondTrue() => {
-      let inside_c = ilt(i, room);
+      let inside_c = i < room;
       if inside_c {
       } else {
         return 0_u8;
       }
     }
     BothFalse() => {
-      let inside_d = ilt(i, room);
+      let inside_d = i < room;
       if inside_d {
       } else {
         return 0_u8;

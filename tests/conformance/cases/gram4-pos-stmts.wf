@@ -3,18 +3,18 @@ command fn main() -> return_value: own ExitStatus pure {
   let i = 0_i32;
   region 'r {
     loop @l {
-      if ige(i, 3_i32) {
+      if i >= 3_i32 {
         break @l;
       }
       set i = i +wrap 1_i32;
     }
   }
-  let d = if ieq(i, 3_i32) {
+  let d = if i == 3_i32 {
     give 7_i32;
   } else {
     give 0_i32;
   }
-  if ieq(d, 7_i32) {
+  if d == 7_i32 {
   } else {
     return exit_status(code: 1_u8);
   }

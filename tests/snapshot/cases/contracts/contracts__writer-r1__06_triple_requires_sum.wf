@@ -1,11 +1,11 @@
 fn bounded_total(first: own u8, first_limit: own u8, second: own u8, second_limit: own u8, third: own u8, third_limit: own u8) -> total: own u8 pure contract {
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(third, third_limit);
-  requires ile(first_limit, 80_u8);
-  requires ile(second_limit, 80_u8);
-  requires ile(third_limit, 93_u8);
-  ensures ile(total, 253_u8);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 80_u8;
+  requires second_limit <= 80_u8;
+  requires third_limit <= 93_u8;
+  ensures total <= 253_u8;
 } {
   let first_two = first + second;
   let total = first_two + third;
@@ -15,7 +15,7 @@ fn bounded_total(first: own u8, first_limit: own u8, second: own u8, second_limi
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: three independent requires goals feed a single ensures.";
   let total = bounded_total(first: 1_u8, first_limit: 8_u8, second: 2_u8, second_limit: 8_u8, third: 3_u8, third_limit: 8_u8);
-  if ieq(total, 6_u8) {
+  if total == 6_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

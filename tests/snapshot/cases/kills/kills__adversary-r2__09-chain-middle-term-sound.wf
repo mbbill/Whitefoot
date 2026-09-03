@@ -1,10 +1,10 @@
 fn chain(a: own u8, b: own u8, c: own u8, w: own u8) -> result: own u8 pure contract {
-  requires ile(a, b);
-  requires ile(b, c);
-  requires ile(c, 5_u8);
+  requires a <= b;
+  requires b <= c;
+  requires c <= 5_u8;
 } {
   set b = w;
-  let ok = ile(b, 5_u8);
+  let ok = b <= 5_u8;
   if ok {
     let z = b + 250_u8;
     return z;
@@ -14,7 +14,7 @@ fn chain(a: own u8, b: own u8, c: own u8, w: own u8) -> result: own u8 pure cont
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "expect ACCEPT: set b=w kills the chain a<=b<=c<=5, but code reproves ile(b,5_u8) via an if-guard before the add";
+  doc "expect ACCEPT: set b=w kills the chain a<=b<=c<=5, but code reproves b <= 5_u8 via an if-guard before the add";
   let r = chain(a: 0_u8, b: 0_u8, c: 0_u8, w: 3_u8);
   return exit_status(code: 0_u8);
 }

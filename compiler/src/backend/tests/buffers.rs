@@ -6,12 +6,12 @@ use super::*;
 
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
     br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
-  requires ile(half, 500_u64);
+  requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
-  let within = ile(n, doubled);
+  let within = n <= doubled;
   if within {
-    invariant tight: ile(n, 1000_u64);
+    invariant tight: n <= 1000_u64;
     let values = buffer_new(n, 0_u16);
   }
   return unit;
@@ -77,17 +77,17 @@ fn buffer_representation_alignment_must_fit_the_selected_allocator_alignment() {
 fn weigh_invariant_proves_domains_then_erases_before_llvm() {
     let source = br#"fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
   define capacity = len(deref(weights));
-  requires ile(count, capacity);
-  requires ile(count, 1000_u64);
-  ensures ile(total, 255000_u32);
+  requires count <= capacity;
+  requires count <= 1000_u64;
+  ensures total <= 255000_u32;
 } {
   let sum = 0_u32;
   for (
     i in 0_u64..count,
-    invariant per_byte: ile(sum, 255_u32 * i)
+    invariant per_byte: sum <= 255_u32 * i
   ) {
     let w = deref(weights)[i];
-    let wide = cvt<u8, u32>(w);
+    let wide = cvt::<u8, u32>(w);
     set sum = sum + wide;
   }
   return sum;
@@ -97,8 +97,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let weights = buffer_new(4_u64, 7_u8);
   let code = 0_u8;
   region 'read {
-    let total = weigh<'read>(weights: &'read weights, count: 4_u64);
-    if ine(total, 28_u32) {
+    let total = weigh::<'read>(weights: &'read weights, count: 4_u64);
+    if total != 28_u32 {
       set code = 1_u8;
     }
   }
@@ -124,9 +124,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
     let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
-  ensures ile(result, 4611686018427387903_u64);
+  ensures result <= 4611686018427387903_u64;
 } {
-  if ile(n, 4611686018427387903_u64) {
+  if n <= 4611686018427387903_u64 {
     return n;
   } else {
     return 4611686018427387903_u64;
@@ -147,17 +147,17 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let length = len(values);
   let stored = 0_u16;
   let code = 0_u8;
-  if ilt(2_u64, length) {
+  if 2_u64 < length {
     set values[2_u64] = replacement();
     set stored = values[2_u64];
   } else {
     set code = 3_u8;
   }
-  if ieq(code, 0_u8) {
-    if ine(length, 4_u64) {
+  if code == 0_u8 {
+    if length != 4_u64 {
       set code = 1_u8;
     }
-    if ine(stored, 9_u16) {
+    if stored != 9_u16 {
       set code = 2_u8;
     }
   }
@@ -216,7 +216,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let initial = buffer_new(4_u64, 7_u8);
   let copied = refill(source: move initial);
   let length = len(copied);
-  if ine(length, 4_u64) {
+  if length != 4_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -282,7 +282,7 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(0_u64, 7_u8);
   let length = len(values);
-  if ine(length, 0_u64) {
+  if length != 0_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -379,7 +379,7 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
 
 fn update['r](pool: &uniq 'r Pool) -> result: own unit reads(pool.left), writes(pool.left, pool.count) {
   let room = len(deref(pool).left);
-  let ok = ilt(1_u64, room);
+  let ok = 1_u64 < room;
   if ok {
     set deref(pool).left[1_u64] = 13_u64;
     set deref(pool).count = 1_u64;
@@ -389,7 +389,7 @@ fn update['r](pool: &uniq 'r Pool) -> result: own unit reads(pool.left), writes(
 
 fn observe['r](pool: &'r Pool) -> result: own u64 reads(pool.left, pool.count) {
   let room = len(deref(pool).left);
-  let ok = ilt(1_u64, room);
+  let ok = 1_u64 < room;
   let count = deref(pool).count;
   if ok {
     let value = deref(pool).left[1_u64];
@@ -407,12 +407,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let apply = True();
   if apply {
     region 'write {
-      update<'write>(pool: &uniq 'write pool);
+      update::<'write>(pool: &uniq 'write pool);
     }
   }
   region 'read {
-    let observed = observe<'read>(pool: &'read pool);
-    if ine(observed, 14_u64) {
+    let observed = observe::<'read>(pool: &'read pool);
+    if observed != 14_u64 {
       set code = 1_u8;
     }
   }
@@ -507,7 +507,7 @@ fn replacement() -> result: own u16 pure {
 
 fn update(columns: own Columns) -> result: own Columns reads(columns.left), writes(columns.left) {
   let room = len(columns.left);
-  let ok = ilt(1_u64, room);
+  let ok = 1_u64 < room;
   if ok {
     set columns.left[1_u64] = replacement();
   }
@@ -520,10 +520,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let columns = Columns(left: move left, right: move right);
   let updated = update(columns: move columns);
   let updated_room = len(updated.left);
-  let updated_ok = ilt(1_u64, updated_room);
+  let updated_ok = 1_u64 < updated_room;
   if updated_ok {
     let value = updated.left[1_u64];
-    if ine(value, 9_u16) {
+    if value != 9_u16 {
       return exit_status(code: 1_u8);
     }
   } else {
@@ -643,7 +643,7 @@ fn compiler_independent_struct_of_buffers_checksum_executes() {
 #[test]
 fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<box<u64>>(3_u64);
+  let slots = buffer_vacant::<box<u64>>(3_u64);
   let first = box_new(11_u64);
   let wrapped = Some<box<u64>>(value: move first);
   let vacant = replace slots[0_u64] = move wrapped;
@@ -671,7 +671,7 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
     }
     Some(value: payload) => {
       let observed = deref(payload);
-      if ine(observed, 11_u64) {
+      if observed != 11_u64 {
         return exit_status(code: 4_u8);
       }
     }
@@ -719,7 +719,7 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u32>(4_u64);
+  let slots = buffer_vacant::<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
   return exit_status(code: 0_u8);
@@ -740,7 +740,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
 #[test]
 fn buffer_vacant_op9_overflow_is_rejected_before_lowering() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
-  let slots = buffer_vacant<u64>(18446744073709551615_u64);
+  let slots = buffer_vacant::<u64>(18446744073709551615_u64);
   return exit_status(code: 0_u8);
 }
 "#;

@@ -1,14 +1,14 @@
 command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "expected: REJECT [INV-1] -- both arms accumulate (2 when the byte equals 9, else 1), so sum can reach 2*i, but the stated invariant claims the much tighter ile(sum, i); at i=1 (data[0]=9) sum becomes 2 which exceeds the claimed bound 1, so the backedge obligation is genuinely false.";
+  doc "expected: REJECT [INV-1] -- both arms accumulate (2 when the byte equals 9, else 1), so sum can reach 2*i, but the stated invariant claims the much tighter sum <= i; at i=1 (data[0]=9) sum becomes 2 which exceeds the claimed bound 1, so the backedge obligation is genuinely false.";
   let data = buffer_new(6_u64, 9_u8);
   set data[2_u64] = 0_u8;
   let sum = 0_u64;
   for (
     i in 0_u64..6_u64,
-    invariant bound: ile(sum, i)
+    invariant bound: sum <= i
   ) {
     let byte = data[i];
-    let matches = ieq(byte, 9_u8);
+    let matches = byte == 9_u8;
     if matches {
       set sum = sum + 2_u64;
     } else {

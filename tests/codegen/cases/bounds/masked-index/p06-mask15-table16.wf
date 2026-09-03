@@ -7,6 +7,6 @@ fn lookup(x: own u64) -> result: own u8 pure {
 
 command fn main() -> status: own ExitStatus traps {
   let value = lookup(x: 31_u64);
-  claim mask_fifteen_drift: ieq(value, 15_u8) because "mask fifteen drift";
+  claim mask_fifteen_drift: value == 15_u8 because "mask fifteen drift";
   return exit_status(code: 0_u8);
 }

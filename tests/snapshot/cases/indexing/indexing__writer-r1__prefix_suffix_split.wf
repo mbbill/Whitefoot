@@ -1,12 +1,12 @@
 fn head_sum(data: own buffer<u8>, split: own u64) -> total: own u32 reads(data) contract {
   define capacity = len(data);
-  requires ile(split, capacity);
+  requires split <= capacity;
 } {
   doc "ACCEPT: sums the [0, split) prefix window; the split parameter is proved no larger than the buffer before the walk.";
   let sum = 0_u32;
   for (i in 0_u64..split) {
     let byte = data[i];
-    let wide = cvt<u8, u32>(byte);
+    let wide = cvt::<u8, u32>(byte);
     set sum = sum +wrap wide;
   }
   return sum;
@@ -14,14 +14,14 @@ fn head_sum(data: own buffer<u8>, split: own u64) -> total: own u32 reads(data) 
 
 fn tail_sum(data: own buffer<u8>, split: own u64) -> total: own u32 reads(data) contract {
   define capacity = len(data);
-  requires ile(split, capacity);
+  requires split <= capacity;
 } {
   doc "ACCEPT: sums the [split, capacity) suffix window that head_sum leaves out, using the same split..capacity endpoint proof shape.";
   let capacity = len(data);
   let sum = 0_u32;
   for (i in split..capacity) {
     let byte = data[i];
-    let wide = cvt<u8, u32>(byte);
+    let wide = cvt::<u8, u32>(byte);
     set sum = sum +wrap wide;
   }
   return sum;
@@ -32,11 +32,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let data2 = buffer_new(6_u64, 2_u8);
   let prefix = head_sum(data: move data, split: 2_u64);
   let suffix = tail_sum(data: move data2, split: 2_u64);
-  if ieq(prefix, 4_u32) {
+  if prefix == 4_u32 {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(suffix, 8_u32) {
+  if suffix == 8_u32 {
   } else {
     return exit_status(code: 2_u8);
   }

@@ -1,8 +1,8 @@
 command fn main() -> status: own ExitStatus pure {
   for (
     i in 0_u64..1_u64,
-    invariant limit: ile(i, 1_u64),
-    invariant limit: ile(i, 1_u64)
+    invariant limit: i <= 1_u64,
+    invariant limit: i <= 1_u64
   ) {
     break;
   }

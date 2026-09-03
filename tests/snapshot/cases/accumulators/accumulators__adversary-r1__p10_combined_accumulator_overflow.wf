@@ -3,14 +3,14 @@ command fn main() -> status: own ExitStatus pure {
   let count_a = 0_u32;
   for (
     i in 0_u64..3_u64,
-    invariant bound_a: ile(count_a, 1000000000_u32 * i)
+    invariant bound_a: count_a <= 1000000000_u32 * i
   ) {
     set count_a = count_a + 1000000000_u32;
   }
   let count_b = 0_u32;
   for (
     j in 0_u64..3_u64,
-    invariant bound_b: ile(count_b, 1000000000_u32 * j)
+    invariant bound_b: count_b <= 1000000000_u32 * j
   ) {
     set count_b = count_b + 1000000000_u32;
   }

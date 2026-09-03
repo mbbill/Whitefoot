@@ -1,20 +1,20 @@
 fn combined_probe(table: own buffer<u8>, first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, third: own u64, third_limit: own u64) -> byte: own u8 reads(table) contract {
   define room = len(table);
-  requires ile(first, first_limit);
-  requires ile(second, second_limit);
-  requires ile(third, third_limit);
-  requires ile(first_limit, 3_u64);
-  requires ile(second_limit, 3_u64);
-  requires ile(third_limit, 3_u64);
-  requires ige(room, 10_u64);
+  requires first <= first_limit;
+  requires second <= second_limit;
+  requires third <= third_limit;
+  requires first_limit <= 3_u64;
+  requires second_limit <= 3_u64;
+  requires third_limit <= 3_u64;
+  requires room >= 10_u64;
 } {
-  invariant component_sum: ile(first + second + third, first_limit + second_limit + third_limit) {
-    use ile(first, first_limit);
-    use ile(second, second_limit);
-    use ile(third, third_limit);
+  invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
+    use first <= first_limit;
+    use second <= second_limit;
+    use third <= third_limit;
   }
-  invariant limit_sum: ile(first_limit + second_limit + third_limit, 9_u64);
-  invariant total_bound: ile(first + second + third, 9_u64);
+  invariant limit_sum: first_limit + second_limit + third_limit <= 9_u64;
+  invariant total_bound: first + second + third <= 9_u64;
   let first_two = first + second;
   let sum = first_two + third;
   let byte = table[sum];
@@ -25,7 +25,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   doc "ACCEPT: an explicit use directed local invariant combines three published premises to establish a subscript's domain obligation.";
   let table = buffer_new(12_u64, 3_u8);
   let byte = combined_probe(table: move table, first: 2_u64, first_limit: 3_u64, second: 3_u64, second_limit: 3_u64, third: 3_u64, third_limit: 3_u64);
-  if ieq(byte, 3_u8) {
+  if byte == 3_u8 {
   } else {
     return exit_status(code: 1_u8);
   }

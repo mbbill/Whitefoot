@@ -6,7 +6,7 @@ fn remainder_neg1(n: own i32) -> result: own i32 pure {
 
 fn remainder_neg1_guarded(n: own i32) -> result: own i32 pure {
   doc "Contrast: bounding n above i32::MIN, as in the existing op2-pos-division-minus-one-divisor-bounded.wf conformance case, discharges the same obligation for remainder.";
-  if igt(n, -2147483648_i32) {
+  if n > -2147483648_i32 {
     let r = n % -1_i32;
     return r;
   }

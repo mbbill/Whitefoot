@@ -134,7 +134,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let needle_backing = buffer_new(1_u64, 7_u8);
   let needle = ByteString(buf: move needle_backing, fill: 1_u64);
   region 'search {{
-    match bs_find<'search, 'search>(haystack: &'search subject, needle: &'search needle) {{
+    match bs_find::<'search, 'search>(haystack: &'search subject, needle: &'search needle) {{
       Some(value: at) => {{
       }}
       None() => {{
@@ -157,7 +157,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
     let guarded = "  if within {
     let capacity = len(deref(s).buf);
-    let addressable = ilt(index, capacity);
+    let addressable = index < capacity;
     if addressable {
       let value = deref(s).buf[index];
       return Some<u8>(value: value);

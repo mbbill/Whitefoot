@@ -1,9 +1,9 @@
 fn get(b: own buffer<u8>, i: own u64) -> result: own u8 reads(b) {
   doc "Closure rule (2): ordinary executed control establishes i at most room and i unequal to room, from which ENT-4 derives the strict bound required by the subscript. No unchecked conclusion stands in for either input-dependent condition.";
   let room = len(b);
-  let within = ile(i, room);
+  let within = i <= room;
   if within {
-    let distinct = ine(i, room);
+    let distinct = i != room;
     if distinct {
       return b[i];
     }

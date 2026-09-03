@@ -1787,3 +1787,31 @@ source-language model is not selected here. This is a temporary scope cut, not
 a constitutional or derivation change. It does not defer layout, address,
 target qualification, target-domain proof, parallel independence, or bounded
 queue/completion protocols.
+
+## v0.41 amendment — integer comparison symbols and the call-site delimiter (2026-09-03, candidate stage)
+
+Specification binding: candidate `spec/kernel-spec.md`, headed v0.41, at
+SHA-256 `71cfbabc4058693241ba3b7f2c6a5a0c7e61552296f8c18f50246162da209cb7`, declared as superseding the active v0.40
+(`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`). The
+owner rulings of 2026-09-03 and the rejected alternatives are recorded in
+`governance/spec-evolution/comparison-symbols-v041-candidate.md` and
+`research/investigations/spelling-relief/SWEEP.md`; the `docs/WORKFLOW.md`
+exact-byte approval and activation are pending, and this binding is restated
+at activation.
+
+v0.41 adds and removes no rules. It modifies 21 existing rules at
+38 verbatim-anchored sites, plus the
+title, status, META-5 delta, and selection-ground header: DIAG-1, EFF-2, ENT-3, ENT-6, EX-1, FN-9, FORM-2, GRAM-1, GRAM-4, GRAM-5, GRAM-6, INV-1, OP-1, OP-2, OP-7, OP-8, OP-9, PRF-1, STOR-2, SYS-2, TYPE-4.
+Grammar productions +1 (`compare_op`; total 83); compound punctuation tokens
++5 (`==`, `!=`, `<=`, `>=`, `::`; total 8); the token alphabet gains `!`
+inside `!=` only; the fixed terminal inventory grows by five (total 98 fixed,
+106 predicates); the six integer comparison rows are respelled
+`==` `!=` `<` `<=` `>` `>=` and leave `DotlessOperationNames`. The FLOOR-5
+spelling rule (T1–T4) is the ground: token count, rule-count delta, two-token
+preservation, and the uniqueness argument; `::` is admitted as a delimiter of
+the expression-position type-argument list on the same ground as the `for`
+header's parentheses. No rule changes derivation status: every modified row
+keeps its chain, because the operation identities, comparison origins,
+contract-clause roots, invariant relations, and diagnostic attributions are
+unchanged under the new spellings. Statistics unchanged: 80 derived · 48
+existence-only · 0 underived.

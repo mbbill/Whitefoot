@@ -10,6 +10,6 @@ fn pick<T>(value: own T) -> result: own T pure {
 command fn main() -> status: own ExitStatus pure {
   doc "The call states one instantiation argument, so FN-2's explicit-argument requirement is met and the count is right; the argument is of the wrong kind, a const where the declaration binds a type. Writing pick<Held> here compiles, so the kind is the only thing this case varies.";
   let a = Held(v: 1_i32);
-  let b = pick<4>(value: move a);
+  let b = pick::<4>(value: move a);
   return exit_status(code: 0_u8);
 }

@@ -57,7 +57,7 @@ const PERMITTED_FOLD: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure 
   let state = seed;
   let round = 0_u64;
   loop @rounds {
-    let done = ieq(round, 24_u64);
+    let done = round == 24_u64;
     if done {
       break @rounds;
     }
@@ -72,7 +72,7 @@ const PERMITTED_FOLD: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure 
 
 fn low_byte(v: own u64) -> result: own u8 pure {
   let low = iand(v, 255_u64);
-  match cvt<u64, u8>(low) {
+  match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -87,12 +87,12 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
   let rest = value;
   loop @octets {
     let limit = at +wrap 8_u64;
-    let done = ige(cursor, limit);
+    let done = cursor >= limit;
     if done {
       break @octets;
     }
     let room = len(deref(destination));
-    let writable = ilt(cursor, room);
+    let writable = cursor < room;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -116,11 +116,11 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let value = folded(lo: 0_u64, hi: 400000_u64);
   let report = buffer_new(8_u64, 0_u8);
   region 'r {
-    let filled = spell<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
+    let filled = spell::<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -143,7 +143,7 @@ const EDGE_RANGES: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
-    let done = ieq(round, 24_u64);
+    let done = round == 24_u64;
     if done {
       break @rounds;
     }
@@ -168,19 +168,19 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "Every degenerate range folds to the accumulator it arrived with, and one wide range folds to the same value split or not.";
   let empty = folded(lo: 5_u64, hi: 5_u64);
-  if ieq(empty, 7_u64) {
+  if empty == 7_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
   let inverted = folded(lo: 400000_u64, hi: 5_u64);
-  if ieq(inverted, 7_u64) {
+  if inverted == 7_u64 {
   } else {
     return exit_status(code: 2_u8);
   }
   let single = folded(lo: 5_u64, hi: 6_u64);
   let one = mix(seed: 5_u64);
   let expected = one +wrap 7_u64;
-  if ieq(single, expected) {
+  if single == expected {
   } else {
     return exit_status(code: 3_u8);
   }
@@ -199,7 +199,7 @@ const WIDE_FRAME: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
-    let done = ieq(round, 24_u64);
+    let done = round == 24_u64;
     if done {
       break @rounds;
     }
@@ -252,7 +252,7 @@ command fn main() -> status: own ExitStatus pure {
     let biased = mixed +wrap a0;
     set total = total +wrap biased;
   }
-  if ieq(total, 0_u64) {
+  if total == 0_u64 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
@@ -274,7 +274,7 @@ const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: own u64, salt: own u64, rounds
   let state = ixor(seed, salt);
   let round = 0_u64;
   loop @rounds {
-    let done = ieq(round, rounds);
+    let done = round == rounds;
     if done {
       break @rounds;
     }
@@ -289,7 +289,7 @@ const CAPTURED_XOR_FOLD: &[u8] = br#"fn mix(seed: own u64, salt: own u64, rounds
 
 fn low_byte(v: own u64) -> result: own u8 pure {
   let low = iand(v, 255_u64);
-  match cvt<u64, u8>(low) {
+  match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -304,12 +304,12 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
   let rest = value;
   loop @octets {
     let limit = at +wrap 8_u64;
-    let done = ige(cursor, limit);
+    let done = cursor >= limit;
     if done {
       break @octets;
     }
     let room = len(deref(destination));
-    let writable = ilt(cursor, room);
+    let writable = cursor < room;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -335,11 +335,11 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = buffer_new(8_u64, 0_u8);
   region 'r {
-    let filled = spell<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
+    let filled = spell::<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
   }
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -360,7 +360,7 @@ const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure
   let state = seed;
   let round = 0_u64;
   loop @rounds {
-    let done = ieq(round, 24_u64);
+    let done = round == 24_u64;
     if done {
       break @rounds;
     }
@@ -375,7 +375,7 @@ const INDEPENDENT_MAP: &[u8] = br#"fn mix(seed: own u64) -> result: own u64 pure
 
 fn low_byte(v: own u64) -> result: own u8 pure {
   let low = iand(v, 255_u64);
-  match cvt<u64, u8>(low) {
+  match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -402,7 +402,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let size = len(report);
   region 'o {
     region 's {
-      match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: size) {
+      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: size) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -448,7 +448,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
     source
         .replacen(
             "fn mapped() -> result: own buffer<u8> allocates(heap) {\n  let out = buffer_new(400000_u64, 0_u8);\n",
-            "fn mapped['m](out: &uniq 'm buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define room = len(deref(out));\n  requires ile(400000_u64, room);\n} {\n",
+            "fn mapped['m](out: &uniq 'm buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define room = len(deref(out));\n  requires 400000_u64 <= room;\n} {\n",
             1,
         )
         .replacen(
@@ -459,7 +459,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
         .replacen("  return move out;\n", "  return unit;\n", 1)
         .replacen(
             "  let report = mapped();\n",
-            "  let report = buffer_new(400000_u64, 0_u8);\n  region 'map {\n    let done = mapped<'map>(out: &uniq 'map report);\n  }\n",
+            "  let report = buffer_new(400000_u64, 0_u8);\n  region 'map {\n    let done = mapped::<'map>(out: &uniq 'map report);\n  }\n",
             1,
         )
         .into_bytes()
@@ -1018,7 +1018,7 @@ struct Combine {
 /// The `u64` accumulator publishes itself.
 const PUBLISH_WIDE: &str = "  return total;\n";
 /// The `u8` accumulator widens, which is a total pair and so binds directly.
-const PUBLISH_NARROW: &str = "  let wide = cvt<u8, u64>(total);\n  return wide;\n";
+const PUBLISH_NARROW: &str = "  let wide = cvt::<u8, u64>(total);\n  return wide;\n";
 /// `Bool` has no numeric conversion, so the branch is written out.
 const PUBLISH_BOOL: &str =
     "  let wide = 0_u64;\n  if total {\n    set wide = 1_u64;\n  }\n  return wide;\n";
@@ -1181,7 +1181,7 @@ const ADMITTED_COMBINES: &[Combine] = &[
         spelling: "band",
         ty: "Bool",
         seed: "True()",
-        element: &["let element = ige(mixed, 0_u64);"],
+        element: &["let element = mixed >= 0_u64;"],
         fold: "band(total, element)",
         publish: PUBLISH_BOOL,
     },
@@ -1190,7 +1190,7 @@ const ADMITTED_COMBINES: &[Combine] = &[
         spelling: "bor",
         ty: "Bool",
         seed: "False()",
-        element: &["let element = ilt(mixed, 0_u64);"],
+        element: &["let element = mixed < 0_u64;"],
         fold: "bor(total, element)",
         publish: PUBLISH_BOOL,
     },
@@ -1201,7 +1201,7 @@ const ADMITTED_COMBINES: &[Combine] = &[
         seed: "False()",
         element: &[
             "let bit = iand(mixed, 1_u64);",
-            "let element = ieq(bit, 1_u64);",
+            "let element = bit == 1_u64;",
         ],
         fold: "bxor(total, element)",
         publish: PUBLISH_BOOL,
@@ -1222,7 +1222,7 @@ const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
   let state = seed;
   let round = 0_u64;
   loop @rounds {
-    let done = ieq(round, 24_u64);
+    let done = round == 24_u64;
     if done {
       break @rounds;
     }
@@ -1237,7 +1237,7 @@ const COMBINE_PRELUDE: &str = r#"fn mix(seed: own u64) -> result: own u64 pure {
 
 fn low_byte(v: own u64) -> result: own u8 pure {
   let low = iand(v, 255_u64);
-  match cvt<u64, u8>(low) {
+  match cvt::<u64, u8>(low) {
     Ok(value: byte) => {
       return byte;
     }
@@ -1252,12 +1252,12 @@ fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> r
   let rest = value;
   loop @octets {
     let limit = at +wrap 8_u64;
-    let done = ige(cursor, limit);
+    let done = cursor >= limit;
     if done {
       break @octets;
     }
     let room = len(deref(destination));
-    let writable = ilt(cursor, room);
+    let writable = cursor < room;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -1315,13 +1315,13 @@ fn admitted_combine_source() -> Vec<u8> {
         let name = combine.name;
         source.push_str(&format!(
             "    let v{index} = value_{name}(after: {at});\n    \
-             let a{index} = spell<'r>(destination: &uniq 'r report, at: {at}, value: v{index});\n"
+             let a{index} = spell::<'r>(destination: &uniq 'r report, at: {at}, value: v{index});\n"
         ));
         at = format!("a{index}");
     }
     source.push_str(&format!(
         "  }}\n  region 'o {{\n    region 's {{\n      \
-         match write_once<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, \
+         match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, \
          end: {width}_u64) {{\n        Ok(value: next) => {{\n          \
          return exit_status(code: 0_u8);\n        }}\n        Err(error: problem) => {{\n          \
          return exit_status(code: 1_u8);\n        }}\n      }}\n    }}\n  }}\n}}\n"

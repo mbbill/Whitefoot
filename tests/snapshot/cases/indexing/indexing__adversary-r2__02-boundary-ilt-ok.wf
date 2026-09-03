@@ -1,8 +1,8 @@
 fn probe(table: own buffer<u8>, idx: own u64) -> found: own u8 reads(table) contract {
   define room = len(table);
-  requires ilt(idx, room);
+  requires idx < room;
 } {
-  doc "expect ACCEPT: requires ilt(idx, room) is the correct strict bound for table[idx]";
+  doc "expect ACCEPT: requires idx < room is the correct strict bound for table[idx]";
   let byte = table[idx];
   return byte;
 }

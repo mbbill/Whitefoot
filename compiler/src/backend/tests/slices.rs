@@ -9,7 +9,7 @@ fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads(values) {
   let length = len(values);
   for (offset in 0_u64..length) {
     let byte = values[offset];
-    let word = cvt<u8, u64>(byte);
+    let word = cvt::<u8, u64>(byte);
     set total = total +wrap word;
   }
   return total;
@@ -19,24 +19,24 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let code = 0_u8;
   region 'static_view {
     let view = slice_of(&'static_view bytes);
-    let total = sum<'static_view>(values: move view);
-    if ine(total, 10_u64) {
+    let total = sum::<'static_view>(values: move view);
+    if total != 10_u64 {
       set code = 1_u8;
     }
   }
-  let local = array_new<u8, 4>(3_u8);
+  let local = array_new::<u8, 4>(3_u8);
   region 'local_view {
     let view = slice_of(&'local_view local);
-    let total = sum<'local_view>(values: move view);
-    if ine(total, 12_u64) {
+    let total = sum::<'local_view>(values: move view);
+    if total != 12_u64 {
       set code = 2_u8;
     }
   }
   let runtime = buffer_new(4_u64, 2_u8);
   region 'runtime_view {
     let view = slice_of(&'runtime_view runtime);
-    let total = sum<'runtime_view>(values: move view);
-    if ine(total, 8_u64) {
+    let total = sum::<'runtime_view>(values: move view);
+    if total != 8_u64 {
       set code = 3_u8;
     }
   }
@@ -64,7 +64,7 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
     // is refutable at compile time and the program rejects with the
     // residual [OP-4, ENT-6].
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let bytes = array_new<u8, 2>(0_u8);
+  let bytes = array_new::<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view bytes);
     let value = window[2_u64];
@@ -99,28 +99,28 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
 
 fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads(value) contract {
   define room = len(deref(value));
-  requires ilt(0_u64, room);
+  requires 0_u64 < room;
 } {
   return deref(value)[0_u64];
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left = array_new<u8, 2>(11_u8);
-  let right = array_new<u8, 2>(29_u8);
+  let left = array_new::<u8, 2>(11_u8);
+  let right = array_new::<u8, 2>(29_u8);
   region 'view {
     let borrowed_source = slice_of(&'view left);
     region 'descriptor {
-      let borrowed_value = borrowed_first<'descriptor, 'view>(value: &'descriptor borrowed_source);
-      if ine(borrowed_value, 11_u8) {
+      let borrowed_value = borrowed_first::<'descriptor, 'view>(value: &'descriptor borrowed_source);
+      if borrowed_value != 11_u8 {
         return exit_status(code: 1_u8);
       }
     }
     let initial = slice_of(&'view left);
-    let passed = pass<'view>(value: move initial);
+    let passed = pass::<'view>(value: move initial);
     let passed_room = len(passed);
-    if ilt(0_u64, passed_room) {
+    if 0_u64 < passed_room {
       let pass_value = passed[0_u64];
-      if ine(pass_value, 11_u8) {
+      if pass_value != 11_u8 {
         return exit_status(code: 2_u8);
       }
     } else {
@@ -129,21 +129,21 @@ command fn main() -> status: own ExitStatus pure {
     let left_view = slice_of(&'view left);
     let right_view = slice_of(&'view right);
     let take_left = False();
-    let selected = choose<'view>(take_left: take_left, left: move left_view, right: move right_view);
+    let selected = choose::<'view>(take_left: take_left, left: move left_view, right: move right_view);
     let selected_room = len(selected);
-    if ilt(0_u64, selected_room) {
+    if 0_u64 < selected_room {
       let selected_value = selected[0_u64];
-      if ine(selected_value, 29_u8) {
+      if selected_value != 29_u8 {
         return exit_status(code: 3_u8);
       }
     } else {
       return exit_status(code: 3_u8);
     }
-    let constant = fixed_view<'view>();
+    let constant = fixed_view::<'view>();
     let constant_room = len(constant);
-    if ilt(1_u64, constant_room) {
+    if 1_u64 < constant_room {
       let constant_value = constant[1_u64];
-      if ine(constant_value, 13_u8) {
+      if constant_value != 13_u8 {
         return exit_status(code: 4_u8);
       }
     } else {

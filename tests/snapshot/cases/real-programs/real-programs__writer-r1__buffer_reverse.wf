@@ -9,7 +9,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set data[5_u64] = 6_u8;
   set data[6_u64] = 7_u8;
   let data_length = len(data);
-  let count_ok = ige(data_length, 1_u64);
+  let count_ok = data_length >= 1_u64;
   if count_ok {
   } else {
     return exit_status(code: 1_u8);
@@ -17,7 +17,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let last = data_length - 1_u64;
   for (i in 0_u64..data_length) {
     let mirror = last - i;
-    let should_swap = ilt(i, mirror);
+    let should_swap = i < mirror;
     if should_swap {
       let front_value = data[i];
       let back_value = data[mirror];
@@ -25,15 +25,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       set data[mirror] = front_value;
     }
   }
-  if ieq(data[0_u64], 7_u8) {
+  if data[0_u64] == 7_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
-  if ieq(data[6_u64], 1_u8) {
+  if data[6_u64] == 1_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
-  if ieq(data[3_u64], 4_u8) {
+  if data[3_u64] == 4_u8 {
   } else {
     return exit_status(code: 2_u8);
   }

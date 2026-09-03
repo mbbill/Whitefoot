@@ -4,7 +4,7 @@ struct Counter {
 
 fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit writes(out) contract {
   define room = len(deref(out));
-  requires ilt(0_u64, room);
+  requires 0_u64 < room;
 } {
   set deref(out)[0_u64] = 7_u8;
   return unit;
@@ -12,10 +12,10 @@ fn write_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit writes(
 
 fn proxy_byte['r](out: &uniq 'r buffer<u8>) -> function_result: own unit writes(out) contract {
   define room = len(deref(out));
-  requires ilt(1_u64, room);
+  requires 1_u64 < room;
 } {
   region 'byte_child {
-    write_byte<'byte_child>(out: &uniq 'byte_child deref(out));
+    write_byte::<'byte_child>(out: &uniq 'byte_child deref(out));
   }
   set deref(out)[1_u64] = 9_u8;
   return unit;
@@ -29,7 +29,7 @@ fn bump_counter['r](counter: &uniq 'r Counter) -> function_result: own unit read
 
 fn proxy_counter['r](counter: &uniq 'r Counter) -> function_result: own unit reads(counter.value), writes(counter.value) {
   region 'counter_child {
-    bump_counter<'counter_child>(counter: &uniq 'counter_child deref(counter));
+    bump_counter::<'counter_child>(counter: &uniq 'counter_child deref(counter));
   }
   set deref(counter).value = deref(counter).value +wrap 1_u64;
   return unit;
@@ -39,20 +39,20 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
   region 'owners {
-    proxy_byte<'owners>(out: &uniq 'owners output);
-    proxy_counter<'owners>(counter: &uniq 'owners counter);
+    proxy_byte::<'owners>(out: &uniq 'owners output);
+    proxy_counter::<'owners>(counter: &uniq 'owners counter);
   }
   let first = output[0_u64];
   let second = output[1_u64];
-  if ieq(first, 7_u8) {
+  if first == 7_u8 {
   } else {
     return exit_status(code: 201_u8);
   }
-  if ieq(second, 9_u8) {
+  if second == 9_u8 {
   } else {
     return exit_status(code: 202_u8);
   }
-  if ieq(counter.value, 42_u64) {
+  if counter.value == 42_u64 {
   } else {
     return exit_status(code: 203_u8);
   }

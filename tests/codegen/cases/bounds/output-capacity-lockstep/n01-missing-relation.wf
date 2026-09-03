@@ -4,7 +4,7 @@ fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 w
   let o = 0_u64;
   loop @groups {
     let rem = n -wrap i;
-    if ilt(rem, 3_u64) {
+    if rem < 3_u64 {
       break @groups;
     }
     set deref(out)[o] = 0_u8;
@@ -12,10 +12,10 @@ fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 w
     set o = o +wrap 4_u64;
   }
   let tail = n -wrap i;
-  if ieq(tail, 1_u64) {
+  if tail == 1_u64 {
     set o = o +wrap 4_u64;
   }
-  if ieq(tail, 2_u64) {
+  if tail == 2_u64 {
     set o = o +wrap 4_u64;
   }
   return o;

@@ -3,7 +3,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   region 'r {
     let b = box_new(9_i32);
     let v = deref(b);
-    if ieq(v, 9_i32) {
+    if v == 9_i32 {
     } else {
       return exit_status(code: 1_u8);
     }

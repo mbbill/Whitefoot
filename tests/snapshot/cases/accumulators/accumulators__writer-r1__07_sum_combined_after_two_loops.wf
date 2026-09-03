@@ -5,23 +5,23 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let first_sum = 0_u64;
   for (
     i in 0_u64..4_u64,
-    invariant first_bound: ile(first_sum, 255_u64 * i)
+    invariant first_bound: first_sum <= 255_u64 * i
   ) {
     let byte = first[i];
-    let wide = cvt<u8, u64>(byte);
+    let wide = cvt::<u8, u64>(byte);
     set first_sum = first_sum + wide;
   }
   let second_sum = 0_u64;
   for (
     j in 0_u64..3_u64,
-    invariant second_bound: ile(second_sum, 255_u64 * j)
+    invariant second_bound: second_sum <= 255_u64 * j
   ) {
     let byte = second[j];
-    let wide = cvt<u8, u64>(byte);
+    let wide = cvt::<u8, u64>(byte);
     set second_sum = second_sum + wide;
   }
   let total = first_sum + second_sum;
-  if ieq(total, 23_u64) {
+  if total == 23_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

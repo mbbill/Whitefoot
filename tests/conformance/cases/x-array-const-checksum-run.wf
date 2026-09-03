@@ -12,7 +12,7 @@ fn checksum() -> function_result: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "A static fixed array feeds a counted-loop checksum whose range facts discharge indexing.";
   let result = checksum();
-  if ieq(result, 228_u64) {
+  if result == 228_u64 {
   } else {
     return exit_status(code: 201_u8);
   }

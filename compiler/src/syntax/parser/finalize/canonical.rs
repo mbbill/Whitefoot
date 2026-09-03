@@ -6,7 +6,7 @@ use crate::{ByteOffset, SourceId};
 
 use crate::syntax::parser::{DerivationElement, SyntaxCoordinate};
 
-use self::format::{GapStyle, build_gap_styles, bytes_match, gap_matches};
+use self::format::{GapStyle, attachment, build_gap_styles, bytes_match, gap_matches};
 pub use self::render::render_canonical;
 use super::outcome::{
     CanonicalCompilerFailure, CanonicalIssue, CanonicalLimit, CanonicalLimits, CanonicalLocation,
@@ -392,10 +392,12 @@ fn audit(
                 return Err(CanonicalCompilerFailure::TerminalBindingDisagreement.into());
             }
             let next = ordinal.checked_add(1);
-            let (gap_end, right_predicate, right_terminal, style, depth) =
+            let (gap_end, right_attachment, right_terminal, style, depth) =
                 if next.is_some_and(|value| value < end) {
                     let next_ordinal = next.ok_or(CanonicalCompilerFailure::CounterOverflow)?;
                     let (right_token, right_predicate) = terminal_element(finalized, next_ordinal)?;
+                    let right_attachment =
+                        attachment(&finalized.topology, next_ordinal, right_predicate)?;
                     let owner = finalized
                         .topology
                         .terminals
@@ -409,7 +411,7 @@ fn audit(
                         .format_depth;
                     (
                         right_token.id().start().value(),
-                        Some(right_predicate),
+                        Some(right_attachment),
                         Some(next_ordinal),
                         *gaps
                             .get(next_ordinal)
@@ -431,8 +433,8 @@ fn audit(
                 actual_gap,
                 style,
                 depth,
-                Some(predicate),
-                right_predicate,
+                Some(attachment(&finalized.topology, ordinal, predicate)?),
+                right_attachment,
                 work,
             )?;
             if !gap_agrees {

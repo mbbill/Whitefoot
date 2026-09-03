@@ -1,5 +1,5 @@
 fn unselected() -> result: own Result<i32, Overflow> pure contract {
-  ensures when Ok(value: result): ieq(result, 0_i32);
+  ensures when Ok(value: result): result == 0_i32;
 } {
   let error = Overflow();
   return Err<i32, Overflow>(error: error);

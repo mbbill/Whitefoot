@@ -3,8 +3,8 @@ fn merge_pair_bounds(a_limit: own u64, b_limit: own u64) -> total: own u64 pure 
   let b = 0_u64;
   for (
     i in 0_u64..3_u64,
-    invariant a_bound: ile(a, a_limit),
-    invariant b_bound: ile(b, b_limit)
+    invariant a_bound: a <= a_limit,
+    invariant b_bound: b <= b_limit
   ) {
     set a = a_limit;
     set b = b_limit;
@@ -15,7 +15,7 @@ fn merge_pair_bounds(a_limit: own u64, b_limit: own u64) -> total: own u64 pure 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- counted for with two header invariants proved simultaneously [INV-1].";
   let total = merge_pair_bounds(a_limit: 3_u64, b_limit: 4_u64);
-  if ieq(total, 7_u64) {
+  if total == 7_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

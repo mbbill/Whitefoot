@@ -4,18 +4,18 @@ enum Selector {
 }
 
 fn fetch(b: own buffer<u8>, i: own u64, pick: own Selector) -> result: own u8 reads(b) {
-  doc "expected ACCEPT: match on a two-variant enum has arms that each establish ilt(i, room) from a different derivation before the shared subscript.";
+  doc "expected ACCEPT: match on a two-variant enum has arms that each establish i < room from a different derivation before the shared subscript.";
   let room = len(b);
   match pick {
     First() => {
-      let direct = ilt(i, room);
+      let direct = i < room;
       if direct {
       } else {
         return 0_u8;
       }
     }
     Second() => {
-      let too_far = ige(i, room);
+      let too_far = i >= room;
       if too_far {
         return 0_u8;
       }

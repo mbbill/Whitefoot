@@ -3,16 +3,16 @@ fn fill_ring(capacity: own u64, steps: own u64) -> last_cursor: own u64 pure {
   let cursor = 0_u64;
   let taken = 0_u64;
   loop (
-    invariant bounded: ile(cursor, capacity),
-    invariant progress: ile(taken, steps)
+    invariant bounded: cursor <= capacity,
+    invariant progress: taken <= steps
   ) {
-    let pending = ilt(taken, steps);
+    let pending = taken < steps;
     if pending {
-      let wrapped = ige(cursor, capacity);
+      let wrapped = cursor >= capacity;
       if wrapped {
         set cursor = 0_u64;
       }
-      let room = ilt(cursor, capacity);
+      let room = cursor < capacity;
       if room {
         set cursor = cursor + 1_u64;
       }
@@ -26,7 +26,7 @@ fn fill_ring(capacity: own u64, steps: own u64) -> last_cursor: own u64 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let last = fill_ring(capacity: 4_u64, steps: 10_u64);
-  let correct = ieq(last, 2_u64);
+  let correct = last == 2_u64;
   if correct {
   } else {
     return exit_status(code: 1_u8);

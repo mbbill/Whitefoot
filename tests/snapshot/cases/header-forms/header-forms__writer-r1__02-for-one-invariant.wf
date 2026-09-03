@@ -3,11 +3,11 @@ command fn main() -> status: own ExitStatus pure {
   let sum = 0_u64;
   for (
     i in 0_u64..5_u64,
-    invariant sum_bound: ile(sum, 5_u64 * i)
+    invariant sum_bound: sum <= 5_u64 * i
   ) {
     set sum = sum + i;
   }
-  if ieq(sum, 10_u64) {
+  if sum == 10_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

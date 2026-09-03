@@ -14,7 +14,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let output = buffer_new(4_u64, 0_u32);
   let output_room = len(output);
   for (center in 0_u64..4_u64) {
-    let output_ok = ilt(center, output_room);
+    let output_ok = center < output_room;
     if output_ok {
     } else {
       return exit_status(code: 1_u8);
@@ -22,7 +22,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let acc = 0_u32;
     for (tap in 0_u64..tap_count) {
       let source_index = center +wrap tap;
-      let source_ok = ilt(source_index, sample_count);
+      let source_ok = source_index < sample_count;
       if source_ok {
       } else {
         return exit_status(code: 2_u8);
@@ -34,11 +34,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
     set output[center] = acc;
   }
-  if ieq(output[0_u64], 8_u32) {
+  if output[0_u64] == 8_u32 {
   } else {
     return exit_status(code: 3_u8);
   }
-  if ieq(output[3_u64], 20_u32) {
+  if output[3_u64] == 20_u32 {
   } else {
     return exit_status(code: 3_u8);
   }

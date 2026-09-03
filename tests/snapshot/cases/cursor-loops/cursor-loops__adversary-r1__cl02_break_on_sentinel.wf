@@ -1,19 +1,19 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: ordinary loop scans a fixed array and breaks when it finds sentinel byte 9, index proven safe by the pre-index bound check";
-  let values = array_new<u8, 8>(3_u8);
+  let values = array_new::<u8, 8>(3_u8);
   set values[5_u64] = 9_u8;
   let cursor = 0_u64;
   let found = False();
   loop (
-    invariant bounded: ile(cursor, 8_u64)
+    invariant bounded: cursor <= 8_u64
   ) {
-    let in_range = ilt(cursor, 8_u64);
+    let in_range = cursor < 8_u64;
     if in_range {
     } else {
       break;
     }
     let byte = values[cursor];
-    let hit = ieq(byte, 9_u8);
+    let hit = byte == 9_u8;
     if hit {
       set found = True();
       break;
@@ -24,7 +24,7 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 1_u8);
   }
-  if ieq(cursor, 5_u64) {
+  if cursor == 5_u64 {
   } else {
     return exit_status(code: 2_u8);
   }

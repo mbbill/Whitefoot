@@ -3,7 +3,7 @@ fn shifted_sum(dummy: own u64) -> result: own u64 pure {
   let sum = 0_u64;
   for (
     i in 1_u64..5_u64,
-    invariant sum_bound: ile(sum, 5_u64 * i)
+    invariant sum_bound: sum <= 5_u64 * i
   ) {
     let prior = i - 1_u64;
     set sum = sum + prior;
@@ -12,12 +12,12 @@ fn shifted_sum(dummy: own u64) -> result: own u64 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "Expected REJECT [OP-2]: this loop's invariant (sum bound) is true but does not establish ige(i, 1_u64), which the subtraction i - 1_u64 in the loop body actually needs. Violating value i=0_u64 (the first iteration) makes i - 1_u64 underflow u64.";
+  doc "Expected REJECT [OP-2]: this loop's invariant (sum bound) is true but does not establish i >= 1_u64, which the subtraction i - 1_u64 in the loop body actually needs. Violating value i=0_u64 (the first iteration) makes i - 1_u64 underflow u64.";
   let ok = shifted_sum(dummy: 0_u64);
   let sum = 0_u64;
   for (
     i in 0_u64..5_u64,
-    invariant sum_bound: ile(sum, 5_u64 * i)
+    invariant sum_bound: sum <= 5_u64 * i
   ) {
     let prior = i - 1_u64;
     set sum = sum + prior;

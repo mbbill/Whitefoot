@@ -2,7 +2,7 @@ fn count_equal_prefix['a, 'b](left: own slice<'a, u64>, right: own slice<'b, u64
   doc "ACCEPT: two cursors advance together in lockstep inside one ordinary loop, each guarded by its own bound.";
   let left_len = len(left);
   let right_len = len(right);
-  let shorter = ilt(left_len, right_len);
+  let shorter = left_len < right_len;
   let bound = if shorter {
     give left_len;
   } else {
@@ -12,15 +12,15 @@ fn count_equal_prefix['a, 'b](left: own slice<'a, u64>, right: own slice<'b, u64
   let j = 0_u64;
   let matched = 0_u64;
   loop (
-    invariant tied_lo: ile(i, j),
-    invariant tied_hi: ile(j, i),
-    invariant bounded: ile(i, bound)
+    invariant tied_lo: i <= j,
+    invariant tied_hi: j <= i,
+    invariant bounded: i <= bound
   ) {
-    let remaining = ilt(i, bound);
+    let remaining = i < bound;
     if remaining {
       let left_value = left[i];
       let right_value = right[j];
-      let same = ieq(left_value, right_value);
+      let same = left_value == right_value;
       if same {
         set matched = matched +wrap 1_u64;
         set i = i + 1_u64;
@@ -51,8 +51,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   region 'compare {
     let left_view = slice_of(&'compare a);
     let right_view = slice_of(&'compare b);
-    let matched = count_equal_prefix<'compare, 'compare>(left: move left_view, right: move right_view);
-    let correct = ieq(matched, 3_u64);
+    let matched = count_equal_prefix::<'compare, 'compare>(left: move left_view, right: move right_view);
+    let correct = matched == 3_u64;
     if correct {
     } else {
       return exit_status(code: 1_u8);

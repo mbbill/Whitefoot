@@ -11,7 +11,7 @@ command fn main() -> return_value: own ExitStatus pure {
     let p = &'r a;
     let b = deref(p) +wrap a;
     let s = Zero();
-    if ieq(b, 10_i32) {
+    if b == 10_i32 {
     } else {
       return exit_status(code: 1_u8);
     }

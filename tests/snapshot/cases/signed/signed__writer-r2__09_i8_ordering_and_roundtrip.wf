@@ -2,15 +2,15 @@ command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: signed comparison ordering on i8 and an i8->i32->i8 cvt round trip both hold.";
   let a = -100_i8;
   let b = -1_i8;
-  let below = ilt(a, b);
+  let below = a < b;
   if below {
   } else {
     return exit_status(code: 1_u8);
   }
-  let widened = cvt<i8, i32>(a);
-  match cvt<i32, i8>(widened) {
+  let widened = cvt::<i8, i32>(a);
+  match cvt::<i32, i8>(widened) {
     Ok(value: narrowed) => {
-      if ieq(narrowed, a) {
+      if narrowed == a {
         return exit_status(code: 0_u8);
       } else {
         return exit_status(code: 2_u8);

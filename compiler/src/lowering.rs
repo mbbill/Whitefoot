@@ -766,7 +766,7 @@ pub enum IrOperation {
         layout_ceiling: IrLayoutCeiling,
         target_domains: IrRuntimeTargetObligations,
     },
-    /// One `buffer_vacant<T>(n)` allocation [OP-1, OP-9]: the defined value's
+    /// One `buffer_vacant::<T>(n)` allocation [OP-1, OP-9]: the defined value's
     /// buffer type names the `Option<T>` element instance, and every element
     /// is initialized to the compiler-minted `None()` of that instance.
     BufferVacant {

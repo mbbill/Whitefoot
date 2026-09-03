@@ -70,41 +70,41 @@ fn option_code(option: own Option<Flag>) -> function_result: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   let ok = make_ok(value: 7_u64);
   let ok_code = result_code(result: move ok);
-  if ieq(ok_code, 7_u64) {
+  if ok_code == 7_u64 {
   } else {
     return exit_status(code: 201_u8);
   }
   let false_atom_0005 = False();
   let first_error = make_err(second: false_atom_0005);
   let first_code = result_code(result: move first_error);
-  if ieq(first_code, 10_u64) {
+  if first_code == 10_u64 {
   } else {
     return exit_status(code: 202_u8);
   }
   let true_atom_0006 = True();
   let second_error = make_err(second: true_atom_0006);
   let second_code = result_code(result: move second_error);
-  if ieq(second_code, 20_u64) {
+  if second_code == 20_u64 {
   } else {
     return exit_status(code: 203_u8);
   }
   let false_atom_0007 = False();
   let some_first = make_some(second: false_atom_0007);
   let some_first_code = option_code(option: move some_first);
-  if ieq(some_first_code, 40_u64) {
+  if some_first_code == 40_u64 {
   } else {
     return exit_status(code: 204_u8);
   }
   let true_atom_0008 = True();
   let some_second = make_some(second: true_atom_0008);
   let some_second_code = option_code(option: move some_second);
-  if ieq(some_second_code, 50_u64) {
+  if some_second_code == 50_u64 {
   } else {
     return exit_status(code: 205_u8);
   }
   let none = make_none();
   let none_code = option_code(option: move none);
-  if ieq(none_code, 30_u64) {
+  if none_code == 30_u64 {
   } else {
     return exit_status(code: 206_u8);
   }

@@ -2,7 +2,7 @@ fn get(b: own buffer<u8>, start: own u64) -> result: own u8 reads(b) {
   doc "Loops carry no induction: the fact state at each iteration head removes every fact a continuing kill event may kill [ENT-5]. The `set` later in the body kills the branch-established bound and an else-free false edge can carry that kill to the next head, so the subscript is undischarged [OP-4] even on the first iteration, where the checked branch still dominates it.";
   let room = len(b);
   let offset = 0_u64;
-  let inside = ilt(offset, room);
+  let inside = offset < room;
   if inside {
   } else {
     return 0_u8;

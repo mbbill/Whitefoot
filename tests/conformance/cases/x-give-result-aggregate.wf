@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus pure {
   let first = choose(b: true_atom_0001);
   match move first {
     Ok(value: ok_value) => {
-      if ieq(ok_value, 1_u64) {
+      if ok_value == 1_u64 {
       } else {
         return exit_status(code: 1_u8);
       }
@@ -28,7 +28,7 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 3_u8);
     }
     Err(error: err_error) => {
-      if ieq(err_error, 2_u64) {
+      if err_error == 2_u64 {
       } else {
         return exit_status(code: 4_u8);
       }

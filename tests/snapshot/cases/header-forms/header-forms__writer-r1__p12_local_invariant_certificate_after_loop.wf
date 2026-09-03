@@ -2,12 +2,12 @@ fn scaled_after_loop(limit: own u64) -> total: own u64 pure {
   let sum = 0_u64;
   for (
     i in 0_u64..limit,
-    invariant sum_bound: ile(sum, i)
+    invariant sum_bound: sum <= i
   ) {
     set sum = sum + 1_u64;
   }
-  invariant exact_bound: ile(sum, limit);
-  invariant scaled_bound: ile(3_u64 * sum, 3_u64 * limit) {
+  invariant exact_bound: sum <= limit;
+  invariant scaled_bound: 3_u64 * sum <= 3_u64 * limit {
     use 3 * exact_bound;
   }
   return sum;
@@ -16,7 +16,7 @@ fn scaled_after_loop(limit: own u64) -> total: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- a local invariant after the loop names an ordinary local, proved with an explicit scaled-sum certificate [PRF-1].";
   let total = scaled_after_loop(limit: 5_u64);
-  if ieq(total, 5_u64) {
+  if total == 5_u64 {
   } else {
     return exit_status(code: 1_u8);
   }

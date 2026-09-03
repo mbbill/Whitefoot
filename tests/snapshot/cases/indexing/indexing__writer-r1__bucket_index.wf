@@ -7,7 +7,7 @@ fn bucket_offset(buckets: own buffer<u8>, n: own u64) -> value: own Option<u8> r
       match bucket_start +checked offset {
         Ok(value: at) => {
           let capacity = len(buckets);
-          let fits = ilt(at, capacity);
+          let fits = at < capacity;
           if fits {
           } else {
             return None<u8>();
@@ -32,7 +32,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let found = bucket_offset(buckets: move buckets, n: 9_u64);
   match found {
     Some(value: byte) => {
-      if ieq(byte, 77_u8) {
+      if byte == 77_u8 {
         return exit_status(code: 0_u8);
       } else {
         return exit_status(code: 1_u8);

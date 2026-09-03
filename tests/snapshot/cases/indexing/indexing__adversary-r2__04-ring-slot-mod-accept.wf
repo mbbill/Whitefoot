@@ -1,8 +1,8 @@
 fn ring_slot(buf: own buffer<u8>, head: own u64, used: own u64) -> found: own u8 reads(buf) contract {
   define cap = len(buf);
-  requires igt(cap, 0_u64);
-  requires ilt(head, cap);
-  requires ilt(used, cap);
+  requires cap > 0_u64;
+  requires head < cap;
+  requires used < cap;
 } {
   doc "expect ACCEPT: slot = (head+wrap used) % cap is always < cap = len(buf) by OP-4 remainder discharge";
   let room = len(buf);

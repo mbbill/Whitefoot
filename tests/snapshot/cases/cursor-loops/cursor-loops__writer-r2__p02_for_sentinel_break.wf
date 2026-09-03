@@ -6,7 +6,7 @@ fn find_sentinel['r](values: own slice<'r, u64>) -> found: own u64 reads(values)
   let found = length;
   for (i in 0_u64..length) {
     let value = values[i];
-    let hit = ieq(value, 0_u64);
+    let hit = value == 0_u64;
     if hit {
       set found = i;
       break;
@@ -18,8 +18,8 @@ fn find_sentinel['r](values: own slice<'r, u64>) -> found: own u64 reads(values)
 command fn main() -> status: own ExitStatus pure {
   region 'scan {
     let view = slice_of(&'scan data);
-    let found = find_sentinel<'scan>(values: move view);
-    let correct = ieq(found, 2_u64);
+    let found = find_sentinel::<'scan>(values: move view);
+    let correct = found == 2_u64;
     if correct {
     } else {
       return exit_status(code: 1_u8);

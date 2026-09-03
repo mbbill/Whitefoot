@@ -67,12 +67,12 @@ pub(crate) const OPERATION_FAMILIES: [&str; 94] = [
     "ineg",
     "ineg.defined",
     "ineg.checked",
-    "ieq",
-    "ine",
-    "ilt",
-    "ile",
-    "igt",
-    "ige",
+    "==",
+    "!=",
+    "<",
+    "<=",
+    ">",
+    ">=",
     "eeq",
     "ene",
     "fadd.strict",
@@ -2044,23 +2044,28 @@ mod tests {
                 .iter()
                 .all(|word| !OPERATION_FAMILIES.contains(word))
         );
-        // OP-1 (iii)'s derived-set consequence after the owner cancelled the
-        // infix comparisons: every respelled row is a dotted OPNAME and was
-        // never a member, so all six integer comparisons are reserved and
-        // DotlessOperationNames has exactly its v0.22 membership. The ordinals
-        // are consecutive because the six occupy one contiguous op-column run.
+        // OP-1's derived-set consequence of the v0.41 comparison symbols:
+        // the six integer comparisons are operator spellings, so they occupy
+        // their contiguous family ordinals but are no longer dotless names,
+        // and the retired names are free identifiers.
         for (spelling, ordinal) in [
-            ("ieq", 22),
-            ("ine", 23),
-            ("ilt", 24),
-            ("ile", 25),
-            ("igt", 26),
-            ("ige", 27),
+            ("==", 22),
+            ("!=", 23),
+            ("<", 24),
+            ("<=", 25),
+            (">", 26),
+            (">=", 27),
         ] {
             assert_eq!(
-                reserved_name(spelling),
-                Some((ReservedNameClass::DotlessOperation, ordinal)),
-                "{spelling} is a dotless operation name"
+                OPERATION_FAMILIES[ordinal], spelling,
+                "{spelling} occupies family ordinal {ordinal}"
+            );
+        }
+        for retired in ["ieq", "ine", "ilt", "ile", "igt", "ige"] {
+            assert_eq!(
+                reserved_name(retired),
+                None,
+                "{retired} is a free identifier"
             );
         }
         assert_eq!(

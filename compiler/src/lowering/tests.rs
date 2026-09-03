@@ -356,7 +356,7 @@ fn nested_counted_breaks_keep_each_exit_interface_local_to_its_range() {
       set total = total +wrap 1_u64;
       break @inner;
     }
-    if ieq(i, 1_u64) {
+    if i == 1_u64 {
       break @outer;
     }
   }
@@ -646,7 +646,7 @@ fn an_unused_state_writing_call_reaches_ir() {
          fn mutate['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.left) {{\n  \
          set deref(pair).left = 1_u64;\n  return unit;\n}}\n\n\
          fn wrapper['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.left) {{\n  \
-         mutate<'r>(pair: move pair);\n  return unit;\n}}\n\n\
+         mutate::<'r>(pair: move pair);\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -855,7 +855,7 @@ fn the_entry_retains_distinct_standard_input_rows_without_alias_metadata() {
 #[test]
 fn ordinary_requires_is_not_lowered_as_a_callee_prologue() {
     let source = br#"fn bounded(value: own u64) -> result: own u64 pure contract {
-  requires ilt(value, 8_u64);
+  requires value < 8_u64;
 } {
   return value;
 }
@@ -883,22 +883,22 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn source_proof_is_erased_before_typed_ir() {
     let source = br#"fn plain(left: own u64, left_limit: own u64, middle: own u64, middle_limit: own u64, right: own u64, right_limit: own u64) -> result: own unit pure contract {
-  requires ile(left, left_limit);
-  requires ile(middle, middle_limit);
-  requires ile(right, right_limit);
+  requires left <= left_limit;
+  requires middle <= middle_limit;
+  requires right <= right_limit;
 } {
   return unit;
 }
 
 fn prove_only(left: own u64, left_limit: own u64, middle: own u64, middle_limit: own u64, right: own u64, right_limit: own u64) -> result: own unit pure contract {
-  requires ile(left, left_limit);
-  requires ile(middle, middle_limit);
-  requires ile(right, right_limit);
+  requires left <= left_limit;
+  requires middle <= middle_limit;
+  requires right <= right_limit;
 } {
-  invariant combined: ile(left + middle + right, left_limit + middle_limit + right_limit) {
-    use ile(left, left_limit);
-    use ile(middle, middle_limit);
-    use ile(right, right_limit);
+  invariant combined: left + middle + right <= left_limit + middle_limit + right_limit {
+    use left <= left_limit;
+    use middle <= middle_limit;
+    use right <= right_limit;
   }
   return unit;
 }
@@ -937,9 +937,9 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -1026,9 +1026,9 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set opened = opened +wrap 1_u64;
           }
@@ -1076,9 +1076,9 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
   let name = buffer_new(4_u64, 97_u8);
   for @first (index in 0_u64..3_u64) {
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      let permit = reserve_file::<'f>(factory: &uniq 'f files);
       region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set opened = opened +wrap 1_u64;
           }
@@ -1090,9 +1090,9 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
   }
   for @second (index in 0_u64..3_u64) {
     region 'g {
-      let permit = reserve_file<'g>(factory: &uniq 'g files);
+      let permit = reserve_file::<'g>(factory: &uniq 'g files);
       region 'm {
-        match open_file<'g, 'm>(permit: move permit, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
+        match open_file::<'g, 'm>(permit: move permit, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set opened = opened +wrap 1_u64;
           }
@@ -1121,10 +1121,10 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
 #[test]
 fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligations() {
     let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) contract {
-  requires ile(n, 1000_u64);
+  requires n <= 1000_u64;
 } {
   let filled = buffer_new(n, 7_u16);
-  let vacant = buffer_vacant<u16>(n);
+  let vacant = buffer_vacant::<u16>(n);
   return unit;
 }
 
@@ -1159,8 +1159,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn an_uninhabited_function_keeps_its_abi_and_lowers_to_one_unreachable_block() {
     let source = br#"fn impossible(value: own i32) -> out: own i32 pure contract {
-  requires ieq(value, 0_i32);
-  requires ine(value, 0_i32);
+  requires value == 0_i32;
+  requires value != 0_i32;
 } {
   return value;
 }
@@ -1207,12 +1207,12 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "command fn main() -> status: own ExitStatus allocates(heap) {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = ige(cursor, stop);\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "command fn main() -> status: own ExitStatus allocates(heap) {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
 
-const NEUTRAL_MIDDLE: &str = "    let newline = ieq(byte, 10_u8);\n    if newline {\n      set seen = seen +wrap 1_u64;\n    }\n    let lead = ieq(byte, mark);\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
+const NEUTRAL_MIDDLE: &str = "    let newline = byte == 10_u8;\n    if newline {\n      set seen = seen +wrap 1_u64;\n    }\n    let lead = byte == mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
 
 fn probe_needle_counts(program: &IrProgram<'_, '_, '_>) -> Vec<usize> {
     program
@@ -1257,7 +1257,7 @@ fn a_non_single_step_increment_declines_the_wide_probe() {
 
 #[test]
 fn a_needle_declared_inside_the_loop_declines_the_wide_probe() {
-    let middle = "    let inner_mark = 88_u8;\n    let lead = ieq(byte, inner_mark);\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
+    let middle = "    let inner_mark = 88_u8;\n    let lead = byte == inner_mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
     with_ir(&byte_walk_source(middle, "1_u64"), |program| {
         assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
     });

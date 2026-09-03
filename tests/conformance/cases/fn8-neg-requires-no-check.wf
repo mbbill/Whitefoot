@@ -1,5 +1,5 @@
 fn no_check(x: own i32) -> result: own i32 pure contract {
-  define permitted = ige(x, 0_i32);
+  define permitted = x >= 0_i32;
 } {
   doc "A define-only contract with no requires or ensures clause is malformed [FN-8].";
   return x;

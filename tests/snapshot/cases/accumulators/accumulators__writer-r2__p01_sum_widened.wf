@@ -5,13 +5,13 @@ command fn main() -> status: own ExitStatus pure {
   let sum = 0_u32;
   for (
     i in 0_u64..6_u64,
-    invariant per_byte: ile(sum, 255_u32 * i)
+    invariant per_byte: sum <= 255_u32 * i
   ) {
     let byte = samples[i];
-    let wide = cvt<u8, u32>(byte);
+    let wide = cvt::<u8, u32>(byte);
     set sum = sum + wide;
   }
-  if ieq(sum, 90_u32) {
+  if sum == 90_u32 {
   } else {
     return exit_status(code: 1_u8);
   }

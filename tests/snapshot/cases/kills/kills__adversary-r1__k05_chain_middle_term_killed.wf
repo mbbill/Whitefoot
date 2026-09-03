@@ -1,10 +1,10 @@
 fn chained_index(table: own buffer<u8>, a: own u64, b: own u64, c: own u64) -> value: own u8 reads(table) contract {
   define room = len(table);
-  requires ile(a, b);
-  requires ile(b, c);
-  requires ile(c, room);
+  requires a <= b;
+  requires b <= c;
+  requires c <= room;
 } {
-  doc "expect REJECT [OP-4]: set b = 900_u64 kills the middle term of the a<=b<=c chain, so table[a] relying on ile(a,c) via b is unproven; a wrong accept lets a=200 index a 100-slot table via a stale transitive fact.";
+  doc "expect REJECT [OP-4]: set b = 900_u64 kills the middle term of the a<=b<=c chain, so table[a] relying on a <= c via b is unproven; a wrong accept lets a=200 index a 100-slot table via a stale transitive fact.";
   set b = 900_u64;
   return table[a];
 }

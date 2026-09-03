@@ -221,7 +221,7 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_rule(
         br#"fn invalid['data, 'storage](value: own slice<'data, u8>) -> result: own unit allocates(arena 'storage) {
-  arena_new<'storage, slice<'data, u8>>(move value);
+  arena_new::<'storage, slice<'data, u8>>(move value);
   return unit;
 }
 
