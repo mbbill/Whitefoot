@@ -616,3 +616,62 @@ fn the_conjunct_fold_matches_the_ent6_table() {
         "340282366920938463426481119284349108225",
     );
 }
+
+/// [OP-2, ENT-6, INV-1, DIAG-1] A body operand nothing bounds leaves its own
+/// `.defined` obligation underivable, and ENT-6 then forms the binding it
+/// initializes as a fresh full-range atom. That demoted value is what breaks
+/// the enclosing header invariant at the backedge, so two obligations fail for
+/// one cause.
+///
+/// DIAG-1 admits exactly one rule and one location, and the one reported is
+/// the cause rather than its consequence: every judgment is ordered where the
+/// checker decides it, and INV-1's backedge judgment is decided only after the
+/// entire loop body has been walked.
+#[test]
+fn a_body_domain_failure_precedes_the_backedge_it_breaks() {
+    let source = br#"fn accumulate(step: own u32) -> total: own u32 pure {
+  let sum = 0_u32;
+  for (
+    i in 0_u64..4_u64,
+    invariant carried: ile(sum, 255_u32)
+  ) {
+    let doubled = step + step;
+    set sum = doubled;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = accumulate(step: 1_u32);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the unbounded body addition must reject: {outcome:?}");
+        };
+        assert_eq!(
+            issue.rule(),
+            SemanticRule::Op2,
+            "the body obligation that demoted the value is the reported rejection",
+        );
+        assert_eq!(
+            issue.kind(),
+            &SemanticIssueKind::UndischargedIntegerDomainObligation {
+                residual: "step +defined step".to_owned(),
+                disposition: StaticObligationDisposition::Unproved,
+                mechanical_fix: OVERFLOW_FIX,
+            },
+        );
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("expected a source-node citation: {:?}", issue.location());
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("offset fits");
+        let end = usize::try_from(coordinate.end().value()).expect("offset fits");
+        assert_eq!(
+            std::str::from_utf8(&source[start..end]).expect("cited bytes are text"),
+            "step + step",
+            "the rejection lands on the body infix node, not on the loop header",
+        );
+    });
+}
