@@ -77,11 +77,18 @@ jobs:
       # `approval-history-integrity` and `spec-append-only` read `main` as a
       # local ref: the approval history must be an exact prefix of main's, and
       # no released specification archive may differ from main's. A CI checkout
-      # has the remote-tracking ref only, so name it locally here.
+      # has the remote-tracking ref only, so name it locally here. On a push to
+      # main the checkout already sits on that branch, and git refuses to force
+      # a branch the worktree has checked out, so the ref is only created when
+      # it is missing.
       - name: Name main as a local ref
         run: |
           git fetch --no-tags --prune origin +refs/heads/main:refs/remotes/origin/main
-          git branch -f main origin/main
+          if git symbolic-ref -q HEAD | grep -qx refs/heads/main; then
+            echo "checkout is on main"
+          else
+            git branch -f main origin/main
+          fi
           git log --oneline -1 main
 
       - name: Install the host toolchain
