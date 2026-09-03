@@ -17,13 +17,13 @@ rather than reporting an empty success.
 Because it tests the LANGUAGE (source -> verdict), not a compiler's internals, this
 suite outlives compiler implementations.
 
-Verdict = ("accept",) | ("reject", rule) | ("run", exit) | ("trap",) | ("unsupported", why)
+Verdict = ("accept",) | ("reject", rule) | ("run", exit) | ("unsupported", why)
 
 Manifest line (JSON):
   {"id": str, "rules": [rule_id...], "expect": EXPECT, "arrange": ARRANGE?,
    "status": "runnable"|"pending"|"xfail", "reason": str?, "doc": str}
   EXPECT = {"kind":"accept"} | {"kind":"reject","rule":R} | {"kind":"run","exit":N}
-         | {"kind":"trap"} | {"kind":"unsupported","why":str}
+         | {"kind":"unsupported","why":str}
 
   status: runnable = must match expect;  pending = toolchain can't run it yet (skip);
           xfail = expect is the CORRECT spec behavior but the current toolchain does
@@ -39,7 +39,7 @@ as non-rejections citing no language rule — target qualification failure and
 pre-entry startup refusal ([QUAL-1], [QUAL-2], [PROG-3]). It is not a place to
 record that this compiler has not implemented something yet.
 
-ARRANGE describes the invocation a `run`/`trap` case needs; a case that is
+ARRANGE describes the invocation a `run` case needs; a case that is
 never executed must not carry one. Every byte string is lowercase hex so the
 corpus can express non-UTF-8 argument and path bytes exactly and diff them
 readably:
@@ -56,7 +56,7 @@ reads at position i, and the vector's length is the count the program reads.
 This is the only lossless reading. `Args` carries the complete native vector
 [HOST-1, SYS-9], so a schema that listed only the arguments after the invoked
 name would leave the vector's first element — an element a program can count
-and read — unstated by the case that claims to fix its invocation. Position 0
+and read — unstated by a case that purports to fix its invocation. Position 0
 is therefore a case's own datum rather than the harness's incidental choice of
 where it built the executable, and an adapter sets it explicitly. An absent
 `argv` means the adapter's own default vector, which supplies position 0 and
@@ -90,7 +90,6 @@ def matches(v, expect):
     return ((k == "accept" and v[0] == "accept")
             or (k == "reject" and v[0] == "reject" and v[1] == expect["rule"])
             or (k == "run" and v[0] == "run" and v[1] == expect["exit"])
-            or (k == "trap" and v[0] == "trap")
             # `why` is the adapter's prose; the corpus asserts the verdict kind,
             # never a diagnostic's wording.
             or (k == "unsupported" and v[0] == "unsupported"))
@@ -120,7 +119,7 @@ def run_cases(cases):
             results.append((c, "SKIP", ("pending",)))
             continue
         src = (CASES / f"{c['id']}.wf").read_text()
-        v = ADAPTER(src, c["expect"]["kind"] in ("run", "trap"))
+        v = ADAPTER(src, c["expect"]["kind"] == "run")
         m = matches(v, c["expect"])
         if status == "xfail":
             outcome = "XPASS" if m else "XFAIL"
@@ -286,10 +285,9 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
         "accept": {"kind"},
         "reject": {"kind", "rule"},
         "run": {"exit", "kind"},
-        "trap": {"kind"},
         "unsupported": {"kind", "why"},
     }
-    executed_kinds = {"run", "trap"}
+    executed_kinds = {"run"}
     for case in cases:
         case_id = case.get("id", "<missing-id>")
         case_rules = case.get("rules")
@@ -328,7 +326,7 @@ def validate_manifest(cases, annots, root=ROOT, cases_dir=CASES):
 
         if "arrange" in case:
             if kind not in executed_kinds:
-                errors.append(f"{case_id}: only a run or trap case may carry an arrange")
+                errors.append(f"{case_id}: only a run case may carry an arrange")
             else:
                 errors += arrange_errors(case_id, case["arrange"])
 

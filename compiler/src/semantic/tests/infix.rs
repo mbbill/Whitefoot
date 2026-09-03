@@ -108,11 +108,11 @@ fn an_operand_type_outside_every_row_is_an_op1_rejection() {
     assert_rule_at(source, SemanticRule::Op1, "f + g");
 }
 
-/// A bare exact operator is proof-required for every operand shape and never
-/// contributes a runtime `traps` effect. Unknown parameters therefore leave a
-/// static [OP-2, ENT-6] obligation instead of making the function trapping.
+/// A bare exact operator is proof-required for every operand shape and adds no
+/// runtime effect. Unknown parameters therefore leave a static [OP-2, ENT-6]
+/// obligation instead of adding a fallback path.
 #[test]
-fn bare_arithmetic_is_a_static_obligation_not_a_traps_effect() {
+fn bare_arithmetic_is_a_static_obligation_without_a_runtime_effect() {
     let source = br#"fn add(a: own i32, b: own i32) -> result: own i32 pure {
   return a + b;
 }
@@ -136,8 +136,8 @@ command fn main() -> status: own ExitStatus pure {
 /// [GRAM-5]'s complete set of positions taking a bare `expr`, enumerated from
 /// the grammar rather than from whichever tests happened to fail: the `if_stmt`
 /// and `value_if` conditions, `ordinary_let_rhs`, `propagate_let_rhs`,
-/// `set_stmt`, `return_stmt`, `claim_stmt`, `give_stmt`, and the `match_stmt`
-/// and `value_match` scrutinees. `expr_stmt := call ";"` takes a `call`, so
+/// `set_stmt`, `return_stmt`, `give_stmt`, and the `match_stmt` and
+/// `value_match` scrutinees. `expr_stmt := call ";"` takes a `call`, so
 /// infix cannot be written there and it is deliberately absent. v0.33 has no
 /// `check_stmt`; contract clauses are not statements and are covered by the
 /// contract tests instead.
@@ -145,7 +145,7 @@ command fn main() -> status: own ExitStatus pure {
 /// Each source writes one infix over `a` and `b` at the named position and
 /// binds the second operand with the exact line [`DISAGREEING_OPERAND`]
 /// rewrites, which is what turns every entry into its own negative case.
-const EXPRESSION_POSITIONS: [(&str, &str); 10] = [
+const EXPRESSION_POSITIONS: [(&str, &str); 9] = [
     (
         "ordinary_let_rhs",
         "command fn main() -> status: own ExitStatus pure {
@@ -184,34 +184,6 @@ command fn main() -> status: own ExitStatus pure {
         "fn add(a: own u64) -> result: own u64 pure {
   let b = 7_u64;
   return a +wrap b;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-",
-    ),
-    (
-        "claim_stmt",
-        "fn clamp_ten(value: own i64) -> result: own i64 pure {
-  let lower = imax(value, -10_i64);
-  return imin(lower, 10_i64);
-}
-
-fn multiply_seven(input: own i64) -> result: own i64 traps {
-  let a = 0_i64;
-  loop @select_operand {
-    if ieq(a, input) {
-      break @select_operand;
-    } else if ieq(a, 10_i64) {
-      break @select_operand;
-    } else {
-      set a = a +wrap 1_i64;
-    }
-  }
-  let b = 7_i64;
-  claim product_defined: a *defined b because \"premises: a starts at zero, advances by one only on the ordinary-loop backedge, and exits no later than ten\\nderivation: induction over reached loop bodies keeps a between zero and ten, so multiplying it by seven remains in range\\nconclusion: a *defined b is true\\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\\nconsumers: the following exact a * b operation requires both signed product bounds\";
-  return a * b;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -298,11 +270,9 @@ command fn main() -> status: own ExitStatus pure {
 /// The second operand's binding, and the disagreeing type that replaces it.
 const AGREEING_OPERAND: &str = "let b = 7_u64;";
 const DISAGREEING_OPERAND: &str = "let b = 7_i32;";
-const CLAIM_AGREEING_OPERAND: &str = "let b = 7_i64;";
-const CLAIM_DISAGREEING_OPERAND: &str = "let b = 7_u64;";
 
-/// Every [GRAM-5] position that admits an infix expression checks one, and
-/// none of them fails the tree.
+/// Every [GRAM-5] expression position checks a well-typed infix source to
+/// completion.
 ///
 /// The `return_stmt` entry is the regression: two `return`-position structural
 /// queries read the `expr` node with `only_child`, and `expr := atom
@@ -310,7 +280,7 @@ const CLAIM_DISAGREEING_OPERAND: &str = "let b = 7_u64;";
 /// return reported `InvalidCanonicalTree` — an internal compiler failure where
 /// a source rejection or an accepted program is required.
 #[test]
-fn infix_is_checked_at_every_expression_position() {
+fn infix_is_checked_at_every_accepted_expression_position() {
     for (position, source) in EXPRESSION_POSITIONS {
         with_semantics(source.as_bytes(), |outcome| {
             assert!(
@@ -331,17 +301,12 @@ fn infix_is_checked_at_every_expression_position() {
 #[test]
 fn a_disagreeing_operand_is_reported_at_that_operand_from_every_position() {
     for (position, source) in EXPRESSION_POSITIONS {
-        let (agreeing, disagreeing) = if position == "claim_stmt" {
-            (CLAIM_AGREEING_OPERAND, CLAIM_DISAGREEING_OPERAND)
-        } else {
-            (AGREEING_OPERAND, DISAGREEING_OPERAND)
-        };
         assert_eq!(
-            source.matches(agreeing).count(),
+            source.matches(AGREEING_OPERAND).count(),
             1,
             "{position} must bind its second operand with the rewritten line",
         );
-        let source = source.replace(agreeing, disagreeing);
+        let source = source.replace(AGREEING_OPERAND, DISAGREEING_OPERAND);
         assert_rule_at(source.as_bytes(), SemanticRule::Type5, "b");
     }
 }

@@ -7,10 +7,7 @@ mod boolean_composition;
 mod borrows;
 mod boxes;
 mod buffers;
-mod check_dissolution;
 mod checked_division;
-mod claim_locality;
-mod claim_residuals;
 mod conditionals;
 mod const_eval;
 mod contracts;
@@ -28,19 +25,20 @@ mod integer_absolute;
 mod integer_conversion;
 mod integer_extended;
 mod integer_negation;
+mod loop_invariants;
 mod loop_permission;
 mod operation_table;
 mod options;
+mod originating_acceptance;
 mod permission;
 mod postconditions;
-mod provenance;
 mod reinterpret;
 mod replace;
 mod requires;
 mod slices;
+mod source_proofs;
 mod staged_permission;
 mod staged_permission_corpus;
-mod strict;
 mod system_effects;
 mod target_action;
 
@@ -196,10 +194,9 @@ fn with_semantics_inputs_for<ResultValue>(
     run(check_semantics(resolved))
 }
 
-/// [`with_semantics`] through the test-only dark checker, which retains
-/// every [ENT-6] obligation and [CLM-2] claim disposition instead of
-/// rejecting at the first one, so engine unit tests can observe complete
-/// per-function derivations.
+/// [`with_semantics`] through the test-only dark checker, which retains every
+/// [ENT-6] obligation instead of rejecting at the first one, so engine unit
+/// tests can observe complete per-function derivations.
 fn with_semantics_dark<ResultValue>(
     source: &[u8],
     run: impl for<'classified, 'lexed, 'source> FnOnce(
@@ -370,21 +367,14 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 }
 
 #[test]
-fn a_residual_claim_statement_is_an_accepted_named_runtime_check() {
-    let source = br#"fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 traps {
-  let size = len(values);
-  let bounded = 0_u64;
-  let step = 0_u64;
-  loop @preserve_zero {
-    if ige(step, 4_u64) {
-      break @preserve_zero;
-    }
-    set bounded = bounded +wrap 0_u64;
-    set step = step +wrap 1_u64;
+fn a_branch_fact_discharges_the_protected_array_read() {
+    let source = br#"fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 pure {
+  let length = len(values);
+  if ilt(i, length) {
+    return values[i];
+  } else {
+    return values[0_u64];
   }
-  let inside = ilt(bounded, size);
-  claim held: inside because "premises: values has length 8 and bounded starts at 0_u64; every completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: inside is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: the following values[bounded] subscript requires this bound for its OP-4 obligation";
-  return values[bounded];
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -399,40 +389,75 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_repeated_claim_name_is_a_clm1_rejection_at_the_later_claim() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  let flag = True();
-  claim held: flag because "premises: this negative fixture has no approved residual theorem premise\nderivation: CLM-1 must reject the repeated name before claim lifecycle classification\nconclusion: this source must not publish a checked program\nchecker gap: this review record only exposes the CLM-1 ordering under test\nconsumers: no approved program consumes this negative fixture";
-  claim held: flag because "premises: this negative fixture has no approved residual theorem premise\nderivation: CLM-1 must reject this second occurrence because held is already defined in the function\nconclusion: this source must not publish a checked program\nchecker gap: this review record only exposes the CLM-1 duplicate-name rejection under test\nconsumers: no approved program consumes this negative fixture";
+fn repeated_normalized_uses_are_a_prf1_rejection() {
+    let source = br#"fn combine(value: own u64, limit: own u64) -> result: own unit pure contract {
+  requires ile(value, limit);
+} {
+  invariant scaled: ile(3_u64 * value, 3_u64 * limit) {
+    use ile(value, limit);
+    use ile(value, limit);
+    use ile(value, limit);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Clm1,
-        SemanticIssueKind::DuplicateClaimName {
-            name: "held".to_owned(),
-        },
-    );
+    assert_rule_kind(source, SemanticRule::Prf1, |kind| {
+        matches!(kind, SemanticIssueKind::UndischargedSourceProof { .. })
+    });
 }
 
 #[test]
-fn a_non_bool_claim_condition_is_a_clm1_rejection() {
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  let value = 3_u64;
-  claim held: value because "premises: this negative fixture supplies a u64 rather than a Bool condition\nderivation: CLM-1 must reject value before claim lifecycle classification\nconclusion: this source must not publish a checked program\nchecker gap: this review record only exposes the CLM-1 predicate-type rejection under test\nconsumers: no approved program consumes this negative fixture";
+fn a_non_ordered_local_invariant_target_is_an_inv1_rejection() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  invariant held: ieq(0_u64, 0_u64);
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Clm1,
-        SemanticIssueKind::InvalidPredicateCondition,
-    );
+    assert_rule_kind(source, SemanticRule::Inv1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidInvariant { .. })
+    });
 }
 
 #[test]
-fn scalar_constants_calls_operations_and_claims_publish_one_checked_program() {
+fn an_unproved_blockless_local_invariant_target_is_an_inv1_rejection() {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  invariant impossible: ile(1_u64, 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Inv1, |kind| {
+        matches!(
+            kind,
+            SemanticIssueKind::UndischargedLocalInvariant { name, .. }
+                if name == "impossible"
+        )
+    });
+}
+
+#[test]
+fn a_non_ordered_use_relation_is_a_prf1_rejection() {
+    let source = br#"fn check(value: own u64, limit: own u64) -> result: own unit pure {
+  invariant scaled: ile(2_u64 * value, 2_u64 * limit) {
+    use ieq(value, limit);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_rule_kind(source, SemanticRule::Prf1, |kind| {
+        matches!(kind, SemanticIssueKind::InvalidSourceProof { .. })
+    });
+}
+
+#[test]
+fn scalar_constants_calls_and_operations_publish_one_checked_program() {
     let source = br#"const base: i32 = 40_i32;
 
 fn add(x: own i32, y: own i32) -> result: own i32 pure {
@@ -465,18 +490,18 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticRule::Fn1,
         SemanticIssueKind::ReturnMismatch,
     );
-    assert_rule(
-        b"command fn main() -> status: own ExitStatus traps {\n  claim bad: 1_i32 because \"premises: this negative fixture supplies an i32 rather than a Bool condition\\nderivation: CLM-1 must reject the condition before claim lifecycle classification\\nconclusion: this source must not publish a checked program\\nchecker gap: this review record only exposes the CLM-1 predicate-type rejection under test\\nconsumers: no approved program consumes this negative fixture\";\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Clm1,
-        SemanticIssueKind::InvalidPredicateCondition,
+    assert_rule_kind(
+        b"command fn main() -> status: own ExitStatus pure {\n  invariant bad: ieq(0_u64, 0_u64);\n  return exit_status(code: 0_u8);\n}\n",
+        SemanticRule::Inv1,
+        |kind| matches!(kind, SemanticIssueKind::InvalidInvariant { .. }),
     );
     assert_rule_kind(
-        b"fn helper() -> result: own unit pure {\n  claim bad: True() because \"premises: this negative fixture has no approved theorem premise\\nderivation: the effect-row check must reject before claim lifecycle classification\\nconclusion: this source must not publish a checked program\\nchecker gap: this review record only exposes the EFF-2 ordering under test\\nconsumers: no approved program consumes this negative fixture\";\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper() -> result: own unit pure {\n  let values = buffer_new(1_u64, 0_u8);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn helper() -> result: own unit traps {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper() -> result: own unit allocates(heap) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -515,9 +540,14 @@ fn loops_enforce_own11_for_outer_affine_moves() {
             mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
         },
     );
-    assert_unsupported(
+    with_semantics(
         b"command fn main() -> status: own ExitStatus pure {\n  loop @forever {\n  }\n  return exit_status(code: 0_u8);\n}\n",
-        UnsupportedSemanticFeature::StructuredControlFlow,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "a break-free loop has a contradictory continuation rather than an unsupported shape: {outcome:?}"
+            );
+        },
     );
 }
 
@@ -671,7 +701,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
 #[test]
 fn effect_mismatch_is_located_at_the_written_effect_row() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  claim bad: True() because \"premises: this negative fixture has no approved theorem premise\\nderivation: the effect-row check must reject before claim lifecycle classification\\nconclusion: this source must not publish a checked program\\nchecker gap: this review record only exposes the EFF-2 ordering under test\\nconsumers: no approved program consumes this negative fixture\";\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure {\n  let values = buffer_new(1_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected EFF-2 mismatch, got {outcome:?}");
@@ -767,14 +797,10 @@ fn enum_equality_exclusions_reach_the_intended_rule() {
 
 #[test]
 fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
-    // The TYPE-5 set-field control is written inline rather than read from
-    // `x-struct-set-field.wf`: that case's `c.n + 1_i32` is a v0.31
-    // constant-operand-class site whose overflow obligation nothing
-    // discharges, so the case now rejects on OP-2 with residual
-    // `c.n <= 2147483646`; keep that independent corpus result out of this
-    // capability control. The capability this
-    // control exists to demonstrate — set a struct field, read it back — is
-    // unaffected.
+    // Keep the capability control smaller than the conformance program: this
+    // test isolates set-field construction and read-back, while
+    // `x-struct-set-field.wf` additionally proves its exact increment from
+    // the S5 post-write image.
     with_semantics(
         b"struct Counter {\n  n: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let c = Counter(n: 1_i32);\n  set c.n = 41_i32;\n  let v = c.n;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
@@ -894,7 +920,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"fn read(holder: own box<buffer<u8>>) -> result: own u8 traps {
+        br#"fn read(holder: own box<buffer<u8>>) -> result: own u8 pure {
   return holder[0_u64];
 }
 

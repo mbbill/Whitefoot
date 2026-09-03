@@ -343,7 +343,8 @@ fn strip_comment(line: &str) -> &str {
 ///
 /// The assembler spelling carries the target's own decoration, and a private
 /// definition does not get the same decoration as an exported one — on this
-/// host an exported `main` is `_main` while a private helper is `l_wf_trap`.
+/// host an exported `main` is `_main` while a private helper is
+/// `l_wf_resource_abort`.
 /// Trying the plain name and each decoration in turn keeps that a property of
 /// the assembler rather than something the ledger has to be told per target,
 /// and an operand that resolves to nothing is an external call, which this
@@ -491,7 +492,7 @@ mod tests {
     /// One `--par` compilation of a two-million-deep recursion, as the host
     /// compiler reported it: a self-recursive function in each of the two
     /// worlds, a thunk, the entry, and the runtime fallbacks.
-    const SPINE_USAGE: &str = "m.ll:wf__par_claim\t0\tstatic
+    const SPINE_USAGE: &str = "m.ll:wf__par_acquire_lane\t0\tstatic
 m.ll:wf__par_thunk_0\t32\tstatic
 m.ll:wf_spine\t48\tstatic
 m.ll:wf__par_seq_spine\t16\tstatic
@@ -500,14 +501,14 @@ m.ll:wf__main_body\t16\tstatic
 m.ll:main\t0\tstatic
 ";
 
-    const SPINE_ASSEMBLY: &str = "\t.globl\t_wf__par_claim
-_wf__par_claim:                         ; @wf__par_claim
+    const SPINE_ASSEMBLY: &str = "\t.globl\t_wf__par_acquire_lane
+_wf__par_acquire_lane:                  ; @wf__par_acquire_lane
 \tret
 _wf__par_thunk_0:                       ; @wf__par_thunk_0
 \tbl\t_wf_spine
 \tret
 _wf_spine:                              ; @wf_spine
-\tbl\t_wf__par_claim
+\tbl\t_wf__par_acquire_lane
 \tb.eq\tLBB2_3
 \tbl\t_wf_spine
 \tret
@@ -602,7 +603,7 @@ _main:                                  ; @main
     fn every_reported_frame_gets_a_row() {
         let lines = ledger();
         for name in [
-            "wf__par_claim",
+            "wf__par_acquire_lane",
             "wf__par_thunk_0",
             "wf_spine",
             "wf__par_seq_spine",

@@ -1,36 +1,25 @@
 const ipv4_header: array<u8, 20> =[69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 0_u8, 64_u8, 1_u8, 0_u8, 0_u8, 192_u8, 168_u8, 0_u8, 1_u8, 192_u8, 168_u8, 0_u8, 199_u8];
 
-fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header), traps contract {
+fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header) contract {
   define length = len(header);
   define odd = iand(length, 1_u64);
   requires ieq(odd, 0_u64);
 } {
   let length = len(header);
-  let odd = iand(length, 1_u64);
-  let offset = 0_u64;
   let sum = 0_u32;
-  loop @words {
-    let done = ieq(offset, length);
-    if done {
-      break @words;
+  for (offset in 0_u64..length) {
+    let byte = header[offset];
+    let wide = cvt<u8, u32>(byte);
+    let parity = iand(offset, 1_u64);
+    if ieq(parity, 0_u64) {
+      let shifted = ishl.wrap(wide, 8_u32);
+      set sum = sum +wrap shifted;
+    } else {
+      let combined = sum +wrap wide;
+      let carry = ishr.wrap(combined, 16_u32);
+      let low_sum = iand(combined, 65535_u32);
+      set sum = low_sum +wrap carry;
     }
-    let low_offset = offset +wrap 1_u64;
-    let high_ok = ilt(offset, length);
-    claim high_in_header: high_ok because "premises: offset starts at zero, length is even, and the word loop exits when offset equals length\nderivation: each continuing iteration adds two, so offset visits exactly the even values strictly below length\nconclusion: offset is below length\nchecker gap: ENT does not derive this ordinary-loop stride induction invariant\nconsumers: the following header subscript uses offset";
-    let high_byte = header[offset];
-    let low_ok = ilt(low_offset, length);
-    claim low_in_header: low_ok because "premises: offset is an even value below the even header length and low_offset is offset plus one\nderivation: an even value below an even limit is at most length minus two, so its successor is below length\nconclusion: low_offset is below length\nchecker gap: ENT does not combine loop stride parity with the even-length requirement\nconsumers: the following header subscript uses low_offset";
-    let low_byte = header[low_offset];
-    let high_word = cvt<u8, u32>(high_byte);
-    let low_word = cvt<u8, u32>(low_byte);
-    let shifted_high = ishl.wrap(high_word, 8_u32);
-    let word = ior(shifted_high, low_word);
-    let combined = sum +wrap word;
-    let carry = ishr.wrap(combined, 16_u32);
-    let low_sum = iand(combined, 65535_u32);
-    let folded = low_sum +wrap carry;
-    set sum = folded;
-    set offset = offset +wrap 2_u64;
   }
   let inverted = inot(sum);
   let checksum_word = iand(inverted, 65535_u32);
@@ -46,7 +35,7 @@ fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header)
   return checksum;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   region 'static_view {
     let view = slice_of(&'static_view ipv4_header);
     let view_length = len(view);

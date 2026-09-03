@@ -8,16 +8,27 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.39 guidance, including the unified-state
-completion-I/O forms activated by v0.37, the per-iteration scratch form
-[PAR-3] admits (P15), and the three forms the 2026-08-28 blind-writer trial
-found a writer lacking: the inline factory reserve inside P15, the hoisted
-length fact (P16), and the subtotal-returning walk (P17). P18 is the explicit
-buffer a loop holds in place of the output resource it may not hold.
+This document carries active v0.40 guidance, including the source-proof forms
+v0.40 activates, the unified-state
+completion-I/O forms introduced by v0.37, the
+per-iteration scratch form [PAR-3] admits (P15), and the three forms the
+2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve
+inside P15, the hoisted length fact (P16), and the subtotal-returning walk
+(P17). P18 is the explicit buffer a loop holds in place of the output resource
+it may not hold. References to earlier versions describe historical evidence,
+not a second writable proof surface.
 
-Implementation boundary: the current backend emits no effect-derived
-attributes or alias metadata, performs no proof-driven check elision, has no
-termination checker or `willreturn` derivation, and does not implement arenas.
+Implementation boundary: the work-branch compiler is being aligned to prove
+supported partial operations before lowering and erase source proof syntax. It
+is not described as complete or activated before whole-repository verification.
+The backend
+still emits no effect-derived attributes or alias metadata, has no termination
+checker or `willreturn` derivation. Local region-confined arenas now lower and
+execute, with selected-target layout and address checks before emission and
+release on the implemented region exits. Arena parameters and slices over arena
+content remain explicit capability limits. The [PAR-3] judgment is implemented;
+its first multi-operation actualization is the narrow direct counted-loop form
+described in P15, not every loop that receives a permitted judgment.
 The speed rationales in P1–P4 and P7–P9 therefore include historical
 measurements or future hypotheses; each entry labels the current boundary. P6
 and P10 already state their exact v0.17 status.
@@ -32,8 +43,9 @@ arena, or process resource, and no clean exclusive window exists at depth.
 Pattern: deep functions are `pure` or `reads(state)`; they compute and RETURN
 write intents as plain values. Exactly one shallow function holds the single
 `&uniq` and applies the intents. Effect rows make the architecture checkable:
-grep the signatures and find one `writes(state)` in the system. The superseded v0.36 wrote those
-subjects as lifetimes; active v0.39 names the formal state directly.
+grep the signatures and find one `writes(state)` in the system. The superseded
+v0.36 wrote those subjects as lifetimes; v0.39 introduced formal state paths and
+active v0.40 retains them.
 Current value: exact effect rows make scattered writes visible and reject a
 false architectural summary. Potential speed: the retired channel-2 experiment
 mapped read-only/pure code to memory attributes for hoisting, CSE, and call
@@ -62,16 +74,37 @@ well-typed UAF).
 
 Problem: interleaved lifetimes vs bulk free — arenas leak if everything lives
 in one region.
-Pattern status: DEFERRED for current compiler use. v0.17 defines arena-related
-language vocabulary, but the compiler reports arena operations as unsupported.
 Pattern: nest regions by phase (request -> pass -> sub-pass); allocate into
-the innermost region; anything that survives a phase is EXPLICITLY moved out
-(`move`) to the outer owner — escape is visible and checker-verified; truly
-interleaved individual lifetimes use `box`. Effect rows (`allocates('r)` vs
-`allocates(heap)`) make the split auditable per signature.
-Fast because: bulk free is O(1) per phase; affine moves make promotion a
-header copy; no GC, no refcount traffic.
-Replaces: GC nurseries (same insight, zero runtime), `Rc` lifetime webs.
+the innermost suitable region with `arena_new<'r, T>(value)`. The returned
+`arena<'r, T>` stays inside that region, and `deref` reads its content. The
+compiler rejects an arena value that leaves the region rather than promoting
+it implicitly. A value that truly needs a different lifetime therefore belongs
+in that region from the start or uses another owned storage form such as `box`.
+Effect rows (`allocates(arena 'r)` vs `allocates(heap)`) keep the allocation
+site visible in a signature.
+
+Current value: each region owns a compiler-generated allocation list. An
+allocation pushes one `{ next, content }` node. Normal fallthrough, loop
+re-entry, `break`, `return`, and nested-region exits walk the correct list and
+release every node; an allocation naming an enclosing region survives an inner
+region's exit. Before emission, selected-target checking computes the complete
+node layout, including padding and alignment, and verifies the allocator and
+address bounds. Backend tests execute content addressing and every exit shape
+above. The load-bearing cases are
+`selected_target_validates_the_complete_padded_arena_node`,
+`arena_node_emission_uses_the_validated_complete_llvm_type`,
+`a_confined_arena_allocation_reads_and_releases_with_its_region`, and the two
+`arena_release_covers_*` cases. Release currently walks all nodes in the region,
+so it is one region-exit operation with O(number of allocations) work, not an
+O(1) reset.
+
+Boundary: local confined allocation, `deref`, inside-region value delivery, and
+release are implemented. Arena-typed function parameters and slices over arena
+content still stop as unsupported compiler capabilities. This pattern must not
+be read as evidence for those wider forms.
+Replaces: tracing or reference-counted lifetime management for values that
+naturally die with one lexical phase. The current implementation still pays one
+list insertion per allocation and one list walk at region exit.
 
 ## P4. Linear threading (exclusive access through a call chain)
 
@@ -103,7 +136,7 @@ enum and exhaustive `match`; otherwise use explicitly named direct functions
 and thread the environment struct by value or borrow.
 Candidate direction: a possible future specification form would keep the
 environment explicit and monomorphize a checked member call to a direct call, but v0.17
-does not claim that mechanism or its performance.
+does not provide that mechanism or its performance evidence.
 Would replace: closures capturing mutable environments, trait objects, and
 function pointers.
 
@@ -114,14 +147,15 @@ Pattern status: validation-only in v0.17. State the admitted algebra
 (`law associative/commutative/identity`) in a contract and conform its
 ordinary top-level function. The compiler must discharge the law for source
 acceptance and refutes an invalid or unavailable law at compile time. The
-stored base derivation is not optimizer authority, so v0.17 does not
-reassociate the sequential fold from that record.
+checked law is not yet optimizer authority, so v0.17 does not reassociate the
+sequential fold from that fact.
 Potential speed: the archived channel-3 experiment measured 3.3x over the
-serial shape. Shipping that transform requires an independently verified fact
-family that rederives the law and names its exact permitted consequence; until
-then facts-off lowering is unchanged.
+serial shape. Shipping that transform requires one specification-fixed consumer
+of the originating checked fact and an exact permitted consequence. The
+originating semantic decision remains the only proof authority. Until then
+facts-off lowering is unchanged.
 Replaces: hand-written multi-accumulator loops resting on unchecked human
-algebra (the signed-sat-add trap).
+algebra.
 
 ## P7. Branchless classifier (i1 dataflow)
 
@@ -138,26 +172,56 @@ recurrence vectorized at width 16 while the integer form used width 2x4, a
 forms, but this floor result has not been revalidated on a selected project.
 Replaces: integer state flags, branchy per-byte match chains.
 
-## P8. Claims to the boundary
+## P8. State a proof at the boundary that maintains it
 
-Potential problem for a future totality consumer: one retained claim in a hot
-leaf may block a `willreturn` proof for the call tower and inhibit
-transformations. Pattern status: DEFERRED as a totality/optimization pattern.
-The current language has no termination checker, `pure` does not promise
-return, the compiler never emits `willreturn`, and no `--totality` report
-exists. It remains valid ordinary design advice to establish a current-function
-invariant at one local control or state boundary and keep its auditable claim
-outside the hot loop when the same fact dominates every use. A fact about a
-callee result belongs in that callee's verified `ensures` and reaches the caller
-through S12; moving a caller claim away from the call does not make that fact
-local. Use `.wrap` only where modular behavior is the intended semantics; it
-must never evade an exact operation's static domain obligation.
-Historical speed evidence: the retired wc line-count experiment found that a
-trap-per-increment form produced no vector operations while the semantically
-valid wrapping-counter form reached full SIMD and roughly 2x throughput. A
-future totality consumer needs its own selected project and proof boundary.
-Replaces: sprinkling invariant claims uniformly and paying for them in the one
-loop that matters.
+Problem: several partial operations need one relation maintained by a loop or
+local state machine. Repeating a runtime check at every use would add branches
+and would still leave the compiler unable to use the relation after the loop.
+Pattern: put the maintained relation in the loop's parenthesized header. The
+checker proves the base case and every arbitrary reachable backedge, then
+exports only the separately proved normal-exhaustion consequence. The binding
+is the first item of a counted `for`; every later item is a header invariant,
+and the final item has no trailing comma:
+
+```whitefoot
+for (
+  i in 0_u64..count,
+  invariant per_byte: ile(sum, 255_u32 * i)
+) {
+  let w = deref(weights)[i];
+  let wide = cvt<u8, u32>(w);
+  set sum = sum + wide;
+}
+```
+
+Header entries cannot carry `use` blocks, and their names exist only inside the
+body. Here AUTO subtracts the one published affine premise `per_byte`; DIRECT
+then proves the residual from the `u8` type interval of `wide`. An explicit use
+block would be redundant and invalid. Put a
+cross-function fact in the callee's verified `ensures`; the caller receives it
+only after the callee's return proof succeeds. Use a local
+`invariant { use ... }` when three or more published affine premises outside
+the final fixed L0-image route, a special elimination route, or an explicit
+factor needs written guidance.
+
+This is the default decision rule, not merely a performance suggestion. If the
+false edge would contradict the function's contract or the algorithm's stated
+invariant, do not add an early return or another observable branch just to make
+a partial operation compile. State the missing proof, or improve the checker
+when it cannot verify the stated proof. Use executed control flow only when the
+false edge is a real result the program is meant to handle, as in P9 and P12.
+
+All three forms are compile-time only. They are erased before lowering and add
+no branch to the hot loop. Use `.wrap` only where modular behavior is the
+intended semantics; it must never evade an exact operation's static domain
+obligation. Historical speed evidence from the retired wc line-count experiment
+showed that a per-increment runtime check prevented vectorization while the
+semantically valid wrapping counter reached full SIMD and roughly 2x
+throughput. That measurement is historical, but the writer rule is current:
+state one machine-checked fact at the boundary that actually maintains it.
+
+Replaces: repeated assertions, duplicated guards, and caller restatements of a
+callee fact.
 
 ## P9. Exact capacity contract or recoverable shortage
 
@@ -170,8 +234,8 @@ violated the actual API contract.  For a fixed-ratio transform, state the
 weakest overflow-safe capacity relation that covers the body.  If insufficient
 capacity is an expected runtime outcome, test the next token/burst before any
 of its effects and return a value such as `NeedMoreOutput`; do not turn that
-outcome into a requirement or claim. A preflight/exact-allocation API is
-appropriate only when its validated size remains bound to the input it
+outcome into a requirement or invariant. A preflight/exact-allocation API
+is appropriate only when its validated size remains bound to the input it
 describes. Never
 put a merely common-case size or a rare worst-case allocation in `requires`.
 Current value: one `contract` block may state several independent `requires`
@@ -199,7 +263,7 @@ the result region and put unrelated slices under distinct formal regions.
 Named constants are also legal suppliers. Do not return a fresh view of local,
 raw-borrowed, or arena storage, and do not return `& slice` or `&uniq slice`;
 those forms need provenance or cleanup semantics that v0.17 deliberately does
-not claim.
+not provide.
 Fast because: the written signature is the complete interprocedural summary.
 Calls substitute finite origin sets and check aliases and effects against the
 whole union without opening bodies, computing recursive fixed points, changing
@@ -210,42 +274,52 @@ which same-region argument a returned view references.
 ## P11. Counted half-open range
 
 Problem: a fixed ascending index walk needs the current index bound inside the
-body without hand-written termination tests, increments, or claims.
-Pattern: write `for @label i in lower..upper { ... }` when both endpoints are
-`own u64` terms or constants. They are evaluated once from left to right; `i`
-is a read-only body binding, the upper endpoint is excluded, and
+body without hand-written termination tests, increments, or assertions.
+Pattern: write the closed one-line header below when both endpoints are
+`own u64` terms or constants:
+
+```whitefoot
+for (i in lower..upper) {
+  consume(i);
+}
+```
+
+The endpoints are evaluated once from left to right; `i` is a
+read-only body binding, the upper endpoint is excluded, and
 `lower >= upper` is zero-trip. A normal fallthrough advances by one; `break`,
 `return`, and propagated errors do not. Use ordinary `loop` when progress is
-not exactly this counted shape. Do not write a claim for `i < upper`; the
-compiler supplies that structural fact, while derived offsets such as `i-k`
-still require the real lower-bound relation.
+not exactly this counted shape. Add a loop label only when an explicit
+cross-level `break` needs one; an `invariant` is structurally attached to its
+direct parent loop and never names the label. Do not write a proof step for
+`i < upper`; the compiler supplies that structural fact, while derived offsets
+such as `i-k` still require the real lower-bound relation.
 Current value: the SHA-256 reference uses this one form for its three index
-walks, removes four claims, and proves all nine schedule accesses. The form
-adds no general induction, iterator protocol, reverse range, step, or
-post-loop equality.
-Replaces: `let i`, `loop`, equality break, index-bound claim, and wrapping
+walks, removes four former runtime assertions, and proves all nine schedule
+accesses. The source-proof successor adds explicit header induction but never guesses an
+invariant; it still adds no iterator protocol, reverse range, variable step, or
+unconditional post-loop equality.
+Replaces: `let i`, `loop`, equality break, redundant index proof, and wrapping
 increment boilerplate for an exact half-open u64 walk.
 
 ## P12. External constrained subject takes a value path
 
-Problem: a protected storage access uses an offset derived from process or
-system input, so valid hostile input may falsify its bound. Test the relation
+Problem: a storage access uses an offset derived from process or system input,
+so valid input may falsify its bound. Test the relation
 with a real branch and return the domain's normal error value on the false
-edge. A `claim` or an ordinary callee requirement is not a repair: each turns
-expected external failure into a trap or an uncallable path. Main has no
-contract and no process-entry wrapper check.
+edge. An unconditional invariant or an ordinary callee requirement is
+not a repair: each turns expected external failure into an uncallable path.
+Main has no contract and no process-entry wrapper check.
 
 Place the branch where the protected relation belongs. For a local protected
 access, branch in the function that owns that access. For a call rejection,
-branch in the rejecting caller before the call so its unasserted state proves
+branch in the rejecting caller before the call so the true edge proves
 the complete bridged goal; alternatively restructure the dataflow so the
-external value no longer reaches the callee's constrained subject. An internal
-constrained subject may still use an honest invariant `claim` under its
-ordinary lifecycle. External values used only as a bound, storage base,
-write-address choice, or unrelated goal operand do not taint the constrained
-subject and need no repair merely for being external. This does not exempt a
-write address's own protected offset obligation when that offset is itself the
-constrained subject.
+external value no longer reaches the operation. An internal relation that is
+true on every execution may instead be stated as a machine-checked local or
+loop-header `invariant`; writing the conclusion never grants it authority—the
+checker must still prove it, either through AUTO or its explicit `use` steps.
+Every address and offset still has its own exact domain obligation regardless of
+where its operands originated.
 
 Replaces: assertion-backed bounds on malformed input and moving the same
 failure behind a helper contract.
@@ -256,9 +330,9 @@ Problem: a helper must choose between two borrowed sources and hand the chosen
 one back, but the callable boundary cannot say which one it chose.
 `fn pick['r](a: &uniq 'r Node, b: &uniq 'r Node) -> selected: &uniq 'r Node` is rejected
 at its own `rtype` [FN-1]: two parameters share the result's region and kind,
-so no caller can root the returned claim, and a result no caller can bind is
-the declaration's error rather than the caller's. Pattern status: active v0.39
-guidance, introduced before v0.36 and preserved since.
+so no caller can root the returned borrow, and a result no caller can bind is
+the declaration's error rather than the caller's. Pattern status: current
+candidate guidance, introduced before v0.36 and preserved since.
 
 Decide which fix applies by asking why there are two sources. If the sources
 are structurally distinct — a node and its scratch buffer, a subject and its
@@ -274,7 +348,7 @@ decision names.
 The worked shape for the data-dependent case is three parts. The callee
 `fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads(a, b)` reads both
 weights through its shared borrows and returns `Left()` or `Right()`. The
-superseded v0.36 spelled that effect `reads('r)`; under active v0.39 `'r`
+superseded v0.36 spelled that effect `reads('r)`; since v0.39, `'r`
 remains only the shared loan lifetime. Both forms take shared borrows, so the returned owned decision has no
 borrow provenance. The caller binds
 `let side = heavier(a: &'a left, b: &'a right);`, and then `match side` takes
@@ -291,57 +365,44 @@ at the place it names, so no facts are lost to a conservative merge.
 Replaces: an ambiguous-provenance borrow-returning signature, and the
 caller-side workaround of binding a result the language cannot root.
 
-## P14. Claim only the proof residual
+## P14. Guide a larger affine proof with `use`
 
-Problem: a partial operation needs a theorem that is true for every execution,
-but the normative checker intentionally does not derive it—for example, an
-ordinary loop invariant or a relation maintained by the current function's
-local state machine. Write a claim only when the proposition has a complete
-offline derivation, every runtime value component it reads is local to the
-current function, and a later source-admission root would fail without that
-exact occurrence. The five `because` fields state the available premises,
-every inference step, the exact conclusion, the exact checker limitation, and
-the exact terminal consumers.
+Problem: the automatic checker knows several affine relations, but the next
+relation needs three or more published affine premises outside the final fixed
+L0-image route, a special elimination route, or an explicit factor. The
+compiler's automatic boundary must not be discovered by
+trial and error. It is fixed by the language: zero-premise direct proof, every
+coefficient-one single premise, every unordered coefficient-one pair including
+the same premise twice, then the final fixed L0-image route. If none applies,
+write a local `invariant` and direct its finite calculation with `use`.
 
-Never use a claim to supply an omitted postcondition for a user or system call.
-A returned scalar, tag, payload, aggregate, length, element, or borrow remains a
-boundary result through copy, conversion, operation, construction, projection,
-control selection, join, storage, and dereference. Put an expressible
-cross-function relation in the callee's verified `ensures` and consume S12
-directly; otherwise use a typed outcome or ordinary control. An `ensures` does
-not make the returned value claim-local, so a caller cannot restate or
-strengthen it with another claim.
+```whitefoot
+invariant total_limit: ile(first + second + third, first_limit + second_limit + third_limit) {
+  use first_bound;
+  use second_bound;
+  use third_bound;
+}
+```
 
-Standing after a call is not the same as reading one. Active v0.39 narrowed
-[CLM-1]: a boundary result reaches a claim through a value the selector chose —
-a matching binder, a `value_if` or `value_match` delivery, or a component whose
-reaching definition differs between the incoming edges of a reconvergence, loop
-head, or loop exit — and not through position alone. So a function that takes a
-typed exit on an I/O failure may still claim a theorem about its own later
-arithmetic, and a claim inside the selected arm over a parameter and literals is
-local. Storage one arm wrote and the other did not, and loop-carried state a
-boundary-selected loop updated, stay non-local: there the selector chose which
-definition arrives.
+The checker snapshots the facts before the outer invariant and proves every
+`use` against that same snapshot. A prior use cannot help prove a later one and
+no use publishes a fact; only `total_limit` enters the ordinary proof context
+after the combination succeeds. A named use resolves the exact live theorem;
+a relation-form use is itself discharged by AUTO. A written factor begins at
+two—factor one must be omitted—and the same normalized premise cannot appear
+twice. The final target may be a direct weakening of the weighted sum.
 
-Do not use a claim for a condition that can legitimately be false, an output
-comparison, an impossible-arm sentinel, a test oracle, a deliberate abort, or
-a fact the checker already knows. Use `if`, `match`, a typed outcome, return or
-exit status for ordinary decisions and failures. Use a total operation row
-when the operation's domain is not guaranteed. If removing the claim changes no
-admission root, remove it; if two claims cover for one another, remove or
-restructure both until each surviving occurrence is independently necessary.
-Human, AI, SMT, or certificate review may approve the prose proof, but it never
-changes compiler acceptance and never removes the retained runtime check.
+A nonempty use block is an error when AUTO already proves the outer target.
+This is a canonical-source rule tied to the exact language version, not a
+warning about a compiler optimization. Use a header invariant when the relation
+is the induction contract; use `ensures` when it must cross a function
+boundary; use a typed result or real branch when the condition can legitimately
+be false. AI may search while authoring the source, but the compiler performs
+no SMT query, heuristic premise selection, timeout-bounded attempt, or runtime
+fallback.
 
-Current value: CLM-1 checks the proof-predicate shape, exact five-field record,
-canonical contribution formation, and current-function authority; CLM-2 then
-rejects proved, refuted, overlapping, vacuous, and non-residual occurrences
-before publishing a checked program. Accepted claims execute through the
-ordinary IR/backend path in every build mode.
-
-Replaces: `assert`, debug-only checks, `unreachable`, intentional aborts,
-"trust me" comments, and claims written merely to silence a partial-operation
-diagnostic.
+Replaces: assertions, intentional aborts, "trust me" comments, and compiler
+guessing over proof candidates.
 
 ## P15. Per-iteration scratch in an I/O loop
 
@@ -358,7 +419,7 @@ beyond it are the previous iteration's.
 Pattern: construct the per-iteration scratch **inside** the loop body.
 
 ```whitefoot
-for @scan index in 0_u64..8192_u64 {
+for @scan (index in 0_u64..8192_u64) {
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
   region 'name {
@@ -476,33 +537,43 @@ One remedy the report can print is not one a writer can take, and it says so:
 where a loop's exit is selected by the may-suspend call's own outcome — the
 `ReadEnd` break of a read-to-EOF loop over one file — the condition-2 line
 states that [PAR-3] cannot stage that loop as written. The shapes staged today
-are a fixed-trip bounded loop and a per-file loop over names; one file's chunk
-loop stays sequential.
+by the permission judgment include a fixed-trip bounded loop and a per-file loop
+over names; one file's chunk loop stays sequential. Permission does not by
+itself promise that the backend has a multi-operation schedule for the whole
+permitted set.
 
-No worked example in `tests/programs/` currently holds this permission.
-`dir_walk.wf`, `wfgrep.wf`, and `byte_string.wf` all compile to the module a
-compiler with no overlap lowering at all emits. Two different facts are mixed
-together in that sentence, and the resolution above separates them: their
-*walker* loops carry the helper factoring because nothing else compiles, and
-their denial is the price of the only admitted form; their *chunk* loops over
-one file are denied by condition 2 because a read-to-EOF break cannot be
-hoisted, which no rewrite fixes either. What a writer must not copy from them
-is the hoisted scratch buffer — the form above is the one to copy for a
-top-level per-file loop, and it is the one this pattern is about.
+The current multi-operation actualizer covers one smaller form: one direct
+counted loop, one straight-line prologue, and a final `match` whose scrutinee is
+the selected may-suspend system call. It derives a fixed two-slot driver from
+the checked source. A native POSIX completion target asks once for a window in
+`1..2`; a qualified target without native completion keeps the same generated
+control flow, fixes the window at one, and issues direct calls. The driver
+issues one batch, drains every issued result in source order, then reuses slot
+zero. Executable tests cover a changing path slice on each iteration, an odd
+five-iteration final batch, the ordinary success and error arms, twelve issued
+iterations, and helper counts zero, one, and four.
 
-Current value: the judgment is landed and reported; the lowering that turns a
-granted verdict into overlapped execution is not, so today this form costs a
-per-iteration `malloc` and fill and buys a granted verdict rather than speed.
-An implementation may allocate the body's constructions once at loop entry and
-restore them per iteration, because the storage it reuses across iterations for
-a construction whose value the body releases without observing it is not
-observable [PAR-3] — so writing the natural form now is what makes the program
-fast later, with no source change.
+That evidence does not cover the full P15 example above. In particular, wider
+open/read/fold bodies, a remainder that needs the counted binder or a prologue
+local, additional branch or cleanup shapes, other operation families, and more
+than one staged loop in a function remain on the ordinary path. If a function
+contains two staged loops, the compiler currently transforms neither. The
+permission judgment and its ledger still apply to those loops; only the
+multi-operation schedule is narrower.
+
+`dir_walk.wf`, `wfgrep.wf`, and `byte_string.wf` remain useful negative
+boundaries. Their walker loops use the helper factoring because the inline
+borrow form does not compile, and their chunk loops leave on a read result, so
+condition 2 keeps them sequential. They are not evidence for the new direct
+counted-loop driver. The driver evidence currently lives in lowering and
+backend tests rather than in a selected real program.
 
 Replaces: hoisting scratch buffers out of loops for allocation cost, and every
 writer-visible depth, window, batch, or `par for` marker a language would
 otherwise need to express I/O overlap. There is no source spelling for how many
-operations stay outstanding; the runtime chooses it.
+operations stay outstanding. The compiler fixes the available storage at two
+slots for the implemented form, and the selected target chooses a window no
+larger than those two slots.
 
 ## P16. One length fact above the writes
 
@@ -539,17 +610,11 @@ Current value: the fact is load-bearing, not ceremony. It is the re-bind that
 is redundant, and the compiler accepts the re-bind, which is why the belief
 survives a whole program: 34 of the 41 length bindings in the five programs of
 the 2026-08-28 blind-writer trial existed only to re-establish a fact that had
-never died. What the hoisted fact holds off is the rejection you get with no
-live length fact at all:
-
-```text
-whitefootc: Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, …, kind:
-UndischargedCallRequirement(UndischargedCallRequirementDetail { concrete_callee: "emit",
-…, disposition: Unproved, mechanical_fix: "establish the complete callee requirement with
-one dominating branch before the call, or, only when it is an independently true theorem
-outside checker rules, add a CLM-2-admissible residual claim with a complete exact
-`because` record" }) } at line.wf:33:16 in line "    let sent = emit<'e>(source: &'e line, length: end);"
-```
+never died. Without that live fact, the call receives an [FN-8] rejection
+because nothing proves the callee's complete requirement. The repair is a
+dominating real branch, an already verified contract fact, or a local
+`invariant` whose optional written premises the checker can discharge. The
+compiler never inserts a callee-side fallback check.
 
 Replaces: defensive re-measurement of a container after every call that wrote
 into it, which in a language without a length fact is the only way to be safe.
@@ -620,7 +685,7 @@ Problem: a loop reads a file per iteration and writes one line to an output —
 given its own. (‹loop› is the writer's file and line; verdicts are byte-exact.)
 
 ```whitefoot
-for @scan index in 0_u64..8_u64 {
+for @scan (index in 0_u64..8_u64) {
   /* P15's reserve, open, and read; then */
   region 'say {
     let written = write_once<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
@@ -646,7 +711,7 @@ outside the loop being taken in index order.
 ```whitefoot
 let page = buffer_new(8_u64, 0_u8);
 let room = len(page);
-for @scan index in 0_u64..8_u64 {
+for @scan (index in 0_u64..8_u64) {
   /* reserve, open, and read into the iteration's own data buffer */
   let writable = ilt(index, room);
   if writable {
@@ -667,9 +732,13 @@ Write into the page by element. A helper taking `&uniq` of it costs the loop
 its pipeline under condition 4 instead: `denied  &uniq 'page page  a call of
 the remainder holds an exclusive loan on it, and two remainders coexist`.
 
-Current value: this is the explicit form and today the only one; the implicit
-form — a per-iteration write to a final stage the runtime commits in order — is
-planned, not landed. Output interleaved as produced appears at the end instead.
+Current value: this is the explicit writer form. The [PAR-3] judgment can grant
+it, but the current fixed two-slot actualizer does not cover the shown
+remainder because it reads the counted binder and per-iteration data while
+writing the enclosing page. The loop therefore keeps ordinary lowering today.
+The implicit alternative, a per-iteration output write committed by a final
+ordered stage, is also not implemented. Output accumulated through this pattern
+appears only when the one write after the loop runs.
 
 Replaces: writing each line where it is produced, as every other language does.
 

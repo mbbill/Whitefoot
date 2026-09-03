@@ -3,7 +3,7 @@ enum Coin {
   Tails();
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Match a coin twice through shared borrows in a region and give a score each time; borrow-mode matching leaves the coin live for the second read [OWN-13, GIVE-1, OP-1, SCOPE-3].";
   let c = Heads();
   region 'r {
@@ -25,8 +25,7 @@ command fn main() -> status: own ExitStatus traps {
         give 20_i32;
       }
     }
-    claim score_sum_defined: first +defined second because "premises: the first coin match yields 3_i32 or 1_i32 and the second yields 10_i32 or 20_i32\nderivation: every pairwise sum lies from 11_i32 through 23_i32 and is representable as i32\nconclusion: first +defined second is true\nchecker gap: ENT does not combine finite match-result ranges across borrowed matches\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
-    let total = first + second;
+    let total = first +wrap second;
     if ieq(total, 13_i32) {
     } else {
       return exit_status(code: 201_u8);

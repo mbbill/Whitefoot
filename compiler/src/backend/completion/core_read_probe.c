@@ -591,7 +591,7 @@ static int test_inline_stale_and_duplicate_terminal(void) {
     wf_completion_outcome outcome;
     wf_completion_publication publication;
     int first = 41;
-    int malicious = 99;
+    int unexpected = 99;
     int second = 43;
     int observed = 0;
 
@@ -609,7 +609,7 @@ static int test_inline_stale_and_duplicate_terminal(void) {
             &publication
         ) == WF_COMPLETION_PUBLISHED
     );
-    publication = integer_publication(&malicious);
+    publication = integer_publication(&unexpected);
     CHECK(
         wf_completion_publish_inline_terminal(
             &runtime,
@@ -633,7 +633,7 @@ static int test_inline_stale_and_duplicate_terminal(void) {
     CHECK(new_token.slot == old_token.slot);
     CHECK(new_token.generation == old_token.generation + 1u);
     CHECK(accept_operation(&runtime, new_token) == 0);
-    publication = integer_publication(&malicious);
+    publication = integer_publication(&unexpected);
     CHECK(
         wf_completion_publish_terminal(&runtime, old_token, &publication)
         == WF_COMPLETION_PUBLISH_STALE

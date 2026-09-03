@@ -1,4 +1,4 @@
-command fn main () -> status: own ExitStatus traps {
+command fn main () -> status: own ExitStatus pure {
   doc "An unknown construct is a hard error (conservative extension) [FORM-1].";
   gimble x;
   return exit_status(code: 0_u8);

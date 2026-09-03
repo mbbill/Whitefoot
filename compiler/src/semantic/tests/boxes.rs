@@ -48,9 +48,51 @@ fn box_creation_dereference_and_cleanup_are_explicit() {
     });
 }
 
+/// Replacing one whole box owner transfers the second allocation into the
+/// first binding without changing the first binding's box type. This used to
+/// be hidden inside a retired assertion-locality fixture; it is an ordinary ownership and
+/// checked-model property.
+#[test]
+fn whole_box_replacement_preserves_the_owner_shape() {
+    let source = br#"struct Pair {
+  value: u64;
+}
+
+fn replace_owner() -> result: own u64 allocates(heap) {
+  let first_value = Pair(value: 0_u64);
+  let first = box_new(move first_value);
+  let second_value = Pair(value: 1_u64);
+  let second = box_new(move second_value);
+  let old = replace first = move second;
+  return deref(first).value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("whole-box replacement must preserve the owner type: {outcome:?}");
+        };
+        let replace_owner = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "replace_owner")
+            .expect("replace_owner function");
+        assert!(
+            replace_owner
+                .body
+                .iter()
+                .any(|statement| matches!(statement, CheckedStatement::Replace { .. }))
+        );
+    });
+}
+
 #[test]
 fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let extracted = move deref(owner);
@@ -83,7 +125,7 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     // [SET-2] shares SET-1's writability relation, so an affine, region-free
     // box content is a legal `replace` target and reaches the same stop.
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let other = buffer_new(1_u64, 1_u8);
@@ -102,7 +144,7 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
 #[test]
 fn box_content_set_targets_keep_their_source_rejections() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let other = buffer_new(1_u64, 1_u8);
@@ -121,7 +163,7 @@ fn box_content_set_targets_keep_their_source_rejections() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let b = box_new(4_i32);
   eat(b: move b);
   set deref(b) = 7_i32;

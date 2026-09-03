@@ -169,7 +169,7 @@ fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     bump<'r>(n: &uniq 'r deref(a));
@@ -185,7 +185,7 @@ command fn main() -> status: own ExitStatus traps {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     region 'c {
@@ -204,7 +204,7 @@ command fn main() -> status: own ExitStatus traps {
   return deref(n);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     let v = peek<'r>(n: &'r deref(a));
@@ -215,7 +215,7 @@ command fn main() -> status: own ExitStatus traps {
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     let h = &uniq 'r deref(a);
@@ -235,7 +235,7 @@ fn arena_content_borrows_keep_their_region_rejections() {
     // An enclosing region outlives the arena's, so its storage is too
     // short-lived for the borrow.
     assert_rule_kind(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   region 'o {
     region 'r {
       let a = arena_new<'r, i32>(4_i32);
@@ -271,7 +271,7 @@ command fn main() -> status: own ExitStatus pure {
         |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new<'r, i32>(4_i32);
     loop @once {

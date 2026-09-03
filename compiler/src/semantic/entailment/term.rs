@@ -1,9 +1,10 @@
 //! [ENT-2] terms: the closed vocabulary the L0 fragment relates.
 //!
 //! A term is a tracked place, a length term over a place, one of the two
-//! private endpoint captures of a written counted range, a constant, a
-//! symbolic const-generic parameter, or the distinguished zero term Z. Term
-//! identity is declaration-anchored: two places are the same term exactly when
+//! private endpoint captures of a written counted range, the private commit
+//! value of one `set` occurrence, a constant, a symbolic const-generic
+//! parameter, or the distinguished zero term Z. Term identity is
+//! declaration-anchored: two places are the same term exactly when
 //! their roots resolve to the same declaration event — one [`BindingId`] in
 //! one checked function — and their canonical spellings agree, which the
 //! structural representation below captures byte-for-byte for canonical
@@ -50,6 +51,18 @@ pub(crate) enum TermKind {
     CountedCapture {
         range_path: Vec<u32>,
         side: CountedCaptureSide,
+    },
+    /// One immutable compiler-owned commit value [ENT-2]: the value the
+    /// right-hand side of one `set` statement evaluated to at that
+    /// occurrence, before its target kill. The statement's finalized
+    /// NodePath plus the value's fragment type is its complete function-local
+    /// identity; source can neither name nor mutate it. The flow visits that
+    /// statement once, so this one term denotes its value in the single
+    /// abstract evaluation the walk performs, as a counted header image does
+    /// for an arbitrary iteration.
+    CommitValue {
+        commit_path: Vec<u32>,
+        ty: IntegerType,
     },
 }
 
@@ -109,7 +122,7 @@ impl TermTable {
     /// one term. Kept apart, a disequality reaches Z only by a bound
     /// strengthened through the constant's implicit equality, which exists
     /// only where the fragment already bounds the operand on that side: a
-    /// `claim ine(d, 0_i32)` then could not discharge an obligation stated
+    /// a source relation `ine(d, 0_i32)` then could not discharge an obligation stated
     /// against Z at a signed type, and [OP-2]'s own mechanical fix would be
     /// unwritable. Z carries exactly the bounds the constant zero would
     /// have contributed, so the merge loses no fact.
@@ -129,6 +142,11 @@ impl TermTable {
         self.terms.push(kind.clone());
         self.ids.insert(kind, id);
         id
+    }
+
+    /// The identity of one already interned term, without interning it.
+    pub(crate) fn interned(&self, kind: &TermKind) -> Option<TermId> {
+        self.ids.get(kind).copied()
     }
 
     pub(crate) fn kind(&self, id: TermId) -> &TermKind {

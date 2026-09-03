@@ -4,7 +4,7 @@ enum IndexError {
   OutOfRange();
 }
 
-fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, IndexError> traps contract {
+fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, IndexError> pure contract {
   ensures when Ok(value: result): ilt(result, limit);
 } {
   let nonzero = ine(limit, 0_u64);
@@ -12,8 +12,6 @@ fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, Inde
     let bounded = index % limit;
     let unchanged = ieq(bounded, index);
     if unchanged {
-      let inside = ilt(bounded, limit);
-      claim admitted_index: inside because "premises: limit is nonzero on this branch, bounded is index remainder limit in this function, and the unchanged branch admits only an index already in the normalized range\nderivation: unsigned remainder by a nonzero divisor is strictly below that divisor\nconclusion: ilt(bounded, limit) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the selected Ok postcondition publishes this exact bound to the caller through S12";
       return Ok<u64, IndexError>(value: bounded);
     }
   }
@@ -21,7 +19,7 @@ fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, Inde
   return Err<u64, IndexError>(error: error);
 }
 
-fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values), traps {
+fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values) {
   let room = len(deref(values));
   match require_index(index: index, limit: room) {
     Ok(value: admitted) => {
@@ -34,7 +32,7 @@ fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<
   }
 }
 
-fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads(values), writes(values), traps {
+fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads(values), writes(values) {
   let room = len(deref(values));
   match require_index(index: index, limit: room) {
     Ok(value: admitted) => {
@@ -47,7 +45,7 @@ fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -
   }
 }
 
-fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out), traps contract {
+fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out) contract {
   define required_out_length = len(deref(out));
   define required_input_length = len(input);
   define required_out_groups = ishr.wrap(required_out_length, 2_u32);
@@ -199,7 +197,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
   return Ok<u64, IndexError>(value: output_offset);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let man_input = buffer_new(3_u64, 0_u8);
   set man_input[0_u64] = 77_u8;
   set man_input[1_u64] = 97_u8;

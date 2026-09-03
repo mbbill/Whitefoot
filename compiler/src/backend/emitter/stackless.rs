@@ -12,10 +12,12 @@ use std::fmt::Write;
 
 use super::system::{CompletionFileOperation, completion_file_operation, completion_mapper_symbol};
 use super::*;
+use crate::IrFlatElement;
+use crate::backend::target::{TargetLayout, validate_stackless_root_frame};
 
 const WRITER_HEADER_BYTES: usize = 64;
 
-pub(super) const STACKLESS_RUNTIME_FALLBACK: &str = "define weak i32 @wf__completion_file_pread_submit_writer(i32 %descriptor, ptr %buffer, i64 %count, i64 %offset, ptr %token, ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak i32 @wf__completion_file_write_submit_writer(i32 %descriptor, ptr %buffer, i64 %count, ptr %token, ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak i32 @wf__completion_file_take(ptr %token, ptr %value, ptr %error) {\nentry:\n  ret i32 0\n}\n\ndefine weak void @wf__writer_frame_init(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_begin_suspend(ptr %frame, ptr %resume) {\nentry:\n  ret void\n}\n\ndefine weak i32 @wf__writer_commit_suspend(ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak void @wf__writer_cancel_suspend(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_complete(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_run_root(ptr %frame) {\nentry:\n  ret void\n}\n\n";
+pub(super) const STACKLESS_RUNTIME_FALLBACK: &str = "define weak i32 @wf__completion_file_pread_submit_writer(i32 %descriptor, ptr %buffer, i64 %count, i64 %offset, ptr %token, ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak i32 @wf__completion_file_write_submit_writer(i32 %descriptor, ptr %buffer, i64 %count, ptr %token, ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak void @wf__writer_frame_init(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_begin_suspend(ptr %frame, ptr %resume) {\nentry:\n  ret void\n}\n\ndefine weak i32 @wf__writer_commit_suspend(ptr %frame) {\nentry:\n  ret i32 0\n}\n\ndefine weak void @wf__writer_cancel_suspend(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_complete(ptr %frame) {\nentry:\n  ret void\n}\n\ndefine weak void @wf__writer_run_root(ptr %frame) {\nentry:\n  ret void\n}\n\n";
 
 #[derive(Clone, Debug)]
 pub(super) struct StacklessPlan {
@@ -93,6 +95,18 @@ impl StacklessPlan {
             }
         }
         let (suspension_index, suspension_result, outer) = selected?;
+        // The ordinary function frame is stack storage owned by the start
+        // activation. A slice, stored address, or arena list formed from one
+        // of its slots may retain a pointer to that storage after the start
+        // activation returns on the suspended path. Until those backing slots
+        // are planned as fields of the persistent root frame, this shape must
+        // keep the synchronous ABI.
+        if block.instructions()[..suspension_index]
+            .iter()
+            .any(instruction_materializes_stack_bound_referent)
+        {
+            return None;
+        }
         if block.instructions()[suspension_index + 1..]
             .iter()
             .any(|instruction| !supported_after_instruction(program, instruction))
@@ -137,6 +151,19 @@ impl StacklessPlan {
         }
         Ok(output)
     }
+}
+
+fn instruction_materializes_stack_bound_referent(instruction: &IrInstruction) -> bool {
+    matches!(
+        instruction,
+        IrInstruction::Define {
+            operation: IrOperation::SliceFromArray {
+                array: IrArrayRoot::Value(_),
+            } | IrOperation::AddressOf { .. }
+                | IrOperation::ArenaListNew,
+            ..
+        }
+    )
 }
 
 fn instruction_may_suspend(program: &IrProgram<'_, '_, '_>, instruction: &IrInstruction) -> bool {
@@ -468,39 +495,67 @@ fn collect_root_live_values(block: &IrBlock, suspension_index: usize) -> BTreeSe
     live
 }
 
+#[derive(Debug)]
 pub(super) struct RootFrame {
     ty: String,
     live_fields: BTreeMap<IrValueId, usize>,
     async_result: usize,
     final_result: usize,
+    alignment: u64,
+    #[cfg(test)]
+    size: u64,
 }
 
 impl RootFrame {
     fn build(
         program: &IrProgram<'_, '_, '_>,
+        qualification: &Qualification,
         function: &IrFunction,
         block: &IrBlock,
         suspension_index: usize,
+        target: TargetLayout,
     ) -> Result<Self, BackendFailure> {
         let live = collect_root_live_values(block, suspension_index);
         let mut fields = vec![
-            format!("[{WRITER_HEADER_BYTES} x i8]"),
-            "[2 x i64]".to_owned(),
-            "i64".to_owned(),
-            "i32".to_owned(),
-            "i64".to_owned(),
-            "i64".to_owned(),
-            "i1".to_owned(),
-            llvm_type(
-                program,
-                function
-                    .value_type(match &block.instructions()[suspension_index] {
-                        IrInstruction::Define { result, .. } => *result,
-                        _ => return Err(BackendFailure::InvalidIr),
-                    })
-                    .ok_or(BackendFailure::InvalidIr)?,
-            )?,
-            llvm_type(program, function.result())?,
+            IrType::Array {
+                element: IrFlatElement::Integer {
+                    width: 8,
+                    signed: false,
+                },
+                length: u64::try_from(WRITER_HEADER_BYTES)
+                    .map_err(|_| BackendFailure::InvalidIr)?,
+            },
+            IrType::Array {
+                element: IrFlatElement::Integer {
+                    width: 64,
+                    signed: false,
+                },
+                length: 2,
+            },
+            IrType::Integer {
+                width: 64,
+                signed: false,
+            },
+            IrType::Integer {
+                width: 32,
+                signed: false,
+            },
+            IrType::Integer {
+                width: 64,
+                signed: false,
+            },
+            IrType::Integer {
+                width: 64,
+                signed: false,
+            },
+            IrType::Bool,
+            function
+                .value_type(match &block.instructions()[suspension_index] {
+                    IrInstruction::Define { result, .. } => *result,
+                    _ => return Err(BackendFailure::InvalidIr),
+                })
+                .ok_or(BackendFailure::InvalidIr)?,
+            function.result(),
         ];
         let async_result = 7;
         let final_result = 8;
@@ -510,14 +565,23 @@ impl RootFrame {
                 .value_type(value)
                 .ok_or(BackendFailure::InvalidIr)?;
             let index = fields.len();
-            fields.push(llvm_type(program, ty)?);
+            fields.push(ty);
             live_fields.insert(value, index);
         }
+        let layout = validate_stackless_root_frame(target, qualification, program, &fields)
+            .map_err(BackendFailure::TargetLayout)?;
+        let mut rendered_fields = Vec::with_capacity(fields.len());
+        for field in fields {
+            rendered_fields.push(llvm_type(program, field)?);
+        }
         Ok(Self {
-            ty: format!("{{ {} }}", fields.join(", ")),
+            ty: format!("{{ {} }}", rendered_fields.join(", ")),
             live_fields,
             async_result,
             final_result,
+            alignment: layout.align(),
+            #[cfg(test)]
+            size: layout.size(),
         })
     }
 }
@@ -530,7 +594,15 @@ impl FunctionEmitter<'_, '_> {
         let [block] = self.function.blocks() else {
             return Err(BackendFailure::InvalidIr);
         };
-        let frame = RootFrame::build(self.program, self.function, block, plan.suspension_index)?;
+        let target = TargetLayout::host().map_err(BackendFailure::TargetLayout)?;
+        let frame = RootFrame::build(
+            self.program,
+            self.qualification,
+            self.function,
+            block,
+            plan.suspension_index,
+            target,
+        )?;
         let result_llvm = llvm_type(self.program, self.function.result())?;
         let source = source_symbol(self.function.name());
         let start_symbol = format!("wf__stackless_root_start_{}", plan.root);
@@ -552,8 +624,9 @@ impl FunctionEmitter<'_, '_> {
         }
         write!(
             self.output,
-            ") {{\nentry:\n  %frame = alloca {}\n  call void @wf__writer_frame_init(ptr %frame)\n  %pending = call i1 @{start_symbol}(ptr %frame",
-            frame.ty
+            ") {{\nentry:\n  %frame = alloca {}, align {}\n  call void @wf__writer_frame_init(ptr %frame)\n  %pending = call i1 @{start_symbol}(ptr %frame",
+            frame.ty,
+            frame.alignment
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         for (value, ty) in self.function.parameters() {
@@ -713,7 +786,6 @@ impl FunctionEmitter<'_, '_> {
         let token = self.next_temporary()?;
         let raw_value_ptr = self.next_temporary()?;
         let raw_error_ptr = self.next_temporary()?;
-        let taken = self.next_temporary()?;
         let raw_value = self.next_temporary()?;
         let raw_error = self.next_temporary()?;
         let start_ptr = self.next_temporary()?;
@@ -722,7 +794,7 @@ impl FunctionEmitter<'_, '_> {
         let extent = self.next_temporary()?;
         writeln!(
             self.output,
-            "  %{token} = getelementptr inbounds {}, ptr %frame, i32 0, i32 1\n  %{raw_value_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 2\n  %{raw_error_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 3\n  %{taken} = call i32 @wf__completion_file_take(ptr %{token}, ptr %{raw_value_ptr}, ptr %{raw_error_ptr})\n  %take_ok = icmp eq i32 %{taken}, 1\n  br i1 %take_ok, label %map, label %invalid_take\ninvalid_take:\n  call void @abort()\n  unreachable\nmap:\n  %{raw_value} = load i64, ptr %{raw_value_ptr}\n  %{raw_error} = load i32, ptr %{raw_error_ptr}\n  %{start_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 4\n  %{extent_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 5\n  %{start} = load i64, ptr %{start_ptr}\n  %{extent} = load i64, ptr %{extent_ptr}\n  %mapped_result = call {result_llvm} @{}(i64 %{raw_value}, i32 %{raw_error}, i64 %{start}, i64 %{extent})\n  br label %result_ready\nresult_ready:\n  {} = phi {result_llvm} [ %inline_result, %inline ], [ %mapped_result, %map ]",
+            "  %{token} = getelementptr inbounds {}, ptr %frame, i32 0, i32 1\n  %{raw_value_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 2\n  %{raw_error_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 3\n  call void @wf__completion_file_join(ptr %{token}, ptr %{raw_value_ptr}, ptr %{raw_error_ptr})\n  %{raw_value} = load i64, ptr %{raw_value_ptr}\n  %{raw_error} = load i32, ptr %{raw_error_ptr}\n  %{start_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 4\n  %{extent_ptr} = getelementptr inbounds {}, ptr %frame, i32 0, i32 5\n  %{start} = load i64, ptr %{start_ptr}\n  %{extent} = load i64, ptr %{extent_ptr}\n  %mapped_result = call {result_llvm} @{}(i64 %{raw_value}, i32 %{raw_error}, i64 %{start}, i64 %{extent})\n  br label %result_ready\nresult_ready:\n  {} = phi {result_llvm} [ %inline_result, %inline ], [ %mapped_result, %async ]",
             frame.ty,
             frame.ty,
             frame.ty,
@@ -753,5 +825,163 @@ impl FunctionEmitter<'_, '_> {
             value_name(*value)
         )
         .map_err(|_| BackendFailure::TextEmission)
+    }
+}
+
+#[cfg(test)]
+mod root_frame_layout_tests {
+    use super::*;
+    use crate::backend::qualification::{SystemTarget, qualify_program};
+    use crate::lexer::{LexOutcome, lex};
+    use crate::{
+        ACTIVE_KERNEL_SPEC_HASH, CanonicalOutcome, CompilerLimits, FinalizeOutcome, IrProgram,
+        OverlapLowering, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle,
+        SourceInput, TerminalOutcome, audit_canonical, check_semantics, classify_terminals,
+        finalize, lower_checked, parse,
+    };
+
+    const ROOT_FRAME_SOURCE: &[u8] = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+  define ordered = ile(start, end);
+  define capacity = len(deref(source));
+  requires ordered;
+  requires ile(end, capacity);
+} {
+  return write_once<'o, 's>(output: move output, source: source, start: start, end: end);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let bytes = buffer_new(1_u64, 65_u8);
+  region 'io {
+    let outcome = publish<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    fn with_root_frame(
+        run: impl for<'classified, 'lexed, 'source> FnOnce(
+            &IrProgram<'classified, 'lexed, 'source>,
+            &Qualification,
+            &IrFunction,
+            &IrBlock,
+            usize,
+            TargetLayout,
+        ),
+    ) {
+        let limits = CompilerLimits::default();
+        let inputs = [SourceInput::new("root-frame-layout.wf", ROOT_FRAME_SOURCE)];
+        let bundle = SourceBundle::with_limits(&inputs, limits.source).expect("valid test bundle");
+        let LexOutcome::Complete(lexed) = lex(&bundle, limits.lexer) else {
+            panic!("root-frame source must lex");
+        };
+        let TerminalOutcome::Complete(classified) =
+            classify_terminals(&lexed, ACTIVE_KERNEL_SPEC_HASH, limits.terminals)
+        else {
+            panic!("root-frame source must classify");
+        };
+        let ParseOutcome::Complete(parsed) = parse(&classified, limits.parser) else {
+            panic!("root-frame source must parse");
+        };
+        let FinalizeOutcome::Complete(finalized) = finalize(parsed, limits.finalizer) else {
+            panic!("root-frame source must finalize");
+        };
+        let CanonicalOutcome::Complete(canonical) = audit_canonical(finalized, limits.canonical)
+        else {
+            panic!("root-frame source must be canonical");
+        };
+        let ResolutionOutcome::Complete(resolved) = crate::resolve(canonical) else {
+            panic!("root-frame source must resolve");
+        };
+        let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
+            panic!("root-frame source must check");
+        };
+        let program = lower_checked(*checked, OverlapLowering::Completion)
+            .expect("checked root-frame source must lower");
+        let target = TargetLayout::host().expect("root-frame test requires a supported host");
+        let system_target = SystemTarget::for_triple(target.triple())
+            .expect("the supported host must have a qualification row");
+        let qualification =
+            qualify_program(system_target, &program).expect("root-frame source must qualify");
+        let plan = StacklessPlan::build(&program, &qualification)
+            .expect("root-frame source must select stackless lowering");
+        let function = program
+            .functions()
+            .get(plan.root as usize)
+            .expect("the stackless root ordinal must identify a function");
+        let [block] = function.blocks() else {
+            panic!("the selected stackless root must have one block");
+        };
+        run(
+            &program,
+            &qualification,
+            function,
+            block,
+            plan.suspension_index,
+            target,
+        );
+    }
+
+    #[test]
+    fn complete_root_frame_accepts_the_exact_selected_target_boundary() {
+        with_root_frame(
+            |program, qualification, function, block, suspension_index, target| {
+                let host_frame = RootFrame::build(
+                    program,
+                    qualification,
+                    function,
+                    block,
+                    suspension_index,
+                    target,
+                )
+                .expect("the host target must represent the root frame");
+                let exact = target.with_address_index_max_for_test(host_frame.size);
+                let exact_frame = RootFrame::build(
+                    program,
+                    qualification,
+                    function,
+                    block,
+                    suspension_index,
+                    exact,
+                )
+                .expect("a target domain equal to the complete frame size must admit it");
+                assert_eq!(exact_frame.size, host_frame.size);
+                assert_eq!(exact_frame.alignment, 8);
+                assert!(exact_frame.ty.starts_with("{ [64 x i8], [2 x i64]"));
+            },
+        );
+    }
+
+    #[test]
+    fn complete_root_frame_rejects_a_domain_one_byte_below_its_padded_size() {
+        with_root_frame(
+            |program, qualification, function, block, suspension_index, target| {
+                let host_frame = RootFrame::build(
+                    program,
+                    qualification,
+                    function,
+                    block,
+                    suspension_index,
+                    target,
+                )
+                .expect("the host target must represent the root frame");
+                assert!(host_frame.size > WRITER_HEADER_BYTES as u64 + 1);
+                let short = target.with_address_index_max_for_test(host_frame.size - 1);
+                let failure = RootFrame::build(
+                    program,
+                    qualification,
+                    function,
+                    block,
+                    suspension_index,
+                    short,
+                )
+                .expect_err("the complete padded frame exceeds this target domain");
+                assert_eq!(
+                    failure,
+                    BackendFailure::TargetLayout(TargetLayoutFailure::Unrepresentable(
+                        crate::backend::target::TargetObject::StackFrame,
+                    ))
+                );
+            },
+        );
     }
 }

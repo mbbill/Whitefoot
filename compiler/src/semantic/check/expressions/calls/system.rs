@@ -68,7 +68,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
         let mut effects = EffectSet {
             allocates_heap: false,
-            traps: false,
             ..EffectSet::NONE
         };
         for (field, parameter) in fields.into_iter().zip(operation.parameters) {

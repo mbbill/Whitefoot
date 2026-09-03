@@ -122,17 +122,17 @@ impl ScopeBuild {
                     )?;
                     let body =
                         build.push_scope(Some(range), ScopeKind::NestedBody, path.clone())?;
-                    // The direct LABEL and IDENT declarations map to `range`,
-                    // while both endpoint atoms deliberately stay in the
-                    // enclosing scope. Only statements enter the body scope,
-                    // making both declarations body-only without a second
-                    // grammar production or a multi-scope owner table.
+                    // The optional direct LABEL and mandatory IDENT declaration
+                    // map to `range`, while both endpoint atoms deliberately
+                    // stay in the enclosing scope. Only statements enter the
+                    // body scope, making either declaration body-only without a
+                    // second grammar production or a multi-scope owner table.
                     build.declaration_scopes[node_id.index()] = Some(range);
                     assign_counted_range_scopes(
                         topology,
                         children,
                         &mut child_scopes,
-                        current_scope,
+                        range,
                         body,
                     )?;
                 }
@@ -297,10 +297,10 @@ fn assign_nested_body_scopes(
             .node(*child)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
             .production;
-        child_scopes[index] = if production == Production::Stmt {
-            body
-        } else {
-            introduced
+        child_scopes[index] = match production {
+            Production::Stmt => body,
+            Production::HeaderInvariant => introduced,
+            _ => introduced,
         };
     }
     Ok(())
@@ -310,27 +310,28 @@ fn assign_counted_range_scopes(
     topology: &FinalizedTopology,
     children: &[NodeId],
     child_scopes: &mut [ScopeId],
-    outer: ScopeId,
+    range: ScopeId,
     body: ScopeId,
 ) -> Result<(), ResolutionCompilerFailure> {
-    let mut endpoint_count = 0_u8;
+    let mut binding_count = 0_u8;
     for (index, child) in children.iter().enumerate() {
         let production = topology
             .node(*child)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
             .production;
         child_scopes[index] = match production {
-            Production::Atom => {
-                endpoint_count = endpoint_count
+            Production::ForBinding => {
+                binding_count = binding_count
                     .checked_add(1)
                     .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-                outer
+                range
             }
+            Production::HeaderInvariant => range,
             Production::Stmt => body,
             _ => return Err(ResolutionCompilerFailure::InvalidCanonicalTree),
         };
     }
-    if endpoint_count != 2 {
+    if binding_count != 1 {
         return Err(ResolutionCompilerFailure::InvalidCanonicalTree);
     }
     Ok(())

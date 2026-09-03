@@ -157,7 +157,8 @@ fn the_boundary_driver_decodes_a_file_read_through_the_system_path() {
 /// Every outcome the boundary can produce reaches its own status.
 ///
 /// A malformed or truncated input is an ordinary outcome of reading a real
-/// file, so none of these may trap or be absorbed into the success path.
+/// file, so none of these may reach a runtime proof-failure path or be
+/// absorbed into the success path.
 #[test]
 fn each_boundary_and_decode_outcome_reaches_its_own_status() {
     let program = boundary_driver();

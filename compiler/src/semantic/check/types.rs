@@ -44,8 +44,8 @@ const TYPE2_FLAT_ELEMENT: &str = "a flat element type: an integer, a float, Bool
 /// sites, so five conditions cover six rejections.
 const EFF1_SHARED_WRITE: &str = "a `writes` path is rooted at a shared borrow parameter, which grants no exclusive access to that state";
 const EFF1_SHARED_WRITE_FIX: &str = "declare that parameter `&uniq` or `own`, or drop the path from `writes`; an effect path grants no permission of its own";
-const EFF1_CATEGORY_ONCE: &str = "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates, traps";
-const EFF1_CATEGORY_ONCE_FIX: &str = "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates, traps";
+const EFF1_CATEGORY_ONCE: &str = "a category appears at most once in one row, and the row is written in the canonical order reads, writes, allocates";
+const EFF1_CATEGORY_ONCE_FIX: &str = "merge the repeated category's paths into one occurrence — `writes(cwd), writes(out)` is `writes(cwd, out)` — and order the categories reads, writes, allocates";
 const EFF1_NON_PARAMETER_ROOT: &str = "every effect path is rooted at one formal value parameter of the same callable, and this root is not one";
 const EFF1_NON_PARAMETER_ROOT_FIX: &str = "root the path at a parameter of this function; a local, a result binder, a region, and an unrelated declaration are never effect roots";
 const EFF1_FIELD_OF_NON_STRUCT: &str = "each effect-path suffix selects one statically known field of a source struct, and this prefix is not a source struct";
@@ -614,9 +614,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declared.add_arena_allocation(region);
                 }
                 2
-            } else if self.has_fixed(effect, FixedTerminal::Traps)? {
-                declared.traps = true;
-                3
             } else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
@@ -850,7 +847,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }
-                | CheckedStatement::Claim { .. }
+                | CheckedStatement::Proof(_)
                 | CheckedStatement::Return { .. }
                 | CheckedStatement::Break { .. } => {}
             }
@@ -1568,39 +1565,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::InvalidIntegerLiteral,
             )
         })
-    }
-
-    pub(super) fn check_message(&self, node: NodeId) -> Result<String, CheckStop> {
-        let terminal = self
-            .tree
-            .direct_token_with(node, TerminalPredicate::String)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let bytes = self.tree.token_bytes(terminal)?;
-        let interior = bytes
-            .strip_prefix(b"\"")
-            .and_then(|bytes| bytes.strip_suffix(b"\""))
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let mut decoded = Vec::with_capacity(interior.len());
-        let mut cursor = 0;
-        while cursor < interior.len() {
-            if interior[cursor] != b'\\' {
-                decoded.push(interior[cursor]);
-                cursor += 1;
-                continue;
-            }
-            let escaped = *interior
-                .get(cursor + 1)
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            decoded.push(match escaped {
-                b'\\' => b'\\',
-                b'"' => b'"',
-                b'n' => b'\n',
-                _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
-            });
-            cursor += 2;
-        }
-        String::from_utf8(decoded)
-            .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding.into())
     }
 }
 

@@ -1,5 +1,0 @@
-command fn main() -> status: own ExitStatus traps {
-  doc "The former knowingly false runtime fixture is retired: False() is exactly refutable under CLM-2, so this explicit negative candidate must be rejected rather than entering an accepted program.";
-  claim impossible_order: False() because "premises: False() is the Boolean false constructor\nderivation: evaluating the constructor yields false directly\nconclusion: False() is false\nchecker gap: there is no checker gap for a direct False() predicate\nconsumers: no accepted terminal consumer may depend on this rejected occurrence";
-  return exit_status(code: 0_u8);
-}

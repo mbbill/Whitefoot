@@ -147,6 +147,7 @@ fn reserved_role(role: &ClassifiedRole) -> Option<(ReservedDeclarationRole, &str
         }
         RawRoleKind::Declaration(DeclarationRole::Parameter) => ReservedDeclarationRole::Parameter,
         RawRoleKind::Declaration(DeclarationRole::Let) => ReservedDeclarationRole::Let,
+        RawRoleKind::Declaration(DeclarationRole::Invariant) => ReservedDeclarationRole::Invariant,
         RawRoleKind::Declaration(DeclarationRole::CountedBinder) => {
             ReservedDeclarationRole::ForBinder
         }
@@ -308,7 +309,7 @@ fn collision_issue(
         return Ok(Some(collision(
             declaration,
             prelude_conflicts,
-            ResolutionRule::Type6,
+            declaration_collision_rule(declaration),
             COLLIDES_WITH_PRELUDE,
         )));
     }
@@ -342,7 +343,7 @@ fn collision_issue(
         return Ok(Some(collision(
             declaration,
             system_conflicts,
-            ResolutionRule::Type6,
+            declaration_collision_rule(declaration),
             COLLIDES_WITH_SYSTEM,
         )));
     }
@@ -370,7 +371,7 @@ fn collision_issue(
         return Ok(Some(collision(
             declaration,
             same_scope,
-            ResolutionRule::Type6,
+            declaration_collision_rule(declaration),
             COLLIDES_IN_ONE_SCOPE,
         )));
     }
@@ -408,10 +409,18 @@ fn collision_issue(
         collision(
             declaration,
             shadows,
-            ResolutionRule::Type6,
+            declaration_collision_rule(declaration),
             COLLIDES_WITH_LIVE_OUTER,
         )
     }))
+}
+
+const fn declaration_collision_rule(declaration: &DeclarationRecord) -> ResolutionRule {
+    if matches!(declaration.role(), DeclarationRole::Invariant) {
+        ResolutionRule::Inv1
+    } else {
+        ResolutionRule::Type6
+    }
 }
 
 fn meta_for_record(

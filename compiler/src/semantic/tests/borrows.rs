@@ -176,7 +176,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(1_u64, 0_u8);
   region 'r {
     let first = &uniq 'r values;
@@ -189,7 +189,7 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
         SemanticIssueKind::BorrowConflict,
     );
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(1_u64, 0_u8);
   region 'r {
     let shared = &'r values;
@@ -210,7 +210,7 @@ fn user_calls_reject_overlapping_unique_arguments() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(1_u64, 0_u8);
   region 'r {
     two<'r>(first: &uniq 'r values, second: &uniq 'r values);
@@ -262,10 +262,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(checked) = outcome else {
+        let SemanticOutcome::Complete(_) = outcome else {
             panic!("incoming call effects must retain their formal origin: {outcome:?}");
         };
-        assert!(!checked.data.functions[1].declared_traps);
     });
 }
 
@@ -444,7 +443,7 @@ fn struct_borrow_roots_block_owner_access_and_affine_moves() {
   count: u64;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(1_u64, 0_u64);
   let pool = Pool(values: move values, count: 0_u64);
   region 'r {
@@ -532,7 +531,7 @@ fn consume['r](source: &'r buffer<u8>, sibling: own buffer<u8>) -> result: own u
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -1094,7 +1093,7 @@ fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let b = box_new(4_i32);
   region 'c {
     bump<'c>(n: &uniq 'c deref(b));
@@ -1283,7 +1282,7 @@ fn extension_binds_call_result_borrows_and_composes_grandchild_chains() {
 }
 
 /// Extension: creating the chain suspends the candidate parent holder for
-/// the remainder of its life — the claim may outlive the statement inside
+/// the remainder of its life; the borrow may outlive the statement inside
 /// the bound result — so a later use through the parent, or a second chain
 /// from it, is the OWN-5 suspension rejection.
 #[test]
@@ -1311,7 +1310,7 @@ fn extension_chains_suspend_the_candidate_parent_permanently() {
 /// A callee signature that does not determine one provenance candidate — two
 /// same-kind same-region borrow parameters — is rejected at its own boundary
 /// citing FN-1, so the reborrow-extension entry never reaches a call whose
-/// result it would have to infer a claim for.
+/// result it would have to infer an ownership fact for.
 #[test]
 fn extension_rejects_ambiguous_result_provenance() {
     assert_rule_extension(

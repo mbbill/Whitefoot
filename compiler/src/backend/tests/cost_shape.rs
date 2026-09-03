@@ -42,7 +42,7 @@
 //! publication entries — two naming standard output and three naming standard
 //! error, exactly as before — counted in whichever of the two forms the
 //! inliner left each site in. Nothing became an inequality and no row lost its
-//! claim.
+//! assertion.
 //!
 //! The complete §9.1 row inventory, and where each row's evidence lives, so
 //! that what is machine-checked here is not confused with what is not:
@@ -52,7 +52,7 @@
 //! | target selection | `target_selection_is_one_link_time_table_decision` |
 //! | selected argument | `an_argument_lease_allocates_nothing_and_copies_no_byte` |
 //! | raw argument bytes | `the_raw_byte_route_carries_no_unicode_gate` |
-//! | UTF-8 text conversion | absence side gated here; the presence side is the `run-syshost-copyutf8-*` conformance cases. The Windows column the row also names has no implementation in the first slice, so it is not inspectable and is not claimed. |
+//! | UTF-8 text conversion | absence side gated here; the presence side is the `run-syshost-copyutf8-*` conformance cases. The Windows column the row also names has no implementation in the first slice, so it is not inspectable and no property is asserted for it. |
 //! | `RelativePath` construction | `relative_path_retypes_the_lease_without_allocating` |
 //! | `open_read` | `open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor` |
 //! | `read_at` / `write_once` | `each_transfer_is_one_host_call_with_a_cold_outcome_mapper` |
@@ -276,7 +276,7 @@ fn opens_a_block(line: &str) -> bool {
 /// lock, no per-call signal operation" requirement to the transfer *path*, not
 /// to the whole program: `wfgrep` legitimately copies bytes elsewhere, in
 /// `host_copy_bytes` and in its own batch append. Reading the block that holds
-/// the host call is what makes the scoped claim checkable instead of
+/// the host call is what makes the scoped property checkable instead of
 /// approximate.
 fn basic_block<'function>(function: &'function str, needle: &str) -> &'function str {
     let hit = function
@@ -598,7 +598,7 @@ fn open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor() {
 /// §9.1 row 7 — `read_at` and `write_once` consume statically authorized
 /// ranges, make one compiler-owned typed target call, sanitize one target
 /// count into an absolute endpoint, and use a cold outcome mapper. Target
-/// hostile tests separately pin that no-progress retries produce at most one
+/// target edge-case tests separately pin that no-progress retries produce at most one
 /// progress-producing transfer.
 #[test]
 fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
@@ -663,7 +663,7 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // It is reached only from a failure arm, and that is read here — in the
     // module the compiler emitted — rather than in the optimized one.
     //
-    // The optimized module cannot carry this claim. Whether a cold call site
+    // The optimized module cannot carry this assertion. Whether a cold call site
     // stays in the program's own code or is outlined into a `.cold.` function
     // is the host toolchain's choice: this machine's clang outlines every one
     // of them, and the gate's Linux clang leaves them standing. Neither is a
@@ -882,8 +882,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
         );
     }
     // The complete inventory of what the finished program calls. Every entry
-    // is accounted for by a first-slice operation, by a written claim, or by
-    // the compiler's own runtime; nothing here is a release reaching a host
+    // is accounted for by a first-slice operation or by the compiler's own
+    // resource runtime; nothing here is a release reaching a host
     // facility, a handle table, or a hidden external effect [§12.2]. A release
     // that started making a target call would have to add a name to this list.
     //
@@ -940,8 +940,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "strlen" | "memchr"
             // Buffer allocation and language cleanup.
             | "calloc" | "free"
-            // Written claims and their mandatory diagnostic record.
-            | "wf_trap" | "abort"
+            // External resource exhaustion and the final process abort.
+            | "wf_resource_record_abort" | "abort"
             // The [PROG-3] start failure: an initial working directory the
             // host refuses leaves the program with nothing to run, so
             // `wf__main_body`'s `start.failure` arm exits with the fixed
@@ -960,19 +960,19 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // this census reads is the default compilation, which actualizes
             // nothing and therefore names none of these. They are listed for
             // the `--par` build of the same source, where all five are the
-            // module's own weak definitions: the claim refuses every lane and
+            // module's own weak definitions: lane acquisition refuses every lane and
             // the rest return, `wf__par_pool_active` answers that no pool
             // started — so that build runs its own sequential clone, which
             // reaches no host facility either, and the four protocol entries
             // go unused. That is a statement about the emitted module, not
             // about every link of it — with the parallel runtime linked,
-            // `wf__par_pool_active` and `wf__par_claim` both reach
+            // `wf__par_pool_active` and `wf__par_acquire_lane` both reach
             // `pthread_create`. This census inspects the module, and the pool
             // the runtime adds is trusted computing base below the language,
             // like malloc's own internals. This row is a permission the
             // target may take, not an operation of the first slice, so no
             // §9.1 count moves with it.
-            | "wf__par_claim" | "wf__par_publish" | "wf__par_join" | "wf__par_release"
+            | "wf__par_acquire_lane" | "wf__par_publish" | "wf__par_join" | "wf__par_release"
             | "wf__par_pool_active"
             // The compiler's own cold [SYS-7] class mapper, which reaches no
             // host object at all: it turns one native error code into one
@@ -1076,7 +1076,7 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // function makes precedes every host transfer it reaches, so no buffer is
     // first created in the drain, the match loop, or the flush.
     //
-    // The stronger claim the argv-list version could make — that the *last*
+    // The stronger property the argv-list version could state — that the *last*
     // allocation also precedes the first transfer — no longer holds textually,
     // and its failure is inlining rather than re-initialization: the host
     // inliner expands `search_file`'s body into `main`'s single-file arm, so

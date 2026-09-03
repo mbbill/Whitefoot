@@ -1,5 +1,5 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  doc "PATH-1: the near-miss a writer expects to be rejected by analogy with confinement. Construction preserves every admitted code unit exactly, including `.` and `..` components and every separator, and performs no normalization, canonicalization, prefix stripping, or component collapse; the first slice's DirectoryRead object makes no confinement claim [PATH-2].";
+  doc "PATH-1: the near-miss a writer expects to be rejected by analogy with confinement. Construction preserves every admitted code unit exactly, including `.` and `..` components and every separator, and performs no normalization, canonicalization, prefix stripping, or component collapse; the first slice's DirectoryRead object provides no confinement guarantee [PATH-2].";
   region 'a {
     match arg_get<'a>(args: &'a args, position: 1_u64) {
       Ok(value: text) => {

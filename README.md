@@ -1,14 +1,38 @@
 # Whitefoot
 
-Whitefoot is a systems language for AI-written, human-approved code. It is
-designed so that memory corruption, data races, uninitialized reads, and silent
-overflow are unrepresentable in accepted source. There is no writer-accessible
-unsafe escape. Every partial operation is admitted only after machine proof of
-its domain; a written claim is the sole writer-reachable runtime trap and is
-never removed. A claim is only an independently true theorem that the
-normative checker cannot derive and a later admission root genuinely needs;
-it is never an assertion, test oracle, intentional abort, or substitute for
-ordinary control flow, and its `because` record states the complete derivation.
+Whitefoot is a proof-carrying systems language for AI-written, human-approved
+code. Here, proof-carrying means that the Whitefoot source itself carries the
+machine-checkable statements and proof steps needed to justify every partial
+operation and every performance fact the optimizer is allowed to trust. The
+compiler checks that source directly. Its syntax tree, fact state, and checked
+program are ordinary compiler data; an inconsistency among them is a compiler
+defect to repair in code and tests.
+
+The extra evidence is intended to buy safety and speed from the same
+mechanism. The target is that an accepted program may contain a logic error,
+but cannot execute memory corruption, a data race, an uninitialized read,
+silent overflow, or another unproved partial operation. The same checked
+ownership, aliasing, effect, bounds, and algebraic facts can remove runtime
+checks, authorize optimizations, and prove the ownership, effects, and
+independence facts required by `par`, without `unsafe`, speculation, or later
+rediscovery. Evidence is erased before execution and creates no runtime branch,
+lock, dependency, or scheduling edge.
+
+The official compiler does not use SMT to decide acceptance. Its automatic
+core runs only specification-fixed, deterministic, terminating derivations.
+Each admitted rule family is run to its specified completion; there is no
+timeout, cumulative proof-work budget, solver seed, or heuristic stopping
+condition that can turn the same source into a different verdict. When those
+rules are not enough, the author writes finite proof steps in the same source
+file. AI or an offline tool may search while writing them, but compilation only
+checks the written steps.
+
+The price is authoring difficulty: programs are more explicit, valid programs
+may need proof structure, and safe code without sufficient evidence is
+rejected. Whitefoot deliberately spends human ergonomics because its intended
+writer is AI. AI may search for programs and proofs and repair checker
+failures, but it is never trusted; humans approve the requirements and
+resulting changes, and the checker decides what has actually been proved.
 
 ## Project goal
 
@@ -20,7 +44,7 @@ untrusted-input service or a stable LLVM-scale product.
 This is more than a demo compiler: language behavior must come from general
 rules, correctness tests stay compiler-independent where useful, and the
 compiler must eventually emit and run real programs. Product-scale resource
-controls, stable artifact protocols, distribution, and release engineering are
+controls, stable binary-distribution interfaces, and release engineering are
 not current goals.
 
 [docs/roadmap.md](docs/roadmap.md) is the living Direction Outline: the current
@@ -33,17 +57,76 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.39 is the active language authority, SHA-256
-`b4d8e01eecd81bdda9c632093873d604ddfbd64d979a4884472907e456d69516`, carried by
-the stable [specification path](spec/kernel-spec.md). It narrows [CLM-1]'s
-claim-authority control dependence to the definitions a boundary selector
-actually chooses, and supersedes v0.38, whose outgoing bytes are
-preserved as [`spec/kernel-spec-v0.38.md`](spec/kernel-spec-v0.38.md). The
-merge-time record for that activation is in
+Kernel specification v0.40 is the active language authority, SHA-256
+`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, carried by
+the stable [specification path](spec/kernel-spec.md). It replaces the runtime
+claim path with one source-carried proof surface, and supersedes v0.39, whose
+outgoing bytes are preserved byte-for-byte at
+[`spec/kernel-spec-v0.39.md`](spec/kernel-spec-v0.39.md). The merge-time record
+for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.
 
-v0.39 uses ordinary opaque values, `own`, `move`, `&`, and
+v0.40 checks `requires`, `ensures`, loop-header `invariant` relations,
+and local `invariant` statements in the ordinary semantic compiler. A local
+invariant may carry an explicit `use` block when the fixed automatic rules are
+insufficient. It accepts a supported partial operation only when the current
+proof context establishes that operation's exact domain, and it proves
+selected-target layout and address arithmetic before emitting the operation.
+The checked proof syntax and diagnostic derivations are erased before runtime
+lowering. Calls, the optimizer, and `par` consume only verified semantic
+consequences; no proof object or checker bookkeeping enters runtime IR. There
+is no writer-accessible runtime assertion or hidden fallback check.
+This implementation cycle does not introduce a `.wfproof` artifact,
+cross-module proof cache, incremental-proof protocol, or compiler
+self-verification layer. Those are possible future build concerns, not part of
+making source proof correct now.
+
+The automatic affine boundary is part of the language, not an implementation
+guess. For each goal, AUTO checks the zero-premise direct route, every available
+coefficient-one single premise, every unordered coefficient-one premise pair
+including a premise paired with itself, and the final fixed L0-image route.
+Those finite families are exhausted in specification order when the goal is
+not proved. A relation that needs three or more published affine premises
+outside the final fixed L0-image route, a special elimination route, or a
+future named nonlinear rule must carry explicit `use` steps. A
+nonempty `use` block is rejected as redundant when AUTO already proves its
+target under the same specification version.
+
+The canonical loop surface makes induction visible at the loop header:
+
+```wf
+for (
+  i in 0_u64..count,
+  invariant per_byte: ile(sum, 255_u32 * i)
+) {
+  let w = deref(weights)[i];
+  let wide = cvt<u8, u32>(w);
+  set sum = sum + wide;
+}
+```
+
+The first `for` header item is the binding and every later item is an
+`invariant`; the final item has no trailing comma. `loop` uses the same optional
+parenthesized invariant list but has no binding item. Header invariants cannot
+have `use` blocks, and their names exist only in the loop body. Local
+invariants are checked once at their program point; every `use` is proved from
+the same entering snapshot, only the outer conclusion is published, factor one
+is omitted, and repeating the same normalized premise is invalid. In this
+example AUTO subtracts the one published affine premise `per_byte`; DIRECT then
+proves the residual from the `u8` type interval of `wide`. Adding a `use` block
+would therefore be redundant and invalid.
+
+`par` consumes this same checked context together with ownership, effect,
+iteration-index, layout, target-domain, and bounded queue/completion facts.
+Proof checking adds no runtime dependency or scheduling edge. External resource
+availability, such as heap exhaustion, stack exhaustion, operating-system quota,
+or runtime-start failure, is the only boundary temporarily outside this
+implementation cycle; its final source-language failure model remains open.
+That scope choice changes neither the project direction nor the required
+layout, address, target, parallel-independence, and bounded-completion proofs.
+
+v0.40 retains v0.39's ordinary opaque values, `own`, `move`, `&`, and
 `&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
 their static struct fields rather than lifetimes. Resource types do not form a
 separate language capability category. There is no separate `world`,
@@ -125,12 +208,10 @@ harness, validates conformance structure and rule coverage, runs every
 non-pending conformance case through the native compile-run adapter, checks the
 maintained research fixtures, and verifies the specification/archive identity
 chain. Gate results are revision-specific, so this overview carries no floating
-pass count. Canonical `make check` deliberately rejects `CANDIDATE` status at
-the archive-identity step: a merge revision must carry the exact ACTIVE
-identity and the outgoing archive, as this revision does. A work branch
-drafting the next version uses `make spec-candidate-integrity` instead. A green
-result states only what the selected gate exercises and is not a completeness
-claim.
+pass count. Canonical `make check` requires the exact ACTIVE identity and the
+outgoing archive. A work branch drafting a later version can use
+`make spec-candidate-integrity` before its own activation. A green result states
+only what the selected gate exercises and does not establish completeness.
 
 ## License
 

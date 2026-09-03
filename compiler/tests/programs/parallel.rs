@@ -3,12 +3,9 @@
 //! `par_layout.wf` is a box-tree layout pass written twice over one tree: once
 //! with a per-node measure whose walk is bounded by the metric table's own
 //! length, and once with a measure whose bound comes from the caller and is
-//! therefore carried by a claim. The two folds differ in nothing else, so the
-//! program isolates exactly what the permission judgment does with a claim in
-//! the call closure — and since batch 0077 the answer is *nothing*: both folds
-//! are permitted, both are eligible, and both are handed out. The claim is the
-//! writer's lemma, so a correct program traps under no schedule and the
-//! guarantee it would otherwise buy is one only a defective program collects.
+//! clamped against that table's length. Both bounds are discharged statically,
+//! so the two folds are permitted, eligible, and handed out without a
+//! writer-reachable runtime check.
 //!
 //! The program publishes the exact bits of both folds, so any divergence
 //! anywhere in either tree is a divergence in the published bytes. Whether the
@@ -30,18 +27,10 @@ use whitefoot::{CompilationFailureKind, module_requires_parallel_runtime};
 
 /// Both folds are handed out, in the same module, from the same source shape.
 ///
-/// This is the redirect made visible in emitted code. The two folds differ by
-/// one claim site in a callee, and that difference used to be the difference
-/// between an outlined thunk, a lane offer, and a join — and none of the
-/// three. Both now carry all three.
-///
-/// The negative control is `@wf_measure_band`, the callee that actually holds
-/// the claim: it sits in no permitted pair, so it must still name no part of
-/// the runtime. It is checked for the runtime's real symbol prefix `wf__par_`.
-/// The assertion this case replaced looked for `wf_par` — with one underscore
-/// — which no emitted symbol can contain, since every runtime symbol reserves
-/// `wf__par_`. It could not have failed, and so said nothing about the fold it
-/// was written to describe.
+/// This is the permission result made visible in emitted code. Both folds carry
+/// an outlined thunk, a lane offer, and a join. `@wf_measure_band` is the
+/// negative control for erasure: its source-only boundary reasoning emits
+/// neither a runtime proof-failure path nor a parallel-runtime call.
 #[test]
 fn both_folds_are_handed_out() {
     let llvm = compile_program_with_overlap("par_layout.wf");
@@ -53,12 +42,12 @@ fn both_folds_are_handed_out() {
     for symbol in ["@wf_layout", "@wf_layout_banded"] {
         let fold = function_body(&llvm, symbol);
         assert!(
-            fold.contains("= call ptr @wf__par_claim(i64 ptrtoint"),
-            "{symbol} must claim a lane for its first child call:\n{fold}"
+            fold.contains("= call ptr @wf__par_acquire_lane(i64 "),
+            "{symbol} must acquire a lane for its first child call:\n{fold}"
         );
         assert!(
             fold.contains(", ptr @wf__par_thunk_"),
-            "{symbol} must publish the outlined call to the claimed lane:\n{fold}"
+            "{symbol} must publish the outlined call to the acquired lane:\n{fold}"
         );
         assert!(
             fold.contains("call void @wf__par_join(ptr"),
@@ -68,8 +57,8 @@ fn both_folds_are_handed_out() {
 
     let measure = function_body(&llvm, "@wf_measure_band");
     assert!(
-        measure.contains("call void @wf_trap("),
-        "the negative control must be the function that carries the claim:\n{measure}"
+        !measure.contains("call void @wf_trap("),
+        "proved source bounds must not lower to a runtime proof-failure call:\n{measure}"
     );
     assert!(
         !measure.contains("wf__par_"),
@@ -77,22 +66,21 @@ fn both_folds_are_handed_out() {
     );
 }
 
-/// The ledger reports both folds identically, and reports no claim-derived
-/// verdict at all: `not-actualizable` is a verdict class that no longer exists.
+/// The ledger reports both statically proved folds identically.
 #[test]
 fn the_ledger_reports_both_folds_eligible() {
     let ledger = program_permission_ledger("par_layout.wf").join("\n");
     assert!(
         ledger.contains("pair(layout, layout)  eligible"),
-        "the claim-free fold's child pair must be reported eligible:\n{ledger}"
+        "the table-bounded fold's child pair must be reported eligible:\n{ledger}"
     );
     assert!(
         ledger.contains("pair(layout_banded, layout_banded)  eligible"),
-        "the claim-bearing fold's child pair must be reported eligible too:\n{ledger}"
+        "the caller-bounded fold's child pair must be reported eligible too:\n{ledger}"
     );
     assert!(
         !ledger.contains("not-actualizable"),
-        "no verdict may still be withheld for a reachable claim:\n{ledger}"
+        "no verdict may be withheld after all source bounds are proved:\n{ledger}"
     );
 }
 
@@ -168,18 +156,17 @@ fn the_layout_program_publishes_one_byte_sequence_at_every_worker_count() {
     }
 }
 
-/// The claim-bearing fold is granted real lanes, and granting them moves no
+/// The caller-bounded fold is granted real lanes, and granting them moves no
 /// byte of what the program publishes.
 ///
 /// This is the redirect's payoff measured rather than argued. Every other case
 /// here would pass against a runtime that refused every lane, because refusing
 /// is a correct execution and the permission is never an obligation — so
 /// "`layout_banded` now actualizes" has to be read off the runtime's own grant
-/// counter. Before batch 0077 this program's only eligible sites were `build`
-/// and `layout`; `layout_banded` is the fold whose call closure reaches the
-/// claim in `measure_band`.
+/// counter. `layout_banded` is the fold whose measure obtains its bound from
+/// the caller and proves the clamp before entering its counted loop.
 #[test]
-fn the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes() {
+fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
     let llvm = compile_program_with_overlap("par_layout.wf");
 
     let (sequential_grants, sequential) = run_counting_grants(&llvm, Some("1"));
@@ -235,7 +222,7 @@ fn the_claim_bearing_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 /// so the unit of compilation is this list and not the file. The list is
 /// checked against the corpus directory by
 /// [`the_corpus_units_cover_every_program_file`], which is what keeps it from
-/// silently falling behind the corpus it claims to cover.
+/// silently falling behind the corpus it is intended to cover.
 const CORPUS_UNITS: &[&[&str]] = &[
     &["byte_string.wf"],
     &["dir_walk.wf"],
@@ -304,10 +291,9 @@ fn the_corpus_units_cover_every_program_file() {
 /// condition: a module that hands nothing out is emitted byte for byte as its
 /// default build, which that program's own case already links and runs.
 ///
-/// What the comparison reaches varies by program. Most of the corpus states
-/// its result in claims and publishes an exit status, so a run that ends
-/// successfully with an empty record channel is the assertion that every claim
-/// held under that schedule. `wfgrep.wf` is a command entry that reports its
+/// What the comparison reaches varies by program. Most of the corpus publishes
+/// an exit status, so a successful run with an empty record channel checks its
+/// normal completion under that schedule. `wfgrep.wf` is a command entry that reports its
 /// usage when invoked with no arguments, so for that one unit this case
 /// reaches the argument-handling path only and the link is what carries it;
 /// its search path is covered with real arguments in `wfgrep.rs`.

@@ -1,16 +1,15 @@
-fn dbl(x: own i32) -> function_result: own i32 traps {
-  doc "Leaf of the chain: doubles its argument [FN-1].";
-  claim double_defined: x +defined x because "premises: the closed call chain reaches dbl only with x equal to 5_i32 or 10_i32\nderivation: doubling either value is representable as i32\nconclusion: x +defined x is true\nchecker gap: ENT does not publish argument values through the uncontracted dbl and quad calls\nconsumers: the following exact addition needs the complete IntegerDomain obligation";
-  return x + x;
+fn dbl(x: own i32) -> function_result: own i32 pure {
+  doc "Leaf of the chain: doubles its argument with the total wrapping family [FN-1, OP-1].";
+  return x +wrap x;
 }
 
-fn quad(x: own i32) -> function_result: own i32 traps {
+fn quad(x: own i32) -> function_result: own i32 pure {
   doc "Middle of the chain: calls dbl twice through a temporary [FN-1].";
   let d = dbl(x: x);
   return dbl(x: d);
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   doc "Three-deep call chain; each caller relies only on the callee signature [FN-1].";
   let q = quad(x: 5_i32);
   if ieq(q, 20_i32) {

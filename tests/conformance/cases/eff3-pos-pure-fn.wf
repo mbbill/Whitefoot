@@ -1,5 +1,5 @@
 fn dbl(x: own i32) -> result: own i32 pure {
-  doc "A genuinely `pure` body: `.wrap` add, no traps/reads/writes/allocates [EFF-3].";
+  doc "A genuinely `pure` body: total `.wrap` addition and no reads, writes, or allocation [EFF-3].";
   let r = x +wrap x;
   return r;
 }

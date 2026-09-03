@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap), traps {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "A `DirectorySource` is an ordinary affine owner [OWN-1, SYS-14]. Moving the source out of its binding ends that binding's ownership, so the later exclusive borrow of the moved-from name is rejected before traversal semantics is consulted.";
   let entries = buffer_new(1024_u64, 0_u8);
   region 'c {

@@ -101,6 +101,7 @@ int wf_completion_runtime_init(
         atomic_init(&slot->event_pending, 0);
         atomic_init(&slot->event_drained, 0);
         slot->consume_waiting = 0;
+        slot->dependent_registered = 0;
         slot->dependent_frame = NULL;
         slot->dependent_requirement = 0;
     }
@@ -213,6 +214,7 @@ enum wf_completion_claim_result wf_completion_claim(
         slot->terminal_kind = 0;
         slot->adapter_tag = 0;
         slot->result_size = 0;
+        slot->dependent_registered = 0;
         slot->dependent_frame = NULL;
         slot->dependent_requirement = 0;
         atomic_store_explicit(&slot->milestones, 0, memory_order_relaxed);
@@ -801,15 +803,16 @@ enum wf_completion_depend_result wf_completion_depend(
         (void)pthread_mutex_unlock(&slot->publication_lock);
         return WF_COMPLETION_DEPEND_STALE;
     }
-    if (slot->dependent_frame != NULL) {
-        (void)pthread_mutex_unlock(&slot->publication_lock);
-        return WF_COMPLETION_DEPEND_DUPLICATE;
-    }
     phase = atomic_load_explicit(&slot->phase, memory_order_acquire);
     if (phase == WF_COMPLETION_FREE || phase == WF_COMPLETION_RETIRED) {
         (void)pthread_mutex_unlock(&slot->publication_lock);
         return WF_COMPLETION_DEPEND_STALE;
     }
+    if (slot->dependent_registered != 0) {
+        (void)pthread_mutex_unlock(&slot->publication_lock);
+        return WF_COMPLETION_DEPEND_DUPLICATE;
+    }
+    slot->dependent_registered = 1;
     milestones = atomic_load_explicit(&slot->milestones, memory_order_acquire);
     if ((milestones & requirement) == requirement
         && atomic_load_explicit(
@@ -877,6 +880,7 @@ enum wf_completion_consume_result wf_completion_consume(
     slot->terminal_kind = 0;
     slot->adapter_tag = 0;
     slot->result_size = 0;
+    slot->dependent_registered = 0;
     slot->dependent_frame = NULL;
     slot->dependent_requirement = 0;
     slot->consume_waiting = 0;

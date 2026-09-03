@@ -1,5 +1,5 @@
 fn add_one(x: own u64) -> return_value: own u64 pure {
-  doc "OP-2 constant-operand class: `x + 1_u64` carries the overflow obligation that the exact mathematical result belongs to u64. Nothing bounds x, so the complete fact state does not discharge the upper conjunct and the call is a compile-time rejection citing OP-2 at its infix node, carrying the residual `x <= 18446744073709551614`. The mechanical fixes are a dominating claim, a dominating branch, or the explicit wrap, checked, or sat respelling.";
+  doc "OP-2 constant-operand class: `x + 1_u64` carries the overflow obligation that the exact mathematical result belongs to u64. Nothing bounds x, so the fact state does not discharge the upper conjunct and the call is rejected citing OP-2 with residual `x <= 18446744073709551614`. Repairs include a dominating branch, requirement, invariant, checked source proof, or the explicit wrap, checked, or sat spelling.";
   let y = x + 1_u64;
   return y;
 }

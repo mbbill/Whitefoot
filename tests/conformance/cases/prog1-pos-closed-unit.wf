@@ -1,11 +1,9 @@
-fn helper(x: own i32) -> return_value: own i32 traps {
-  doc "In-unit helper; every callee name is defined within this compilation unit. The increment is an OP-2 class site, so a dominating claim discharges its overflow obligation and the row keeps `traps` for the claim's own runtime check.";
-  let below_max = ile(x, 2147483646_i32);
-  claim x_below_max: below_max because "premises: the only closed-world call to helper supplies x equal to 6_i32\nderivation: 6_i32 is at most i32 maximum minus one\nconclusion: below_max is true\nchecker gap: ENT does not publish an uncontracted user-call argument value into helper\nconsumers: the following exact addition needs this upper IntegerDomain component";
-  return x + 1_i32;
+fn helper(x: own i32) -> return_value: own i32 pure {
+  doc "In-unit helper; every callee name is defined within this compilation unit. Explicit wrapping arithmetic makes the helper total so this case isolates closed-world resolution.";
+  return x +wrap 1_i32;
 }
 
-command fn main() -> return_value: own ExitStatus traps {
+command fn main() -> return_value: own ExitStatus pure {
   doc "PROG-1 closed world: helper is defined in-unit, ieq/True are the prelude+table; no import/extern/dynamic-load construct exists to reach outside the unit.";
   let a = 6_i32;
   let b = helper(x: a);

@@ -1,4 +1,4 @@
-use super::{compile, compile_and_run, compile_rejection, emitted_function, system};
+use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 /// Counts the stack slots one emitted function declares, and how many of those
 /// declarations sit outside its entry block.
@@ -88,7 +88,7 @@ command fn main() -> status: own ExitStatus pure {
     let llvm = compile(source);
     let read = emitted_function(&llvm, "read");
     // The verified callee summary discharges the subscript directly: the
-    // caller emits neither a claim trap nor a second bounds branch.
+    // caller emits no runtime fallback and no second bounds branch.
     assert!(!read.contains("icmp ult i64"));
     assert!(!read.contains("call void @wf_trap"));
     assert!(read.contains("getelementptr inbounds [4 x i16]"));
@@ -115,46 +115,6 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-4"));
     assert!(failure.detail().contains("2_u64 < len(values)"));
-}
-
-#[test]
-fn a_failing_claim_reports_its_clm1_record_before_abort() {
-    // The source claim first passes the complete residual judgment as a true,
-    // load-bearing theorem. The test-only IR mutation then redirects exactly
-    // that named claim to an existing false value so DIAG-3 can exercise the
-    // runtime record without granting source writers a false-claim escape.
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  let values = array_new<u8, 4>(0_u8);
-  let bounded = 0_u64;
-  let step = 0_u64;
-  loop @preserve_zero {
-    if ige(step, 4_u64) {
-      break @preserve_zero;
-    }
-    set bounded = bounded +wrap 0_u64;
-    set step = step +wrap 1_u64;
-  }
-  let in_range = ilt(bounded, 4_u64);
-  let injected_false = False();
-  claim expected_true: in_range because "premises: bounded starts at 0_u64 and each completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: in_range is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: values[bounded] requires this exact bound";
-  let ignored = values[bounded];
-  return exit_status(code: 0_u8);
-}
-"#;
-    let llvm = system::with_mutated_ir(source, |program| {
-        assert!(program.force_claim_false_for_test("main", "expected_true"));
-        crate::emit_llvm(program)
-            .expect("fault-injected checked IR must emit")
-            .into_string()
-    });
-    let output = compile_and_run(&llvm);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8(output.stderr).expect("trap record is UTF-8");
-    assert!(stderr.starts_with(
-        "{\"rule_id\":\"CLM-1\",\"message\":\"expected_true\",\"function\":\"main\",\"node_path\":["
-    ));
-    assert!(stderr.ends_with("]}\n"));
-    assert_eq!(stderr.lines().count(), 1);
 }
 
 #[test]
@@ -236,36 +196,22 @@ fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
     // corroboration rather than the measurement — 200000 iterations of two
     // 64-byte slots is about 25 MB, which used to be past a default 8 MB limit
     // and now fits inside the 1 GiB stack the runtime gives every thread.
-    let source = br#"command fn main() -> status: own ExitStatus traps {
-  doc "A long loop reads and writes one fixed array through a rotating index.";
+    let source = br#"command fn main() -> status: own ExitStatus pure {
+  doc "Nested counted loops read and write one fixed array for two hundred thousand iterations.";
   let window = array_new<u64, 8>(1_u64);
-  let step = 0_u64;
-  let cursor = 0_u64;
+  let completed = 0_u64;
   let total = 0_u64;
-  loop @stream {
-    if ige(step, 200000_u64) {
-      break @stream;
+  for (batch in 0_u64..25000_u64) {
+    for (cursor in 0_u64..8_u64) {
+      let previous = window[cursor];
+      let mixed = ixor(previous, completed);
+      set window[cursor] = mixed *wrap 1099511628211_u64;
+      set total = total +wrap previous;
+      set completed = completed +wrap 1_u64;
     }
-    let cursor_ok = ilt(cursor, 8_u64);
-    claim cursor_in_window: cursor_ok because "premises: cursor starts at 0_u64 and every continuing iteration replaces 7_u64 by 0_u64 or increments a value below 7_u64 by one\nderivation: induction over completed iterations keeps cursor in the closed interval 0_u64 through 7_u64 before each access; the only increment starts below 7_u64 and cannot wrap\nconclusion: cursor_ok is true\nchecker gap: ENT does not synthesize the loop induction invariant for the rotating cursor\nconsumers: the following read and indexed set each require this exact OP-4 bound";
-    let previous = window[cursor];
-    let mixed = ixor(previous, step);
-    set window[cursor] = mixed *wrap 1099511628211_u64;
-    set total = total +wrap previous;
-    let at_end = ieq(cursor, 7_u64);
-    let next_cursor = if at_end {
-      give 0_u64;
-    } else {
-      give cursor +wrap 1_u64;
-    }
-    set cursor = next_cursor;
-    set step = step + 1_u64;
   }
-  if ine(step, 200000_u64) {
+  if ine(completed, 200000_u64) {
     return exit_status(code: 1_u8);
-  }
-  if ine(cursor, 0_u64) {
-    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }

@@ -157,6 +157,10 @@ typedef struct wf_completion_slot {
     uint32_t terminal_kind;
     uint32_t adapter_tag;
     size_t result_size;
+    /* Protected by publication_lock. The first successful depend sets this
+     * for the claimed generation and consumption clears it. Draining may clear
+     * the pointer below, but cannot reopen a second ready-frame injection. */
+    unsigned dependent_registered;
     void *dependent_frame;
     uint32_t dependent_requirement;
     union {

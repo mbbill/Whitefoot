@@ -133,7 +133,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
@@ -163,7 +163,7 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
 #[test]
 fn slice_loans_live_until_their_named_data_region_ends() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   region 'outer {
     region 'inner {
@@ -179,7 +179,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
     );
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   let take_view = True();
   region 'outer {
@@ -207,7 +207,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
     with_semantics(ended_region, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "the shared claim must end with its named data region: {outcome:?}"
+            "the shared borrow must end with its named data region: {outcome:?}"
         );
     });
 }
@@ -215,7 +215,7 @@ fn slice_loans_live_until_their_named_data_region_ends() {
 #[test]
 fn slice_loans_follow_structured_break_region_exits() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let view = slice_of(&'view values);
@@ -246,12 +246,12 @@ fn slice_loans_follow_structured_break_region_exits() {
     with_semantics(ended_on_break, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "breaking out of the data region must end its shared claim: {outcome:?}"
+            "breaking out of the data region must end its shared borrow: {outcome:?}"
         );
     });
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   region 'outside {
     loop @once {
@@ -424,7 +424,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn slice_views_are_not_set_targets() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus traps {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   region 'view {
     let window = slice_of(&'view values);
@@ -529,7 +529,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // `'outer` outlives the binding the view is taken from is not the point —
     // the loan is keyed on the region the borrow writes.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(4_u64, 0_u8);
   region 'view {
     let view = slice_of(&'view data);
@@ -548,7 +548,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // asserts — the `derivation.rs:224` class.
     // The written `<'view, u8>` IS the subject and must stay written.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap), traps {
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(4_u64, 0_u8);
   region 'view {
     slice_of<'view, u8>(&'view data);
@@ -696,7 +696,7 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let left = array_new<u8, 2>(0_u8);
   let right = array_new<u8, 2>(0_u8);
   region 'view {

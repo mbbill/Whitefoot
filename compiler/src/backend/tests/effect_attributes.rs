@@ -4,7 +4,7 @@
 //! currently satisfied without the emitter doing anything. That is the point:
 //! it is a canary for the effect-attribute channel that a future change will
 //! open when it starts translating Whitefoot effect rows (`pure`, `reads`,
-//! `writes`, `traps`) into LLVM attributes. It must fail on the day anyone
+//! `writes`, `allocates`) into LLVM attributes. It must fail on the day anyone
 //! emits `willreturn`, before the resulting miscompile reaches a program.
 //!
 //! Why `willreturn` specifically, and why not just the combination:
@@ -13,29 +13,14 @@
 //! deduplication and reordering of calls with equal arguments. Elimination of
 //! an unused pure call additionally requires a termination proof; v0 provides
 //! no termination checker, so unused pure calls are not eliminated. `pure`
-//! excludes traps and all reads/writes/allocates; it does not promise
-//! termination." `willreturn` is exactly the termination promise the language
+//! excludes all reads/writes/allocates; it does not promise termination."
+//! `willreturn` is exactly the termination promise the language
 //! does not make, so emitting it asserts something v0 cannot prove.
 //!
-//! Measured hazard, on a function containing an executed claim path: with
-//! `nounwind willreturn memory(argmem: read)`, LLVM DELETES the claim trap.
-//! The program then exits 0 with empty stderr where it must abort with the
-//! DIAG-3 record. Every other tested combination kept the trap and aborted
-//! correctly: `nounwind`; `willreturn`; `memory(read)`; `nounwind
-//! memory(read)`; `nounwind memory(argmem: read)`; `willreturn memory(read)`;
-//! and `nounwind willreturn memory(read, inaccessiblemem: readwrite)`. The
-//! claim trap vanishes only when `nounwind` and `willreturn` and a memory class that
-//! excludes `inaccessiblemem` all coincide, in the shape where a caller
-//! discards the callee's result - which is precisely how the emitted `main`
-//! shim calls `wf_main`.
-//!
-//! The tripwire is on `willreturn` alone rather than on the triple because
-//! `nounwind` and a narrow `memory(...)` class are each individually harmless
-//! and are the attributes an effect row would most naturally justify, while
-//! `willreturn` is the one member of the triple that no v0 effect row can
-//! license. Guarding the single unlicensed attribute keeps the useful channel
-//! open and closes the unsound one. Do not delete this test as vacuous: it is
-//! meant to be silent until the channel opens.
+//! The tripwire is on `willreturn` because it is the attribute no v0 effect row
+//! can license. `nounwind` and a narrow `memory(...)` class can eventually be
+//! derived from effects, but termination requires its own proof. Do not delete
+//! this test as vacuous: it is meant to be silent until the channel opens.
 //!
 //! The check is on the module the backend emits, not on the module the host
 //! optimizer returns. Do not "strengthen" it to the optimized module: the host
@@ -47,9 +32,8 @@
 
 use super::compile;
 
-/// Representative accepted programs from the corpus. Their proof-residual
-/// claims are not part of this test's contract: the attribute tripwire depends
-/// only on each program continuing to emit a function definition.
+/// Representative accepted programs from the corpus. The attribute tripwire
+/// depends only on each program continuing to emit a function definition.
 /// `recursive_tree` exercises a self-recursive call and `generic_instances`
 /// exercises monomorphized instances, so the check still covers the call
 /// shapes an effect-attribute pass would annotate.
@@ -80,31 +64,12 @@ const REPRESENTATIVE_PROGRAMS: &[(&str, &[u8])] = &[
     ),
 ];
 
-/// A self-contained, genuinely residual local theorem supplies the claim trap
-/// path used by the measured-hazard tripwire. The exact addition consumes
-/// precisely the fact established on the claim's continuing edge.
-const RESIDUAL_CLAIM_PROGRAM: &[u8] = br#"command fn main() -> status: own ExitStatus traps {
-  let bounded = 0_u64;
-  let step = 0_u64;
-  loop @preserve_zero {
-    if ige(step, 4_u64) {
-      break @preserve_zero;
-    }
-    set bounded = bounded +wrap 0_u64;
-    set step = step +wrap 1_u64;
-  }
-  claim bounded_below_one: ilt(bounded, 1_u64) because "premises: bounded starts at 0_u64 and every completed preserve_zero iteration adds wrapping zero\nderivation: adding wrapping zero preserves bounded at 0_u64 through every completed iteration\nconclusion: ilt(bounded, 1_u64) is true\nchecker gap: ENT does not synthesize the loop invariant that bounded remains zero\nconsumers: the following bounded + 1_u64 exact addition requires this bound for its OP-2 domain obligation";
-  let successor = bounded + 1_u64;
-  return exit_status(code: 0_u8);
-}
-"#;
-
 #[test]
 fn no_emitted_module_promises_termination_with_the_willreturn_attribute() {
     for (path, source) in REPRESENTATIVE_PROGRAMS {
         let module = compile(source);
         // Guards against the corpus coverage going vacuous on a degenerate
-        // module without coupling that coverage to its current claim count.
+        // module without coupling that coverage to its current proof count.
         assert!(
             module.contains("define "),
             "{path} must emit at least one function definition"
@@ -112,20 +77,7 @@ fn no_emitted_module_promises_termination_with_the_willreturn_attribute() {
         assert!(
             !module.contains("willreturn"),
             "{path} emitted the willreturn attribute; v0 has no termination \
-             checker, so no effect row licenses that promise [EFF-3], and \
-            `nounwind willreturn memory(argmem: read)` was measured to delete \
-             a written claim trap"
+             checker, so no effect row licenses that promise [EFF-3]"
         );
     }
-
-    let residual = compile(RESIDUAL_CLAIM_PROGRAM);
-    assert!(residual.contains("define "));
-    assert!(
-        residual.contains("@wf_trap"),
-        "the self-contained residual fixture must emit its written claim trap path"
-    );
-    assert!(
-        !residual.contains("willreturn"),
-        "the residual fixture emitted the unlicensed willreturn attribute"
-    );
 }

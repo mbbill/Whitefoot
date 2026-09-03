@@ -57,11 +57,10 @@ fn collect_statements(
 ) {
     for statement in statements {
         match statement {
-            CheckedStatement::Let { value, .. }
-            | CheckedStatement::Evaluate(value)
-            | CheckedStatement::Claim {
-                condition: value, ..
-            } => collect_expression(value, direct, edges),
+            CheckedStatement::Proof(_) => {}
+            CheckedStatement::Let { value, .. } | CheckedStatement::Evaluate(value) => {
+                collect_expression(value, direct, edges)
+            }
             CheckedStatement::PropagateLet {
                 scrutinee,
                 error_drops,

@@ -6,7 +6,9 @@ use crate::{
     SemanticCompilerFailure, SemanticIssueKind, SemanticRule,
 };
 
-use super::super::super::super::goal::{GoalDatum, GoalExpression, GoalProjection};
+use super::super::super::super::goal::{
+    EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
+};
 use super::super::super::super::model::{
     CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
     CheckedStateOrigins, CheckedType,
@@ -117,11 +119,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut goal_arguments = Vec::with_capacity(fields.len());
         let mut call_scoped_borrows: Vec<BorrowInfo> = Vec::new();
         let call = self.tree.path(node)?.clone();
-        // Payload-free allocation and trap capabilities transfer by presence
-        // at a call boundary [EFF-2]; region entries are projected below.
+        // Payload-free heap allocation transfers by presence at a call
+        // boundary [EFF-2]; region entries are projected below.
         let mut effects = EffectSet {
             allocates_heap: signature.declared_effects.allocates_heap,
-            traps: signature.declared_effects.traps,
             ..EffectSet::NONE
         };
         let result_candidate = self.result_borrow_candidate(signature);
@@ -344,10 +345,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .first_child_with(atom, Production::Place)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.call_goal_place_contains_subscript(place)? {
-            return Ok(GoalExpression::Datum(GoalDatum::EphemeralActual {
-                caller,
-                call: call.clone(),
-                argument: ordinal,
+            return Ok(GoalExpression::Datum(GoalDatum::EvaluatedValue {
+                function: caller,
+                occurrence: EvaluatedValueOccurrence::CallArgument {
+                    call: call.clone(),
+                    argument: ordinal,
+                },
                 captured_type: expected_type,
                 projections: Vec::new(),
                 ty: expected_type,

@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus pure {
   doc "A counted binder is immutable compiler-updated state, never source-writable storage [SET-1].";
-  for @items i in 0_u64..1_u64 {
+  for @items (i in 0_u64..1_u64) {
     set i = 1_u64;
   }
   return exit_status(code: 0_u8);

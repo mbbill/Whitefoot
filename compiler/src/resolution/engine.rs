@@ -60,12 +60,9 @@ enum RawRoleKind {
     /// name domain; its FN-7 kind-table judgment is an unimplemented compiler
     /// capability, so classification produces no retained record yet.
     TableChecked,
-    /// A DIAG-1 claim-name carrier: the IDENT of a `claim_stmt`. It declares
-    /// nothing, enters and queries no lexical name domain, and does not
-    /// participate in FORM-3's reservation inventory; its CLM-1 per-function
-    /// uniqueness judgment is an unimplemented compiler capability, so
-    /// classification produces no retained record yet.
-    ClaimName,
+    /// One INV-1 direct IDENT whose spelling is judged by the semantic
+    /// invariant checker rather than entered into a lexical domain.
+    InvariantCarrier,
 }
 
 impl RawRoleKind {
@@ -76,7 +73,7 @@ impl RawRoleKind {
             Self::LexicalUse(_) => 2,
             Self::DeferredUse(_) => 3,
             Self::TableChecked => 4,
-            Self::ClaimName => 5,
+            Self::InvariantCarrier => 5,
         }
     }
 }
@@ -301,10 +298,9 @@ fn build_tables(
                 origin: role.origin.clone(),
             }),
             // Table-checked carriers await the FN-7 kind-table capability, and
-            // claim-name carriers the CLM-1 claim capability; until then a unit
-            // containing one stops in semantic checking as an explicit
-            // unsupported compiler capability.
-            RawRoleKind::Selector(_) | RawRoleKind::TableChecked | RawRoleKind::ClaimName => {}
+            RawRoleKind::Selector(_)
+            | RawRoleKind::TableChecked
+            | RawRoleKind::InvariantCarrier => {}
         }
     }
 
@@ -697,6 +693,7 @@ fn declaration_classes(role: DeclarationRole) -> Vec<DeclarationClass> {
             vec![DeclarationClass::Value]
         }
         DeclarationRole::LoopLabel => vec![DeclarationClass::Label],
+        DeclarationRole::Invariant => vec![DeclarationClass::Invariant],
     }
 }
 
@@ -707,9 +704,9 @@ fn declaration_scope(
 ) -> Result<ScopeId, ResolutionCompilerFailure> {
     match declaration_role {
         DeclarationRole::Variant => Ok(ScopeId(0)),
-        DeclarationRole::LoopLabel
-        | DeclarationRole::CountedBinder
-        | DeclarationRole::LocalRegion => scopes.declaration_scope(role.owner),
+        DeclarationRole::LoopLabel | DeclarationRole::LocalRegion => {
+            scopes.declaration_scope(role.owner)
+        }
         _ => Ok(role.scope),
     }
 }
@@ -727,7 +724,9 @@ fn declaration_visibility(
         DeclarationRole::NamedConst
         | DeclarationRole::ConstGeneric
         | DeclarationRole::Parameter
-        | DeclarationRole::Let => node_end(topology, role.owner)?.value(),
+        | DeclarationRole::Let
+        | DeclarationRole::CountedBinder
+        | DeclarationRole::Invariant => node_end(topology, role.owner)?.value(),
         DeclarationRole::MatchBinder => {
             let list = ancestor_with_production(topology, role.owner, Production::FieldbindList)
                 .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
@@ -801,6 +800,7 @@ fn declaration_domain(class: DeclarationClass) -> Option<DeclarationDomain> {
         DeclarationClass::Contract => Some(DeclarationDomain::Contract),
         DeclarationClass::Region => Some(DeclarationDomain::Region),
         DeclarationClass::Label => Some(DeclarationDomain::Label),
+        DeclarationClass::Invariant => Some(DeclarationDomain::Invariant),
         DeclarationClass::OperationFamily => None,
     }
 }

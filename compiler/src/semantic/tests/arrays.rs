@@ -119,7 +119,7 @@ fn const_expression_and_const_value_failures_keep_their_rule_owners() {
         SemanticIssueKind::ImmutableSetTarget,
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus traps {\n  let items = array_new<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let items = array_new<u8, 2>(0_u8);\n  let value = items[0_u32];\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -208,24 +208,24 @@ fn indexed_set_retains_its_pre_rhs_guard_and_copy_target() {
 
 #[test]
 fn indexed_set_rechecks_type_effect_and_root_liveness() {
-    // A discharged subscript is not an [EFF-2] trap source: the indexed set
-    // with a constant in-range offset is accepted in a `pure` function.
+    // A discharged subscript adds no runtime effect: the indexed set with a
+    // constant in-range offset is accepted in a `pure` function.
     with_semantics(
         b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u8;\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| {
             assert!(
                 matches!(outcome, SemanticOutcome::Complete(_)),
-                "a discharged indexed set must not force a traps row: {outcome:?}"
+                "a discharged indexed set must remain pure: {outcome:?}"
             );
         },
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = 1_u16;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
     assert_rule(
-        b"fn consume(values: own array<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus traps {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn consume(values: own array<u8, 2>) -> result: own u8 pure {\n  return 1_u8;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let values = array_new<u8, 2>(0_u8);\n  set values[0_u64] = consume(values: move values);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Own1,
         SemanticIssueKind::UseAfterMove {
             mechanical_fix: "introduce a new `let` binding before reuse",
@@ -290,7 +290,7 @@ fn replacement(value: own Outer) -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
@@ -313,7 +313,7 @@ struct Outer {
   inner: Inner;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let values = array_new<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);

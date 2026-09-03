@@ -1,8 +1,8 @@
-//! The [PAR-3] judgment's verdict on the adversarial corpus of 2026-08-27.
+//! The [PAR-3] judgment's verdict on the boundary corpus of 2026-08-27.
 //!
 //! The sibling file next door tests one condition at a time, against a fixture
 //! written to violate exactly that condition. This file tests the judgment
-//! against whole programs an adversarial reviewer wrote to break it, kept
+//! against whole programs a boundary reviewer wrote to stress it, kept
 //! verbatim, with the verdict each one must carry. Two of them were granted by
 //! the first implementation and are unsound: a recurrence carried through a
 //! struct field, and a `propagate` whose right-hand side is the cut itself.
@@ -51,7 +51,7 @@ enum Outcome {
 }
 
 /// One program of the corpus.
-struct Attack {
+struct CorpusCase {
     /// The reviewer's own file name, so a failure names the program a reader
     /// can go and look at.
     name: &'static str,
@@ -64,7 +64,7 @@ struct Attack {
 const A01_BASELINE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Baseline: the granted shape.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
@@ -100,7 +100,7 @@ const A02_HOISTED_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own D
   doc "Design 2.3: the destination buffer is hoisted above the loop, so one iteration's short read leaves the previous iteration's bytes behind it.";
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -135,7 +135,7 @@ const A03_CARRIED_BYTE: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
   doc "The name buffer is hoisted above the loop and mutated in the remainder, so iteration i+1 opens a name iteration i wrote.";
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -182,7 +182,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "Design 2.5: the fold reads the hoisted destination before this iteration's transfer writes it, so every byte it reads is the previous iteration's.";
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'fold {
       let digest = fold_prefix<'fold>(source: &'fold data, produced: 64_u64, seed: 0_u64);
@@ -219,7 +219,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A05_RETURN_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The body returns from the remainder, after later iterations have already submitted opens the source-order execution never performs.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -243,7 +243,7 @@ const A06_BREAK_ENCLOSING: &[u8] = br#"command fn main(command.cwd as cwd: own D
   doc "The remainder breaks out of a loop enclosing the staged loop.";
   let total = 0_u64;
   loop @outer {
-    for @scan index in 0_u64..4_u64 {
+    for @scan (index in 0_u64..4_u64) {
       let name = buffer_new(16_u64, 97_u8);
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -271,7 +271,7 @@ const A07_DIRECTORY_SOURCE: &[u8] = br#"command fn main(command.cwd as cwd: own 
     let permit = reserve_file<'c>(factory: &uniq 'c files);
     match open_directory_source<'c>(permit: move permit, directory: &'c cwd) {
       Ok(value: list) => {
-        for @scan index in 0_u64..4_u64 {
+        for @scan (index in 0_u64..4_u64) {
           let entries = buffer_new(1024_u64, 0_u8);
           region 'b {
             match directory_next<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
@@ -298,7 +298,7 @@ const A08_READONLY_NAME: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
   doc "A may-suspend call retains a shared borrow of an enclosing buffer the body never writes.";
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -320,7 +320,7 @@ const A09_REMAINDER_CURSOR: &[u8] = br#"command fn main(command.cwd as cwd: own 
   doc "The remainder reads an enclosing cursor to pick the file offset of its second submission and then overwrites that cursor from the loop binder alone, so the final value matches source order whatever the schedule while the offset the host reads at does not.";
   let cursor = 0_u64;
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
@@ -358,7 +358,7 @@ const A09_REMAINDER_CURSOR: &[u8] = br#"command fn main(command.cwd as cwd: own 
 const A10_PROLOGUE_ACCUMULATOR: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The accumulator is written in the prologue only. Prologues run in index order and never overlap, so the sum is the source-order sum.";
   let attempted = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     set attempted = attempted +wrap 1_u64;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -380,9 +380,9 @@ const A10_PROLOGUE_ACCUMULATOR: &[u8] = br#"command fn main(command.cwd as cwd: 
 const A12_NESTED_INNER_IO: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Nested loops with the inner loop doing the I/O: the outer body has no single cut, the inner loop is judged on its own terms.";
   let total = 0_u64;
-  for @outer step in 0_u64..2_u64 {
+  for @outer (step in 0_u64..2_u64) {
     let shared = buffer_new(16_u64, 97_u8);
-    for @scan index in 0_u64..4_u64 {
+    for @scan (index in 0_u64..4_u64) {
       region 'f {
         let permit = reserve_file<'f>(factory: &uniq 'f files);
         region 'n {
@@ -401,17 +401,17 @@ const A12_NESTED_INNER_IO: &[u8] = br#"command fn main(command.cwd as cwd: own D
 }
 "#;
 
-const A13_CLAIM: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap), traps {
-  doc "A claim in the remainder. T3: the correct path pays nothing and permission must not narrow because a claim is written.";
+const A13_PROOF_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "A checked local invariant in the remainder erases before execution and does not narrow staged permission.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
         match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
-            claim bounded: ilt(index, 4_u64) because "premises: index is the binder of the counted range 0_u64..4_u64 enclosing this statement\nderivation: a counted range binder takes each value of its half-open range exactly once, so it is strictly below the exclusive upper endpoint\nconclusion: ilt(index, 4_u64) is true\nchecker gap: the range analysis publishes no upper bound for a counted binder at this depth\nconsumers: no proof-required consumer exists here; the claim is written to observe that permission does not narrow because of it";
+            invariant bounded: ile(index, 4_u64);
             set total = total +wrap 1_u64;
           }
           Err(error: problem) => {
@@ -424,14 +424,13 @@ const A13_CLAIM: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRe
 }
 "#;
 
-const A13A_CLAIM_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap), traps {
-  doc "A claim in the prologue with a real consumer. T3: the correct path pays nothing and permission must not narrow because a claim is written.";
+const A13A_REMAINDER_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "An automatically proved remainder bound admits a prologue subscript before staged permission computes its footprint.";
   let total = 0_u64;
   let table = array_new<u8, 8>(3_u8);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let seed = index *wrap 3_u64;
     let slot = seed % 8_u64;
-    claim check_drift: ilt(slot, 8_u64) because "premises: table has length 8 and slot is seed remainder 8_u64 computed in this body\nderivation: unsigned remainder by 8_u64 is at most 7_u64 and therefore strictly less than the array length\nconclusion: ilt(slot, 8_u64) is true\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\nconsumers: the following table subscript needs this upper Range component";
     let picked = table[slot];
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -451,10 +450,41 @@ const A13A_CLAIM_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own D
 }
 "#;
 
-const A13B_CLAIM_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap), traps {
-  doc "A claim in the remainder, about storage the remainder itself constructs.";
+// This paired case uses a dominating branch instead of the automatic remainder
+// interval. Both proof routes must produce the same staged footprint.
+const A13C_PROVED_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "A branch-proved subscript in the prologue. Permission is determined by its checked footprint, not by the proof route that admitted the partial operation.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  let table = array_new<u8, 8>(3_u8);
+  for @scan (index in 0_u64..4_u64) {
+    let seed = index *wrap 3_u64;
+    let slot = seed % 8_u64;
+    invariant two_steps: ile(0_u64, 2_u64);
+    if ilt(slot, 8_u64) {
+      let picked = table[slot];
+    }
+    let name = buffer_new(16_u64, 97_u8);
+    region 'f {
+      let permit = reserve_file<'f>(factory: &uniq 'f files);
+      region 'n {
+        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const A13B_PROOF_REMAINDER_STORAGE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "A checked local invariant in the remainder may mention locally constructed storage facts without changing staged permission.";
+  let total = 0_u64;
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -463,8 +493,7 @@ const A13B_CLAIM_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own 
           Ok(value: handle) => {
             let slot = buffer_new(8_u64, 0_u8);
             let room = len(slot);
-            let sized = ieq(room, 8_u64);
-            claim wide_enough: sized because "premises: slot is constructed immediately above by buffer_new with the literal length 8_u64\nderivation: buffer_new fixes the length of the buffer it constructs to its first argument, and nothing writes slot between that construction and this statement\nconclusion: sized is true\nchecker gap: the length fact of a freshly constructed buffer is not republished as a comparison result here\nconsumers: no proof-required consumer exists here; the claim is written to observe that permission does not narrow because of it";
+            invariant fixed_step: ile(0_u64, 2_u64);
             set total = total +wrap 1_u64;
           }
           Err(error: problem) => {
@@ -480,7 +509,7 @@ const A13B_CLAIM_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own 
 const A14_INTERPOSED: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "An ordinary statement written between the submission and the statement that consumes its outcome. The judgment cuts at the submission statement, so the interposed statement is in the remainder.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let data = buffer_new(64_u64, 0_u8);
     region 'f {
@@ -518,7 +547,7 @@ const A15_BODY_BOUND_BORROW: &[u8] = br#"command fn main(command.cwd as cwd: own
   doc "A borrow of enclosing storage bound to a body-introduced name, then handed to the submission. If the judgment read the binding rather than its referent, the enclosing buffer would carry no disposition at all.";
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -543,7 +572,7 @@ const A16_GIVE_OUT: &[u8] = br#"command fn main(command.cwd as cwd: own Director
   let seed = Some<u64>(value: 1_u64);
   let picked = match seed {
     Some(value: carried) => {
-      for @scan index in 0_u64..4_u64 {
+      for @scan (index in 0_u64..4_u64) {
         let name = buffer_new(16_u64, 97_u8);
         region 'f {
           let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -571,7 +600,7 @@ const A16_GIVE_OUT: &[u8] = br#"command fn main(command.cwd as cwd: own Director
 const A17_NO_CLEAN_CUT: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The submission is written inside one branch, and a statement after the branch is neither before it on every path nor reached only through it.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let first = ieq(index, 0_u64);
     if first {
@@ -607,7 +636,7 @@ fn probe['w, 'c, 'n](w: &'w Work, root: &'c DirectoryRead, name: &'n buffer<u8>,
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The submission reads the whole carried record; the remainder writes one field of it. The two are the same storage.";
   let work = Work(seen: 1_u64, code: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -636,7 +665,7 @@ const A19_FIELD_RECURRENCE: &[u8] = br#"struct Work {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The carried count is read in the prologue as a field and rewritten in the remainder as the whole record. Sequentially work.seen takes 0,1,2,3; with prologues running ahead of remainders every iteration reads the same value.";
   let work = Work(seen: 0_u64, code: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let carried = work.seen;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -660,7 +689,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A19B_CONTROL_SCALAR: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Control for A19: the identical recurrence carried in a bare u64 instead of a struct field.";
   let seen = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let carried = seen;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -689,7 +718,7 @@ const A19C_OBSERVABLE: &[u8] = br#"struct Work {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The carried count selects the name prefix the open uses, so the divergence reaches the host: sequentially the four opens name four different prefixes, pipelined they name one.";
   let work = Work(seen: 0_u64, code: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let carried = work.seen;
     let short = ilt(carried, 4_u64);
     if short {
@@ -718,7 +747,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A20_PROPAGATE_CUT: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "The submission statement is itself the exit: propagate leaves the loop and the function on the operation's own Err outcome.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
       let permit = reserve_file<'p>(factory: &uniq 'p files);
@@ -748,7 +777,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A20B_MATCH_TWIN: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "The same exit as A20, spelled as a match arm instead of a propagate.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
       let permit = reserve_file<'p>(factory: &uniq 'p files);
@@ -784,7 +813,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A20C_PROPAGATE_SECOND: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "A propagate on a second submission, written in the remainder.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'p {
       let permit = reserve_file<'p>(factory: &uniq 'p files);
@@ -835,7 +864,7 @@ const A22_EXPR_STATEMENT: &[u8] = br#"fn stamp['b](slot: &uniq 'b buffer<u8>, in
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "An expression statement in the prologue.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 's {
       stamp<'s>(slot: &uniq 's name, index: index);
@@ -860,7 +889,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A23_GIVE_INSIDE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "A value initializer written inside the remainder: its gives deliver to a binding of the same iteration and leave nothing.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
@@ -891,7 +920,7 @@ const A24_SLICE_READONLY: &[u8] = br#"command fn main(command.cwd as cwd: own Di
   doc "A shared slice of an enclosing buffer the body never writes.";
   let table = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'v {
       let view = slice_of(&'v table);
@@ -933,7 +962,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "The name the submission opens is a field of a record the remainder replaces wholesale. Sequentially iteration 0 opens one name and iterations 1 to 3 open another; with prologues running ahead of remainders all four open the first.";
   let seed = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move seed, seen: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     region 'f {
       let permit = reserve_file<'f>(factory: &uniq 'f files);
       region 'n {
@@ -955,7 +984,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A27_OUTPUT_WRITE: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
   doc "The remainder writes an enclosing Output. Two remainders coexist, so the bytes reaching the stream would not be in iteration order.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let line = buffer_new(8_u64, 65_u8);
     region 'f {
@@ -999,7 +1028,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "The prologue reads a doubly nested field and the remainder replaces its parent.";
   let start = Inner(a: 0_u64, b: 0_u64);
   let carrier = Outer(inner: move start, tag: 0_u64);
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let carried = carrier.inner.a;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -1024,7 +1053,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 const A29_TWO_SUBMISSIONS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Two submissions on disjoint branches: neither is a single cut.";
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     let first = ieq(index, 0_u64);
     if first {
@@ -1066,7 +1095,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   doc "The mirror of A19: the prologue replaces the whole record and the remainder reads one of its fields. Sequentially the remainder of iteration i reads the tag its own prologue wrote; with prologues running ahead it reads a later iteration's.";
   let carrier = Carrier(tag: 0_u64, spare: 0_u64);
   let total = 0_u64;
-  for @scan index in 0_u64..4_u64 {
+  for @scan (index in 0_u64..4_u64) {
     let previous = replace carrier = Carrier(tag: index, spare: 0_u64);
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
@@ -1096,10 +1125,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 /// (A20). Each of them sits beside the control that proved it wrong: A19b is
 /// the same recurrence in a bare `u64`, which was always denied, and A20b is
 /// the same exit written as a `match` arm, which was always denied.
-const CORPUS: &[Attack] = &[
+const CORPUS: &[CorpusCase] = &[
     // The shape the rule exists for: one file per iteration, everything the
     // body writes either iteration-own or confined to one segment.
-    Attack {
+    CorpusCase {
         name: "A01-baseline.wf",
         source: A01_BASELINE,
         function: "main",
@@ -1107,21 +1136,21 @@ const CORPUS: &[Attack] = &[
     },
     // A scratch buffer hoisted out of the loop, borrowed by the submission and
     // written by the body: condition 3's central case.
-    Attack {
+    CorpusCase {
         name: "A02-hoisted-scratch.wf",
         source: A02_HOISTED_SCRATCH,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Denied(3)]),
     },
     // The same hazard hidden in one carried byte of an enclosing name buffer.
-    Attack {
+    CorpusCase {
         name: "A03-carried-byte.wf",
         source: A03_CARRIED_BYTE,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Denied(3)]),
     },
     // A fold over the enclosing destination before the read that fills it.
-    Attack {
+    CorpusCase {
         name: "A04-fold-before-read.wf",
         source: A04_FOLD_BEFORE_READ,
         function: "main",
@@ -1129,7 +1158,7 @@ const CORPUS: &[Attack] = &[
     },
     // A `return` after the submission: the decision to leave would be taken
     // after later prologues already submitted.
-    Attack {
+    CorpusCase {
         name: "A05-return-in-remainder.wf",
         source: A05_RETURN_IN_REMAINDER,
         function: "main",
@@ -1139,7 +1168,7 @@ const CORPUS: &[Attack] = &[
     // submission is written inside a loop of its own body and so has no cut,
     // and the inner `for @scan`, from whose remainder a `break` naming the
     // enclosing loop leaves.
-    Attack {
+    CorpusCase {
         name: "A06-break-enclosing.wf",
         source: A06_BREAK_ENCLOSING,
         function: "main",
@@ -1148,7 +1177,7 @@ const CORPUS: &[Attack] = &[
     // A retained exclusive loan on an enclosing enumeration cursor, which no
     // replication ever repairs: the denial says so instead of offering the
     // per-iteration form as advice.
-    Attack {
+    CorpusCase {
         name: "A07-directory-source.wf",
         source: A07_DIRECTORY_SOURCE,
         function: "main",
@@ -1156,7 +1185,7 @@ const CORPUS: &[Attack] = &[
     },
     // A retained *shared* borrow of enclosing storage the body never writes is
     // the read-only disposition, and it is granted.
-    Attack {
+    CorpusCase {
         name: "A08-readonly-name.wf",
         source: A08_READONLY_NAME,
         function: "main",
@@ -1165,7 +1194,7 @@ const CORPUS: &[Attack] = &[
     // A cursor the remainder reads and then overwrites. It is granted, and the
     // rule owes it the read half of the remainder's index ordering: without
     // that sentence E(i) could read what E(j) has not yet written.
-    Attack {
+    CorpusCase {
         name: "A09-remainder-cursor.wf",
         source: A09_REMAINDER_CURSOR,
         function: "main",
@@ -1173,7 +1202,7 @@ const CORPUS: &[Attack] = &[
     },
     // An accumulator written in the prologue alone: serialized there, because
     // prologues never overlap.
-    Attack {
+    CorpusCase {
         name: "A10-prologue-accumulator.wf",
         source: A10_PROLOGUE_ACCUMULATOR,
         function: "main",
@@ -1181,36 +1210,45 @@ const CORPUS: &[Attack] = &[
     },
     // Two nested loops: the outer one's first submission is written inside the
     // inner loop, so the outer has no cut and the inner is judged on its own.
-    Attack {
+    CorpusCase {
         name: "A12-nested-inner-io.wf",
         source: A12_NESTED_INNER_IO,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Denied(1), Expected::Permitted]),
     },
-    // A `claim` on a system result is refused by [CLM-1] before this judgment
-    // ever runs.
-    Attack {
-        name: "A13-claim.wf",
-        source: A13_CLAIM,
-        function: "main",
-        outcome: Outcome::Rejected,
-    },
-    // A `claim` in the prologue is admitted: a claim narrows no permission.
-    Attack {
-        name: "A13a-claim-prologue.wf",
-        source: A13A_CLAIM_PROLOGUE,
+    // A checked source proof in the remainder erases before permission and
+    // leaves the permitted overlap unchanged.
+    CorpusCase {
+        name: "A13-proof-remainder.wf",
+        source: A13_PROOF_REMAINDER,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Permitted]),
     },
-    Attack {
-        name: "A13b-claim-remainder.wf",
-        source: A13B_CLAIM_REMAINDER,
+    // The deterministic remainder interval authorizes the load-bearing
+    // subscript before staged permission computes its footprint.
+    CorpusCase {
+        name: "A13a-remainder-prologue.wf",
+        source: A13A_REMAINDER_PROLOGUE,
         function: "main",
-        outcome: Outcome::Rejected,
+        outcome: Outcome::Staged(&[Expected::Permitted]),
+    },
+    CorpusCase {
+        name: "A13b-proof-remainder-storage.wf",
+        source: A13B_PROOF_REMAINDER_STORAGE,
+        function: "main",
+        outcome: Outcome::Staged(&[Expected::Permitted]),
+    },
+    // The same prologue computation with an ordinary dominating proof remains
+    // a real accepted PAR-3 case.
+    CorpusCase {
+        name: "A13c-proved-prologue.wf",
+        source: A13C_PROVED_PROLOGUE,
+        function: "main",
+        outcome: Outcome::Staged(&[Expected::Permitted]),
     },
     // A statement written between the submission and the join is judged like
     // any other statement of the remainder.
-    Attack {
+    CorpusCase {
         name: "A14-interposed.wf",
         source: A14_INTERPOSED,
         function: "main",
@@ -1219,7 +1257,7 @@ const CORPUS: &[Attack] = &[
     // A borrow of enclosing storage bound by a body statement rather than
     // written as a call argument carries no stateable loan, so the form is
     // refused rather than read as loan-free.
-    Attack {
+    CorpusCase {
         name: "A15-body-bound-borrow.wf",
         source: A15_BODY_BOUND_BORROW,
         function: "main",
@@ -1227,23 +1265,23 @@ const CORPUS: &[Attack] = &[
     },
     // A `give` delivering to an initializer written outside the loop leaves
     // it, and it is written after the submission.
-    Attack {
+    CorpusCase {
         name: "A16-give-out.wf",
         source: A16_GIVE_OUT,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Denied(2)]),
     },
     // A body with no single-entry single-exit cut at its first submission.
-    Attack {
+    CorpusCase {
         name: "A17-no-clean-cut.wf",
         source: A17_NO_CLEAN_CUT,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Denied(1)]),
     },
     // The coarse `reads(w)` row this program declares is refused by [EFF-2]
-    // before this judgment runs; A19 is the same attack with a row [EFF-2]
+    // before this judgment runs; A19 is the same boundary case with a row [EFF-2]
     // accepts.
-    Attack {
+    CorpusCase {
         name: "A18-field-alias.wf",
         source: A18_FIELD_ALIAS,
         function: "main",
@@ -1253,7 +1291,7 @@ const CORPUS: &[Attack] = &[
     // replaced in the remainder. Keyed by exact path the two are independent
     // rows, each with a safe disposition; under [OWN-7] they are one storage
     // the body reaches on both sides of the cut, and condition 5 denies.
-    Attack {
+    CorpusCase {
         name: "A19-field-recurrence.wf",
         source: A19_FIELD_RECURRENCE,
         function: "main",
@@ -1261,7 +1299,7 @@ const CORPUS: &[Attack] = &[
     },
     // The control that proved it: the byte-identical recurrence carried in a
     // bare `u64`, which the first implementation already denied.
-    Attack {
+    CorpusCase {
         name: "A19b-control-scalar.wf",
         source: A19B_CONTROL_SCALAR,
         function: "main",
@@ -1269,7 +1307,7 @@ const CORPUS: &[Attack] = &[
     },
     // The same recurrence feeding the submission's `start` argument, so the
     // divergence a grant would admit reaches the host.
-    Attack {
+    CorpusCase {
         name: "A19c-observable.wf",
         source: A19C_OBSERVABLE,
         function: "main",
@@ -1278,7 +1316,7 @@ const CORPUS: &[Attack] = &[
     // THE SECOND WIDENING. The `propagate` whose right-hand side is the cut:
     // its `Err` edge is selected by the submission's own outcome, so it is an
     // edge of the remainder however the statement's footprint is segmented.
-    Attack {
+    CorpusCase {
         name: "A20-propagate-cut.wf",
         source: A20_PROPAGATE_CUT,
         function: "scan_all",
@@ -1286,7 +1324,7 @@ const CORPUS: &[Attack] = &[
     },
     // The control that proved it: the same exit written as a `match` arm,
     // which the first implementation already denied.
-    Attack {
+    CorpusCase {
         name: "A20b-match-twin.wf",
         source: A20B_MATCH_TWIN,
         function: "scan_all",
@@ -1294,7 +1332,7 @@ const CORPUS: &[Attack] = &[
     },
     // A `propagate` on a second submission, which is unambiguously in the
     // remainder.
-    Attack {
+    CorpusCase {
         name: "A20c-propagate-second.wf",
         source: A20C_PROPAGATE_SECOND,
         function: "scan_all",
@@ -1302,7 +1340,7 @@ const CORPUS: &[Attack] = &[
     },
     // An over-denial the rule sanctions: an expression statement anywhere in
     // the body refuses the loop, because its reach projects onto no actual.
-    Attack {
+    CorpusCase {
         name: "A22-expr-statement.wf",
         source: A22_EXPR_STATEMENT,
         function: "main",
@@ -1310,7 +1348,7 @@ const CORPUS: &[Attack] = &[
     },
     // A `give` delivering to an initializer written inside the loop reaches a
     // binding of the same iteration and leaves nothing.
-    Attack {
+    CorpusCase {
         name: "A23-give-inside.wf",
         source: A23_GIVE_INSIDE,
         function: "main",
@@ -1318,7 +1356,7 @@ const CORPUS: &[Attack] = &[
     },
     // The second sanctioned over-denial: a slice of enclosing storage the body
     // never writes is a footprint element this judgment does not resolve.
-    Attack {
+    CorpusCase {
         name: "A24-slice-readonly.wf",
         source: A24_SLICE_READONLY,
         function: "main",
@@ -1328,7 +1366,7 @@ const CORPUS: &[Attack] = &[
     // region are accepted, so the factory's unique loan is call-scoped rather
     // than region-scoped. It holds no loop, so it carries no staged verdict —
     // its content is that it checks at all.
-    Attack {
+    CorpusCase {
         name: "A25-loan-extent.wf",
         source: A25_LOAN_EXTENT,
         function: "main",
@@ -1338,14 +1376,14 @@ const CORPUS: &[Attack] = &[
     // `held.name`, and the remainder drops that buffer by replacing `held`
     // while a later iteration's open is still outstanding on it. This is the
     // precise hazard condition 3 exists to prevent.
-    Attack {
+    CorpusCase {
         name: "A26-struct-name-swap.wf",
         source: A26_STRUCT_NAME_SWAP,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Denied(3)]),
     },
     // A `write_once` to an enclosing Output from the remainder.
-    Attack {
+    CorpusCase {
         name: "A27-output-write.wf",
         source: A27_OUTPUT_WRITE,
         function: "main",
@@ -1354,14 +1392,14 @@ const CORPUS: &[Attack] = &[
     // The first widening at nesting depth two: `carrier.inner.a` read in the
     // prologue, `carrier.inner` replaced in the remainder. The overlap
     // relation is a prefix test, so depth costs it nothing.
-    Attack {
+    CorpusCase {
         name: "A28-nested-field.wf",
         source: A28_NESTED_FIELD,
         function: "main",
         outcome: Outcome::Staged(&[Expected::Denied(5)]),
     },
     // Two submissions on disjoint branches: neither is a cut.
-    Attack {
+    CorpusCase {
         name: "A29-two-submissions.wf",
         source: A29_TWO_SUBMISSIONS,
         function: "main",
@@ -1371,7 +1409,7 @@ const CORPUS: &[Attack] = &[
     // the class and not over one disposition: `carrier` is replaced in the
     // prologue and `carrier.tag` is read in the remainder, so the unsound
     // grant came out as serialized-P rather than as read-only.
-    Attack {
+    CorpusCase {
         name: "A34-mirror-prologue-write.wf",
         source: A34_MIRROR_PROLOGUE_WRITE,
         function: "main",
@@ -1385,7 +1423,7 @@ const CORPUS: &[Attack] = &[
 /// that moves several verdicts reports all of them at once instead of hiding
 /// the rest behind the first.
 #[test]
-fn the_judgment_holds_its_verdict_on_the_whole_adversarial_corpus() {
+fn the_judgment_holds_its_verdict_on_the_whole_boundary_corpus() {
     let drifts: Vec<String> = CORPUS.iter().filter_map(drift).collect();
     assert!(
         drifts.is_empty(),
@@ -1398,35 +1436,30 @@ fn the_judgment_holds_its_verdict_on_the_whole_adversarial_corpus() {
 
 /// How one program's verdict differs from the one the rule gives it, when it
 /// differs.
-fn drift(attack: &Attack) -> Option<String> {
-    with_semantics(attack.source, |outcome| {
+fn drift(case: &CorpusCase) -> Option<String> {
+    with_semantics(case.source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            return (attack.outcome != Outcome::Rejected)
-                .then(|| format!("{}: the source no longer checks", attack.name));
+            return (case.outcome != Outcome::Rejected)
+                .then(|| format!("{}: the source no longer checks", case.name));
         };
-        let Outcome::Staged(expected) = attack.outcome else {
+        let Outcome::Staged(expected) = case.outcome else {
             return Some(format!(
                 "{}: the source now checks, and owes a staged verdict",
-                attack.name
+                case.name
             ));
         };
         let judged: Vec<&StagedPermission> = program
             .data
             .permission
-            .named(attack.function)
-            .unwrap_or_else(|| {
-                panic!(
-                    "no permission table for {} of {}",
-                    attack.function, attack.name
-                )
-            })
+            .named(case.function)
+            .unwrap_or_else(|| panic!("no permission table for {} of {}", case.function, case.name))
             .staged
             .iter()
             .collect();
         if judged.len() != expected.len() {
             return Some(format!(
                 "{}: {} staged loops, expected {}",
-                attack.name,
+                case.name,
                 judged.len(),
                 expected.len()
             ));
@@ -1439,7 +1472,7 @@ fn drift(attack: &Attack) -> Option<String> {
             if held != *want {
                 return Some(format!(
                     "{} loop {index}: {held:?}, expected {want:?} ({:?})",
-                    attack.name, judgement.verdict
+                    case.name, judgement.verdict
                 ));
             }
         }

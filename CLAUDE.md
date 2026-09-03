@@ -1,10 +1,19 @@
 # Whitefoot — agent instructions
 
-Whitefoot is a systems language for AI-written, human-approved code. Accepted
-programs must make memory corruption, data races, uninitialized reads, and
-silent overflow unrepresentable. There is no writer-accessible unsafe escape.
-Every partial operation is admitted only after machine proof of its domain; a
-written claim is the sole writer-reachable runtime trap and is never removed.
+Whitefoot is a proof-carrying systems language for AI-written, human-approved
+code. Accepted programs must make memory corruption, data races, uninitialized
+reads, silent overflow, and every other unproved partial operation
+unrepresentable. There is no writer-accessible unsafe escape or runtime trap.
+Every partial operation is admitted only after machine proof of its domain.
+The official compiler uses no SMT for acceptance: automatic derivation is
+specification-fixed, deterministic, and terminating. Every admitted automatic
+family runs to its specified completion; timeout, machine speed, solver state,
+or a cumulative work budget never selects acceptance. Harder proofs arrive as
+explicit finite `use` steps inside a local `invariant`, and the compiler checks
+those written steps without rediscovering them. Proofs are erased before
+lowering and may authorize check removal, optimization, and parallel
+independence without adding runtime branches, locks, dependencies, or
+scheduling edges.
 
 ## Project goal
 
@@ -161,10 +170,26 @@ only reports the same class of mistake earlier.
   function name, signature, source shape, project, corpus, or test identity.
 - Keep one normal semantic and lowering path. A temporary unsupported
   capability must be explicit rather than misreported as invalid source.
-- Never remove or weaken a written claim for speed. Required static proof is
-  the only authority for admitting a partial operation.
+- Never replace or weaken required static proof with executable fallback
+  control flow. Required static proof is the only authority for admitting a
+  partial operation.
+- State relations that are intended to hold on every conforming execution as
+  proof-only source evidence: `requires`/`ensures` across functions,
+  header `invariant` relations across loop edges, and local `invariant`
+  statements for program-point facts. A local invariant may carry explicit
+  `use` steps; those steps read one entering snapshot, publish nothing
+  themselves, and only the checked outer invariant becomes a later fact. A
+  source branch may guard a partial operation only when its false edge is
+  intended program behavior. An impossible-case return or other observable
+  branch added only to satisfy the checker is a compiler or source defect;
+  improve the proof or the checker instead.
+- Do not add timeouts, fuel, a proof-work budget, heuristic early failure, or
+  hash-order dependence to any acceptance path. Fixed structural source
+  ceilings are language rules; within them the specified checker runs to
+  completion. Stopping at the first success in a fixed order is valid because
+  a later candidate cannot revoke a proof.
 - Keep facts-off compilation correct. An optimizer fact may improve an accepted
-  program but may not change acceptance or claim execution.
+  program but may not change source acceptance or program semantics.
 - Prefer simple implementations and normal collections. Fix measured
   performance or resource problems instead of designing for imagined scale.
 - Keep files cohesive and reviewable. Split by invariant-bearing

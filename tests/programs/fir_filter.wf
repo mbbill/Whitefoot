@@ -8,19 +8,14 @@ struct FirFilter {
   delay: DelayLine;
 }
 
-command fn main() -> status: own ExitStatus traps {
+command fn main() -> status: own ExitStatus pure {
   let taps = array_new<f64, 8>(0.125_f64);
   let samples = array_new<f64, 8>(0.0_f64);
   let delay = DelayLine(samples: move samples, cursor: 0_u64);
   let filter = FirFilter(taps: move taps, delay: move delay);
   let tap_count = len(filter.taps);
-  let frame = 0_u64;
   let output_sum = 0.0_f64;
-  loop @frames {
-    let finished = ieq(frame, 64_u64);
-    if finished {
-      break @frames;
-    }
+  for (frame in 0_u64..64_u64) {
     let first_frame = ieq(frame, 0_u64);
     let sample = if first_frame {
       give 8.0_f64;
@@ -28,21 +23,20 @@ command fn main() -> status: own ExitStatus traps {
       give 0.0_f64;
     }
     let write_ok = ilt(filter.delay.cursor, 8_u64);
-    claim cursor_in_delay: write_ok because "premises: the cursor starts at zero and every completed frame replaces it with zero at seven or with its successor below eight\nderivation: induction over completed frames keeps the cursor in the closed range zero through seven\nconclusion: filter.delay.cursor is below eight\nchecker gap: ENT does not derive this ordinary-loop induction invariant\nconsumers: the following delay-line write uses filter.delay.cursor";
+    if write_ok {
+    } else {
+      return exit_status(code: 1_u8);
+    }
     set filter.delay.samples[filter.delay.cursor] = sample;
-    let tap = 0_u64;
     let read_cursor = filter.delay.cursor;
     let output = 0.0_f64;
-    loop @taps {
-      let taps_finished = ieq(tap, tap_count);
-      if taps_finished {
-        break @taps;
-      }
-      let tap_ok = ilt(tap, 8_u64);
-      claim tap_in_taps: tap_ok because "premises: tap starts at zero, tap_count is eight, and the loop exits when tap equals tap_count\nderivation: each continuing iteration increments tap once, so a continuing tap is one of zero through seven\nconclusion: tap is below eight\nchecker gap: ENT does not derive this ordinary-loop induction invariant\nconsumers: the following tap-array subscript uses tap";
+    for (tap in 0_u64..tap_count) {
       let coefficient = filter.taps[tap];
       let read_ok = ilt(read_cursor, 8_u64);
-      claim read_cursor_in_delay: read_ok because "premises: read_cursor starts at the in-range delay cursor and each tap replaces zero with seven or decrements a positive value\nderivation: induction over completed tap iterations keeps read_cursor in the closed range zero through seven\nconclusion: read_cursor is below eight\nchecker gap: ENT does not derive this ordinary-loop induction invariant\nconsumers: the following delay-line read uses read_cursor";
+      if read_ok {
+      } else {
+        return exit_status(code: 1_u8);
+      }
       let delayed = filter.delay.samples[read_cursor];
       let contribution = fmul.strict(coefficient, delayed);
       set output = fadd.strict(output, contribution);
@@ -53,7 +47,6 @@ command fn main() -> status: own ExitStatus traps {
         give read_cursor -wrap 1_u64;
       }
       set read_cursor = previous_cursor;
-      set tap = tap +wrap 1_u64;
     }
     set output_sum = fadd.strict(output_sum, output);
     let at_end = ieq(filter.delay.cursor, 7_u64);
@@ -63,7 +56,6 @@ command fn main() -> status: own ExitStatus traps {
       give filter.delay.cursor +wrap 1_u64;
     }
     set filter.delay.cursor = next_cursor;
-    set frame = frame +wrap 1_u64;
   }
   if feq(output_sum, 8.0_f64) {
   } else {

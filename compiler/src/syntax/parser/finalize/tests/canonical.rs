@@ -202,7 +202,7 @@ fn tree_mutation_with_the_original_tape_cannot_publish_canonical_syntax() {
     let inputs = [SourceInput::new("mutated.wf", source)];
     with_parsed(&inputs, |parsed| {
         let FinalizeOutcome::Complete(mut finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-            panic!("fixture must finalize before hostile mutation");
+            panic!("fixture must finalize before the consistency edit");
         };
         let Some(node) = finalized
             .topology
@@ -221,7 +221,7 @@ fn tree_mutation_with_the_original_tape_cannot_publish_canonical_syntax() {
 
     with_parsed(&inputs, |parsed| {
         let FinalizeOutcome::Complete(mut finalized) = finalize(parsed, FINALIZE_LIMITS) else {
-            panic!("fixture must finalize before hostile mutation");
+            panic!("fixture must finalize before the consistency edit");
         };
         finalized.topology.terminals[0].local_ordinal = 1;
         assert!(matches!(
@@ -483,15 +483,62 @@ fn if_else_renders_its_join_line_and_indents_both_blocks() {
 
 #[test]
 fn counted_range_attaches_its_endpoints_and_round_trips_canonically() {
-    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range index in lower..upper {\n    break @range;\n  }\n  return unit;\n}\n";
+    // `(` remains in FORM-2's general right-attachment set, so the affine
+    // parenthesized factor is `*(...)`, with no proof-syntax exception.
+    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: ile(index + 1_u64 *(1_u64), upper)\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range index in lower .. upper{\nbreak @range;\n}\nreturn unit;\n}\n";
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range( index in lower .. upper,invariant limit : ile ( index+1_u64 * ( 1_u64 ) ,upper )){\nbreak @range;\n}\nreturn unit;\n}\n";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
     );
     assert_eq!(
         rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+}
+
+#[test]
+fn a_counted_header_without_an_invariant_stays_on_one_line() {
+    // FORM-2 breaks a loop header apart only to set its `header_invariant`
+    // clauses on their own lines. A counted `for` whose header is nothing but
+    // its binding has no invariant to set apart, so the whole header stays on
+    // one line and the three-line spelling of that same header is rejected.
+    let canonical = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (index in lower..upper) {\n    break @range;\n  }\n  for (other in lower..upper) {\n  }\n  return unit;\n}\n";
+    only_these_trivia_bytes_render(canonical);
+    let sloppy = b"fn probe(lower:own u64,upper:own u64)->result:own unit pure{\nfor @range(\n  index in lower..upper\n){\nbreak @range;\n}\nfor( other in lower .. upper ){}\nreturn unit;\n}\n";
+    assert_eq!(
+        rendered_bytes(sloppy).as_deref(),
+        Some(canonical.as_slice())
+    );
+    assert_eq!(
+        rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+}
+
+#[test]
+fn local_invariant_certificates_render_their_header_and_steps_canonically() {
+    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: ile(left + 1_i32, right + 1_i32) {\n    use 2 * ile(left, right);\n    use earlier;\n  }\n  return unit;\n}\n";
+    only_these_trivia_bytes_render(canonical);
+    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ invariant ordered : ile ( left+1_i32,right+1_i32 ) { use 2 * ile ( left , right ) ; use earlier; } return unit; }";
+    assert_eq!(
+        rendered_bytes(sloppy).as_deref(),
+        Some(canonical.as_slice())
+    );
+    assert_eq!(
+        rendered_bytes(canonical).as_deref(),
+        Some(canonical.as_slice())
+    );
+}
+
+#[test]
+fn ordinary_loop_header_invariants_use_the_same_multiline_layout() {
+    let canonical = b"fn probe(value: own i32) -> result: own unit pure {\n  loop @again (\n    invariant stable: ile(value, value)\n  ) {\n    break @again;\n  }\n  return unit;\n}\n";
+    only_these_trivia_bytes_render(canonical);
+    let sloppy = b"fn probe(value:own i32)->result:own unit pure{ loop @again(invariant stable : ile(value,value)){ break @again; } return unit; }";
+    assert_eq!(
+        rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())
     );
 }

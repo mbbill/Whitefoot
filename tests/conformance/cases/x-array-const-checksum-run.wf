@@ -1,23 +1,16 @@
 const input: array<u64, 8> =[3_u64, 5_u64, 8_u64, 13_u64, 21_u64, 34_u64, 55_u64, 89_u64];
 
-fn checksum() -> function_result: own u64 traps {
-  let cursor = 0_u64;
+fn checksum() -> function_result: own u64 pure {
   let total = 0_u64;
-  loop @scan {
-    if ieq(cursor, 8_u64) {
-      break @scan;
-    }
-    let in_range = ilt(cursor, 8_u64);
-    claim cursor_in_range: in_range because "premises: the scan loop starts its cursor at zero, advances by one, and exits at the fixed eight-element extent\nderivation: on every body reach the cursor is strictly below that extent, which is the predicate computed immediately above\nconclusion: in_range is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and loop recurrence\nconsumers: the following scan indexed access needs this upper Range component";
+  for (cursor in 0_u64..8_u64) {
     let value = input[cursor];
     set total = total +wrap value;
-    set cursor = cursor +wrap 1_u64;
   }
   return total;
 }
 
-command fn main() -> status: own ExitStatus traps {
-  doc "A static fixed array feeds a loop-carried checksum; the loop claim discharges its indexing.";
+command fn main() -> status: own ExitStatus pure {
+  doc "A static fixed array feeds a counted-loop checksum whose range facts discharge indexing.";
   let result = checksum();
   if ieq(result, 228_u64) {
   } else {

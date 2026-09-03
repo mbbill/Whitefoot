@@ -10,6 +10,19 @@ compiler capability. The [Direction Outline](roadmap.md) owns live status, the
 [compiler README](../compiler/README.md) owns implementation detail, and the
 active numbered specification owns language semantics.
 
+Current correction: Whitefoot is now pursuing a **proof-carrying systems
+language**. The work branch is an implementation candidate, not an activated or
+completed release. Source contracts, loop-header invariants, local invariants,
+and finite `use` steps are checked by the ordinary compiler and erased before
+lowering. Every supported partial operation is proved or rejected; there is no
+writer proof trap or hidden fallback. The compiler uses no SMT, timeout, or
+cumulative proof-work budget. AUTO is exactly the zero-premise route, every
+coefficient-one single premise, every unordered coefficient-one pair including
+self-pairs, and the final fixed L0-image route; combinations that need three or
+more published affine premises outside that final route, plus special routes,
+use written certificates. Full rules and current completion
+conditions live in [`current-plan.md`](current-plan.md).
+
 ---
 
 ## The premise: languages are shaped by who writes them
@@ -38,7 +51,11 @@ So why does every language accept the loss? The writer was human. Humans will no
 
 Change the writer, and the bargain flips. An AI writer pays verbosity in tokens, which are cheap and getting cheaper. It brings no style attachment, no installed base, no familiarity demands. It needs regularity instead, since irregularity rather than verbosity is what makes weak models fail; a specification small enough to ride in its context window; and deterministic compile-time feedback it can act on. And it must not get an escape hatch, because a stuck writer will use it.
 
-For the first time, one design becomes rational: a systems language that demands the whole truth at authoring time. State every fact, spell each construct one way, check everything, carry it all to the optimizer. Nothing to recover downstream, because nothing gets discarded upstream.
+For the first time, one design becomes rational: a proof-carrying systems
+language that demands the whole truth at authoring time. State every fact,
+spell each construct one way, check everything, carry the verified consequence
+to the optimizer, and erase the proof itself. Nothing to recover downstream,
+because nothing gets discarded upstream.
 
 An optimizer runs only as fast as the facts it is handed. Human-first languages spend their ergonomics budget throwing those facts away, and the optimization stack labors to get them back. Change the writer and you can stop discarding them. That premise runs through the rest of this document.
 
@@ -64,7 +81,15 @@ The answer comes in two moves.
 
 Nothing in safe Rust prevents the `Rc<RefCell<T>>` object graph, the pointer-chasing layout, mutation scattered across twenty call sites, the obvious indexed loop that runs 1.6x slower than the restructured one (§ 3, measured), or an `assert!` that looks like a contract and optimizes like a comment (§ 3, also measured). In a large codebase, and AI-written codebases grow large fast, whatever is representable eventually gets written. Rust cannot enforce a floor under program quality, because its human contract forbids taking shapes away.
 
-Whitefoot constrains the writable shape-space itself. One spelling per construct, to the byte. One loop form, one conditional form. Overflow behavior chosen in the operation's name, per call site. A closed, taught catalog of program architectures. Static obligations for every partial operation, plus named claims that always remain executable. No `unsafe` to ban, because none exists. The worst program the checker accepts is still memory-safe, race-free, and on a fast shape. That is the floor, and it holds only because the writer has no installed base to appease.
+Whitefoot constrains the writable shape-space itself. One spelling per
+construct, to the byte. One conditional form and closed loop headers. Overflow
+behavior chosen in the operation's name, per call site. A closed, taught
+catalog of program architectures. Static obligations for every partial
+operation, with source invariants and finite proof steps when fixed AUTO is
+insufficient. No `unsafe` or writer proof trap exists. The worst program the
+checker accepts is still memory-safe, race-free, and on a fast shape. That is
+the floor, and it holds only because the writer has no installed base to
+appease.
 
 The floor already shows up in measurement. In the project's shipped-library comparisons, the first correctness-green artifact a fixed mid-tier model produced, with no benchmark feedback, no performance hints, and no human edits, beat the shipped Rust `percent-encoding` crate by 1.65x and the shipped `utf8parse` crate by 1.10x on locked workloads, every bounds check still in place. The model was not clever; the shapes the language permits are the shapes that run fast. Both results carry their protocols and caveats in the repository, and they are floor evidence for these two libraries and corpora, not a universal claim.
 
@@ -88,7 +113,36 @@ Safety in Whitefoot is load-bearing infrastructure, not the mission statement, a
 
 So the usual intuition inverts. "Safety costs speed, and I buy speed back with `unsafe`" stops holding, because the thing that makes the program safe is a thing that makes it fast. Sections 3 and 5 show it: the statically proved capacity contract that protects the output buffer deletes the bounds checks, and the exclusive borrow that prevents the aliasing bug unlocks guard-free vectorization.
 
-One honest boundary. This argument claims safety and speed share machinery. It does not claim every dynamic uncertainty is free. A hazardous condition is proved, represented as a typed ordinary outcome, or backed by a visible `claim`; there is no writer-accessible hidden trap mode.
+One honest boundary. This argument says safety and speed share machinery; it
+does not say every dynamic uncertainty is free. A partial operation's domain is
+proved before execution. A condition that can legitimately be false is
+represented by a typed ordinary outcome and real source control flow. If
+neither applies, the source is rejected—never repaired with an executable proof
+fallback.
+
+The proof cost is source explicitness. Consider the relation that bounds a
+running byte sum:
+
+```whitefoot
+for (
+  i in 0_u64..count,
+  invariant per_byte: ile(sum, 255_u32 * i)
+) {
+  let w = deref(weights)[i];
+  let wide = cvt<u8, u32>(w);
+  set sum = sum + wide;
+}
+```
+
+The header states what must hold at every reachable iteration. AUTO subtracts
+the one published affine premise `per_byte`; DIRECT then proves the residual
+from the `u8` type interval of `wide`. Writing a use block there would be
+redundant and invalid. When a relation needs three or more published affine
+premises outside the final fixed L0-image route, or a special route, a local
+invariant carries explicit `use` steps. AI absorbs that
+verbosity and may search while writing it. The compiler does not search for the
+invariant, choose an arbitrary proof route, ask an SMT solver, or let a timeout
+choose the verdict.
 
 ---
 
@@ -100,6 +154,8 @@ to discharge its finite safety obligations. It checks effect rows, borrows,
 and FN-4 laws but does not yet emit effect/alias attributes or reassociate
 reductions from them. The measurements remain evidence for separately selected
 optimizer consumers, not a claim that every historical consumer ships today.
+Their listings preserve the exact retired source—including the old
+`loop @label {` spelling—and are evidence, not current writer examples.
 
 Each section below covers one mechanism: what the writer states, what the checker verifies, what the backend receives, and what the machine code looks like on both sides of the comparison. Every listing is an excerpt from a committed file, trimmed where marked, with full paths in the appendix. Times are medians on an Apple M4, under the exact protocol in each experiment's RESULTS file.
 
@@ -110,9 +166,8 @@ sprinkling implicit runtime checks through the program. An index, exact integer
 operation, allocation-size multiplication, or system buffer range carries a
 deterministic proof obligation. If the checker cannot discharge it, the source
 is rejected. Total and checked operations return ordinary values, and expected
-external failures return typed outcomes. The only writer-visible runtime
-safety backstop is a named `claim`, which always remains executable. There is
-no `unsafe`, unchecked assumption, or freely callable `trap`.
+external failures return typed outcomes. There is no writer-visible runtime
+proof backstop, `unsafe`, unchecked assumption, or freely callable trap.
 
 The interprocedural mechanism is a static contract. A non-entry function may
 carry one `contract` block with erased `define` abbreviations and independent
@@ -491,11 +546,11 @@ let saturated = a +sat b;
 The wrapping, checked, and saturating forms are total value operations. The
 bare exact addition has one matching static domain obligation. FN-9 proves
 `clamp_hundred`'s relation at each normal return, S12 publishes it after the
-call, and that machine fact discharges the addition without a caller claim or a
-`traps` effect. If the body stops satisfying the promise, the callee fails FN-9;
+call, and that machine fact discharges the addition without a caller restatement
+or runtime proof path. If the body stops satisfying the promise, the callee fails FN-9;
 if the promise is weakened, the ordinary caller operation fails at its own
 proof obligation. A caller may not inspect the body and manufacture a hidden
-postcondition with a claim, even after copying, converting, wrapping,
+postcondition, even after copying, converting, wrapping,
 projecting, or storing the result. A potentially false condition still uses the
 checked row or an ordinary branch and value outcome. There is no
 arithmetic-specific trap mode.
@@ -536,13 +591,13 @@ witness. Recyclable generational pools, stale-handle checks, and check-elision
 schemes below are proposed or historical, not current language/compiler
 capability.*
 
-The last floor mechanism governs where long-lived data lives. The center of gravity moves off borrows. Big structures live in pools, and ordinary code holds either the value itself for small copyable data, or ownership moved in and out, or a handle, an index of plain copyable data, a claim ticket rather than the coat.
+The last floor mechanism governs where long-lived data lives. The center of gravity moves off borrows. Big structures live in pools, and ordinary code holds either the value itself for small copyable data, or ownership moved in and out, or a handle—an index of plain copyable data rather than the object itself.
 
 Node links in a tree or graph are handles into the pool, not pointers or references. Two consequences matter here.
 
 - **Performance:** contiguous storage, no per-node allocation, no headers, no refcount traffic, and indices that survive relocation. High-performance C adopts this layout by hand in entity systems and arena-indexed ASTs; in Whitefoot it is the default, and it composes with § 5's disjoint-column facts.
 - **The writer's burden:** most code holds no loans at all, so the borrow rules bite only at the few sites that point into something. The self-referential-struct wall that pushes real Rust projects through `Pin`, `unsafe`, or index-arena workarounds does not exist, because structs store values, not borrows. The problematic program is not painful to write; it is impossible to state.
-- **Safety of stale handles:** a future recyclable pool would pair each slot with a generation and expose mismatch as a typed lookup outcome. A property of that lookup result must be a machine-verified interface relation where the contract language can express it; otherwise the caller branches on the typed outcome. A caller claim may cover only its own local state evolution, never an unstated property of the returned lookup value. There is no dedicated hidden handle trap. Check-free schemes (loans that freeze reuse for a scope, affine owned handles, proof-discharged repeat checks) remain an active research track.
+- **Safety of stale handles:** a future recyclable pool would pair each slot with a generation and expose mismatch as a typed lookup outcome. A property of that lookup result must be a machine-verified interface relation where the contract language can express it; otherwise the caller branches on the typed outcome. A caller cannot manufacture an unstated property of the returned lookup value with a local invariant: the invariant itself must be proved. There is no dedicated hidden handle trap. Check-free schemes (loans that freeze reuse for a scope, affine owned handles, proof-discharged repeat checks) remain an active research track.
 
 A Rust engineer will recognize this as "just use indices into a `Vec`," the arena
 idiom Rust folklore already recommends for escaping its own borrow checker at
@@ -559,7 +614,7 @@ claim.
 
 Section 8's "one spelling to the byte" has consequences past writer reliability, and they compound enough to earn their own section.
 
-The specification pins the facts: one spelling per construct and one byte-level formatting, rejected rather than reformatted; a one-to-one, machine-enforced mapping between grammar productions and syntax-tree nodes; accepted programs elaborate to a canonical artifact that makes every derived operation explicit, including drops, releases, instantiations, discharged static obligations, and retained named claims, so acceptance is decidable from the artifact alone; and diagnostics that are deterministic and byte-stable, each rejection citing one rule and one tree path.
+The specification pins the facts: one spelling per construct and one byte-level formatting, rejected rather than reformatted; a one-to-one, machine-enforced mapping between grammar productions and syntax-tree nodes; accepted programs elaborate to a canonical checked program that makes every derived operation explicit, including drops, releases, instantiations, and discharged static obligations; and diagnostics that are deterministic and byte-stable, each rejection citing one rule and one tree path. Proof syntax is erased before runtime lowering. Compiler stages are ordinary compiler data, and an inconsistency among them is a compiler defect rather than a reason to export or replay a second proof object.
 
 What that buys, labeled by evidence status:
 
@@ -631,11 +686,13 @@ ordinary performance: if a sealed catalog is later admitted, ordinary code may
 compose its project-provided operations. A user implementation receives such
 privileges only through deterministic machine verification of its exact
 obligations, never through human review or a writer assertion. The active
-specification defines no such proof or privilege today.
+language defines no such representation privilege today. The source-proof
+candidate's contracts and invariants justify ordinary program safety and
+optimization facts; they do not silently grant D17 representation authority.
 
 One doctrine runs at every scale. A bounds or exact-operation obligation is
-proved (§ 3), backed by an explicit retained current-function-local claim, or
-rejected; it never turns into an implicit operation-specific trap. A
+proved (§ 3) or rejected; it never turns into an implicit
+operation-specific trap or writer fallback. A
 cross-function result fact comes only from a machine-verified callable
 boundary, not from a caller reading a callee body. A reassociation happens under separately authorized checked evidence
 (§ 6) or it does not. Under the long-term D17 lane, a privileged representation
@@ -690,6 +747,6 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `archive/research/systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
 | Reproducibility direction and the absence of a complete object claim | `docs/roadmap.md`, item `VERIFY-4` |
-| Current language rules cited (one spelling; reject-not-reformat; two-way effect checking; static contracts; exact integer domains; claim = sole residual runtime trap) | `spec/kernel-spec.md`: FORM-1/2/3, EFF-1/2/4, FN-8, OP-1/2, CLM-1/2 |
-| Pattern doctrine (command buffer, SoA pool, boolean classifier, traps-to-boundary) | `docs/patterns.md` |
+| Current direction cited (one spelling; reject-not-reformat; checked effects; static contracts; exact integer domains; prove-or-reject partial operations; source invariants and finite use steps) | `spec/kernel-spec.md`, `docs/current-plan.md` |
+| Pattern doctrine (command buffer, SoA pool, boolean classifier, proof at the maintained boundary) | `docs/patterns.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

@@ -1,0 +1,12 @@
+fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {
+  requires ile(value, limit);
+} {
+  invariant upper_bound: ile(value, limit) {
+    use ile(value, limit);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

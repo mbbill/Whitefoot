@@ -96,8 +96,8 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
 /// one real publication to standard output.
 ///
 /// The oracle is the published line itself. Intermediate result mismatches
-/// return a nonzero status before publication; the one retained claim is the
-/// report-capacity representation theorem consumed by `publish_all`.
+/// return a nonzero status before publication, and every partial operation is
+/// admitted by ordinary control-flow facts or a checked contract.
 #[test]
 fn byte_string_builds_searches_and_publishes_its_report() {
     let llvm = compile_program("byte_string.wf");
@@ -173,43 +173,4 @@ fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
     let failure = compile_rejection(&[("byte_string_unguarded.wf", stripped.as_bytes())]);
     assert!(failure.contains("[OP-4]"), "{failure}");
     assert!(failure.contains("index < len(deref(s).buf)"), "{failure}");
-}
-
-/// `deny_claims` on the search path is enforced, not annotation.
-///
-/// Injecting one genuine residual claim into `bs_find` is still a [CLM-3]
-/// rejection at the claim node. The claim checks a current-function local
-/// index and is immediately consumed by that subscript, so neither redundancy
-/// nor a later [OP-4] error can masquerade as the `deny_claims` result. The
-/// search layer is claim-free because it must be.
-#[test]
-fn a_claim_injected_into_the_strict_search_is_a_clm3_rejection() {
-    let declaration = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill) {";
-    let trapping = "deny_claims fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill), traps {";
-    let entry = "command fn main() -> status: own ExitStatus allocates(heap) {";
-    let trapping_entry = "command fn main() -> status: own ExitStatus allocates(heap), traps {";
-    let anchor = "  let last = hay_length -wrap needle_length;\n";
-    let claim_source = "  let last = hay_length -wrap needle_length;
-  let proof_values = array_new<u8, 4>(0_u8);
-  let bounded_probe = last % 4_u64;
-  let probe_inside = ilt(bounded_probe, 4_u64);
-  claim search_probe_in_bounds: probe_inside because \"premises: bounded_probe is last remainder 4_u64 computed in the current function\\nderivation: unsigned remainder by four is one of 0_u64 through 3_u64 and is therefore strictly less than 4_u64\\nconclusion: probe_inside is True\\nchecker gap: ENT proves the remainder operation domain but does not publish its result range\\nconsumers: the immediately following proof_values[bounded_probe] subscript requires this exact bound\";
-  let consumed_probe = proof_values[bounded_probe];
-";
-    let source = search_layer_with_entry();
-    let retyped_function = source.replace(declaration, trapping);
-    assert_ne!(
-        retyped_function, source,
-        "the bs_find declaration must have been found"
-    );
-    let retyped = retyped_function.replace(entry, trapping_entry);
-    assert_ne!(
-        retyped, retyped_function,
-        "the command effect row must track the injected trap"
-    );
-    let claiming = retyped.replace(anchor, claim_source);
-    assert_ne!(claiming, retyped, "the claim anchor must have been found");
-    let failure = compile_rejection(&[("byte_string_claiming.wf", claiming.as_bytes())]);
-    assert!(failure.contains("[CLM-3]"), "{failure}");
-    assert!(failure.contains("search_probe_in_bounds"), "{failure}");
 }

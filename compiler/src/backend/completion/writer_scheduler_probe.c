@@ -164,9 +164,16 @@ static int dependent_frame_waits_for_its_exact_drain(void) {
     if (wf_completion_drain(&runtime, &event, 1u, 1u) != 1u
         || event.token.slot != token.slot
         || event.token.generation != token.generation) return 58;
+    if (wf_completion_depend(
+            &runtime,
+            token,
+            WF_COMPLETION_OWNERSHIP_COMPLETE,
+            &frame
+        ) != WF_COMPLETION_DEPEND_DUPLICATE) return 62;
     if (!wf__writer_scheduler_help_once() || !wf__writer_is_done(&frame)) {
         return 59;
     }
+    if (wf__writer_scheduler_help_once()) return 63;
     if (wf_completion_consume(
             &runtime,
             token,

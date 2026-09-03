@@ -4,9 +4,7 @@
 //! sound decomposition set — `+band` and `-bor` decompose into their signed
 //! children recursively, `bnot` flips, and `-band`, `+bor`, and `bxor` on
 //! either sign contribute nothing (the classic asymmetry: the other sign's
-//! content is genuinely disjunctive). A residual claim instead publishes its
-//! canonical contribution components and reconstructs only the finite parent
-//! already present in the goal universe.
+//! content is genuinely disjunctive).
 //!
 //! The obligations these guards protect now discharge, which is the rule's
 //! purpose: the [ENT-3] members are facts at their establishment point.
@@ -64,8 +62,8 @@ fn entry_with_root(
         })
 }
 
-/// The recorded entry whose parent is the `own Bool` binding a guard or claim
-/// named, rather than that binding's expanded Boolean tree. Both parents are
+/// The recorded entry whose parent is the `own Bool` binding a guard named,
+/// rather than that binding's expanded Boolean tree. Both parents are
 /// established, so both are recorded; this one carries the conjuncts in the
 /// operand forms their own comparison bindings recorded.
 fn binding_rooted_entry(summary: &FunctionEntailment, sign: GoalSign) -> &BooleanGoalDecomposition {
@@ -157,44 +155,20 @@ fn assert_comparison_member(
     assert_eq!(*held, bound);
 }
 
-/// S3: a genuine residual on a `band` tree publishes two canonical
-/// contribution components, so both guarded subscripts discharge from one
-/// reviewed theorem without treating the parent as an ordinary decomposition.
+/// S1: a true `band` guard publishes both positive conjuncts, so both guarded
+/// subscripts discharge.
 #[test]
-fn passed_band_claim_establishes_positive_conjuncts_and_discharges_both() {
-    let source =
-        br#"fn clamp_seven(value: own u64) -> result: own u64 pure {
-  return imin(value, 7_u64);
-}
-
-fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 traps {
-  let low_bounded = 0_u64;
-  loop @select_low {
-    if ieq(low_bounded, low) {
-      break @select_low;
-    } else if ieq(low_bounded, 7_u64) {
-      break @select_low;
-    } else {
-      set low_bounded = low_bounded +wrap 1_u64;
-    }
-  }
-  let high_bounded = 0_u64;
-  loop @select_high {
-    if ieq(high_bounded, high) {
-      break @select_high;
-    } else if ieq(high_bounded, 7_u64) {
-      break @select_high;
-    } else {
-      set high_bounded = high_bounded +wrap 1_u64;
-    }
-  }
-  let low_ok = ilt(low_bounded, 8_u64);
-  let high_ok = ilt(high_bounded, 8_u64);
+fn passed_band_guard_establishes_positive_conjuncts_and_discharges_both() {
+    let source = br#"fn read_pair(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure {
+  let low_ok = ilt(low, 8_u64);
+  let high_ok = ilt(high, 8_u64);
   let both = band(low_ok, high_ok);
-  claim pair_in_range: both because "premises: each bounded value starts at zero, advances by one only on its own ordinary-loop backedge, and exits no later than seven\nderivation: induction over the two current-function loops keeps both bounded values between zero and seven inclusive\nconclusion: both is true\nchecker gap: ENT carries no induction fact across either ordinary-loop backedge\nconsumers: the following two table subscripts consume the respective bounds";
-  let first = table[low_bounded];
-  let second = table[high_bounded];
-  return second;
+  if both {
+    let first = table[low];
+    let second = table[high];
+    return second;
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -205,10 +179,8 @@ command fn main() -> status: own ExitStatus pure {
     // Each conjunct is established, so each subscript discharges.
     assert_eq!(summary.obligations.len(), 2);
     assert!(summary.obligations.iter().all(|o| o.discharged));
-    // Claim components are S3 authorities, not ordinary Boolean
-    // decompositions; the retained outcome records both canonical facts.
-    assert!(summary.boolean_decompositions.is_empty());
-    assert_eq!(summary.claims[0].components.len(), 2);
+    let entry = entry_with_root(&summary, CheckedBooleanOperation::And, GoalSign::Positive);
+    assert_eq!(entry.members.len(), 2);
 }
 
 /// S1: the ruled-flip guard shape. The `bor` else edge establishes both
@@ -377,17 +349,11 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(negative.members[0].0, positive.members[0].0);
 }
 
-/// S4: a `band` requirement goal establishes its conjuncts at body entry, so
-/// the body's own subscript discharges. At the caller, two genuine claim
-/// components reconstruct the already-interned exact parent requirement.
+/// S4 establishes a `band` requirement's conjuncts at body entry. At the
+/// caller, the same true `band` guard proves the complete requirement.
 #[test]
-fn band_requirement_establishes_body_conjuncts_and_claim_components_reconstruct_the_parent() {
-    let source =
-        br#"fn clamp_seven(value: own u64) -> result: own u64 pure {
-  return imin(value, 7_u64);
-}
-
-fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure contract {
+fn band_requirement_and_guard_share_the_same_conjuncts() {
+    let source = br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure contract {
   define low_ok = ilt(low, 8_u64);
   define high_ok = ilt(high, 8_u64);
   define both = band(low_ok, high_ok);
@@ -397,35 +363,14 @@ fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 
   return first;
 }
 
-fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 traps {
-  let low_bounded = 0_u64;
-  loop @select_low {
-    if ieq(low_bounded, low) {
-      break @select_low;
-    } else if ieq(low_bounded, 7_u64) {
-      break @select_low;
-    } else {
-      set low_bounded = low_bounded +wrap 1_u64;
-    }
-  }
-  let high_bounded = 0_u64;
-  loop @select_high {
-    if ieq(high_bounded, high) {
-      break @select_high;
-    } else if ieq(high_bounded, 7_u64) {
-      break @select_high;
-    } else {
-      set high_bounded = high_bounded +wrap 1_u64;
-    }
-  }
-  let low_ok = ilt(low_bounded, 8_u64);
-  let high_ok = ilt(high_bounded, 8_u64);
+fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure {
+  let low_ok = ilt(low, 8_u64);
+  let high_ok = ilt(high, 8_u64);
   let both = band(low_ok, high_ok);
-  claim caller_proof: both because "premises: each bounded value starts at zero, advances by one only on its own ordinary-loop backedge, and exits no later than seven\nderivation: induction over the two current-function loops keeps both bounded values between zero and seven inclusive\nconclusion: both is true\nchecker gap: ENT carries no induction fact across either ordinary-loop backedge\nconsumers: the two following table subscripts consume the components and pick requires the reconstructed exact conjunction";
-  let low_probe = table[low_bounded];
-  let high_probe = table[high_bounded];
-  let value = pick(table: move table, low: low_bounded, high: high_bounded);
-  return value;
+  if both {
+    return pick(table: move table, low: low, high: high);
+  }
+  return 0_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -439,8 +384,8 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(entry.members.len(), 2);
     assert_comparison_member(&callee, entry.members[0], GoalSign::Positive, 8, -1);
     assert_comparison_member(&callee, entry.members[1], GoalSign::Positive, 8, -1);
-    // The caller discharges the exact conjunction reconstructed from the two
-    // canonical claim components.
+    // The caller discharges the exact conjunction from the same two guard
+    // conjuncts.
     let caller = entailment(source, "caller");
     assert_eq!(caller.call_goals.len(), 1);
     assert!(
@@ -461,13 +406,9 @@ command fn main() -> status: own ExitStatus pure {
 /// whose arithmetic root has no term form, and the second subscript's
 /// obligation survived while the first discharged.
 ///
-/// Both halves are branch guards rather than claims. The claim spelling this
-/// case first used bounded an unconstrained parameter against an unconstrained
-/// length, which is an assertion about the callers rather than a lemma, and
-/// [CLM-2] retired that genre. The guard proves the same thing about
-/// decomposition and keeps its teeth: without the binding-read the conjoined
-/// half fails `[OP-4]` on `next < len(deref(input))` while the nested half
-/// still discharges.
+/// Both halves are branch guards. The guard proves the decomposition directly:
+/// without the binding-read the conjoined half fails `[OP-4]` on
+/// `next < len(deref(input))` while the nested half still discharges.
 #[test]
 fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() {
     let conjoined =
@@ -527,10 +468,8 @@ command fn main() -> status: own ExitStatus pure {
     assert_binding_members(&summary, named, GoalSign::Positive);
 }
 
-/// The same widening under a branch guard rather than a claim, which is the
-/// shape that leaves the function claim-free: `if band(..)` admits both
-/// subscripts on the true edge and neither on the false edge, because `-band`
-/// carries only disjunctive content.
+/// `if band(..)` admits both subscripts on the true edge and neither on the
+/// false edge, because `-band` carries only disjunctive content.
 #[test]
 fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
     let source =
@@ -555,9 +494,6 @@ command fn main() -> status: own ExitStatus pure {
     let summary = entailment(source, "window");
     assert_eq!(summary.obligations.len(), 2);
     assert!(summary.obligations.iter().all(|o| o.discharged));
-    // No claim site, so the guarded form is the one that keeps a caller's
-    // sibling pair eligible.
-    assert!(summary.claims.is_empty());
     let else_edge =
         br#"fn window['i](input: &'i buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;

@@ -46,6 +46,25 @@ fn system_catalog_actions_have_one_shot_ownership_completion() {
 }
 
 #[test]
+fn system_catalog_fixes_only_the_host_byte_length_target_bound() {
+    let bounded = crate::SYSTEM_OPERATIONS
+        .iter()
+        .filter_map(|operation| {
+            operation
+                .integer_result_bound
+                .map(|bound| (operation.spelling, bound))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        bounded,
+        vec![(
+            "host_bytes_len",
+            crate::SystemIntegerResultBound::AddressIndexMaximum
+        )]
+    );
+}
+
+#[test]
 fn system_catalog_projects_one_unified_state_row() {
     let row = |name| {
         crate::SYSTEM_OPERATIONS

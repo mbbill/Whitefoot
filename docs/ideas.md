@@ -84,7 +84,7 @@ produced it.
 ## Multiple backends as mutual oracles
 
 Independent LLVM, C, and future WebAssembly backends could compile the same
-checked program. A differential runner would compare values, claim records,
+checked program. A differential runner would compare values, typed outcomes,
 external effects, and resource teardown. Each disagreement would produce the
 smallest practical regression before a backend fix closes.
 
@@ -94,8 +94,8 @@ backend's performance.
 
 First experiment: run the existing codegen corpus through LLVM and portable C.
 Compile the C at low and high optimization levels with two compilers. Require
-the same result and trap class for valid and adversarial inputs, including
-failure paths.
+the same result and typed-failure class for valid inputs and boundary cases,
+including failure paths.
 
 ## Safe C ABI capsules
 
@@ -132,23 +132,6 @@ First experiment: select a small, defined-behavior C loop with one bounds
 contract and one alias contract. Mutate the contracts one at a time and require
 the extractor or Whitefoot checker to reject the corresponding program.
 
-## Resource certificates
-
-The compiler could emit a machine-readable resource certificate beside an
-artifact. Depending on the program's declared inputs and any future explicitly
-designed export adapter, the certificate could record stack and heap bounds,
-allocation counts, named claim sites, input-size constraints, external effects,
-proved loop bounds, and the distinct resource/TCB abort boundaries.
-
-Embedded, real-time, and serverless systems could check the certificate against
-a deployment budget before running the program. Unknown bounds must remain
-unknown; the certificate must not turn a profile observation into a guarantee.
-
-First experiment: certify a fixed-capacity, allocation-free kernel. Compare the
-reported stack and memory bounds with instrumented executions at all boundary
-sizes, then use mutations to ensure an added allocation or enlarged buffer
-invalidates the certificate.
-
 ## Effect-derived sandbox policies
 
 Once Whitefoot has production I/O and FFI, the compiler could derive a sandbox
@@ -164,21 +147,6 @@ First experiment: define a tiny abstract effect set and one sandbox target.
 Generate policies for pure, read-only, and network-using fixtures. Mutation
 tests should add one hidden effect at a time and require either a broader
 manifest or compiler rejection.
-
-## Optimization receipts
-
-A release artifact could carry a compact receipt for each removed safety
-check. Each row would connect a source site to the proved proposition, proof
-producer, invalidators, backend consumer, emitted IR, and final code location.
-Reviewers could inspect why an operation has no runtime guard without
-reconstructing the optimizer's reasoning.
-
-Receipts must describe the frozen artifact rather than a nearby build. Source,
-proof report, IR, object, and receipt hashes would need to agree.
-
-First experiment: emit receipts for one bounds-proof family. Break each
-premise in turn and require the check to return, the receipt row to disappear,
-and the program to retain correct checked behavior.
 
 ## Narrow semantic domains and automatic niches
 
@@ -232,12 +200,12 @@ Before an owner promotes one of these ideas, its experiment should answer:
 - Does the consumer affect correctness, performance, or both?
 - Which producer and invalidators govern the proposition?
 - What safe behavior remains when the target cannot represent the fact?
-- Which hostile mutation demonstrates that the consumer fails closed?
+- Which premise-removal case demonstrates that the consumer fails closed?
 - Which correctness, code-shape, and performance observations decide the
   experiment?
 - Which result stops the work instead of expanding its scope?
 
 Before one of these notes enters an execution proposal, its Direction Outline
 item must name the current producer, consumer, invalidators, safe fallback,
-hostile mutation, decision observation, and stop condition that actually apply.
+premise-removal case, decision observation, and stop condition that actually apply.
 Until then it remains supporting detail rather than compiler work.

@@ -1,0 +1,17 @@
+fn opaque(n: own i32) -> function_result: own i32 pure {
+  return n;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The literals are individually canonical FORM-7 values, while their checked sum is the typed Err case. Ordinary control handles the expected overflow.";
+  let a = opaque(n: 2147483647_i32);
+  let one = opaque(n: 1_i32);
+  match a +checked one {
+    Ok(value: sum) => {
+      return exit_status(code: 1_u8);
+    }
+    Err(error: overflow) => {
+      return exit_status(code: 0_u8);
+    }
+  }
+}

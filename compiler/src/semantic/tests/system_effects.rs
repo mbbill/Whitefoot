@@ -179,9 +179,9 @@ fn a_release_on_one_match_arm_contributes_its_row() {
 
 #[test]
 fn a_pure_contract_member_cannot_bind_a_release_effectful_function() {
-    // [FN-3] normalizes a row to six state identities and compares `external`
-    // and `blocks` by presence exactly as `traps`: a `pure` member cannot
-    // bind a function that exhibits a category only through release.
+    // [FN-3] normalizes state identities and compares `external` and `blocks`
+    // by presence: a `pure` member cannot bind a function that exhibits a
+    // category only through release.
     assert_rule(
         b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn3,
@@ -220,9 +220,9 @@ fn release_attribution_is_transitive_over_owned_content() {
 }
 
 #[test]
-fn the_two_categories_keep_eff1_canonical_order_and_multiplicity() {
+fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     // The replacement keeps the same canonical-order and multiplicity
-    // coverage over the live categories: reads, writes, allocates, traps.
+    // coverage over the live categories: reads, writes, and allocates.
     assert_rule_kind(
         b"fn probe(file: own ReadFile) -> result: own unit allocates(heap), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
@@ -234,7 +234,7 @@ fn the_two_categories_keep_eff1_canonical_order_and_multiplicity() {
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
     assert_rule_kind(
-        b"fn probe(file: own ReadFile) -> result: own unit traps, writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: own ReadFile) -> result: own unit writes(file), reads(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );

@@ -13,16 +13,18 @@
 //! divergent implementation of the language.
 //!
 //! A case reaches its verdict through the ordinary compiler path and, when
-//! the expectation is a `run` or a `trap`, through a real invocation: the
+//! the expectation is a `run`, through a real invocation: the
 //! emitted module is linked with the same host arguments every Whitefoot
 //! executable uses, the manifest's `arrange` is realized as actual fixture
 //! files, actual argument bytes, an actual standard input, and actual
-//! redirection, and the process's own exit status or abort is the verdict.
+//! redirection, and the process's own exit status is the verdict. A process
+//! that ends without an exit status is a harness stop, never a language
+//! verdict.
 //! Nothing about a case's identity, name, or family selects a path here.
 //!
 //! The corpus-wide run is `#[ignore]`d for cost, not for a blocker: it obtains
 //! the actual compiler verdict for every non-pending case and links and runs
-//! every run/trap case. It is kept out of the default `cargo test` run and
+//! every run case. It is kept out of the default `cargo test` run and
 //! invoked by `make conformance-run` with `--ignored`; root `make check`
 //! includes that focused target. The wiring and the attribute are one unit.
 //! The adapter excludes no case, weakens no expectation, and skips nothing the
@@ -191,9 +193,10 @@ fn execute(module: &str, arrange: Option<&Arrangement>) -> Verdict {
         .status;
     std::fs::remove_dir_all(&directory).expect("remove conformance invocation directory");
 
-    // A contract violation aborts the whole process and produces no status
-    // at all [TRAP-1, PROG-3], which is exactly the absence of an exit code.
-    status.code().map_or(Verdict::Trap, Verdict::Run)
+    status.code().map_or_else(
+        || Verdict::Stopped("program terminated without an exit status".to_owned()),
+        Verdict::Run,
+    )
 }
 
 fn invocation_directory() -> PathBuf {
@@ -310,7 +313,7 @@ fn outcome(case: &Case, reached: &Verdict) -> Outcome {
 
 #[test]
 #[ignore = "Cost, not a blocker: this obtains every non-pending case's compiler verdict \
-            and links and runs every run/trap case, so it stays out of default `cargo test`. \
+            and links and runs every run case, so it stays out of default `cargo test`. \
             `make conformance-run` invokes it with `--ignored`, and root `make check` includes \
             that target; removing the attribute without dropping `--ignored` would select no test."]
 fn the_corpus_reaches_its_declared_verdict_through_the_ordinary_compiler_path() {

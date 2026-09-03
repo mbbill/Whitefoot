@@ -1,26 +1,17 @@
-fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> function_result: own u64 reads(source), writes(out), traps contract {
+fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> function_result: own u64 reads(source), writes(out) contract {
   define out_length = len(deref(out));
   define source_length = len(source);
   requires ile(source_length, out_length);
 } {
   let length = len(source);
-  let offset = 0_u64;
-  loop @copy {
-    let done = ieq(offset, length);
-    if done {
-      break @copy;
-    } else {
-      let copy_ok = ilt(offset, length);
-      claim copy_offset_in_source: copy_ok because "premises: the copy loop starts offset at zero, advances by one, and exits when offset equals source length\nderivation: each reached body therefore has offset strictly below length\nconclusion: copy_ok is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and recurrence\nconsumers: the following source-buffer read needs this upper Range component";
-      let value = source[offset];
-      set deref(out)[offset] = value;
-      set offset = offset +wrap 1_u64;
-    }
+  for (offset in 0_u64..length) {
+    let value = source[offset];
+    set deref(out)[offset] = value;
   }
   return length;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap), traps {
+command fn main() -> status: own ExitStatus allocates(heap) {
   let length = 4_u64;
   let source = buffer_new(length, 7_u8);
   let output = buffer_new(length, 0_u8);

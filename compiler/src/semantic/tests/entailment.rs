@@ -1,34 +1,30 @@
 //! Unit tests for the L0 entailment engine, one family per [ENT] rule,
-//! including the adversarial stale-fact and fresh-binding shapes the spec
+//! including the stale-fact and fresh-binding boundary shapes the spec
 //! text was reviewed against.
 //!
 //! Derivation tests observe accepted proof roots through checked-program
-//! metadata.  Invalid claims are failure-atomic source errors and are tested
-//! directly through their ordinary diagnostics rather than a dark accepted
-//! program.
+//! metadata.
 
 use crate::{
-    BindingId, CallRequirementDisposition, NodePath, SemanticCompilerFailure, SemanticIssueKind,
-    SemanticOutcome, SemanticRule, SourceInput,
+    BindingId, CallRequirementDisposition, NodePath, SemanticIssueKind, SemanticOutcome,
+    SemanticRule, SourceInput,
 };
 
 use super::super::entailment::{
-    CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, ClaimComponentFact, ClaimDisposition,
-    ClaimLedger, ClaimLifecycleKind, ClaimSourceIdentity, ClaimUseProvenance,
-    CountedAtomicDerivation, CountedCaptureSide, CountedDerivationSet, CountedProofPoint,
-    CountedRootAtom, DerivationId, DerivationNode, DerivationRootKind, FlowEvent, FlowEventId,
-    FlowEventKind, FunctionEntailment, GoalId, GoalSign, ImplicitBoundKind, JoinParent,
-    LengthBound, ObligationFamily, ObligationOutcome, PlaceProjection, PlaceRoot,
-    PostconditionAggregate, PostconditionCallDetail, PostconditionDeliveryJoinDetail,
-    PostconditionDisposition, PostconditionExit, PostconditionViewExit, ProofView, Relation,
-    S7DerivationKind, ShiftOneIdentity, StrictDerivationRootKind, TermId, TermKind, ZERO,
-    build_claim_ledger, type_range,
+    CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedAtomicDerivation,
+    CountedCaptureSide, CountedDerivationSet, CountedProofPoint, CountedRootAtom, DerivationId,
+    DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind, FunctionEntailment,
+    GoalId, GoalSign, ImplicitBoundKind, JoinParent, LengthBound, ObligationFamily,
+    ObligationOutcome, PlaceProjection, PlaceRoot, PostconditionCallDetail,
+    PostconditionDeliveryJoinDetail, PostconditionDisposition, Relation, RemainderEndpoint,
+    S7Derivation, S7DerivationKind, S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId,
+    TermKind, ZERO, type_range,
 };
+use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedBodyDisposition, CheckedExpression, CheckedProgramData, CheckedStatement, CheckedValue,
-    FunctionId, IntegerType,
+    CheckedBodyDisposition, CheckedExpression, CheckedIntegerOperation, CheckedProgramData,
+    CheckedStatement, CheckedValue, FunctionId, IntegerType,
 };
-use super::super::provenance::LocalLeafProvenanceDisposition;
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
 fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
@@ -44,33 +40,6 @@ fn obligations(source: &[u8], function: &str) -> Vec<ObligationOutcome> {
             .unwrap_or_else(|| panic!("function {function} must exist"));
         function.entailment.obligations.clone()
     })
-}
-
-fn retained_claim_sources(program: &CheckedProgramData) -> Vec<Vec<ClaimSourceIdentity>> {
-    program
-        .functions
-        .iter()
-        .map(|function| {
-            function
-                .entailment
-                .claims
-                .iter()
-                .map(|claim| {
-                    program
-                        .claim_ledger
-                        .entries
-                        .iter()
-                        .find(|entry| {
-                            entry.source.function == function.id
-                                && entry.source.node_path == claim.node_path
-                        })
-                        .expect("every checked claim has one source identity")
-                        .source
-                        .clone()
-                })
-                .collect()
-        })
-        .collect()
 }
 
 fn call_goals(source: &[u8], function: &str) -> Vec<CallGoalOutcome> {
@@ -104,9 +73,7 @@ fn entailment(source: &[u8], function: &str) -> FunctionEntailment {
     })
 }
 
-/// Reads a summary only after the ordinary acceptance path succeeds. Positive
-/// claim fixtures use this helper so a future non-residual rejection cannot be
-/// hidden by the test-only dark checker.
+/// Reads a summary only after the ordinary acceptance path succeeds.
 fn accepted_entailment(source: &[u8], function: &str) -> FunctionEntailment {
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -170,7 +137,6 @@ fn collect_direct_calls<'checked>(
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),
             CheckedStatement::PropagateLet { scrutinee, .. } => record(scrutinee, callee, calls),
             CheckedStatement::Evaluate(expression) => record(expression, callee, calls),
-            CheckedStatement::Claim { condition, .. } => record(condition, callee, calls),
             CheckedStatement::Match {
                 scrutinee, arms, ..
             }
@@ -192,7 +158,7 @@ fn collect_direct_calls<'checked>(
                 record(upper, callee, calls);
                 collect_direct_calls(body, callee, calls);
             }
-            CheckedStatement::Break { .. } => {}
+            CheckedStatement::Break { .. } | CheckedStatement::Proof(_) => {}
         }
     }
 }
@@ -217,6 +183,7 @@ enum DerivationConclusion {
     Relation(Relation),
     Goal { goal: GoalId, sign: GoalSign },
     IntegerDomain(Option<GoalId>),
+    AffineConsequence,
     Contradiction,
     PostconditionAggregate,
 }
@@ -227,6 +194,31 @@ fn retained_term(summary: &FunctionEntailment, id: TermId) -> &TermKind {
         .terms
         .get(id.0 as usize)
         .unwrap_or_else(|| panic!("retained term ID {id:?} must resolve"))
+}
+
+/// One retained S7 image names exactly the value its subject identifies: the
+/// `let` binder's own place term, or the commit value of the `set`
+/// occurrence whose right-hand side produced it [ENT-2, ENT-3.S7].
+fn s7_result_names_subject(
+    summary: &FunctionEntailment,
+    result: TermId,
+    source: &S7Derivation,
+) -> bool {
+    match &source.subject {
+        S7Subject::Binding(binding) => matches!(
+            retained_term(summary, result),
+            TermKind::Place(place, row)
+                if place.root == PlaceRoot::Binding(*binding)
+                    && !place.deref
+                    && place.fields.is_empty()
+                    && *row == source.row
+        ),
+        S7Subject::Commit(commit) => matches!(
+            retained_term(summary, result),
+            TermKind::CommitValue { commit_path, ty }
+                if commit_path.as_slice() == commit.components() && *ty == source.row
+        ),
+    }
 }
 
 fn assert_relation_terms_resolve(summary: &FunctionEntailment, relation: &Relation) {
@@ -292,36 +284,6 @@ fn retained_event(summary: &FunctionEntailment, id: FlowEventId) -> &FlowEvent {
         .events
         .get(id.0 as usize)
         .unwrap_or_else(|| panic!("retained flow event ID {id:?} must resolve"))
-}
-
-const fn proof_view_index(view: ProofView) -> usize {
-    match view {
-        ProofView::Complete => 0,
-        ProofView::Unasserted => 1,
-        ProofView::S4Blinded => 2,
-    }
-}
-
-const fn postcondition_exit_view(
-    exit: &PostconditionExit,
-    view: ProofView,
-) -> &PostconditionViewExit {
-    match view {
-        ProofView::Complete => &exit.complete,
-        ProofView::Unasserted => &exit.unasserted,
-        ProofView::S4Blinded => &exit.s4_blinded,
-    }
-}
-
-const fn postcondition_aggregate_view(
-    proof: &super::super::entailment::FunctionPostconditionProof,
-    view: ProofView,
-) -> &PostconditionAggregate {
-    match view {
-        ProofView::Complete => &proof.complete,
-        ProofView::Unasserted => &proof.unasserted,
-        ProofView::S4Blinded => &proof.s4_blinded,
-    }
 }
 
 fn node_event(node: &DerivationNode) -> Option<FlowEventId> {
@@ -418,6 +380,7 @@ fn normalized_derivation_dump(summary: &FunctionEntailment) -> Vec<u8> {
             &summary.derivations.nodes,
             &summary.derivations.roots,
             &summary.counted_derivations,
+            &summary.loop_invariants,
             &summary.inventory,
         )
     )
@@ -430,7 +393,6 @@ fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut
     assert!(matches!(
         event.kind,
         FlowEventKind::S1
-            | FlowEventKind::S3
             | FlowEventKind::S4
             | FlowEventKind::S5
             | FlowEventKind::S6
@@ -463,11 +425,6 @@ fn assert_materialization_event(
     match event.kind {
         FlowEventKind::Snapshot => {
             assert!(event.node_path.is_none());
-            assert!(event.claim_component.is_none());
-        }
-        FlowEventKind::ClaimReconstruction => {
-            assert!(event.node_path.is_some());
-            assert!(event.claim_component.is_none());
         }
         other => panic!("a materialized goal has an invalid event kind {other:?}"),
     }
@@ -507,6 +464,7 @@ fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
         TermKind::Length(_) | TermKind::ProjectedLength(_) | TermKind::CountedCapture { .. } => {
             Some(type_range(IntegerType::U64))
         }
+        TermKind::CommitValue { ty, .. } => Some(type_range(*ty)),
         TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
     }
 }
@@ -751,6 +709,62 @@ fn validate_counted_derivation_set(
     );
     for (_, atomic) in counted_atoms(counted) {
         assert_counted_atomic_parent(summary, conclusions, counted, atomic);
+    }
+}
+
+fn assert_source_affine_fact_resolves(summary: &FunctionEntailment, source: SourceAffineFactRef) {
+    let mut pending = vec![source];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(source) = pending.pop() {
+        if !seen.insert(source) {
+            continue;
+        }
+        match source {
+            SourceAffineFactRef::LoopInvariant(source) => {
+                let mut matching = summary.loop_invariants.iter().filter(|invariant| {
+                    invariant.loop_id == source.loop_id
+                        && invariant.source_ordinal == source.source_ordinal
+                });
+                let invariant = matching
+                    .next()
+                    .expect("affine consequence source invariant must resolve");
+                assert!(
+                    matching.next().is_none(),
+                    "source invariant reference is unique"
+                );
+                assert!(invariant.proof.discharged());
+            }
+            SourceAffineFactRef::SourceProof { source_ordinal } => {
+                let proof = summary
+                    .source_proofs
+                    .iter()
+                    .find(|proof| proof.source_ordinal == source_ordinal)
+                    .expect("affine consequence source proof must resolve");
+                assert!(proof.check.discharged());
+            }
+            SourceAffineFactRef::JoinedSourceProof { join_ordinal } => {
+                let provenance = summary
+                    .joined_source_proofs
+                    .get(join_ordinal as usize)
+                    .expect("joined source proof reference must resolve");
+                assert!(
+                    provenance.predecessors.len() >= 2,
+                    "a diagnostic join records every structural predecessor"
+                );
+                for predecessor in provenance.predecessors.iter().copied() {
+                    if let SourceAffineFactRef::JoinedSourceProof {
+                        join_ordinal: predecessor_ordinal,
+                    } = predecessor
+                    {
+                        assert!(
+                            predecessor_ordinal < join_ordinal,
+                            "joined source proof provenance is a backward DAG"
+                        );
+                    }
+                    pending.push(predecessor);
+                }
+            }
+        }
     }
 }
 
@@ -1078,6 +1092,28 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert!(!parents.is_empty());
                 DerivationConclusion::IntegerDomain(*goal)
             }
+            DerivationNode::AffineConsequence {
+                relation,
+                premises,
+                parents,
+            } => {
+                for parent in parents {
+                    assert!(matches!(
+                        retained_conclusion(&conclusions, *parent),
+                        DerivationConclusion::Relation(_) | DerivationConclusion::Contradiction
+                    ));
+                }
+                for premise in premises {
+                    assert!(premise.factor > 0);
+                    assert_source_affine_fact_resolves(summary, premise.source);
+                }
+                if let Some(relation) = relation {
+                    assert_relation_terms_resolve(summary, relation);
+                    DerivationConclusion::Relation(relation.as_ref().clone())
+                } else {
+                    DerivationConclusion::AffineConsequence
+                }
+            }
             DerivationNode::GoalNormalization {
                 goal,
                 sign,
@@ -1102,6 +1138,18 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         &DerivationConclusion::Relation(relation),
                     );
                 }
+                DerivationConclusion::Goal {
+                    goal: *goal,
+                    sign: *sign,
+                }
+            }
+            DerivationNode::GoalAffineConsequence { goal, sign, parent } => {
+                assert!(summary.inventory.goals.get(goal.0 as usize).is_some());
+                assert_eq!(
+                    retained_conclusion(&conclusions, *parent),
+                    &DerivationConclusion::AffineConsequence,
+                    "an affine-goal conclusion must retain its owning affine proof",
+                );
                 DerivationConclusion::Goal {
                     goal: *goal,
                     sign: *sign,
@@ -1264,22 +1312,8 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     goal: *goal,
                     sign: *sign,
                 };
-                match kind {
-                    FlowEventKind::Snapshot => {
-                        assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
-                    }
-                    FlowEventKind::ClaimReconstruction => {
-                        assert_eq!(*sign, GoalSign::Positive);
-                        assert!(matches!(
-                            retained_conclusion(&conclusions, *parent),
-                            DerivationConclusion::Goal {
-                                sign: GoalSign::Positive,
-                                ..
-                            }
-                        ));
-                    }
-                    _ => unreachable!("materialization event was checked above"),
-                }
+                assert_eq!(kind, FlowEventKind::Snapshot);
+                assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
                 conclusion
             }
             DerivationNode::MaterializedContradiction { event, parent } => {
@@ -1298,17 +1332,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 let conclusion = DerivationConclusion::Relation(relation.clone());
                 assert!(matches!(
                     retained_conclusion(&conclusions, *parent),
-                    parent if parent == &conclusion || parent == &DerivationConclusion::Contradiction
+                    parent if parent == &conclusion
+                        || parent == &DerivationConclusion::AffineConsequence
+                        || parent == &DerivationConclusion::Contradiction
                 ));
                 conclusion
             }
             DerivationNode::PostconditionAggregate { parents, .. } => {
                 assert!(!parents.is_empty());
-                let view = summary.derivations.node_views[index];
                 let statements = parents
                     .iter()
                     .map(|parent| {
-                        assert_eq!(summary.derivations.node_views[parent.0 as usize], view);
                         let DerivationNode::PostconditionExit { statement, .. } =
                             &summary.derivations.nodes[parent.0 as usize]
                         else {
@@ -1330,21 +1364,14 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     summary: reference,
                     substitutions,
                     transfer_events,
-                    a0_parents,
-                    view_parents,
+                    parents,
                     ..
                 } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
                 assert!(!reference.summary.block.components().is_empty());
-                let view = summary.derivations.node_views[index];
-                assert!(a0_parents.iter().all(|parent| {
-                    summary.derivations.node_views[parent.0 as usize] == ProofView::Complete
-                }));
-                assert!(
-                    view_parents.iter().all(|parent| {
-                        summary.derivations.node_views[parent.0 as usize] == view
-                    })
-                );
+                for parent in parents {
+                    assert!(summary.derivations.nodes.get(parent.0 as usize).is_some());
+                }
                 for substitution in substitutions {
                     retained_term(summary, substitution.term);
                 }
@@ -1508,6 +1535,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         }
                         DerivationConclusion::Goal { .. }
                         | DerivationConclusion::IntegerDomain(_)
+                        | DerivationConclusion::AffineConsequence
                         | DerivationConclusion::PostconditionAggregate => {
                             panic!("delivery join parent must be a relation or contradiction")
                         }
@@ -1563,51 +1591,24 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     for counted in &summary.counted_derivations {
         validate_counted_derivation_set(summary, &conclusions, counted);
     }
-    for (view, proof_view) in [
-        (ProofView::Unasserted, &summary.unasserted),
-        (ProofView::S4Blinded, &summary.s4_blinded),
-    ] {
-        for derivation in proof_view
-            .obligations
-            .iter()
-            .filter_map(|outcome| outcome.derivation)
-            .chain(
-                proof_view
-                    .call_goals
-                    .iter()
-                    .filter_map(|outcome| outcome.derivation),
-            )
-        {
-            assert!(
-                derivation.0 < summary.derivations.nodes.len() as u32,
-                "counterfactual proof metadata must be remapped by the sole finish"
-            );
-            assert_eq!(
-                summary.derivations.node_views[derivation.0 as usize], view,
-                "counterfactual proof metadata must retain its exact view"
-            );
-        }
-    }
 
     let mut seen_obligations = vec![false; summary.obligations.len()];
     let mut seen_calls = vec![false; summary.call_goals.len()];
     let mut seen_counted = vec![[false; 8]; summary.counted_derivations.len()];
     let mut seen_s7 = vec![false; summary.s7_derivations.len()];
-    let mut seen_claim_lifecycle = vec![false; summary.claims.len()];
-    let mut seen_strict = vec![false; summary.strict_roots.len()];
     let mut seen_postcondition_exits = summary
         .postconditions
         .iter()
-        .map(|proof| vec![[false; 3]; proof.exits.len()])
+        .map(|proof| vec![false; proof.exits.len()])
         .collect::<Vec<_>>();
-    let mut seen_postcondition_aggregates = vec![[false; 3]; summary.postconditions.len()];
+    let mut seen_postcondition_aggregates = vec![false; summary.postconditions.len()];
     let mut seen_s12 = 0u32;
     let mut seen_s12_nodes = vec![false; summary.derivations.nodes.len()];
     let mut seen_delivery_gives = 0u32;
     let mut seen_delivery_joins = 0u32;
     let mut seen_delivery_nodes = vec![false; summary.derivations.nodes.len()];
     let mut counted_root_order = Vec::new();
-    let mut class_counts = [0u32; 6];
+    let mut class_counts = [0u32; 4];
     for root in &summary.derivations.roots {
         let conclusion = retained_conclusion(&conclusions, root.node);
         match root.kind {
@@ -1678,10 +1679,39 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     }
                     DerivationConclusion::Goal { .. }
                     | DerivationConclusion::IntegerDomain(_)
+                    | DerivationConclusion::AffineConsequence
                     | DerivationConclusion::PostconditionAggregate => {
                         panic!("this obligation root cannot conclude that goal")
                     }
                 }
+            }
+            DerivationRootKind::AllocationUpperBound(ordinal) => {
+                let outcome = summary
+                    .obligations
+                    .get(ordinal as usize)
+                    .expect("allocation-ceiling root ordinal must resolve");
+                assert_eq!(outcome.family, ObligationFamily::AllocationFit);
+                assert!(outcome.discharged);
+                assert_eq!(
+                    outcome.allocation_length_upper_bound_derivation,
+                    Some(root.node)
+                );
+                let left = outcome.components[0]
+                    .left
+                    .expect("a retained numeric allocation ceiling has one length term");
+                let upper = i128::from(
+                    outcome
+                        .allocation_length_upper_bound
+                        .expect("a retained numeric allocation ceiling has one value"),
+                );
+                assert_eq!(
+                    conclusion,
+                    &DerivationConclusion::Relation(Relation::Bound {
+                        left,
+                        right: ZERO,
+                        bound: upper,
+                    })
+                );
             }
             DerivationRootKind::IntegerDomainObligation(ordinal) => {
                 let ordinal = ordinal as usize;
@@ -1729,6 +1759,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         panic!("a discharged call root must be positive or contradictory")
                     }
                     DerivationConclusion::IntegerDomain(_)
+                    | DerivationConclusion::AffineConsequence
                     | DerivationConclusion::PostconditionAggregate => {
                         panic!("a discharged call root cannot be a postcondition aggregate")
                     }
@@ -1754,21 +1785,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(root.node, expected);
             }
             DerivationRootKind::BitAndBound(occurrence)
-            | DerivationRootKind::ShiftOneNonzero(occurrence) => {
+            | DerivationRootKind::ShiftOneNonzero(occurrence)
+            | DerivationRootKind::UnsignedDivisionBound(occurrence)
+            | DerivationRootKind::UnsignedRemainderBound(occurrence)
+            | DerivationRootKind::SignedRemainderBound(occurrence) => {
                 let source = summary
                     .s7_derivations
                     .get(occurrence as usize)
                     .expect("S7-root occurrence must resolve");
-                assert!(
-                    !seen_s7[occurrence as usize],
-                    "one root per S7 relation/view"
-                );
+                assert!(!seen_s7[occurrence as usize], "one root per S7 relation");
                 seen_s7[occurrence as usize] = true;
                 assert_eq!(source.parent, root.node);
-                assert_eq!(
-                    summary.derivations.node_views[root.node.0 as usize],
-                    source.view
-                );
                 assert_eq!(
                     summary.derivations.node_event(root.node),
                     Some(source.event)
@@ -1781,6 +1808,18 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     matches!(source.kind, S7DerivationKind::BitAndBound { .. }),
                     matches!(root.kind, DerivationRootKind::BitAndBound(_))
                 );
+                assert_eq!(
+                    matches!(source.kind, S7DerivationKind::UnsignedDivisionBound { .. }),
+                    matches!(root.kind, DerivationRootKind::UnsignedDivisionBound(_))
+                );
+                assert_eq!(
+                    matches!(source.kind, S7DerivationKind::UnsignedRemainderBound { .. }),
+                    matches!(root.kind, DerivationRootKind::UnsignedRemainderBound(_))
+                );
+                assert_eq!(
+                    matches!(source.kind, S7DerivationKind::SignedRemainderBound { .. }),
+                    matches!(root.kind, DerivationRootKind::SignedRemainderBound(_))
+                );
                 match (&source.kind, &source.relation) {
                     (
                         S7DerivationKind::BitAndBound { admitted, .. },
@@ -1788,14 +1827,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ) => {
                         assert_eq!(right, admitted);
                         assert_eq!(*bound, 0);
-                        assert!(matches!(
-                            retained_term(summary, *left),
-                            TermKind::Place(place, row)
-                                if place.root == PlaceRoot::Binding(source.binding)
-                                    && !place.deref
-                                    && place.fields.is_empty()
-                                    && *row == source.row
-                        ));
+                        assert!(s7_result_names_subject(summary, *left, source));
                     }
                     (
                         S7DerivationKind::ShiftOneNonzero { count_atom, one },
@@ -1807,14 +1839,43 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         }
                         let result = if *left == ZERO { *right } else { *left };
                         assert!(*left == ZERO || *right == ZERO);
-                        assert!(matches!(
-                            retained_term(summary, result),
-                            TermKind::Place(place, row)
-                                if place.root == PlaceRoot::Binding(source.binding)
-                                    && !place.deref
-                                    && place.fields.is_empty()
-                                    && *row == source.row
-                        ));
+                        assert!(s7_result_names_subject(summary, result, source));
+                    }
+                    (
+                        S7DerivationKind::UnsignedDivisionBound { dividend, divisor },
+                        Relation::Bound { left, right, bound },
+                    ) => {
+                        assert_eq!(right, dividend);
+                        assert_eq!(*bound, 0);
+                        assert!(*divisor > 0);
+                        assert!(!source.row.signed());
+                        assert!(s7_result_names_subject(summary, *left, source));
+                    }
+                    (
+                        S7DerivationKind::UnsignedRemainderBound { divisor },
+                        Relation::Bound { left, right, bound },
+                    ) => {
+                        assert_eq!(right, divisor);
+                        assert_eq!(*bound, -1);
+                        assert!(s7_result_names_subject(summary, *left, source));
+                    }
+                    (
+                        S7DerivationKind::SignedRemainderBound { divisor, endpoint },
+                        Relation::Bound { left, right, bound },
+                    ) => {
+                        let limit = divisor.abs() - 1;
+                        assert_eq!(*bound, limit);
+                        let result = match endpoint {
+                            RemainderEndpoint::Minimum => {
+                                assert_eq!(*left, ZERO);
+                                *right
+                            }
+                            RemainderEndpoint::Maximum => {
+                                assert_eq!(*right, ZERO);
+                                *left
+                            }
+                        };
+                        assert!(s7_result_names_subject(summary, result, source));
                     }
                     _ => panic!("S7 root kind, metadata, and relation must agree"),
                 }
@@ -1822,7 +1883,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             DerivationRootKind::PostconditionExit {
                 relation_ordinal,
                 occurrence,
-                view,
+                ..
             } => {
                 let proof = summary
                     .postconditions
@@ -1833,14 +1894,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     .exits
                     .get(occurrence)
                     .expect("postcondition exit root occurrence must resolve");
-                let outcome = postcondition_exit_view(exit, view);
-                assert_eq!(outcome.disposition, PostconditionDisposition::Discharged);
-                assert_eq!(outcome.derivation, Some(root.node));
-                let seen = &mut seen_postcondition_exits[relation_ordinal as usize][occurrence]
-                    [proof_view_index(view)];
-                assert!(!*seen, "one exact root per discharged exit and view");
+                assert_eq!(exit.disposition, PostconditionDisposition::Discharged);
+                assert_eq!(exit.derivation, Some(root.node));
+                let seen = &mut seen_postcondition_exits[relation_ordinal as usize][occurrence];
+                assert!(!*seen, "one exact root per discharged exit");
                 *seen = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
                 let DerivationNode::PostconditionExit {
                     statement,
@@ -1854,21 +1912,18 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 assert_eq!(relation.as_ref(), &exit.relation);
             }
             DerivationRootKind::PostconditionAggregate {
-                relation_ordinal,
-                view,
+                relation_ordinal, ..
             } => {
                 let proof = summary
                     .postconditions
                     .get(relation_ordinal as usize)
                     .expect("an aggregate root requires retained proof metadata");
-                let aggregate = postcondition_aggregate_view(proof, view);
+                let aggregate = &proof.aggregate;
                 assert!(aggregate.discharged);
                 assert_eq!(aggregate.derivation, Some(root.node));
-                let seen = &mut seen_postcondition_aggregates[relation_ordinal as usize]
-                    [proof_view_index(view)];
-                assert!(!*seen, "one exact root per discharged aggregate and view");
+                let seen = &mut seen_postcondition_aggregates[relation_ordinal as usize];
+                assert!(!*seen, "one exact root per discharged aggregate");
                 *seen = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert_eq!(conclusion, &DerivationConclusion::PostconditionAggregate);
                 let DerivationNode::PostconditionAggregate {
                     block,
@@ -1884,243 +1939,92 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     .exits
                     .iter()
                     .map(|exit| {
-                        postcondition_exit_view(exit, view)
-                            .derivation
+                        exit.derivation
                             .expect("a discharged aggregate requires every exit root")
                     })
                     .collect::<Vec<_>>();
                 assert_eq!(parents, &expected);
             }
-            DerivationRootKind::PostconditionDirectResult { occurrence, view } => {
+            DerivationRootKind::PostconditionDirectResult { occurrence, .. } => {
                 assert_eq!(occurrence, seen_s12);
                 seen_s12 += 1;
                 assert!(!seen_s12_nodes[root.node.0 as usize]);
                 seen_s12_nodes[root.node.0 as usize] = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
                 assert!(matches!(
                     summary.derivations.nodes[root.node.0 as usize],
                     DerivationNode::PostconditionDirectResult { .. }
                 ));
             }
-            DerivationRootKind::PostconditionDirectMatch { occurrence, view } => {
+            DerivationRootKind::PostconditionDirectMatch { occurrence, .. } => {
                 assert_eq!(occurrence, seen_s12);
                 seen_s12 += 1;
                 assert!(!seen_s12_nodes[root.node.0 as usize]);
                 seen_s12_nodes[root.node.0 as usize] = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
                 assert!(matches!(
                     summary.derivations.nodes[root.node.0 as usize],
                     DerivationNode::PostconditionDirectMatch { .. }
                 ));
             }
-            DerivationRootKind::PostconditionDirectReceiver { occurrence, view } => {
+            DerivationRootKind::PostconditionDirectReceiver { occurrence, .. } => {
                 assert_eq!(occurrence, seen_s12);
                 seen_s12 += 1;
                 assert!(!seen_s12_nodes[root.node.0 as usize]);
                 seen_s12_nodes[root.node.0 as usize] = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
                 assert!(matches!(
                     summary.derivations.nodes[root.node.0 as usize],
                     DerivationNode::PostconditionDirectReceiver { .. }
                 ));
             }
-            DerivationRootKind::PostconditionSelectedReceiver { occurrence, view } => {
+            DerivationRootKind::PostconditionSelectedReceiver { occurrence, .. } => {
                 assert_eq!(occurrence, seen_s12);
                 seen_s12 += 1;
                 assert!(!seen_s12_nodes[root.node.0 as usize]);
                 seen_s12_nodes[root.node.0 as usize] = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
                 assert!(matches!(
                     summary.derivations.nodes[root.node.0 as usize],
                     DerivationNode::PostconditionSelectedReceiver { .. }
                 ));
             }
-            DerivationRootKind::PostconditionGive { occurrence, view } => {
+            DerivationRootKind::PostconditionGive { occurrence, .. } => {
                 assert_eq!(occurrence, seen_delivery_gives);
                 seen_delivery_gives += 1;
                 assert!(!seen_delivery_nodes[root.node.0 as usize]);
                 seen_delivery_nodes[root.node.0 as usize] = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
                 assert!(matches!(
                     summary.derivations.nodes[root.node.0 as usize],
                     DerivationNode::PostconditionGive { .. }
                 ));
             }
-            DerivationRootKind::PostconditionDeliveryJoin { occurrence, view } => {
+            DerivationRootKind::PostconditionDeliveryJoin { occurrence, .. } => {
                 assert_eq!(occurrence, seen_delivery_joins);
                 seen_delivery_joins += 1;
                 assert!(!seen_delivery_nodes[root.node.0 as usize]);
                 seen_delivery_nodes[root.node.0 as usize] = true;
-                assert_eq!(summary.derivations.node_views[root.node.0 as usize], view);
                 assert!(matches!(conclusion, DerivationConclusion::Relation(_)));
                 assert!(matches!(
                     summary.derivations.nodes[root.node.0 as usize],
                     DerivationNode::PostconditionDeliveryJoin { .. }
                 ));
             }
-            DerivationRootKind::ClaimLifecycle { occurrence, kind } => {
-                let occurrence = occurrence as usize;
-                let outcome = summary
-                    .claims
-                    .get(occurrence)
-                    .expect("claim-lifecycle root occurrence must resolve");
-                assert!(
-                    !seen_claim_lifecycle[occurrence],
-                    "one exact lifecycle root per non-retained claim"
-                );
-                seen_claim_lifecycle[occurrence] = true;
-                assert_eq!(outcome.lifecycle_derivation, Some(root.node));
-                assert_eq!(
-                    summary.derivations.node_views[root.node.0 as usize],
-                    ProofView::Complete
-                );
-                match (&outcome.disposition, kind, conclusion) {
-                    (
-                        ClaimDisposition::Redundant,
-                        ClaimLifecycleKind::Redundant,
-                        DerivationConclusion::Relation(_)
-                        | DerivationConclusion::Goal {
-                            sign: GoalSign::Positive,
-                            ..
-                        }
-                        | DerivationConclusion::Contradiction,
-                    ) => {}
-                    (
-                        ClaimDisposition::Refuted { .. },
-                        ClaimLifecycleKind::Refuted,
-                        DerivationConclusion::Relation(_)
-                        | DerivationConclusion::Goal {
-                            sign: GoalSign::Negative,
-                            ..
-                        },
-                    ) => {}
-                    _ => panic!("claim lifecycle root, disposition, and proof must agree"),
-                }
-            }
-            DerivationRootKind::ClaimComponent {
-                occurrence,
-                component,
-            } => {
-                let claim = summary
-                    .claims
-                    .get(occurrence as usize)
-                    .expect("claim-component root occurrence must resolve");
-                let evidence = claim
-                    .proof
-                    .as_ref()
-                    .expect("retained claim component root has proof evidence")
-                    .components
-                    .get(component as usize)
-                    .expect("claim-component ordinal must resolve");
-                assert_eq!(evidence.ordinal, component);
-                assert_eq!(evidence.source, root.node);
-                match (&evidence.fact, conclusion) {
-                    (
-                        ClaimComponentFact::Relation(expected),
-                        DerivationConclusion::Relation(actual),
-                    ) => match (expected, actual) {
-                        (
-                            Relation::Distinct {
-                                left: expected_left,
-                                right: expected_right,
-                            },
-                            Relation::Distinct { left, right },
-                        ) => assert!(
-                            (expected_left == left && expected_right == right)
-                                || (expected_left == right && expected_right == left),
-                            "claim disequality evidence uses unordered fact identity"
-                        ),
-                        _ => assert_eq!(expected, actual),
-                    },
-                    (
-                        ClaimComponentFact::Goal { goal, sign },
-                        DerivationConclusion::Goal {
-                            goal: actual_goal,
-                            sign: actual_sign,
-                        },
-                    ) => {
-                        assert_eq!(goal, actual_goal);
-                        assert_eq!(sign, actual_sign);
-                    }
-                    _ => panic!("claim component evidence must conclude its exact fact"),
-                }
-            }
-            DerivationRootKind::ClaimReconstruction { occurrence, direct } => {
-                let proof = summary
-                    .claims
-                    .get(occurrence as usize)
-                    .and_then(|claim| claim.proof.as_ref())
-                    .expect("claim reconstruction root occurrence must resolve");
-                let expected = if direct {
-                    proof.reconstructions.direct
-                } else {
-                    proof.reconstructions.expanded
-                };
-                assert_eq!(expected, root.node);
-            }
-            DerivationRootKind::Strict { occurrence, kind } => {
-                let occurrence = occurrence as usize;
-                let retained = summary
-                    .strict_roots
-                    .get(occurrence)
-                    .expect("strict-root occurrence must resolve");
-                assert!(
-                    !seen_strict[occurrence],
-                    "one exact root per strict U query"
-                );
-                seen_strict[occurrence] = true;
-                assert_eq!(retained.kind, kind);
-                assert_eq!(retained.derivation, root.node);
-                assert!(!retained.node_path.components().is_empty());
-                match kind {
-                    StrictDerivationRootKind::Obligation => {
-                        assert!(retained.requires_clause.is_none());
-                    }
-                    StrictDerivationRootKind::CallGoal => {
-                        assert!(
-                            retained
-                                .requires_clause
-                                .as_ref()
-                                .is_some_and(|clause| !clause.components().is_empty())
-                        );
-                    }
-                }
-                assert_eq!(
-                    summary.derivations.node_views[root.node.0 as usize],
-                    ProofView::Unasserted
-                );
-            }
         }
 
-        if matches!(root.kind, DerivationRootKind::ClaimLifecycle { .. }) {
-            class_counts[4] += 1;
-        } else if matches!(
-            root.kind,
-            DerivationRootKind::ClaimComponent { .. }
-                | DerivationRootKind::ClaimReconstruction { .. }
-        ) {
-            class_counts[5] += 1;
-        } else {
-            match &summary.derivations.nodes[root.node.0 as usize] {
-                DerivationNode::SourceGoal { .. }
-                | DerivationNode::JoinGoal { .. }
-                | DerivationNode::MaterializedGoal { .. } => class_counts[1] += 1,
-                DerivationNode::GoalProjection { .. } => class_counts[2] += 1,
-                DerivationNode::L0Contradiction { .. }
-                | DerivationNode::GoalContradiction { .. }
-                | DerivationNode::JoinContradiction { .. }
-                | DerivationNode::MaterializedContradiction { .. } => class_counts[3] += 1,
-                _ => class_counts[0] += 1,
-            }
+        match &summary.derivations.nodes[root.node.0 as usize] {
+            DerivationNode::SourceGoal { .. }
+            | DerivationNode::JoinGoal { .. }
+            | DerivationNode::MaterializedGoal { .. } => class_counts[1] += 1,
+            DerivationNode::GoalProjection { .. } => class_counts[2] += 1,
+            DerivationNode::L0Contradiction { .. }
+            | DerivationNode::GoalContradiction { .. }
+            | DerivationNode::JoinContradiction { .. }
+            | DerivationNode::MaterializedContradiction { .. } => class_counts[3] += 1,
+            _ => class_counts[0] += 1,
         }
     }
-    assert!(seen_strict.into_iter().all(|seen| seen));
-
     let mut reachable = vec![false; summary.derivations.nodes.len()];
     let mut stack: Vec<_> = summary
         .derivations
@@ -2172,11 +2076,6 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         assert_eq!(outcome.derivation.is_some(), discharged);
         assert_eq!(seen_calls[ordinal], discharged);
     }
-    for (occurrence, outcome) in summary.claims.iter().enumerate() {
-        let judged = !matches!(outcome.disposition, ClaimDisposition::Retained);
-        assert_eq!(outcome.lifecycle_derivation.is_some(), judged);
-        assert_eq!(seen_claim_lifecycle[occurrence], judged);
-    }
     assert!(
         seen_counted
             .iter()
@@ -2191,32 +2090,15 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
         .zip(seen_postcondition_aggregates)
     {
         for (ordinal, exit) in proof.exits.iter().enumerate() {
-            for view in [
-                ProofView::Complete,
-                ProofView::Unasserted,
-                ProofView::S4Blinded,
-            ] {
-                let discharged = postcondition_exit_view(exit, view).disposition
-                    == PostconditionDisposition::Discharged;
-                assert_eq!(
-                    postcondition_exit_view(exit, view).derivation.is_some(),
-                    discharged
-                );
-                assert_eq!(seen[ordinal][proof_view_index(view)], discharged);
-            }
+            let discharged = exit.disposition == PostconditionDisposition::Discharged;
+            assert_eq!(exit.derivation.is_some(), discharged);
+            assert_eq!(seen[ordinal], discharged);
         }
-        for view in [
-            ProofView::Complete,
-            ProofView::Unasserted,
-            ProofView::S4Blinded,
-        ] {
-            let aggregate = postcondition_aggregate_view(proof, view);
-            assert_eq!(aggregate.derivation.is_some(), aggregate.discharged);
-            assert_eq!(
-                seen_aggregates[proof_view_index(view)],
-                aggregate.discharged
-            );
-        }
+        assert_eq!(
+            proof.aggregate.derivation.is_some(),
+            proof.aggregate.discharged
+        );
+        assert_eq!(seen_aggregates, proof.aggregate.discharged);
     }
     let expected_counted_order: Vec<_> = summary
         .counted_derivations
@@ -2242,254 +2124,22 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
             summary.derivations.metrics.opaque_goal_roots,
             summary.derivations.metrics.projected_goal_roots,
             summary.derivations.metrics.contradiction_roots,
-            summary.derivations.metrics.claim_lifecycle_roots,
-            summary.derivations.metrics.claim_evidence_roots,
         ]
     );
 }
 
-fn validate_claim_ledger(program: &CheckedProgramData) {
-    let mut entry_ordinal = 0usize;
-    for (function_ordinal, function) in program.functions.iter().enumerate() {
-        assert_eq!(function.id.0 as usize, function_ordinal);
-        let entry_end = entry_ordinal + function.entailment.claims.len();
-        assert!(entry_end <= program.claim_ledger.entries.len());
-        let entries = &program.claim_ledger.entries[entry_ordinal..entry_end];
-        for (claim, entry) in function.entailment.claims.iter().zip(entries) {
-            assert_eq!(entry.source.function, function.id);
-            assert_eq!(entry.source.function_symbol, function.symbol);
-            assert_eq!(entry.source.node_path, claim.node_path);
-            assert_eq!(entry.name, claim.name);
-            assert_eq!(entry.predicate, claim.predicate);
-            assert_eq!(entry.justification, claim.justification);
-            assert_eq!(entry.disposition, claim.disposition);
-            assert_eq!(entry.lifecycle_derivation, claim.lifecycle_derivation);
-            assert_eq!(entry.proof, claim.proof);
-
-            for used in &entry.uses {
-                assert!(
-                    !matches!(
-                        used.root,
-                        DerivationRootKind::ClaimLifecycle { .. }
-                            | DerivationRootKind::ClaimComponent { .. }
-                            | DerivationRootKind::ClaimReconstruction { .. }
-                    ),
-                    "a lifecycle observation is not a supported obligation"
-                );
-                assert!(
-                    function
-                        .entailment
-                        .derivations
-                        .roots
-                        .iter()
-                        .any(|root| root.kind == used.root && root.node == used.root_derivation)
-                );
-                assert!(
-                    used.premise_derivations
-                        .windows(2)
-                        .all(|pair| pair[0] < pair[1])
-                );
-                let expected = function
-                    .entailment
-                    .derivations
-                    .event_premises(used.root_derivation, FlowEventKind::S3)
-                    .into_iter()
-                    .filter_map(|(path, premise)| {
-                        (path == entry.source.node_path).then_some(premise)
-                    })
-                    .collect::<Vec<_>>();
-                assert_eq!(used.premise_derivations, expected);
-                match (used.root, &used.provenance) {
-                    (
-                        DerivationRootKind::BoundsObligation(ordinal),
-                        ClaimUseProvenance::ProtectedLeaf {
-                            disposition,
-                            direct_demands,
-                            structural_bridges,
-                            subject_bridges,
-                            calls,
-                        },
-                    ) => {
-                        let obligation = &function.entailment.obligations[ordinal as usize];
-                        let leaf = &disposition.leaf;
-                        assert_eq!(leaf.function, function.id);
-                        assert_eq!(leaf.obligation, obligation.node_path);
-                        assert_eq!(leaf.conjunct, 0);
-                        assert_eq!(
-                            program
-                                .provenance
-                                .local_leaf_dispositions
-                                .iter()
-                                .filter(|candidate| *candidate == disposition)
-                                .count(),
-                            1
-                        );
-                        assert_eq!(
-                            direct_demands,
-                            &program
-                                .provenance
-                                .direct_demands
-                                .iter()
-                                .filter(|candidate| candidate.leaf == *leaf)
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        );
-                        assert_eq!(
-                            structural_bridges,
-                            &program
-                                .provenance
-                                .structural_bridges
-                                .iter()
-                                .filter(|candidate| candidate.leaf == *leaf)
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        );
-                        assert_eq!(
-                            subject_bridges,
-                            &program
-                                .provenance
-                                .subject_bridges
-                                .iter()
-                                .filter(|candidate| candidate.leaf == *leaf)
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        );
-                        assert_eq!(
-                            calls,
-                            &program
-                                .provenance
-                                .calls
-                                .iter()
-                                .filter(|candidate| candidate.leaf == *leaf)
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        );
-                    }
-                    (DerivationRootKind::BoundsObligation(_), _) => {
-                        panic!("a protected bounds leaf requires exact provenance")
-                    }
-                    (
-                        DerivationRootKind::CallGoal(ordinal),
-                        ClaimUseProvenance::Call { arguments, bridges },
-                    ) => {
-                        let outcome = &function.entailment.call_goals[ordinal as usize];
-                        assert_eq!(arguments.len(), outcome.argument_count as usize);
-                        assert!(arguments.iter().enumerate().all(|(ordinal, argument)| {
-                            argument.caller == function.id
-                                && argument.call == outcome.node_path
-                                && argument.argument as usize == ordinal
-                        }));
-                        assert_eq!(
-                            arguments,
-                            &program
-                                .provenance
-                                .call_argument_dispositions
-                                .iter()
-                                .filter(|candidate| {
-                                    candidate.caller == function.id
-                                        && candidate.call == outcome.node_path
-                                })
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        );
-                        assert_eq!(
-                            bridges,
-                            &program
-                                .provenance
-                                .calls
-                                .iter()
-                                .filter(|candidate| {
-                                    candidate.caller == function.id
-                                        && candidate.call == outcome.node_path
-                                })
-                                .cloned()
-                                .collect::<Vec<_>>()
-                        );
-                    }
-                    (DerivationRootKind::CallGoal(_), _) => {
-                        panic!("a call goal requires its exact success-side provenance")
-                    }
-                    (_, ClaimUseProvenance::NotApplicable) => {}
-                    (_, ClaimUseProvenance::ProtectedLeaf { .. }) => {
-                        panic!("only bounds leaves carry local PRV provenance")
-                    }
-                    (_, ClaimUseProvenance::Call { .. }) => {
-                        panic!("only call goals carry call provenance")
-                    }
-                }
-            }
-        }
-
-        let published_uses = entries.iter().map(|entry| entry.uses.len()).sum::<usize>();
-        let mut expected_uses = 0usize;
-        for root in &function.entailment.derivations.roots {
-            let eligible = match root.kind {
-                DerivationRootKind::BoundsObligation(ordinal)
-                | DerivationRootKind::IntegerDomainObligation(ordinal) => function
-                    .entailment
-                    .obligations
-                    .get(ordinal as usize)
-                    .is_some_and(|outcome| {
-                        outcome.derivation == Some(root.node)
-                            && outcome.discharged
-                            && !outcome.contradictory
-                    }),
-                DerivationRootKind::CallGoal(ordinal) => function
-                    .entailment
-                    .call_goals
-                    .get(ordinal as usize)
-                    .is_some_and(|outcome| {
-                        outcome.derivation == Some(root.node)
-                            && outcome.disposition == CallGoalDisposition::Discharged
-                            && !outcome.evidence.contains(&CallGoalEvidence::AllDerivable)
-                    }),
-                DerivationRootKind::PostconditionAggregate {
-                    relation_ordinal,
-                    view: ProofView::Complete,
-                } => function
-                    .entailment
-                    .postconditions
-                    .get(relation_ordinal as usize)
-                    .is_some_and(|proof| {
-                        proof.relation_ordinal == relation_ordinal
-                            && proof.complete.derivation == Some(root.node)
-                            && proof.complete.discharged
-                    }),
-                _ => false,
-            };
-            if !eligible || !function.entailment.derivations.is_non_explosive(root.node) {
-                continue;
-            }
-            let mut used_claims = Vec::<NodePath>::new();
-            for (path, _) in function
-                .entailment
-                .derivations
-                .event_premises(root.node, FlowEventKind::S3)
-            {
-                if !used_claims.contains(&path) {
-                    used_claims.push(path);
-                }
-            }
-            expected_uses += used_claims.len();
-        }
-        assert_eq!(published_uses, expected_uses);
-        entry_ordinal += function.entailment.claims.len();
-    }
-    assert_eq!(entry_ordinal, program.claim_ledger.entries.len());
-}
-
-fn assert_derivation_mutation_rejected(
+fn assert_derivation_metadata_edit_rejected(
     summary: &FunctionEntailment,
-    mutate: impl FnOnce(&mut FunctionEntailment),
+    edit: impl FnOnce(&mut FunctionEntailment),
 ) {
-    let mut mutant = summary.clone();
-    mutate(&mut mutant);
+    let mut edited = summary.clone();
+    edit(&mut edited);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            validate_derivations(&mutant);
+            validate_derivations(&edited);
         }))
         .is_err(),
-        "the hostile counted-root mutation must fail the structural checker"
+        "an inconsistent counted-root edit must fail the metadata checker"
     );
 }
 
@@ -2967,26 +2617,16 @@ fn equality_retains_both_directed_parents_and_reflexive_implicit_support() {
   return unit;
 }
 
-fn hidden_identity(value: own u64) -> result: own u64 pure {
-  return value;
-}
-
-fn directed(value: own u64) -> result: own unit traps {
-  let left = value;
-  let right = value;
-  let cursor = 0_u8;
-  loop @advance_pair {
-    if ieq(cursor, 3_u8) {
-      break @advance_pair;
+fn directed(left: own u64, right: own u64) -> result: own unit pure {
+  if ile(left, right) {
+    if ile(right, left) {
+      need_equal(left: left, right: right);
     } else {
-      set left = left +wrap 1_u64;
-      set right = right +wrap 1_u64;
-      set cursor = cursor +wrap 1_u8;
+      return unit;
     }
+  } else {
+    return unit;
   }
-  claim forward: ile(left, right) because "premises: left and right start equal and every completed current-function loop iteration applies the same wrapping increment to both\nderivation: induction over reached loop bodies preserves equality, so left is at most right\nconclusion: left is at most right\nchecker gap: ENT carries no relational induction fact across this ordinary-loop backedge\nconsumers: need_equal requires this directed half of left equals right";
-  claim reverse: ile(right, left) because "premises: left and right start equal and every completed current-function loop iteration applies the same wrapping increment to both\nderivation: induction over reached loop bodies preserves equality, so right is at most left\nconclusion: right is at most left\nchecker gap: ENT carries no relational induction fact across this ordinary-loop backedge\nconsumers: need_equal requires this directed half of left equals right";
-  need_equal(left: left, right: right);
   return unit;
 }
 
@@ -3012,9 +2652,9 @@ command fn main() -> status: own ExitStatus pure {
         let DerivationNode::SourceBound { event, .. } =
             &directed.derivations.nodes[parent.0 as usize]
         else {
-            panic!("each directed equality parent comes from its passed claim");
+            panic!("each directed equality parent comes from its branch fact");
         };
-        assert_eq!(retained_event(&directed, *event).kind, FlowEventKind::S3);
+        assert_eq!(retained_event(&directed, *event).kind, FlowEventKind::S1);
     }
 
     let reflexive = accepted_entailment(source, "reflexive");
@@ -3083,11 +2723,11 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_kill_between_establishment_and_query_breaks_an_underived_chain() {
-    // The flow carries established facts and closure happens at the query
-    // [ENT-3, ENT-4]: consuming the middle term's root before the query
-    // leaves the endpoints unrelated, because i - Z was never established
-    // as its own fact on this straight-line path.
+fn consuming_a_middle_vertex_preserves_its_survivor_consequence() {
+    // The move kills p.count, but it cannot retroactively change the already
+    // proved independent integer fact i < 4. Killed-vertex projection fixes
+    // that one survivor relation before the middle term disappears; this is a
+    // deliberate capability increase over query-only closure.
     let source = br#"const count: u64 = 4_u64;
 
 struct Pair {
@@ -3124,15 +2764,107 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![false],
-        "consuming p kills both links before any join materializes i <= 3"
+        vec![true],
+        "consuming the middle projects the still-true i <= 3 conclusion"
     );
-    assert!(summary.obligations[0].derivation.is_none());
+    assert_root_contains(
+        &summary,
+        obligation_root(&summary, 0),
+        |node| matches!(node, DerivationNode::TransitiveBound { .. }),
+        "the killed-middle projection",
+    );
 }
 
 // ---------------------------------------------------------------------
 // [ENT-5] kills: assignment overlap and effect-row write projection
 // ---------------------------------------------------------------------
+
+#[test]
+fn assigning_a_middle_vertex_projects_a_bound_needed_after_the_write() {
+    let source = br#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+} {
+  set middle = replacement;
+  let result = x + 1_u8;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(source, "increment");
+    validate_derivations(&summary);
+    assert_eq!(
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true],
+        "x <= middle <= 254 must project x <= 254 before middle is assigned"
+    );
+    assert_root_contains(
+        &summary,
+        obligation_root(&summary, 0),
+        |node| matches!(node, DerivationNode::TransitiveBound { .. }),
+        "the killed-middle projection",
+    );
+}
+
+#[test]
+fn projection_does_not_preserve_a_bound_when_the_final_endpoint_is_written() {
+    let source = br#"fn increment(x: own u8, middle: own u8, replacement: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+} {
+  set middle = replacement;
+  set x = 255_u8;
+  let result = x + 1_u8;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "increment"),
+        vec![false],
+        "the later endpoint write kills the projected x <= 254 fact"
+    );
+}
+
+#[test]
+fn projection_does_not_preserve_a_bound_through_a_moved_alias_write_to_its_endpoint() {
+    let source = br#"fn overwrite['w](value: &uniq 'w u8) -> result: own unit writes(value) {
+  set deref(value) = 255_u8;
+  return unit;
+}
+
+fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
+  requires ile(x, middle);
+  requires ile(middle, 254_u8);
+} {
+  region 'w {
+    let holder = &uniq 'w x;
+    overwrite<'w>(value: move holder);
+  }
+  let result = x + 1_u8;
+  return result;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "increment"),
+        vec![false],
+        "the moved writable alias resolves to and kills x itself, so no survivor endpoint exists"
+    );
+}
 
 #[test]
 fn an_assignment_to_a_sibling_field_keeps_facts_and_to_the_fact_field_kills_them() {
@@ -3855,7 +3587,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_fresh_binding_reusing_an_expired_spelling_inherits_no_stale_fact() {
-    // The stale-fact/fresh-binding attack shape: each arm declares its own
+    // The stale-fact/fresh-binding edge case: each arm declares its own
     // `j`; the second is a distinct declaration event [ENT-2] and no fact
     // established for the first may attach to it.
     let source = br#"const count: u64 = 4_u64;
@@ -4051,8 +3783,7 @@ command fn main() -> status: own ExitStatus pure {
         .derivations
         .nodes
         .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
+        .filter_map(|node| {
             let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
                 return None;
             };
@@ -4070,8 +3801,7 @@ command fn main() -> status: own ExitStatus pure {
             else {
                 return None;
             };
-            (summary.derivations.node_views[index] == ProofView::Complete)
-                .then_some((*receiver, *left, parents))
+            Some((*receiver, *left, parents))
         })
         .collect::<Vec<_>>();
     assert_eq!(joins.len(), 1);
@@ -4080,21 +3810,19 @@ command fn main() -> status: own ExitStatus pure {
             .derivations
             .nodes
             .iter()
-            .enumerate()
-            .filter(|(index, node)| {
-                summary.derivations.node_views[*index] == ProofView::Complete
-                    && matches!(
-                        node,
-                        DerivationNode::PostconditionGive { relation, .. }
-                            if matches!(
-                                **relation,
-                                Relation::Bound {
-                                    right: ZERO,
-                                    bound: 7 | 127,
-                                    ..
-                                }
-                            )
-                    )
+            .filter(|node| {
+                matches!(
+                    node,
+                    DerivationNode::PostconditionGive { relation, .. }
+                        if matches!(
+                            **relation,
+                            Relation::Bound {
+                                right: ZERO,
+                                bound: 7 | 127,
+                                ..
+                            }
+                        )
+                )
             })
             .count(),
         2,
@@ -4106,26 +3834,25 @@ command fn main() -> status: own ExitStatus pure {
             .roots
             .iter()
             .filter(|root| {
-                summary.derivations.node_views[root.node.0 as usize] == ProofView::Complete
-                    && match &summary.derivations.nodes[root.node.0 as usize] {
-                        DerivationNode::PostconditionGive { relation, .. } => matches!(
-                            **relation,
-                            Relation::Bound {
-                                right: ZERO,
-                                bound: 7 | 127,
-                                ..
-                            }
-                        ),
-                        DerivationNode::PostconditionDeliveryJoin { detail } => matches!(
-                            detail.relation,
-                            Relation::Bound {
-                                right: ZERO,
-                                bound: 127,
-                                ..
-                            }
-                        ),
-                        _ => false,
-                    }
+                match &summary.derivations.nodes[root.node.0 as usize] {
+                    DerivationNode::PostconditionGive { relation, .. } => matches!(
+                        **relation,
+                        Relation::Bound {
+                            right: ZERO,
+                            bound: 7 | 127,
+                            ..
+                        }
+                    ),
+                    DerivationNode::PostconditionDeliveryJoin { detail } => matches!(
+                        detail.relation,
+                        Relation::Bound {
+                            right: ZERO,
+                            bound: 127,
+                            ..
+                        }
+                    ),
+                    _ => false,
+                }
             })
             .count(),
         3,
@@ -4326,12 +4053,7 @@ command fn main() -> status: own ExitStatus pure {
         .derivations
         .nodes
         .iter()
-        .enumerate()
         .filter_map(|node| {
-            let (index, node) = node;
-            if summary.derivations.node_views[index] != ProofView::Complete {
-                return None;
-            }
             let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
                 return None;
             };
@@ -4374,7 +4096,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn one_structural_value_if_delivery_retains_exact_c_u_b_edge_order() {
+fn one_structural_value_if_delivery_retains_exact_originating_edge_order() {
     let source = br#"fn guard(value: own i32) -> result: own unit pure contract {
   requires ilt(value, 128_i32);
 } {
@@ -4401,12 +4123,11 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let summary = entailment(source, "choose");
     validate_derivations(&summary);
-    let views = summary
+    let joins = summary
         .derivations
         .nodes
         .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
+        .filter_map(|node| {
             let DerivationNode::PostconditionDeliveryJoin { detail } = node else {
                 return None;
             };
@@ -4421,28 +4142,19 @@ command fn main() -> status: own ExitStatus pure {
             else {
                 return None;
             };
-            assert_eq!(
+            Some(
                 parents
                     .iter()
                     .map(|parent| parent.ordinal)
                     .collect::<Vec<_>>(),
-                vec![0, 1]
-            );
-            Some(summary.derivations.node_views[index])
+            )
         })
         .collect::<Vec<_>>();
-    assert_eq!(
-        views,
-        vec![
-            ProofView::Complete,
-            ProofView::Unasserted,
-            ProofView::S4Blinded,
-        ]
-    );
+    assert_eq!(joins, vec![vec![0, 1]]);
 }
 
 #[test]
-fn a_prv_event_discards_a_no_ensures_value_if_delivery_batch() {
+fn a_local_invariant_does_not_discard_an_unrelated_no_ensures_value_if_delivery() {
     let source = br#"fn choose(value: own i32, side: own Bool) -> result: own i32 pure {
   if ilt(value, 128_i32) {
     let picked = if side {
@@ -4456,36 +4168,26 @@ fn a_prv_event_discards_a_no_ensures_value_if_delivery_batch() {
   }
 }
 
-fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn read(values: own array<u8, 4>, raw_position: own u64) -> result: own u8 traps {
-  let position = imin(raw_position, 3_u64);
-  claim bounded: ilt(position, 4_u64) because "premises: position is imin(raw_position, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: position is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following array subscript consumes this bound";
+fn read(values: own array<u8, 4>, position: own u64) -> result: own u8 pure contract {
+  requires ile(position, 3_u64);
+} {
+  invariant bounded: ile(position, 3_u64);
   return values[position];
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), traps {
-  let values = array_new<u8, 4>(0_u8);
-  region 'a {
-    let raw_position = args_count<'a>(args: &'a args);
-    let selected = read(values: move values, raw_position: raw_position);
-  }
+command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
     with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("PRV must discard the no-ensures delivery batch: {outcome:?}");
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("local invariant checking must preserve the unrelated delivery: {outcome:?}");
         };
-        assert_eq!(issue.rule_id(), "PRV-2");
     });
     with_semantics_dark(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("PRV must discard the no-ensures delivery batch: {outcome:?}");
+        let SemanticOutcome::Complete(_) = outcome else {
+            panic!("dark checking must preserve the unrelated delivery: {outcome:?}");
         };
-        assert_eq!(issue.rule_id(), "PRV-2");
     });
 }
 
@@ -4904,7 +4606,7 @@ fn a_counted_range_discharges_its_binder_and_safe_predecessor_indices() {
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 1_u64..4_u64 {
+  for @items (i in 1_u64..4_u64) {
     let previous = i -wrap 1_u64;
     let current_value = values[i];
     let previous_value = values[previous];
@@ -4931,7 +4633,7 @@ fn a_counted_range_does_not_prove_the_next_index_or_an_unrelated_carried_index()
 
 fn read(values: own array<i32, count>, j: own u64) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 0_u64..4_u64 {
+  for @items (i in 0_u64..4_u64) {
     let next = i +wrap 1_u64;
     let current_value = values[i];
     let next_value = values[next];
@@ -4960,7 +4662,7 @@ fn a_counted_upper_needs_an_independent_relation_to_the_storage_length() {
 
 fn read(values: own array<i32, count>, upper: own u64) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 0_u64..upper {
+  for @items (i in 0_u64..upper) {
     let value = values[i];
     set total = total +wrap value;
   }
@@ -4979,13 +4681,13 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_counted_preheader_closes_snapshot_consequences_before_body_kills() {
+fn killed_middles_preserve_survivor_consequences_in_counted_and_ordinary_flow() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let upper = 4_u64;
   let total = 0_i32;
-  for @items i in 0_u64..upper {
+  for @items (i in 0_u64..upper) {
     set upper = 0_u64;
     let value = values[i];
     set total = total +wrap value;
@@ -5026,15 +4728,123 @@ command fn main() -> status: own ExitStatus pure {
         |node| matches!(node, DerivationNode::MaterializedBound { .. }),
         "the counted preheader materialization marker",
     );
+    let ordinary = entailment(source, "ordinary");
+    validate_derivations(&ordinary);
     assert_eq!(
-        discharge_flags(source, "ordinary"),
-        vec![false],
-        "without S11's preheader materialization, the same write kills the ordinary query-derived relation"
+        ordinary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true],
+        "the ordinary write projects i < 4 before killing the mutable middle upper"
+    );
+    assert_root_contains(
+        &ordinary,
+        obligation_root(&ordinary, 0),
+        |node| match node {
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: -1,
+                ..
+            } => {
+                matches!(
+                    (
+                        retained_term(&ordinary, *left),
+                        retained_term(&ordinary, *middle),
+                        retained_term(&ordinary, *right),
+                    ),
+                    (
+                        TermKind::Place(i, IntegerType::U64),
+                        TermKind::Place(upper, IntegerType::U64),
+                        TermKind::Constant(4),
+                    ) if i.root == PlaceRoot::Binding(BindingId(1))
+                        && upper.root == PlaceRoot::Binding(BindingId(2))
+                )
+            }
+            _ => false,
+        },
+        "the exact i - upper <= -1 plus upper - 4 <= 0 projection",
     );
 }
 
 #[test]
-fn counted_roots_cover_hostile_control_edges_and_unused_s11_facts() {
+fn a_write_preserves_a_survivor_bound_derived_through_disequality_strengthening() {
+    let source = br#"const count: u64 = 3_u64;
+
+fn read(values: own array<i32, count>, index: own u64, middle: own u64) -> result: own i32 pure contract {
+  requires ile(index, middle);
+  requires ine(index, middle);
+  requires ile(middle, 3_u64);
+} {
+  set middle = 0_u64;
+  return values[index];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "read");
+    validate_derivations(&summary);
+    let [obligation] = summary.obligations.as_slice() else {
+        panic!("the one subscript must retain exactly one bounds obligation");
+    };
+    assert!(obligation.discharged);
+    let root = obligation_root(&summary, 0);
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::StrengthenedBound { .. }),
+        "index <= middle and index != middle strengthen to index < middle",
+    );
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::MaterializedBound { bound: 2, .. }),
+        "the complete pre-write closure publishes index <= 2 before middle changes",
+    );
+}
+
+#[test]
+fn a_write_preserves_a_survivor_bound_derived_through_an_implicit_type_edge() {
+    let source =
+        br#"fn increment(value: own u8, byte_limit: own u8) -> result: own u8 pure contract {
+  requires ilt(value, byte_limit);
+} {
+  set byte_limit = 0_u8;
+  return value + 1_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "increment");
+    validate_derivations(&summary);
+    let [obligation] = summary.obligations.as_slice() else {
+        panic!("the one exact addition must retain exactly one domain obligation");
+    };
+    assert!(obligation.discharged);
+    let root = obligation_root(&summary, 0);
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::ImplicitBound { .. }),
+        "the u8 middle contributes its implicit upper bound before it changes",
+    );
+    assert_root_contains(
+        &summary,
+        root,
+        |node| matches!(node, DerivationNode::MaterializedBound { bound: 254, .. }),
+        "the complete pre-write closure publishes value <= 254 independently",
+    );
+}
+
+#[test]
+fn counted_roots_cover_mixed_control_edges_and_unused_s11_facts() {
     let source = br#"enum Stop {
   Failed();
 }
@@ -5047,41 +4857,41 @@ fn maybe(fail: own Bool) -> result: own Result<unit, Stop> pure {
   return Ok<unit, Stop>(value: unit);
 }
 
-fn hostile(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> result: own Result<unit, Stop> pure {
-  for @zero zero in 0_u64..0_u64 {
+fn mixed_edges(lower: own u64, upper: own u64, leave: own Bool, fail: own Bool) -> result: own Result<unit, Stop> pure {
+  for @zero (zero in 0_u64..0_u64) {
   }
-  for @reversed reversed in 2_u64..1_u64 {
+  for @reversed (reversed in 2_u64..1_u64) {
   }
-  for @singleton singleton in 0_u64..1_u64 {
+  for @singleton (singleton in 0_u64..1_u64) {
   }
-  for @maximum maximum in 18446744073709551614_u64..18446744073709551615_u64 {
+  for @maximum (maximum in 18446744073709551614_u64..18446744073709551615_u64) {
   }
   let mutable_lower = lower;
   let mutable_upper = upper;
-  for @mutated at in mutable_lower..mutable_upper {
+  for @mutated (at in mutable_lower..mutable_upper) {
     set mutable_lower = 0_u64;
     set mutable_upper = 0_u64;
     if leave {
       break @mutated;
     }
   }
-  for @returning at in 0_u64..1_u64 {
+  for @returning (at in 0_u64..1_u64) {
     if leave {
       return Ok<unit, Stop>(value: unit);
     }
   }
-  for @propagating at in 0_u64..1_u64 {
+  for @propagating (at in 0_u64..1_u64) {
     let ignored = propagate maybe(fail: fail);
   }
-  for @outer_counted outer in 0_u64..1_u64 {
-    for @inner_counted inner in 0_u64..1_u64 {
+  for @outer_counted (outer in 0_u64..1_u64) {
+    for @inner_counted (inner in 0_u64..1_u64) {
       if leave {
         break @inner_counted;
       }
     }
   }
   loop @ordinary {
-    for @breaking at in 0_u64..1_u64 {
+    for @breaking (at in 0_u64..1_u64) {
       if leave {
         break @ordinary;
       } else {
@@ -5097,7 +4907,7 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let summary = entailment(source, "hostile");
+    let summary = entailment(source, "mixed_edges");
     validate_derivations(&summary);
     assert_eq!(summary.counted_derivations.len(), 10);
     assert_eq!(
@@ -5152,7 +4962,7 @@ fn contradictory(left: own u64, right: own u64, choose: own Bool) -> result: own
   } else {
     return unit;
   }
-  for @impossible i in 0_u64..1_u64 {
+  for @impossible (i in 0_u64..1_u64) {
   }
   return unit;
 }
@@ -5163,7 +4973,7 @@ fn joined(values: own array<i32, count>, x: own u64) -> result: own i32 pure {
     let impossible = x;
   }
   let total = 0_i32;
-  for @items i in 0_u64..upper {
+  for @items (i in 0_u64..upper) {
     let item = values[i];
     set total = total +wrap item;
   }
@@ -5239,9 +5049,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn counted_root_mutations_fail_the_structural_checker() {
+fn inconsistent_counted_root_metadata_fails_the_test_checker() {
     let source = br#"fn probe(upper: own u64) -> result: own unit pure {
-  for @items i in 0_u64..upper {
+  for @items (i in 0_u64..upper) {
   }
   return unit;
 }
@@ -5254,32 +5064,32 @@ command fn main() -> status: own ExitStatus pure {
     validate_derivations(&summary);
     assert_eq!(summary.counted_derivations.len(), 1);
 
-    assert_derivation_mutation_rejected(&summary, |mutant| {
-        let index = mutant
+    assert_derivation_metadata_edit_rejected(&summary, |edited| {
+        let index = edited
             .derivations
             .roots
             .iter()
             .position(|root| matches!(root.kind, DerivationRootKind::CountedS11 { .. }))
             .expect("counted root");
-        mutant.derivations.roots.remove(index);
+        edited.derivations.roots.remove(index);
     });
-    assert_derivation_mutation_rejected(&summary, |mutant| {
-        let root = *mutant
+    assert_derivation_metadata_edit_rejected(&summary, |edited| {
+        let root = *edited
             .derivations
             .roots
             .iter()
             .find(|root| matches!(root.kind, DerivationRootKind::CountedS11 { .. }))
             .expect("counted root");
-        mutant.derivations.roots.push(root);
+        edited.derivations.roots.push(root);
     });
-    assert_derivation_mutation_rejected(&summary, |mutant| {
-        mutant.counted_derivations[0]
+    assert_derivation_metadata_edit_rejected(&summary, |edited| {
+        edited.counted_derivations[0]
             .counted_node_path
             .components
             .push(999);
     });
-    assert_derivation_mutation_rejected(&summary, |mutant| {
-        let relation = &mut mutant.counted_derivations[0]
+    assert_derivation_metadata_edit_rejected(&summary, |edited| {
+        let relation = &mut edited.counted_derivations[0]
             .lower_capture_eq_endpoint
             .forward
             .relation;
@@ -5288,30 +5098,30 @@ command fn main() -> status: own ExitStatus pure {
         };
         *bound = 1;
     });
-    assert_derivation_mutation_rejected(&summary, |mutant| {
-        mutant.counted_derivations[0]
+    assert_derivation_metadata_edit_rejected(&summary, |edited| {
+        edited.counted_derivations[0]
             .upper_capture_eq_endpoint
             .reverse
             .parent = DerivationId(u32::MAX);
     });
-    assert_derivation_mutation_rejected(&summary, |mutant| {
-        let parent = mutant.counted_derivations[0]
+    assert_derivation_metadata_edit_rejected(&summary, |edited| {
+        let parent = edited.counted_derivations[0]
             .lower_capture_eq_endpoint
             .forward
             .parent;
-        let event = match mutant.derivations.nodes[parent.0 as usize] {
+        let event = match edited.derivations.nodes[parent.0 as usize] {
             DerivationNode::MaterializedBound { event, .. }
             | DerivationNode::MaterializedContradiction { event, .. } => event,
             ref node => panic!("snapshot root has the wrong node: {node:?}"),
         };
-        mutant.derivations.events[event.0 as usize].kind = FlowEventKind::Join;
+        edited.derivations.events[event.0 as usize].kind = FlowEventKind::Join;
     });
-    assert_derivation_mutation_rejected(&summary, |mutant| {
-        let killed_preheader_parent = mutant.counted_derivations[0]
+    assert_derivation_metadata_edit_rejected(&summary, |edited| {
+        let killed_preheader_parent = edited.counted_derivations[0]
             .binder_eq_lower_capture
             .reverse
             .parent;
-        mutant.counted_derivations[0]
+        edited.counted_derivations[0]
             .lower_capture_le_binder
             .atomic
             .parent = killed_preheader_parent;
@@ -5322,9 +5132,9 @@ command fn main() -> status: own ExitStatus pure {
 fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
     let source = br#"fn ranges<const n: u64>(values: own array<u8, n>) -> result: own unit pure {
   let upper = len(values);
-  for @first i in 0_u64..upper {
+  for @first (i in 0_u64..upper) {
   }
-  for @second j in 1_u64..upper {
+  for @second (j in 1_u64..upper) {
   }
   return unit;
 }
@@ -5391,7 +5201,7 @@ fn a_break_free_zero_trip_counted_continuation_is_reachable_not_contradictory() 
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
-  for @empty i in 4_u64..4_u64 {
+  for @empty (i in 4_u64..4_u64) {
     let ignored = i;
   }
   return values[9_u64];
@@ -5413,7 +5223,7 @@ fn a_counted_body_fact_does_not_escape_through_the_zero_trip_edge() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  for @maybe n in 0_u64..1_u64 {
+  for @maybe (n in 0_u64..1_u64) {
     if ilt(i, 4_u64) {
       let ignored = n;
     } else {
@@ -5444,7 +5254,7 @@ fn read(values: own array<i32, count>, i: own u64, leave: own Bool) -> result: o
     return 0_i32;
   }
   loop @outer {
-    for @inner n in 0_u64..1_u64 {
+    for @inner (n in 0_u64..1_u64) {
       set i = i +wrap 1_u64;
       let ignored = n;
     }
@@ -5526,7 +5336,60 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_buffer_or_slice_offset_renders_the_same_subscript_spelling() {
+fn a_failed_inner_index_prevents_the_unreached_outer_bounds_obligation() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(lens: own array<u8, count>, order: own array<u64, count>, j: own u64) -> result: own u8 pure {
+  return lens[order[j]];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let outcomes = obligations(source, "read");
+    let [inner] = outcomes.as_slice() else {
+        panic!("only the reached inner index may retain an obligation: {outcomes:?}");
+    };
+    assert_eq!(inner.family, ObligationFamily::Bounds);
+    assert!(!inner.discharged);
+    assert_eq!(inner.residual.as_deref(), Some("j < len(order)"));
+}
+
+#[test]
+fn a_failed_boolean_index_publishes_no_admitted_goal_origin() {
+    let source = br#"fn remember(flags: own array<Bool, 1>) -> result: own unit pure {
+  let observed = flags[1_u64];
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(source, "remember");
+    let [index] = summary.obligations.as_slice() else {
+        panic!(
+            "the failed Boolean index must retain exactly its own obligation: {:?}",
+            summary.obligations
+        );
+    };
+    assert_eq!(index.family, ObligationFamily::Bounds);
+    assert!(!index.discharged);
+    assert!(
+        summary.inventory.goals.iter().all(|goal| !matches!(
+            &goal.expression,
+            GoalExpression::Operation {
+                row: GoalOperation::ArrayIndex { .. },
+                ..
+            }
+        )),
+        "an index whose own bounds obligation failed has no admitted value expression to publish"
+    );
+}
+
+#[test]
+fn a_buffer_offset_renders_the_outer_subscript_and_a_failed_slice_offset_stops_there() {
     let source = br#"const count: u64 = 4_u64;
 
 fn from_buffer(values: own array<u8, count>) -> result: own u8 allocates(heap) {
@@ -5557,12 +5420,119 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let slice = obligations(source, "from_slice");
-    assert_eq!(slice.len(), 2, "inner offset first, then the outer site");
-    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len(order)"));
     assert_eq!(
-        slice[1].residual.as_deref(),
-        Some("order[0_u64] < len(values)")
+        slice.len(),
+        1,
+        "the failed inner slice index prevents the outer site from being reached"
     );
+    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len(order)"));
+}
+
+#[test]
+fn failed_partial_operations_do_not_create_parent_or_downstream_domain_authority() {
+    let source = br#"fn add_after_index(values: own array<u8, 1>) -> result: own u8 pure {
+  let result = values[1_u64] + 1_u8;
+  return result;
+}
+
+fn continue_after_failed_exact() -> result: own u8 pure {
+  let below_zero = 0_u8 - 1_u8;
+  let recovered = below_zero + 1_u8;
+  return recovered;
+}
+
+fn continue_after_failed_set() -> result: own u8 pure {
+  let current = 0_u8;
+  set current = 0_u8 - 1_u8;
+  let recovered = current + 1_u8;
+  return recovered;
+}
+
+fn return_after_failed_set(value: own u8) -> result: own u8 pure contract {
+  ensures igt(result, value);
+} {
+  let current = 0_u8;
+  set current = value + 1_u8;
+  return current;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+
+    let indexed = obligations(source, "add_after_index");
+    let [inner_index] = indexed.as_slice() else {
+        panic!("only the reached inner index may retain an obligation: {indexed:?}");
+    };
+    assert_eq!(inner_index.family, ObligationFamily::Bounds);
+    assert!(!inner_index.discharged);
+    assert!(
+        indexed
+            .iter()
+            .all(|outcome| outcome.family != ObligationFamily::IntegerDomain),
+        "the outer exact addition has no admitted indexed operand and is not reached"
+    );
+
+    let exact = obligations(source, "continue_after_failed_exact");
+    let [subtraction, downstream_addition] = exact.as_slice() else {
+        panic!("both source-ordered exact sites must retain their own outcome: {exact:?}");
+    };
+    assert_eq!(subtraction.family, ObligationFamily::IntegerDomain);
+    assert!(subtraction.refuted);
+    assert!(matches!(
+        &subtraction.canonical_goal,
+        Some(GoalExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: CheckedIntegerOperation::SubtractDefined,
+                ..
+            },
+            ..
+        })
+    ));
+    assert_eq!(downstream_addition.family, ObligationFamily::IntegerDomain);
+    assert!(!downstream_addition.discharged);
+    assert!(matches!(
+        &downstream_addition.canonical_goal,
+        Some(GoalExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: CheckedIntegerOperation::AddDefined,
+                ..
+            },
+            ..
+        })
+    ));
+
+    let set = obligations(source, "continue_after_failed_set");
+    let [set_value, after_set] = set.as_slice() else {
+        panic!("the failed set value and later exact site retain outcomes: {set:?}");
+    };
+    assert_eq!(set_value.family, ObligationFamily::IntegerDomain);
+    assert!(set_value.refuted);
+    assert_eq!(after_set.family, ObligationFamily::IntegerDomain);
+    assert!(!after_set.discharged);
+
+    let returned = entailment(source, "return_after_failed_set");
+    let [set_value] = returned.obligations.as_slice() else {
+        panic!(
+            "the failed set value must retain its own domain outcome: {:?}",
+            returned.obligations
+        );
+    };
+    assert_eq!(set_value.family, ObligationFamily::IntegerDomain);
+    assert!(!set_value.discharged);
+    let [postcondition] = returned.postconditions.as_slice() else {
+        panic!(
+            "the failed return still retains an unproved FN-9 result: {:?}",
+            returned.postconditions
+        );
+    };
+    assert_eq!(postcondition.exits.len(), 1);
+    assert_eq!(
+        postcondition.exits[0].disposition,
+        PostconditionDisposition::Unproved
+    );
+    assert!(!postcondition.aggregate.discharged);
 }
 
 // ---------------------------------------------------------------------
@@ -5666,11 +5636,11 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_element_write_keeps_the_allocation_equality_that_a_write_to_its_length_kills() {
+fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
     // [ENT-5]: a buffer's length is fixed at allocation, so an element write
-    // never kills its length fact; a write to the term the equality is held
-    // against does. A buffer place is affine [STOR-1], so writing the root
-    // binding itself is not a source shape the engine can be shown.
+    // never kills its length fact. Writing n kills facts that still mention n,
+    // but first projects the already true 3 < len(b) consequence whose two
+    // endpoints survive the write.
     let source = br#"fn kept(n: own u64) -> result: own u8 allocates(heap) contract {
   requires buffer_fits<u8>(n);
 } {
@@ -5713,20 +5683,48 @@ command fn main() -> status: own ExitStatus pure {
     let killed = entailment(source, "killed");
     validate_derivations(&killed);
     assert!(
-        !killed
+        killed
             .obligations
             .last()
             .is_some_and(|outcome| outcome.discharged),
-        "writing n kills the allocation equality held against it"
+        "writing n preserves the already established 3 < len(b) consequence"
     );
-    assert!(killed.obligations.last().unwrap().derivation.is_none());
+    assert_root_contains(
+        &killed,
+        obligation_root(&killed, killed.obligations.len() - 1),
+        |node| match node {
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: -1,
+                ..
+            } => {
+                matches!(
+                    (
+                        retained_term(&killed, *left),
+                        retained_term(&killed, *middle),
+                        retained_term(&killed, *right),
+                    ),
+                    (
+                        TermKind::Constant(3),
+                        TermKind::Place(n, IntegerType::U64),
+                        TermKind::Length(buffer),
+                    ) if n.root == PlaceRoot::Binding(BindingId(0))
+                        && buffer.root == PlaceRoot::Binding(BindingId(1))
+                )
+            }
+            _ => false,
+        },
+        "the exact 3 - n <= -1 plus n - len(b) <= 0 projection",
+    );
 }
 
 #[test]
-fn consuming_the_buffer_kills_a_length_binding_that_survives_otherwise() {
-    // The support of len(b) is b's root binding, so a consuming use kills
-    // every fact holding it, including the equality a length binding carries
-    // away from it [ENT-5](c).
+fn consuming_the_buffer_projects_its_copied_length_before_the_root_dies() {
+    // The support of len(b) is b's root binding, so the length term dies with
+    // the move. Its already copied mathematical value m does not: projecting
+    // m = len(b) = 4 before the kill soundly preserves m < 8.
     let source = br#"const wide: u64 = 8_u64;
 
 fn eat(b: own buffer<u8>) -> result: own unit pure {
@@ -5775,24 +5773,29 @@ command fn main() -> status: own ExitStatus pure {
         FlowEventKind::S6,
     );
 
-    let killed = entailment(source, "killed");
-    validate_derivations(&killed);
+    let projected = entailment(source, "killed");
+    validate_derivations(&projected);
     assert_eq!(
-        killed
+        projected
             .obligations
             .iter()
             .filter(|outcome| outcome.family == ObligationFamily::Bounds)
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
-        vec![false],
-        "the consuming use kills m's tie to the allocation length"
+        vec![true],
+        "the consuming use projects the independent copied-length bound"
     );
-    let killed_bounds = killed
+    let projected_bounds = projected
         .obligations
         .iter()
-        .find(|outcome| outcome.family == ObligationFamily::Bounds)
+        .position(|outcome| outcome.family == ObligationFamily::Bounds)
         .expect("the subscript carries one bounds obligation");
-    assert!(killed_bounds.derivation.is_none());
+    assert_root_contains(
+        &projected,
+        obligation_root(&projected, projected_bounds),
+        |node| matches!(node, DerivationNode::TransitiveBound { .. }),
+        "the consumed length-root projection",
+    );
 }
 
 #[test]
@@ -5824,16 +5827,16 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 // ---------------------------------------------------------------------
-// [ENT-3] S3 claim facts
+// [ENT-3] S1 guard facts
 // ---------------------------------------------------------------------
 
 #[test]
-fn a_passed_claim_establishes_its_comparison_on_the_continuation() {
+fn a_true_guard_establishes_its_comparison_on_the_selected_edge() {
     let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
   return imin(value, 3_u64);
 }
 
-fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
+fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 pure {
   let bounded = 0_u64;
   loop @select_bound {
     if ieq(bounded, input) {
@@ -5844,11 +5847,13 @@ fn direct(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
       set bounded = bounded +wrap 1_u64;
     }
   }
-  claim i_must_be_in_range: ilt(bounded, 4_u64) because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, and exits no later than three\nderivation: induction over reached loop bodies keeps bounded between zero and three inclusive\nconclusion: bounded is below four\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following array subscript consumes this bound";
-  return values[bounded];
+  if ilt(bounded, 4_u64) {
+    return values[bounded];
+  }
+  return 0_i32;
 }
 
-fn through_origin(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
+fn through_origin(values: own array<i32, 4>, input: own u64) -> result: own i32 pure {
   let bounded = 0_u64;
   loop @select_bound {
     if ieq(bounded, input) {
@@ -5860,8 +5865,10 @@ fn through_origin(values: own array<i32, 4>, input: own u64) -> result: own i32 
     }
   }
   let ok = ilt(bounded, 4_u64);
-  claim i_must_be_in_range: ok because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, exits no later than three, and ok is ilt(bounded, 4)\nderivation: induction over reached loop bodies makes ok true\nconclusion: ok is True\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following array subscript expands ok and consumes its bounded-below-four comparison";
-  return values[bounded];
+  if ok {
+    return values[bounded];
+  }
+  return 0_i32;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -5872,20 +5879,19 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         accepted_discharge_flags(source, "through_origin"),
         vec![true],
-        "the claim reads comparison-origin shape (b) exactly as a match does"
+        "the guard reads comparison-origin shape (b) exactly as a direct comparison does"
     );
 }
 
 #[test]
-fn a_claim_on_a_band_establishes_its_conjuncts_not_a_whole_tree_relation() {
-    // Both conjuncts are genuine checker residuals and each is consumed by a
-    // distinct bounds obligation.  A checker-known unsigned lower bound would
-    // overlap the claim and must therefore not be used as the second member.
+fn a_true_band_guard_establishes_its_conjuncts_not_a_whole_tree_relation() {
+    // Each conjunct is consumed by a distinct bounds obligation on the true
+    // edge of the same Boolean guard.
     let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
   return imin(value, 3_u64);
 }
 
-fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_raw: own u64, right_raw: own u64) -> result: own i32 traps {
+fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_raw: own u64, right_raw: own u64) -> result: own i32 pure {
   let left = 0_u64;
   loop @select_left {
     if ieq(left, left_raw) {
@@ -5908,10 +5914,12 @@ fn read(left_values: own array<i32, 4>, right_values: own array<i32, 4>, left_ra
   }
   let left_inside = ilt(left, 4_u64);
   let right_inside = ilt(right, 4_u64);
-  claim both_inside: band(left_inside, right_inside) because "premises: each value starts at zero, advances by one only on its own current-function ordinary-loop backedge, and exits no later than three\nderivation: induction over both reached loop bodies makes both below-four comparisons true\nconclusion: band(left_inside, right_inside) is True\nchecker gap: ENT carries no induction fact across either ordinary-loop backedge\nconsumers: the two array subscripts consume the left and right comparison components respectively";
-  let first = left_values[left];
-  let second = right_values[right];
-  return first +wrap second;
+  if band(left_inside, right_inside) {
+    let first = left_values[left];
+    let second = right_values[right];
+    return first +wrap second;
+  }
+  return 0_i32;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -5964,6 +5972,268 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
+    // The RHS value is read before the write. After the target's stale facts
+    // are killed, S5 publishes `start = back`; no runtime check is needed.
+    let source = br#"fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
+  let n = len(deref(data));
+  let have_room = ige(n, 8_u64);
+  let start = 0_u64;
+  let out = 0_u8;
+  if have_room {
+    let back = n -wrap 8_u64;
+    set start = back;
+    let byte = deref(data)[start];
+    set out = byte;
+  }
+  return out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let input = buffer_new(4096_u64, 7_u8);
+  region 'r {
+    let byte = tail_byte<'r>(data: &'r input);
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "tail_byte");
+    validate_derivations(&summary);
+    assert_eq!(
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true]
+    );
+    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S5);
+}
+
+#[test]
+fn a_scope_exit_keeps_a_closed_consequence_that_does_not_name_the_local() {
+    // `next` cannot survive its arm. The mathematical consequence
+    // `out = i + 1`, and therefore `out < 4`, does not name `next` and must be
+    // materialized before the arm-local binding is killed.
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
+  let out = 0_u64;
+  if ilt(i, 3_u64) {
+    let next = i +wrap 1_u64;
+    set out = next;
+  } else {
+    return 0_i32;
+  }
+  return values[out];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "read");
+    validate_derivations(&summary);
+    assert_eq!(
+        summary
+            .obligations
+            .iter()
+            .map(|outcome| outcome.discharged)
+            .collect::<Vec<_>>(),
+        vec![true]
+    );
+    let root = obligation_root(&summary, 0);
+    assert_root_has_event_kind(&summary, root, FlowEventKind::S5);
+    assert_root_has_event_kind(&summary, root, FlowEventKind::Snapshot);
+}
+
+#[test]
+fn a_set_commit_kills_the_old_target_fact_before_publishing_the_new_copy() {
+    let source = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  let offset = 0_u64;
+  if ilt(offset, 4_u64) {
+  } else {
+    return 0_i32;
+  }
+  set offset = replacement;
+  return values[offset];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(source, "read"),
+        vec![false],
+        "offset = replacement cannot preserve the killed fact offset < 4"
+    );
+}
+
+/// [ENT-3.S5, ENT-3.S7] A `set` evaluates its right-hand side under exactly
+/// the value sources a `let` initializer uses, so a wrapping offset whose
+/// range the closed state derives publishes its image through the commit
+/// value just as the two-statement spelling does.
+///
+/// This test previously pinned the opposite: the same expression was accepted
+/// through an intervening `let` binding and rejected when written directly,
+/// because the commit published only the three-row copy image and an
+/// arithmetic right-hand side had none. That asymmetry was a defect in the
+/// commit's value image, not a language rule, so the test now states the
+/// agreement it should always have had.
+#[test]
+fn a_wrapping_offset_commit_publishes_the_image_its_let_spelling_publishes() {
+    let direct = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    set offset = replacement +wrap 0_u64;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let through_let = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    let shifted = replacement +wrap 0_u64;
+    set offset = shifted;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(direct, "read"),
+        vec![true],
+        "the commit value carries the derived wrapping offset to the target"
+    );
+    assert_eq!(
+        discharge_flags(through_let, "read"),
+        discharge_flags(direct, "read"),
+        "one value written two ways must have one verdict"
+    );
+}
+
+/// [ENT-3.S5] A right-hand side outside every value source still publishes no
+/// image. `k +wrap k` is no constant offset, so the commit value carries only
+/// its type range and the subscript stays undischarged — in both spellings.
+#[test]
+fn a_set_right_hand_side_outside_every_value_source_publishes_no_image() {
+    let direct = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    set offset = replacement +wrap replacement;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let through_let = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    let doubled = replacement +wrap replacement;
+    set offset = doubled;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(direct, "read"),
+        vec![false],
+        "the compiler does not search for an unlisted operation image"
+    );
+    assert_eq!(
+        discharge_flags(through_let, "read"),
+        discharge_flags(direct, "read"),
+        "one value written two ways must have one verdict"
+    );
+}
+
+/// [ENT-3.S5, ENT-3.S7] A wrapping subtraction whose range the closed state
+/// cannot derive publishes no image at a commit, exactly as at a `let`: the
+/// commit value keeps only its own type range, so a following exact use is
+/// still rejected. Accepting it would read `values[u64::MAX]` for a zero
+/// operand, which is why the commit value must never carry the unwrapped
+/// result of an unproved wrap.
+#[test]
+fn a_wrapping_subtraction_commit_publishes_no_post_write_image() {
+    let direct = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    set offset = replacement -wrap 1_u64;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let through_let = br#"const count: u64 = 4_u64;
+
+fn read(values: own array<i32, count>, replacement: own u64) -> result: own i32 pure {
+  if ilt(replacement, 4_u64) {
+    let offset = 0_u64;
+    let lowered = replacement -wrap 1_u64;
+    set offset = lowered;
+    return values[offset];
+  } else {
+    return 0_i32;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    assert_eq!(
+        discharge_flags(direct, "read"),
+        vec![false],
+        "an unproved wrapping subtraction leaves the commit value unbounded"
+    );
+    assert_eq!(
+        discharge_flags(through_let, "read"),
+        discharge_flags(direct, "read"),
+        "one value written two ways must have one verdict"
+    );
+}
+
+#[test]
 fn a_narrowing_conversion_carries_no_equality_into_its_ok_arm() {
     // [OP-6] narrowing is not a total pair, so [ENT-3] S5 does not apply and
     // the `Ok` binder inherits only its own type range.
@@ -6001,7 +6271,76 @@ command fn main() -> status: own ExitStatus pure {
 // ---------------------------------------------------------------------
 
 #[test]
-fn unsigned_bit_and_and_shift_one_retain_exact_s7_sources_in_all_views() {
+fn unsigned_remainder_publishes_its_strict_divisor_bound() {
+    let source =
+        br#"fn reduce(dividend: own u64, divisor: own u64) -> result: own u64 pure contract {
+  requires ine(divisor, 0_u64);
+  ensures ilt(result, divisor);
+} {
+  let remainder = dividend % divisor;
+  return remainder;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "reduce");
+    validate_derivations(&summary);
+    assert_eq!(summary.s7_derivations.len(), 1);
+    assert!(
+        summary
+            .s7_derivations
+            .iter()
+            .all(|source| matches!(source.kind, S7DerivationKind::UnsignedRemainderBound { .. }))
+    );
+    let [postcondition] = summary.postconditions.as_slice() else {
+        panic!("reduce must retain one postcondition proof");
+    };
+    assert!(postcondition.aggregate.discharged);
+}
+
+#[test]
+fn signed_constant_remainders_publish_intervals_for_exact_arithmetic() {
+    let source = br#"fn combine(left_seed: own i32, right_seed: own i32) -> result: own i32 pure {
+  let left = left_seed % 41_i32;
+  let right = right_seed % -3_i32;
+  return left + right;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = accepted_entailment(source, "combine");
+    validate_derivations(&summary);
+    assert_eq!(summary.s7_derivations.len(), 4);
+    assert!(
+        summary
+            .s7_derivations
+            .iter()
+            .all(|source| matches!(source.kind, S7DerivationKind::SignedRemainderBound { .. }))
+    );
+    assert_eq!(
+        summary
+            .s7_derivations
+            .iter()
+            .filter(|source| matches!(
+                source.kind,
+                S7DerivationKind::SignedRemainderBound {
+                    endpoint: RemainderEndpoint::Minimum,
+                    ..
+                }
+            ))
+            .count(),
+        2
+    );
+    assert_eq!(summary.obligations.len(), 3);
+    assert!(summary.obligations.iter().all(|outcome| outcome.discharged));
+}
+
+#[test]
+fn unsigned_bit_and_and_shift_one_retain_exact_s7_sources() {
     let source = br#"const earlier_one: u32 = 1_u32;
 
 fn sources(left: own u32, right: own u32, count: own u32) -> result: own u32 pure {
@@ -6017,26 +6356,14 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let summary = entailment(source, "sources");
     validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 12);
+    assert_eq!(summary.s7_derivations.len(), 4);
 
-    let expected_bit_and_views = [
-        ProofView::Complete,
-        ProofView::Complete,
-        ProofView::Unasserted,
-        ProofView::Unasserted,
-        ProofView::S4Blinded,
-        ProofView::S4Blinded,
-    ];
-    let bit_and = &summary.s7_derivations[..6];
-    assert_eq!(
-        bit_and.iter().map(|source| source.view).collect::<Vec<_>>(),
-        expected_bit_and_views
-    );
+    let bit_and = &summary.s7_derivations[..2];
     assert!(bit_and.iter().all(|source| source.row == IntegerType::U32));
     assert!(
         bit_and
             .iter()
-            .all(|source| source.binding == bit_and[0].binding)
+            .all(|source| source.subject == bit_and[0].subject)
     );
     assert!(
         bit_and
@@ -6056,28 +6383,28 @@ command fn main() -> status: own ExitStatus pure {
                 S7DerivationKind::ShiftOneNonzero { .. } => {
                     panic!("the first S7 group must be the bit-and bounds")
                 }
+                S7DerivationKind::UnsignedDivisionBound { .. } => {
+                    panic!("the first S7 group must be the bit-and bounds")
+                }
+                S7DerivationKind::UnsignedRemainderBound { .. } => {
+                    panic!("the first S7 group must be the bit-and bounds")
+                }
+                S7DerivationKind::SignedRemainderBound { .. } => {
+                    panic!("the first S7 group must be the bit-and bounds")
+                }
             })
             .collect::<Vec<_>>(),
-        vec![0, 1, 0, 1, 0, 1]
+        vec![0, 1]
     );
 
-    let literal_shift = &summary.s7_derivations[6..9];
-    let named_shift = &summary.s7_derivations[9..12];
-    let expected_shift_views = [
-        ProofView::Complete,
-        ProofView::Unasserted,
-        ProofView::S4Blinded,
-    ];
+    let literal_shift = &summary.s7_derivations[2..3];
+    let named_shift = &summary.s7_derivations[3..4];
     for group in [literal_shift, named_shift] {
-        assert_eq!(
-            group.iter().map(|source| source.view).collect::<Vec<_>>(),
-            expected_shift_views
-        );
         assert!(group.iter().all(|source| source.row == IntegerType::U32));
         assert!(
             group
                 .iter()
-                .all(|source| source.binding == group[0].binding)
+                .all(|source| source.subject == group[0].subject)
         );
         assert!(group.iter().all(|source| source.event == group[0].event));
         assert!(group.iter().all(|source| source.source == group[0].source));
@@ -6087,9 +6414,15 @@ command fn main() -> status: own ExitStatus pure {
                     == match &group[0].kind {
                         S7DerivationKind::ShiftOneNonzero { count_atom, .. } => count_atom,
                         S7DerivationKind::BitAndBound { .. } => unreachable!(),
+                        S7DerivationKind::UnsignedDivisionBound { .. } => unreachable!(),
+                        S7DerivationKind::UnsignedRemainderBound { .. } => unreachable!(),
+                        S7DerivationKind::SignedRemainderBound { .. } => unreachable!(),
                     }
             }
             S7DerivationKind::BitAndBound { .. } => false,
+            S7DerivationKind::UnsignedDivisionBound { .. } => false,
+            S7DerivationKind::UnsignedRemainderBound { .. } => false,
+            S7DerivationKind::SignedRemainderBound { .. } => false,
         }));
     }
     assert!(literal_shift.iter().all(|source| matches!(
@@ -6116,7 +6449,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn repeated_bit_and_operands_keep_two_ordered_s7_roots_per_view() {
+fn repeated_bit_and_operands_keep_two_ordered_s7_roots() {
     let source = br#"fn repeated(value: own u32) -> result: own u32 pure {
   let masked = iand(value, value);
   return masked;
@@ -6128,32 +6461,26 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let summary = entailment(source, "repeated");
     validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 6);
-    for (pair, view) in summary.s7_derivations.as_chunks::<2>().0.iter().zip([
-        ProofView::Complete,
-        ProofView::Unasserted,
-        ProofView::S4Blinded,
-    ]) {
-        assert_eq!([pair[0].view, pair[1].view], [view, view]);
-        let S7DerivationKind::BitAndBound {
-            operand: first,
-            admitted: first_term,
-        } = pair[0].kind
-        else {
-            panic!("the first repeated operand must be a bit-and source");
-        };
-        let S7DerivationKind::BitAndBound {
-            operand: second,
-            admitted: second_term,
-        } = pair[1].kind
-        else {
-            panic!("the second repeated operand must be a bit-and source");
-        };
-        assert_eq!((first, second), (0, 1));
-        assert_eq!(first_term, second_term);
-        assert_eq!(pair[0].parent, pair[1].parent);
-    }
-    assert_eq!(summary.derivations.roots.len(), 6);
+    assert_eq!(summary.s7_derivations.len(), 2);
+    let pair = &summary.s7_derivations;
+    let S7DerivationKind::BitAndBound {
+        operand: first,
+        admitted: first_term,
+    } = pair[0].kind
+    else {
+        panic!("the first repeated operand must be a bit-and source");
+    };
+    let S7DerivationKind::BitAndBound {
+        operand: second,
+        admitted: second_term,
+    } = pair[1].kind
+    else {
+        panic!("the second repeated operand must be a bit-and source");
+    };
+    assert_eq!((first, second), (0, 1));
+    assert_eq!(first_term, second_term);
+    assert_eq!(pair[0].parent, pair[1].parent);
+    assert_eq!(summary.derivations.roots.len(), 2);
     assert_eq!(
         summary
             .derivations
@@ -6161,7 +6488,7 @@ command fn main() -> status: own ExitStatus pure {
             .iter()
             .map(|root| root.kind)
             .collect::<Vec<_>>(),
-        (0..6)
+        (0..2)
             .map(DerivationRootKind::BitAndBound)
             .collect::<Vec<_>>()
     );
@@ -6182,19 +6509,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let summary = entailment(source, "independent");
     validate_derivations(&summary);
-    assert_eq!(summary.s7_derivations.len(), 3);
-    assert_eq!(
-        summary
-            .s7_derivations
-            .iter()
-            .map(|source| source.view)
-            .collect::<Vec<_>>(),
-        vec![
-            ProofView::Complete,
-            ProofView::Unasserted,
-            ProofView::S4Blinded,
-        ]
-    );
+    assert_eq!(summary.s7_derivations.len(), 1);
     assert!(summary.s7_derivations.iter().all(|source| matches!(
         source.kind,
         S7DerivationKind::BitAndBound { operand: 1, .. }
@@ -6281,13 +6596,11 @@ command fn main() -> status: own ExitStatus pure {
         .first()
         .expect("identity retains its local proof");
     assert_eq!(proof.exits.len(), 2);
-    assert!(proof.complete.discharged);
-    assert!(proof.unasserted.discharged);
-    assert!(proof.s4_blinded.discharged);
+    assert!(proof.aggregate.discharged);
 }
 
 #[test]
-fn caller_postcondition_sources_use_b_first_then_same_view_gv() {
+fn caller_postcondition_sources_retain_the_originating_parents() {
     let b_first = br#"fn callee(value: own i32) -> result: own i32 pure contract {
   ensures ieq(result, value);
 } {
@@ -6311,37 +6624,17 @@ command fn main() -> status: own ExitStatus pure {
         .derivations
         .nodes
         .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
+        .filter_map(|node| {
             let DerivationNode::PostconditionCall { detail } = node else {
                 return None;
             };
-            let PostconditionCallDetail {
-                summary: reference,
-                a0_parents,
-                view_parents,
-                ..
-            } = detail.as_ref();
-            Some((
-                summary.derivations.node_views[index],
-                reference.view,
-                a0_parents,
-                view_parents,
-            ))
+            Some(&detail.parents)
         })
         .collect::<Vec<_>>();
-    assert_eq!(calls.len(), 3);
-    assert_eq!(calls[0].0, ProofView::Complete);
-    assert_eq!(calls[0].1, ProofView::Complete);
-    assert_eq!(calls[1].0, ProofView::Unasserted);
-    assert_eq!(calls[1].1, ProofView::S4Blinded);
-    assert_eq!(calls[2].0, ProofView::S4Blinded);
-    assert_eq!(calls[2].1, ProofView::S4Blinded);
+    assert_eq!(calls.len(), 1);
     assert!(
-        calls
-            .iter()
-            .all(|(_, _, a0, same_view)| a0.is_empty() && same_view.is_empty()),
-        "a discharged B summary needs neither Gv nor requirement parents"
+        calls.iter().all(|parents| parents.is_empty()),
+        "the exact callee summary needs no extra relation parent"
     );
 
     let u_fallback = br#"fn normalized(value: own i32) -> result: own i32 pure contract {
@@ -6368,9 +6661,7 @@ command fn main() -> status: own ExitStatus pure {
         .postconditions
         .first()
         .expect("normalized retains a postcondition proof");
-    assert!(proof.complete.discharged);
-    assert!(proof.unasserted.discharged);
-    assert!(!proof.s4_blinded.discharged);
+    assert!(proof.aggregate.discharged);
 
     let summary = entailment(u_fallback, "caller");
     validate_derivations(&summary);
@@ -6378,36 +6669,15 @@ command fn main() -> status: own ExitStatus pure {
         .derivations
         .nodes
         .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
+        .filter_map(|node| {
             let DerivationNode::PostconditionCall { detail } = node else {
                 return None;
             };
-            let PostconditionCallDetail {
-                summary: reference,
-                a0_parents,
-                view_parents,
-                ..
-            } = detail.as_ref();
-            Some((
-                summary.derivations.node_views[index],
-                reference.view,
-                a0_parents,
-                view_parents,
-            ))
+            Some(&detail.parents)
         })
         .collect::<Vec<_>>();
-    assert_eq!(calls.len(), 3);
-    assert_eq!(calls[0].0, ProofView::Complete);
-    assert_eq!(calls[0].1, ProofView::Complete);
-    assert_eq!(calls[1].0, ProofView::Unasserted);
-    assert_eq!(calls[1].1, ProofView::Unasserted);
-    assert_eq!(calls[2].0, ProofView::S4Blinded);
-    assert_eq!(calls[2].1, ProofView::Unasserted);
-    assert!(calls.iter().all(|(_, _, a0, _)| a0.len() == 1));
-    assert!(calls[0].3.is_empty());
-    assert_eq!(calls[1].3.len(), 1);
-    assert_eq!(calls[2].3.len(), 1);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].len(), 1);
 }
 
 #[test]
@@ -6468,12 +6738,7 @@ command fn main() -> status: own ExitStatus pure {
                 Some((*variant, *field, *tag, *binding))
             })
             .collect::<Vec<_>>();
-        assert_eq!(
-            routes.len(),
-            3,
-            "{function} retains one selected route per view"
-        );
-        assert!(routes.windows(2).all(|pair| pair[0] == pair[1]));
+        assert_eq!(routes.len(), 1, "{function} retains one selected route");
         assert_eq!(routes[0].0, crate::PreludeDeclarationId::new(11));
         assert_eq!(routes[0].1, crate::PreludeDeclarationId::new(12));
         assert_eq!(routes[0].2, 0, "PRE-1 Ok is the selected tag");
@@ -6487,8 +6752,8 @@ command fn main() -> status: own ExitStatus pure {
                     DerivationRootKind::PostconditionDirectMatch { .. }
                 ))
                 .count(),
-            3,
-            "{function} keeps each direct selected route as a required root"
+            1,
+            "{function} keeps the direct selected route as a required root"
         );
         assert!(
             summary
@@ -6501,7 +6766,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn direct_and_selected_receivers_retain_exact_same_view_route_roots() {
+fn direct_and_selected_receivers_retain_one_source_context_route_root() {
     let source = br#"fn choose(ignored: own i32, value: own i32) -> result: own i32 pure contract {
   ensures ieq(result, value);
 } {
@@ -6572,7 +6837,7 @@ command fn main() -> status: own ExitStatus pure {
                 }
             })
             .count();
-        assert_eq!(count, 3, "{function} retains one route per proof view");
+        assert_eq!(count, 1, "{function} retains one source-context route");
     }
 }
 
@@ -6745,13 +7010,21 @@ const inside: array<u64, count> =[0_u64, 1_u64, 3_u64, 2_u64];
 const outside: array<u64, count> =[0_u64, 1_u64, 4_u64, 2_u64];
 
 fn low(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  let bound = inside[i];
-  return values[bound];
+  if ilt(i, 4_u64) {
+    let bound = inside[i];
+    return values[bound];
+  } else {
+    return 0_i32;
+  }
 }
 
 fn high(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  let bound = outside[i];
-  return values[bound];
+  if ilt(i, 4_u64) {
+    let bound = outside[i];
+    return values[bound];
+  } else {
+    return 0_i32;
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -6766,8 +7039,8 @@ command fn main() -> status: own ExitStatus pure {
         "the element read carries its own obligation"
     );
     assert!(
-        !low.obligations[0].discharged,
-        "the index into the const table is judged separately and unaffected"
+        low.obligations[0].discharged,
+        "the dominating guard reaches the const-table element read"
     );
     assert!(
         low.obligations[1].discharged,
@@ -6894,6 +7167,33 @@ command fn main() -> status: own ExitStatus pure {
 // ---------------------------------------------------------------------
 
 #[test]
+fn a_failed_system_endpoint_expression_prevents_unreached_range_obligations() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
+  region 'attempt {
+    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
+  }
+  return unit;
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let outcomes = obligations(source, "publish");
+    let [endpoint_index] = outcomes.as_slice() else {
+        panic!("only the reached endpoint index may retain an obligation: {outcomes:?}");
+    };
+    assert_eq!(endpoint_index.family, ObligationFamily::Bounds);
+    assert!(!endpoint_index.discharged);
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| outcome.family != ObligationFamily::SystemRange),
+        "SYS-8 begins only after every endpoint expression succeeds"
+    );
+}
+
+#[test]
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
     let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
   region 'attempt {
@@ -6932,6 +7232,161 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
             SemanticIssueKind::UndischargedSystemRangeObligation { .. }
         ));
     });
+}
+
+#[test]
+fn ordinary_source_relations_discharge_both_system_ranges() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
+  define capacity = len(deref(source));
+  requires ile(start, end);
+  requires ile(end, capacity);
+} {
+  region 'attempt {
+    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the two source relations must discharge SYS-8: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "publish")
+            .expect("publish is checked");
+        validate_derivations(&function.entailment);
+        let ranges = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
+            .collect::<Vec<_>>();
+        assert_eq!(ranges.len(), 2);
+        assert!(ranges.iter().all(|range| range.discharged));
+
+        for range in ranges {
+            let root = range
+                .derivation
+                .expect("an accepted SYS-8 relation retains its derivation");
+            let mut seen = vec![false; function.entailment.derivations.nodes.len()];
+            let mut stack = vec![root];
+            while let Some(node) = stack.pop() {
+                let position = node.0 as usize;
+                if seen[position] {
+                    continue;
+                }
+                seen[position] = true;
+                let retained = &function.entailment.derivations.nodes[position];
+                assert!(
+                    !matches!(retained, DerivationNode::AffineConsequence { .. }),
+                    "ordinary source relations have priority over the affine routes"
+                );
+                stack.extend(retained.parent_ids());
+            }
+        }
+    });
+}
+
+#[test]
+fn indexed_system_guards_discharge_both_structurally_identical_ranges() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 2>) -> result: own unit reads(output, source), writes(output) {
+  let capacity = len(deref(source));
+  if ile(endpoints[0_u64], endpoints[1_u64]) {
+    if ile(endpoints[1_u64], capacity) {
+      region 'attempt {
+        let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);
+      }
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the two indexed guards must prove the exact SYS-8 goals: {outcome:?}");
+        };
+        let publish = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "publish")
+            .expect("publish is checked");
+        let ranges = publish
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
+            .collect::<Vec<_>>();
+        assert_eq!(ranges.len(), 2);
+        assert!(ranges.iter().all(|range| range.discharged));
+        let Some(GoalExpression::Operation {
+            arguments: first, ..
+        }) = &ranges[0].canonical_goal
+        else {
+            panic!("the first SYS-8 conjunct retains its canonical goal");
+        };
+        let Some(GoalExpression::Operation {
+            arguments: second, ..
+        }) = &ranges[1].canonical_goal
+        else {
+            panic!("the second SYS-8 conjunct retains its canonical goal");
+        };
+        assert!(matches!(
+            first.as_slice(),
+            [
+                GoalExpression::Operation {
+                    row: GoalOperation::ArrayIndex { .. },
+                    ..
+                },
+                GoalExpression::Operation {
+                    row: GoalOperation::ArrayIndex { .. },
+                    ..
+                }
+            ]
+        ));
+        assert_eq!(
+            first[1], second[0],
+            "both conjuncts reuse the same end value identity"
+        );
+    });
+}
+
+#[test]
+fn a_nonterm_system_endpoint_is_never_replaced_by_the_zero_term() {
+    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
+  region 'attempt {
+    let outcome = write_once<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let ranges = obligations(source, "publish")
+        .into_iter()
+        .filter(|outcome| outcome.family == ObligationFamily::SystemRange)
+        .collect::<Vec<_>>();
+    assert_eq!(ranges.len(), 2);
+    assert!(ranges[0].canonical_goal.is_some());
+    assert!(ranges[0].components.is_empty());
+    assert!(!ranges[0].discharged);
+    assert!(
+        !ranges[0].refuted,
+        "`1 <= indexed_end` is unknown, not `1 <= 0`"
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -7231,393 +7686,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
 }
 
 // ---------------------------------------------------------------------
-// [ENT-3] S3 claim facts
+// [ENT-3] originating call and loop facts
 // ---------------------------------------------------------------------
 
 #[test]
-fn a_passed_claim_establishes_its_fact_on_the_continuation() {
-    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let bounded = 0_u64;
-  loop @select_bound {
-    if ieq(bounded, input) {
-      break @select_bound;
-    } else if ieq(bounded, 3_u64) {
-      break @select_bound;
-    } else {
-      set bounded = bounded +wrap 1_u64;
-    }
-  }
-  let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: bounded starts at zero, advances by one only on the current-function ordinary-loop backedge, exits no later than three, and inside is ilt(bounded, 4)\nderivation: induction over reached loop bodies makes inside true\nconclusion: inside is True\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
-  return values[bounded];
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    let summary = accepted_entailment(source, "read");
-    validate_derivations(&summary);
-    let outcomes = &summary.obligations;
-    assert_eq!(outcomes.len(), 1);
-    assert!(
-        outcomes[0].discharged,
-        "S3: the passed claim predicate discharges the following subscript"
-    );
-    assert_root_has_event_kind(&summary, obligation_root(&summary, 0), FlowEventKind::S3);
-    let claim_outcomes = &summary.claims;
-    assert_eq!(claim_outcomes.len(), 1);
-    assert_eq!(claim_outcomes[0].name, "in_range");
-    assert_eq!(claim_outcomes[0].disposition, ClaimDisposition::Retained);
-    assert_eq!(claim_outcomes[0].lifecycle_derivation, None);
-    assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 0);
-}
-
-#[test]
-fn the_claim_ledger_reports_exact_source_text_used_proof_and_provenance() {
-    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn read(values: own array<i32, 4>, i: own u64) -> result: own i32 traps {
-  let bounded = imin(i, 3_u64);
-  let inside = ilt(bounded, 4_u64);
-  claim in_range: inside because "premises: bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";
-  return values[bounded];
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("claim-ledger source must be accepted: {outcome:?}");
-        };
-        validate_claim_ledger(&program.data);
-        assert_eq!(program.data.claim_ledger.entries.len(), 1);
-        let entry = &program.data.claim_ledger.entries[0];
-        assert_eq!(entry.source.display_path, "test.wf");
-        assert_eq!(entry.source.coordinate.source().ordinal(), 0);
-        assert_eq!(entry.name, "in_range");
-        assert_eq!(entry.predicate, "inside");
-        assert_eq!(
-            entry.justification.raw,
-            "premises: bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)\n\
-derivation: minimum with three is always between zero and three inclusive, so inside is true\n\
-conclusion: inside is True\n\
-checker gap: ENT does not publish the result range of imin\n\
-consumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison"
-        );
-        assert_eq!(
-            entry.justification.premises,
-            "bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)"
-        );
-        assert_eq!(
-            entry.justification.derivation,
-            "minimum with three is always between zero and three inclusive, so inside is true"
-        );
-        assert_eq!(entry.justification.conclusion, "inside is True");
-        assert_eq!(
-            entry.justification.checker_gap,
-            "ENT does not publish the result range of imin"
-        );
-        assert_eq!(
-            entry.justification.consumers,
-            "the array subscript values[bounded] expands inside and requires its bounded-below-four comparison"
-        );
-        assert_eq!(entry.disposition, ClaimDisposition::Retained);
-        assert_eq!(entry.lifecycle_derivation, None);
-        let start = entry.source.coordinate.start().value() as usize;
-        let end = entry.source.coordinate.end().value() as usize;
-        assert_eq!(
-            &source[start..end],
-            br#"claim in_range: inside because "premises: bounded is imin(i, 3_u64) computed in the current function, and inside is ilt(bounded, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript values[bounded] expands inside and requires its bounded-below-four comparison";"#
-        );
-
-        assert_eq!(entry.uses.len(), 1);
-        let used = &entry.uses[0];
-        assert_eq!(used.root, DerivationRootKind::BoundsObligation(0));
-        let function = &program.data.functions[entry.source.function.0 as usize];
-        assert_eq!(function.symbol, entry.source.function_symbol);
-        assert_eq!(
-            function.entailment.obligations[0].derivation,
-            Some(used.root_derivation)
-        );
-        assert!(!used.premise_derivations.is_empty());
-        for premise in &used.premise_derivations {
-            let event = function
-                .entailment
-                .derivations
-                .node_event(*premise)
-                .expect("an S3 premise has one retained event");
-            assert_eq!(
-                retained_event(&function.entailment, event),
-                &FlowEvent {
-                    kind: FlowEventKind::S3,
-                    node_path: Some(entry.source.node_path.clone()),
-                    claim_component: Some(0),
-                }
-            );
-        }
-        let ClaimUseProvenance::ProtectedLeaf {
-            disposition,
-            direct_demands,
-            structural_bridges,
-            subject_bridges,
-            calls,
-        } = &used.provenance
-        else {
-            panic!("a bounds obligation must carry its exact PRV disposition");
-        };
-        assert_eq!(
-            disposition.disposition,
-            LocalLeafProvenanceDisposition::DirectDemand
-        );
-        assert!(disposition.complete_discharged);
-        assert!(!disposition.unasserted_discharged);
-        assert!(!disposition.s4_blinded_discharged);
-        assert!(!direct_demands.is_empty());
-        assert!(structural_bridges.is_empty());
-        assert!(subject_bridges.is_empty());
-        assert!(calls.is_empty());
-
-        let sources = retained_claim_sources(&program.data);
-        let mut missing = program.data.provenance.clone();
-        missing.local_leaf_dispositions.clear();
-        assert_eq!(
-            build_claim_ledger(&program.data.functions, &missing, sources.clone()),
-            Err(SemanticCompilerFailure::InvalidResolution),
-            "a missing required provenance mapping fails closed"
-        );
-        let mut missing = program.data.provenance.clone();
-        missing.direct_demands.clear();
-        assert_eq!(
-            build_claim_ledger(&program.data.functions, &missing, sources.clone()),
-            Err(SemanticCompilerFailure::InvalidResolution),
-            "a DirectDemand disposition without its exact demand fails closed"
-        );
-        let mut missing = program.data.provenance.clone();
-        missing.local_leaf_dispositions[0].disposition =
-            LocalLeafProvenanceDisposition::RequirementBridge;
-        missing.direct_demands.clear();
-        assert_eq!(
-            build_claim_ledger(&program.data.functions, &missing, sources),
-            Err(SemanticCompilerFailure::InvalidResolution),
-            "a RequirementBridge disposition without its bridge inventory fails closed"
-        );
-    });
-}
-
-#[test]
-fn the_claim_ledger_links_only_live_canonical_s3_premises() {
-    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn joined(values: own array<i32, 4>, input: own u64, choose: own Bool) -> result: own i32 traps {
-  let i = imin(input, 3_u64);
-  if choose {
-    claim left: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript after the join consumes this true-arm proof";
-  } else {
-    claim right: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript after the join consumes this false-arm proof";
-  }
-  return values[i];
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("the two genuine branch claims must be accepted: {outcome:?}");
-        };
-        validate_claim_ledger(&program.data);
-        let entry = |name: &str| {
-            program
-                .data
-                .claim_ledger
-                .entries
-                .iter()
-                .find(|entry| entry.name == name)
-                .unwrap_or_else(|| panic!("claim {name} must be reported"))
-        };
-
-        let left = entry("left");
-        let right = entry("right");
-        assert_eq!(left.uses.len(), 1);
-        assert_eq!(right.uses.len(), 1);
-        assert_eq!(left.uses[0].root, DerivationRootKind::BoundsObligation(0));
-        assert_eq!(right.uses[0].root, DerivationRootKind::BoundsObligation(0));
-        assert_eq!(left.uses[0].root_derivation, right.uses[0].root_derivation);
-        assert_ne!(
-            left.uses[0].premise_derivations, right.uses[0].premise_derivations,
-            "the join retains each exact reaching S3 parent"
-        );
-    });
-
-    let duplicate = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let i = imin(input, 3_u64);
-  let inside = ilt(i, 4_u64);
-  claim first: inside because "premises: i is imin(input, 3_u64) computed in the current function and inside is ilt(i, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the following array subscript expands inside and consumes its bounded-below-four comparison";
-  claim second: inside because "premises: the earlier claim already establishes inside\nderivation: no residual remains for a second occurrence\nconclusion: inside is already checker-known at this point\nchecker gap: none; this negative fixture must be rejected as redundant\nconsumers: no consumer may receive duplicate claim authority";
-  return values[i];
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(duplicate, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("the duplicate claim must reject: {outcome:?}");
-        };
-        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
-            panic!("expected duplicate-claim detail: {:?}", issue.kind());
-        };
-        assert_eq!(detail.name, "second");
-        assert_eq!(detail.classification, "redundant");
-    });
-
-    let killed = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn read(values: own array<i32, 4>, input: own u64) -> result: own unit traps {
-  let i = imin(input, 3_u64);
-  claim stale: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: no terminal consumer remains after i is overwritten, so this negative fixture must reject";
-  set i = 0_u64;
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(killed, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("the killed claim must reject as non-residual: {outcome:?}");
-        };
-        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
-            panic!("expected non-residual detail: {:?}", issue.kind());
-        };
-        assert_eq!(detail.name, "stale");
-        assert_eq!(detail.classification, "non-residual");
-    });
-}
-
-#[test]
-fn one_claim_can_support_multiple_bounds_and_a_call_goal() {
-    let source = br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn need(index: own u64) -> result: own unit pure contract {
-  requires ilt(index, 4_u64);
-} {
-  return unit;
-}
-
-fn read(values: own array<i32, 4>, input: own u64) -> result: own i32 traps {
-  let i = imin(input, 3_u64);
-  let inside = ilt(i, 4_u64);
-  claim bounded: inside because "premises: i is imin(input, 3_u64) computed in the current function and inside is ilt(i, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: both following array subscripts expand inside and consume its bounded-below-four comparison";
-  let first = values[i];
-  let second = values[i];
-  return first;
-}
-
-fn caller(input: own u64) -> result: own unit traps {
-  let i = imin(input, 3_u64);
-  claim small: ilt(i, 4_u64) because "premises: i is imin(input, 3_u64) computed in the current function\nderivation: minimum with three is always between zero and three inclusive\nconclusion: i is below four\nchecker gap: ENT does not publish the result range of imin\nconsumers: need requires this exact bound for its index argument";
-  need(index: i);
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("multi-use claim source must be accepted: {outcome:?}");
-        };
-        validate_claim_ledger(&program.data);
-        let bounded = program
-            .data
-            .claim_ledger
-            .entries
-            .iter()
-            .find(|entry| entry.name == "bounded")
-            .expect("bounded claim");
-        assert_eq!(bounded.uses.len(), 2);
-        assert_eq!(
-            bounded
-                .uses
-                .iter()
-                .map(|used| used.root)
-                .collect::<Vec<_>>(),
-            vec![
-                DerivationRootKind::BoundsObligation(0),
-                DerivationRootKind::BoundsObligation(1),
-            ]
-        );
-        assert!(
-            bounded
-                .uses
-                .iter()
-                .all(|used| matches!(used.provenance, ClaimUseProvenance::ProtectedLeaf { .. }))
-        );
-
-        let small = program
-            .data
-            .claim_ledger
-            .entries
-            .iter()
-            .find(|entry| entry.name == "small")
-            .expect("small claim");
-        assert_eq!(small.uses.len(), 1);
-        assert_eq!(small.uses[0].root, DerivationRootKind::CallGoal(0));
-        let ClaimUseProvenance::Call { arguments, bridges } = &small.uses[0].provenance else {
-            panic!("a call goal must retain its exact call provenance");
-        };
-        assert_eq!(arguments.len(), 1);
-        assert_eq!(arguments[0].argument, 0);
-        assert_eq!(arguments[0].caller, small.source.function);
-        assert_eq!(bridges.len(), 0);
-
-        let mut missing = program.data.provenance.clone();
-        missing.call_argument_dispositions.retain(|argument| {
-            argument.caller != small.source.function
-                || argument.call
-                    != program.data.functions[small.source.function.0 as usize]
-                        .entailment
-                        .call_goals[0]
-                        .node_path
-        });
-        assert_eq!(
-            build_claim_ledger(
-                &program.data.functions,
-                &missing,
-                retained_claim_sources(&program.data),
-            ),
-            Err(SemanticCompilerFailure::InvalidResolution),
-            "a missing required call-provenance mapping fails closed"
-        );
-    });
-}
-
-#[test]
-fn a_zero_argument_call_goal_has_no_claim_or_argument_provenance() {
+fn a_zero_argument_call_goal_is_discharged_in_its_originating_context() {
     let source = br#"fn need() -> result: own unit pure contract {
   define first = ilt(0_u64, 1_u64);
   define second = ilt(1_u64, 2_u64);
@@ -7640,8 +7713,6 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("zero-argument call must be accepted: {outcome:?}");
         };
-        validate_claim_ledger(&program.data);
-        assert!(program.data.claim_ledger.entries.is_empty());
         let caller = program
             .data
             .functions
@@ -7654,114 +7725,16 @@ command fn main() -> status: own ExitStatus pure {
             caller.entailment.call_goals[0].disposition,
             CallGoalDisposition::Discharged
         );
-        assert!(
-            program
-                .data
-                .provenance
-                .call_argument_dispositions
-                .iter()
-                .all(|argument| argument.caller != caller.id)
-        );
     });
 }
 
 #[test]
-fn postcondition_routes_retain_claim_premises_through_complete_a0_parents() {
-    let source = br#"fn hidden_one() -> result: own i32 pure {
-  return 1_i32;
-}
-
-fn normalized(value: own i32) -> result: own i32 pure contract {
-  requires ieq(value, 1_i32);
-  ensures ieq(result, 1_i32);
-} {
-  return 1_i32;
-}
-
-fn caller() -> result: own unit traps {
-  let value = 1_i32;
-  let cursor = 0_u8;
-  loop @retain_one {
-    if ieq(cursor, 3_u8) {
-      break @retain_one;
-    } else {
-      set value = 1_i32;
-      set cursor = cursor +wrap 1_u8;
-    }
-  }
-  claim normalized_input: ieq(value, 1_i32) because "premises: value starts at one and every completed current-function loop iteration writes one again before advancing the cursor\nderivation: induction over reached loop bodies preserves value equal to one\nconclusion: value equals one\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: normalized requires value equal to one";
-  let called = normalized(value: value);
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("claim-dependent postcondition route must be accepted: {outcome:?}");
-        };
-        validate_claim_ledger(&program.data);
-        let entry = program
-            .data
-            .claim_ledger
-            .entries
-            .iter()
-            .find(|entry| entry.name == "normalized_input")
-            .expect("normalized_input claim");
-        let caller = &program.data.functions[entry.source.function.0 as usize];
-        assert_eq!(entry.uses.len(), 1);
-        assert_eq!(entry.uses[0].root, DerivationRootKind::CallGoal(0));
-        let direct_roots = caller
-            .entailment
-            .derivations
-            .roots
-            .iter()
-            .filter(|root| {
-                matches!(
-                    root.kind,
-                    DerivationRootKind::PostconditionDirectResult { .. }
-                )
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(direct_roots.len(), 3, "one retained route per proof view");
-        let call_goal = caller.entailment.call_goals[0]
-            .derivation
-            .expect("the complete call goal is discharged");
-        for root in direct_roots {
-            let DerivationNode::PostconditionDirectResult { parent, .. } =
-                &caller.entailment.derivations.nodes[root.node.0 as usize]
-            else {
-                panic!("the route root names its direct-result node");
-            };
-            let DerivationNode::PostconditionCall { detail } =
-                &caller.entailment.derivations.nodes[parent.0 as usize]
-            else {
-                panic!("the direct-result parent is the instantiated call summary");
-            };
-            assert!(detail.a0_parents.contains(&call_goal));
-        }
-    });
-}
-
-#[test]
-fn a_loop_body_claim_links_only_the_obligation_it_reaches() {
-    let source =
-        br#"fn clamp_three(value: own u64) -> result: own u64 pure {
-  return imin(value, 3_u64);
-}
-
-fn read(values: own array<i32, 4>, input: own u64, leave: own Bool) -> result: own i32 traps {
-  loop @again {
-    let bounded = imin(input, 3_u64);
-    let inside = ilt(bounded, 4_u64);
-    claim loop_bound: inside because "premises: bounded is imin(input, 3_u64) computed in this iteration of the current function and inside is ilt(bounded, 4)\nderivation: minimum with three is always between zero and three inclusive, so inside is true\nconclusion: inside is True\nchecker gap: ENT does not publish the result range of imin\nconsumers: the array subscript in this iteration expands inside and consumes its bounded-below-four comparison";
-    let value = values[bounded];
+fn a_counted_loop_body_bound_reaches_only_its_dominated_obligation() {
+    let source = br#"fn read(values: own array<i32, 4>, leave: own Bool) -> result: own i32 pure {
+  for (index in 0_u64..4_u64) {
+    let value = values[index];
     if leave {
       return value;
-    } else {
-      break @again;
     }
   }
   return values[0_u64];
@@ -7773,284 +7746,19 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            panic!("the loop-local residual claim must be accepted: {outcome:?}");
+            panic!("the counted-loop fact must discharge its body read: {outcome:?}");
         };
-        validate_claim_ledger(&program.data);
-        let entry = program
+        let function = program
             .data
-            .claim_ledger
-            .entries
+            .functions
             .iter()
-            .find(|entry| entry.name == "loop_bound")
-            .expect("loop_bound claim");
-        assert_eq!(entry.uses.len(), 1);
-        assert_eq!(entry.uses[0].root, DerivationRootKind::BoundsObligation(0));
-        let function = &program.data.functions[entry.source.function.0 as usize];
+            .find(|function| function.name == "read")
+            .expect("read function");
+        validate_derivations(&function.entailment);
         assert_eq!(function.entailment.obligations.len(), 2);
         assert!(function.entailment.obligations[0].discharged);
         assert!(function.entailment.obligations[1].discharged);
     });
-}
-
-#[test]
-fn concrete_generic_claims_keep_distinct_checked_program_identities() {
-    let source = br#"fn hidden_identity<T: Int>(value: own T) -> result: own T pure {
-  return value;
-}
-
-fn need_equal<T: Int>(left: own T, right: own T) -> result: own unit pure contract {
-  requires ieq(left, right);
-} {
-  return unit;
-}
-
-fn identity<T: Int>(value: own T) -> result: own T traps {
-  let echoed = imax(value, value);
-  claim echo_preserved: ieq(echoed, value) because "premises: echoed is imax(value, value) computed in the current generic function\nderivation: selecting the maximum of two identical operands returns that same value\nconclusion: echoed equals value\nchecker gap: schema ENT does not publish the idempotent result equality of GenericInt imax\nconsumers: need_equal requires the same equality for its two arguments";
-  need_equal<T>(left: echoed, right: value);
-  return echoed;
-}
-
-command fn main() -> status: own ExitStatus traps {
-  let signed = identity<i32>(value: 1_i32);
-  let unsigned = identity<u32>(value: 1_u32);
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::Complete(program) = outcome else {
-            panic!("concrete generic claims must be accepted: {outcome:?}");
-        };
-        validate_claim_ledger(&program.data);
-        let entries = program
-            .data
-            .claim_ledger
-            .entries
-            .iter()
-            .filter(|entry| entry.name == "echo_preserved")
-            .collect::<Vec<_>>();
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].source.node_path, entries[1].source.node_path);
-        assert_eq!(
-            entries[0].source.display_path,
-            entries[1].source.display_path
-        );
-        assert_ne!(entries[0].source.function, entries[1].source.function);
-        assert_ne!(
-            entries[0].source.function_symbol,
-            entries[1].source.function_symbol
-        );
-        assert!(entries.iter().all(|entry| {
-            entry.disposition == ClaimDisposition::Retained
-                && entry.lifecycle_derivation.is_none()
-                && entry.uses.len() == 1
-        }));
-    });
-}
-
-#[test]
-fn an_opaque_bool_residual_is_retained_without_a_comparison_origin() {
-    let source = br#"fn hidden_true() -> result: own Bool pure {
-  return True();
-}
-
-fn need_true(flag: own Bool) -> result: own unit pure contract {
-  requires flag;
-} {
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus traps {
-  let flag = True();
-  let cursor = 0_u8;
-  loop @retain_true {
-    if ieq(cursor, 3_u8) {
-      break @retain_true;
-    } else {
-      set flag = True();
-      set cursor = cursor +wrap 1_u8;
-    }
-  }
-  claim held: flag because "premises: flag starts true and every completed current-function loop iteration writes True() again before advancing the cursor\nderivation: induction over reached loop bodies preserves the exact opaque Bool flag as true\nconclusion: flag is True\nchecker gap: ENT carries no induction fact across this ordinary-loop backedge\nconsumers: need_true requires flag itself to be True";
-  need_true(flag: flag);
-  return exit_status(code: 0_u8);
-}
-"#;
-    let summary = accepted_entailment(source, "main");
-    validate_derivations(&summary);
-    assert_eq!(summary.claims.len(), 1);
-    assert_eq!(summary.claims[0].disposition, ClaimDisposition::Retained);
-    assert_eq!(summary.claims[0].lifecycle_derivation, None);
-    assert_eq!(summary.derivations.metrics.claim_lifecycle_roots, 0);
-    assert_eq!(summary.call_goals.len(), 1);
-    assert_eq!(
-        summary.call_goals[0].disposition,
-        CallGoalDisposition::Discharged
-    );
-}
-
-// ---------------------------------------------------------------------
-// [CLM-2] redundancy and refutation
-// ---------------------------------------------------------------------
-
-#[test]
-fn a_derivable_claim_is_a_redundant_source_error() {
-    let source = br#"const count: u64 = 4_u64;
-
-fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
-  if ilt(i, 4_u64) {
-    claim proven: ilt(i, 4_u64) because "premises: the branch establishes the bound\nderivation: the predicate is the branch condition\nconclusion: i is below four\nchecker gap: none because the checker already knows it\nconsumers: the following subscript";
-    return values[i];
-  } else {
-    return 0_i32;
-  }
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("a redundant claim must reject, got {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Clm2);
-        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
-            panic!("expected redundant claim detail, got {:?}", issue.kind());
-        };
-        assert_eq!(detail.name, "proven");
-        assert_eq!(detail.classification, "redundant");
-    });
-}
-
-#[test]
-fn a_refuted_claim_is_a_clm2_rejection_with_predicate_and_negation() {
-    let source = br#"const count: u64 = 4_u64;
-
-fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
-  if ige(i, 4_u64) {
-    claim in_range: ilt(i, 4_u64) because "premises: the branch establishes i is at least four\nderivation: no valid derivation exists; this negative fixture asks CLM-2 to expose the contradiction\nconclusion: i is below four is intentionally refuted\nchecker gap: none; the checker must reject this source\nconsumers: the following subscript would consume the false bound if the claim were admitted";
-    return values[i];
-  } else {
-    return 0_i32;
-  }
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("a refuted claim must reject, got {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Clm2);
-        let SemanticIssueKind::RefutedClaim(detail) = issue.kind() else {
-            panic!("expected the refutation payload, got {:?}", issue.kind());
-        };
-        assert_eq!(detail.name, "in_range");
-    });
-}
-
-#[test]
-fn integer_domain_normalization_drives_positive_and_negative_claim_lifecycle() {
-    let positive = br#"fn probe() -> result: own unit traps {
-  claim obvious: ishl.defined(1_u8, 1_u32) because "premises: one is below eight\nderivation: the shift amount lies in the domain\nconclusion: the shift is defined\nchecker gap: none because normalization proves it\nconsumers: no valid residual consumer";
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(positive, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("a normalization-proved claim must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Clm2);
-    });
-    let negative = br#"fn probe() -> result: own unit traps {
-  claim impossible: ishl.defined(1_u8, 8_u32) because "premises: a u8 shift amount must be below eight\nderivation: no valid derivation exists because the written amount is eight\nconclusion: the shift-defined predicate is intentionally refuted\nchecker gap: none; normalization must reject this source\nconsumers: no consumer may receive this false domain fact";
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(negative, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("a normalization-refuted claim must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Clm2);
-        let SemanticIssueKind::RefutedClaim(detail) = issue.kind() else {
-            panic!("expected CLM-2 refutation detail: {:?}", issue.kind());
-        };
-        assert_eq!(detail.name, "impossible");
-    });
-}
-
-#[test]
-fn a_contradictory_state_rejects_a_claim_as_vacuous_before_refutation() {
-    let source = br#"const count: u64 = 4_u64;
-
-fn read(values: own array<i32, count>, i: own u64) -> result: own i32 traps {
-  if ilt(i, 0_u64) {
-    claim absurd: ilt(i, 4_u64) because "premises: the u64 branch condition i below zero is impossible\nderivation: no theorem may be admitted from an unreachable contradictory path\nconclusion: this claim is intentionally vacuous\nchecker gap: none; contradiction-first lifecycle must reject it\nconsumers: the following subscript is unreachable and is not an eligible consumer";
-    return values[i];
-  } else {
-    return 0_i32;
-  }
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    with_semantics(source, |outcome| {
-        let SemanticOutcome::SourceIssue { issue } = outcome else {
-            panic!("a vacuous claim must reject: {outcome:?}");
-        };
-        assert_eq!(issue.rule(), SemanticRule::Clm2);
-        let SemanticIssueKind::InvalidClaim(detail) = issue.kind() else {
-            panic!("expected vacuous claim detail, got {:?}", issue.kind());
-        };
-        assert_eq!(detail.name, "absurd");
-        assert_eq!(detail.classification, "vacuous");
-        assert_eq!(detail.reason, "the pre-claim state is contradictory");
-    });
-}
-
-#[test]
-fn claim_lifecycle_rejection_is_stable_across_repeated_analysis() {
-    let source = br#"fn inspect(i: own u64) -> result: own unit traps {
-  if ilt(i, 4_u64) {
-    claim redundant: ilt(i, 4_u64) because "premises: the branch establishes i below four\nderivation: the predicate is exactly the active branch condition\nconclusion: i is below four\nchecker gap: none; this negative fixture must be rejected as redundant\nconsumers: no consumer may receive authority from a redundant claim";
-    return unit;
-  } else {
-    return unit;
-  }
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
-}
-"#;
-    let render_issue = || {
-        let mut rendered = None;
-        with_semantics(source, |outcome| {
-            let SemanticOutcome::SourceIssue { issue } = outcome else {
-                panic!("the redundant claim must reject: {outcome:?}");
-            };
-            assert_eq!(issue.rule(), SemanticRule::Clm2);
-            rendered = Some(format!("{issue:#?}"));
-        });
-        rendered.expect("one deterministic issue")
-    };
-    let expected = render_issue();
-    for _ in 0..2 {
-        assert_eq!(render_issue(), expected);
-    }
 }
 
 // ---------------------------------------------------------------------
@@ -8073,8 +7781,30 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Op4,
         SemanticIssueKind::UndischargedBoundsObligation {
             residual: "i < len(values)".to_owned(),
-            mechanical_fix: "establish the residual with a dominating branch, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual `claim` with a complete exact `because` record",
+            mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
         },
+    );
+}
+
+#[test]
+fn a_closed_opposite_bound_marks_the_subscript_obligation_refuted() {
+    let source = br#"fn read(values: own array<i32, 2>) -> result: own i32 pure {
+  return values[2_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let summary = entailment(source, "read");
+    let [bounds] = summary.obligations.as_slice() else {
+        panic!("the one subscript must retain exactly one OP-4 obligation");
+    };
+    assert_eq!(bounds.family, ObligationFamily::Bounds);
+    assert!(!bounds.discharged);
+    assert!(
+        bounds.refuted,
+        "the implicit len(values) = 2 relation proves the negation of 2 < len(values)"
     );
 }
 
@@ -8094,11 +7824,6 @@ command fn main() -> status: own ExitStatus pure {
         let SemanticOutcome::Complete(program) = outcome else {
             panic!("a discharged subscript must accept, got {outcome:?}");
         };
-        assert_eq!(
-            program.data.claim_ledger,
-            ClaimLedger::default(),
-            "a no-claim unit keeps the empty fast path"
-        );
         let function = program
             .data
             .functions
@@ -8108,30 +7833,16 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(function.entailment.obligations.len(), 1);
         assert!(function.entailment.obligations[0].discharged);
         validate_derivations(&function.entailment);
-        for views in [
-            &program.data.provenance.unasserted,
-            &program.data.provenance.s4_blinded,
-        ] {
-            let obligations: Vec<_> = views.iter().flat_map(|view| &view.obligations).collect();
-            assert_eq!(obligations.len(), 1);
-            assert!(
-                obligations
-                    .iter()
-                    .all(|obligation| !obligation.node_path.components().is_empty()
-                        && obligation.discharged == obligation.residual.is_none()),
-                "counterfactual views retain only provenance's exact path and disposition"
-            );
-        }
     });
 }
 
 #[test]
-fn counted_counterfactual_views_publish_only_exact_outcome_shape() {
+fn counted_flow_publishes_one_exact_originating_outcome_shape() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>) -> result: own i32 pure {
   let total = 0_i32;
-  for @items i in 0_u64..4_u64 {
+  for @items (i in 0_u64..4_u64) {
     let value = values[i];
     set total = total +wrap value;
   }
@@ -8144,7 +7855,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(program) = outcome else {
-            panic!("the counted counterfactual fixture must accept: {outcome:?}");
+            panic!("the counted-flow fixture must accept: {outcome:?}");
         };
         let function = program
             .data
@@ -8164,34 +7875,23 @@ command fn main() -> status: own ExitStatus pure {
                 .count(),
             8
         );
-        let expected_path = &function.entailment.obligations[0].node_path;
-        let function_index = function.id.0 as usize;
-        for (name, views) in [
-            ("unasserted", &program.data.provenance.unasserted),
-            ("S4-blinded", &program.data.provenance.s4_blinded),
-        ] {
-            let view = &views[function_index];
-            assert_eq!(view.obligations.len(), 1, "{name}");
-            assert_eq!(&view.obligations[0].node_path, expected_path, "{name}");
-            assert!(view.obligations[0].discharged, "{name}");
-            assert_eq!(view.obligations[0].residual, None, "{name}");
-            assert!(view.call_goals.is_empty(), "{name}");
-            let dump = format!("{view:?}");
-            assert!(!dump.contains("DerivationId"), "{name}: {dump}");
-            assert!(!dump.contains("TermId"), "{name}: {dump}");
-            assert!(!dump.contains("CountedDerivation"), "{name}: {dump}");
-        }
+        let [outcome] = function.entailment.obligations.as_slice() else {
+            panic!("one counted subscript obligation must be retained");
+        };
+        assert!(!outcome.node_path.components().is_empty());
+        assert!(outcome.discharged);
+        assert_eq!(outcome.residual, None);
+        assert!(function.entailment.call_goals.is_empty());
     });
 }
 
 #[test]
-fn counted_sha256_discharges_all_nine_indices_without_claims() {
+fn counted_sha256_discharges_all_nine_indices_from_counted_facts() {
     let source = include_bytes!("../../../../tests/programs/sha256_abc.wf");
     let summary = entailment(source, "sha256_abc_word_zero");
     validate_derivations(&summary);
     assert_eq!(summary.obligations.len(), 9);
     assert!(summary.obligations.iter().all(|outcome| outcome.discharged));
-    assert!(summary.claims.is_empty());
     assert_eq!(summary.counted_derivations.len(), 3);
     assert_eq!(
         summary.counted_derivations.len() * 5,
@@ -8221,7 +7921,7 @@ fn counted_sha256_discharges_all_nine_indices_without_claims() {
 }
 
 #[test]
-fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_positives() {
+fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positives() {
     let bundles: [&[SourceInput<'_>]; 3] = [
         &[SourceInput::new(
             "utf8parse.wf",
@@ -8258,59 +7958,18 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
         crate::Inventory::ACTIVE,
         crate::Inventory::ACTIVE,
     ];
-    let expected_claims: [&[(&str, &str)]; 3] = [
-        &[("parse", "byte_in_source"), ("parse", "events_behind_scan")],
-        &[("ordered_code_symbol", "code_index_in_order")],
-        &[
-            ("append_trailing_newline", "carry_in_input"),
-            ("scan_line", "probe_in_input"),
-            ("scan_line", "spot_in_input"),
-            ("shift_input_tail", "shift_read_in_input"),
-            ("shift_input_tail", "shift_write_in_input"),
-        ],
-    ];
-    for ((inputs, expected_claims), inventory) in
-        bundles.into_iter().zip(expected_claims).zip(inventories)
-    {
+    for (inputs, inventory) in bundles.into_iter().zip(inventories) {
         super::with_semantics_inputs_for(inputs, inventory, |outcome| {
             let SemanticOutcome::Complete(program) = outcome else {
                 panic!("frozen real source bundle must remain accepted: {outcome:?}");
             };
-            validate_claim_ledger(&program.data);
-            let actual_claims = program
-                .data
-                .claim_ledger
-                .entries
-                .iter()
-                .map(|entry| {
-                    let function = &program.data.functions[entry.source.function.0 as usize];
-                    (function.name.as_str(), entry.name.as_str())
-                })
-                .collect::<Vec<_>>();
-            assert_eq!(actual_claims, expected_claims);
-            let claim_keys = program
-                .data
-                .claim_ledger
-                .entries
-                .iter()
-                .map(|entry| {
-                    let function = &program.data.functions[entry.source.function.0 as usize];
-                    assert_eq!(entry.source.function_symbol, function.symbol);
-                    assert!(!entry.name.is_empty());
-                    assert!(!entry.predicate.is_empty());
-                    assert!(!entry.justification.raw.is_empty());
-                    assert!(!entry.source.node_path.components().is_empty());
-                    (entry.source.function.0, entry.source.node_path.components())
-                })
-                .collect::<Vec<_>>();
-            assert!(
-                claim_keys.windows(2).all(|pair| pair[0] < pair[1]),
-                "claim ledger order is dense function then source occurrence: {claim_keys:?}"
-            );
             for function in &program.data.functions {
                 validate_derivations(&function.entailment);
                 let expected_counted = match function.name.as_str() {
+                    "parse" => 1,
                     "append_slice" => 1,
+                    "scan_line" => 1,
+                    "shift_input_tail" => 1,
                     "build_huffman_table" => 2,
                     _ => 0,
                 };
@@ -8329,11 +7988,6 @@ fn frozen_real_sources_retain_complete_entailment_roots_without_counted_false_po
             {
                 assert_real_read_bits_routes(&program.data);
                 assert_real_raw_append_routes(&program.data);
-                // This call carries the canonical-DEFLATE provenance gate. It
-                // rides this walk so both gates share one front-end pass over
-                // the same four-file bundle. If this bundle ever leaves the
-                // corpus, restore provenance.rs's standalone test.
-                super::provenance::assert_canonical_deflate_provenance(&program.data);
             }
             if program
                 .data
@@ -8425,8 +8079,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .derivations
             .nodes
             .iter()
-            .enumerate()
-            .filter_map(|(index, node)| {
+            .filter_map(|node| {
                 let DerivationNode::PostconditionDirectMatch {
                     call: candidate,
                     relation,
@@ -8435,22 +8088,11 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                 else {
                     return None;
                 };
-                (candidate == &call.path).then_some((index, relation))
+                (candidate == &call.path).then_some(relation)
             })
             .collect::<Vec<_>>();
-        assert_eq!(direct.len(), 3, "read_bits row {ordinal} DirectMatch views");
-        assert_eq!(
-            direct
-                .iter()
-                .map(|(index, _)| summary.derivations.node_views[*index])
-                .collect::<Vec<_>>(),
-            vec![
-                ProofView::Complete,
-                ProofView::Unasserted,
-                ProofView::S4Blinded,
-            ]
-        );
-        for (_, relation) in direct {
+        assert_eq!(direct.len(), 1, "read_bits row {ordinal} DirectMatch route");
+        for relation in direct {
             assert!(
                 relation.terms().into_iter().any(|term| match call.mask {
                     MaskActual::Literal(mask) => {
@@ -8471,8 +8113,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .derivations
             .nodes
             .iter()
-            .enumerate()
-            .filter_map(|(index, node)| {
+            .filter_map(|node| {
                 let DerivationNode::PostconditionSelectedReceiver {
                     binding,
                     relation,
@@ -8488,36 +8129,20 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                     DerivationNode::PostconditionDirectMatch { call: candidate, .. }
                         if candidate == &call.path
                 )
-                .then_some((
-                    summary.derivations.node_views[index],
-                    *binding,
-                    relation.as_ref().clone(),
-                    *target_event,
-                ))
+                .then_some((*binding, relation.as_ref().clone(), *target_event))
             })
             .collect::<Vec<_>>();
         assert_eq!(
             selected.len(),
-            3,
-            "read_bits row {ordinal} SelectedReceiver views"
+            1,
+            "read_bits row {ordinal} SelectedReceiver route"
         );
-        assert_eq!(
-            selected.iter().map(|entry| entry.0).collect::<Vec<_>>(),
-            vec![
-                ProofView::Complete,
-                ProofView::Unasserted,
-                ProofView::S4Blinded,
-            ]
-        );
-        assert!(selected[1..].iter().all(|entry| {
-            entry.1 == selected[0].1 && entry.2 == selected[0].2 && entry.3 == selected[0].3
-        }));
         selected_rows.push((
             call.caller,
             call.path.clone(),
-            selected[0].1,
-            selected[0].2.clone(),
-            selected[0].3,
+            selected[0].0,
+            selected[0].1.clone(),
+            selected[0].2,
         ));
         assert!(summary.derivations.nodes.iter().all(|node| {
             let DerivationNode::PostconditionDirectReceiver { parent, .. } = node else {
@@ -8533,41 +8158,30 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
         }));
     }
 
-    for view in [
-        ProofView::Complete,
-        ProofView::Unasserted,
-        ProofView::S4Blinded,
-    ] {
-        let roots = program
+    assert_eq!(
+        program
             .functions
             .iter()
-            .flat_map(|function| &function.entailment.derivations.roots);
-        assert_eq!(
-            roots
-                .clone()
-                .filter(|root| matches!(
-                    root.kind,
-                    DerivationRootKind::PostconditionDirectMatch {
-                        view: root_view,
-                        ..
-                    } if root_view == view
-                ))
-                .count(),
-            14
-        );
-        assert_eq!(
-            roots
-                .filter(|root| matches!(
-                    root.kind,
-                    DerivationRootKind::PostconditionSelectedReceiver {
-                        view: root_view,
-                        ..
-                    } if root_view == view
-                ))
-                .count(),
-            14
-        );
-    }
+            .flat_map(|function| &function.entailment.derivations.roots)
+            .filter(|root| matches!(
+                root.kind,
+                DerivationRootKind::PostconditionDirectMatch { .. }
+            ))
+            .count(),
+        14
+    );
+    assert_eq!(
+        program
+            .functions
+            .iter()
+            .flat_map(|function| &function.entailment.derivations.roots)
+            .filter(|root| matches!(
+                root.kind,
+                DerivationRootKind::PostconditionSelectedReceiver { .. }
+            ))
+            .count(),
+        14
+    );
     assert!(program.functions.iter().all(|function| {
         function.entailment.derivations.roots.iter().all(|root| {
             !matches!(
@@ -8651,27 +8265,18 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
 }
 
 fn assert_real_raw_append_routes(program: &CheckedProgramData) {
-    for view in [
-        ProofView::Complete,
-        ProofView::Unasserted,
-        ProofView::S4Blinded,
-    ] {
-        assert_eq!(
-            program
-                .functions
-                .iter()
-                .flat_map(|function| &function.entailment.derivations.roots)
-                .filter(|root| matches!(
-                    root.kind,
-                    DerivationRootKind::PostconditionDirectReceiver {
-                        view: root_view,
-                        ..
-                    } if root_view == view
-                ))
-                .count(),
-            8,
-        );
-    }
+    assert_eq!(
+        program
+            .functions
+            .iter()
+            .flat_map(|function| &function.entailment.derivations.roots)
+            .filter(|root| matches!(
+                root.kind,
+                DerivationRootKind::PostconditionDirectReceiver { .. }
+            ))
+            .count(),
+        8,
+    );
 }
 
 /// The `append_slice` receiver routes and the A10-A16 delivery chain the
@@ -8684,28 +8289,78 @@ fn assert_real_raw_append_routes(program: &CheckedProgramData) {
 /// root-length route introduced when `append_slice` gained its static input
 /// contract — four more sites.
 fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
-    for view in [
-        ProofView::Complete,
-        ProofView::Unasserted,
-        ProofView::S4Blinded,
-    ] {
-        assert_eq!(
-            program
-                .functions
-                .iter()
-                .flat_map(|function| &function.entailment.derivations.roots)
-                .filter(|root| matches!(
-                    root.kind,
-                    DerivationRootKind::PostconditionDirectReceiver {
-                        view: root_view,
-                        ..
-                    } if root_view == view
-                ))
-                .count(),
-            12,
-            "wfgrep has exactly twelve append_slice receiver routes",
-        );
-    }
+    let proof_nodes: u64 = program
+        .functions
+        .iter()
+        .map(|function| u64::from(function.entailment.derivations.metrics.unique_nodes))
+        .sum();
+    let proof_edges: u64 = program
+        .functions
+        .iter()
+        .map(|function| u64::from(function.entailment.derivations.metrics.parent_edges))
+        .sum();
+    // A wall-clock assertion would vary with the host and with the Rust
+    // profile.  These two deterministic sizes guard the cost shape instead:
+    // the current source retains 27,460 nodes and 53,423 parent edges, with a
+    // small margin for ordinary proof evolution.  A return to the former
+    // million-node shape fails here on every machine.
+    //
+    // The counts rose from 23,394 and 45,669 when a `set` to a fragment place
+    // gained the commit-value image [ENT-3.S5]: each such statement now
+    // carries one more term through its pre-kill closure, exactly as the
+    // equivalent `let` of the same right-hand side already did.  The shape is
+    // unchanged.
+    assert!(
+        proof_nodes <= 30_000,
+        "wfgrep retained {proof_nodes} proof nodes; expected at most 30,000"
+    );
+    assert!(
+        proof_edges <= 58_000,
+        "wfgrep retained {proof_edges} proof edges; expected at most 58,000"
+    );
+    let shift = program
+        .functions
+        .iter()
+        .find(|function| function.name == "shift_input_tail")
+        .expect("shift_input_tail function");
+    let [invariant] = shift.entailment.loop_invariants.as_slice() else {
+        panic!("shift_input_tail keeps its one source-written induction relation");
+    };
+    assert_eq!(invariant.name, "destination_precedes_source");
+    assert!(
+        invariant.proof.base,
+        "the originating context proves the invariant before iteration zero"
+    );
+    assert_eq!(
+        invariant.proof.step,
+        Some(true),
+        "the originating context proves the invariant from an arbitrary loop header to its next backedge"
+    );
+    assert_eq!(
+        shift.entailment.obligations.len(),
+        3,
+        "the invariant-backed copy retains its source read, destination write, and exact increment obligations"
+    );
+    assert!(
+        shift
+            .entailment
+            .obligations
+            .iter()
+            .all(|outcome| outcome.discharged)
+    );
+    assert_eq!(
+        program
+            .functions
+            .iter()
+            .flat_map(|function| &function.entailment.derivations.roots)
+            .filter(|root| matches!(
+                root.kind,
+                DerivationRootKind::PostconditionDirectReceiver { .. }
+            ))
+            .count(),
+        12,
+        "wfgrep has exactly twelve append_slice receiver routes",
+    );
 
     let report = program
         .functions
@@ -8741,35 +8396,12 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
             .all(|receiver| receiver == bounded_length),
         "A10 is the only value_if delivery in report_failure",
     );
-    let mut delivery_views = report
-        .entailment
-        .derivations
-        .nodes
-        .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
-            matches!(node, DerivationNode::PostconditionDeliveryJoin { .. })
-                .then_some(report.entailment.derivations.node_views[index])
-        })
-        .collect::<Vec<_>>();
-    delivery_views.sort_by_key(|view| proof_view_index(*view));
-    delivery_views.dedup();
-    assert_eq!(
-        delivery_views,
-        vec![
-            ProofView::Complete,
-            ProofView::Unasserted,
-            ProofView::S4Blinded,
-        ]
-    );
-
     let mut bounded_routes = report
         .entailment
         .derivations
         .nodes
         .iter()
-        .enumerate()
-        .filter_map(|(index, node)| {
+        .filter_map(|node| {
             let DerivationNode::PostconditionDirectReceiver {
                 statement,
                 binding,
@@ -8779,45 +8411,24 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
             else {
                 return None;
             };
-            (*binding == bounded_length).then_some((
-                statement.clone(),
-                report.entailment.derivations.node_views[index],
-                *parent,
-            ))
+            (*binding == bounded_length).then_some((statement.clone(), *parent))
         })
         .collect::<Vec<_>>();
-    bounded_routes.sort_by(|left, right| {
-        left.0
-            .components()
-            .cmp(right.0.components())
-            .then_with(|| proof_view_index(left.1).cmp(&proof_view_index(right.1)))
-    });
+    bounded_routes.sort_by(|left, right| left.0.components().cmp(right.0.components()));
     assert_eq!(
         bounded_routes.len(),
-        21,
+        7,
         "the separator and six following reason appends use bounded_length",
     );
-    for route in bounded_routes.as_chunks::<3>().0 {
-        assert_eq!(route[0].0, route[1].0);
-        assert_eq!(route[1].0, route[2].0);
-        assert_eq!(
-            route.iter().map(|entry| entry.1).collect::<Vec<_>>(),
-            vec![
-                ProofView::Complete,
-                ProofView::Unasserted,
-                ProofView::S4Blinded,
-            ]
+    for (_, parent) in &bounded_routes {
+        assert!(
+            root_contains(&report.entailment, *parent, |node| matches!(
+                node,
+                DerivationNode::PostconditionDeliveryJoin { detail }
+                    if detail.receiver == bounded_length
+            )),
+            "each A11-A16 receiver chain must descend from A10",
         );
-        for (_, _, parent) in route {
-            assert!(
-                root_contains(&report.entailment, *parent, |node| matches!(
-                    node,
-                    DerivationNode::PostconditionDeliveryJoin { detail }
-                        if detail.receiver == bounded_length
-                )),
-                "each A11-A16 receiver chain must descend from A10",
-            );
-        }
     }
 
     let publish = program
@@ -8846,7 +8457,7 @@ fn counted_range_reads_a_dereferenced_projected_endpoint_as_an_s11_term() {
 }
 
 fn probe(holder: own Holder) -> result: own unit reads(holder.value) {
-  for @items i in deref(holder.value)..1_u64 {
+  for @items (i in deref(holder.value)..1_u64) {
   }
   return unit;
 }
@@ -8872,7 +8483,6 @@ command fn main() -> status: own ExitStatus pure {
         endpoint.projections,
         vec![PlaceProjection::Field(0), PlaceProjection::Deref]
     );
-    assert!(summary.claims.is_empty());
 }
 
 #[test]
@@ -8890,7 +8500,7 @@ fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
 fn probe(limit: own Limit) -> result: own unit reads(limit.upper), writes(limit.upper) {
   region 'r {
     let holder = &uniq 'r limit;
-    for @items i in 0_u64..deref(holder).upper {
+    for @items (i in 0_u64..deref(holder).upper) {
       set deref(holder).upper = 0_u64;
       need(index: i, upper: deref(holder).upper);
     }
@@ -8917,7 +8527,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_preserves_multiple_deref_projections_in_one_endpoint_term() {
     let source = br#"fn probe(holder: own box<box<u64>>) -> result: own unit reads(holder) {
-  for @items i in deref(deref(holder))..1_u64 {
+  for @items (i in deref(deref(holder))..1_u64) {
   }
   return unit;
 }
@@ -8948,7 +8558,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
     let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads(holder) {
-  for @items i in deref(deref(deref(holder)))..1_u64 {
+  for @items (i in deref(deref(deref(holder)))..1_u64) {
   }
   return unit;
 }
@@ -8981,7 +8591,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_range_does_not_treat_a_read_only_box_deref_as_a_consume() {
     let source = br#"fn probe(holder: own box<u64>) -> result: own unit reads(holder) {
-  for @items i in deref(holder)..1_u64 {
+  for @items (i in deref(holder)..1_u64) {
   }
   return unit;
 }
@@ -9008,7 +8618,7 @@ command fn main() -> status: own ExitStatus pure {
 fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
     let source = br#"fn probe() -> result: own unit allocates(heap) {
   let holder = box_new(0_u64);
-  for @items i in deref(holder)..1_u64 {
+  for @items (i in deref(holder)..1_u64) {
   }
   return unit;
 }
@@ -9434,7 +9044,11 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(outcomes.len(), 2);
     assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
     assert_eq!(outcomes[0].evidence, vec![CallGoalEvidence::OpaquePositive]);
-    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+    assert_eq!(
+        outcomes[1].disposition,
+        CallGoalDisposition::Refuted,
+        "the set commit kills the old comparison origin, then S5 establishes value = 20"
+    );
 }
 
 #[test]
@@ -9824,7 +9438,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
         assert_eq!(
             detail.mechanical_fix,
-            "establish the complete callee requirement with one dominating branch before the call, or, only when it is an independently true theorem outside checker rules, add a CLM-2-admissible residual claim with a complete exact `because` record"
+            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
         );
         let crate::SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
             panic!("FN-8 must cite the source call");
@@ -9836,7 +9450,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn actual_obligations_precede_fn8_and_ephemeral_goals_use_the_stronger_fix() {
+fn actual_obligations_precede_fn8_and_admitted_index_goals_use_the_source_fix() {
     let admitted_actual = br#"fn positive(value: own u8) -> result: own unit pure contract {
   requires ilt(value, 10_u8);
 } {
@@ -9855,21 +9469,17 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(admitted_actual, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
-            panic!("the ephemeral goal is not source-establishable: {outcome:?}");
+            panic!("the unproved indexed goal must reject at FN-8: {outcome:?}");
         };
         assert_eq!(issue.rule(), SemanticRule::Fn8);
         let SemanticIssueKind::UndischargedCallRequirement(detail) = issue.kind() else {
             panic!("expected FN-8 payload, got {:?}", issue.kind());
         };
         assert_eq!(detail.disposition, CallRequirementDisposition::Unproved);
-        assert!(
-            detail
-                .instantiated_goal
-                .contains("argument #0 pre-transfer value")
-        );
+        assert_eq!(detail.instantiated_goal, "ilt(values[0_u64], 10_u8)");
         assert_eq!(
             detail.mechanical_fix,
-            "bind that argument or referent value with one preceding ordinary let, establish the complete requirement over that binding, and pass the binding, borrowing it when the parameter mode requires a borrow"
+            "when the call is required to succeed, establish the entire instantiated callee requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call"
         );
     });
     let admitted = entailment(admitted_actual, "caller");
@@ -9991,7 +9601,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn s4_discharges_the_body_call_until_a_body_write_kills_it() {
+fn writing_back_an_independent_copy_preserves_the_call_precondition() {
     let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
   requires ilt(deref(value), 10_u64);
 } {
@@ -10017,7 +9627,9 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
-    let outcomes = call_goals(source, "update");
+    let summary = entailment(source, "update");
+    validate_derivations(&summary);
+    let outcomes = &summary.call_goals;
     assert_eq!(outcomes.len(), 2);
     assert_eq!(outcomes[0].disposition, CallGoalDisposition::Discharged);
     assert_eq!(
@@ -10027,7 +9639,40 @@ command fn main() -> status: own ExitStatus pure {
             CallGoalEvidence::ExactL0Projection,
         ]
     );
-    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Unproved);
+    assert_eq!(outcomes[1].disposition, CallGoalDisposition::Discharged);
+    assert_eq!(
+        outcomes[1].evidence,
+        vec![CallGoalEvidence::ExactL0Projection]
+    );
+    assert_root_contains(
+        &summary,
+        call_root(&summary, 1),
+        |node| match node {
+            DerivationNode::TransitiveBound {
+                left,
+                middle,
+                right,
+                bound: -1,
+                ..
+            } => {
+                matches!(
+                    (
+                        retained_term(&summary, *left),
+                        retained_term(&summary, *middle),
+                        retained_term(&summary, *right),
+                    ),
+                    (
+                        TermKind::Place(old, IntegerType::U64),
+                        TermKind::ProjectedPlace(value, IntegerType::U64),
+                        TermKind::Constant(10),
+                    ) if old.root == PlaceRoot::Binding(BindingId(1))
+                        && value.root == PlaceRoot::Binding(BindingId(0))
+                )
+            }
+            _ => false,
+        },
+        "the exact old - deref(value) <= 0 plus deref(value) - 10 <= -1 projection",
+    );
 }
 
 #[test]

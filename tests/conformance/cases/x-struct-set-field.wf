@@ -2,12 +2,10 @@ struct Counter {
   n: i32;
 }
 
-command fn main() -> status: own ExitStatus traps {
-  doc "TYPE-5: mutate a struct field with `set place.f = atom`, read it back, and control-check the expected result. The read-back feeds a class site, so a dominating claim discharges its OP-2 overflow obligation with the residual the diagnostic renders.";
+command fn main() -> status: own ExitStatus pure {
+  doc "TYPE-5: mutate a struct field with `set place.f = atom`, use the machine-derived S5 post-write equality to discharge the following exact addition, and control-check the expected result.";
   let c = Counter(n: 1_i32);
   set c.n = 41_i32;
-  let field_in_range = ile(c.n, 2147483646_i32);
-  claim field_below_max: field_in_range because "premises: c.n is set to 41_i32 immediately before the bound is computed\nderivation: 41_i32 is at most i32 maximum minus one\nconclusion: field_in_range is true\nchecker gap: ENT does not retain a value through a mutable nominal field projection\nconsumers: the following exact field increment needs this upper IntegerDomain component";
   let v = c.n + 1_i32;
   if ieq(v, 42_i32) {
   } else {

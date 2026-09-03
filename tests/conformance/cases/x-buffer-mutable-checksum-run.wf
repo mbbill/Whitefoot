@@ -1,28 +1,14 @@
-command fn main() -> status: own ExitStatus allocates(heap), traps {
-  doc "A runtime-length buffer is allocated, filled, folded, and released; loop claims discharge its indexed access.";
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "A runtime-length buffer is allocated, filled, folded, and released; counted-loop range facts discharge every indexed access.";
   let values = buffer_new(8_u64, 0_u64);
   let length = len(values);
-  let cursor = 0_u64;
-  loop @fill {
-    if ieq(cursor, length) {
-      break @fill;
-    }
-    let fill_in_range = ilt(cursor, length);
-    claim fill_cursor_in_range: fill_in_range because "premises: the fill loop starts its cursor at zero, advances by one, and exits at the runtime buffer length\nderivation: on every body reach the cursor is strictly below that extent, which is the predicate computed immediately above\nconclusion: fill_in_range is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and loop recurrence\nconsumers: the following fill indexed access needs this upper Range component";
-    set values[cursor] = cursor +wrap 1_u64;
-    set cursor = cursor +wrap 1_u64;
+  for (fill_index in 0_u64..length) {
+    set values[fill_index] = fill_index +wrap 1_u64;
   }
-  set cursor = 0_u64;
   let total = 0_u64;
-  loop @fold {
-    if ieq(cursor, length) {
-      break @fold;
-    }
-    let fold_in_range = ilt(cursor, length);
-    claim fold_cursor_in_range: fold_in_range because "premises: the fold loop starts its cursor at zero, advances by one, and exits at the runtime buffer length\nderivation: on every body reach the cursor is strictly below that extent, which is the predicate computed immediately above\nconclusion: fold_in_range is true\nchecker gap: ENT does not derive the strict loop range from the equality exit and loop recurrence\nconsumers: the following fold indexed access needs this upper Range component";
-    let value = values[cursor];
+  for (fold_index in 0_u64..length) {
+    let value = values[fold_index];
     set total = total +wrap value;
-    set cursor = cursor +wrap 1_u64;
   }
   if ieq(total, 36_u64) {
   } else {

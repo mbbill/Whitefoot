@@ -18,14 +18,14 @@ pub use engine::{resolve, resolve_with_inventory};
 
 pub use catalog::{
     Inventory, OPEN_BY_NAME, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-    SystemConstructor, SystemEntity, SystemField, SystemNominal, SystemOperation, SystemParameter,
-    SystemParameterMode, SystemRelease, SystemReleaseAction, SystemReleaseRow,
-    SystemResourceBacking, SystemResourceContract, SystemResourceType, SystemResultPayload,
-    SystemResultStateOrigin, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction, TargetCompletion,
-    TargetDispatch, TargetMilestones, operation_state_effects, system_constructor_declaration,
-    system_constructor_index, system_constructors, system_entity, system_nominal_index,
-    system_nominals, system_operation_index, system_operations, system_release_row,
-    system_resource_contract,
+    SystemConstructor, SystemEntity, SystemField, SystemIntegerResultBound, SystemNominal,
+    SystemOperation, SystemParameter, SystemParameterMode, SystemRelease, SystemReleaseAction,
+    SystemReleaseRow, SystemResourceBacking, SystemResourceContract, SystemResourceType,
+    SystemResultPayload, SystemResultStateOrigin, SystemTypeRef, TRAVERSAL_SURFACE, TargetAction,
+    TargetCompletion, TargetDispatch, TargetMilestones, operation_state_effects,
+    system_constructor_declaration, system_constructor_index, system_constructors, system_entity,
+    system_nominal_index, system_nominals, system_operation_index, system_operations,
+    system_release_row, system_resource_contract,
 };
 
 /// Returns the exact OP-1 spelling of a resolved operation family.
@@ -197,11 +197,13 @@ pub enum DeclarationClass {
     Region,
     /// Loop label.
     Label,
+    /// One machine-checked invariant fact named by source.
+    Invariant,
     /// One distinct OP-1 spelling.
     OperationFamily,
 }
 
-/// Closed TYPE-6 collision-domain order.
+/// Closed resolver collision-domain order.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DeclarationDomain {
     /// Functions, constants, const generics, parameters, lets, and binders.
@@ -216,6 +218,8 @@ pub enum DeclarationDomain {
     Region,
     /// Loop labels.
     Label,
+    /// Machine-checked invariant facts.
+    Invariant,
 }
 
 impl DeclarationDomain {
@@ -227,6 +231,7 @@ impl DeclarationDomain {
             Self::Contract => 3,
             Self::Region => 4,
             Self::Label => 5,
+            Self::Invariant => 6,
         }
     }
 }
@@ -264,6 +269,8 @@ pub enum DeclarationRole {
     MatchBinder,
     /// D15: counted-range binder.
     CountedBinder,
+    /// A named invariant fact visible after its checked declaration point.
+    Invariant,
 }
 
 /// Dependent declaration roles X01 through X03.
@@ -320,6 +327,12 @@ pub enum LexicalUseRole {
     FunctionBinding,
     /// U18: generic suffix in `0_T` or `1_T`.
     GenericNumericSuffix,
+    /// One local integer value named by an INV-1 proof-only affine factor.
+    InvariantValue,
+    /// One local integer value named by a PRF-1 finite source-proof factor.
+    ProofValue,
+    /// One earlier named invariant selected by a local `use` step.
+    InvariantFact,
 }
 
 /// Deferred member and field uses resolved by the semantic owner type.
@@ -684,6 +697,10 @@ pub enum ResolutionRule {
     Fn8,
     /// Ensures-block structural and selector admission.
     Fn9,
+    /// Invariant declaration names and proof-only target-value lookup.
+    Inv1,
+    /// Finite source-certificate relation-value lookup.
+    Prf1,
 }
 
 impl ResolutionRule {
@@ -705,6 +722,8 @@ impl ResolutionRule {
             Self::Fn4 => "FN-4",
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
+            Self::Inv1 => "INV-1",
+            Self::Prf1 => "PRF-1",
         }
     }
 }
@@ -729,6 +748,8 @@ pub enum ReservedDeclarationRole {
     Parameter,
     /// Lexical let binding.
     Let,
+    /// Header or body-local invariant declaration.
+    Invariant,
     /// Counted-range binder.
     ForBinder,
     /// Match binder.

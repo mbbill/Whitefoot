@@ -1,5 +1,5 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "Accepted: parses, satisfies every rule, discharges every static obligation, and carries every explicit claim [SCOPE-2].";
+  doc "Accepted: parses, satisfies every rule, and discharges every static obligation [SCOPE-2].";
   let a = 7_i32;
   return exit_status(code: 0_u8);
 }
