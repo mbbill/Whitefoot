@@ -17,6 +17,18 @@ record. No sample was removed, extended, or rerun. Two earlier invocations
 were refused before run-directory creation because AC power was not stable;
 they produced no header or sample and did not consume the create-once run.
 
+## Replay status (2026-09-03)
+
+This bundle is frozen v0.17-era evidence. `literal_line.wf` no longer parses
+under the active specification: a function's result binding is now named
+(`-> result: own u64`, the active grammar's `result_binding`), and the
+`traps` effect its kernel functions declare was retired in v0.40 together
+with every runtime trap. The Makefile that compiled the kernel through the
+current compiler was removed on 2026-09-03, so no research driver names a
+program the compiler rejects. The kernel, the C and Rust controls, the
+harness, `runner.rs`, and the raw evidence stay as the run's record; a
+replay starts from the freeze commit named above.
+
 ## Result
 
 The primary ratio is `C elapsed / Whitefoot elapsed`; below 1 means C is

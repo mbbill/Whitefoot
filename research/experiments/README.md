@@ -23,6 +23,28 @@ high-level sequencing; plans do not grant or withhold branch permission.
   control; not a Whitefoot layer); the compute loss to the scalar
   double-walk shape, with the literal matcher above the newline scan and
   the retained per-byte traps a bounded ~18%-ceiling secondary term.
+  The run is closed and its driver is not replayable from HEAD: the subject
+  was the `tests/programs/wfgrep.wf` of 2026-08-06, which became a recursive
+  search printing `PATH:LINE:TEXT` lines on 2026-08-18; `MANIFEST.txt`
+  remains the pinned corpus and output identity.
+- `wfgrep-double-walk/` — the follow-on slice on the baseline's attributed
+  compute cause: three legal source shapes paired against a fresh B0 under
+  the inherited corpus and pins. Credited: S2, the fused single-pass
+  scan+match, 1.150/1.145 on `large`/`nomatch` with byte-identical behavior,
+  landed as `tests/programs/wfgrep.wf` on 2026-08-06; S3, the word-at-a-time
+  newline scan, is the witness that no legal shape widens the serial
+  per-byte step under that lowering. The run is closed and B0 cannot be
+  rebuilt from HEAD; the three shape sources are kept on the active
+  specification, and `make check` verifies that they still reproduce the
+  inherited manifest byte for byte.
+- `wide-scan-lowering/` — the lowering answer to the double-walk's latency
+  floor: the same landed `wfgrep.wf` bytes compiled by the base-revision
+  compiler and by the candidate carrying the check-aware wide probe.
+  Credited route (b): a material 1.43x on both scan cases with every
+  required check preserved observably, and the confirm rerun moves wfgrep
+  past the system grep on every compute-bound case. Closed and not
+  replayable from HEAD: the subject program changed on 2026-08-18 and
+  `base` needs a pinned base-revision compiler worktree.
 - `ripgrep/` — RG-BASE preregistration for the owner-selected 2x ripgrep
   flagship. It freezes the Apple M4 target, pinned official/native ripgrep
   comparators, two real source trees, one large-text corpus, nine equal-weight
@@ -80,15 +102,26 @@ high-level sequencing; plans do not grant or withhold branch permission.
   which is 612x below 1% of this program's 1.76 ms empty-input process floor,
   so no input size makes it material. Dossier §11's stop condition did not
   fire.
-- `literal-line-floor/` — the active v0.17 language expresses an exact
+
+## Frozen v0.17 floor studies
+
+Two single-buffer floor measurements of the v0.17 language, complete and
+closed. Their kernels no longer parse under the active specification (a
+function's result binding is now named, and the `traps` effect was retired
+in v0.40), so their drivers were removed on 2026-09-03 and the bundles are
+records: sources, controls, harness, runner, raw evidence, and the freeze
+commit each RESULTS.md names.
+
+- `literal-line-floor/` — the then-active v0.17 language expresses an exact
   runtime-needle literal line matcher, but its helper-shaped scalar lowering is
   directionally about 5% behind same-Clang C: C/Whitefoot is 0.9535
   [0.9223, 0.9609], below the preregistered material-loss threshold. Pinned
   Rust `memmem` is descriptively 7.33x the same-toolchain scalar control with
   the expected NEON packed-pair mechanism, but strict primary parity was not
   met, so this is not promoted to a language, ripgrep, end-to-end, or 2x claim.
-- `wfgrep-scan-floor/` — the active v0.17 language and ordinary compiler match
-  same-Clang C on two safe single-buffer scanner shapes. The width-16
+- `wfgrep-scan-floor/` — the then-active v0.17 language and ordinary
+  compiler match same-Clang C on two safe single-buffer scanner shapes. The
+  width-16
   Boolean-dataflow full pass measures 0.9993x C [0.9969, 1.0023], and four
   scalar early exits measure 1.0008x C [0.9981, 1.0088]. LLVM removes the
   guard-dominated bounds traps in both. This validates a narrow language floor,

@@ -1,92 +1,72 @@
-# WFGREP-DOUBLE-WALK build and phase driver. Phases run in protocol order:
-#   build -> gen -> verify -> code-shape -> null-before -> bench-grep ->
-#   bench-s1 -> bench-s2 -> bench-s3 -> null-after -> counters
-#   [-> confirm SHAPE=sN, conditional per PROTOCOL.md]
+# WFGREP-DOUBLE-WALK: the frozen run's record and the shapes' replay check.
+#
+# The single run of 2026-08-06 (RESULTS.md) paired three candidate source
+# shapes against B0, the then-current tests/programs/wfgrep.wf, through the
+# phases build -> gen -> verify -> code-shape -> null -> bench -> counters
+# -> confirm. B0 cannot be rebuilt from HEAD: that program became a
+# recursive search printing PATH:LINE:TEXT lines on 2026-08-18, and its
+# frozen bytes predate specification v0.40. The comparative phases therefore
+# live only in the freeze commit RESULTS.md names. This driver keeps what
+# HEAD can still assert: the three shape sources, kept on the active
+# specification, compile through the ordinary compiler and reproduce the
+# inherited WFGREP-BASELINE manifest byte for byte.
+#
+#   make -C research/experiments/wfgrep-double-walk check
+#
+# The corpus and binaries live in the scratch root. Nothing here writes to
+# the committed raw/ evidence of the frozen run.
 
 ROOT := $(abspath ../../..)
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK_ROOT ?= $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-wfgrep-double-walk
 BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
-CARGO_TARGET := $(WORK_ROOT)/cargo-target
 BUNDLE := $(abspath .)
-RAW ?= $(BUNDLE)/raw/wfgrep-double-walk-1.jsonl
-ENV := WFD_WORK_ROOT=$(WORK_ROOT) WFD_MANIFEST=$(BUNDLE)/../wfgrep-baseline/MANIFEST.txt WFD_RAW=$(RAW)
-CLANG := /usr/bin/clang
+ENV := WFD_WORK_ROOT=$(WORK_ROOT) WFD_MANIFEST=$(BUNDLE)/../wfgrep-baseline/MANIFEST.txt
 RUSTC := rustc
+WFC := $(ROOT)/compiler/target/gate/whitefootc
 
-SHAPE_SOURCES := s1-hoisted-first-byte s2-fused-scan-match s3-swar-newline-scan
-BINARIES := $(BUILD)/base $(BUILD)/s1 $(BUILD)/s2 $(BUILD)/s3
-ARTIFACTS := $(foreach name,base s1 s2 s3,$(BUILD)/$(name).raw.ll $(BUILD)/$(name).opt.ll $(BUILD)/$(name).s)
+# The corpus is regenerated only when this file is missing; `verify` then
+# checks every corpus digest against the pinned manifest, so a stale or
+# partial corpus fails loudly and `make gen` rebuilds it.
+CORPUS_STAMP := $(WORK_ROOT)/corpus/floor/empty.txt
 
-.PHONY: build prepare gen verify code-shape null-before null-after counters check \
-        bench-grep bench-s1 bench-s2 bench-s3 confirm
+SHAPES := s1 s2 s3
+BINARIES := $(foreach name,$(SHAPES),$(BUILD)/$(name))
 
-build: prepare $(BINARIES) $(BUILD)/runner
+.PHONY: build prepare compiler gen verify check
+
+build: prepare compiler $(BINARIES) $(BUILD)/runner
 
 prepare:
-	mkdir -p $(BUILD) $(TMP) $(CARGO_TARGET) $(BUNDLE)/raw
+	mkdir -p $(BUILD) $(TMP)
+
+# The gate profile is the compiler's own optimized build; the program it
+# emits does not depend on that profile, and the dev profile takes minutes
+# per shape.
+compiler:
+	cd $(ROOT)/compiler && env CARGO_TARGET_DIR=$(ROOT)/compiler/target \
+		cargo build --profile gate --bin whitefootc --locked --offline
 
 $(BUILD)/runner: runner.rs | prepare
 	$(RUSTC) --edition=2024 -C opt-level=2 -C panic=abort $< -o $@
 
-source_of = $(if $(filter base,$(1)),$(ROOT)/tests/programs/wfgrep.wf,$(BUNDLE)/shapes/$(filter $(1)-%,$(SHAPE_SOURCES)).wf)
+$(BUILD)/s1: shapes/s1-hoisted-first-byte.wf compiler | prepare
+	env TMPDIR=$(TMP) $(WFC) -o $@ $<
 
-define BUILD_SUBJECT
-$(BUILD)/$(1): $(call source_of,$(1)) | prepare
-	cd $(ROOT)/compiler && env TMPDIR=$(TMP) CARGO_TARGET_DIR=$(CARGO_TARGET) \
-		cargo run --bin whitefootc --locked --offline -- -o $$@ $$<
+$(BUILD)/s2: shapes/s2-fused-scan-match.wf compiler | prepare
+	env TMPDIR=$(TMP) $(WFC) -o $@ $<
 
-$(BUILD)/$(1).raw.ll: $(call source_of,$(1)) | prepare
-	cd $(ROOT)/compiler && env TMPDIR=$(TMP) CARGO_TARGET_DIR=$(CARGO_TARGET) \
-		cargo run --bin whitefootc --locked --offline -- --emit-llvm -o $$@ $$<
+$(BUILD)/s3: shapes/s3-swar-newline-scan.wf compiler | prepare
+	env TMPDIR=$(TMP) $(WFC) -o $@ $<
 
-$(BUILD)/$(1).opt.ll: $(BUILD)/$(1).raw.ll
-	$(CLANG) -O2 -Wno-override-module -x ir -S -emit-llvm $$< -o $$@
-
-$(BUILD)/$(1).s: $(BUILD)/$(1).raw.ll
-	$(CLANG) -O2 -Wno-override-module -x ir -S $$< -o $$@
-endef
-
-$(eval $(call BUILD_SUBJECT,base))
-$(eval $(call BUILD_SUBJECT,s1))
-$(eval $(call BUILD_SUBJECT,s2))
-$(eval $(call BUILD_SUBJECT,s3))
-
-gen: build
+$(CORPUS_STAMP): | $(BUILD)/runner
 	$(ENV) $(BUILD)/runner gen
 
-verify: build
+gen: $(BUILD)/runner
+	$(ENV) $(BUILD)/runner gen
+
+verify: build $(CORPUS_STAMP)
 	$(ENV) $(BUILD)/runner verify
-
-# The retained pre-timing artifacts; inspection findings are recorded in
-# RESULTS.md against these exact files.
-code-shape: build $(ARTIFACTS)
-	shasum -a 256 $(ARTIFACTS)
-
-null-before: build
-	$(ENV) $(BUILD)/runner null before
-
-bench-grep: build
-	$(ENV) $(BUILD)/runner bench-grep
-
-bench-s1: build
-	$(ENV) $(BUILD)/runner bench-shape s1
-
-bench-s2: build
-	$(ENV) $(BUILD)/runner bench-shape s2
-
-bench-s3: build
-	$(ENV) $(BUILD)/runner bench-shape s3
-
-null-after: build
-	$(ENV) $(BUILD)/runner null after
-
-counters: build
-	$(ENV) $(BUILD)/runner counters
-
-# Conditional confirmation phase: make confirm SHAPE=s2
-confirm: build
-	$(ENV) $(BUILD)/runner confirm $(SHAPE)
 
 check: verify

@@ -114,16 +114,16 @@ fn io_class(error: own IoError) -> result: own u8 pure {
 
 fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
   define capacity = len(deref(destination));
-  ensures ile(result, capacity);
+  ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds.";
   let capacity = len(deref(destination));
-  let admitted = ile(filled, capacity);
+  let admitted = filled <= capacity;
   let length = len(text);
   if admitted {
-    for @append at in filled..capacity {
+    for @append (at in filled..capacity) {
       let taken = at -wrap filled;
-      let done = ige(taken, length);
+      let done = taken >= length;
       if done {
         return at;
       }
@@ -138,12 +138,12 @@ fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<
 
 fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) contract {
   define destination_room = len(deref(destination));
-  ensures ile(result, destination_room);
+  ensures result <= destination_room;
 } {
   doc "Copies one half-open source range into the destination at one offset.";
   let source_room = len(deref(source));
   let destination_room = len(deref(destination));
-  let admitted = ile(at, destination_room);
+  let admitted = at <= destination_room;
   if admitted {
   } else {
     return destination_room;
@@ -151,14 +151,14 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
   let target = at;
   let cursor = from;
   loop @copy {
-    let done = ige(cursor, to);
+    let done = cursor >= to;
     if done {
       break @copy;
     }
-    let read_ok = ilt(cursor, source_room);
+    let read_ok = cursor < source_room;
     if read_ok {
     } else {
-      let target_fits = ile(target, destination_room);
+      let target_fits = target <= destination_room;
       if target_fits {
         return target;
       } else {
@@ -166,7 +166,7 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
       }
     }
     let byte = deref(source)[cursor];
-    let write_ok = ilt(target, destination_room);
+    let write_ok = target < destination_room;
     if write_ok {
     } else {
       return destination_room;
@@ -175,7 +175,7 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
     set target = target +wrap 1_u64;
     set cursor = cursor +wrap 1_u64;
   }
-  let target_fits = ile(target, destination_room);
+  let target_fits = target <= destination_room;
   if target_fits {
     return target;
   } else {
@@ -185,12 +185,12 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
 
 fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
-  requires ile(length, source_length);
+  requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
   let sent = 0_u64;
   loop @publish {
-    let pending = ilt(sent, length);
+    let pending = sent < length;
     if pending {
     } else {
       break @publish;
@@ -211,7 +211,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
 
 fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, status: own u8, position: own u64) -> result: own unit reads(args, err, report), writes(err, report) contract {
   define report_room = len(deref(report));
-  requires ile(256_u64, report_room);
+  requires 256_u64 <= report_room;
 } {
   doc "Assembles one `wfgrep: NAME: reason` diagnostic in the reusable report buffer and publishes it to standard error.";
   let length = 0_u64;
@@ -223,7 +223,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
   }
   match arg_get(args: args, position: position) {
     Ok(value: text) => {
-      let name_start_ok = ile(length, 256_u64);
+      let name_start_ok = length <= 256_u64;
       if name_start_ok {
         region {
           match host_copy_bytes(value: &text, destination: &uniq deref(report), start: length, end: 256_u64) {
@@ -246,7 +246,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
     }
   }
   let named = 0_u8;
-  if ieq(status, 1_u8) {
+  if status == 1_u8 {
     set named = 1_u8;
     region {
       let view = slice_of(&reason_missing);
@@ -255,7 +255,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
       }
     }
   }
-  if ieq(status, 2_u8) {
+  if status == 2_u8 {
     set named = 1_u8;
     region {
       let view = slice_of(&reason_denied);
@@ -264,7 +264,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
       }
     }
   }
-  if ieq(status, 3_u8) {
+  if status == 3_u8 {
     set named = 1_u8;
     region {
       let view = slice_of(&reason_directory);
@@ -273,7 +273,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
       }
     }
   }
-  if ieq(status, 5_u8) {
+  if status == 5_u8 {
     set named = 1_u8;
     region {
       let view = slice_of(&reason_invalid_path);
@@ -282,7 +282,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
       }
     }
   }
-  if ieq(status, 6_u8) {
+  if status == 6_u8 {
     set named = 1_u8;
     region {
       let view = slice_of(&reason_long_line);
@@ -291,7 +291,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
       }
     }
   }
-  if ieq(named, 0_u8) {
+  if named == 0_u8 {
     region {
       let view = slice_of(&reason_unreadable);
       region {
@@ -322,7 +322,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   }
   let startup = 0_u8;
   let pattern_length = 0_u64;
-  let usable = ige(arguments, 3_u64);
+  let usable = arguments >= 3_u64;
   if usable {
     region {
       match arg_get(args: &args, position: 1_u64) {
@@ -346,10 +346,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   } else {
     set startup = 1_u8;
   }
-  if ieq(startup, 0_u8) {
+  if startup == 0_u8 {
   } else {
     let length = 0_u64;
-    if ieq(startup, 1_u8) {
+    if startup == 1_u8 {
       region {
         let view = slice_of(&usage_text);
         set length = append_slice(destination: &uniq report, filled: length, text: move view);
@@ -371,7 +371,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     return exit_status(code: 2_u8);
   }
   let first_pattern_byte = pattern[0_u64];
-  let empty_pattern = ieq(pattern_length, 0_u64);
+  let empty_pattern = pattern_length == 0_u64;
   let failed = 0_u8;
   let matched = 0_u8;
   let filled = 0_u64;
@@ -379,7 +379,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let write_class = 0_u8;
   let position = 2_u64;
   loop @files {
-    let more = ilt(position, arguments);
+    let more = position < arguments;
     if more {
     } else {
       break @files;
@@ -397,14 +397,14 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                     let carry = 0_u64;
                     let file_offset = 0_u64;
                     loop @chunks {
-                      let carry_fits = ilt(carry, 4096_u64);
+                      let carry_fits = carry < 4096_u64;
                       if carry_fits {
                       } else {
                         set status = 6_u8;
                         break @chunks;
                       }
                       let room = 4096_u64 -wrap carry;
-                      let overlong = ieq(room, 0_u64);
+                      let overlong = room == 0_u64;
                       if overlong {
                         set status = 6_u8;
                         break @chunks;
@@ -427,17 +427,17 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                         }
                       }
-                      if ieq(ended, 2_u8) {
+                      if ended == 2_u8 {
                         break @chunks;
                       }
-                      if ieq(ended, 1_u8) {
-                        let trailing = igt(carry, 0_u64);
+                      if ended == 1_u8 {
+                        let trailing = carry > 0_u64;
                         if trailing {
                           set input[carry] = 10_u8;
                           set available = carry +wrap 1_u64;
                         }
                       }
-                      let available_fits = ile(available, 4096_u64);
+                      let available_fits = available <= 4096_u64;
                       if available_fits {
                       } else {
                         set status = 6_u8;
@@ -449,48 +449,48 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         let hit = empty_pattern;
                         let probe = scan;
                         loop @walk {
-                          let done = ige(probe, available);
+                          let done = probe >= available;
                           if done {
                             break @walk;
                           }
                           let byte = input[probe];
-                          let newline = ieq(byte, 10_u8);
+                          let newline = byte == 10_u8;
                           if newline {
                             set terminator = probe;
                             break @walk;
                           }
                           if hit {
                           } else {
-                            let lead = ieq(byte, first_pattern_byte);
+                            let lead = byte == first_pattern_byte;
                             if lead {
                               let same = True();
                               let ahead = 1_u64;
                               loop @verify {
-                                let proven = ige(ahead, pattern_length);
+                                let proven = ahead >= pattern_length;
                                 if proven {
                                   break @verify;
                                 }
                                 let spot = probe +wrap ahead;
-                                let inside = ilt(spot, available);
+                                let inside = spot < available;
                                 if inside {
                                 } else {
                                   set same = False();
                                   break @verify;
                                 }
-                                let ahead_fits = ilt(ahead, 4096_u64);
+                                let ahead_fits = ahead < 4096_u64;
                                 if ahead_fits {
                                 } else {
                                   set same = False();
                                   break @verify;
                                 }
                                 let candidate = input[spot];
-                                let stopper = ieq(candidate, 10_u8);
+                                let stopper = candidate == 10_u8;
                                 if stopper {
                                   set same = False();
                                   break @verify;
                                 }
                                 let expected = pattern[ahead];
-                                let equal = ieq(candidate, expected);
+                                let equal = candidate == expected;
                                 if equal {
                                 } else {
                                   set same = False();
@@ -505,7 +505,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                           set probe = probe +wrap 1_u64;
                         }
-                        let complete = ilt(terminator, available);
+                        let complete = terminator < available;
                         if complete {
                         } else {
                           break @lines;
@@ -515,9 +515,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           let stop = terminator +wrap 1_u64;
                           let span = stop -wrap scan;
                           let need = filled +wrap span;
-                          let overfull = igt(need, 4096_u64);
+                          let overfull = need > 4096_u64;
                           if overfull {
-                            let filled_fits = ile(filled, 4096_u64);
+                            let filled_fits = filled <= 4096_u64;
                             if filled_fits {
                               region {
                                 match publish_all(output: &uniq out, source: &batch, length: filled) {
@@ -534,7 +534,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                             }
                             set filled = 0_u64;
                           }
-                          if ieq(write_failed, 0_u8) {
+                          if write_failed == 0_u8 {
                             region {
                               set filled = copy_range(destination: &uniq batch, at: filled, source: &input, from: scan, to: stop);
                             }
@@ -544,19 +544,19 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         }
                         set scan = terminator +wrap 1_u64;
                       }
-                      if ieq(ended, 1_u8) {
+                      if ended == 1_u8 {
                         break @chunks;
                       }
                       let tail = available -wrap scan;
                       let moved = 0_u64;
                       loop @shift {
-                        let done = ige(moved, tail);
+                        let done = moved >= tail;
                         if done {
                           break @shift;
                         }
                         let source_index = scan +wrap moved;
-                        let source_fits = ilt(source_index, 4096_u64);
-                        let target_fits = ilt(moved, 4096_u64);
+                        let source_fits = source_index < 4096_u64;
+                        let target_fits = moved < 4096_u64;
                         if source_fits {
                         } else {
                           break @shift;
@@ -588,7 +588,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         }
       }
     }
-    let reportable = ine(status, 0_u8);
+    let reportable = status != 0_u8;
     if reportable {
       set failed = 1_u8;
       region {
@@ -597,8 +597,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     set position = position +wrap 1_u64;
   }
-  if ieq(write_failed, 0_u8) {
-    let filled_fits = ile(filled, 4096_u64);
+  if write_failed == 0_u8 {
+    let filled_fits = filled <= 4096_u64;
     if filled_fits {
       region {
         match publish_all(output: &uniq out, source: &batch, length: filled) {
@@ -614,11 +614,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       set write_failed = 1_u8;
     }
   }
-  if ieq(write_failed, 0_u8) {
+  if write_failed == 0_u8 {
   } else {
     set failed = 1_u8;
     let length = 0_u64;
-    if ieq(write_class, 4_u8) {
+    if write_class == 4_u8 {
       region {
         let view = slice_of(&reason_broken_pipe);
         set length = append_slice(destination: &uniq report, filled: length, text: move view);
@@ -638,11 +638,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       }
     }
   }
-  if ieq(failed, 0_u8) {
+  if failed == 0_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
-  if ieq(matched, 0_u8) {
+  if matched == 0_u8 {
     return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);

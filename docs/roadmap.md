@@ -19,8 +19,8 @@ Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
 
 The stable path currently carries the **v0.42 CANDIDATE** at
-`8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`, whose status line declares
-`CANDIDATE v0.42 supersedes v0.41 899437ec…`. A candidate is work-branch
+`8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`, whose
+status line declares `CANDIDATE v0.42 supersedes v0.41 899437ec…`. A candidate is work-branch
 content, not an installed identity: canonical `make check` rejects it at
 `spec-archive-integrity` until an activation archives the outgoing v0.41 bytes
 and records a new chain line, so the authority named above is unchanged.
