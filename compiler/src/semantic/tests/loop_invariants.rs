@@ -2277,9 +2277,22 @@ command fn main() -> status: own ExitStatus pure {
 /// [INV-1] The same increment without any guard on its reaching path leaves
 /// the header relation unproved at the backedge. The diagnostic names the
 /// written relation, not an internal value image.
+///
+/// This is also the control for DIAG-1's causal selection: the body holds no
+/// other failing obligation, so the backedge is genuinely the first failure
+/// and is the one reported. The written `requires` is what makes that true.
+/// Without it `limit` is unbounded, `cursor + 1_u64` fails its own OP-2
+/// obligation, and the value it commits is demoted to a fresh full-range
+/// atom — which is what breaks this backedge. The test was originally written
+/// against that program and passed only because the header failure was
+/// reported ahead of the body failure that caused it; bounding `limit` keeps
+/// the subject the backedge rather than the increment's domain.
 #[test]
 fn an_unguarded_cursor_increment_fails_the_ordinary_loop_backedge() {
-    let source = br#"fn advance(limit: own u64, leave: own Bool) -> result: own unit pure {
+    let source =
+        br#"fn advance(limit: own u64, leave: own Bool) -> result: own unit pure contract {
+  requires ilt(limit, 1000_u64);
+} {
   let cursor = 0_u64;
   loop (
     invariant bounded: ile(cursor, limit)
@@ -2529,5 +2542,64 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(invariant.name, "bounded");
         assert!(invariant.proof.base);
         assert_eq!(invariant.proof.step, None);
+    });
+}
+
+/// [INV-1, DIAG-1] A body-end local invariant is a probe: it asks whether the
+/// entering context at that join still proves the relation the header carries.
+/// Here it does not, and the header's own backedge fails for exactly the same
+/// reason. DIAG-1 admits one rejection, and the probe is decided at the join
+/// while the backedge is decided only after the whole body has been walked, so
+/// the probe is the reported failure.
+///
+/// Reporting the header instead makes a failing probe look like a passing one,
+/// which is how a writer concludes that the join does establish the relation.
+#[test]
+fn a_failing_body_probe_is_reported_before_the_header_backedge() {
+    let source = br#"fn narrow(room: own u64, cand: own u64, flag: own Bool) -> out: own u64 pure {
+  let hi = room;
+  loop (
+    invariant bounds: ile(hi, room)
+  ) {
+    if ile(cand, room) {
+    } else {
+      return 0_u64;
+    }
+    if flag {
+      set hi = cand;
+    }
+    invariant reprove: ile(hi, room);
+  }
+  return hi;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = True();
+  let v = narrow(room: 8_u64, cand: 3_u64, flag: t);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the failing body probe must reject: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Inv1);
+        let SemanticIssueKind::UndischargedLocalInvariant { name, .. } = issue.kind() else {
+            panic!(
+                "expected the probe's own undischarged local invariant, got {:?}",
+                issue.kind()
+            );
+        };
+        assert_eq!(name, "reprove");
+        let SemanticLocation::SourceNode(_, coordinate) = issue.location() else {
+            panic!("INV-1 must cite a source node");
+        };
+        let start = usize::try_from(coordinate.start().value()).expect("source offset fits usize");
+        let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
+        assert_eq!(
+            std::str::from_utf8(&source[start..end]).expect("cited bytes are text"),
+            "invariant reprove: ile(hi, room);",
+            "the rejection lands on the body probe, not on the loop header",
+        );
     });
 }
