@@ -30,7 +30,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
       match reserve_file<'f>(factory: &uniq 'f files) {
         Ok(value: permit) => {
           match open_file<'f, 'f>(permit: move permit, root: &'f cwd, name: &'f name, start: 0_u64, end: 2_u64) {
-            Ok(value: handle) => {
+            FileOpened(value: handle) => {
               region 'read {
                 match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
                   ReadBytes(next: reached) => {
@@ -51,7 +51,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
                 }
               }
             }
-            Err(error: problem) => {
+            FileOpenFailed(error: problem, permit: refused) => {
             }
           }
         }

@@ -171,8 +171,9 @@ fn emit_lowered(source: &[u8], overlap: OverlapLowering) -> String {
     let ResolutionOutcome::Complete(resolved) = resolve(canonical) else {
         panic!("backend test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
-        panic!("backend test source must check");
+    let checked = match check_semantics(resolved) {
+        SemanticOutcome::Complete(checked) => checked,
+        other => panic!("backend test source must check: {other:?}"),
     };
     let ir = lower_checked(*checked, overlap).expect("checked program must lower");
     emit_llvm(&ir)

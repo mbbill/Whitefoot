@@ -144,13 +144,13 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
                         let opened_c = open_file::<'f, 'n>(permit: move permit_c, root: &'f cwd, name: &'n name_c, start: 0_u64, end: 10_u64);
                         let opened_d = open_file::<'f, 'n>(permit: move permit_d, root: &'f cwd, name: &'n name_d, start: 0_u64, end: 10_u64);
                         match opened_a {
-                          Ok(value: handle_a) => {
+                          FileOpened(value: handle_a) => {
                             match opened_b {
-                              Ok(value: handle_b) => {
+                              FileOpened(value: handle_b) => {
                                 match opened_c {
-                                  Ok(value: handle_c) => {
+                                  FileOpened(value: handle_c) => {
                                     match opened_d {
-                                      Ok(value: handle_d) => {
+                                      FileOpened(value: handle_d) => {
                                         region 'h {
                                           region 'd {
                                             let read_a = read_at::<'h, 'd>(file: &'h handle_a, destination: &uniq 'd data_a, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
@@ -224,22 +224,22 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
                                           }
                                         }
                                       }
-                                      Err(error: failed_d) => {
+                                      FileOpenFailed(error: failed_d, permit: refused) => {
                                         return exit_status(code: 7_u8);
                                       }
                                     }
                                   }
-                                  Err(error: failed_c) => {
+                                  FileOpenFailed(error: failed_c, permit: refused) => {
                                     return exit_status(code: 6_u8);
                                   }
                                 }
                               }
-                              Err(error: failed_b) => {
+                              FileOpenFailed(error: failed_b, permit: refused) => {
                                 return exit_status(code: 5_u8);
                               }
                             }
                           }
-                          Err(error: failed_a) => {
+                          FileOpenFailed(error: failed_a, permit: refused) => {
                             return exit_status(code: 4_u8);
                           }
                         }

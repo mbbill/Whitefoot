@@ -200,14 +200,14 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 Ok(value: permit) => {
                   region 'open {
                     match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
-                      Ok(value: handle) => {
+                      FileOpened(value: handle) => {
                         region 'copy {
                           let counted = pump<'copy, 'copy, 'copy>(handle: &'copy handle, output: &uniq 'copy out, chunk: &uniq 'copy chunk);
                           set lines = counted.lines;
                           set status = counted.status;
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused) => {
                         set status = 3_u8;
                       }
                     }

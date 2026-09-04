@@ -159,7 +159,7 @@ pub(crate) fn operation_spelling(id: OperationFamilyId) -> Option<&'static str> 
 pub struct SystemNominal {
     /// Exact TYPEID spelling.
     pub spelling: &'static str,
-    /// `true` for the ten opaque types, `false` for the eight outcome enums.
+    /// `true` for the ten opaque types, `false` for the eleven outcome enums.
     pub opaque: bool,
 }
 
@@ -401,6 +401,9 @@ const DIRECTORY_SOURCE: u8 = 14;
 const LIST_OUTCOME: u8 = 15;
 const FILE_FACTORY: u8 = 16;
 const FILE_PERMIT: u8 = 17;
+const FILE_OPEN_OUTCOME: u8 = 18;
+const DIRECTORY_OPEN_OUTCOME: u8 = 19;
+const SOURCE_OPEN_OUTCOME: u8 = 20;
 
 /// The traversal surface switch [SYS-2, SYS-14], activated as v0.32.
 ///
@@ -474,7 +477,8 @@ impl Inventory {
     const fn constructors(self) -> usize {
         match self {
             Self::Base => BASE_CONSTRUCTORS,
-            Self::Traversal | Self::OpenByName | Self::FilePermits => SYSTEM_CONSTRUCTORS.len(),
+            Self::Traversal | Self::OpenByName => OPEN_BY_NAME_CONSTRUCTORS,
+            Self::FilePermits => SYSTEM_CONSTRUCTORS.len(),
         }
     }
 
@@ -505,13 +509,15 @@ const TRAVERSAL_OPERATIONS: usize = 14;
 const OPEN_BY_NAME_OPERATIONS: usize = 15;
 /// The v0.33-v0.36 nominal count before explicit file-open authority.
 const OPEN_BY_NAME_NOMINALS: usize = 16;
+/// The v0.32-v0.41 constructor count before the open outcome enums.
+const OPEN_BY_NAME_CONSTRUCTORS: usize = 40;
 
 /// The [SYS-2] nominal types in normative table order.
 ///
 /// The first fourteen are v0.31's; the last two are v0.32's traversal-surface
 /// additions and are admitted only under
 /// [`TRAVERSAL_SURFACE`].
-pub const SYSTEM_NOMINALS: [SystemNominal; 18] = [
+pub const SYSTEM_NOMINALS: [SystemNominal; 21] = [
     nominal("Args", true),
     nominal("HostString", true),
     nominal("RelativePath", true),
@@ -530,6 +536,9 @@ pub const SYSTEM_NOMINALS: [SystemNominal; 18] = [
     nominal("ListOutcome", false),
     nominal("FileFactory", true),
     nominal("FilePermit", true),
+    nominal("FileOpenOutcome", false),
+    nominal("DirectoryOpenOutcome", false),
+    nominal("SourceOpenOutcome", false),
 ];
 
 /// The [SYS-2] nominal types one inventory state admits.
@@ -569,6 +578,16 @@ const NEXT_AND_ENTRIES_U64: [SystemField; 2] = [
     field("next", SystemTypeRef::U64),
     field("entries", SystemTypeRef::U64),
 ];
+/// The one payload of a successful open: the fresh owner [SYS-10].
+const OPENED_FILE: [SystemField; 1] = [field("value", SystemTypeRef::Nominal(READ_FILE))];
+const OPENED_DIRECTORY: [SystemField; 1] = [field("value", SystemTypeRef::Nominal(DIRECTORY_READ))];
+const OPENED_SOURCE: [SystemField; 1] = [field("value", SystemTypeRef::Nominal(DIRECTORY_SOURCE))];
+/// The payload of a refused open: the host's error and the permit the open
+/// took, handed back because no descriptor was taken [SYS-10].
+const ERROR_AND_PERMIT: [SystemField; 2] = [
+    field("error", SystemTypeRef::Nominal(IO_ERROR)),
+    field("permit", SystemTypeRef::Nominal(FILE_PERMIT)),
+];
 
 const fn field(name: &'static str, ty: SystemTypeRef) -> SystemField {
     SystemField { name, ty }
@@ -600,7 +619,7 @@ const fn constructor(
 /// The first thirty-nine are the active specification's; the last three are
 /// the traversal-surface candidate's `ListOutcome` variants, admitted only
 /// under [`TRAVERSAL_SURFACE`].
-pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 40] = [
+pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 46] = [
     constructor("InvalidIndex", ARG_ERROR, &[]),
     constructor("Utf8Invalid", UTF8_ERROR, &[]),
     constructor("CopyTooSmall", COPY_ERROR, &REQUIRED_U64),
@@ -641,6 +660,16 @@ pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 40] = [
     constructor("ListBytes", LIST_OUTCOME, &NEXT_AND_ENTRIES_U64),
     constructor("ListEnd", LIST_OUTCOME, &[]),
     constructor("ListFailed", LIST_OUTCOME, &ERROR_IO),
+    constructor("FileOpened", FILE_OPEN_OUTCOME, &OPENED_FILE),
+    constructor("FileOpenFailed", FILE_OPEN_OUTCOME, &ERROR_AND_PERMIT),
+    constructor("DirectoryOpened", DIRECTORY_OPEN_OUTCOME, &OPENED_DIRECTORY),
+    constructor(
+        "DirectoryOpenFailed",
+        DIRECTORY_OPEN_OUTCOME,
+        &ERROR_AND_PERMIT,
+    ),
+    constructor("SourceOpened", SOURCE_OPEN_OUTCOME, &OPENED_SOURCE),
+    constructor("SourceOpenFailed", SOURCE_OPEN_OUTCOME, &ERROR_AND_PERMIT),
 ];
 
 const fn parameter(
@@ -826,7 +855,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 19] = [
                 SystemTypeRef::Nominal(RELATIVE_PATH),
             ),
         ],
-        result: ok_nominal(READ_FILE, IO_ERROR),
+        result: SystemTypeRef::Nominal(FILE_OPEN_OUTCOME),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
         integer_result_bound: None,
@@ -920,7 +949,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 19] = [
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
-        result: ok_nominal(DIRECTORY_READ, IO_ERROR),
+        result: SystemTypeRef::Nominal(DIRECTORY_OPEN_OUTCOME),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
         integer_result_bound: None,
@@ -942,7 +971,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 19] = [
                 SystemTypeRef::Nominal(DIRECTORY_READ),
             ),
         ],
-        result: ok_nominal(DIRECTORY_SOURCE, IO_ERROR),
+        result: SystemTypeRef::Nominal(SOURCE_OPEN_OUTCOME),
         state_reads: &[0, 1],
         state_writes: &[0],
         integer_result_bound: None,
@@ -998,7 +1027,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 19] = [
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
-        result: ok_nominal(READ_FILE, IO_ERROR),
+        result: SystemTypeRef::Nominal(FILE_OPEN_OUTCOME),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
         integer_result_bound: None,
@@ -1851,9 +1880,9 @@ mod tests {
         let nominals = system_nominals(Inventory::FilePermits);
         let constructors = system_constructors(Inventory::FilePermits);
         let operations = system_operations(Inventory::FilePermits);
-        assert_eq!(nominals.len(), 18);
+        assert_eq!(nominals.len(), 21);
         assert_eq!(nominals.iter().filter(|nominal| nominal.opaque).count(), 10);
-        assert_eq!(constructors.len(), 40);
+        assert_eq!(constructors.len(), 46);
         assert_eq!(operations.len(), 19);
         assert_eq!(
             operations
@@ -1870,8 +1899,8 @@ mod tests {
             47
         );
         let records = system_declarations(Inventory::FilePermits);
-        assert_eq!(records.len(), 209);
-        let reserve = SystemDeclarationId::new(200);
+        assert_eq!(records.len(), 227);
+        let reserve = SystemDeclarationId::new(218);
         let Some(SystemEntity::Operation(operation)) =
             system_entity(reserve, Inventory::FilePermits)
         else {

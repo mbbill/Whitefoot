@@ -138,8 +138,9 @@ fn with_mutated_ir_for_overlap<ResultValue>(
     else {
         panic!("system test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
-        panic!("system test source must check");
+    let checked = match check_semantics(resolved) {
+        SemanticOutcome::Complete(checked) => checked,
+        other => panic!("system test source must check: {other:?}"),
     };
     let mut ir = lower_checked(*checked, overlap).expect("checked system program must lower");
     run(&mut ir)
@@ -761,9 +762,9 @@ fn a_target_without_directory_relative_resolution_rejects_component_opening() {
       match reserve_file::<'c>(factory: &uniq 'c files) {
         Ok(value: permit) => {
           match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
-            Ok(value: file) => {
+            FileOpened(value: file) => {
             }
-            Err(error: problem) => {
+            FileOpenFailed(error: problem, permit: refused_2) => {
             }
           }
         }
@@ -877,9 +878,9 @@ fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }
@@ -928,9 +929,9 @@ fn a_facility_without_an_approved_record_is_a_missing_mapping() {
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }
@@ -1228,9 +1229,9 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
       match reserve_file::<'c>(factory: &uniq 'c files) {
         Ok(value: permit) => {
           match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
-            Ok(value: file) => {
+            FileOpened(value: file) => {
             }
-            Err(error: problem) => {
+            FileOpenFailed(error: problem, permit: refused_2) => {
             }
           }
         }
@@ -1292,14 +1293,14 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
             region 'l {
               region 'd {
                 let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
               }
             }
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }
@@ -1362,14 +1363,14 @@ fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
             region 'l {
               region 'd {
                 let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
               }
             }
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }

@@ -446,8 +446,8 @@ for @scan (index in 0_u64..8192_u64) {
         region 'n {
           match open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
                                   name: &'n name, start: 0_u64, end: 10_u64) {
-            Ok(value: handle) => { /* read, fold, accumulate */ }
-            Err(error: problem) => { }
+            FileOpened(value: handle) => { /* read, fold, accumulate */ }
+            FileOpenFailed(error: problem, permit: refused) => { }
           }
         }
       }
@@ -464,10 +464,14 @@ copy rather than a fact to rediscover:
   written after the submission denies the loop: with later iterations already
   in flight, the decision to leave would be taken after opens the source-order
   execution never performs. Write the guard and its `break` at the top of the
-  body, before any I/O. `let handle = propagate open_file(…);` is such an exit
-  and not an exception to it: the `Err` edge is selected by the submission's own
-  outcome, so it leaves from the remainder however early the statement is
-  written. Match on the result instead and handle the error inside the body.
+  body, before any I/O. `let written = propagate write_once(…);` is such an
+  exit and not an exception to it: the `Err` edge is selected by the
+  submission's own outcome, so it leaves from the remainder however early the
+  statement is written. Match on the outcome instead and handle the error
+  inside the body. An open has no `propagate` form at all: its outcome is
+  `FileOpened(value: …)` or `FileOpenFailed(error: …, permit: …)`, and the
+  failed arm hands the permit back, so the body decides what to do with the
+  error and the credit in the same place.
 - **Write the accumulator as an ordinary source-order `set`.** `set sum = sum
   +wrap digest;` needs no associativity, no identity element, and no
   combination tree, because [PAR-3] commits the remainder's writes to storage

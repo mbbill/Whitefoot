@@ -941,10 +941,10 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }
@@ -1036,10 +1036,10 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set opened = opened +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }
@@ -1092,10 +1092,10 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set opened = opened +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }
@@ -1112,10 +1112,10 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
         Ok(value: permit) => {
           region 'm {
             match open_file::<'g, 'm>(permit: move permit, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set opened = opened +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }
@@ -1301,10 +1301,10 @@ fn a_prologue_gate_leaving_by_break_keeps_the_two_slot_driver() {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set opened = opened +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }

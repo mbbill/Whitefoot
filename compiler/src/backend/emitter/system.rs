@@ -784,6 +784,9 @@ struct OutcomeShape {
     err_index: usize,
     err_llvm: String,
     err_type: IrType,
+    /// The position of the permit an open outcome hands back beside its
+    /// error [SYS-10]; `None` for a plain `Result<T, E>`.
+    permit_index: Option<usize>,
 }
 
 fn variants_of<'program>(
@@ -809,18 +812,30 @@ fn outcome_shape(
     let [ok, err] = variants else {
         return Err(BackendFailure::InvalidIr);
     };
-    let ([ok_field], [err_field]) = (ok.fields(), err.fields()) else {
+    let [ok_field] = ok.fields() else {
         return Err(BackendFailure::InvalidIr);
     };
+    // A plain `Result<T, E>` carries one field on its failed variant; an open
+    // outcome [SYS-10] carries the error and, beside it, the permit it hands
+    // back. Both are resolved from the program's own IR, never a spelling.
+    let (err_field, carries_permit) = match err.fields() {
+        [err_field] => (err_field, false),
+        [err_field, permit_field] if matches!(permit_field.ty(), IrType::Nominal(_)) => {
+            (err_field, true)
+        }
+        _ => return Err(BackendFailure::InvalidIr),
+    };
+    let err_index = variant_field_base(variants, err.tag())?;
     Ok(OutcomeShape {
         llvm: llvm_type(program, ty)?,
         ok_tag: ok.tag(),
         ok_index: variant_field_base(variants, ok.tag())?,
         ok_llvm: llvm_type(program, ok_field.ty())?,
         err_tag: err.tag(),
-        err_index: variant_field_base(variants, err.tag())?,
+        err_index,
         err_llvm: llvm_type(program, err_field.ty())?,
         err_type: err_field.ty(),
+        permit_index: carries_permit.then(|| err_index.checked_add(1)).flatten(),
     })
 }
 
@@ -1508,6 +1523,7 @@ fn emit_open_read(
         err_llvm,
         ..
     } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
     let (read_error, error) = native_error(target, "failure");
     // [PATH-2]: the path is resolved against the supplied value's own directory
     // object through the target's own directory-relative facility. Nothing is
@@ -1581,7 +1597,8 @@ fn emit_open_read(
          {read_error}  \
          %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
          {ORIGIN_DIRECTORY_OPEN})\n  \
-         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %err.tag = insertvalue {llvm} %err.base, i32 {err_tag}, 0\n  \
          %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err\n\
          }}\n\n",
@@ -1613,6 +1630,7 @@ fn emit_open_completion_mapper(
         err_type,
         ..
     } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
     let classes = io_error_classes(program, *err_type)?;
     let directory_class = classes
         .iter()
@@ -1644,25 +1662,29 @@ fn emit_open_completion_mapper(
          open.failure:\n  \
          %open.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
          {ORIGIN_DIRECTORY_OPEN})\n  \
-         %open.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %open.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %open.tag = insertvalue {llvm} %open.base, i32 {err_tag}, 0\n  \
          %open.result = insertvalue {llvm} %open.tag, {err_llvm} %open.error, {err_index}\n  \
          ret {llvm} %open.result\n\
          status.failure:\n  \
          %status.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
          {ORIGIN_DESCRIPTOR_STATUS})\n  \
-         %status.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %status.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %status.tag = insertvalue {llvm} %status.base, i32 {err_tag}, 0\n  \
          %status.result = insertvalue {llvm} %status.tag, {err_llvm} %status.error, \
          {err_index}\n  \
          ret {llvm} %status.result\n\
          kind.directory.return:\n\
          {directory_value}  \
-         %kind.directory.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.directory.result.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %kind.directory.result.tag = insertvalue {llvm} %kind.directory.result.base, i32 {err_tag}, 0\n  \
          %kind.directory.result = insertvalue {llvm} %kind.directory.result.tag, {err_llvm} \
          {directory_error}, {err_index}\n  \
          ret {llvm} %kind.directory.result\n\
          kind.other.return:\n\
          {other_value}  \
-         %kind.other.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.other.result.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %kind.other.result.tag = insertvalue {llvm} %kind.other.result.base, i32 {err_tag}, 0\n  \
          %kind.other.result = insertvalue {llvm} %kind.other.result.tag, {err_llvm} \
          {other_error}, {err_index}\n  \
          ret {llvm} %kind.other.result\n\
@@ -2186,6 +2208,7 @@ fn emit_open_by_name(
         err_type,
         ..
     } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
     let terminator_bytes = if target.is_windows() { 2 } else { 1 };
     let slot = target.component_limit() + terminator_bytes;
     let component_align = if target.is_windows() { 2 } else { 1 };
@@ -2268,7 +2291,8 @@ fn emit_open_by_name(
              inspection.error:\n  \
              %inspection.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {inspection_error}, \
              i8 {ORIGIN_DESCRIPTOR_STATUS})\n  \
-             %inspection.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %inspection.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+             %inspection.tag = insertvalue {llvm} %inspection.base, i32 {err_tag}, 0\n  \
              %inspection.outcome = insertvalue {llvm} %inspection.tag, {err_llvm} \
              %inspection.mapped, {err_index}\n  \
              ret {llvm} %inspection.outcome\n\
@@ -2280,13 +2304,15 @@ fn emit_open_by_name(
              br i1 %kind.directory, label %kind.directory.return, label %kind.other.return\n\
              kind.directory.return:\n\
              {directory_value}  \
-             %kind.directory.outcome.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %kind.directory.outcome.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+             %kind.directory.outcome.tag = insertvalue {llvm} %kind.directory.outcome.base, i32 {err_tag}, 0\n  \
              %kind.directory.outcome = insertvalue {llvm} %kind.directory.outcome.tag, \
              {err_llvm} {directory_error}, {err_index}\n  \
              ret {llvm} %kind.directory.outcome\n\
              kind.other.return:\n\
              {other_value}  \
-             %kind.other.outcome.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %kind.other.outcome.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+             %kind.other.outcome.tag = insertvalue {llvm} %kind.other.outcome.base, i32 {err_tag}, 0\n  \
              %kind.other.outcome = insertvalue {llvm} %kind.other.outcome.tag, {err_llvm} \
              {other_error}, \
              {err_index}\n  \
@@ -2338,7 +2364,8 @@ fn emit_open_by_name(
              ret {llvm} %mapped\n\
              invalid:\n\
              {invalid_value}  \
-             %rejected.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+             %rejected.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+             %rejected.tag = insertvalue {llvm} %rejected.base, i32 {err_tag}, 0\n  \
              %rejected.outcome = insertvalue {llvm} %rejected.tag, {err_llvm} \
              {invalid_error}, {err_index}\n  \
              ret {llvm} %rejected.outcome\n\
@@ -2369,12 +2396,14 @@ fn emit_open_by_name(
          {read_error}  \
          %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
          {ORIGIN_DIRECTORY_OPEN})\n  \
-         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %err.tag = insertvalue {llvm} %err.base, i32 {err_tag}, 0\n  \
          %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err\n\
          invalid:\n\
          {invalid_value}  \
-         %rejected.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %rejected.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %rejected.tag = insertvalue {llvm} %rejected.base, i32 {err_tag}, 0\n  \
          %rejected.outcome = insertvalue {llvm} %rejected.tag, {err_llvm} {invalid_error}, \
          {err_index}\n  \
          ret {llvm} %rejected.outcome\n\
@@ -2413,6 +2442,7 @@ fn emit_open_directory_source(
         err_llvm,
         ..
     } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
     let (read_error, error) = native_error(target, "failure");
     let mapper = emit_open_completion_mapper(
         program,
@@ -2473,7 +2503,8 @@ fn emit_open_directory_source(
          {read_error}  \
          %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
          {ORIGIN_DIRECTORY_OPEN})\n  \
-         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %err.tag = insertvalue {llvm} %err.base, i32 {err_tag}, 0\n  \
          %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
          ret {llvm} %err\n\
          }}\n\n",

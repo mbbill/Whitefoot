@@ -25,7 +25,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 2_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'read {
                   match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
                     ReadBytes(next: reached) => {
@@ -46,7 +46,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }

@@ -11,7 +11,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         region 'f {
                           region 'd {
                             match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
@@ -53,7 +53,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused) => {
                         return exit_status(code: 16_u8);
                       }
                     }

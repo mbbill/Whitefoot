@@ -132,7 +132,7 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let bytes = buffer_new(64_u64, 0_u8);
                         region 'f {
                           region 'd {
@@ -158,7 +158,7 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         return exit_status(code: 203_u8);
                       }
                     }
@@ -283,10 +283,10 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
                 match reserve_file::<'c>(factory: &uniq 'c files) {{
                   Ok(value: permit) => {{
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {{
-                      Ok(value: file) => {{
+                      FileOpened(value: file) => {{
                         return exit_status(code: 0_u8);
                       }}
-                      Err(error: problem) => {{
+                      FileOpenFailed(error: problem, permit: refused_2) => {{
                         match move problem {{
 {arms}                        }}
                       }}
@@ -385,7 +385,7 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let bytes = buffer_new(3_u64, 0_u8);
                         let total = 0_u64;
                         let chunks = 0_u64;
@@ -424,7 +424,7 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         return exit_status(code: 203_u8);
                       }
                     }
@@ -491,7 +491,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let bytes = buffer_new(8_u64, 0_u8);
                         let vacant = 0_u64;
                         region 'f {
@@ -537,7 +537,7 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         return exit_status(code: 203_u8);
                       }
                     }
@@ -599,7 +599,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let bytes = buffer_new(8_u64, 7_u8);
                         region 'f {
                           region 'd {
@@ -647,7 +647,7 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         return exit_status(code: 203_u8);
                       }
                     }
@@ -894,7 +894,7 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let bytes = buffer_new(4096_u64, 0_u8);
                         let total = 0_u64;
                         loop @drain {
@@ -936,7 +936,7 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         return exit_status(code: 203_u8);
                       }
                     }
@@ -1147,7 +1147,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let page = buffer_new(16_u64, 0_u8);
                         let total = 0_u64;
                         let file_offset = 0_u64;
@@ -1223,7 +1223,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         return exit_status(code: 6_u8);
                       }
                     }
@@ -1344,7 +1344,7 @@ pub(super) const CLOSE_KEEPS_THE_COUNT: &[u8] = br#"command fn main(command.args
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         for @drain (index in 0_u64..4096_u64) {
                           region 'r {
                             match reserve_file::<'r>(factory: &uniq 'r files) {
@@ -1367,15 +1367,15 @@ pub(super) const CLOSE_KEEPS_THE_COUNT: &[u8] = br#"command fn main(command.args
                           }
                         }
                         match open_read::<'c, 'p>(permit: move returned, root: &'c cwd, path: &'p path) {
-                          Ok(value: again) => {
+                          FileOpened(value: again) => {
                             return exit_status(code: 0_u8);
                           }
-                          Err(error: problem) => {
+                          FileOpenFailed(error: problem, permit: refused_2) => {
                             return exit_status(code: 21_u8);
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         return exit_status(code: 12_u8);
                       }
                     }
@@ -1432,6 +1432,119 @@ fn an_explicit_close_returns_the_credit_as_the_permit_and_never_raises_the_count
     let llvm = compile(CLOSE_KEEPS_THE_COUNT);
     let output =
         run_in_directory_with_descriptor_limit(&llvm, &[("one.txt", b"x")], b"one.txt", 100);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Drains the factory, fails an open on an absent name with the last permit,
+/// and opens an existing name with the permit that came back.
+///
+/// [SYS-10]: a refused open took no descriptor, so its permit returns in
+/// `FileOpenFailed(error, permit)` and the factory's count does not move:
+/// `reserve_file` still refuses after the failure, and the returned permit
+/// still opens.
+pub(super) const FAILED_OPEN_RETURNS_THE_PERMIT: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+  region 'a {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: absent_text) => {
+        match relative_path(value: move absent_text) {
+          Ok(value: absent) => {
+            match arg_get::<'a>(args: &'a args, position: 2_u64) {
+              Ok(value: present_text) => {
+                match relative_path(value: move present_text) {
+                  Ok(value: present) => {
+                    region 'c {
+                      region 'p {
+                        match reserve_file::<'c>(factory: &uniq 'c files) {
+                          Ok(value: permit) => {
+                            for @drain (index in 0_u64..4096_u64) {
+                              region 'r {
+                                match reserve_file::<'r>(factory: &uniq 'r files) {
+                                  Ok(value: extra) => {
+                                  }
+                                  Err(error: spent) => {
+                                    break;
+                                  }
+                                }
+                              }
+                            }
+                            match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p absent) {
+                              FileOpened(value: unexpected) => {
+                                return exit_status(code: 20_u8);
+                              }
+                              FileOpenFailed(error: problem, permit: returned) => {
+                                region 'q {
+                                  match reserve_file::<'q>(factory: &uniq 'q files) {
+                                    Ok(value: raised) => {
+                                      return exit_status(code: 22_u8);
+                                    }
+                                    Err(error: spent) => {
+                                    }
+                                  }
+                                }
+                                match open_read::<'c, 'p>(permit: move returned, root: &'c cwd, path: &'p present) {
+                                  FileOpened(value: again) => {
+                                    return exit_status(code: 0_u8);
+                                  }
+                                  FileOpenFailed(error: problem_again, permit: refused) => {
+                                    return exit_status(code: 21_u8);
+                                  }
+                                }
+                              }
+                            }
+                          }
+                          Err(error: spent) => {
+                            return exit_status(code: 15_u8);
+                          }
+                        }
+                      }
+                    }
+                  }
+                  Err(error: rejected) => {
+                    return exit_status(code: 13_u8);
+                  }
+                }
+              }
+              Err(error: absent_argument) => {
+                return exit_status(code: 14_u8);
+              }
+            }
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 13_u8);
+          }
+        }
+      }
+      Err(error: absent_argument) => {
+        return exit_status(code: 14_u8);
+      }
+    }
+  }
+}
+"#;
+
+#[cfg(unix)]
+#[test]
+fn a_refused_open_hands_its_permit_back_and_leaves_the_count_alone() {
+    let llvm = compile(FAILED_OPEN_RETURNS_THE_PERMIT);
+    let directory = test_directory();
+    let executable = build_executable(&llvm, &directory);
+    write_fixtures(&directory, &[("present.txt", b"A")]);
+    let output = Command::new("/bin/sh")
+        .current_dir(&directory)
+        .arg("-c")
+        .arg("ulimit -n \"$0\" && exec \"$1\" \"$2\" \"$3\"")
+        .arg("100")
+        .arg(&executable)
+        .arg("missing.txt")
+        .arg("present.txt")
+        .output()
+        .expect("run backend test executable under a descriptor limit");
+    std::fs::remove_dir_all(&directory).expect("remove backend test directory");
     assert_eq!(
         output.status.code(),
         Some(0),

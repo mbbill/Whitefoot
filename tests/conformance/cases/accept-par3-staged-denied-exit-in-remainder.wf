@@ -8,10 +8,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
                 return exit_status(code: 4_u8);
               }
             }

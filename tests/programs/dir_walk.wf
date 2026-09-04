@@ -227,7 +227,14 @@ fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, leng
 fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
   match reserve_file::<'f>(factory: move factory) {
     Ok(value: permit) => {
-      return open_directory_source::<'d>(permit: move permit, directory: directory);
+      match open_directory_source::<'d>(permit: move permit, directory: directory) {
+        SourceOpened(value: opened) => {
+          return Ok<DirectorySource, IoError>(value: move opened);
+        }
+        SourceOpenFailed(error: problem, permit: refused) => {
+          return Err<DirectorySource, IoError>(error: move problem);
+        }
+      }
     }
     Err(error: spent) => {
       return Err<DirectorySource, IoError>(error: move spent);
@@ -244,7 +251,14 @@ fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: 
 } {
   match reserve_file::<'f>(factory: move factory) {
     Ok(value: permit) => {
-      return open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+      match open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end) {
+        DirectoryOpened(value: opened) => {
+          return Ok<DirectoryRead, IoError>(value: move opened);
+        }
+        DirectoryOpenFailed(error: problem, permit: refused) => {
+          return Err<DirectoryRead, IoError>(error: move problem);
+        }
+      }
     }
     Err(error: spent) => {
       return Err<DirectoryRead, IoError>(error: move spent);

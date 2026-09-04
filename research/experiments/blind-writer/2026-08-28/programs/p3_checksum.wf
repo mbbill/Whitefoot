@@ -224,7 +224,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   Ok(value: permit) => {
                     region 'open {
                       match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
-                        Ok(value: handle) => {
+                        FileOpened(value: handle) => {
                           region 'scan {
                             let summary = checksum_file<'scan, 'scan>(handle: &'scan handle, chunk: &uniq 'scan data, seed: digest);
                             set digest = summary.digest;
@@ -232,7 +232,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                             set outcome = summary.status;
                           }
                         }
-                        Err(error: problem) => {
+                        FileOpenFailed(error: problem, permit: refused) => {
                           set outcome = 3_u8;
                         }
                       }

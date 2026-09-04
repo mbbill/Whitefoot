@@ -601,11 +601,11 @@ fn every_unit_receives_the_system_domain_before_entry_validation() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("entry-invalid syntax must still resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 209);
+        assert_eq!(resolved.system_declarations().len(), 227);
         for (role, spelling, ordinal) in [
             (LexicalUseRole::Type, "Args", 0),
             (LexicalUseRole::Type, "ExitStatus", 6),
-            (LexicalUseRole::IdentifierCallee, "exit_status", 171),
+            (LexicalUseRole::IdentifierCallee, "exit_status", 189),
         ] {
             let usage = resolved
                 .lexical_uses()
@@ -663,7 +663,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach system inventory: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 209);
+        assert_eq!(resolved.system_declarations().len(), 227);
     });
 }
 
@@ -775,32 +775,32 @@ fn list_outcomes(m: own ListOutcome) -> result: own unit pure {
             expect(LexicalUseRole::Type, spelling, ordinal);
         }
         for (spelling, ordinal) in [
-            ("args_count", 121),
-            ("arg_get", 124),
-            ("host_bytes_len", 128),
-            ("host_copy_bytes", 131),
-            ("host_utf8_len", 138),
-            ("host_copy_utf8", 141),
-            ("relative_path", 148),
-            ("open_read", 150),
-            ("read_at", 156),
-            ("write_once", 164),
-            ("exit_status", 171),
-            ("open_directory", 173),
-            ("open_directory_source", 181),
-            ("directory_next", 185),
-            ("open_file", 192),
-            ("reserve_file", 200),
+            ("args_count", 139),
+            ("arg_get", 142),
+            ("host_bytes_len", 146),
+            ("host_copy_bytes", 149),
+            ("host_utf8_len", 156),
+            ("host_copy_utf8", 159),
+            ("relative_path", 166),
+            ("open_read", 168),
+            ("read_at", 174),
+            ("write_once", 182),
+            ("exit_status", 189),
+            ("open_directory", 191),
+            ("open_directory_source", 199),
+            ("directory_next", 203),
+            ("open_file", 210),
+            ("reserve_file", 218),
         ] {
             expect(LexicalUseRole::IdentifierCallee, spelling, ordinal);
         }
-        expect(LexicalUseRole::Construct, "NotFound", 31);
-        expect(LexicalUseRole::ArmVariant, "ReadBytes", 26);
-        expect(LexicalUseRole::ArmVariant, "ReadEnd", 28);
-        expect(LexicalUseRole::ArmVariant, "ReadFailed", 29);
-        expect(LexicalUseRole::ArmVariant, "ListBytes", 115);
-        expect(LexicalUseRole::ArmVariant, "ListEnd", 118);
-        expect(LexicalUseRole::ArmVariant, "ListFailed", 119);
+        expect(LexicalUseRole::Construct, "NotFound", 34);
+        expect(LexicalUseRole::ArmVariant, "ReadBytes", 29);
+        expect(LexicalUseRole::ArmVariant, "ReadEnd", 31);
+        expect(LexicalUseRole::ArmVariant, "ReadFailed", 32);
+        expect(LexicalUseRole::ArmVariant, "ListBytes", 118);
+        expect(LexicalUseRole::ArmVariant, "ListEnd", 121);
+        expect(LexicalUseRole::ArmVariant, "ListFailed", 122);
     });
 }
 
@@ -828,7 +828,7 @@ fn system_names_are_reserved_even_without_a_valid_entry() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 121
+            DeclarationOrigin::System(id) if id.ordinal() == 139
         ));
     });
 }
@@ -864,7 +864,7 @@ fn system_collisions_reject_deterministically_in_both_directions() {
             assert_eq!(conflicts[0].class(), DeclarationClass::Function);
             assert!(matches!(
                 conflicts[0].origin(),
-                DeclarationOrigin::System(id) if id.ordinal() == 121
+                DeclarationOrigin::System(id) if id.ordinal() == 139
             ));
         });
     }
@@ -921,7 +921,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::Constructor);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 28
+            DeclarationOrigin::System(id) if id.ordinal() == 31
         ));
     });
 
@@ -947,7 +947,7 @@ fn system_collisions_cover_every_contributed_domain_and_nested_scopes() {
         assert_eq!(conflicts[0].domain(), DeclarationDomain::LexicalIdentifier);
         assert!(matches!(
             conflicts[0].origin(),
-            DeclarationOrigin::System(id) if id.ordinal() == 128
+            DeclarationOrigin::System(id) if id.ordinal() == 146
         ));
     });
 }
@@ -1032,7 +1032,7 @@ fn system_resolution_is_deterministic_across_repeated_runs_and_paths() {
         first,
         vec![
             ("ExitStatus".to_owned(), 6),
-            ("exit_status".to_owned(), 171)
+            ("exit_status".to_owned(), 189)
         ]
     );
     assert_eq!(first, targets("first.wf"));

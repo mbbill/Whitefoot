@@ -472,7 +472,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 match reserve_file<'open_call>(factory: &uniq 'open_call files) {
                   Ok(value: permit) => {
                     match open_read<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let carry = 0_u64;
                         let file_offset = 0_u64;
                         loop @chunks {
@@ -670,7 +670,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           set carry = tail;
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused_2) => {
                         set status = io_class(error: move problem);
                       }
                     }

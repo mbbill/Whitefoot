@@ -269,7 +269,7 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
     match reserve_file::<'listing>(factory: &uniq 'listing files) {
       Ok(value: permit) => {
         match open_directory_source::<'listing>(permit: move permit, directory: &'listing cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
             region 'batch {
               match directory_next::<'batch, 'batch>(source: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
                 ListBytes(next: endpoint, entries: reported) => {
@@ -292,7 +292,7 @@ const PUBLISH_ONE_BATCH: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
               }
             }
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused) => {
             return exit_status(code: 5_u8);
           }
         }

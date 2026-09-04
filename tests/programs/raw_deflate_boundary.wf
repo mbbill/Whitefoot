@@ -228,7 +228,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
               match reserve_file::<'open_call>(factory: &uniq 'open_call files) {
                 Ok(value: permit) => {
                   match open_read::<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
-                    Ok(value: file) => {
+                    FileOpened(value: file) => {
                       let ended = 0_u8;
                       loop @chunks {
                         let within_scratch = filled <= 4097_u64;
@@ -265,7 +265,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         set status = 2_u8;
                       }
                     }
-                    Err(error: problem) => {
+                    FileOpenFailed(error: problem, permit: refused_2) => {
                       set status = 2_u8;
                     }
                   }

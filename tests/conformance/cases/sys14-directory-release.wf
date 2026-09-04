@@ -4,9 +4,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused) => {
           }
         }
       }

@@ -10,10 +10,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         return exit_status(code: 10_u8);
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused) => {
                         match problem {
                           NotFound(code: c, origin: o) => {
                             return exit_status(code: 0_u8);

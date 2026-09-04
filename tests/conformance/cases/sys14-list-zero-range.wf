@@ -5,7 +5,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
             region 'b {
               match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 0_u64) {
                 ListBytes(next: bytes, entries: reported) => {
@@ -25,7 +25,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
               }
             }
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused) => {
             return exit_status(code: 4_u8);
           }
         }

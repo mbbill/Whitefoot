@@ -7,7 +7,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
             let produced = 0_u64;
             let announced = 0_u64;
             region 'b {
@@ -84,7 +84,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
               set status = 12_u8;
             }
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused) => {
             set status = 4_u8;
           }
         }

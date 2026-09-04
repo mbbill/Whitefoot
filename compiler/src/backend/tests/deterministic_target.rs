@@ -557,10 +557,10 @@ fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
       match reserve_file::<'c>(factory: &uniq 'c files) {{
         Ok(value: permit) => {{
           match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
-            Ok(value: file) => {{
+            FileOpened(value: file) => {{
               return exit_status(code: 24_u8);
             }}
-            Err(error: problem) => {{
+            FileOpenFailed(error: problem, permit: refused) => {{
               match move problem {{
 {arms}              }}
             }}

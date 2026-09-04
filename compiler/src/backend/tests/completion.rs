@@ -157,10 +157,10 @@ const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: 
               match reserve_file::<'state>(factory: &uniq 'state files) {
                 Ok(value: permit) => {
                   match open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path) {
-                    Ok(value: file) => {
+                    FileOpened(value: file) => {
                       return exit_status(code: 1_u8);
                     }
-                    Err(error: problem) => {
+                    FileOpenFailed(error: problem, permit: refused_2) => {
                       return exit_status(code: 0_u8);
                     }
                   }
@@ -199,10 +199,10 @@ const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as ar
                       let opened = open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path);
                       let announced = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
                       match move opened {
-                        Ok(value: file) => {
+                        FileOpened(value: file) => {
                           return exit_status(code: 1_u8);
                         }
-                        Err(error: problem) => {
+                        FileOpenFailed(error: problem, permit: refused) => {
                           return exit_status(code: 0_u8);
                         }
                       }
@@ -314,21 +314,21 @@ const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cw
         match reserve_file::<'listing>(factory: &uniq 'listing files) {
           Ok(value: second_permit) => {
             match open_directory_source::<'listing>(permit: move first_permit, directory: &'listing cwd) {
-              Ok(value: first_list) => {
+              SourceOpened(value: first_list) => {
                 match open_directory_source::<'listing>(permit: move second_permit, directory: &'listing cwd) {
-                  Ok(value: second_list) => {
+                  SourceOpened(value: second_list) => {
                     region 'step {
                       let first = directory_next::<'step, 'step>(source: &uniq 'step first_list, destination: &uniq 'step first_bytes, start: 0_u64, end: 4096_u64);
                       let second = directory_next::<'step, 'step>(source: &uniq 'step second_list, destination: &uniq 'step second_bytes, start: 0_u64, end: 4096_u64);
                     }
                     return exit_status(code: 0_u8);
                   }
-                  Err(error: problem) => {
+                  SourceOpenFailed(error: problem, permit: refused_2) => {
                     return exit_status(code: 201_u8);
                   }
                 }
               }
-              Err(error: problem) => {
+              SourceOpenFailed(error: problem, permit: refused_2) => {
                 return exit_status(code: 202_u8);
               }
             }
@@ -436,10 +436,10 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set opened = opened +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -469,9 +469,9 @@ const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own 
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -500,10 +500,10 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n names, start: index, end: end) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set opened = opened +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -527,7 +527,7 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
 
 fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
     let mut source = String::from(
-        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region 'a {\n    match arg_get::<'a>(args: &'a args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region 'p {\n                match reserve_file::<'c>(factory: &uniq 'c files) {\n                  Ok(value: permit) => {\n                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {\n                      Ok(value: file) => {\n",
+        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region 'a {\n    match arg_get::<'a>(args: &'a args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region 'p {\n                match reserve_file::<'c>(factory: &uniq 'c files) {\n                  Ok(value: permit) => {\n                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {\n                      FileOpened(value: file) => {\n",
     );
     for index in 0..count {
         source.push_str(&format!(
@@ -541,7 +541,7 @@ fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
         ));
     }
     source.push_str(
-        "                          }\n                        }\n                        return exit_status(code: 0_u8);\n                      }\n                      Err(error: problem) => {\n                        return exit_status(code: 201_u8);\n                      }\n                    }\n                  }\n                  Err(error: spent) => {\n                    return exit_status(code: 8_u8);\n                  }\n                }\n              }\n            }\n          }\n          Err(error: problem) => {\n            return exit_status(code: 202_u8);\n          }\n        }\n      }\n      Err(error: problem) => {\n        return exit_status(code: 203_u8);\n      }\n    }\n  }\n}\n",
+        "                          }\n                        }\n                        return exit_status(code: 0_u8);\n                      }\n                      FileOpenFailed(error: problem, permit: refused) => {\n                        return exit_status(code: 201_u8);\n                      }\n                    }\n                  }\n                  Err(error: spent) => {\n                    return exit_status(code: 8_u8);\n                  }\n                }\n              }\n            }\n          }\n          Err(error: problem) => {\n            return exit_status(code: 202_u8);\n          }\n        }\n      }\n      Err(error: problem) => {\n        return exit_status(code: 203_u8);\n      }\n    }\n  }\n}\n",
     );
     source.into_bytes()
 }

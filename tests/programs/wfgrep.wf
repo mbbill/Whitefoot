@@ -725,7 +725,14 @@ fn search_file['f, 'a, 'n, 'o](file: &'f ReadFile, pattern: &'a buffer<u8>, patt
 fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
   match reserve_file::<'f>(factory: move factory) {
     Ok(value: permit) => {
-      return open_directory_source::<'d>(permit: move permit, directory: directory);
+      match open_directory_source::<'d>(permit: move permit, directory: directory) {
+        SourceOpened(value: opened) => {
+          return Ok<DirectorySource, IoError>(value: move opened);
+        }
+        SourceOpenFailed(error: problem, permit: refused) => {
+          return Err<DirectorySource, IoError>(error: move problem);
+        }
+      }
     }
     Err(error: spent) => {
       return Err<DirectorySource, IoError>(error: move spent);
@@ -742,7 +749,14 @@ fn open_file_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d D
 } {
   match reserve_file::<'f>(factory: move factory) {
     Ok(value: permit) => {
-      return open_file::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+      match open_file::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end) {
+        FileOpened(value: opened) => {
+          return Ok<ReadFile, IoError>(value: move opened);
+        }
+        FileOpenFailed(error: problem, permit: refused) => {
+          return Err<ReadFile, IoError>(error: move problem);
+        }
+      }
     }
     Err(error: spent) => {
       return Err<ReadFile, IoError>(error: move spent);
@@ -759,7 +773,14 @@ fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: 
 } {
   match reserve_file::<'f>(factory: move factory) {
     Ok(value: permit) => {
-      return open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+      match open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end) {
+        DirectoryOpened(value: opened) => {
+          return Ok<DirectoryRead, IoError>(value: move opened);
+        }
+        DirectoryOpenFailed(error: problem, permit: refused) => {
+          return Err<DirectoryRead, IoError>(error: move problem);
+        }
+      }
     }
     Err(error: spent) => {
       return Err<DirectoryRead, IoError>(error: move spent);
@@ -1332,7 +1353,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     match reserve_file::<'root_open>(factory: &uniq 'root_open files) {
       Ok(value: root_permit) => {
         match open_directory::<'root_open, 'root_open>(permit: move root_permit, root: &'root_open cwd, name: &'root_open root_name, start: 0_u64, end: root_length) {
-          Ok(value: root) => {
+          DirectoryOpened(value: root) => {
             let outcome = 0_u8;
             region 'root_walk {
               set outcome = walk::<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk>(factory: &uniq 'root_walk files, dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err);
@@ -1346,7 +1367,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
               set failed = 1_u8;
             }
           }
-          Err(error: problem) => {
+          DirectoryOpenFailed(error: problem, permit: refused_2) => {
             set root_status = io_class(error: move problem);
           }
         }
@@ -1368,7 +1389,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 match reserve_file::<'open_call>(factory: &uniq 'open_call files) {
                   Ok(value: fallback_permit) => {
                     match open_read::<'open_call, 'open_call>(permit: move fallback_permit, root: &'open_call cwd, path: &'open_call path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         set single = 1_u8;
                         let outcome = 0_u8;
                         region 'search_call {
@@ -1380,7 +1401,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           set matched = 1_u8;
                         }
                       }
-                      Err(error: refused) => {
+                      FileOpenFailed(error: refused, permit: refused_2) => {
                       }
                     }
                   }

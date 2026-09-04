@@ -11,10 +11,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let returned = close_read(file: move file);
                         match open_read::<'c, 'p>(permit: move returned, root: &'c cwd, path: &'p path) {
-                          Ok(value: again) => {
+                          FileOpened(value: again) => {
                             region 'f {
                               region 'd {
                                 match read_at::<'f, 'd>(file: &'f again, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 1_u64) {
@@ -31,12 +31,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                               }
                             }
                           }
-                          Err(error: problem) => {
+                          FileOpenFailed(error: problem, permit: refused) => {
                             return exit_status(code: 16_u8);
                           }
                         }
                       }
-                      Err(error: problem) => {
+                      FileOpenFailed(error: problem, permit: refused) => {
                         return exit_status(code: 12_u8);
                       }
                     }

@@ -1162,10 +1162,10 @@ fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
     match reserve_file::<'f>(factory: move factory) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: root) {
-          Ok(value: listing) => {
+          SourceOpened(value: listing) => {
             return 1_u64;
           }
-          Err(error: refused) => {
+          SourceOpenFailed(error: refused, permit: refused_2) => {
             return 0_u64;
           }
         }
@@ -1202,7 +1202,7 @@ fn a_direct_directory_state_transition_keeps_its_unique_loan() {
     match reserve_file::<'open>(factory: &uniq 'open files) {
       Ok(value: permit) => {
         match open_directory_source::<'open>(permit: move permit, directory: &'open cwd) {
-          Ok(value: listing) => {
+          SourceOpened(value: listing) => {
             let total = 0_u64;
             for @scan (i in 0_u64..4_u64) {
               region 'attempt {
@@ -1211,7 +1211,7 @@ fn a_direct_directory_state_transition_keeps_its_unique_loan() {
               set total = total +wrap 1_u64;
             }
           }
-          Err(error: refused) => {
+          SourceOpenFailed(error: refused, permit: refused_2) => {
           }
         }
       }

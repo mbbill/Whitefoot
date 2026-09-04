@@ -1027,7 +1027,8 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   it (`Status: CANDIDATE v0.42 supersedes v0.41` in `spec/kernel-spec.md`;
   the plan is `docs/current-plan.md`): the permit is credit-backed by a
   process-wide counter set from the target's descriptor budget, the three
-  explicit closes return the credit, and the ledger, its award order, the
+  explicit closes return the credit as a permit, a refused open hands its
+  permit back in its outcome enum, and the ledger, its award order, the
   thread-holding retry wait, and their Windows twins are deleted. Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
   io_uring work, Windows IOCP runtime, selective stackless slice, and component

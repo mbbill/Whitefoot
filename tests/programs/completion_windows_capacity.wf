@@ -10,7 +10,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
               match reserve_file::<'open>(factory: &uniq 'open files) {
                 Ok(value: permit) => {
                   match open_read::<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
-                    Ok(value: file) => {
+                    FileOpened(value: file) => {
                       let bytes0 = buffer_new(1_u64, 0_u8);
                       let bytes1 = buffer_new(1_u64, 0_u8);
                       let bytes2 = buffer_new(1_u64, 0_u8);
@@ -42,7 +42,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                         }
                       }
                     }
-                    Err(error: problem) => {
+                    FileOpenFailed(error: problem, permit: refused) => {
                       return exit_status(code: 4_u8);
                     }
                   }

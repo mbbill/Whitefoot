@@ -33,7 +33,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let digest = 0_u64;
                 region 'fold {
                   set digest = fold_prefix::<'fold>(source: &'fold data, produced: 64_u64, seed: 0_u64);
@@ -53,7 +53,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }

@@ -72,7 +72,7 @@ const A01_BASELINE: &[u8] = br#"command fn main(command.cwd as cwd: own Director
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'h {
                   region 'd {
                     match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
@@ -87,7 +87,7 @@ const A01_BASELINE: &[u8] = br#"command fn main(command.cwd as cwd: own Director
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -113,7 +113,7 @@ const A02_HOISTED_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own D
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'h {
                   region 'd {
                     match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
@@ -128,7 +128,7 @@ const A02_HOISTED_SCRATCH: &[u8] = br#"command fn main(command.cwd as cwd: own D
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -153,10 +153,10 @@ const A03_CARRIED_BYTE: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -211,7 +211,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'h {
                   region 'd {
                     match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
@@ -225,7 +225,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -250,10 +250,10 @@ const A05_RETURN_IN_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
                 return exit_status(code: 4_u8);
               }
             }
@@ -280,10 +280,10 @@ const A06_BREAK_ENCLOSING: &[u8] = br#"command fn main(command.cwd as cwd: own D
           Ok(value: permit) => {
             region 'n {
               match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-                Ok(value: handle) => {
+                FileOpened(value: handle) => {
                   break @outer;
                 }
-                Err(error: problem) => {
+                FileOpenFailed(error: problem, permit: refused_2) => {
                 }
               }
             }
@@ -307,7 +307,7 @@ const A07_DIRECTORY_SOURCE: &[u8] = br#"command fn main(command.cwd as cwd: own 
     match reserve_file::<'c>(factory: &uniq 'c files) {
       Ok(value: permit) => {
         match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-          Ok(value: list) => {
+          SourceOpened(value: list) => {
             for @scan (index in 0_u64..4_u64) {
               let entries = buffer_new(1024_u64, 0_u8);
               region 'b {
@@ -323,7 +323,7 @@ const A07_DIRECTORY_SOURCE: &[u8] = br#"command fn main(command.cwd as cwd: own 
               }
             }
           }
-          Err(error: problem) => {
+          SourceOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }
@@ -346,10 +346,10 @@ const A08_READONLY_NAME: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -376,7 +376,7 @@ const A09_REMAINDER_CURSOR: &[u8] = br#"command fn main(command.cwd as cwd: own 
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let at = cursor;
                 let stride = index *wrap 64_u64;
                 set cursor = stride;
@@ -394,7 +394,7 @@ const A09_REMAINDER_CURSOR: &[u8] = br#"command fn main(command.cwd as cwd: own 
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -420,9 +420,9 @@ const A10_PROLOGUE_ACCUMULATOR: &[u8] = br#"command fn main(command.cwd as cwd: 
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -448,10 +448,10 @@ const A12_NESTED_INNER_IO: &[u8] = br#"command fn main(command.cwd as cwd: own D
           Ok(value: permit) => {
             region 'n {
               match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n shared, start: 0_u64, end: 4_u64) {
-                Ok(value: handle) => {
+                FileOpened(value: handle) => {
                   set total = total +wrap 1_u64;
                 }
-                Err(error: problem) => {
+                FileOpenFailed(error: problem, permit: refused_2) => {
                 }
               }
             }
@@ -477,11 +477,11 @@ const A13_PROOF_REMAINDER: &[u8] = br#"command fn main(command.cwd as cwd: own D
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 invariant bounded: index <= 4_u64;
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -510,10 +510,10 @@ const A13A_REMAINDER_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -547,10 +547,10 @@ const A13C_PROVED_PROLOGUE: &[u8] = br#"command fn main(command.cwd as cwd: own 
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -575,13 +575,13 @@ const A13B_PROOF_REMAINDER_STORAGE: &[u8] = br#"command fn main(command.cwd as c
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let slot = buffer_new(8_u64, 0_u8);
                 let room = len(slot);
                 invariant fixed_step: 0_u64 <= 2_u64;
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -607,7 +607,7 @@ const A14_INTERPOSED: &[u8] = br#"command fn main(command.cwd as cwd: own Direct
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let squared = index *wrap index;
                 set total = total +wrap squared;
                 region 'h {
@@ -624,7 +624,7 @@ const A14_INTERPOSED: &[u8] = br#"command fn main(command.cwd as cwd: own Direct
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -650,10 +650,10 @@ const A15_BODY_BOUND_BORROW: &[u8] = br#"command fn main(command.cwd as cwd: own
           region 'n {
             let borrowed = &'n name;
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: borrowed, start: 0_u64, end: 0_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -681,10 +681,10 @@ const A16_GIVE_OUT: &[u8] = br#"command fn main(command.cwd as cwd: own Director
             Ok(value: permit) => {
               region 'n {
                 match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-                  Ok(value: handle) => {
+                  FileOpened(value: handle) => {
                     give 7_u64;
                   }
-                  Err(error: problem) => {
+                  FileOpenFailed(error: problem, permit: refused_2) => {
                   }
                 }
               }
@@ -717,9 +717,9 @@ const A17_NO_CLEAN_CUT: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
           Ok(value: permit) => {
             region 'n {
               match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-                Ok(value: handle) => {
+                FileOpened(value: handle) => {
                 }
-                Err(error: problem) => {
+                FileOpenFailed(error: problem, permit: refused_2) => {
                 }
               }
             }
@@ -793,11 +793,11 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let bumped = carried +wrap 1_u64;
                 let previous = replace work = Work(seen: bumped, code: 0_u64);
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -823,11 +823,11 @@ const A19B_CONTROL_SCALAR: &[u8] = br#"command fn main(command.cwd as cwd: own D
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let bumped = carried +wrap 1_u64;
                 set seen = bumped;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -863,11 +863,11 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: carried, end: 8_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let bumped = carried +wrap 1_u64;
                 let previous = replace work = Work(seen: bumped, code: 0_u64);
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -882,7 +882,19 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 }
 "#;
 
-const A20_PROPAGATE_CUT: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
+const A20_PROPAGATE_CUT: &[u8] = br#"fn open_first['c, 'n](permit: own FilePermit, root: &'c DirectoryRead, name: &'n buffer<u8>) -> result: own Result<ReadFile, IoError> reads(permit, root, name), writes(permit) {
+  let extent = len(deref(name));
+  match open_file::<'c, 'n>(permit: move permit, root: root, name: name, start: 0_u64, end: extent) {
+    FileOpened(value: opened) => {
+      return Ok<ReadFile, IoError>(value: move opened);
+    }
+    FileOpenFailed(error: problem, permit: refused) => {
+      return Err<ReadFile, IoError>(error: move problem);
+    }
+  }
+}
+
+fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "The submission statement is itself the exit: propagate leaves the loop and the function on the operation's own Err outcome.";
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -891,7 +903,7 @@ const A20_PROPAGATE_CUT: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, fil
       match reserve_file::<'p>(factory: &uniq 'p files) {
         Ok(value: permit) => {
           region 'n {
-            let handle = propagate open_file::<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64);
+            let handle = propagate open_first::<'c, 'n>(permit: move permit, root: cwd, name: &'n name);
             set total = total +wrap 1_u64;
           }
         }
@@ -928,10 +940,10 @@ const A20B_MATCH_TWIN: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files
         Ok(value: permit) => {
           region 'n {
             match open_file::<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
                 return Err<u64, IoError>(error: move problem);
               }
             }
@@ -960,7 +972,19 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 }
 "#;
 
-const A20C_PROPAGATE_SECOND: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
+const A20C_PROPAGATE_SECOND: &[u8] = br#"fn open_first['c, 'n](permit: own FilePermit, root: &'c DirectoryRead, name: &'n buffer<u8>) -> result: own Result<ReadFile, IoError> reads(permit, root, name), writes(permit) {
+  let extent = len(deref(name));
+  match open_file::<'c, 'n>(permit: move permit, root: root, name: name, start: 0_u64, end: extent) {
+    FileOpened(value: opened) => {
+      return Ok<ReadFile, IoError>(value: move opened);
+    }
+    FileOpenFailed(error: problem, permit: refused) => {
+      return Err<ReadFile, IoError>(error: move problem);
+    }
+  }
+}
+
+fn scan_all['c](cwd: &'c DirectoryRead, files: own FileFactory) -> result: own Result<u64, IoError> reads(cwd, files), writes(files), allocates(heap) {
   doc "A propagate on a second submission, written in the remainder.";
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
@@ -970,12 +994,12 @@ const A20C_PROPAGATE_SECOND: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead,
         Ok(value: permit) => {
           region 'n {
             match open_file::<'c, 'n>(permit: move permit, root: cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'q {
                   match reserve_file::<'q>(factory: &uniq 'q files) {
                     Ok(value: again) => {
                       region 'm {
-                        let second = propagate open_file::<'c, 'm>(permit: move again, root: cwd, name: &'m name, start: 0_u64, end: 4_u64);
+                        let second = propagate open_first::<'c, 'm>(permit: move again, root: cwd, name: &'m name);
                         set total = total +wrap 1_u64;
                       }
                     }
@@ -985,7 +1009,7 @@ const A20C_PROPAGATE_SECOND: &[u8] = br#"fn scan_all['c](cwd: &'c DirectoryRead,
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1036,10 +1060,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1064,7 +1088,7 @@ const A23_GIVE_INSIDE: &[u8] = br#"command fn main(command.cwd as cwd: own Direc
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let weight = match Some<u64>(value: 2_u64) {
                   Some(value: carried) => {
                     give carried;
@@ -1075,7 +1099,7 @@ const A23_GIVE_INSIDE: &[u8] = br#"command fn main(command.cwd as cwd: own Direc
                 }
                 set total = total +wrap weight;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1106,9 +1130,9 @@ const A24_SLICE_READONLY: &[u8] = br#"command fn main(command.cwd as cwd: own Di
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1160,11 +1184,11 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n held.name, start: 0_u64, end: 0_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let fresh = buffer_new(16_u64, 98_u8);
                 let previous = replace held = Holder(name: move fresh, seen: 1_u64);
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1190,7 +1214,7 @@ const A27_OUTPUT_WRITE: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'o {
                   region 's {
                     match write_once::<'o, 's>(output: &uniq 'o out, source: &'s line, start: 0_u64, end: 8_u64) {
@@ -1203,7 +1227,7 @@ const A27_OUTPUT_WRITE: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1240,12 +1264,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let bumped = carried +wrap 1_u64;
                 let replacement = Inner(a: bumped, b: 0_u64);
                 let previous = replace carrier.inner = move replacement;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1272,9 +1296,9 @@ const A29_TWO_SUBMISSIONS: &[u8] = br#"command fn main(command.cwd as cwd: own D
           Ok(value: permit) => {
             region 'n {
               match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-                Ok(value: handle) => {
+                FileOpened(value: handle) => {
                 }
-                Err(error: problem) => {
+                FileOpenFailed(error: problem, permit: refused_2) => {
                 }
               }
             }
@@ -1290,9 +1314,9 @@ const A29_TWO_SUBMISSIONS: &[u8] = br#"command fn main(command.cwd as cwd: own D
           Ok(value: other) => {
             region 'm {
               match open_file::<'g, 'm>(permit: move other, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
-                Ok(value: handle) => {
+                FileOpened(value: handle) => {
                 }
-                Err(error: problem) => {
+                FileOpenFailed(error: problem, permit: refused_2) => {
                 }
               }
             }
@@ -1325,11 +1349,11 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let seen = carrier.tag;
                 set total = total +wrap seen;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }

@@ -473,7 +473,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_fresh_and_formal_result_join_remains_a_finite_origin_set() {
-    let source = br#"fn choose_file['r, 'p](existing: own Result<ReadFile, IoError>, permit: own FilePermit, root: &'r DirectoryRead, path: &'p RelativePath, fresh: own Bool) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(existing, permit) {
+    let source = br#"fn choose_file['r, 'p](existing: own FileOpenOutcome, permit: own FilePermit, root: &'r DirectoryRead, path: &'p RelativePath, fresh: own Bool) -> result: own FileOpenOutcome reads(permit, root, path), writes(existing, permit) {
   if fresh {
     return open_read::<'r, 'p>(permit: move permit, root: root, path: path);
   } else {
@@ -802,8 +802,14 @@ fn a_loop_break_join_retains_the_two_origins_an_update_can_select() {
         match reserve_file::<'reservation>(factory: &uniq 'reservation factory) {
           Ok(value: permit) => {
             region 'lookup {
-              let replacement = open_read::<'lookup, 'p>(permit: move permit, root: &'lookup root, path: path);
-              let discarded = replace selected = move replacement;
+              match open_read::<'lookup, 'p>(permit: move permit, root: &'lookup root, path: path) {
+                FileOpened(value: got) => {
+                  let discarded = replace selected = Ok<ReadFile, IoError>(value: move got);
+                }
+                FileOpenFailed(error: problem, permit: refused) => {
+                  let discarded = replace selected = Err<ReadFile, IoError>(error: move problem);
+                }
+              }
             }
           }
           Err(error: spent) => {

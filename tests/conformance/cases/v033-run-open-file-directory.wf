@@ -9,10 +9,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
       match reserve_file::<'c>(factory: &uniq 'c files) {
         Ok(value: permit) => {
           match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-            Ok(value: file) => {
+            FileOpened(value: file) => {
               return exit_status(code: 1_u8);
             }
-            Err(error: problem) => {
+            FileOpenFailed(error: problem, permit: refused) => {
               match move problem {
                 NotFound(code: native_code, origin: native_origin) => {
                   return exit_status(code: 3_u8);

@@ -21,9 +21,9 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                 let opened_a = open_read::<'open, 'open>(permit: move permit_a, root: &'open cwd, path: &'open path_a);
                                 let opened_b = open_read::<'open, 'open>(permit: move permit_b, root: &'open cwd, path: &'open path_b);
                                 match move opened_a {
-                                  Ok(value: file_a) => {
+                                  FileOpened(value: file_a) => {
                                     match move opened_b {
-                                      Ok(value: file_b) => {
+                                      FileOpened(value: file_b) => {
                                         region 'files {
                                           region 'data {
                                             let read_a = read_at::<'files, 'data>(file: &'files file_a, destination: &uniq 'data data_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
@@ -75,12 +75,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                           }
                                         }
                                       }
-                                      Err(error: problem_b) => {
+                                      FileOpenFailed(error: problem_b, permit: refused_b) => {
                                         return exit_status(code: 6_u8);
                                       }
                                     }
                                   }
-                                  Err(error: problem_a) => {
+                                  FileOpenFailed(error: problem_a, permit: refused_a) => {
                                     return exit_status(code: 5_u8);
                                   }
                                 }

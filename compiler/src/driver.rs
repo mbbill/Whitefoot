@@ -669,7 +669,7 @@ mod tests {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'h {
                   region 'd {
                     match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
@@ -684,7 +684,7 @@ mod tests {
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -710,10 +710,10 @@ mod tests {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -926,9 +926,9 @@ mod tests {
     match permit {
       Ok(value: opened) => {
         match open_file::<'source, 'c>(permit: move opened, root: root, name: name, start: 0_u64, end: 1_u64) {
-          Ok(value: handle) => {
+          FileOpened(value: handle) => {
           }
-          Err(error: problem) => {
+          FileOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }
@@ -1093,10 +1093,10 @@ command fn main() -> status: own ExitStatus pure {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1688,10 +1688,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1768,12 +1768,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 let sum = left[0_u64] +wrap right[0_u64];
                 let wide = cvt::<u8, u64>(sum);
                 set total = total +wrap wide;
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1834,7 +1834,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'h {
                   region 'd {
                     match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
@@ -1849,7 +1849,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1910,7 +1910,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         Ok(value: permit) => {
           region 'n {
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
+              FileOpened(value: handle) => {
                 region 'h {
                   region 'd {
                     match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
@@ -1925,7 +1925,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                   }
                 }
               }
-              Err(error: problem) => {
+              FileOpenFailed(error: problem, permit: refused_2) => {
               }
             }
           }
@@ -1989,9 +1989,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
           Ok(value: permit) => {
             region 'n {
               match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n shared, start: 0_u64, end: 4_u64) {
-                Ok(value: handle) => {
+                FileOpened(value: handle) => {
                 }
-                Err(error: problem) => {
+                FileOpenFailed(error: problem, permit: refused_2) => {
                 }
               }
             }
@@ -2924,10 +2924,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
         Ok(value: permit) => {{
           region 'n {{
             match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {{
-              Ok(value: handle) => {{
+              FileOpened(value: handle) => {{
                 set total = total +wrap 1_u64;
               }}
-              Err(error: problem) => {{
+              FileOpenFailed(error: problem, permit: refused_2) => {{
               }}
             }}
           }}

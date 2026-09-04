@@ -4,9 +4,9 @@ fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'
     match reserve_file<'source>(factory: &uniq 'source deref(factory)) {
       Ok(value: permit) => {
         match open_file<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
-          Ok(value: handle) => {
+          FileOpened(value: handle) => {
           }
-          Err(error: problem) => {
+          FileOpenFailed(error: problem, permit: refused) => {
           }
         }
       }

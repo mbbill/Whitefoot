@@ -31,7 +31,12 @@ relation. The relation is now on the API.
   DirectoryRoot) -> FilePermit`, `close_directory_source(own DirectorySource)
   -> FilePermit`: explicit closes return the credit as a fresh permit. Derived
   release still closes and returns nothing.
-- Writer spellings +3, system operations +3 (META-5 delta), outcome and
+- The four opens answer with their own outcome enums instead of
+  `Result<_, IoError>`: `FileOpenOutcome`, `DirectoryOpenOutcome`,
+  `SourceOpenOutcome`, each `Opened(value: <owner>)` or
+  `OpenFailed(error: IoError, permit: FilePermit)` (§7 item 3).
+- Writer spellings +3, system operations +3, enum nominals +3 with six
+  constructors, declaration records +24 (META-5 delta); outcome and
   target-contract tables updated, derivation ledger rows SYS-10/11/14 and the
   v0.42 candidate paragraph appended.
 
@@ -118,8 +123,8 @@ green against a mechanism that no longer exists:
 - Linux translation units (`linux_io_uring.c`, `bridge.c`, `runtime.c`,
   `file_adapter.c`, `harness.c`, `writer_scheduler.c`, `native_contract.c`)
   compile under `zig cc -target x86_64-linux-gnu -Werror -Wpedantic`.
-- `cargo test --profile gate --lib`: 1492 passed. `make conformance-run`:
-  Pass=502, Xfail=1 (the recorded `ent5-neg-callee-uniq-buffer-replace-kills-length`),
+- `cargo test --profile gate --lib`: 1493 passed. `make conformance-run`:
+  Pass=503, Xfail=1 (the recorded `ent5-neg-callee-uniq-buffer-replace-kills-length`),
   Skip=1. `make snapshot-run`: Pass=491, Flip=0.
 - Canonical `make check` stages on the branch: `repository-invariants`,
   `approval-history-integrity`, `spec-append-only`, `spec-digest-sync`,
@@ -160,21 +165,39 @@ emitter. Two are corrected in this batch; the third is the owner's call.
    an unspent permit spends the credit, exactly as derived release of an open
    resource does. The same test's drain loop drops one permit per iteration
    and relies on it.
-3. **A failed open's credit (open decision).** The candidate said a
-   recoverable open failure "returns the credit to the factory, because no
-   descriptor was taken". Nothing implemented it, and the count-raising form
-   has the T4 defect of item 2 in a place that matters: in a staged pipeline
-   the failure is decided at drain, after the next iteration's `reserve_file`
-   ran, so a pipelined run could refuse a reserve the sequential run grants.
-   The text now says the failure spends the credit, which is what the
-   compiler does; but a scanner that meets `NotFound` or `PermissionDenied`
-   on many names then loses a credit per miss and is refused for the rest of
-   the program. The form that expresses the relation on the API is for the
-   open's `Err` to carry the permit back as a value (`Result<ReadFile,
-   OpenFailure>` with `error` and `permit` fields): no count changes, and the
-   program reuses or drops the permit it got back. That changes every open's
-   result type and every `Err` arm in the corpus, so it is presented to the
-   owner in `docs/current-plan.md` rather than taken here.
+3. **A failed open's credit (owner decision 2026-09-04: the permit comes
+   back in the outcome).** The candidate said a recoverable open failure
+   "returns the credit to the factory, because no descriptor was taken".
+   Nothing implemented it, and the count-raising form has the T4 defect of
+   item 2 in a place that matters: in a staged pipeline the failure is
+   decided at drain, after the next iteration's `reserve_file` ran, so a
+   pipelined run could refuse a reserve the sequential run grants. Spending
+   the credit instead would be an error of ours: the host took no
+   descriptor, and a scanner that meets `NotFound` or `PermissionDenied` on
+   many names would be refused for the rest of the program. The owner's
+   rule for the whole question is that the error is the system's, so the
+   open keeps it, and the permit is ours, so it comes back where the checker
+   can see it. The four opens now answer with their own outcome enums,
+   `FileOpenOutcome { FileOpened(value: ReadFile); FileOpenFailed(error:
+   IoError, permit: FilePermit); }` and the `Directory`/`Source` twins for
+   `DirectoryRead` and `DirectorySource`, in the style of `ReadOutcome`.
+   The failed variant hands the permit back beside the host's error; no
+   count changes. The emitter threads the permit bit into every failed
+   value it builds (the twelve sites in `emit_open_completion_mapper`,
+   `emit_open_read`, `emit_open_by_name`, `emit_open_directory_source`) from
+   one structurally resolved `permit_index`. `propagate` no longer applies
+   to an open (its outcome is not a `Result`); the three [PAR-3] fixtures
+   that used `propagate open_file` as the cut now propagate a helper that
+   matches the outcome and returns a `Result`, and the judgment they pin is
+   unchanged. Corpus: 340 match arms rewritten across the conformance
+   cases, `tests/programs`, the bench and blind-writer programs, the Rust
+   fixtures, and `docs/patterns.md`; the helpers in `wfgrep.wf` and
+   `dir_walk.wf` that returned an open's `Result` directly now match and
+   convert. New case `run-sysfile-failed-open-returns-permit.wf` and the
+   test `a_refused_open_hands_its_permit_back_and_leaves_the_count_alone`
+   (an absent name refused under `ulimit -n 100` after a drain; the
+   returned permit opens the present name; `reserve_file` still refuses)
+   pin it.
 
 ## Approval classes
 

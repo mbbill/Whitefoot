@@ -7642,7 +7642,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                 match reserve_file::<'c>(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                      Ok(value: file) => {
+                      FileOpened(value: file) => {
                         let bytes = buffer_new(64_u64, 0_u8);
                         region 'f {
                           region 'd {
@@ -7658,7 +7658,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                         }
                       }
-                      Err(error: unopened) => {
+                      FileOpenFailed(error: unopened, permit: refused) => {
                       }
                     }
                   }
