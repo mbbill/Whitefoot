@@ -1,6 +1,6 @@
 # Park on miss: one scheduler for compute hand-outs and I/O completions
 
-Status: design under review (issue 56, the completion-record bound of decision 55, awaits an owner ruling), not implemented. Derived with the
+Status: design settled, no open issue; not implemented. Derived with the
 owner on 2026-09-02 and 2026-09-03, and re-anchored on 2026-09-04. Every claim
 about the current runtime below cites the file and line it was read from at
 `main` = `30602914` (specification v0.41 ACTIVE), on branch
@@ -27,7 +27,7 @@ not before. Roadmap `BOUND-1`'s Windows policy of zero blocking fallback is
 *not* superseded: this design removes the per-operation fallback everywhere
 rather than adding one.
 
-Four owner rulings govern everything below and are folded in rather than argued
+Five owner rulings govern everything below and are folded in rather than argued
 again. **One stack class.** The first implementation has a single class, sized
 as today's lane stack, in a fixed count set at startup; every stack carries
 a guard page; there is no class test, no class-mismatch switch and no fifth
@@ -46,32 +46,36 @@ because that frame is waiting for exactly the work the nesting produces. So the
 exhausted path — no free stack and no READY stack — splits by what the join is
 waiting for, and only the I/O arm is required to nest nothing (§2's fourth
 line, §3, §7's `wf__par_wait` bullet).
-**No per-operation blocking fallback, anywhere.** Every resource the runtime
-spends on overlapping is sized from the bound on its use, so it never refuses
-itself and its refusal paths are deleted (§2, §5, §7); emitted code has one
-lowering for every I/O operation, submit then join, and the direct family leaves
-it (§8); an operation with no kernel completion form is executed inside the
-runtime's engine and publishes a completion like any other (§7.1). Reproduction
+**No per-operation blocking fallback, anywhere.** Emitted code has one lowering
+for every I/O operation, submit then join, and the direct family leaves it (§8);
+an operation with no kernel completion form is executed inside the runtime's
+engine and publishes a completion like any other (§7.1); no refusal path is left
+to fall to (§2, §7). Reproduction
 follows from the same ruling: completion order is a kernel event and therefore
 an *input*, so constitution T3's sequential world is realized by replaying
 recorded inputs under §11's controlled scheduler, and the guarantee is stated as
 **with identical external inputs, including completion order, the internal
 execution is identical** — never as unqualified determinism (§11, §13).
+**The completion record lives in the frame that submits the operation, and it
+runs a compute hand-out slot's protocol, completed by the kernel instead of a
+thread.** The two storages stay different — a compute slot is the lane's, and
+keeps decision 6's refusal (§1, §7) — but the emitter reserves the record in
+the frame (§5) and the join reads it with the compute slot's own protocol
+(`par_runtime.c:448-463`, §6); it is sound
+because the group's join precedes every read and every exit edge
+(`parallel.rs:619-623`), so the frame outlives the operations it submits and a
+parked stack's memory stays in place. Nothing that existed because records were
+pool objects survives: no slot array, `WF_COMPLETION_SLOT_CAPACITY`, token,
+generation, publication lock, milestone, dependent registration,
+`wf_completion_depend`, claim, capacity notification, result copy, or refusal
+(§5, §7). N operations cost N records in one frame, which the stack ledger
+counts from the clang frame size, so the ceiling is the stack.
 
-§11 carries the obligation the owner attached to the last ruling: this state
-machine is large enough that its tests are part of the implementation batch
-rather than a follow-up to it.
+§11 carries the obligation the owner attached to these rulings: this state
+machine's tests are part of the implementation batch, not a follow-up to it.
 
-Six issues were raised in the second review round (ids 27 to 32). Five are
-settled and folded: the NOTIFIED-at-commit arm enqueues, so exactly one of the
-two transitions into READY does (§6, S7, §11-A5); both ends of the free list
-are atomic, with their orderings stated (§3's I3, §7); a thread's host stack is
-not a Whitefoot stack and every scheduler loop runs on a pool stack (§5, §7);
-§7.1's primitive set grew past four (it is eight after the rounds since); and §11's
-bounded configurations are derived from those rules rather than chosen.
-
-The sixth issue closed on a ruling that governs this design from outside it.
-**Constitution T4**, resource dependencies are API relations: every finite
+One issue of the review closed on a ruling that governs this design from outside
+it. **Constitution T4**, resource dependencies are API relations: every finite
 resource a system operation consumes is an owned value in that operation's
 signature, drawn from a factory whose capacity is source-visible, so an
 operation holding its resource cannot fail for want of it, and an
@@ -79,33 +83,31 @@ implementation never waits, awards, retries, or keeps a ledger to hide an
 outcome the sequential program does not produce
 (`docs/constitution.md`, T4, owner ruling 2026-09-04).
 
-A third round raised six more (ids 33 to 38), all settled and folded here. The
-exit-status post is a third epoch-bump transition, and the entry thread tests
-for it inside step 4's capture-to-park window rather than only after a wake
-(§5, §6, S17, §11 item 16). Target progress is §7.1's seventh primitive, and it
-is the one that may block, because with no helper the bounded pass runs a host
-`open` or `close` inline (§7.1, §11 item 17). The stack reservation and the
-worker pool start at different moments, and the pool's setting fixes the stack
-count's floor at the thread count plus one, not the count itself
-(§5, §7, §11's sweep). The
-stack free list is inside the core's one mutex, its poppers are enumerated, and
-an EMPTY stack is pushed back only after the switch, from the stack switched to
-(§5, §6, §11 item 18). Completion members keep the join positions the emitter
-gives them today (§4, §8). And every specification citation is read at v0.41
-(§9).
-
-Later rounds (ids 39 to 54) are settled and folded: the stack count is its own
-startup setting with the pool's setting fixing only its floor (§5, §7, §11);
-`wf_completion_depend` is primitive 8, the one that re-enters the core (§7.1,
-§11 item 19); the Windows twins are named in the files they live in, `wf_floor_windows.c`
-and `windows_bridge.c` (§3, §5, §7); the ready-list test sits inside step 4's
-capture-to-park window (§6, §11 item 20); `wf__floor_attach_thread` splits into
-a per-thread alternate stack and per-stack bounds written from the reservation
-record (§5, §7); I4 gains the power-of-two half the deque's mask needs (§3);
-the floor's argument and its §11 item are stated (§5, §11 item 21); and the
-citations are corrected. Every question those rounds asked about a *refusal*
-path — where it waits, what it reverts to, which platform it differs on — was
-answered by the ruling above, which removes the paths instead.
+Every other issue the review rounds raised (ids 1 to 57) is settled and folded
+into the section that owns it, with `reviews/park-on-miss-decisions.json` the
+record and this the map. The NOTIFIED-at-commit arm enqueues, so
+exactly one of the two transitions into READY does (§6, S7, §11-A5); both ends
+of the free list are atomic (§3's I3, §7); a thread's host stack is not a
+Whitefoot stack and every scheduler loop runs on a pool stack (§5, §7); §7.1's
+primitive set is seven and §11's configurations are derived rather than chosen;
+the exit-status post is a third epoch-bump transition, tested inside step 4's
+capture-to-park window as the ready-list test is (§5, §6, S17, §11 items 16 and
+20); target progress is the one primitive that may block, because with no helper
+the bounded pass runs a host `open` or `close` inline (§7.1, §11 item 17); the
+stack reservation and the worker pool start at different moments, the stack
+count is its own setting and the pool's setting fixes only its floor (§5, §7,
+§11); the stack free list is inside the core's one mutex and an EMPTY stack is
+pushed back only after the switch, from the stack switched to (§5, §6, §11 item
+18); completion members keep the join positions the emitter gives them today
+(§4, §8); the Windows twins are named in the files they live in,
+`wf_floor_windows.c` and `windows_bridge.c` (§3, §5, §7);
+`wf__floor_attach_thread` splits into a per-thread alternate stack and per-stack
+bounds written from the reservation record (§5, §7); I4 gains the power-of-two
+half the deque's mask needs (§3); the floor's argument is stated (§5, §11 item
+21); and every specification citation is read at v0.41 (§9). Every question
+those rounds asked about a *refusal* path — where it waits, what it reverts to,
+which platform it differs on — was answered by the rulings above, which remove
+the paths instead.
 
 That fixes the order of work. **Park on miss is implemented after the backed
 `FilePermit` batch** (roadmap `BOUND-1`): that batch gives `FileFactory` a
@@ -192,17 +194,23 @@ edge (`compiler/src/backend/emitter/parallel.rs:619-623`, the
 `spec/kernel-spec.md:1984`, that no edge out of s1 leaves the enclosing block
 or function without first reaching s2). Nothing ever
 waits at an I/O call itself. A `read` returns to its caller the moment the
-operation has been accepted.
+operation has been accepted. A full submission queue does not change that, and
+§7 says why.
 
 ```text
                      compute hand-out                    I/O operation
+the record           a slot in the lane's pool           a block of the caller's frame
 call site            push onto own deque, continue       submit to the completion source, continue
 join, target done    read the result                     read the result
 join, target missed  see section 2                       see section 2
 who can finish it    any thread, including this one      only the completion source
 ```
 
-Only the last row differs, and it only matters after a miss.
+**One protocol over two storages.** A compute slot is one of the lane's 64
+(`par_runtime.c:184-207`), refused with NULL when the lane has none (`:757-780`);
+an I/O record is the frame's and cannot be refused (§5). What they share is the
+state-and-waiter protocol the join runs over either (`par_runtime.c:448-463`,
+§6). Of the rows above only the last differs at run time, after a miss.
 
 ## 2. The rule
 
@@ -217,29 +225,24 @@ join(X):
 ```
 
 The first three lines do not test what X is, and no line tests a stack class:
-there is one class (§5). An I/O operation is never on the deque, so it takes
-the first or the third line. A compute hand-out another thread took and has not
+there is one class (§5). Line one is one rule for both kinds — read the record's
+state, and its result if DONE — differing only in who stored DONE, a thread or
+the kernel (§6). An I/O operation is never on the deque, so it takes the first
+or the third line. A compute hand-out another thread took and has not
 finished takes the third line as well; "run it yourself" is undefined for it,
 and helping instead would reopen the burial through a compute join. Line two
 also tests that X's home lane is this thread's (§4). Only the fourth line asks
 what X is waiting for, and §3 says why the two arms are not the same question.
 
-**No refusal path exists.** Owner ruling, 2026-09-04: every resource the
-runtime spends on overlapping is sized from the bound on its use, the way the
-stack pool is sized from the thread count (§5). Completion records are sized
-from the stack count and the per-stack in-flight window, and the ring is sized
-above the records, so a submit cannot fail to claim a record, an adapter queue
-cannot fill, and a ring cannot fill (§5 states the sizing; §7 lists the paths
-that are deleted with it). Emitted code therefore has **one lowering for every
-I/O operation: submit, then join** — there is no second arm to fall to, on any
-platform.
-
-Two refusals remain in the design and neither is an I/O wait. A refused compute
-slot runs the call inline on the owner, which is decision 6 unchanged: that is
-compute on the thread that wanted it and blocks nothing (`parallel.rs:655-660`,
-§7). And honest target exhaustion — a limit changed outside the program — stays
-the operation's own typed error, which is constitution T4's rule and not a
-scheduler question (§3).
+**No refusal path exists.** Owner rulings, 2026-09-04: there is no record
+resource to refuse, because the record is a block of the submitting frame and
+the stack is its only ceiling (§5), and ring backpressure stays the engine's
+(§7). Emitted code
+therefore has **one lowering for every I/O operation: submit, then join** —
+there is no second arm to fall to, on any platform. Two refusals remain and
+neither is an I/O wait: a refused compute slot runs the call inline on the owner
+(`parallel.rs:655-660`, §7), which blocks nothing, and honest target exhaustion
+stays the operation's own typed error under constitution T4 (§3).
 
 "Park this stack" means: register the stack as the waiter of X, switch to
 another stack, and continue there. There are two kinds of switch target and
@@ -714,25 +717,39 @@ conclusion directly. The alternative was to cap the lane count by the stacks
 reserved; it is not taken, because it makes the worker pool read a core capacity
 at its own start and still leaves this floor to be enforced somewhere.
 
-**The rest of the runtime's own resources are sized the same way, from the
-bound on their use.** That is the owner's ruling of 2026-09-04 (header), and
-the stack floor above is its first instance. Completion records are at least
-the per-stack in-flight window times the stack count: one stack cannot have
-more operations outstanding than the window the emitter fixes, which is
-`WF_BRIDGE_OPERATION_CAPACITY / 2` today (`bridge.c:857`), and no stack can
-hold records for another. The submission ring is sized at least at the record
-count, so a ring cannot fill while every submission in it holds a record; the
-adapter queue is bounded the same way. And an operation record holds the
-*loaned path pointer* rather than a copy of the path, which the specification
-already permits — "Submission may retain only the loans recorded for that call"
-(`spec/kernel-spec.md:1456`) — so the fixed path buffer
-(`WF_FILE_PATH_CAPACITY`, `file_adapter.h:65`) and the demotion of a path that
-does not fit (`bridge.c:1049-1059`) both disappear.
+**The completion record is a block of the submitting frame, and the stack
+ledger already counts it.** That is the owner's fifth ruling (header), and the
+stack floor above is the only sizing rule this design owes. The runtime owns the
+layout — an atomic state (PENDING or DONE), the waiter, the typed result of
+value and error code, the operation kind, and a platform block whose three forms
+§7 anchors — and the emitter reserves that block where it reserves an
+operation's other storage today (§8). So a group of N operations costs N records
+in one frame and nesting costs one set per live frame; every Whitefoot frame is
+static (`stack_ledger.rs:38-42`), clang sizes it and the ledger reads that size,
+so the ceiling is the stack and nothing else.
+An earlier draft sized a record pool from `wf__completion_window`
+(`bridge.c:845-887`), which its own comment calls a per-loop query — "asked once
+per loop entry and never per iteration" (`bridge.h:30-35`) — and not a bound on
+one stack's outstanding operations, which a straight-line [PAR-1] group of N
+members reaches at whatever N the source states. The query itself does not
+survive either, because every input it has is deleted here: the slot constant at
+`bridge.c:857` and the ring and entry capacities it clamps to
+(`bridge.c:858-864` over `linux_io_uring.c:1440-1450`). **The window becomes an
+emitter depth choice, not a resource-derived bound.** With no pooled
+per-operation resource left, nothing in the runtime bounds how many iterations
+one loop may carry, so the number the staged [PAR-3] lowering consumes
+(`lowering.rs:1211-1234`) is the compiler's own choice of depth against the
+frame it costs. The one thing the runtime still answers is the floor it answers
+today: one is always legal and reproduces the sequential program exactly
+(`bridge.h:30-36`).
 
-The consequence is the one §2 states: the runtime never refuses itself, every
-refusal path in the submit and claim machinery is unreachable by construction,
-and §7 deletes it rather than answering it. This costs memory that is now
-stated rather than assumed, and §12 prices it.
+The record holds the *loans* of the buffer and the path until the join rather
+than copies, which the specification already permits — "Submission may retain
+only the loans recorded for that call" (`spec/kernel-spec.md:1456`) — so the
+fixed path buffer (`WF_FILE_PATH_CAPACITY`, `file_adapter.h:65`), the demotion
+of a path that does not fit (`bridge.c:1049-1059`) and the 256-byte result copy
+(`WF_COMPLETION_RESULT_CAPACITY`, `contract.h:30`) all disappear. §12 prices the
+frame growth this costs.
 
 On cost, the measurement
 at `par_runtime.c:865-875` prices a different move and is not borrowed: its 17
@@ -781,9 +798,8 @@ switched away from with nothing pending is EMPTY, and the thread that switched
 to the next stack pushes it back to the free list from there.
 
 Proof-sized classes are a **named later step**, not part of this design, and
-they are taken only if the parked population can exceed tens (§12); records
-now follow the stack count rather than capping it (§5), so it is the stack
-count that decides. When they are, the class cannot come from
+they are taken only if the parked population can exceed tens (§12), which the
+stack count alone decides. When they are, the class cannot come from
 the emitter reading the ledger: the stack ledger is produced from clang's
 output after the emitter has finished (`whitefootc.rs:282-310`, which already
 runs clang), and its chain bound excludes every runtime and libc frame and
@@ -855,11 +871,14 @@ has five steps, and the middle one is not optional.
 
 ```text
 1. mark SUSPENDING                     (wf__writer_begin_suspend, writer_scheduler.c:102-118)
-2. register the wake                   (the waiter store, or wf_completion_depend)
-3. re-read the target's state
+2. register the wake                   (the waiter store into the record)
+3. re-read the record's state
 4. already satisfied -> cancel here and continue; never switch
 5. otherwise         -> switch, then commit on the target stack
 ```
+
+**It is written once because there is one record** (§5): the join runs these
+five steps whether a thread or the kernel will store DONE.
 
 Step 2 must follow step 1, because `wf__writer_scheduler_ready` aborts on any
 phase but SUSPENDING or SUSPENDED (`writer_scheduler.c:121-151`, abort at
@@ -870,9 +889,8 @@ loads the waiter (`par_runtime.c:455-463`), and its reason
 `waiter` before its read of the state, which `wf__par_wait` performs at
 `par_runtime.c:501-503`. Without step 3 a DONE that lands before the waiter
 store is lost and the stack is parked forever on an event that already
-happened. The I/O arm gets the same answer by a different means:
-`wf_completion_depend` finds the milestone reached and drained, calls ready
-itself and returns ALREADY_READY (`runtime.c:817-830`).
+happened. The I/O arm reads the same two fields of the same record and gets the
+same answer, with the drain in the publisher's place.
 
 Step 5's commit never precedes the switch, because until the switch happens the
 parking thread is still executing on the stack a resumer would take. Commit is
@@ -886,8 +904,7 @@ see each other: the waiter reads DONE *and* the publisher loaded the waiter,
 in which case the phase is already NOTIFIED when the cancel runs. The ported
 arm is a strong compare-exchange from SUSPENDING that aborts on anything else
 (`writer_scheduler.c:183-194`, Windows twin
-`writer_scheduler_windows.c:219-229`), and the I/O arm reaches the same state
-through `runtime.c:829`. So the core's cancel arm accepts NOTIFIED and takes
+`writer_scheduler_windows.c:219-229`). So the core's cancel arm accepts NOTIFIED and takes
 it back to RUNNING, consuming the notification, the way
 `wf__writer_commit_suspend` already accepts NOTIFIED
 (`writer_scheduler.c:161-179`), and keeps the abort for every other phase.
@@ -922,19 +939,16 @@ compute hand-out's `wf__par_execute` when it stores DONE
 `par_runtime_windows.c:601-610` wakes by address instead and has no `waiter`
 field to repurpose, `par_runtime_windows.c:68-74`), and the completion
 drain for an I/O record (where `wf__writer_scheduler_ready` is called today,
-`completion/runtime.c:653,744,829`). Two threads cannot both resume one READY
+`completion/runtime.c:653` and `:744`). Two threads cannot both resume one READY
 stack because the transition happens once, inside the CAS that wins it.
 
-The I/O park registers through `wf_completion_depend`, passing a pointer to
-the stack's state header — at the stack base, §5 — where a writer frame goes
-today, with the same milestone requirement the join needs. `runtime.c` is not
-edited for this: `slot->dependent_frame` is an uninterpreted `void *` stored
-under `publication_lock` (`runtime.c:824`) and handed only to
-`wf__writer_scheduler_ready` (`runtime.c:653,744,829`), and it is that symbol's
-implementation that becomes "mark this stack READY". The duplicate-registration
-refusal (`dependent_registered`, `runtime.c:811-814`) stays. `wf_completion_wait_to_consume`
-is not the registration: it sets a boolean answered by a global epoch bump and
-a broadcast, and names no resumable object.
+The I/O park needs no registration call. Step 2's waiter store goes into the
+record the frame already holds, and the drain publishes it exactly as
+`wf__par_execute` does: store DONE, load the waiter, mark that stack READY,
+having found the record by its address rather than by a lookup (§7). So
+`wf_completion_depend`, the slot's `publication_lock`, `dependent_registered`,
+`dependent_frame`, the milestone requirement and `wf_completion_wait_to_consume`
+are deleted rather than ported (§7).
 
 The ready queue is an intrusive singly-linked list threaded through a
 next-ready field in each stack's state header, with the head in the scheduler
@@ -962,12 +976,9 @@ only between its park and its resume, so a linked header is never recycled.
 
 The mutex stays. A lock-free push and pop is a later measurement against the
 2.2 microsecond park-and-wake figure (`par_runtime.c:124-125`), not a
-precondition and not a correctness question. The removal also frees a
-coupling: `WF_WRITER_READY_CAPACITY` (`writer_scheduler.h:22`) and the
-assertion tying it to the slot count (`bridge.c:55-58`) go with the array, and
-`WF_COMPLETION_SLOT_CAPACITY` moves to `completion/contract.h` beside
-`WF_COMPLETION_RESULT_CAPACITY` (`contract.h:30`), which is where a capacity of
-that kind already lives.
+precondition and not a correctness question. The removal also frees a coupling
+outright rather than rehousing it, because neither the ready list nor the
+records have a capacity any more (§7).
 
 A thread with nothing to run sleeps on one primitive: the completion park
 that already exists (`wf_bridge_park`, `bridge.c:502-530`, io_uring on Linux
@@ -1087,17 +1098,16 @@ nothing else. The set is:
    push is placed after the switch rather than merely inside the lock (§5, §6).
 6. The yield, which the compute arm of §2's fourth line keeps
    (`sched_yield` at `par_runtime.c:493`, inside `:487-495`).
-7. Target progress: flush the deferred doorbell, run one bounded target pass,
-   drain ready completions. §6's step 4 and §2's I/O arm both call it. It is
-   the one primitive that may block: with no helper the bounded pass executes a
-   queued host `open` or `close` on the calling thread.
-8. Completion registration: `wf_completion_depend`,
-   which is step 2 of §6's switch sequence on the I/O arm. It registers the
-   parking stack as the operation's dependent, or answers already-satisfied
-   having *already* published that stack through the core's own ready
-   transition, and it refuses a second registration on the same record.
+7. Target progress and the drain: flush the deferred doorbell, run one bounded
+   target pass, drain ready completions — each drained completion storing DONE
+   into its record and publishing that record's waiter READY. §6's step 4 and
+   §2's I/O arm both call it. It is the one primitive that may block: with no
+   helper the bounded pass executes a queued host `open` or `close` on the
+   calling thread. It is also the I/O join's publisher, which is why the set is
+   seven: the join registers through no call of its own, the record being the
+   frame's and its waiter store primitive 1 (§6).
 
-Everything that touches shared state through those eight is the core: §6's
+Everything that touches shared state through those seven is the core: §6's
 stack state machine, the slot states, the deque, the free list, and the ready
 list. Everything else — the adapters, the rings, the bridge's own queues, the
 floor — is outside it and reaches its own state its own way.
@@ -1129,20 +1139,6 @@ executed here, or on an adapter's own execution thread where the target has no
 completion source at all, and it publishes a completion like any other. It is
 the runtime's engine running under the scheduler loop's rules, not a path an
 emitted program can take (§2, §8).
-
-Primitive 8 is in the set for the same reason and with one property of its own:
-it re-enters the core. `wf_completion_depend` takes
-the slot's publication lock (`runtime.c:800`), refuses a duplicate registration
-(`:811-814`), stores the header pointer under that lock (`:824`), and on the
-already-satisfied arm calls `wf__writer_scheduler_ready(frame)` *itself* before
-it answers (`:828-830`) — that is, the core's own SUSPENDING-to-NOTIFIED
-transition runs from inside a call, and the answer the caller reads arrives
-after it. An earlier draft's set left it out, which would have made the core
-uncompilable against the replacement header §11 requires and would have left
-group A item 6 and S21's I/O twin — both written on the ALREADY_READY answer —
-outside the enumeration. Its outcomes are four (`runtime.c:800-832`); two are
-live for this design, REGISTERED and ALREADY_READY, and DUPLICATE is the refusal
-§6 relies on to keep one registration per record.
 
 Items 5 and 6 are here because §6 and §2 put them inside the core, and an
 earlier draft's set of four left them out. They are
@@ -1188,13 +1184,13 @@ core absorbs are the last two but one: `par_runtime.c` and
 (`par_runtime_windows.c` at 1,041 lines and `writer_scheduler_windows.c` at
 288, whose synchronization is `Interlocked`, `WaitOnAddress` and
 `WakeByAddress` rather than the C11 atomics, 24 and 7 lines respectively). The
-rest of the count is adapter and bridge state that stays where it is: the
-completion core's 146 atomic and 76 mutex lines are its records and its
-publication lock, not the scheduler's — and a part of that count goes with the
-retirement ledger the backed `FilePermit` batch deletes before this design is
-implemented (header), so it is an upper bound on what stays outside the core.
-`wf_floor.c` has none of either, which is what makes it the one unit already on the far side
-of this boundary.
+rest of the count is adapter and bridge state that stays where it is, and it is
+an upper bound rather than a residue: the completion core's 146 atomic and 76
+mutex lines are its slot records and its publication lock, and both go with the
+record pool this design deletes (§7's bullets), as the retirement ledger's share
+goes with the backed `FilePermit` batch (header). `wf_floor.c` has none of
+either, which is what makes it the one unit already on the far side of this
+boundary.
 
 Where the core is linked. It is not staged by the predicate
 the two parallel runtimes are staged by. `compile_executable` writes the
@@ -1402,9 +1398,9 @@ change of §5 lands on Windows; it too has its own bullet.
   is `par_runtime_windows.c:61-64`, which this list deletes. Every slot on a lane's ring is
   that lane's even when stacks migrate, because acquire-to-publish is one
   straight line with no join between (`parallel.rs:478`, `:492`).
-- `wf__completion_file_join` and its two siblings (`bridge.c:1692-1811`):
-  the park becomes a stack park, registered through `wf_completion_depend`
-  with the stack's state header where a writer frame goes today (§6).
+- `wf__completion_file_join` and its two siblings (`bridge.c:1692-1811`): the
+  park becomes a stack park on the frame's own record, step 2's waiter store
+  taking the place of the token wait (`bridge.c:1711`, `:1752`, `:1797`) (§6).
 - The Windows completion twins, in `completion/windows_bridge.c` and not in
   `par_runtime_windows.c`: the two live I/O joins, `wf__completion_file_join`
   (`windows_bridge.c:1138-1153`) and `wf__completion_file_open_join`
@@ -1418,20 +1414,99 @@ change of §5 lands on Windows; it too has its own bullet.
   loop that does not exist. `wf__writer_run_root` (`:1225-1242`) goes with the
   writer scheduler it pumps, and the record-capacity wait
   `wf__completion_wait_core_capacity` (`:755-780`) is deleted as dead code: with
-  records sized from the stacks (§5) no record refusal reaches it. The three
+  no record pool (§5) there is no record refusal to reach it. The three
   `wf__par_help_once` calls this list deletes on
   Windows are inside those last two and
   `wf__windows_completion_progress_for_retirement` (`:772`, `:793`, `:1231`).
-- The refusal machinery of the submit path: deleted, not answered, because §5's
-  sizing makes every branch of it unreachable. That is the record claim's
-  refusal (`bridge.c:612-614`), the capacity loop in `wf_bridge_submit_file` and
-  its io_uring twin with their parks (`bridge.c:640-657`, `:694-719`), the
-  adapter and ring capacity answers those loops consume
-  (`file_adapter.c:1109-1117`, `linux_io_uring.c:608-628`), and the
+- **The record's pool machinery: deleted, not answered**, because the record is
+  a block of the submitting frame (§5). That is the slot array and its count
+  (`contract.h:189-190`) and the slot record itself (`contract.h:145-170`) with
+  its `publication_lock`, `generation`, `milestones`, `dependent_registered`,
+  `dependent_frame` and 256-byte result union (`contract.h:30`); the token
+  (`contract.h:57-60`) and `WF_COMPLETION_SLOT_CAPACITY`
+  (`writer_scheduler.h:21`); the claim with its `WAIT_CAPACITY` answer
+  (`runtime.c:234-239`) and the submit-side refusal that consumes it
+  (`bridge.c:612-614`); the capacity loops in `wf_bridge_submit_file` and its
+  io_uring twin with their parks (`bridge.c:640-657`, `:694-719`), the adapter
+  and ring capacity answers they consume (`file_adapter.c:1109-1117`,
+  `linux_io_uring.c:608-628`), and `wf_completion_notify_capacity` with its six
+  callers (`bridge.c:1361`, `file_adapter.c:505`, `:557`, `:810`,
+  `linux_io_uring.c:925`, `:1209`); `wf_completion_depend` (`runtime.c:784-833`)
+  with its duplicate refusal and its ALREADY_READY arm; and the
   path-does-not-fit demotion with its counter (`bridge.c:1049-1059`,
   `WF_FILE_PATH_CAPACITY` at `file_adapter.h:65`), which goes because the record
-  holds the loaned pointer (§5). What remains of the submit path is: claim,
-  register the dependent, submit, return.
+  holds the loan (§5).
+- **The engine's own per-operation pools go with it**, because they are sized by
+  the same constant and hold the same object. `WF_BRIDGE_OPERATION_CAPACITY` is
+  the deleted slot constant (`bridge.c:42-44` over `writer_scheduler.h:21`), and
+  every fixed array it sizes is disposed of here rather than left standing:
+  `wf_bridge_slots` (`bridge.c:61`) and `wf_bridge_linux_entries`
+  (`bridge.c:103`) are **deleted**, because the frame's record *is* the adapter
+  entry — the SQE is built from the record straight into the ring, where
+  `entry->request` supplies it today (`linux_io_uring.c:505-526`); and
+  `wf_bridge_queue` (`bridge.c:63`) is **deleted** because an adapter-thread
+  target queues pending work on an intrusive list through the records instead
+  (`file_adapter.c:1020`, `:1050`, `queue_capacity` at `:1109`). So
+  `wf_linux_reserve_entry` (`linux_io_uring.c:425-450`) and its `WAIT_CAPACITY`
+  answer (`:624-628`) go with the loops that consumed them, and the ring's depth
+  is **resized to a ring parameter** — a throughput choice, not a bound on
+  operations in flight — so `io_uring_setup`'s `entry_capacity`
+  (`linux_io_uring.c:217-232`) stops being read from the slot constant. **The
+  same census runs on Windows**, where the constant reaches the bridge through
+  `WF_WINDOWS_BRIDGE_CAPACITY` (`windows_bridge.c:23`) and sizes
+  `wf_windows_bridge_slots` (`:44`) and `wf_windows_bridge_entries` (`:46`),
+  with two static assertions tying it to the blocking and ready capacities
+  (`:29-36`); all of it is deleted with the POSIX arrays, because there the
+  `OVERLAPPED` is the record's own platform block, so no entry pool is left for
+  `wf_windows_reserve_entry` (`windows_iocp.c:218-241`) to draw from and its
+  `WAIT_CAPACITY` answer (`:263`), the capacity loop that consumes it
+  (`windows_bridge.c:872-875`) and the window twin (`:884`) go with it.
+  Neither queue can then refuse an operation. A full submission queue is emptied by the
+  submitting call's own `io_uring_enter`, which consumes it synchronously
+  because this design uses no SQPOLL, so submit waits on a syscall and never on
+  an event (§1). Completion-queue overflow is absorbed by `IORING_SETUP_CQSIZE`
+  with the NODROP feature the adapter already requires and refuses a ring
+  without (`linux_io_uring.c:227-228`). Windows has no submission ring to fill,
+  which is true but is not why its pool is gone: the record replacing the entry
+  is.
+- **Every submit path ends in a published record**, the property that replaces
+  the not-pending verdict now that no inline arm consumes it (§8). Either the
+  kernel accepts the operation and the drain publishes its terminal, or the
+  engine executes it and publishes an inline terminal — the shape the tree
+  already has on the Windows immediate-failure arm, where the entry owns the
+  unique terminal publication because Windows promises no packet
+  (`windows_iocp.c:462-471`) — so the adapter result that is neither TARGET_OWNS
+  nor WAIT_CAPACITY (`bridge.c:651-652`) publishes instead of answering 0. The
+  one remaining path is not an operation outcome: a bridge that cannot
+  initialize (`bridge.c:608-610`) leaves no engine to run the operation and no
+  drain to publish it, so it is a trusted-computing-base failure and terminates
+  deterministically where the floor does. A refused native ring is *not* that
+  case and is not a submit failure: `WF_IO_NO_NATIVE_RING` routes the process to
+  the POSIX adapter (`bridge.c:261`, `:280`), `wf_bridge_ensure_file` still
+  succeeds, and the gate runs that configuration
+  (`compiler/Makefile:293-297`, under the `completion-test` stage at `:232`). The submit path becomes: fill the frame's record, submit or
+  execute, return with the record in flight or published — never with a 0 the
+  caller must interpret.
+- **Exactly one terminal completion per submission, and the record still there
+  for it.** This replaces the identity checks the token pool carried — the
+  `user_data` range and in-flight tests (`linux_io_uring.c:1015-1022`), the
+  Windows range-and-stride test (`windows_iocp.c:474-486`) and the core's
+  stale-generation drop (`runtime.c:428-437`) — with an impossibility rather
+  than an unchecked write. The count: a resubmission publishes nothing and
+  re-arms the same operation (`linux_io_uring.c:1029-1040`), so several CQEs may
+  name one record while exactly one is terminal, and the bullet above keeps that
+  count off zero. The lifetime: `emit_terminator` joins every outstanding
+  completion before any terminator (`emitter.rs:1732-1740`), the stronger form
+  of §1's placement rule, so no exit edge and therefore no frame teardown
+  precedes the join that consumes the terminal. §11 carries it as an item.
+- **What survives, and the one change inside it.** The adapters and the rings
+  keep their own state on the far side of §7.1's boundary. The drain
+  changes in one way: it finds the
+  record by address instead of by token, so `linux_io_uring.c:526` submits the
+  record's address as `user_data` where an entry index sits today (decoded at
+  `:1010`), and the Windows entry's `OVERLAPPED`-first layout
+  (`windows_iocp.h:101-109`, asserted at `windows_iocp.c:59-62`) is embedded in
+  the frame's record instead of a pool entry.
 - `wf_floor_windows.c`, the Windows floor: its
   `wf__floor_run` (`:143-175`) takes the same entry-shape change as
   `wf_floor.c`'s. The weak core-symbol test selects the shape at link time; the
@@ -1457,11 +1532,9 @@ change of §5 lands on Windows; it too has its own bullet.
 - `writer_scheduler.c`, `writer_scheduler_windows.c`, `emitter/stackless.rs`,
   `tests/stackless.rs`: retired. Their handshake moves to the stack park;
   the emitter emits the plain synchronous ABI for every function.
-  `WF_COMPLETION_SLOT_CAPACITY` is defined in `writer_scheduler.h:21` and
-  needs a new home; the candidate is `completion/contract.h` beside
-  `WF_COMPLETION_RESULT_CAPACITY` (`contract.h:30`), with
-  `WF_WRITER_READY_CAPACITY` (`writer_scheduler.h:22`) and the assertion at
-  `bridge.c:55-58` deleted along with the queue (§6).
+  `WF_WRITER_READY_CAPACITY` (`writer_scheduler.h:22`) and the assertion tying
+  it to the slot count (`bridge.c:55-58`) go with the file, as
+  `WF_COMPLETION_SLOT_CAPACITY` (`:21`) goes with the record pool above.
 - The cancel arm of the core's park protocol accepts NOTIFIED and returns it to
   RUNNING, consuming the notification, on the model of the commit arm
   (`writer_scheduler.c:161-179`); every other phase still aborts. This is a
@@ -1501,14 +1574,42 @@ change of §5 lands on Windows; it too has its own bullet.
   `IrOverlap::handed_out` in the lowering module (`lowering.rs:1086-1091`).
   Two more emitter changes follow the owner's fourth ruling (header), and the
   bullet above is otherwise the whole of it.
+- **The frame carries the record where it carries the token today.** The emitter
+  already reserves an entry-block element per outstanding operation — the token,
+  the result slot, the raw value and error, an open's outcome, a cursor's
+  position, an open's staged path — through `completion_entry_slot`
+  (`completion.rs:313-335`, the reason at `:287-296`), the token itself as
+  `[2 x i64]` at `:665`, `:829` and `:1135`. That set collapses to one opaque
+  block of the runtime's stated size and alignment, whose address is what submit
+  is given and what the join reads (§5, §6); the emitted module holds one opaque
+  pointer and "never learns this layout" (`par_runtime.c:185-207`). The per-site
+  outstanding-count rule is unchanged; only what one element is changes.
+- **How the size and alignment reach the emitter**, which nothing states today
+  and which a wrong number turns into a kernel write past the reservation. They
+  are one ABI constant of the completion contract, stated in the completion
+  header beside the other public capacities and used by the emitter to reserve
+  the block; the C side asserts its own record layout against that constant with
+  a `_Static_assert` on the model of `bridge.c:55-58`, so a layout that outgrows
+  or out-aligns the emitter's number fails the build instead of the program, and
+  §11 carries the matching item. Two things it is *not*. The compute slot is not
+  the precedent: there the emitted call passes the *program's* frame size into
+  the runtime and is refused above `WF_PAR_FRAME_BYTES` (`parallel.rs:472-479`,
+  `par_runtime.c:761-762`), which crosses the other way. And the number cannot
+  come from the stack ledger, which runs clang on LLVM the emitter has already
+  produced (`whitefootc.rs:282-310`) — §5's own ordering fact. The ledger prices
+  the block (§5, §12); the header states its size.
 - **One lowering for every I/O operation: submit, then join.** The direct family
-  leaves emitted code: the dispatch that names the six `_direct` symbols
-  (`compiler/src/backend/qualification.rs:233-291`), the inline arm those calls
-  sit on (`completion.rs:764-783`) and its three callers (`:764`, `:924`,
-  `:1183`), and the eligibility branch that selects it (`:749`). An operation
-  with no kernel completion form is executed inside the runtime's engine and
-  publishes a completion like any other (§7.1), so the emitter needs no second
-  arm for it and no per-operation fallback exists to emit.
+  leaves emitted code, and it has two anchors rather than one. The qualification
+  dispatch names five — close, open_at, status, pread and write, each spelled
+  `wf__completion_file_*_direct` (`qualification.rs:233-291`) — while the sixth,
+  `wf__completion_directory_next_direct`, is declared and called by the
+  directory-list lowering (`emitter/system.rs:542`, `:2735`) and defined at
+  `windows_runtime.c:1617`; an earlier draft counted six in the first range
+  alone. With them go the inline arm (`completion.rs:764-783`), its three
+  callers (`:764`, `:924`, `:1183`), and the eligibility branch that selects it
+  (`:749`). An operation with no kernel completion form is executed inside the
+  runtime's engine and publishes a completion like any other (§7.1), so the
+  emitter needs no second arm for it.
 - The Windows verdict fork goes with it, as dead code rather than as a policy
   change: `emit_completion_submit_verdict`'s Windows arm
   (`completion.rs:438-526`), its `wf__completion_wait_core_capacity` declaration
@@ -1518,9 +1619,9 @@ change of §5 lands on Windows; it too has its own bullet.
   `stackless.rs:473` with that file. `completion/bridge.h:28` is deleted with
   them; the verdict enum (`bridge.h:18-22`) stays, because the runtime type is
   unchanged, and its comment (`bridge.h:11-22`), which today describes the retry
-  policy, is rewritten to say that a capacity verdict is unreachable under §5's
-  sizing. In `tests/completion.rs`, only assertions of the retry shape are
-  retired — the declaration entry at `:478`, and the fork-specific assertions of
+  policy, is rewritten to say that a capacity verdict is unreachable once the
+  record is the frame's (§5). In `tests/completion.rs`, only assertions of the
+  retry shape are retired — the declaration entry at `:478`, and those of
   `windows_core_pressure_materializes_the_oldest_owned_result_and_retries`
   (fn at `:496`) — with the honest note this repository requires: the rule they
   test was changed by a recorded owner ruling, not to make a check pass. The
@@ -1591,6 +1692,21 @@ completion lowering when the implementation actualizes the window"
 (`spec/kernel-spec.md:1983`). Park on miss is a completion lowering. Loan
 retention until `loan-released(path)` is unchanged: a parked stack holds its
 borrows exactly as a blocked thread does today (`spec/kernel-spec.md:1983`).
+
+**DONE is the `loan-released` point**, which has to be said because §7 deletes
+the milestones. The four are already one product today — `RESULT_READY`,
+`PAYLOAD_RELEASED`, `RESOURCE_RELEASED` and `TERMINAL` as
+`WF_COMPLETION_OWNERSHIP_COMPLETE` (`contract.h:35-44`) — and DONE *is* that
+product: a drain stores DONE only when the target is finished with every
+referent of the call, so none stores DONE while the target still holds the
+buffer or the path. That matters more, not less, after §5 spends [EFF-5]'s
+permission to drop the path copy, because the adapter now retains the writer's
+referent where it retained a copy. The record in a frame is not the exposure the
+same sentence forbids, either: what it forbids is target-private protocol state
+"exposed as ordinary shared Whitefoot storage" (`spec/kernel-spec.md:1456`), and
+the record is an opaque block no source form can name, address, read, or alias,
+holding no Whitefoot place. The frame is where its bytes live, not a way to
+observe them.
 
 No fiber unwinding support is needed, and the specification has supported that
 more strongly since v0.40 than v0.39 did. The `claim` statement and its runtime
@@ -1734,15 +1850,13 @@ corrupt a deque.
   no-core twin: a program with neither
   predicate runs today's `wf__floor_run` unchanged and never parks.
 
-- S18. Record exhaustion is unreachable by sizing, and this walks the bound
-  rather than the refusal. Every stack in the pool submits its full window of
-  operations and none has completed: the outstanding count is the window times
-  the stack count, which is what §5 sizes the records from, so the last claim
-  still succeeds. The schedule that would reach a refusal is the one to state
-  and to check cannot arise: a stack holding more than the window outstanding,
-  or a submission made by something that is not a stack of the pool. Neither
-  exists — the window is the emitter's own bound (`bridge.c:857`) and every
-  submission is made by a running stack.
+- S18. A group of N reads holds N records in one frame. The emitter walks the
+  publish queue once and joins each completion member where it sits
+  (`parallel.rs:631-637`), so all N are outstanding together, each owning its own
+  block, and a nested group adds its own N one frame up. Nothing is claimed, so
+  what this walks is that every record's address stays valid to its join, which
+  the join's placement before any read and any exit edge gives
+  (`parallel.rs:619-623`).
 - S19. Two stacks of one thread park on two different events that complete
   in the opposite order. Each resumes independently.
 - S20. A `may-suspend` inline member that never actually misses (the
@@ -1757,9 +1871,9 @@ corrupt a deque.
   NOTIFIED and the cancel must consume it rather than abort. The stack must run
   exactly once and never be enqueued. Then release the slot and acquire it again
   on the same lane, checking that the waiter field the cancel cleared
-  (§6) leaves the next publisher nothing stale to name. I/O twin:
-  `wf_completion_depend` answers ALREADY_READY, having already called ready
-  itself (`runtime.c:817-830`).
+  (§6) leaves the next publisher nothing stale to name. The I/O twin is the
+  same walk with the drain in the thief's place, on the same two fields of the
+  same kind of record (§5).
 - S22. A crossed pair on the exhausted path: two stacks resumed on foreign
   threads, each joining a hand-out on the other's home lane, with no free stack
   and nothing READY. Walked to the end under §2's fourth line: both targets are
@@ -1798,7 +1912,7 @@ to it. The list below is derived from §5 and §6's own state diagram and from
 
 **The gate is not "these tests pass". The gate is that the core is enumerable
 and the enumeration passes.** Concretely: the protocol core compiles against a
-replacement primitives header — the eight primitives of §7.1 and nothing
+replacement primitives header — the seven primitives of §7.1 and nothing
 else — inside a cargo test; a controlled scheduler in
 that test enumerates *every* interleaving of those primitive operations for
 bounded configurations; and every item below is checked as an invariant at
@@ -1901,17 +2015,17 @@ resume and loses no wake.
 2. SUSPENDING to SUSPENDED, committed on the target stack after the switch and
    never before it. Kind A with two stacks; the assertion is that the commit is
    observed after the switch, which is what makes the stack safe to take.
-3. SUSPENDED to READY with an enqueue, from each of the two event sources §6
-   names: a compute DONE store and a completion drain. Kind B, one per source.
+3. SUSPENDED to READY with an enqueue. One transition, not two that resemble
+   each other: the compute publisher and the drain store DONE and load the
+   waiter of the same record (§5, §6). Kind B, one per side.
 4. READY to RUNNING when a thread switches to it, including the case where the
    resuming thread is not the parking thread.  Kind B.
 5. SUSPENDING to NOTIFIED and NOTIFIED to READY at commit, with the commit
    enqueueing the stack exactly once. Kind C; this
    is S7, and Kind B cannot place the event inside the window reliably.
-6. SUSPENDING to RUNNING by cancel, when step 3 finds the target already
-   satisfied. Kind A on the I/O arm, where `wf_completion_depend` — primitive 8
-   — answers ALREADY_READY deterministically
-   (`runtime.c:817-830`), having already published the stack itself (`:828-830`).
+6. SUSPENDING to RUNNING by cancel, when step 3 finds the record already DONE.
+   Kind A, with the completion drained, or the compute target finished, before
+   the join runs, so the re-read is deterministic.
 7. NOTIFIED to RUNNING by cancel, consuming the notification. Kind C; this is
    the arm the ported code aborts on (`writer_scheduler.c:183-194`) and the one
    widening §7 records, so a test that never reaches it leaves the widening
@@ -1933,13 +2047,9 @@ resume and loses no wake.
 10. A stack is linked into the ready queue at most once: **exactly one of the
     two transitions into READY enqueues**, with both arms reached. That is §6's property, and it is stated as a
     property rather than as a race on purpose. There is exactly one publisher
-    per registration in the tree this design keeps — the drain clears
-    `dependent_frame` under the slot's publication lock before it calls ready
-    (`runtime.c:630-635` into `:652-653`), `wf_completion_depend` refuses a
-    second registration (`:811-814`) and on the already-satisfied arm calls
-    ready itself without storing a frame (`:828-830`), the slot reset clears
-    both fields (`:883-885`), and `wf__par_execute` stores DONE once and loads
-    the waiter once (`par_runtime.c:455-463`) — so an item that asked the
+    per record: the kernel delivers a completion once, and the drain that
+    receives it stores DONE and loads the waiter once, which is
+    `wf__par_execute`'s own pair (`par_runtime.c:455-463`) — so an item that asked the
     enumerator to reach two publishers racing for one stack would be asking it
     to reach a state the design forbids, and the way an unreachable gate item
     gets satisfied is by adding the path that reaches it. Kind C for the
@@ -1956,7 +2066,7 @@ S2   Kind A, pool >= 2          I1, I2    S14  Kind A                     —
 S3   Kind B                     I1        S15  Kind B, two consumers      —
 S4   Kind B                     I2        S16  Kind B                     I2
 S5   Kind A                     I1        S17  Kind B + link checks       —
-S6   Kind B                     —         S18  Kind A, sizing bound       —
+S6   Kind B                     —         S18  Kind A, N in one frame     —
 S7   Kind C (group A item 5)    —         S19  Kind B                     —
 S8   Kind B                     —         S20  Kind A                     —
 S9   Kind B, slots exhausted    I4        S21  Kind C                     —
@@ -1969,11 +2079,11 @@ A dash means the schedule checks no invariant of I1 to I4 and checks something
 else the section names: S6 the wake bar, S8 the floor's single record, S10a the
 equality with today's behaviour, S13 cleanup on the resuming thread, S15 that
 two consumers of one READY stack are serialized by the core's mutex and no stack
-is resumed twice, S18 the record sizing bound, S20 the
+is resumed twice, S18 the frame's record set, S20 the
 no-miss fast path, and S7, S14, S17, S19, S21 the park protocol.
 
 **Group C — the five the owner named, because a single ordinary run does not
-reach them, and eight more the review rounds added (items 16 to 23).**
+reach them, and nine more the review rounds added (items 16 to 24).**
 
 11. The fourth line's two arms, each run at §5's floor — two stacks with one
     thread, three with two — so exhaustion is reached deterministically rather
@@ -2028,20 +2138,16 @@ reach them, and eight more the review rounds added (items 16 to 23).**
     §6 distinguishes: a post before the capture is caught only by the status
     test inside the capture-to-park window, and a post after it is caught by
     the wake. Enumerator, over the configurations above.
-17. Target progress as a nondeterministic operation.
-    Wherever the core calls primitive 7, the
-    enumerator may deliver any subset of the registered completions — each
-    publishing its waiter READY through the drain's own transition — may report
-    progress or none, and may block: the bounded target pass executes a queued
-    host `open` or `close` inline (`bridge.c:198-201` into
-    `wf_file_adapter_progress`, `file_adapter.c:1135-1149`, whose
-    `wf_file_run_work` at `:731-742` reaches the host call at `:196-203` and
-    `:273`), so a model in which primitive 7 always returns promptly is a model
-    of something the runtime is not. That is strictly more
-    schedules than a host produces, which is the right direction for a gate;
-    the item is that every §11 invariant still holds under all of them.
-18. The stack free list with two poppers and two pushers.
-    Group A item 9 models the *lane slot* list,
+17. Target progress as a nondeterministic operation. Wherever the core calls
+    primitive 7 the enumerator may deliver any subset of the outstanding
+    completions — each storing DONE into its record and publishing its waiter —
+    may report progress or none, and may block, because the bounded pass runs a
+    host call inline (§7.1's anchors). A model in which it always returns
+    promptly is a model of something the runtime is not. That is strictly more
+    schedules than a host produces, the right direction for a gate; the item is
+    that every §11 invariant holds under all of them.
+18. The stack free list with two poppers and two pushers. Group A item 9
+    models the *lane slot* list,
     whose single popper makes its constituent-operation modelling sound; this
     one is many-producer many-consumer, and the assertion is that no stack is
     ever held by two threads and none is lost. Under the folded answer the list
@@ -2051,15 +2157,15 @@ reach them, and eight more the review rounds added (items 16 to 23).**
     reach is the one §5 and §6 place *after* the switch, issued from the stack
     switched to: a push scheduled before the switch is the defect this item
     exists to catch, because it offers a stack a thread is still running on.
-19. Completion registration as a nondeterministic operation. Wherever the core
-    calls primitive 8, the
-    enumerator may answer REGISTERED or ALREADY_READY, and on the second answer
-    it must perform the core's own ready publication for the registering stack
-    *before* the answer is returned, which is what `wf_completion_depend` does
-    at `runtime.c:828-830`. Both answers must be reachable at every registration
-    point, because that is what puts §6's step 3 cancel arm and its NOTIFIED
-    widening under the enumeration rather than in prose; a duplicate
-    registration on one record must be refused (`runtime.c:811-814`).
+19. The record's protocol, enumerated **once** for both kinds. A compute slot
+    and an I/O record are the same object (§5), so the enumerator models one
+    publisher-and-waiter pair — DONE stored then the waiter loaded, against the
+    waiter stored then the state re-read (`par_runtime.c:448-463`, `:496-505`) —
+    and reaches it from both sides, `wf__par_execute` and a completion delivered
+    inside primitive 7. Two models would be the defect this item prevents: the
+    arm not enumerated is the arm whose interleavings are unchecked. Both step 3
+    outcomes must be reachable from each side, which is what puts §6's cancel arm
+    and its NOTIFIED widening under the enumeration rather than in prose.
 20. No reachable state has every thread asleep with a non-empty ready list. A
     state assertion checked at every step, beside
     item 16's status assertion. It is expected to hold by construction once the
@@ -2078,13 +2184,23 @@ reach them, and eight more the review rounds added (items 16 to 23).**
     orderings §5's argument rules out by construction, a park before the pool
     starts and a park by an already-started worker during the create loop, so
     that the assertion is a check rather than a restatement of the reasoning.
-22. The sizing bound: no reachable state has a submission refused for want of a
-    record, a ring entry, or an adapter queue slot. Checked at every step over
-    the swept configurations with the records sized as §5 sizes them, and
-    checked the other way too — with the records deliberately set one below the
-    bound, the enumerator must reach a refusal, so the item is testing the bound
-    and not the absence of a path to it.
-23. Replay. The controlled scheduler this section already requires is also the
+22. One terminal completion per submission, and the record alive for it (§7).
+    The enumerator counts terminal publications per accepted submission and
+    asserts it is exactly one, with the resubmission arm reached so that several
+    deliveries for one record are walked and only one is terminal
+    (`linux_io_uring.c:1029-1040`), and with a submission that produces no
+    kernel completion reached so the count is never zero. Beside it a compiler
+    test asserts the lifetime half: no terminator is emitted while a completion
+    is outstanding (`emitter.rs:1732-1740`). This is what replaces the token's
+    range, stride and generation checks, so an item that never reaches the
+    resubmission arm leaves the replacement unexercised.
+23. The record's layout agreement (§8). A test asserts that the block the
+    emitter reserves matches the runtime's `sizeof` and `_Alignof` for the
+    record, and that the C `_Static_assert` fails the build when they disagree.
+    The enumerator cannot cover this: it compiles the core against a replacement
+    header and never touches the real layout, which is why the item is a
+    compiler test beside the enumeration rather than inside it.
+24. Replay. The controlled scheduler this section already requires is also the
     replay harness: it records the external inputs of a run — the data and the
     completion order — and replays them. The guarantee to check is **with
     identical external inputs, including completion order, the internal
@@ -2117,14 +2233,12 @@ reach them, and eight more the review rounds added (items 16 to 23).**
   the bar is that park on miss is not slower than the pipeline on the pipeline's
   own program and beats nested helping on §0's three shapes.
 - The smallest stack count at which the pool stops refusing for the corpus
-  programs, and what refusal costs below it. The stack count is the one startup
-  setting left (§5), and the record count now follows it rather than bounding
-  it: records are the window times the stack count (§5), so the memory this
-  design asks for is `stacks × 32` records at today's window
-  (`bridge.c:857`) — 96 records at the sweep's largest configuration of three
-  stacks, against the 64 fixed records the tree has today (`bridge.c:42-44`).
-  Measure the record memory at the corpus stack counts, because it is the
-  price of having no refusal path at all.
+  programs, and what refusal costs below it — the one startup setting left (§5).
+- Record memory, now per frame rather than per pool (§5). Run the stack ledger
+  over `tests/programs` before and after, and report the growth per frame that
+  holds a group and the growth of the deepest chain bound, which is what a stack
+  is sized against. That growth replaces today's fixed 64 records
+  (`bridge.c:42-44`) and is the price of having no refusal path.
 - The ledger's chain bound per hand-out entry across `tests/programs`, to
   see how many classes real programs would need — input to §5's later step,
   not to the first implementation.
@@ -2133,7 +2247,14 @@ reach them, and eight more the review rounds added (items 16 to 23).**
 
 - Any change to which statements or iterations may overlap.
 - Any writer-visible task, future, callback, or scheduling marker.
-- Growth of completion records beyond what §13 admission already bounds.
+- A completion-record pool of any shape. The record lives in the submitting
+  frame (§5), so there is no pool to size, grow, refuse from, or index with a
+  token, and reintroducing one reintroduces the bound this review found false.
+- Moving compute hand-out slots into frames. Only the I/O record moves; the
+  compute slot stays the lane's with decision 6's refusal (§1), because a
+  refused hand-out runs the call inline on the owner and costs nothing, where a
+  refused I/O operation has no inline arm to fall to. Giving compute the same
+  treatment is a possible later simplification and is not taken here.
 - Growth of anything at run time: the stack count, the slot capacity and the
   deque capacity are all fixed at start and refuse rather than grow.
 - The direct family in emitted code, and any per-operation blocking fallback.

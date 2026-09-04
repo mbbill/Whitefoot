@@ -372,7 +372,7 @@
         "Ten thousand small stacks without guard pages",
         "Fixed pool sized by a startup setting; guard pages affordable"
       ],
-      "decision": "The ten-thousand figure is removed. Parked-on-I/O stacks are bounded by the 64 completion records; the stack count is a startup setting (like WF_WORKERS), never grown, per the owner's no-heap constraint. Section 11's third measurement becomes: the smallest stack count at which the pool stops refusing for the corpus programs, and what refusal costs below it. The capacity constant moves out of writer_scheduler.h when that unit is retired. AMENDED 2026-09-04 by decision 55: the completion-record count is no longer the fixed 64 but a bound sized from the stack count and the per-stack in-flight window, so parked-on-I/O stacks are bounded by the stack count; the stack count remains the startup setting of decision 40.",
+      "decision": "The ten-thousand figure is removed. Parked-on-I/O stacks are bounded by the 64 completion records; the stack count is a startup setting (like WF_WORKERS), never grown, per the owner's no-heap constraint. Section 11's third measurement becomes: the smallest stack count at which the pool stops refusing for the corpus programs, and what refusal costs below it. The capacity constant moves out of writer_scheduler.h when that unit is retired. AMENDED 2026-09-04 by decision 55: the completion-record count is no longer the fixed 64 but a bound sized from the stack count and the per-stack in-flight window, so parked-on-I/O stacks are bounded by the stack count; the stack count remains the startup setting of decision 40. SUPERSEDED on the record count, 2026-09-04, by decision 56: there is no record pool; the ceiling on parked stacks is the stack count.",
       "evidence": [
         "research/investigations/io-model/PARK-ON-MISS.md:178-182",
         "research/investigations/io-model/PARK-ON-MISS.md:344-346",
@@ -788,7 +788,7 @@
         "Treat registration as core-internal",
         "An eighth primitive, completion registration"
       ],
-      "decision": "Completion registration is the eighth primitive: wf_completion_depend, modelled in section 11 item 19 as a registration that may answer REGISTERED or ALREADY_READY, with the reentry (ready called on the registering stack) ordered before the answer.",
+      "decision": "Completion registration is the eighth primitive: wf_completion_depend, modelled in section 11 item 19 as a registration that may answer REGISTERED or ALREADY_READY, with the reentry (ready called on the registering stack) ordered before the answer. SUPERSEDED 2026-09-04 by decision 56: wf_completion_depend and its ALREADY_READY arm are deleted; the I/O join uses the protocol of primitive 1 exactly as the compute join does, so primitive 8 is removed and the closed set is seven.",
       "evidence": [
         "compiler/src/backend/completion/runtime.c:784-833",
         "compiler/src/backend/completion/runtime.c:828-830"
@@ -1022,7 +1022,7 @@
         "Refusal parks on a capacity-waiter list (rejected under T4 and decision 30)",
         "Runtime-own resources sized from the bound on their use so refusal is unreachable; one lowering; replay for reproduction"
       ],
-      "decision": "Owner ruling, 2026-09-04. (1) The runtime's own resources are sized from the bound on their use, the same principle as stacks >= threads + 1: completion records >= (the largest in-flight count one stack can reach, which the emitter fixes: today the window, WF_BRIDGE_OPERATION_CAPACITY / 2 at bridge.c:857) x the stack count; ring depth >= records, so a ring cannot fill while every submission holds a record; the operation record holds the loaned path pointer rather than a copy, which the specification already permits (spec/kernel-spec.md:1456, 'Submission may retain only the loans recorded for that call'), so the 1024-byte demotion (file_adapter.h:65, bridge.c:1049-1059) disappears. The runtime therefore never refuses itself; its refusal paths are unreachable by construction and are deleted, on Windows included (the capacity-await loop and the emitter's retry fork are dead code; the BOUND-1 policy of zero blocking fallback stands and decision 46's policy change is withdrawn). (2) Emitted code has one lowering for every I/O operation: submit, then join; the direct family (qualification.rs:233-291 dispatch, the inline arm in completion.rs) is removed from emitted code. Operations without a kernel completion form are executed inside the runtime's engine (the target pass on a scheduler thread, or an adapter's execution thread on targets without a kernel completion source) and publish a completion like any other; that is the runtime's engine under the scheduler loop's rules, not a program path. (3) Reproduction: completion order is an input; the sequential world of constitution T3 is realized by replaying recorded inputs (data and completion order) under the controlled scheduler section 11 already requires, the same harness as the enumeration; the plan states the guarantee as 'with identical external inputs, including completion order, the internal execution is identical', never as unqualified determinism. (4) Honest target exhaustion (a limit changed outside the program) remains the operation's typed error under T4; compute slot refusal (decision 6) is unchanged because running the call inline is compute on the owner and blocks no thread. Decisions 30, 39 and 46 are superseded on their refusal paths; decision 20's record count becomes the sized bound.",
+      "decision": "Owner ruling, 2026-09-04. (1) The runtime's own resources are sized from the bound on their use, the same principle as stacks >= threads + 1: completion records >= (the largest in-flight count one stack can reach, which the emitter fixes: today the window, WF_BRIDGE_OPERATION_CAPACITY / 2 at bridge.c:857) x the stack count; ring depth >= records, so a ring cannot fill while every submission holds a record; the operation record holds the loaned path pointer rather than a copy, which the specification already permits (spec/kernel-spec.md:1456, 'Submission may retain only the loans recorded for that call'), so the 1024-byte demotion (file_adapter.h:65, bridge.c:1049-1059) disappears. The runtime therefore never refuses itself; its refusal paths are unreachable by construction and are deleted, on Windows included (the capacity-await loop and the emitter's retry fork are dead code; the BOUND-1 policy of zero blocking fallback stands and decision 46's policy change is withdrawn). (2) Emitted code has one lowering for every I/O operation: submit, then join; the direct family (qualification.rs:233-291 dispatch, the inline arm in completion.rs) is removed from emitted code. Operations without a kernel completion form are executed inside the runtime's engine (the target pass on a scheduler thread, or an adapter's execution thread on targets without a kernel completion source) and publish a completion like any other; that is the runtime's engine under the scheduler loop's rules, not a program path. (3) Reproduction: completion order is an input; the sequential world of constitution T3 is realized by replaying recorded inputs (data and completion order) under the controlled scheduler section 11 already requires, the same harness as the enumeration; the plan states the guarantee as 'with identical external inputs, including completion order, the internal execution is identical', never as unqualified determinism. (4) Honest target exhaustion (a limit changed outside the program) remains the operation's typed error under T4; compute slot refusal (decision 6) is unchanged because running the call inline is compute on the owner and blocks no thread. Decisions 30, 39 and 46 are superseded on their refusal paths; decision 20's record count becomes the sized bound. AMENDED 2026-09-04 by decision 56: the sizing rule for completion records is withdrawn (its window is a per-loop number, not a per-stack bound); the record now lives in the submitting frame and no record resource exists; the single lowering and the replay guarantee stand.",
       "evidence": [
         "compiler/src/backend/completion/bridge.c:857",
         "compiler/src/backend/completion/writer_scheduler.h:21",
@@ -1033,6 +1033,166 @@
         "compiler/src/backend/emitter/completion.rs:764-783",
         "spec/kernel-spec.md:1456",
         "docs/constitution.md (T3, T4)"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 56,
+      "title": "Decision 55's record bound is not a bound: a straight-line group holds one record per member and nesting sums across frames",
+      "issue_summary": "wf__completion_window is the staged pipeline's per-loop query (bridge.h:30-35, bridge.c:845-887), not a bound on one stack's outstanding operations. A straight-line [PAR-1] group holds one completion record per member until the group's join (parallel.rs:631-637) with N a source statement count (the corpus generates it at arbitrary N, tests/completion.rs:438-457), and nesting sums across live frames bounded only by recursion depth. Decision 55 had deleted every refusal path on that bound's strength.",
+      "alternatives_considered": [
+        "Capacity park: a stack that finds no record parks with a freed record as its wake (sound; a waiter list and an event source; keeps the 64-record ceiling)",
+        "The emitter caps members per group by batching (bounds a frame, not nesting depth)",
+        "The record lives in the submitting frame; the global slot array and everything that exists because records were pool objects are deleted"
+      ],
+      "decision": "Owner ruling, 2026-09-04: the record lives in the frame that submits the operation, and it is the same object as a compute hand-out slot, completed by the kernel instead of a thread. Why it is valid: the emitter places the group's join before any value is read and before any exit edge (parallel.rs:619-623), so the frame outlives every operation it submits, and a parked stack's memory stays in place, so the address is stable for the operation's life. Shape (the runtime owns the layout; the emitter reserves an opaque block of the runtime's stated size and alignment in the frame, as it does for the compute slot): an atomic state (PENDING or DONE), the waiter (a stack), the typed result (value and error code), the operation kind, and a platform block (the SQE arguments on Linux; OVERLAPPED on Windows; the intrusive execution-queue link on targets with adapter threads). Protocol: decision 26's sequentially consistent pair, the one the compute slot already uses (par_runtime.c:448-463): the drain, on any thread at step 4 or in target progress, stores DONE then loads the waiter and publishes it READY; the join loads the state, reads the result if DONE, otherwise registers the waiter and re-reads before it parks. Consequences: no slot array, no WF_COMPLETION_SLOT_CAPACITY, no token, no generation (the kernel delivers each completion exactly once and the join has consumed it before the frame reuses the block), no publication lock, no milestones, no dependent registration, no wf_completion_depend and its ALREADY_READY arm (section 7.1 primitive 8 collapses into the protocol of primitive 1), no claim, no capacity notification, no 256-byte result copy (read writes the program buffer directly; the record holds the loans of the buffer and the path until the join, spec/kernel-spec.md:1456), no refusal. The completion is mapped to the record by address (io_uring user_data; the IOCP OVERLAPPED pointer), no lookup. A group of N operations costs N records in its frame, which the stack ledger counts from the clang frame size, so the concurrency ceiling is the stack, which decision 20 later shrinks by proof. Ring backpressure is the engine's: a full submission queue is re-entered until the kernel consumes it; the completion queue is sized with IORING_SETUP_CQSIZE and relies on NODROP; adapter-thread targets queue pending records on an intrusive list through the records. Decision 55 sizing rule is replaced by this; its single lowering and replay guarantee stand. Decision 20 record-count bound and decision 41 primitive 8 are superseded accordingly.",
+      "evidence": [
+        "compiler/src/backend/completion/contract.h:57-60",
+        "compiler/src/backend/completion/contract.h:145-170",
+        "compiler/src/backend/completion/writer_scheduler.h:21",
+        "compiler/src/backend/completion/bridge.h:30-35",
+        "compiler/src/backend/completion/bridge.c:845-887",
+        "compiler/src/backend/emitter/parallel.rs:619-637",
+        "compiler/src/backend/tests/completion.rs:438-457",
+        "compiler/src/backend/par_runtime.c:185-207",
+        "compiler/src/backend/par_runtime.c:448-463",
+        "spec/kernel-spec.md:1456"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 57,
+      "title": "Section 8 counts six _direct symbols in a range that names five",
+      "issue_summary": "qualification.rs:233-291 names five direct symbols; the sixth, wf__completion_directory_next_direct (windows_runtime.c:1617), is emitted from emitter/system.rs:542 and :2735 (qualification.rs:1036 names wf__completion_file_status_direct).",
+      "alternatives_considered": [
+        "Leave",
+        "Fix"
+      ],
+      "decision": "Fixed in the decision-56 fold: the direct family is listed by name with both anchors.",
+      "evidence": [
+        "compiler/src/backend/emitter/qualification.rs:233-291",
+        "compiler/src/backend/emitter/system.rs:542",
+        "compiler/src/backend/emitter/system.rs:2735",
+        "compiler/src/backend/windows_runtime.c:1617"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 58,
+      "title": "The engine's own fixed per-operation pools survive the record's deletion",
+      "issue_summary": "WF_COMPLETION_SLOT_CAPACITY still sized the bridge's slot, queue and Linux entry arrays (bridge.c:42-44, :61, :63, :103) and the submission queue (linux_io_uring.c:217-232), each submit reserved an adapter entry answering WAIT_CAPACITY on exhaustion (linux_io_uring.c:425-450, :624-628), and the same constant sizes the Windows bridge arrays through WF_WINDOWS_BRIDGE_CAPACITY (windows_bridge.c:23, :44, :46, static assertions :29-36) with the identical reserve loop (windows_iocp.c:218-241), WAIT_CAPACITY answer (:263), capacity loop (windows_bridge.c:872) and window twin (:884).",
+      "alternatives_considered": [
+        "Keep the entry pools and size them",
+        "Delete the entry pools: the record is the entry"
+      ],
+      "decision": "The adapter entry pools are deleted on both platforms because the record is the entry: on Linux the SQE is built from the record straight into the ring; on Windows the OVERLAPPED is the record's platform block and there is no submission ring, so the Windows bridge arrays, their static assertions, reserve loop, WAIT_CAPACITY answer, capacity loop and window twin go with the POSIX ones. Ring depth is a throughput parameter, not a bound on in-flight operations; the tree uses no SQPOLL and already refuses a ring without NODROP (linux_io_uring.c:227-228); a full submission queue is flushed by the submit syscall itself, which is that call's own syscall and not a wait for an event; completion-queue overflow is absorbed by IORING_SETUP_CQSIZE plus NODROP. Lead ruling adopting the critic's Windows census.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:42-44",
+        "compiler/src/backend/completion/bridge.c:61-63",
+        "compiler/src/backend/completion/bridge.c:103",
+        "compiler/src/backend/completion/linux_io_uring.c:217-232",
+        "compiler/src/backend/completion/linux_io_uring.c:425-450",
+        "compiler/src/backend/completion/linux_io_uring.c:624-628",
+        "compiler/src/backend/completion/windows_bridge.c:23-46",
+        "compiler/src/backend/completion/windows_bridge.c:872",
+        "compiler/src/backend/completion/windows_bridge.c:884",
+        "compiler/src/backend/completion/windows_iocp.c:218-241",
+        "compiler/src/backend/completion/windows_iocp.c:263"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 59,
+      "title": "The drain's identity checks go with the token, and the plan did not say what makes a completion for a dead record impossible",
+      "issue_summary": "Token validation at linux_io_uring.c:1013-1022, windows_iocp.c:474-486 and runtime.c:429-437 is deleted with the token; the impossibility argument was not written.",
+      "alternatives_considered": [
+        "Keep a generation word in the record",
+        "State the impossibility"
+      ],
+      "decision": "Stated once: each submission produces exactly one terminal completion (the resubmission arm publishes nothing, linux_io_uring.c:1029-1040; the Windows immediate-failure arm publishes the one terminal, windows_iocp.c:462-471; the open-exhaustion twin at linux_io_uring.c:1041-1050 leaves with the FilePermit batch), and the frame cannot reuse or release the block before the join consumed that terminal, because emit_terminator joins every outstanding completion before any terminator (emitter.rs:1732-1740) and the driven pipeline result stays in the same frame.",
+      "evidence": [
+        "compiler/src/backend/completion/linux_io_uring.c:1013-1050",
+        "compiler/src/backend/completion/windows_iocp.c:462-486",
+        "compiler/src/backend/completion/runtime.c:429-437",
+        "compiler/src/backend/emitter.rs:1732-1740"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 60,
+      "title": "A submission that publishes nothing has no consumer once the direct family leaves emitted code",
+      "issue_summary": "wf_bridge_submit_file returned 0 without publishing (bridge.c:608-614, :651-652); the consumer was the deleted direct arm, so the join would park forever.",
+      "alternatives_considered": [
+        "Keep a return-0 path and a consumer",
+        "Every submit path ends in a published record"
+      ],
+      "decision": "Every submit path publishes: accepted by the kernel, or executed by the engine and published with an inline terminal (windows_iocp.c:462-471); a bridge that cannot initialize is a trusted-computing-base failure and terminates deterministically as the floor does. Lead ruling adopting the critic's correction: the clause 'a ring refused outright (bridge.c:608-610)' is deleted, because WF_IO_NO_NATIVE_RING routes to the POSIX adapter (bridge.c:261, :280), wf_bridge_ensure_file still succeeds, and the gate runs that configuration (compiler/Makefile:293-297).",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:261",
+        "compiler/src/backend/completion/bridge.c:280",
+        "compiler/src/backend/completion/bridge.c:608-614",
+        "compiler/src/backend/completion/bridge.c:651-652",
+        "compiler/src/backend/completion/windows_iocp.c:462-471",
+        "compiler/Makefile:293-297"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 61,
+      "title": "Nothing stated how the record's size and alignment reach the emitter",
+      "issue_summary": "The cited precedent (parallel.rs:472-479) crosses the other way and the token was an unasserted [2 x i64]; a short block is a frame overwrite.",
+      "alternatives_considered": [
+        "The ledger pass supplies the number (impossible: it runs clang on already-emitted LLVM, whitefootc.rs:282-310)",
+        "One completion-contract header constant with a C _Static_assert"
+      ],
+      "decision": "The record's size and alignment are one constant in the completion contract header, asserted on the C side with _Static_assert against the record layout and checked by a test that the emitted block matches; the ledger pass prices the block but cannot supply the number (section 11 item 23).",
+      "evidence": [
+        "compiler/src/bin/whitefootc.rs:282-310",
+        "compiler/src/backend/emitter/parallel.rs:472-479"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 62,
+      "title": "The staged pipeline's window query is computed from the deleted constant",
+      "issue_summary": "wf__completion_window (bridge.c:857, Windows twin windows_bridge.c:884) derived the window from the slot capacity.",
+      "alternatives_considered": [
+        "Keep a runtime query",
+        "An emitter depth choice"
+      ],
+      "decision": "The pipeline window is an emitter depth choice, not a resource-derived bound; both query sites go with the pools.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:857",
+        "compiler/src/backend/completion/windows_bridge.c:884"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 63,
+      "title": "Section 9 said loan retention until loan-released is unchanged while section 7 deletes the milestones",
+      "issue_summary": "The loan-released point was defined by a milestone the fold deleted.",
+      "alternatives_considered": [
+        "Keep a milestone",
+        "DONE is the loan-released point"
+      ],
+      "decision": "The record's DONE publication is the loan-released point; an opaque block in the frame is not [EFF-5] exposure of target-private state.",
+      "evidence": [
+        "spec/kernel-spec.md:1456"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 64,
+      "title": "Section 1's table said a compute hand-out's record is a slot in the caller's frame",
+      "issue_summary": "The compute slot is a lane-pool object (par_runtime.c:184-207, :757-780), not frame storage.",
+      "alternatives_considered": [
+        "Move compute slots into frames too",
+        "One protocol over two storages"
+      ],
+      "decision": "The I/O record and the compute slot share the state-and-waiter protocol, not the storage; the compute slot stays in the lane pool with decision 6's refusal because an inline run costs nothing; section 13 records that moving compute slots into frames is a possible later simplification, not taken.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:184-207",
+        "compiler/src/backend/par_runtime.c:757-780"
       ],
       "resolved_at_round": 1
     }
