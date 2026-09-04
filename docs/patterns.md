@@ -8,9 +8,10 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.42 guidance, including the one canonical
-region spelling [FORM-8] activates, the comparison symbols and call-site `::`
-delimiter introduced by v0.41, the source-proof forms introduced
+This document carries active v0.43 guidance, including the loop-body region
+block and the associative [ENT-6] join v0.43 activates, the one canonical
+region spelling introduced by [FORM-8] in v0.42, the comparison symbols and
+call-site `::` delimiter introduced by v0.41, the source-proof forms introduced
 by v0.40, the unified-state
 completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
@@ -874,8 +875,8 @@ Problem: a borrow taken inside a loop body must die with the iteration, and the
 reflex — carried over from every earlier version — is to wrap the body in a
 `region` block so that it does.
 
-Pattern: write the borrow bare. Under the v0.43 candidate every `loop_stmt` and
-`for_stmt` body is itself a region block: it introduces one unnamed region whose
+Pattern: write the borrow bare. Under v0.43 every `loop_stmt` and `for_stmt`
+body is itself a region block: it introduces one unnamed region whose
 block is that body, so a borrow written directly in the body takes that region,
 dies with the iteration, and lets the outer binding be written again before the
 next one [OWN-11]. That is exactly the guarantee the wrapper used to buy, and it
@@ -923,7 +924,7 @@ for @append (i in 0_u64..count) {
 Decide by reading the loop body alone: if the body writes nothing beside the
 block, the block is the body's own region under a second name and must go.
 
-Current value: mechanical. The corpus rewrite for the candidate removed four
+Current value: mechanical. The corpus rewrite for v0.43 removed four
 such blocks across `tests/` and touched nothing else, because most existing
 blocks were already narrower than their bodies.
 
