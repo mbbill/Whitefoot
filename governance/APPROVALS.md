@@ -2708,3 +2708,31 @@ ACTIVE-SPEC: v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6
   program's behaviour, published diagnostics, or exit codes change, and the
   integration tests that execute both still pass. `docs/patterns.md` carries
   the writer form as P21 and corrects P16's define-per-measure spelling.
+
+## 2026-09-04 — merge-time approval content: activate v0.44 (the fact machinery: contract vocabulary, operand denotation, and publication; numbered rules +4/-0 relative to v0.43, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.44 at exact SHA-256
+  `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`.
+  It supersedes active v0.43 at SHA-256
+  `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.43.md`. The candidate that preceded activation was
+  installed on `main` by the record above of 2026-09-04: it declared
+  `CANDIDATE v0.44 supersedes v0.43` and hashed to
+  `1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`;
+  activation flipped that status line to `ACTIVE v0.44` and changed no other
+  byte, so the META-5 delta declaration, the four added rules ([MSR-3],
+  [MSR-5], [CALL-4], [CALL-6]; numbered rules +4/-0, 136 remain; grammar
+  productions +1, `clause_expr`), the amendments in place to [GRAM-6],
+  [FN-8], [FN-9], [ENT-2], [ENT-3], and [ENT-5], and the conformance boundary
+  recorded there are the content activated here. This record adds the
+  `ACTIVE-SPEC:` chain line below and the archive of the outgoing bytes, and
+  nothing else.
+- CONFORMANCE BOUNDARY: this merge adds, modifies, deletes, or renames no
+  conformance case, manifest row, adapter, runner, or collection wiring; the
+  boundary recorded with the candidate on 2026-09-04 is unchanged.
+ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951

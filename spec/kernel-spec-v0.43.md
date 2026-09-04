@@ -1,15 +1,13 @@
-# Kernel Specification v0.44
+# Kernel Specification v0.43
 
-Status: ACTIVE v0.44
+Status: ACTIVE v0.43
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +4/-0 (136 remain), being [MSR-3], [MSR-5], [CALL-4] and [CALL-6]; grammar productions +1/-0 (84 remain), being `clause_expr`; changed productions 2, being `requires_clause` and `ensures_clause`, each of which takes a `clause_expr` where it took an `expr`; unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. [ENT-3] gains one enumerated source, S13; no source label is retired or reused. [GRAM-6], [FN-8], [FN-9], [ENT-2], [ENT-3] and [ENT-5] are amended; no rule id is retired.
-This candidate lands the fact machinery: what a contract may be written over, and where a declared relation is computed and established.
-The first amendment, [MSR-5], widens the contract-clause operand set. A `requires` and an `ensures` take a `clause_expr` whose operands are an `atom`, a `call`, or a `construct`, so a measure of a place is an operand on either side of the comparison and `ensures len(rest) >= len(out);` is a written clause where it was a [GRAM-5] parse rejection. The judgment over the widened set is the [OP-5] condition [FN-8] and [FN-9] already apply; no route, fact source, or proof authority is added. The measure formers are table data with one row in this version, `len(P)`, admitted exactly where [ENT-2] clause (b) admits a length term.
-The second, [MSR-3], states one denotation per operand position, keyed on the parameter's mode, in one table rather than distributed over three rules. An `own` operand read at a caller denotes that call's **call datum** — a compiler-owned immutable term with empty support — which is what makes a relation naming a consumed operand's measure mean what it reads as at the caller. A `&uniq` parameter's measure is inadmissible in a source-declared `ensures` and is a hard error citing MSR-3, because that parameter is the one position from which a callee could leave a caller holding a measure of a value the callee replaced.
-The third, [CALL-4], states the contract vocabulary over the result: a `fn_decl` declares exactly one result, so a route names no ordinal and no ordinal binder is written, and the destinations stay [ENT-3.S12]'s closed list.
-The fourth, [CALL-6], states publication once — the substitution, the point at which a relation is instantiated, the point at which it is established, the destination, and the support — and adds [ENT-3]'s source S13, which mints each `own` operand's call datum at the call's pre-transfer point. A routed relation is instantiated at the call and restricted to its arm rather than deferred to it, so an event between the call and the arm kills what it removes. And a `contract_block` whose published relations are contradictory at their establishment point is a hard error at the `fn_decl`: at a contradictory point every relation and both signs of every goal are derivable, so an inconsistent contract is not one wrong fact at a caller but every fact at every caller.
-Selection ground: evidence-selected. The operand widening is selected by probe `q7` of the containers-and-resources design session, which is a [GRAM-5] parse rejection of `ensures len(kept) >= 1_u64;` on the build of record, and by the same file's measurement that the surviving spelling costs one `contract_define` per measure named. The call datum and the two establishment points are selected by that design's seventh falsifier round, which reached memory three times through a published relation computed at one program point and used at another, and once through a relation set that was contradictory and therefore discharged every goal a caller submitted; the two BREAK programs and their refutations are recorded in `research/investigations/containers-and-resources/DESIGN.md` §3.K.1, §3.K.6 and §6.11. Prior selection ground for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
+META-5 delta declaration: numbered rules +0/-0 (132 remain); grammar productions +0/-0 (83 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. No rule id is added or retired; [OWN-3], [OWN-11], [FORM-8], and [ENT-6] are amended. No production is added, removed, or given a new decision: neither amendment adds a spelling and the first deletes one.
+This candidate carries two independent amendments.
+The first makes every loop body a region block. The body of a `loop_stmt` or a `for_stmt` introduces one unnamed local region whose block is that body, so a `borrow_expr` written in the body with no `region_stmt` between it and the loop takes that region and is written bare, exactly as it would take an enclosing `region_stmt`'s. [OWN-11]'s guarantee is unchanged and now needs no writer ceremony to obtain: a borrow formed in a loop body ends with the iteration, so outer bindings may be written again between iterations. Because that region exists, a `region_stmt` that is a loop body's only statement has exactly that body as its block and is a second spelling of one region, which is now a hard error citing [FORM-8]. A `region_stmt` the body writes another statement beside has a strictly smaller block that [OWN-6]'s statement-scope judgment tells apart from the body's own, is not a second spelling, and stays legal. Every liveness, outlives, exclusivity, storage-duration, provenance, effect, and confinement judgment is unchanged; the accepted program set changes only by removing the redundant spelling and admitting the bare one.
+The second repairs [ENT-6]'s control-flow join, which was not associative: a delta atom an earlier join minted counted as an ordinary nonconstant term at the next one, so two nested joins lost a binding image one flat join over the same branches kept, and a three-arm demux was accepted written as a `match` and rejected written as nested `if`/`else`. Each input image is now normalized before the comparison by folding every earlier delta atom back into the constant interval it stands for, so nested joins reach exactly the flat join's image. The rule stays source-structural, deterministic, and decidable from the rule alone; delta atoms remain ordinary shared atoms between joins, so correlations formed over them survive; and the change only adds images, so every program the previous version accepted is still accepted.
+Selection ground: minimality-selected under [FORM-1] and the owner ruling of record (2026-09-03) that one semantics has one spelling. [OWN-11] already gives every loop body the extent a region block over that body gives, so writing that block restates what the loop already says. The line falls where the language can still tell two blocks apart: a block that is the body has the body's own extent, while a block the body writes another statement beside is a strictly smaller one [OWN-6] judges differently. The v0.42 ground for the region-spelling partition is unchanged and carried forward: a written region at a position the surrounding text already fixes is a second spelling, and a written region that relates nothing carries no information a reader can act on. Both rules are decidable from the owning text alone — this one from the loop body alone — so a writer chooses the legal spelling without a checker verdict. The [ENT-6] join repair is not selected under [FORM-1] at all: it is a defect fix under the owner ruling of record (2026-09-03) that a source-structural image rule must not make acceptance depend on the shape of a control join, and the corrected rule is the associative one the old text already intended. Prior selection ground for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as v0.41 recorded it, in `research/investigations/spelling-relief/SWEEP.md`, `governance/spec-evolution/comparison-symbols-v041-candidate.md`, `research/investigations/io-model/FIRST-PRINCIPLES.md`, and `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`.
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
 R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
@@ -223,8 +221,8 @@ program_kind := "command"
 result_binding:= IDENT ":" rtype
 contract_block:= "contract" "{" contract_define* requires_clause* ensures_clause* "}"
 contract_define:= "define" IDENT "=" expr ";"
-requires_clause:= "requires" clause_expr ";"
-ensures_clause:= "ensures" ("when" result_route ":")? clause_expr ";"
+requires_clause:= "requires" expr ";"
+ensures_clause:= "ensures" ("when" result_route ":")? expr ";"
 result_route:= TYPEID "(" fieldbind ")"
 contract_decl:= "contract" TYPEID generics? "{" doc? fn_sig* law* "}"
 fn_sig       := "fn" IDENT region_params? "(" param_list? ")" "->" result_binding effects ";"
@@ -315,8 +313,6 @@ fieldinit_list := fieldinit ("," fieldinit)*
 fieldinit      := IDENT ":" atom
 borrow_expr    := "&" REGIONID? place | "&uniq" REGIONID? place
 atom_list      := atom ("," atom)*
-clause_expr    := (atom | call | construct)
-                  ((infix_op | compare_op) (atom | call | construct))?
 place          := pbase psuffix*
 pbase          := IDENT | "deref" "(" place ")"
 psuffix        := "." IDENT | "[" atom "]"
@@ -332,8 +328,6 @@ An `else` whose block contains exactly one `if_stmt` and nothing else is a hard 
 A conditional value is a `let`-initializer `match` or `if` [GRAM-7, GIVE-1].
 The only iteration forms are the ordinary `loop` plus `break`, and the counted ascending half-open `for` form whose complete semantics are [TYPE-5, TYPE-6, OWN-11, FN-1, ENT-2, ENT-3, ENT-5]; there is no step, reverse, iterator, or `continue` form.
 The subscript suffix is a place form (its sole home); bounds semantics are [OP-4].
-A `clause_expr` is the contract-clause shape and its sole home is a `requires_clause` and an `ensures_clause` [GRAM-2]: one operand, or two operands around one operator, where an operand is an `atom`, a `call`, or a `construct` and the operator is an `infix_op` or a `compare_op`.
-It differs from an `expr` in exactly one way — a `call` and a `construct` may stand where an `expr` admits only an `atom` — which is what lets a contract clause name a measure of a place on either side of its comparison [MSR-5]; every other position keeps [GRAM-9]'s one-operation-over-two-atoms shape and a nested call is still bound by its own `let`.
 
 [GRAM-7] `match` and `if` each have one source body shape and two distinct core-tree node kinds: `match_stmt`/`if_stmt` for statements, `value_match`/`value_if` for a `let` initializer.
 The pairs never compete at one grammar decision: the statement forms begin at the statement boundary, the value forms only after the complete `let IDENT =` prefix, so the parser decides from source position alone, without type, name-resolution, or checker context.
@@ -1314,7 +1308,7 @@ User and system calls, construction, move, borrow, subscript, mutation, control 
 The corresponding `.defined` queries are total and admissible.
 Each definition produces an own copy value, follows ordinary typing and no-shadowing, and is erased by recursive alpha-expansion into every later clause; no definition is evaluated, snapshotted, lowered, or visible in the body.
 
-Each requires expression is one `clause_expr` [GRAM-5, MSR-5], has exact mode and type `own Bool` under [OP-5], and independently forms one finite typed GoalTemplate after definition expansion.
+Each requires expression has exact mode and type `own Bool` under [OP-5] and independently forms one finite typed GoalTemplate after definition expansion.
 A formal datum keeps its zero-based parameter ordinal and field or `deref` projections; named consts, literals, selected operation rows, written arguments after substitution, result types, and operand order retain their existing identities.
 Definition spelling, sharing, and NodePaths are absent after expansion.
 The requirement occurrence is `(concrete function instance, requires_clause NodePath)` and is outside predicate equality.
@@ -1360,8 +1354,7 @@ Borrow-mode, unit, float, aggregate, nested-payload, whole-Result, non-Ok, and e
 Omitting Err routes means Err exits are unselected, not unreachable.
 
 After recursively alpha-expanding every shared `contract_define`, the clause expression must have exact type `own Bool` and its root must be exactly one `compare_op` — `==`, `!=`, `<`, `<=`, `>`, or `>=` [GRAM-5].
-Both operands must be the clause's symbolic result datum, a parameter datum with field and `deref` projections, a named const, a typed integer literal, or `len(P)` for an admitted formal place P [MSR-5]; at least one operand contains the result datum.
-A `len(P)` operand whose place P is rooted at a `&uniq` parameter is inadmissible in an `ensures_clause` and is a hard error citing MSR-3 at that clause.
+Both operands must be the clause's symbolic result datum, a parameter datum with field and `deref` projections, a named const, a typed integer literal, or `len(P)` for an admitted formal place P; at least one operand contains the result datum.
 No proof-required exact operation, computed arithmetic result, subscript, occurrence-local evaluated-value datum, Boolean connective, nested result projection, or body local becomes a relation term.
 The comparison normalizes to one finite L0 RelationTemplate; equality's two bounds remain one relation occurrence.
 Parameters denote function-entry images.
@@ -1414,28 +1407,6 @@ No candidate is individually committed or retracted and no second flow walk or n
 
 Every successful selected-return proof and caller establishment extends [DIAG-2]'s one derivation DAG.
 Postconditions add no runtime operation, hidden check, assume, optimizer license, alternate lowering path, or ABI field.
-
-[MSR-5] A contract clause is the relation an invariant already is, over a wider operand set.
-A `requires_clause` and an `ensures_clause` take a `clause_expr` [GRAM-2, GRAM-5], whose operands are each an `atom`, a `call`, or a `construct`.
-The operand set is the whole of this rule: [GRAM-5]'s `atom` has no `call` alternative, so before this version a measure of a place derived nowhere in a clause and `len(source) <= len(out)` was a GRAM-5 parse rejection at the comparison, while the same fact written through one `contract_define` per operand was admitted — one semantics with two spellings, one of which cost a definition per measure.
-A clause is judged by exactly the [OP-5] condition [FN-8] and [FN-9] already apply: the root has exact value mode and type `own Bool`, and every operand is a non-consuming datum or an operation-table form pure and total over its selected operand domain.
-This rule adds no route, no fact source, and no proof authority; it adds spellings the existing admissions already accept.
-
-The measure formers are table data over the measured types, with one row in this version: `len(P)`, of fragment type u64, admitted for exactly the places [ENT-2] clause (b) admits a length term for.
-A measure former is written as an ordinary `call` whose one `atom_list` operand is that place; a written type argument, a `fieldinit_list`, or a second operand is the ordinary [OP-1] rejection.
-A clause operand that is neither an [ENT-2] term nor a constant stays an ordinary pure total operand contributing no L0 projection; clause position makes nothing a term.
-
-The affine surface is unchanged.
-The `affine_factor` production of [GRAM-4] is not widened, so a `header_invariant`, an `invariant_stmt`, and a `proof_use` keep exactly [INV-1] 3109-3113's atom admission and a measure term is a clause operand and not yet an affine atom.
-DEFERRED: admitting a measure term as an affine atom, which requires the affine domain to carry one immutable atom per measure term and the L0-to-affine index to range over measure terms; its delta is grammar productions +0, numbered rules +0, and it is recorded here rather than taken.
-
-[CALL-4] Contract vocabulary, the result ordinal, the routes, and where the relations land.
-The clause operands of [FN-9] are terms [MSR-5], so a measure over an admitted formal place is an operand with no per-family admission, and so is one over an admitted result place.
-A `fn_decl` declares exactly one `result_binding` [GRAM-2], so the ordinal a route applies to is that one result, the route names no ordinal, and no ordinal binder is written; a declaration with more than one result is not a form of this version and neither is a destructuring binder over one.
-The result datum's type is a fragment integer after concrete [FN-2] substitution [FN-9], and the measure table gives a fragment integer no row [MSR-5], so no measure of a result is an admitted operand in this version.
-DEFERRED: a result of measured type, a measure over a result place, and a route over any variant of any returned enum type; their delta is numbered rules +0 and grammar productions +0, and each is an admission widening of [FN-9] rather than a new judgment.
-
-The destinations are exactly [ENT-3.S12] 2822-2837's, and a relation reaches a caller only there; [CALL-6] fixes the point at which each is instantiated and the point at which each is established.
 
 ## 9. Effects (unified-state revision)
 
@@ -2751,7 +2722,7 @@ Adding a fact source, relation family, closure rule, proof rule, protected opera
 No caller fact is copied into a callee: an ordinary call judges its instantiated [FN-8] goal in the caller's entering state, the callee body begins with its own proved requirement as [ENT-3] source S4, and only a separately FN-9-verified earlier-SCC summary may establish its instantiated normal-result relation back in the caller.
 A fragment type is one member of the closed integer set [OP-2]; relations are over mathematical values, so relations between terms of different fragment types are well-formed and are created only by the sources and flow transports [ENT-3, ENT-5] admit.
 
-A term is exactly one of: (a) a tracked place — a `place` [GRAM-5] whose root `pbase` IDENT resolves to any `let_stmt` binding, a `for_stmt` binder, a `param`, any match binder regardless of its [OWN-13]-derived mode, or a named const [CONST-2], formed with any number of field-selection `psuffix`es and `deref` wrappings and no subscript suffix, whose final selected type is one fragment type; (b) a length term `len(P)`, of fragment type u64, where P is a place formed under the same restriction whose final selected type is `array<T, N>`, `slice<'r, T>`, or `buffer<T>`; (c) a constant — the mathematical value of an integer literal or of an integer-typed named const, or symbolically an in-scope integer-typed const-generic parameter; (d) one of the two compiler-owned u64 capture terms belonging to an admitted `for_stmt`, identified exactly by `(that for_stmt's NodePath, lower)` or `(that for_stmt's NodePath, upper)`; (e) the one compiler-owned symbolic result datum of an admitted FN-9 clause while its RelationTemplate is formed, identified by that `ensures_clause`, its route or unrouted class, and fragment type; (f) the one compiler-owned commit value of an admitted [SET-1] `set` whose right-hand side has one fragment type, identified exactly by `(that statement's NodePath, that fragment type)`; (g) the distinguished zero term Z, used only to carry constant bounds, S7's exact mathematical-zero disequality, and [ENT-6]'s normalized integer-domain components; or (h) one compiler-owned call datum [MSR-3, ENT-3.S13], identified exactly by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or its length)`.
+A term is exactly one of: (a) a tracked place — a `place` [GRAM-5] whose root `pbase` IDENT resolves to any `let_stmt` binding, a `for_stmt` binder, a `param`, any match binder regardless of its [OWN-13]-derived mode, or a named const [CONST-2], formed with any number of field-selection `psuffix`es and `deref` wrappings and no subscript suffix, whose final selected type is one fragment type; (b) a length term `len(P)`, of fragment type u64, where P is a place formed under the same restriction whose final selected type is `array<T, N>`, `slice<'r, T>`, or `buffer<T>`; (c) a constant — the mathematical value of an integer literal or of an integer-typed named const, or symbolically an in-scope integer-typed const-generic parameter; (d) one of the two compiler-owned u64 capture terms belonging to an admitted `for_stmt`, identified exactly by `(that for_stmt's NodePath, lower)` or `(that for_stmt's NodePath, upper)`; (e) the one compiler-owned symbolic result datum of an admitted FN-9 clause while its RelationTemplate is formed, identified by that `ensures_clause`, its route or unrouted class, and fragment type; (f) the one compiler-owned commit value of an admitted [SET-1] `set` whose right-hand side has one fragment type, identified exactly by `(that statement's NodePath, that fragment type)`; or (g) the distinguished zero term Z, used only to carry constant bounds, S7's exact mathematical-zero disequality, and [ENT-6]'s normalized integer-domain components.
 The FN-9 result datum occurs only in its template: every selected-return or caller query substitutes it with one ordinary term or constant before flow, so it never enters a body state, survives a return, or creates runtime storage.
 Two places are the same term exactly when their roots resolve to the same declaration event [TYPE-6, DIAG-1] and their canonical source spellings [FORM-2] are byte-identical; a fresh binding legally reusing an expired spelling is a distinct term, and distinct spellings are distinct terms even when they resolve to overlapping storage.
 Term identity thus under-approximates aliasing, while kills [ENT-5] use [OWN-7]'s resolved-place overlap relation and over-approximate it.
@@ -2763,7 +2734,6 @@ The two capture terms are finite, immutable, compiler-owned, and not source bind
 Their scope begins after their respective once-only endpoint captures and ends on every edge leaving the counted construct.
 The counted binder's compiler fact scope begins at its initialization and ends on every edge leaving the counted construct, even though [TYPE-6] makes its source name visible only in the body.
 A commit value is compiler-owned and unwritable in the same sense, and denotes the one value its `set` occurrence's right-hand side evaluated to: it exists from that evaluation, no [ENT-5] event kills it, and no later write can retarget it.
-A call datum is compiler-owned and unwritable in the same sense, and denotes the value one `own` operand of a declared relation had at its call's pre-transfer point [ENT-5]: it exists from that point, contains no place, and no [ENT-5] event kills it.
 One static term per statement is enough because [ENT-3]'s forward flow visits every statement of one function body exactly once: a loop body is walked once from the head state [ENT-5] forms before that walk, each `match` arm walks its own statements, and no statement is visited twice in one analysis.
 A commit value therefore denotes that statement's value in the one abstract evaluation the walk performs, exactly as a counted header image denotes the binder's value in an arbitrary iteration, and every fact derived about it holds of each dynamic evaluation of that statement separately.
 
@@ -2800,40 +2770,6 @@ Difference-bound identity preserves the ordered term pair; disequality identity 
 Source relations normalize exactly: `a <= b` is `a - b <= 0`; `a < b` is `a - b <= -1`; `a = b` is the bound pair `a - b <= 0` and `b - a <= 0`; `a >= b` and `a > b` swap operands; `a != b` is one disequality.
 A constant operand folds through Z: `a <= 7` is `a - Z <= 7`.
 Implicit facts hold at every program point: every term t carries the reflexive bound `t - t <= 0`; every term t of fragment type T carries `t - Z <= max(T)` and `Z - t <= -min(T)`; every length term over a place of type `array<T, N>` carries the equality `len(P) = N` (both bounds), with concrete N a constant and const-generic N a symbolic constant term.
-
-[MSR-3] One denotation per operand position, keyed on the parameter's mode.
-One spelling occurring at two positions of one declaration denotes two things, and which one is decided by the mode of the parameter the operand names rather than by the rule that reads it.
-The complete table is:
-
-```text
-| the operand occurs in                                                | it denotes                    |
-|----------------------------------------------------------------------|-------------------------------|
-| a [FN-8] `requires`, naming a parameter                              | that parameter's entry image  |
-| a [FN-9] `ensures`, naming an `own` or shared-borrow parameter       | that parameter's entry image  |
-| a [FN-9] `ensures`, naming a `&uniq` parameter's measure             | inadmissible                  |
-| a [FN-9] clause, naming the result binder                            | that result                   |
-| any of the above, read at the CALLER after substitution, naming an   | that call's call datum        |
-|   `own` parameter                                                    |                               |
-| any of the above, read at the CALLER after substitution, naming a    | the live term                 |
-|   shared-borrow parameter                                            |                               |
-| any of the above, read at the CALLER after substitution, naming the  | the result                    |
-|   result binder                                                      |                               |
-```
-
-An `own` operand denotes the call datum because an `own` parameter is a value the operation received and its post-state is not a thing the caller can name; and because that is what makes a relation naming a consumed operand's measure mean what it reads as, the consume the same statement performs being unable to kill a datum that contains no place.
-A `&uniq` parameter's measure is inadmissible in an `ensures` because a `&uniq` parameter is the one position from which a callee could leave a caller holding a measure of a value the callee replaced: a source-declared body is a body, so a caller reading its post-state would be reading a claim about an object at a point the callee cannot name.
-That inadmissibility is a hard error citing MSR-3 at the clause, with the restructuring `take the value by value and relate the result, or state the fact as a requires`.
-The same operand in a `requires` stays admissible — a requirement is a fact the caller establishes before the call, not a claim about a state after it — and denotes the parameter's entry image inside the body and that call's call datum where the caller reads it, exactly as the table gives it.
-
-A **call datum** is a compiler-owned immutable [ENT-2] term with empty support: no place occurs in it, no [ENT-5] event kills it, and no later write retargets it.
-There is one former, keyed on what a datum denotes: a datum is identified by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or its length)`, is compiler-owned and immutable, and is established equal to that operand's pre-transfer term at the call's pre-transfer point [ENT-3.S13].
-A datum is formed, never proved.
-When the operand's pre-transfer term is itself immutable with empty support — a constant, a symbolic const-generic parameter, a counted capture, a commit value, or another call datum — nothing can retarget what that term denotes, so the datum is that term and no second one is formed; every other operand mints its own.
-Its placement is the call, which is one of the events at which the language undertakes to carry a value's measures.
-DEFERRED: the entry, construct, rebind, enum-payload-binder, and destructuring-binder placements of a measure datum, each of which carries a measured value's measures across a naming event the way the call placement carries them across a transfer; their delta is numbered rules +0 and grammar productions +0.
-
-*Judgment:* the denotation at every operand position, and the inadmissibility of a `&uniq` parameter's measure in a source-declared `ensures`.
-*Publishes:* the call datum at the call placement, and the denotation table.
 
 [ENT-3] The fact state is defined constructively over the conservative structural normal-control graph [FN-1]: each source below establishes its L0 and signed-goal facts at its stated point; facts flow forward along normal edges; kill events apply on the edges where [ENT-5] places them, with scope-exit kills applied before any join; merge points take the [ENT-5] join and loop heads the [ENT-5] loop rule; and the state queried at any point is the [ENT-4] closure of that flow.
 retired: S8
@@ -2942,37 +2878,7 @@ The only destinations are the fresh direct ordinary-let binding, direct-call sel
 A named or pending outcome, stored or propagated whole outcome, false matching predicate, killed support, or rejected call establishes nothing.
 The complete candidate set stays unchanged in failure-atomic scratch until the owning source judgment succeeds; any failure publishes none, and success commits all of them atomically.
 
-[ENT-3.S13]
-- S13 (call datums).
-At an ordinary source call whose callee has an atomically published summary, each `own` operand of each declared relation of the resolved callee mints one call datum [MSR-3] and establishes it equal to that operand's exact pre-transfer term, at the pre-transfer point of [ENT-5]'s call-boundary order and before that boundary's consumes, borrow commits, callee-effect kills, and target kills.
-The operand's pre-transfer term is the one [FN-9]'s `A0(c)` substitution already fixes; the datum adds no term the substitution could not name and no relation the callee did not declare.
-A datum has empty support, so [ENT-5]'s pre-kill closure carries its consequences across the same statement's kills while every fact whose support those kills remove dies normally.
-An operand the substitution leaves without an [ENT-2] term mints no datum, exactly as it makes only that relation unavailable under `M(c,q)`.
-S13 is the one source by which a declared relation's substitution is computed at a point other than the point at which the relation is established, and [CALL-6] states both points.
-
 The label S8 is retired, not reused: its midpoint family was struck as an owner-approved version amendment and may return as a later version's monotone addition the day a corpus program writes the shape.
-
-[CALL-6] Publication: how a declared relation becomes a fact, where it is computed, where it is established, and that the set it belongs to is consistent.
-Every published relation in this document is published by exactly one route — [ENT-3.S12]'s, with [ENT-3.S13]'s substitution — and nothing else publishes anything.
-This rule states that route's four points once, so no rule computes a fact at one program point and uses it at another without naming both.
-
-A declared relation is **instantiated at the call**, by substituting each operand at the denotation [MSR-3]'s table gives its parameter's mode: an `own` formal by that call's call datum [ENT-3.S13], a shared-borrow formal by the live term of its resolved referent, the result binder by its destination below.
-Its **support** is the ordinary L0 support of the substituted terms, taken at the call.
-It is **established** on the call's normal continuation, after the call's ordinary transfer, consumes, borrow commits, target commit and kills, exactly in [ENT-5] 2898-2905's order.
-A relation routed to a variant is instantiated at the call in the same order and is **restricted** to that variant's arm: it is available exactly on the paths on which that arm is entered, and it is not deferred to the arm, so an [ENT-5] event lying between the call and the arm kills a relation whose support it removes rather than preceding an establishment that has not happened.
-A relation whose support is dead is not available at all; a relation over a call datum has empty support and no event kills it.
-The destinations are exactly [ENT-3.S12] 2822-2837's closed list, and a relation lands nowhere else.
-
-Every published relation set is checked for consistency at the declaration.
-A `contract_block` whose instantiated relations are contradictory at their establishment point is a hard error citing CALL-6 at the `fn_decl`, `ContradictoryPublishedRelations`, naming the clauses and carrying the restructuring `state one consistent relation set: a contract whose clauses cannot hold together publishes every fact at every caller`.
-The set is partitioned by route first, because a routed clause is available only on its own arm and two clauses on two arms are never in one caller state together; an unrouted clause selects every explicit return [FN-9] and is therefore a member of every route's set.
-Contradiction is the ordinary [ENT-4] question over the declared templates: each distinct operand datum is one term, a literal folds through Z with its value, and the set is contradictory exactly when its transitive closure derives a negative self-bound or forces two terms one declared disequality separates to be equal.
-A template whose operand shape that closure cannot represent contributes no premise, so a reported contradiction is always a real one.
-The judgment is at the declaration because the set is fixed there: at a contradictory point every L0 relation and both signs of every goal are derivable [ENT-4], so an inconsistent contract is not one wrong fact at a caller but every fact at every caller, and no caller state repairs it.
-A contradictory `requires` set is a different thing and stays admissible: it makes the instance legally uninhabited [FN-8], publishes no relation, and no reachable non-contradictory caller can call it.
-
-*Judgment:* the S13 instantiation at the call, the establishment and restriction, the kill from the call, and the consistency check at the declaration.
-*Publishes:* the source, the substitution, the instantiation point, the establishment point, the destination list, and the support of every declared relation in the language.
 
 [ENT-4] The L0 component of the closed fact state is the least set containing its established and implicit facts and closed under exactly: (1) from `t1 - t2 <= c1` and `t2 - t3 <= c2`, derive `t1 - t3 <= c1 + c2`; (2) from `t1 - t2 <= 0` and a disequality between t1 and t2 in either orientation, derive `t1 - t2 <= -1`; (3) of two bounds on one ordered pair, the smaller constant subsumes.
 L0 derivability is exact: `a - b <= c` is derivable when the closed state contains `a - b <= c'` with c' <= c; `a = b` when both `a - b <= 0` and `b - a <= 0` are derivable; `a != b` when a disequality is present or `a - b <= -1` or `b - a <= -1` is derivable.
@@ -2999,7 +2905,7 @@ The least closure is unique and finite up to L0 subsumption because only the fin
 Implementations may compute lazily or incrementally, but every derivability and disposition answer must equal this least-closure answer.
 
 [ENT-5] The support of an L0 fact is every tracked place occurring in its terms; every compiler-owned counted capture term occurring in its terms; for each length term len(P), the root binding of P but not P's element storage — an element write never kills a length fact, because a `buffer<T>` length is fixed at allocation and an `array<T, N>` or `slice<'r, T>` length is fixed by its type or creation [TYPE-2, OP-1]; and every borrow or box/arena holder binding any of its places reads through by `deref`, a bound call-result holder included — its resolved place is the candidate actual's complete resolved place [OWN-6], so a `set` commit or projected callee write through the chain kills exactly the facts supported by that storage.
-Z, literals, named const values, and call datums have empty support and never die.
+Z, literals, and named const values have empty support and never die.
 A counted capture is immutable and can die only on an edge leaving its compiler-owned construct scope.
 
 The support of either sign of an opaque goal is the union of the resolved places whose values its complete typed expression reads.

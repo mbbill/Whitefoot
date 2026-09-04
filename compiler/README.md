@@ -6,13 +6,15 @@ private implementation choices; the active language is defined by
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), not by the compiler source or
 this README.
 
-The frontend targets the exact v0.43 bytes at `../spec/kernel-spec.md`,
-SHA-256 `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`.
-v0.43 makes every loop body a region block, so a borrow written in the body
-takes that body's own region bare, and repairs [ENT-6]'s control-flow join so
-nested joins reach the flat join's image; it supersedes v0.42 at
-`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`, whose
-outgoing bytes are archived at `../spec/kernel-spec-v0.42.md`.
+The frontend targets the exact v0.44 bytes at `../spec/kernel-spec.md`,
+SHA-256 `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`.
+v0.44 adds the fact machinery: a contract clause may take a measure of a place
+as an operand [MSR-5], each operand has one mode-keyed denotation and an `own`
+operand denotes the call datum [MSR-3], the result vocabulary is stated
+[CALL-4], and publication is stated once with a contradictory contract refused
+at its declaration [CALL-6]; it supersedes v0.43 at
+`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`, whose
+outgoing bytes are archived at `../spec/kernel-spec-v0.43.md`.
 `whitefoot-spec` checks the selected identity, activation chain,
 rule inventory, and generated syntax identity as one compiler gate.
 

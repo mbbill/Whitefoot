@@ -1,15 +1,16 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 67 (v0.43 makes every loop body a region block and repairs the
-[ENT-6] control-flow join so nested joins reach the flat join's image)
+Revision: 68 (v0.44 adds the fact machinery: contract-clause measure operands,
+mode-keyed operand denotation with the call datum, the result vocabulary, and
+publication stated once)
 
-The active language authority is v0.43, SHA-256
-`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`, carried by
+The active language authority is v0.44, SHA-256
+`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`, carried by
 the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
-v0.42 at `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`,
+v0.43 at `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`,
 archived byte-for-byte at
-[`spec/kernel-spec-v0.42.md`](../spec/kernel-spec-v0.42.md). The merge-time
+[`spec/kernel-spec-v0.43.md`](../spec/kernel-spec-v0.43.md). The merge-time
 approval record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
 with the owner's merge approval of the exact revision containing it; the batch
@@ -18,13 +19,13 @@ execution plan is [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
 
-The stable path carries those exact **ACTIVE v0.43** bytes; the candidate that
+The stable path carries those exact **ACTIVE v0.44** bytes; the candidate that
 preceded activation hashed to
-`1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`, and
+`1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`, and
 activation flipped its status line and changed no other byte. The outgoing
-v0.42 bytes are archived and the chain in
+v0.43 bytes are archived and the chain in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) carries the new
-`ACTIVE-SPEC: v0.43` line.
+`ACTIVE-SPEC: v0.44` line.
 v0.42 adds [FORM-8], one canonical region spelling. A REGIONID is written
 exactly where the document does not otherwise fix the region: a declaration
 writes a name only to relate two of its own positions or to name an
@@ -59,6 +60,22 @@ the comparison by folding every earlier delta atom back into the constant
 interval it stands for, so nested joins reach the flat join's image and
 acceptance stops depending on the shape of the control join. The repair only
 adds images: no program v0.42 accepted is refused.
+
+v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
+or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`
+is a written clause where it was a parse rejection, and the define-per-measure
+spelling is gone. [MSR-3] gives every contract operand one denotation keyed on
+its parameter's mode: an `own` operand read at a caller denotes the call datum,
+the value at transfer, which no consume and no later write kills; a `&uniq`
+parameter's measure is inadmissible in a source-declared `ensures`, because the
+callee cannot name the caller's object at a point after its own writes.
+[CALL-4] states the contract vocabulary over the one result a declaration has
+and records the deferred widenings. [CALL-6] states once how a declared
+relation is instantiated at the call, established on the normal continuation,
+and restricted to its routed arm, and refuses at the declaration a contract
+whose published relations contradict each other. The batch that carried it is
+B1 of the container and resource design under
+`research/investigations/containers-and-resources/`.
 
 v0.40 carries source proof through the
 ordinary semantic compiler. It checks contracts, explicit loop-header
