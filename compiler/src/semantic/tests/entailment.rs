@@ -5199,7 +5199,11 @@ command fn main() -> status: own ExitStatus pure {
                     .all(|term| !matches!(term, TermKind::ConstParameter(_))),
                 "concrete instances retain no symbolic const term"
             );
-            let mut lengths: Vec<_> = summary
+            // [MSR-1] the array place carries four measures; the two
+            // distinct constants this version's table fixes for it are zero,
+            // for `room` and `head`, and the instance's own N for `len` and
+            // `cap`. The instance is identified by the second.
+            let mut constants: Vec<_> = summary
                 .inventory
                 .measure_bounds
                 .iter()
@@ -5208,10 +5212,13 @@ command fn main() -> status: own ExitStatus pure {
                     Some(MeasureBound::Equal(_)) | None => None,
                 })
                 .collect();
-            lengths.sort_unstable();
-            lengths.dedup();
-            assert_eq!(lengths.len(), 1);
-            normalized.push((lengths[0], normalized_derivation_dump(&summary)));
+            constants.sort_unstable();
+            constants.dedup();
+            assert_eq!(constants, vec![0, constants[constants.len() - 1]]);
+            normalized.push((
+                constants[constants.len() - 1],
+                normalized_derivation_dump(&summary),
+            ));
         }
         normalized.sort_by_key(|(length, _)| *length);
         normalized
@@ -8371,13 +8378,22 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     // actual costs nothing at all. The ceilings keep the same proportional
     // margin they had, and a return to the former million-node shape still
     // fails here on every machine.
+    //
+    // They rose again at v0.45, to 46,998 and 92,148, when [MSR-1] gave every
+    // measured place four measure terms instead of one length term. Each
+    // measure carries the [ENT-2] implicit type bounds and the [MSR-2]
+    // standing fact its table cell fixes, so the rise is linear in measured
+    // places and is the cost of the facts themselves rather than of a wider
+    // search: no derivation family and no candidate set grew. The ceilings
+    // keep the same proportional margin, and the million-node shape still
+    // fails here.
     assert!(
-        proof_nodes <= 40_000,
-        "wfgrep retained {proof_nodes} proof nodes; expected at most 40,000"
+        proof_nodes <= 52_000,
+        "wfgrep retained {proof_nodes} proof nodes; expected at most 52,000"
     );
     assert!(
-        proof_edges <= 75_000,
-        "wfgrep retained {proof_edges} proof edges; expected at most 75,000"
+        proof_edges <= 100_000,
+        "wfgrep retained {proof_edges} proof edges; expected at most 100,000"
     );
     let shift = program
         .functions
@@ -9946,7 +9962,10 @@ command fn main() -> status: own ExitStatus pure {
                 },
                 "the concrete const instance's own implicit array proof",
             );
-            let lengths: Vec<_> = summary
+            // [MSR-1] the one array place carries all four measures, and
+            // every cell of this version's table fixes a constant: `len` and
+            // `cap` are the instance's own N, `room` and `head` are zero.
+            let mut constants: Vec<_> = summary
                 .inventory
                 .measure_bounds
                 .iter()
@@ -9955,8 +9974,12 @@ command fn main() -> status: own ExitStatus pure {
                     Some(MeasureBound::Equal(_)) | None => None,
                 })
                 .collect();
-            assert_eq!(lengths.len(), 1);
-            concrete_lengths.push(lengths[0]);
+            constants.sort_unstable();
+            assert_eq!(constants.len(), 4);
+            assert_eq!(constants[0], 0);
+            assert_eq!(constants[1], 0);
+            assert_eq!(constants[2], constants[3]);
+            concrete_lengths.push(constants[3]);
         }
         concrete_lengths.sort_unstable();
         assert_eq!(concrete_lengths, vec![2, 5]);

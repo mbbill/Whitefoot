@@ -13,7 +13,12 @@ This document carries guidance for the active specification at
 `let` and `set` binder forms introduced by v0.45 — a transforming operation now
 hands back the value it was given beside what it computed, `-> (rest: own
 Vector<u8>, written: own u64)`, instead of a two-field struct per operation, and
-its caller writes `let (rest, written) = collect(...);` — the contract-clause
+its caller writes `let (rest, written) = collect(...);` — and the four measure
+terms and their readers `len`, `cap`, `room` and `head`, also introduced by
+v0.45 (P16): a measured value carries the standing facts `len <= cap`,
+`head <= cap` and `len + room = cap` with no writer statement, a write to a
+sibling field kills no measure, and the three new reader spellings are reserved
+against every writer declaration — the contract-clause
 measure operands and the
 call datum introduced by v0.44 (P16, P21), the loop-body
 region block and the associative [ENT-6] join introduced by v0.43, the one canonical

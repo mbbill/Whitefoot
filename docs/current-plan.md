@@ -164,8 +164,8 @@ multiline and has no trailing comma:
 ```wf
 fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32
     reads(weights) contract {
-  define room = len(deref(weights));
-  requires count <= room;
+  define spare = len(deref(weights));
+  requires count <= spare;
   requires count <= 1000_u64;
   ensures total <= 255000_u32;
 } {

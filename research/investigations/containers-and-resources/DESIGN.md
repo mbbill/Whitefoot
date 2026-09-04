@@ -5622,6 +5622,22 @@ program. That is [S21] in all three positions.
 > written-type-argument failures, which is what [MSR-5] already said. The rule text now
 > says [TYPE-5], and no compiler behaviour changed.
 
+> **Correction, decided 2026-09-04, from B2's implementation.** [S11] priced the three
+> reader names as "a readability choice", on the ground that no rule reads a name. One
+> rule does: [OP-1]'s `ReservedLowerNames` is exactly the dotless IDENT-shaped operation
+> spellings union the mode words, and no source declaration may use a member of it. Adding
+> `cap`, `room` and `head` as reader rows therefore takes all three spellings away from
+> every writer declaration, and `let room = len(line);` — the exact line P16 of
+> `docs/patterns.md` recommended — is now a [FORM-3] `ReservedName` rejection. Measured on
+> this branch before the repair: **28 of 525 conformance cases and 72 of 491 snapshot
+> cases stopped reaching their recorded verdict, every one of them that rejection and none
+> of them a semantic change**; `room` accounted for 63 of the 72, `head` for 6 and `cap`
+> for 3. The repair is the writer's own: the corpus renames its bindings (`room` to
+> `spare`, `head` to `front`, `cap` to `limit`) and every verdict returns, with no
+> expectation and no snapshot row edited. **The cost is real and it is the owner's to keep
+> or spend differently** — the alternative is a reader name no writer wants for a local,
+> which is a change to [S11] and not one this batch may make.
+
 **What did not land, and why it could not.** Four of §7's B2 tests name a *run of runs* or
 a *wrapped run*, and neither exists in v0.45's type system. [TYPE-2] admits only a **flat
 element type** — an integer, a float, `Bool`, `unit`, or a struct or enum of those — so no

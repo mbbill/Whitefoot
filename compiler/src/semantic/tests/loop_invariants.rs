@@ -2561,26 +2561,27 @@ command fn main() -> status: own ExitStatus pure {
 /// which is how a writer concludes that the join does establish the relation.
 #[test]
 fn a_failing_body_probe_is_reported_before_the_header_backedge() {
-    let source = br#"fn narrow(room: own u64, cand: own u64, flag: own Bool) -> out: own u64 pure {
-  let hi = room;
+    let source =
+        br#"fn narrow(spare: own u64, cand: own u64, flag: own Bool) -> out: own u64 pure {
+  let hi = spare;
   loop (
-    invariant bounds: hi <= room
+    invariant bounds: hi <= spare
   ) {
-    if cand <= room {
+    if cand <= spare {
     } else {
       return 0_u64;
     }
     if flag {
       set hi = cand;
     }
-    invariant reprove: hi <= room;
+    invariant reprove: hi <= spare;
   }
   return hi;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let t = True();
-  let v = narrow(room: 8_u64, cand: 3_u64, flag: t);
+  let v = narrow(spare: 8_u64, cand: 3_u64, flag: t);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -2603,7 +2604,7 @@ command fn main() -> status: own ExitStatus pure {
         let end = usize::try_from(coordinate.end().value()).expect("source offset fits usize");
         assert_eq!(
             std::str::from_utf8(&source[start..end]).expect("cited bytes are text"),
-            "invariant reprove: hi <= room;",
+            "invariant reprove: hi <= spare;",
             "the rejection lands on the body probe, not on the loop header",
         );
     });

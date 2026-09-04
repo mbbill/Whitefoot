@@ -730,6 +730,8 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         postcondition_entry_images: Vec::new(),
         affine_atoms: Vec::new(),
         measure_atoms: HashMap::new(),
+        measure_terms_seen: Vec::new(),
+        measure_terms_scanned: 0,
         encountered_counted: 0,
         completed_counted_roots: 0,
         s12_roots: 0,
@@ -977,6 +979,10 @@ struct Analyzer<'check, 'unit> {
     /// and has no written spelling; it exists so the automatic derivation of
     /// a numeric goal can range over measures.
     measure_atoms: HashMap<TermId, AffineForm>,
+    /// Every measure term registered so far, and how much of the term
+    /// registry the scan that found them has covered.
+    measure_terms_seen: Vec<TermId>,
+    measure_terms_scanned: usize,
     encountered_counted: u32,
     completed_counted_roots: u32,
     s12_roots: u32,
@@ -9581,16 +9587,26 @@ impl Analyzer<'_, '_> {
     }
 
     /// Every registered measure term, in term order.
-    fn measure_terms(&self) -> Vec<TermId> {
-        self.terms
-            .ids()
-            .filter(|id| {
-                matches!(
-                    self.terms.kind(*id),
-                    TermKind::Measure(..) | TermKind::ProjectedMeasure(..)
-                )
-            })
-            .collect()
+    ///
+    /// The registry only grows during the forward walk, so this scans just
+    /// the terms interned since the last call and keeps the answer. Every
+    /// numeric goal queries it, and rescanning the whole registry per query
+    /// made that quadratic in the size of the function.
+    fn measure_terms(&mut self) -> Vec<TermId> {
+        let registered = self.terms.ids().count();
+        for index in self.measure_terms_scanned..registered {
+            let id = TermId(
+                u32::try_from(index).expect("ENT term inventory exceeds the u32 identity space"),
+            );
+            if matches!(
+                self.terms.kind(id),
+                TermKind::Measure(..) | TermKind::ProjectedMeasure(..)
+            ) {
+                self.measure_terms_seen.push(id);
+            }
+        }
+        self.measure_terms_scanned = registered;
+        self.measure_terms_seen.clone()
     }
 
     fn affine_l0_candidates(&mut self, values: &AffineFlowState) -> Vec<AffineL0Candidate> {
