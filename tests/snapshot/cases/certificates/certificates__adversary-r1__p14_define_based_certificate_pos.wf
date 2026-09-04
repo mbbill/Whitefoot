@@ -1,9 +1,9 @@
 fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
-  define room = len(table);
+  define spare = len(table);
   requires lo < hi;
-  requires hi <= room;
+  requires hi <= spare;
 } {
-  doc "expect ACCEPT: invariant certificate combines a define-derived fact (room = len(table)) with a named division-bound invariant and a requires premise, matching the midpoint-subscript pattern with an extra layer.";
+  doc "expect ACCEPT: invariant certificate combines a define-derived fact (spare = len(table)) with a named division-bound invariant and a requires premise, matching the midpoint-subscript pattern with an extra layer.";
   let span = hi - lo;
   let half = span / 2_u64;
   let mid = lo + half;

@@ -243,8 +243,8 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn call_effects_preserve_the_incoming_storage_origin() {
     let source = br#"fn write(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) {
-  let room = len(deref(out));
-  let ok = 0_u64 < room;
+  let spare = len(deref(out));
+  let ok = 0_u64 < spare;
   if ok {
     set deref(out)[0_u64] = 1_u8;
   }
@@ -327,8 +327,8 @@ fn count(pool: &Pool) -> result: own u64 reads(pool.count) {
 }
 
 fn first(pool: &Pool) -> result: own u64 reads(pool.left) {
-  let room = len(deref(pool).left);
-  let ok = 0_u64 < room;
+  let spare = len(deref(pool).left);
+  let ok = 0_u64 < spare;
   if ok {
     return deref(pool).left[0_u64];
   } else {
@@ -337,8 +337,8 @@ fn first(pool: &Pool) -> result: own u64 reads(pool.left) {
 }
 
 fn update(pool: &uniq Pool) -> result: own unit reads(pool.right), writes(pool.right, pool.count) {
-  let room = len(deref(pool).right);
-  let ok = 0_u64 < room;
+  let spare = len(deref(pool).right);
+  let ok = 0_u64 < spare;
   if ok {
     set deref(pool).right[0_u64] = 9_u64;
   }
@@ -554,8 +554,8 @@ fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
 }
 
 fn write_byte(out: &uniq buffer<u8>) -> function_result: own unit reads(out), writes(out) {
-  let room = len(deref(out));
-  let first_ok = 0_u64 < room;
+  let spare = len(deref(out));
+  let first_ok = 0_u64 < spare;
   if first_ok {
     set deref(out)[0_u64] = 7_u8;
   }
@@ -566,8 +566,8 @@ fn proxy_byte(out: &uniq buffer<u8>) -> function_result: own unit reads(out), wr
   region {
     write_byte(out: &uniq deref(out));
   }
-  let room = len(deref(out));
-  let second_ok = 1_u64 < room;
+  let spare = len(deref(out));
+  let second_ok = 1_u64 < spare;
   if second_ok {
     set deref(out)[1_u64] = 9_u8;
   }

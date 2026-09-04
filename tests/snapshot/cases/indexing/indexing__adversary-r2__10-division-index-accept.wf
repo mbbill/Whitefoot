@@ -1,8 +1,8 @@
 fn bucket_of(values: own buffer<u8>, n: own u64) -> found: own u8 reads(values) {
-  doc "expect ACCEPT: idx = n/10 is runtime-checked idx < room before the subscript, so the access is always in bounds";
-  let room = len(values);
+  doc "expect ACCEPT: idx = n/10 is runtime-checked idx < spare before the subscript, so the access is always in bounds";
+  let spare = len(values);
   let idx = n / 10_u64;
-  let safe = idx < room;
+  let safe = idx < spare;
   let byte = 0_u8;
   if safe {
     set byte = values[idx];

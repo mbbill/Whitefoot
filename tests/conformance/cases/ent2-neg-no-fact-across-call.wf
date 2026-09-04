@@ -4,9 +4,9 @@ fn identity(n: own u64) -> result: own u64 pure {
 
 fn get(b: own buffer<u8>) -> result: own u8 reads(b) {
   doc "No fact crosses a call boundary [ENT-2]. The checked branch bounds `probe`, but the value returned by `identity` is a fresh term carrying no relation to it, so the subscript is undischarged [OP-4] and the residual names the returned binding.";
-  let room = len(b);
+  let spare = len(b);
   let probe = 0_u64;
-  let inside = probe < room;
+  let inside = probe < spare;
   if inside {
   } else {
     return 0_u8;

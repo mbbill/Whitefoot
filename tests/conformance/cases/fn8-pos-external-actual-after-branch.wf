@@ -1,6 +1,6 @@
 fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(bytes) contract {
-  define room = len(bytes);
-  requires index < room;
+  define spare = len(bytes);
+  requires index < spare;
 } {
   return bytes[index];
 }
@@ -9,8 +9,8 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
   region {
     let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
-    let room = len(bytes);
-    if index < room {
+    let spare = len(bytes);
+    if index < spare {
       let value = read_at_index(bytes: move bytes, index: index);
       return exit_status(code: value);
     } else {

@@ -1,7 +1,7 @@
 fn shift_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) -> moved: own u64 reads(input), writes(input) {
   doc "expect ACCEPT: moved <= source_index throughout, so the compaction write index never runs ahead of the read index it copies from";
-  let room = len(deref(input));
-  let available_fits = available <= room;
+  let spare = len(deref(input));
+  let available_fits = available <= spare;
   let scan_fits = scan <= available;
   let moved = 0_u64;
   if available_fits {

@@ -340,9 +340,9 @@ fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
 #[test]
 fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
     let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let room = len(deref(src));
-  invariant scaled_limit_fits: 4_u64 * limit <= 4_u64 * room {
-    use 4 * (limit <= room);
+  let spare = len(deref(src));
+  invariant scaled_limit_fits: 4_u64 * limit <= 4_u64 * spare {
+    use 4 * (limit <= spare);
   }
   let total = 0_u64;
   for @sum (i in 0_u64..limit) {
@@ -378,9 +378,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
     let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let room = len(deref(src));
+  let spare = len(deref(src));
   let total = 0_u64;
-  let fits = limit <= room;
+  let fits = limit <= spare;
   if fits {
     for @sum (i in 0_u64..limit) {
       let v = deref(src)[i];
@@ -558,8 +558,8 @@ fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
   let table = buffer_new(64_u64, 0_u64);
   let cursor = 0_u64;
   for @fill (i in 0_u64..8_u64) {
-    let room = cursor < 64_u64;
-    if room {
+    let spare = cursor < 64_u64;
+    if spare {
       set table[cursor] = i;
     }
     set cursor = cursor +wrap 1_u64;
@@ -849,7 +849,7 @@ fn a_whole_collection_read_still_denies_a_same_map_update() {
     let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u8);
   for @update (i in 0_u64..64_u64) {
-    let room = len(out);
+    let spare = len(out);
     let old = out[i];
     set out[i] = old +wrap 1_u8;
   }
@@ -869,8 +869,8 @@ fn a_whole_collection_read_still_denies_a_same_map_update() {
 #[test]
 fn a_unique_borrowed_output_accepts_a_proved_element_map() {
     let source = br#"fn fill(out: &uniq buffer<u8>, count: own u64) -> result: own unit writes(out) contract {
-  define room = len(deref(out));
-  requires count <= room;
+  define spare = len(deref(out));
+  requires count <= spare;
 } {
   for @fill (i in 0_u64..count) {
     set deref(out)[i] = 1_u8;
@@ -978,9 +978,9 @@ fn an_exact_map_with_a_reduction_uses_reduction_actualization() {
 #[test]
 fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
     let source = br#"fn fill(output: own buffer<u64>, limit: own u64) -> result: own buffer<u64> reads(output), writes(output) {
-  let room = len(output);
-  invariant limit_fits: limit <= room {
-    use limit <= room;
+  let spare = len(output);
+  invariant limit_fits: limit <= spare {
+    use limit <= spare;
   }
   for @fill (i in 0_u64..limit) {
     set output[i] = i;
@@ -1649,8 +1649,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   requires bounded_limit <= limit;
   requires limit <= capacity;
 } {
-  let room = len(deref(src));
-  invariant limit_fits: bounded_limit <= room;
+  let spare = len(deref(src));
+  invariant limit_fits: bounded_limit <= spare;
   let total = 0_u64;
   for @sum (i in 0_u64..bounded_limit) {
     let v = deref(src)[i];
@@ -1668,9 +1668,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 "#;
     let dominating = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let room = len(deref(src));
+  let spare = len(deref(src));
   let total = 0_u64;
-  if limit <= room {
+  if limit <= spare {
     for @sum (i in 0_u64..limit) {
       let v = deref(src)[i];
       set total = total +wrap v;
@@ -1688,10 +1688,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 ";
     let branched = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let room = len(deref(src));
+  let spare = len(deref(src));
   let total = 0_u64;
   for @sum (i in 0_u64..limit) {
-    let inside = i < room;
+    let inside = i < spare;
     if inside {
       let v = deref(src)[i];
       set total = total +wrap v;

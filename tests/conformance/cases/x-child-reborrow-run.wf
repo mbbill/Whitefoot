@@ -3,16 +3,16 @@ struct Counter {
 }
 
 fn write_byte(out: &uniq buffer<u8>) -> function_result: own unit writes(out) contract {
-  define room = len(deref(out));
-  requires 0_u64 < room;
+  define spare = len(deref(out));
+  requires 0_u64 < spare;
 } {
   set deref(out)[0_u64] = 7_u8;
   return unit;
 }
 
 fn proxy_byte(out: &uniq buffer<u8>) -> function_result: own unit writes(out) contract {
-  define room = len(deref(out));
-  requires 1_u64 < room;
+  define spare = len(deref(out));
+  requires 1_u64 < spare;
 } {
   region {
     write_byte(out: &uniq deref(out));

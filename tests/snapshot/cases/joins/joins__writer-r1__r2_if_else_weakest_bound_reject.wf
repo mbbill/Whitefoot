@@ -1,14 +1,14 @@
 fn pick_byte(b: own buffer<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
-  doc "REJECT: one arm proves the strict i < room and the other only the non-strict i <= room, so ENT-5's join carries the weaker non-strict bound and the trailing subscript's OP-4 is undischarged (i == room satisfies the joined fact).";
-  let room = len(b);
+  doc "REJECT: one arm proves the strict i < spare and the other only the non-strict i <= spare, so ENT-5's join carries the weaker non-strict bound and the trailing subscript's OP-4 is undischarged (i == spare satisfies the joined fact).";
+  let spare = len(b);
   if pick {
-    let strict_bound = i < room;
+    let strict_bound = i < spare;
     if strict_bound {
     } else {
       return 0_u8;
     }
   } else {
-    let loose_bound = i <= room;
+    let loose_bound = i <= spare;
     if loose_bound {
     } else {
       return 0_u8;

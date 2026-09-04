@@ -2746,7 +2746,44 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
 - SPECIFICATION: v0.45 at the digest on the chain line below supersedes v0.44
   at `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
   whose outgoing bytes are preserved byte-for-byte as `spec/kernel-spec-v0.44.md`.
-- CONTENT: v0.45 lands multi-return. Numbered rules +0/-0 (136 remain) and
+- CONTENT (B2, the proof surface): v0.45 additionally lands the containers
+  design's [MSR] proof surface. Numbered rules +4/-0 (140 remain), being
+  [MSR-1], [MSR-2], [MSR-4] and [MSR-6]; grammar productions +0/-0 and no
+  grammar atom is added by this batch; writer operation spellings +3/-0, being
+  the [OP-1] readers `cap`, `room` and `head` over `array<T, N>`,
+  `slice<'r, T>` and `buffer<T>`; exception clauses +0/-1, being [ENT-5]'s
+  element-position carve-out, removed rather than narrowed. [OP-1], [OP-4],
+  [OP-7], [TYPE-6], [ENT-2], [ENT-5], [ENT-6], [INV-1] and [MSR-5] are amended
+  in place. [MSR-1] makes `len(P)`, `cap(P)`, `room(P)` and `head(P)` [ENT-2]
+  terms over an admitted measure place formed with field selections, `deref`
+  wrappings and subscripts, states that a measure table exists and gives every
+  measured type a row with one of exact, bounded or absent per cell, carries
+  that table as a `wf-measures` fence, and fixes the logical coordinate system
+  and its injectivity sentence. [MSR-2] states the support of a measure term as
+  descriptor storage rather than a root binding, restates the kill as an
+  ordinary [ENT-5] event over that storage, fixes the standing facts every
+  measured value carries, and appends `len + room = cap` to [ENT-6]'s automatic
+  affine premises as two inequalities with empty support. [MSR-4] states once
+  the complete ordered derivation of a numeric goal in six steps and retires
+  [ENT-6]'s per-family route grants, each family keeping its normalization;
+  [ENT-6] carries one compiler-owned immutable affine atom per live measure
+  term. [MSR-6] admits an in-scope const generic as a [TYPE-6] `pbase` and with
+  it as an [ENT-2] `for_stmt` endpoint and an [MSR-5] clause operand.
+- CONSEQUENCE OF THE THREE READER SPELLINGS: `cap`, `room` and `head` are
+  dotless IDENT-shaped operation spellings, so [OP-1] adds all three to
+  `ReservedLowerNames` and no source declaration may be spelled with one of
+  them any more. The corpus used all three as ordinary binding spellings. This
+  merge therefore renames those bindings in the corpus's own sources -- `room`
+  to `spare`, `head` to `front`, `cap` to `limit` -- in 118 snapshot cases, 30
+  conformance cases, 7 `tests/programs` sources and the compiler's embedded
+  test sources. Every renamed program keeps the verdict it recorded: no
+  `tests/snapshot/index.tsv` row and no `tests/conformance/manifest.jsonl`
+  expectation is edited by this merge. Before the rename the two corpora
+  reported 28 conformance failures and 72 snapshot flips, every one of them a
+  [FORM-3] `ReservedName` rejection on one of the three spellings and none of
+  them a semantic verdict change; after it both corpora are back to their
+  recorded verdicts.
+- CONTENT (B1b, multi-return): v0.45 lands multi-return. Numbered rules +0/-0 and
   grammar productions +0/-0 (84 remain); five productions change — `fn_decl`
   takes an ordered result list, `result_route` an optional ordinal binder,
   `let_stmt` a parenthesized binder list over a `call`, `set_stmt` a
@@ -2760,17 +2797,30 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   [CALL-4] takes the ordinal-named route `when b is V(f: r):`, its
   omitted-binder condition, its ambiguity refusal at the declaration, and the
   two [ENT-3.S12] destinations only a multi-result contract exercises.
-- CONFORMANCE BOUNDARY: this merge ADDS five conformance cases and their five
-  manifest rows and modifies, deletes, or renames none; it changes no adapter,
+- CONFORMANCE BOUNDARY: this merge ADDS thirteen conformance cases and their
+  thirteen manifest rows, MODIFIES the source of 30 existing cases by renaming
+  a binding whose spelling [OP-1] now reserves (listed under CONSEQUENCE
+  above; no expectation, rule citation, status or manifest row of any of them
+  changes), and deletes or renames none; it changes no adapter,
   runner, or collection wiring. The added case ids are
   `s16-pos-result-list-reaches-both-let-binders`,
   `s16-pos-result-list-reaches-both-set-targets`,
   `call4-pos-route-names-a-result-ordinal`,
   `call4-pos-omitted-route-binder-with-one-enum-ordinal` (each expecting run,
   exit 0) and `call4-neg-ambiguous-route-over-two-enum-ordinals` (expecting
-  reject, CALL-4). Before this merge the corpus holds 520 cases with the native
-  adapter reporting Pass=518, Xfail=1, Skip=1; after it the corpus holds 525
-  with the adapter reporting Pass=523, Xfail=1, Skip=1. The one xfail
+  reject, CALL-4). B2 adds `msr1-pos-the-four-measure-readers`,
+  `msr1-pos-subscript-obligation-against-len`,
+  `msr2-pos-sibling-field-write-keeps-the-measure`,
+  `msr2-pos-element-write-keeps-the-measure`,
+  `msr4-pos-capacity-requirement-discharges-a-length-obligation`,
+  `msr6-pos-const-generic-as-a-value` and
+  `msr6-pos-const-generic-in-a-clause-and-an-endpoint` (each expecting run,
+  exit 0) and `msr2-neg-descriptor-write-kills-the-measure` (expecting reject,
+  OP-4). Before this merge the corpus holds 520 cases with the native adapter
+  reporting Pass=518, Xfail=1, Skip=1; after it the corpus holds 533 with the
+  adapter reporting Pass=531, Xfail=1, Skip=1. The one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
-  unchanged in id, expectation, and status.
-ACTIVE-SPEC: v0.45 8fa6fe3ea5e07e0925c2777108656b258c24bd092aaa932e97179e3f798d04be 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+  unchanged in id, expectation, and status: [MSR-2] restated the granularity of
+  a measure kill over storage, while the classification of what a projected
+  callee write touches is [CALL-3]'s and is not in this merge.
+ACTIVE-SPEC: v0.45 d779c19cd0b5527b8b2c4cd92ccd67f619b36b601cd7e4debab11c19d652b7b5 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

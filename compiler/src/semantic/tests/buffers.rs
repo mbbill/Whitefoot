@@ -543,7 +543,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         assert!(matches!(
             &main.body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { .. },
+                value: CheckedExpression::BufferMeasure { .. },
                 ..
             }
         ));
@@ -638,7 +638,7 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
         assert!(matches!(
             &main.body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { .. },
+                value: CheckedExpression::BufferMeasure { .. },
                 ..
             }
         ));
@@ -795,7 +795,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         assert!(matches!(
             &main.body[6],
             CheckedStatement::Let {
-                value: CheckedExpression::BufferLength { root, .. },
+                value: CheckedExpression::BufferMeasure { root, .. },
                 ..
             } if root.fields == [1]
         ));
@@ -934,8 +934,8 @@ fn a_hoisted_length_fact_survives_a_callee_element_write() {
     with_semantics(
         br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
-  let room = len(deref(destination));
-  let inside = at < room;
+  let spare = len(deref(destination));
+  let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
   }
@@ -959,12 +959,12 @@ fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) c
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "Emits a prefix without a live length fact.";
   let line = buffer_new(64_u64, 0_u8);
-  let room = len(line);
+  let spare = len(line);
   let end = 0_u64;
   region {
     set end = fill(destination: &uniq line, at: end);
   }
-  let fits = end <= room;
+  let fits = end <= spare;
   if fits {
     region {
       let sent = emit(source: &line, length: end);
@@ -982,8 +982,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     with_semantics(
         br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
-  let room = len(deref(destination));
-  let inside = at < room;
+  let spare = len(deref(destination));
+  let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
   }

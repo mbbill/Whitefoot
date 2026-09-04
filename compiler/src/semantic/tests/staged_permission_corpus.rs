@@ -154,7 +154,7 @@ const A03_CARRIED_BYTE: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
 
 const A04_FOLD_BEFORE_READ: &[u8] = br#"fn fold_prefix(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
-  let room = len(deref(source));
+  let spare = len(deref(source));
   let sum = seed;
   let at = 0_u64;
   loop @fold {
@@ -162,7 +162,7 @@ const A04_FOLD_BEFORE_READ: &[u8] = br#"fn fold_prefix(source: &buffer<u8>, prod
     if scanned {
       break @fold;
     }
-    let readable = at < room;
+    let readable = at < spare;
     if readable {
     } else {
       break @fold;
@@ -486,7 +486,7 @@ const A13B_PROOF_REMAINDER_STORAGE: &[u8] = br#"command fn main(command.cwd as c
         match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             let slot = buffer_new(8_u64, 0_u8);
-            let room = len(slot);
+            let spare = len(slot);
             invariant fixed_step: 0_u64 <= 2_u64;
             set total = total +wrap 1_u64;
           }
@@ -845,8 +845,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 
 const A22_EXPR_STATEMENT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
   doc "Writes one byte of the borrowed slot.";
-  let room = len(deref(slot));
-  let wide = 0_u64 < room;
+  let spare = len(deref(slot));
+  let wide = 0_u64 < spare;
   if wide {
     set deref(slot)[0_u64] = 7_u8;
   }

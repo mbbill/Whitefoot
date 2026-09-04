@@ -550,8 +550,15 @@ fn contract_definitions_are_shared_across_clauses_but_do_not_reach_the_body() {
     });
 }
 
+/// [MSR-6] a `pbase` admits an in-scope const generic.
+///
+/// Until v0.45 this test asserted the opposite: `available: [ConstGeneric]`
+/// with the class inadmissible, which is the rejection the containers design
+/// recorded as probe `q10`. That rejection is what [MSR-6] removes, so the
+/// test now pins the admission and the declaration it resolves to rather than
+/// being deleted.
 #[test]
-fn const_generics_remain_outside_the_ordinary_place_base_domain() {
+fn a_const_generic_resolves_as_an_ordinary_place_base() {
     let ordinary = br#"fn value<const n: u64>() -> result: own u64 pure {
   return n;
 }
@@ -572,20 +579,22 @@ fn probe() -> result: own unit pure {
 "#;
     for source in [ordinary.as_slice(), postcondition.as_slice()] {
         with_one_resolution(source, |outcome| {
-            let ResolutionOutcome::SourceIssue { issue, .. } = outcome else {
-                panic!("a const generic must not become an ordinary pbase: {outcome:?}");
+            let ResolutionOutcome::Complete(resolved) = outcome else {
+                panic!("a const generic is an ordinary pbase: {outcome:?}");
             };
-            assert_eq!(issue.rule(), ResolutionRule::Type5);
+            let usage = resolved
+                .lexical_uses()
+                .iter()
+                .find(|usage: &&crate::resolution::LexicalUseRecord| {
+                    usage.role() == LexicalUseRole::PlaceBase && usage.spelling() == "n"
+                })
+                .expect("the place base `n` is a resolved use");
             assert!(matches!(
-                issue.kind(),
-                ResolutionIssueKind::UnresolvedUse {
-                    spelling,
-                    role: LexicalUseRole::PlaceBase,
-                    admissible,
-                    available,
-                } if spelling == "n"
-                    && !admissible.contains(&DeclarationClass::ConstGeneric)
-                    && available.contains(&DeclarationClass::ConstGeneric)
+                usage.target(),
+                ResolvedTarget::Source {
+                    class: DeclarationClass::ConstGeneric,
+                    ..
+                }
             ));
         });
     }

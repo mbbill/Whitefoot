@@ -98,8 +98,8 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
 }
 
 fn borrowed_first(value: &slice<u8>) -> result: own u8 reads(value) contract {
-  define room = len(deref(value));
-  requires 0_u64 < room;
+  define spare = len(deref(value));
+  requires 0_u64 < spare;
 } {
   return deref(value)[0_u64];
 }

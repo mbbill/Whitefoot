@@ -597,7 +597,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         relation: &RelationTemplate,
     ) -> Result<(), CheckStop> {
         for operand in &relation.operands {
-            let RelationDatum::Length(place) = operand else {
+            let RelationDatum::Measure(_, place) = operand else {
                 continue;
             };
             let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
@@ -789,9 +789,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             ExpandedClauseExpression::Operation {
                 row:
-                    GoalOperation::ArrayLength { .. }
-                    | GoalOperation::BufferLength { .. }
-                    | GoalOperation::SliceLength { .. },
+                    GoalOperation::ArrayMeasure { measure, .. }
+                    | GoalOperation::BufferMeasure { measure, .. }
+                    | GoalOperation::SliceMeasure { measure, .. },
                 arguments,
                 ..
             } => {
@@ -805,11 +805,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 else {
                     return None;
                 };
-                Some(RelationDatum::Length(PostconditionPlace {
-                    root: PostconditionPlaceRoot::Parameter { ordinal: *ordinal },
-                    projections: projections.clone(),
-                    ty: *ty,
-                }))
+                Some(RelationDatum::Measure(
+                    *measure,
+                    PostconditionPlace {
+                        root: PostconditionPlaceRoot::Parameter { ordinal: *ordinal },
+                        projections: projections.clone(),
+                        ty: *ty,
+                    },
+                ))
             }
             ExpandedClauseExpression::Operation { .. }
             | ExpandedClauseExpression::InvalidSelectorUse { .. } => None,
@@ -875,7 +878,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 PostconditionReturnDatum::Literal { value, .. } => {
                     matches!(value.ty(), CheckedType::Integer(_))
                 }
-                PostconditionReturnDatum::Length(_) => true,
+                PostconditionReturnDatum::Measure(..) => true,
             })
         });
         Ok(fragment_returns.then_some(checked))
@@ -1213,7 +1216,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     origin,
                 }))
             }
-            CheckedExpression::ArrayLength { root, length } => {
+            CheckedExpression::ArrayMeasure {
+                measure,
+                root,
+                length,
+            } => {
                 let place = match root {
                     CheckedArrayRoot::Binding { binding, fields } => {
                         self.postcondition_binding_place(*binding, fields, statement, binding_info)?
@@ -1244,9 +1251,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if actual_length != *length {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                Ok(Some(PostconditionReturnDatum::Length(place)))
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
-            CheckedExpression::BufferLength { root } => {
+            CheckedExpression::BufferMeasure { measure, root } => {
                 let Some(
                     place @ PostconditionReturnPlace {
                         ty: CheckedType::Buffer { element },
@@ -1264,9 +1271,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if element != root.element {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                Ok(Some(PostconditionReturnDatum::Length(place)))
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
-            CheckedExpression::SliceLength { root } => {
+            CheckedExpression::SliceMeasure { measure, root } => {
                 let Some(
                     place @ PostconditionReturnPlace {
                         ty: CheckedType::Slice { element, .. },
@@ -1279,7 +1286,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 if element != root.element {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
-                Ok(Some(PostconditionReturnDatum::Length(place)))
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
             _ => Ok(None),
         }

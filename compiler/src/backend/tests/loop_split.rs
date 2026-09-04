@@ -91,8 +91,8 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let room = len(deref(destination));
-    let writable = cursor < room;
+    let spare = len(deref(destination));
+    let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -308,8 +308,8 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let room = len(deref(destination));
-    let writable = cursor < room;
+    let spare = len(deref(destination));
+    let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;
@@ -448,7 +448,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
     source
         .replacen(
             "fn mapped() -> result: own buffer<u8> allocates(heap) {\n  let out = buffer_new(400000_u64, 0_u8);\n",
-            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define room = len(deref(out));\n  requires 400000_u64 <= room;\n} {\n",
+            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define spare = len(deref(out));\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
@@ -1256,8 +1256,8 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let room = len(deref(destination));
-    let writable = cursor < room;
+    let spare = len(deref(destination));
+    let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
       set deref(destination)[cursor] = byte;

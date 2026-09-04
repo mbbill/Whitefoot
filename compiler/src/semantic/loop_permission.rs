@@ -708,7 +708,7 @@ impl<'check> Survey<'check, '_> {
                 binding, fields, ..
             } => Some((*binding, rooted_place(self.places, *binding, fields))),
             CheckedExpression::BorrowBuffer { root, .. }
-            | CheckedExpression::BufferLength { root } => Some((
+            | CheckedExpression::BufferMeasure { root, .. } => Some((
                 root.binding,
                 rooted_place(self.places, root.binding, &root.fields),
             )),
@@ -725,11 +725,11 @@ impl<'check> Survey<'check, '_> {
                 }
                 Some((root.binding, place))
             }
-            CheckedExpression::SliceLength { root }
+            CheckedExpression::SliceMeasure { root, .. }
             | CheckedExpression::SliceIndex { root, .. } => {
                 Some((root.binding, rooted_place(self.places, root.binding, &[])))
             }
-            CheckedExpression::ArrayLength {
+            CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Binding { binding, fields },
                 ..
             } => Some((*binding, rooted_place(self.places, *binding, fields))),
@@ -748,7 +748,7 @@ impl<'check> Survey<'check, '_> {
                 }
                 Some((*binding, place))
             }
-            CheckedExpression::ArrayLength {
+            CheckedExpression::ArrayMeasure {
                 root: CheckedArrayRoot::Constant(_),
                 ..
             }

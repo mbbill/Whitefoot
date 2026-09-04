@@ -140,15 +140,15 @@ fn record_line(records: &ByteString, index: own u64, destination: &uniq buffer<u
   let length_at = base +wrap 1_u64;
   let length = stored_byte(records: records, index: length_at);
   let count = cvt::<u8, u64>(length);
-  let room = len(deref(destination));
+  let spare = len(deref(destination));
   let cursor = at;
   let glyph = 48_u8 +wrap kind;
-  let kind_fits = cursor < room;
+  let kind_fits = cursor < spare;
   if kind_fits {
     set deref(destination)[cursor] = glyph;
     set cursor = cursor +wrap 1_u64;
   }
-  let space_fits = cursor < room;
+  let space_fits = cursor < spare;
   if space_fits {
     set deref(destination)[cursor] = 32_u8;
     set cursor = cursor +wrap 1_u64;
@@ -162,7 +162,7 @@ fn record_line(records: &ByteString, index: own u64, destination: &uniq buffer<u
     }
     let path_at = path_start +wrap taken;
     let byte = stored_byte(records: records, index: path_at);
-    let body_fits = cursor < room;
+    let body_fits = cursor < spare;
     if body_fits {
     } else {
       break @path;
@@ -171,7 +171,7 @@ fn record_line(records: &ByteString, index: own u64, destination: &uniq buffer<u
     set cursor = cursor +wrap 1_u64;
     set taken = taken +wrap 1_u64;
   }
-  let end_fits = cursor < room;
+  let end_fits = cursor < spare;
   if end_fits {
     set deref(destination)[cursor] = 10_u8;
     set cursor = cursor +wrap 1_u64;
@@ -201,7 +201,7 @@ fn record_entry(records: &uniq ByteString, path: &buffer<u8>, length: own u64, k
   region {
     let pushed = bs_push(s: &uniq deref(records), value: byte_length);
   }
-  let room = len(deref(path));
+  let spare = len(deref(path));
   let at = 0_u64;
   loop @body {
     let done = at >= 126_u64;
@@ -211,7 +211,7 @@ fn record_entry(records: &uniq ByteString, path: &buffer<u8>, length: own u64, k
     let byte = 0_u8;
     let inside = at < stored;
     if inside {
-      let readable = at < room;
+      let readable = at < spare;
       if readable {
         set byte = deref(path)[at];
       }

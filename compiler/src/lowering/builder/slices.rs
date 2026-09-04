@@ -57,7 +57,7 @@ impl IrBuilder<'_> {
                 width: 64,
                 signed: false,
             },
-            IrOperation::SliceLength { slice },
+            IrOperation::SliceMeasure { slice },
         )
     }
 

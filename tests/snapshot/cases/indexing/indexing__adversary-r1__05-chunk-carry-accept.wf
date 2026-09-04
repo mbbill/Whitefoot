@@ -1,18 +1,18 @@
 fn sum_chunks(buf: own buffer<u8>, chunk_size: own u64) -> total: own u64 reads(buf) contract {
-  define room = len(buf);
+  define spare = len(buf);
   requires chunk_size > 0_u64;
   requires chunk_size <= 2147483648_u64;
-  requires room <= 2147483648_u64;
+  requires spare <= 2147483648_u64;
 } {
   doc "expect ACCEPT: chunk reader walks buf in fixed-size chunks; the loop only reads a chunk after proving cursor + chunk_size <= len(buf)";
-  let room = len(buf);
+  let spare = len(buf);
   let cursor = 0_u64;
   let total = 0_u64;
   loop (
-    invariant cursor_in_range: cursor <= room
+    invariant cursor_in_range: cursor <= spare
   ) {
     let chunk_end = cursor + chunk_size;
-    let has_full_chunk = chunk_end <= room;
+    let has_full_chunk = chunk_end <= spare;
     if has_full_chunk {
       let first = buf[cursor];
       let widened = cvt::<u8, u64>(first);

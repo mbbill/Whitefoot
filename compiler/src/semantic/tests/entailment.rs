@@ -14,7 +14,7 @@ use super::super::entailment::{
     CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedAtomicDerivation,
     CountedCaptureSide, CountedDerivationSet, CountedProofPoint, CountedRootAtom, DerivationId,
     DerivationNode, DerivationRootKind, FlowEvent, FlowEventId, FlowEventKind, FunctionEntailment,
-    GoalId, GoalSign, ImplicitBoundKind, JoinParent, LengthBound, ObligationFamily,
+    GoalId, GoalSign, ImplicitBoundKind, JoinParent, MeasureBound, ObligationFamily,
     ObligationOutcome, PlaceProjection, PlaceRoot, PostconditionCallDetail,
     PostconditionDeliveryJoinDetail, PostconditionDisposition, Relation, RemainderEndpoint,
     S7Derivation, S7DerivationKind, S7Subject, ShiftOneIdentity, SourceAffineFactRef, TermId,
@@ -22,8 +22,8 @@ use super::super::entailment::{
 };
 use super::super::goal::{GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedBodyDisposition, CheckedExpression, CheckedIntegerOperation, CheckedProgramData,
-    CheckedStatement, CheckedValue, FunctionId, IntegerType,
+    CheckedBodyDisposition, CheckedExpression, CheckedIntegerOperation, CheckedMeasure,
+    CheckedProgramData, CheckedStatement, CheckedValue, FunctionId, IntegerType,
 };
 use super::{assert_rule, with_semantics, with_semantics_dark};
 
@@ -464,9 +464,9 @@ fn assert_join_parents(
 fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
     match kind {
         TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => Some(type_range(*ty)),
-        TermKind::Length(_) | TermKind::ProjectedLength(_) | TermKind::CountedCapture { .. } => {
-            Some(type_range(IntegerType::U64))
-        }
+        TermKind::Measure(..)
+        | TermKind::ProjectedMeasure(..)
+        | TermKind::CountedCapture { .. } => Some(type_range(IntegerType::U64)),
         TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
         TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
     }
@@ -478,12 +478,12 @@ fn assert_array_length_bound(
     right: TermId,
     bound: i128,
 ) {
-    let relation_matches = |length: TermId, length_bound: LengthBound| match length_bound {
-        LengthBound::Constant(value) => {
+    let relation_matches = |length: TermId, measure_bound: MeasureBound| match measure_bound {
+        MeasureBound::Constant(value) => {
             (left == length && right == ZERO && bound == value)
                 || (left == ZERO && right == length && bound == -value)
         }
-        LengthBound::Equal(parameter) => {
+        MeasureBound::Equal(parameter) => {
             ((left == length && right == parameter) || (left == parameter && right == length))
                 && bound == 0
         }
@@ -491,9 +491,9 @@ fn assert_array_length_bound(
     let matched = [left, right].into_iter().any(|candidate| {
         matches!(
             retained_term(summary, candidate),
-            TermKind::Length(_) | TermKind::ProjectedLength(_)
-        ) && summary.inventory.length_bounds[candidate.0 as usize]
-            .is_some_and(|length_bound| relation_matches(candidate, length_bound))
+            TermKind::Measure(..) | TermKind::ProjectedMeasure(..)
+        ) && summary.inventory.measure_bounds[candidate.0 as usize]
+            .is_some_and(|measure_bound| relation_matches(candidate, measure_bound))
     });
     assert!(matched, "array-length implicit bound must resolve exactly");
 }
@@ -774,7 +774,7 @@ fn assert_source_affine_fact_resolves(summary: &FunctionEntailment, source: Sour
 pub(super) fn validate_derivations(summary: &FunctionEntailment) {
     assert_eq!(
         summary.inventory.terms.len(),
-        summary.inventory.length_bounds.len(),
+        summary.inventory.measure_bounds.len(),
         "term and length-bound inventories stay densely aligned"
     );
     assert_eq!(retained_term(summary, ZERO), &TermKind::Zero);
@@ -892,8 +892,26 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             .expect("type minimum requires an integer-like term");
                         assert_eq!(*bound, -minimum);
                     }
-                    ImplicitBoundKind::ArrayLength => {
+                    ImplicitBoundKind::StandingMeasure => {
                         assert_array_length_bound(summary, *left, *right, *bound);
+                    }
+                    // [MSR-2] `len(P) <= limit(P)` and `front(P) <= limit(P)`,
+                    // emitted from the capacity term of one place.
+                    ImplicitBoundKind::MeasureOrdering => {
+                        assert_eq!(*bound, 0);
+                        assert!(matches!(
+                            retained_term(summary, *right),
+                            TermKind::Measure(CheckedMeasure::Capacity, _)
+                                | TermKind::ProjectedMeasure(CheckedMeasure::Capacity, _)
+                        ));
+                        assert!(matches!(
+                            retained_term(summary, *left),
+                            TermKind::Measure(CheckedMeasure::Length | CheckedMeasure::Head, _)
+                                | TermKind::ProjectedMeasure(
+                                    CheckedMeasure::Length | CheckedMeasure::Head,
+                                    _
+                                )
+                        ));
                     }
                 }
                 DerivationConclusion::Relation(Relation::Bound {
@@ -2499,7 +2517,7 @@ command fn main() -> status: own ExitStatus pure {
             matches!(
                 node,
                 DerivationNode::ImplicitBound {
-                    kind: ImplicitBoundKind::ArrayLength,
+                    kind: ImplicitBoundKind::StandingMeasure,
                     ..
                 }
             )
@@ -4315,7 +4333,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true, true],
-        "no kill event in the body touches i, so the fact holds at the head"
+        "no kill event in the body touches i, so the fact holds at the front"
     );
 }
 
@@ -4360,7 +4378,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "return_inside"),
         vec![true],
-        "D1h: a return edge reaches no later head, so it cannot erase the entry fact"
+        "D1h: a return edge reaches no later front, so it cannot erase the entry fact"
     );
     assert_eq!(
         discharge_flags(source, "return_after"),
@@ -4393,7 +4411,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "the set's only successor leaves this loop, so no later head observes it"
+        "the set's only successor leaves this loop, so no later front observes it"
     );
 }
 
@@ -4429,7 +4447,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "the assignment reaches only the enclosing loop's continuation, not the inner head"
+        "the assignment reaches only the enclosing loop's continuation, not the inner front"
     );
 }
 
@@ -4471,7 +4489,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "only propagate's Ok edge can return to the head; its Err edge leaves the function"
+        "only propagate's Ok edge can return to the front; its Err edge leaves the function"
     );
 }
 
@@ -5183,11 +5201,11 @@ command fn main() -> status: own ExitStatus pure {
             );
             let mut lengths: Vec<_> = summary
                 .inventory
-                .length_bounds
+                .measure_bounds
                 .iter()
                 .filter_map(|bound| match bound {
-                    Some(LengthBound::Constant(value)) => Some(*value),
-                    Some(LengthBound::Equal(_)) | None => None,
+                    Some(MeasureBound::Constant(value)) => Some(*value),
+                    Some(MeasureBound::Equal(_)) | None => None,
                 })
                 .collect();
             lengths.sort_unstable();
@@ -5728,7 +5746,7 @@ command fn main() -> status: own ExitStatus pure {
                     (
                         TermKind::Constant(3),
                         TermKind::Place(n, IntegerType::U64),
-                        TermKind::Length(buffer),
+                        TermKind::Measure(CheckedMeasure::Length, buffer),
                     ) if n.root == PlaceRoot::Binding(BindingId(0))
                         && buffer.root == PlaceRoot::Binding(BindingId(1))
                 )
@@ -8127,7 +8145,7 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                     MaskActual::Binding(binding) => {
                         matches!(
                             retained_term(summary, term),
-                            TermKind::CallDatum { measure: false, .. }
+                            TermKind::CallDatum { measure: None, .. }
                         ) && summary.inventory.terms.iter().any(|kind| {
                             matches!(
                                 kind,
@@ -9539,7 +9557,7 @@ command fn main() -> status: own ExitStatus pure {
             matches!(
                 node,
                 DerivationNode::ImplicitBound {
-                    kind: ImplicitBoundKind::ArrayLength,
+                    kind: ImplicitBoundKind::StandingMeasure,
                     ..
                 }
             )
@@ -9921,7 +9939,7 @@ command fn main() -> status: own ExitStatus pure {
                     matches!(
                         node,
                         DerivationNode::ImplicitBound {
-                            kind: ImplicitBoundKind::ArrayLength,
+                            kind: ImplicitBoundKind::StandingMeasure,
                             ..
                         }
                     )
@@ -9930,11 +9948,11 @@ command fn main() -> status: own ExitStatus pure {
             );
             let lengths: Vec<_> = summary
                 .inventory
-                .length_bounds
+                .measure_bounds
                 .iter()
                 .filter_map(|bound| match bound {
-                    Some(LengthBound::Constant(value)) => Some(*value),
-                    Some(LengthBound::Equal(_)) | None => None,
+                    Some(MeasureBound::Constant(value)) => Some(*value),
+                    Some(MeasureBound::Equal(_)) | None => None,
                 })
                 .collect();
             assert_eq!(lengths.len(), 1);
@@ -9959,8 +9977,8 @@ fn write_left(pair: &uniq Pair, value: own u64) -> result: own unit writes(pair.
 }
 
 fn preserve_right(pair: own Pair, values: own array<u8, 4>) -> result: own u8 reads(pair.right), writes(pair.left) contract {
-  define room = len(values);
-  requires pair.right < room;
+  define spare = len(values);
+  requires pair.right < spare;
 } {
   region {
     write_left(pair: &uniq pair, value: 0_u64);
@@ -10065,9 +10083,9 @@ fn an_array_length_verdict_is_invariant_under_an_unrelated_binding() {
 #[test]
 fn a_write_still_kills_an_established_bound_on_its_target() {
     let source = br#"fn get(b: own buffer<u8>, start: own u64) -> result: own u8 reads(b) {
-  let room = len(b);
+  let spare = len(b);
   let offset = 0_u64;
-  let inside = offset < room;
+  let inside = offset < spare;
   if inside {
   } else {
     return 0_u8;

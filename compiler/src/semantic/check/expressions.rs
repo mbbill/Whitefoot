@@ -1201,6 +1201,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ))
                 }
             }
+            // [MSR-6] an in-scope const generic is a value wherever a named
+            // const is. It is one `pbase` with no suffix and no `deref`, its
+            // exact type is the `gparam`'s written integer type, and reading
+            // it performs no operation and has the empty effect row.
+            DeclarationClass::ConstGeneric => {
+                if options.explicit_move {
+                    return self.issue_node(
+                        SemanticRule::Own1,
+                        use_node,
+                        SemanticIssueKind::MoveOfCopy {
+                            mechanical_fix: "use the copy place without `move`",
+                        },
+                    );
+                }
+                if !suffixes.is_empty() {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        use_node,
+                        SemanticIssueKind::type_mismatch(
+                            "a const generic read with no suffix",
+                            "a suffix chain on an integer const generic",
+                        ),
+                    );
+                }
+                let ty = self.const_generic_type(declaration)?;
+                let value = match function.substitution.const_argument(declaration) {
+                    Some(CheckedConst::Value(value)) => CheckedValue::Integer { ty, bits: value },
+                    // The one source-canonical symbolic instance keeps the
+                    // declaration-anchored constant [ENT-2] clause (c) fixes.
+                    _ => CheckedValue::ConstGeneric { declaration, ty },
+                };
+                Ok(TypedExpression::owned(
+                    CheckedExpression::Constant(value),
+                    EffectSet::NONE,
+                ))
+            }
             DeclarationClass::NamedConst => {
                 if options.explicit_move {
                     return self.issue_node(

@@ -790,8 +790,8 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
     let name = buffer_new(16_u64, 97_u8);
     region {
       let holder = &uniq shared;
-      let room = len(deref(holder));
-      let fits = 0_u64 < room;
+      let spare = len(deref(holder));
+      let fits = 0_u64 < spare;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
       }
@@ -838,8 +838,8 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
     let scratch = buffer_new(8_u64, 0_u8);
     region {
       let holder = &uniq scratch;
-      let room = len(deref(holder));
-      let fits = 0_u64 < room;
+      let spare = len(deref(holder));
+      let fits = 0_u64 < spare;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
       }
@@ -956,8 +956,8 @@ fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
 #[test]
 fn an_expression_statement_refuses_as_a_form_and_names_the_let_binding() {
     let source = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
-  let room = len(deref(slot));
-  let wide = 0_u64 < room;
+  let spare = len(deref(slot));
+  let wide = 0_u64 < spare;
   if wide {
     set deref(slot)[0_u64] = 7_u8;
   }
@@ -1606,8 +1606,8 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let room = len(name);
-    let fits = index < room;
+    let spare = len(name);
+    let fits = index < spare;
     if fits {
       set name[index] = 98_u8;
     }
@@ -1857,8 +1857,8 @@ const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own D
 "#;
 
 const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
-  let room = len(deref(slot));
-  let sized = 0_u64 < room;
+  let spare = len(deref(slot));
+  let sized = 0_u64 < spare;
   if sized {
     let parity = index % 2_u64;
     let odd = parity == 1_u64;
@@ -1870,8 +1870,8 @@ const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index:
 }
 
 fn first_byte(source: &buffer<u8>) -> result: own u64 reads(source) {
-  let room = len(deref(source));
-  let sized = 0_u64 < room;
+  let spare = len(deref(source));
+  let sized = 0_u64 < spare;
   if sized {
   } else {
     return 0_u64;

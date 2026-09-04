@@ -13,9 +13,9 @@ use crate::{
 use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
     CheckedConst, CheckedExpression, CheckedFlatElement, CheckedLayoutCeiling,
-    CheckedLayoutMagnitude, CheckedMode, CheckedNominalKind, CheckedRuntimeTargetObligations,
-    CheckedSetTarget, CheckedSliceRoot, CheckedTargetDomainObligation, CheckedType, IntegerType,
-    NominalId,
+    CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
+    CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
 };
 use super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, RequiredReferent, ResolvedPlace, SliceInfo,
@@ -524,18 +524,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    pub(in crate::semantic::check) fn check_flat_length(
+    /// One [MSR-1] measure former read as an [OP-1] row.
+    ///
+    /// The four spellings share one judgment because they are one operation
+    /// family over one place: which measure the row reads is the selected
+    /// measure, and the measure table [MSR-1] gives its value per measured
+    /// type. Nothing here is keyed on the spelling beyond that selection.
+    pub(in crate::semantic::check) fn check_flat_measure(
         &self,
         node: NodeId,
+        measure: CheckedMeasure,
         _function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         _loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
-        self.reject_named_operation_arguments(node, "len")?;
+        self.reject_named_operation_arguments(node, measure.spelling())?;
         self.reject_written_operation_type_argument(node)?;
         let atoms = self.operation_atoms(node, 1)?;
-        // [OP-2] `len`'s selected element type is the base place's own; the
-        // result is `own u64` for every row, so nothing else consults it.
+        // [OP-2] a measure former's selected element type is the base place's
+        // own; the result is `own u64` for every row, so nothing else consults
+        // it.
         let place = self.check_indexed_atom_place(atoms[0], bindings)?;
         let mut effects = EffectSet::NONE;
         match &place {
@@ -583,16 +591,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         Ok(TypedExpression::owned(
             match place {
-                CheckedIndexedPlace::Array(array) => CheckedExpression::ArrayLength {
+                CheckedIndexedPlace::Array(array) => CheckedExpression::ArrayMeasure {
+                    measure,
                     root: array.root,
                     length: array.length,
                 },
-                CheckedIndexedPlace::Buffer(buffer) => {
-                    CheckedExpression::BufferLength { root: buffer.root }
-                }
-                CheckedIndexedPlace::Slice(slice) => {
-                    CheckedExpression::SliceLength { root: slice.root }
-                }
+                CheckedIndexedPlace::Buffer(buffer) => CheckedExpression::BufferMeasure {
+                    measure,
+                    root: buffer.root,
+                },
+                CheckedIndexedPlace::Slice(slice) => CheckedExpression::SliceMeasure {
+                    measure,
+                    root: slice.root,
+                },
             },
             effects,
         ))

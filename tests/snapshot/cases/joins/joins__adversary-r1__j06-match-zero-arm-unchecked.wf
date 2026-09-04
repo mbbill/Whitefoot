@@ -4,15 +4,15 @@ enum Pick {
 }
 
 fn get(b: own buffer<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
-  doc "expect REJECT: the Zero() arm rebinds i to 0 without ever checking room > 0, so it does not establish i < room; with an empty buffer (room = 0) and choice = Zero, b[i] is out of range even though i looks like a safe constant.";
-  let room = len(b);
+  doc "expect REJECT: the Zero() arm rebinds i to 0 without ever checking spare > 0, so it does not establish i < spare; with an empty buffer (spare = 0) and choice = Zero, b[i] is out of range even though i looks like a safe constant.";
+  let spare = len(b);
   let cursor = i;
   match choice {
     Zero() => {
       set cursor = 0_u64;
     }
     Wide() => {
-      let inside = i < room;
+      let inside = i < spare;
       if inside {
       } else {
         return 0_u8;

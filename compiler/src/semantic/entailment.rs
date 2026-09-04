@@ -45,7 +45,8 @@ pub(crate) use state::{
 };
 #[cfg(test)]
 pub(crate) use term::{
-    CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, TermId, TermKind, ZERO, type_range,
+    CountedCaptureSide, MeasureBound, PlaceProjection, PlaceRoot, TermId, TermKind, ZERO,
+    type_range,
 };
 
 use std::collections::{BTreeSet, HashMap};
@@ -754,7 +755,8 @@ pub(crate) enum PostconditionDisposition {
 pub(crate) struct PostconditionEntryImage {
     pub(crate) parameter: u32,
     pub(crate) projections: Vec<super::goal::GoalProjection>,
-    pub(crate) length: bool,
+    /// Which [MSR-1] measure the datum denotes, when it denotes one.
+    pub(crate) measure: Option<super::model::CheckedMeasure>,
 }
 
 /// Source-value stability retained at one selected return. `None` is the

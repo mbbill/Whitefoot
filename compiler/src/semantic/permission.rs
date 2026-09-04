@@ -1791,12 +1791,11 @@ pub(crate) fn visit_read_bindings(
         | CheckedExpression::ReborrowAddressed { binding, .. }
         | CheckedExpression::DerefAddressed { binding, .. } => note(*binding),
         CheckedExpression::BorrowBuffer { root, .. }
-        | CheckedExpression::BufferLength { root }
+        | CheckedExpression::BufferMeasure { root, .. }
         | CheckedExpression::BufferIndex { root, .. } => note(root.binding),
-        CheckedExpression::SliceLength { root } | CheckedExpression::SliceIndex { root, .. } => {
-            note(root.binding)
-        }
-        CheckedExpression::ArrayLength { root, .. }
+        CheckedExpression::SliceMeasure { root, .. }
+        | CheckedExpression::SliceIndex { root, .. } => note(root.binding),
+        CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => {
             if let CheckedArrayRoot::Binding { binding, .. } = root {
                 note(*binding);
@@ -1881,14 +1880,15 @@ pub(super) fn collect_operand_reads(
         CheckedExpression::DerefAddressed { binding, .. } => {
             read(footprint, node, places.resolve_deref(*binding, 0));
         }
-        CheckedExpression::BufferLength { root } | CheckedExpression::BufferIndex { root, .. } => {
+        CheckedExpression::BufferMeasure { root, .. }
+        | CheckedExpression::BufferIndex { root, .. } => {
             read(
                 footprint,
                 node,
                 rooted_place(places, root.binding, &root.fields),
             );
         }
-        CheckedExpression::ArrayLength { root, .. }
+        CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => match root {
             CheckedArrayRoot::Binding { binding, fields } => {
                 read(footprint, node, rooted_place(places, *binding, fields));
@@ -1907,7 +1907,7 @@ pub(super) fn collect_operand_reads(
         }
         // A slice descriptor names storage this analysis does not resolve, so
         // reading through one fails closed.
-        CheckedExpression::SliceLength { .. } | CheckedExpression::SliceIndex { .. } => {
+        CheckedExpression::SliceMeasure { .. } | CheckedExpression::SliceIndex { .. } => {
             footprint.operand_unresolved = Some(node.clone());
         }
         // [GRAM-9] forbids a call in argument position; if one ever reaches

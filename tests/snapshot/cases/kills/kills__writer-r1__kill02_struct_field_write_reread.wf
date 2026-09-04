@@ -4,9 +4,9 @@ struct Counter {
 }
 
 fn bump(c: &uniq Counter) -> result: own Bool reads(c.value, c.limit), writes(c.value) {
-  doc "expect ACCEPT: writing deref(c).value kills the old value fact, so the room check after the write reads the freshly written field, not a stale image.";
-  let room = deref(c).value < deref(c).limit;
-  if room {
+  doc "expect ACCEPT: writing deref(c).value kills the old value fact, so the spare check after the write reads the freshly written field, not a stale image.";
+  let spare = deref(c).value < deref(c).limit;
+  if spare {
   } else {
     return False();
   }

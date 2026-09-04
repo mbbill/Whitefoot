@@ -1,14 +1,14 @@
 fn shifted_read(buf: own buffer<u8>, base: own u64, delta: own u64) -> value: own u8 reads(buf) contract {
-  define room = len(buf);
-  requires room <= 4294967296_u64;
-  requires base < room;
-  requires delta < room;
+  define spare = len(buf);
+  requires spare <= 4294967296_u64;
+  requires base < spare;
+  requires delta < spare;
 } {
-  doc "expect ACCEPT: base < room and delta < room, plus a ceiling on room, let AUTO prove base +defined delta and combine both bounds to show base + delta stays inside 2 * room; the caller further picks base, delta so the exact sum lands inside room itself";
-  let room = len(buf);
+  doc "expect ACCEPT: base < spare and delta < spare, plus a ceiling on spare, let AUTO prove base +defined delta and combine both bounds to show base + delta stays inside 2 * spare; the caller further picks base, delta so the exact sum lands inside spare itself";
+  let spare = len(buf);
   let offset = base + delta;
-  invariant offset_double_bounded: offset < 2_u64 * room;
-  let too_far = offset >= room;
+  invariant offset_double_bounded: offset < 2_u64 * spare;
+  let too_far = offset >= spare;
   if too_far {
     return buf[0_u64];
   } else {

@@ -1,6 +1,6 @@
 fn get_bounded(b: &buffer<u8>, i: own u64) -> value: own u8 reads(b) contract {
-  define room = len(deref(b));
-  requires i < room;
+  define spare = len(deref(b));
+  requires i < spare;
 } {
   return deref(b)[i];
 }

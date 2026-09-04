@@ -3,11 +3,11 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
   region {
     let position = args_count(args: &args);
     let bytes = buffer_new(8_u64, 0_u8);
-    let room = len(bytes);
-    let head = bytes[0_u64];
+    let spare = len(bytes);
+    let front = bytes[0_u64];
     let second = bytes[1_u64];
     let tail = bytes[7_u64];
-    let partial = head +wrap second;
+    let partial = front +wrap second;
     let checksum = partial +wrap tail;
     let sample = bytes[position];
     return exit_status(code: sample);

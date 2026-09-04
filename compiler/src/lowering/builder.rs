@@ -13,8 +13,9 @@ use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
     BindingId, CheckedArrayRoot, CheckedConstructor, CheckedDrop, CheckedEntryForm,
-    CheckedExpression, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedParameter,
-    CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue, FunctionPermissions,
+    CheckedExpression, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedParameter, CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue,
+    FunctionPermissions, MeasureCell, MeasuredKind,
 };
 
 use super::*;
@@ -133,7 +134,8 @@ fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFai
             ty: lower_type(crate::semantic::CheckedType::Float(*ty))?,
             bits: *bits,
         }),
-        CheckedValue::NumericIdentity { .. }
+        CheckedValue::ConstGeneric { .. }
+        | CheckedValue::NumericIdentity { .. }
         | CheckedValue::Array { .. }
         | CheckedValue::Struct { .. } => Err(LoweringFailure::InvalidCheckedProgram),
     }
@@ -731,6 +733,19 @@ impl<'program> IrBuilder<'program> {
         }
         self.current = None;
         Ok(())
+    }
+
+    /// One [MSR-1] measure whose table cell is a compile-time constant.
+    /// The reader still executes; it just has no load to perform.
+    fn lower_fixed_measure(&mut self, value: u64) -> Result<IrValueId, LoweringFailure> {
+        let ty = IrType::Integer {
+            width: 64,
+            signed: false,
+        };
+        self.define(
+            ty,
+            IrOperation::Constant(IrConstant::Integer { ty, bits: value }),
+        )
     }
 
     fn define(&mut self, ty: IrType, operation: IrOperation) -> Result<IrValueId, LoweringFailure> {
@@ -1614,7 +1629,14 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::ArrayLength { root, length, .. } => {
+            CheckedExpression::ArrayMeasure {
+                measure,
+                root,
+                length,
+            } => {
+                if let Some(constant) = fixed_measure(*measure, MeasuredKind::Array) {
+                    return self.lower_fixed_measure(constant);
+                }
                 let (_, ty) = self.array_root(root)?;
                 let IrType::Array { length: actual, .. } = ty else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -1708,7 +1730,12 @@ impl<'program> IrBuilder<'program> {
                     },
                 )
             }
-            CheckedExpression::BufferLength { root, .. } => self.lower_buffer_length(root),
+            CheckedExpression::BufferMeasure { measure, root } => {
+                match fixed_measure(*measure, MeasuredKind::Buffer) {
+                    Some(constant) => self.lower_fixed_measure(constant),
+                    None => self.lower_buffer_length(root),
+                }
+            }
             CheckedExpression::BufferIndex {
                 root,
                 offset,
@@ -1718,7 +1745,12 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::SliceOf {
                 source, element, ..
             } => self.lower_slice_of(source, *element),
-            CheckedExpression::SliceLength { root, .. } => self.lower_slice_length(root),
+            CheckedExpression::SliceMeasure { measure, root } => {
+                match fixed_measure(*measure, MeasuredKind::Slice) {
+                    Some(constant) => self.lower_fixed_measure(constant),
+                    None => self.lower_slice_length(root),
+                }
+            }
             CheckedExpression::SliceIndex {
                 root,
                 offset,
@@ -2297,5 +2329,15 @@ impl<'program> IrBuilder<'program> {
             });
         }
         Ok(lowered)
+    }
+}
+
+/// The compile-time value of one [MSR-1] measure cell, when the table fixes
+/// it. A cell the table gives the measured value's own extent is loaded at
+/// run time instead, which is the `None` case.
+const fn fixed_measure(measure: CheckedMeasure, measured: MeasuredKind) -> Option<u64> {
+    match measure.cell(measured) {
+        MeasureCell::ExactConstant(value) => Some(value),
+        MeasureCell::ExactExtent | MeasureCell::Bounded | MeasureCell::Absent => None,
     }
 }

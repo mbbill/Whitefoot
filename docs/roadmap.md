@@ -52,7 +52,7 @@ interval it stands for, so nested joins reach the flat join's image and
 acceptance stops depending on the shape of the control join. The repair only
 adds images: no program v0.42 accepted is refused.
 
-v0.45 adds no rule and retires none (136 remain), and adds one grammar atom,
+v0.45 adds four rules and retires none (140 remain), and adds one grammar atom,
 `is`. A `fn_decl` may write an ordered result list, `-> (kept: own u64, spare:
 own u64)`, and a caller names its ordinals again with a destructuring `let`
 binder list or a `set` target list; a `return` writes one expression per
@@ -67,6 +67,24 @@ same rule adds the two [ENT-3.S12] destinations only a multi-result contract
 exercises, each binder of a destructuring `let` and each target of a `set`
 target list. The batch that carried it is B1b of the container and resource
 design under `research/investigations/containers-and-resources/`.
+
+The same version adds that design's proof surface, which is where its four
+added rules are. [MSR-1] makes `len(P)`, `cap(P)`, `room(P)` and `head(P)`
+[ENT-2] terms over an admitted measure place -- field selections, `deref`
+wrappings and subscripts alike -- and [OP-1] readers over the same places,
+states that a measure table exists and gives every measured type a row with one
+of exact, bounded or absent per cell, and fixes the logical coordinate system
+in which every measure and every [OP-4] obligation is stated. [MSR-2] states
+the support of a measure term as descriptor storage rather than a root binding,
+so a write to a sibling field kills no measure and a write at an element
+position kills the measures of the written element and none of the run's own;
+[ENT-5]'s element-position carve-out is removed. [MSR-4] states once the
+complete ordered derivation of a numeric goal in six steps and retires
+[ENT-6]'s per-family route grants. [MSR-6] admits an in-scope const generic as
+a value, a counted endpoint and a clause operand. The three readers are dotless
+operation spellings, so `ReservedLowerNames` gains all three and a writer
+declaration may no longer be spelled `cap`, `room` or `head`. The batch that
+carried it is B2 of the same design.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`

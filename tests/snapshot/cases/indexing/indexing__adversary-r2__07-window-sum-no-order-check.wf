@@ -1,13 +1,13 @@
 fn window_sum(buf: own buffer<u8>, offset: own u64, length: own u64) -> total: own u64 reads(buf) {
-  doc "expect ACCEPT: only end<=room is checked, offset<=end is NOT checked; offset=u64::MAX-2,length=5 wraps end to 2, but the for-range offset..end is empty since offset>end so the body never runs, remaining sound";
-  let room = len(buf);
+  doc "expect ACCEPT: only end<=spare is checked, offset<=end is NOT checked; offset=u64::MAX-2,length=5 wraps end to 2, but the for-range offset..end is empty since offset>end so the body never runs, remaining sound";
+  let spare = len(buf);
   let end = offset +wrap length;
-  let fits = end <= room;
+  let fits = end <= spare;
   let sum = 0_u64;
   if fits {
     for (
       i in offset..end,
-      invariant within: end <= room
+      invariant within: end <= spare
     ) {
       let byte = buf[i];
       let widened = cvt::<u8, u64>(byte);

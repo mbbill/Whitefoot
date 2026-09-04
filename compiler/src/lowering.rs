@@ -778,7 +778,7 @@ pub enum IrOperation {
         length: IrValueId,
         maximum_length: u64,
     },
-    BufferLength {
+    BufferMeasure {
         buffer: IrValueId,
     },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
@@ -808,7 +808,7 @@ pub enum IrOperation {
     SliceFromBuffer {
         buffer: IrValueId,
     },
-    SliceLength {
+    SliceMeasure {
         slice: IrValueId,
     },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].

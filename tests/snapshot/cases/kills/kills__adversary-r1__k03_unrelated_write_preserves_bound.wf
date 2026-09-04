@@ -1,7 +1,7 @@
 fn touch_then_read(buf: own buffer<u8>, i: own u64) -> value: own u8 reads(buf), writes(buf) contract {
-  define room = len(buf);
-  requires i < room;
-  requires 0_u64 < room;
+  define spare = len(buf);
+  requires i < spare;
+  requires 0_u64 < spare;
 } {
   doc "expect ACCEPT: writing buf[0] does not change len(buf), so the i < len(buf) fact for a different index i still holds; sanity check that unrelated writes are not over-killed.";
   set buf[0_u64] = 42_u8;

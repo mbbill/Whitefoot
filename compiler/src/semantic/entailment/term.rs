@@ -14,7 +14,7 @@
 
 use std::collections::HashMap;
 
-use super::super::model::IntegerType;
+use super::super::model::{CheckedMeasure, IntegerType};
 pub(crate) use super::super::places::{PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm};
 use crate::DeclarationId;
 
@@ -41,10 +41,11 @@ pub(crate) enum TermKind {
     /// The same [ENT-2] tracked-place class when field selections precede a
     /// deref or more than one deref occurs in the canonical spelling.
     ProjectedPlace(ProjectedPlaceTerm, IntegerType),
-    /// The length term `len(P)`, of fragment type u64.
-    Length(PlaceTerm),
-    /// A length term whose place has interleaved field/deref projections.
-    ProjectedLength(ProjectedPlaceTerm),
+    /// One measure term `len(P)`, `cap(P)`, `room(P)` or `head(P)` [MSR-1],
+    /// of fragment type u64. Its support is P's descriptor storage [MSR-2].
+    Measure(CheckedMeasure, PlaceTerm),
+    /// A measure term whose place has interleaved field/deref projections.
+    ProjectedMeasure(CheckedMeasure, ProjectedPlaceTerm),
     /// One immutable compiler-owned endpoint capture [ENT-2, S11]. The
     /// finalized `for_stmt` path plus the endpoint side is its complete
     /// function-local identity; source can neither name nor mutate it.
@@ -68,15 +69,15 @@ pub(crate) enum TermKind {
     /// one `own` operand of a declared relation had at that call's
     /// pre-transfer point, or one measure of it. The call's finalized
     /// NodePath, the formal ordinal, the operand's ordered projections, and
-    /// whether the datum denotes the operand's value or its length are its
-    /// complete function-local identity. No place occurs in it, so no
+    /// and which measure of it the datum denotes, if any, are its complete
+    /// function-local identity [MSR-1]. No place occurs in it, so no
     /// [ENT-5] event kills it and a relation stated over it survives the
     /// consume the same statement performs.
     CallDatum {
         call_path: Vec<u32>,
         formal: u32,
         projections: Vec<CallDatumProjection>,
-        measure: bool,
+        measure: Option<CheckedMeasure>,
         ty: IntegerType,
     },
 }
@@ -92,11 +93,13 @@ pub(crate) enum CallDatumProjection {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
 pub(crate) struct TermId(pub(crate) u32);
 
-/// The implicit [ENT-2] length equality of one length term whose place has
-/// type `array<T, N>`: concrete N is a constant, const-generic N a symbolic
-/// constant term. Implicit facts hold at every program point and never die.
+/// One implicit [ENT-2] equality a measure term carries at every program
+/// point: the `array<T, N>` `len` and `cap` equality to N, with concrete N a
+/// constant and const-generic N a symbolic constant term, and [MSR-2]'s
+/// standing constant for a table cell whose value is fixed. Implicit facts
+/// hold at every program point and never die.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum LengthBound {
+pub(crate) enum MeasureBound {
     Constant(i128),
     Equal(TermId),
 }
@@ -114,7 +117,7 @@ pub(crate) const ZERO: TermId = TermId(0);
 pub(crate) struct TermTable {
     terms: Vec<TermKind>,
     ids: HashMap<TermKind, TermId>,
-    length_bounds: HashMap<TermId, LengthBound>,
+    measure_bounds: HashMap<TermId, MeasureBound>,
 }
 
 impl TermTable {
@@ -122,19 +125,33 @@ impl TermTable {
         let mut table = Self {
             terms: Vec::new(),
             ids: HashMap::new(),
-            length_bounds: HashMap::new(),
+            measure_bounds: HashMap::new(),
         };
         let zero = table.intern(TermKind::Zero);
         debug_assert_eq!(zero, ZERO);
         table
     }
 
-    pub(crate) fn set_length_bound(&mut self, term: TermId, bound: LengthBound) {
-        self.length_bounds.insert(term, bound);
+    pub(crate) fn set_measure_bound(&mut self, term: TermId, bound: MeasureBound) {
+        self.measure_bounds.insert(term, bound);
     }
 
-    pub(crate) fn length_bound(&self, term: TermId) -> Option<LengthBound> {
-        self.length_bounds.get(&term).copied()
+    pub(crate) fn measure_bound(&self, term: TermId) -> Option<MeasureBound> {
+        self.measure_bounds.get(&term).copied()
+    }
+
+    /// Another measure of the same place as `term`, when that measure term is
+    /// registered. [MSR-2]'s standing orderings relate two measures of one
+    /// place, so the table has to find the sibling by its place.
+    pub(crate) fn sibling_measure(&self, term: TermId, measure: CheckedMeasure) -> Option<TermId> {
+        let sibling = match self.kind(term) {
+            TermKind::Measure(_, place) => TermKind::Measure(measure, place.clone()),
+            TermKind::ProjectedMeasure(_, place) => {
+                TermKind::ProjectedMeasure(measure, place.clone())
+            }
+            _ => return None,
+        };
+        self.interned(&sibling)
     }
 
     /// Interns one term, canonicalizing the written constant zero to Z.
@@ -182,17 +199,17 @@ impl TermTable {
         })
     }
 
-    pub(crate) fn into_inventory(self) -> (Vec<TermKind>, Vec<Option<LengthBound>>) {
-        let length_bounds = (0..self.terms.len())
+    pub(crate) fn into_inventory(self) -> (Vec<TermKind>, Vec<Option<MeasureBound>>) {
+        let measure_bounds = (0..self.terms.len())
             .map(|index| {
                 let id = TermId(
                     u32::try_from(index)
                         .expect("ENT term inventory exceeds the u32 identity space"),
                 );
-                self.length_bounds.get(&id).copied()
+                self.measure_bounds.get(&id).copied()
             })
             .collect();
-        (self.terms, length_bounds)
+        (self.terms, measure_bounds)
     }
 }
 

@@ -1,6 +1,6 @@
 fn pick(b: own buffer<u8>, idx: own u64, stray: own u64) -> result: own u8 reads(b) {
-  let cap = len(b);
-  let ok = idx < cap;
+  let limit = len(b);
+  let ok = idx < limit;
   if ok {
   } else {
     return 0_u8;

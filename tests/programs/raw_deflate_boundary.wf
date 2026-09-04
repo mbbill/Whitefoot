@@ -20,11 +20,11 @@ fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u6
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds.";
-  let room = len(deref(destination));
-  let admitted = filled <= room;
+  let spare = len(deref(destination));
+  let admitted = filled <= spare;
   let length = len(text);
   if admitted {
-    for @append (at in filled..room) {
+    for @append (at in filled..spare) {
       let taken = at -wrap filled;
       let done = taken >= length;
       if done {
@@ -33,7 +33,7 @@ fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u6
       let byte = text[taken];
       set deref(destination)[at] = byte;
     }
-    return room;
+    return spare;
   } else {
     return filled;
   }
@@ -236,8 +236,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                       set ended = 2_u8;
                       break @chunks;
                     }
-                    let room = 4097_u64 -wrap filled;
-                    let full = room == 0_u64;
+                    let spare = 4097_u64 -wrap filled;
+                    let full = spare == 0_u64;
                     if full {
                       break @chunks;
                     }

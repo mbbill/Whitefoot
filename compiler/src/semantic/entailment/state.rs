@@ -12,10 +12,10 @@ use std::mem::size_of;
 
 use super::super::goal::{GoalExpression, GoalOperation, GoalProjection};
 use super::super::model::{
-    BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedValue, IntegerType,
+    BindingId, CheckedBooleanOperation, CheckedLoopId, CheckedMeasure, CheckedValue, IntegerType,
 };
 use super::VerifiedPostconditionSummaryRef;
-use super::term::{LengthBound, TermId, TermKind, TermTable, ZERO, type_range};
+use super::term::{MeasureBound, TermId, TermKind, TermTable, ZERO, type_range};
 use crate::{NodePath, PreludeDeclarationId};
 
 /// One normalized source relation over interned terms.
@@ -228,7 +228,7 @@ pub(crate) struct RetainedGoal {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct DerivationInventory {
     pub(crate) terms: Vec<TermKind>,
-    pub(crate) length_bounds: Vec<Option<LengthBound>>,
+    pub(crate) measure_bounds: Vec<Option<MeasureBound>>,
     pub(crate) goals: Vec<RetainedGoal>,
 }
 
@@ -239,7 +239,12 @@ pub(crate) enum ImplicitBoundKind {
     Constant,
     TypeMinimum,
     TypeMaximum,
-    ArrayLength,
+    /// One [MSR-2] standing fact: a measure whose table cell fixes its
+    /// value, or a measure the table equates to another measure of the
+    /// same place. It has empty support and no event kills it.
+    StandingMeasure,
+    /// [MSR-2]'s standing ordering between two measures of one place.
+    MeasureOrdering,
 }
 
 /// One reaching predecessor named by a join derivation.
@@ -1385,7 +1390,8 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
             ImplicitBoundKind::Constant => 1,
             ImplicitBoundKind::TypeMinimum => 2,
             ImplicitBoundKind::TypeMaximum => 3,
-            ImplicitBoundKind::ArrayLength => 4,
+            ImplicitBoundKind::StandingMeasure => 4,
+            ImplicitBoundKind::MeasureOrdering => 5,
         }),
         DerivationNode::TransitiveBound { first, second, .. } => {
             [first.0, second.0].get(index).copied()
@@ -1745,7 +1751,11 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
 pub(crate) struct GoalSupport {
     pub(crate) root: BindingId,
     pub(crate) projections: Vec<GoalProjection>,
-    pub(crate) length: bool,
+    /// Which [MSR-1] measure of the place this support belongs to, when the
+    /// node is a measure node; `None` is the ordinary place node. Every
+    /// measure of one place has the same support, P's descriptor storage
+    /// [MSR-2], so this selects the node class rather than the storage.
+    pub(crate) measure: Option<CheckedMeasure>,
 }
 
 /// Derived data attached to one exact typed expression.
@@ -2901,20 +2911,34 @@ fn for_each_implicit_bound(
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
         }
-        TermKind::Length(_) | TermKind::ProjectedLength(_) => {
+        // [MSR-2] every measure term carries the standing facts of its
+        // place. The `u64` range already gives `Z <= m`; what the measure
+        // table adds is the value a fixed cell has and the ordering between
+        // two measures of one place. Each has empty support and no event
+        // kills it, which is exactly what an implicit bound is.
+        TermKind::Measure(measure, _) | TermKind::ProjectedMeasure(measure, _) => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
-            match terms.length_bound(id) {
-                Some(LengthBound::Constant(length)) => {
-                    emit(id, ZERO, length, ImplicitBoundKind::ArrayLength);
-                    emit(ZERO, id, -length, ImplicitBoundKind::ArrayLength);
+            match terms.measure_bound(id) {
+                Some(MeasureBound::Constant(value)) => {
+                    emit(id, ZERO, value, ImplicitBoundKind::StandingMeasure);
+                    emit(ZERO, id, -value, ImplicitBoundKind::StandingMeasure);
                 }
-                Some(LengthBound::Equal(parameter)) => {
-                    emit(id, parameter, 0, ImplicitBoundKind::ArrayLength);
-                    emit(parameter, id, 0, ImplicitBoundKind::ArrayLength);
+                Some(MeasureBound::Equal(other)) => {
+                    emit(id, other, 0, ImplicitBoundKind::StandingMeasure);
+                    emit(other, id, 0, ImplicitBoundKind::StandingMeasure);
                 }
                 None => {}
+            }
+            // `len(P) <= cap(P)` and `head(P) <= cap(P)`, emitted from the
+            // capacity term so each ordering is emitted exactly once.
+            if *measure == CheckedMeasure::Capacity {
+                for bounded in [CheckedMeasure::Length, CheckedMeasure::Head] {
+                    if let Some(other) = terms.sibling_measure(id, bounded) {
+                        emit(other, id, 0, ImplicitBoundKind::MeasureOrdering);
+                    }
+                }
             }
         }
         TermKind::CountedCapture { .. } => {
@@ -3482,7 +3506,7 @@ fn closure_middle_terms(
     // parameter, and two lengths equal to that parameter become equal to one
     // another. `available` keeps an excluded receiver out of this universe.
     for id in ids {
-        let Some(LengthBound::Equal(parameter)) = terms.length_bound(*id) else {
+        let Some(MeasureBound::Equal(parameter)) = terms.measure_bound(*id) else {
             continue;
         };
         active.0[id.0 as usize] = true;
@@ -4083,12 +4107,15 @@ mod tests {
             DeclarationId::from_index(0).expect("zero declaration identity exists"),
         ));
         let length = |terms: &mut TermTable, binding| {
-            let term = terms.intern(TermKind::Length(super::super::term::PlaceTerm {
-                root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
-                deref: false,
-                fields: Vec::new(),
-            }));
-            terms.set_length_bound(term, LengthBound::Equal(parameter));
+            let term = terms.intern(TermKind::Measure(
+                CheckedMeasure::Length,
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+            ));
+            terms.set_measure_bound(term, MeasureBound::Equal(parameter));
             term
         };
         let first = length(&mut terms, 0);

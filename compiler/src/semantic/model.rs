@@ -362,6 +362,82 @@ impl CheckedType {
     }
 }
 
+/// One of [MSR-1]'s four measures of a measured value.
+///
+/// The spelling and the [ENT-2] term are the same quantity read two ways, so
+/// one enum keys both the [OP-1] reader row and the measure term.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum CheckedMeasure {
+    Length,
+    Capacity,
+    Room,
+    Head,
+}
+
+/// One cell of [MSR-1]'s measure table.
+///
+/// This version's table gives every cell of every measured type an exact
+/// value, so `Bounded` has no row yet; the enum states the three cell classes
+/// the rule requires so a later row cannot smuggle in a fourth.
+// [MSR-1] requires every cell of the table to be one of exact, bounded or
+// absent. No row of this version.s table selects bounded or absent, and the
+// two classes stay named here because the rule is what fixes the closed set:
+// a later row that needs one adds the row, not a fourth class.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum MeasureCell {
+    /// The measure is exactly the measured value's own extent, which the
+    /// `len` reader already loads.
+    ExactExtent,
+    /// The measure is exactly this compile-time constant.
+    ExactConstant(u64),
+    /// The measure is exact but only two-sidedly published by some writing
+    /// operation. No row of this version's table selects it.
+    Bounded,
+    /// The type has no such measure.
+    Absent,
+}
+
+impl CheckedMeasure {
+    /// The [OP-1] spelling of this measure, which is also its [MSR-5] former.
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::Length => "len",
+            Self::Capacity => "cap",
+            Self::Room => "room",
+            Self::Head => "head",
+        }
+    }
+
+    /// [MSR-1]'s measure table, for the three measured types this version
+    /// has. Each is completely initialized over its whole capacity at its
+    /// formation, so it has no spare room and no window origin but zero.
+    ///
+    /// The table is data, not a rule: a later version adds a row per measured
+    /// type it adds, and only such a row can introduce a bounded or absent
+    /// cell.
+    pub(crate) const fn cell(self, measured: MeasuredKind) -> MeasureCell {
+        match (measured, self) {
+            (MeasuredKind::Array | MeasuredKind::Buffer | MeasuredKind::Slice, Self::Length)
+            | (MeasuredKind::Array | MeasuredKind::Buffer | MeasuredKind::Slice, Self::Capacity) => {
+                MeasureCell::ExactExtent
+            }
+            (
+                MeasuredKind::Array | MeasuredKind::Buffer | MeasuredKind::Slice,
+                Self::Room | Self::Head,
+            ) => MeasureCell::ExactConstant(0),
+        }
+    }
+}
+
+/// One measured type [MSR-1]: exactly a type the measure table gives a row.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum MeasuredKind {
+    Array,
+    Buffer,
+    Slice,
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedValue {
     Unit,
@@ -373,6 +449,15 @@ pub(crate) enum CheckedValue {
     Float {
         ty: FloatType,
         bits: u64,
+    },
+    /// One in-scope const generic read as a value [MSR-6]. It is a
+    /// monomorphization-time constant, so a concrete [FN-2] instance folds
+    /// it to `Integer` at substitution and only the one source-canonical
+    /// symbolic instance retains this form, where [ENT-2] clause (c)
+    /// already makes it the symbolic constant term.
+    ConstGeneric {
+        declaration: DeclarationId,
+        ty: IntegerType,
     },
     NumericIdentity {
         ty: CheckedType,
@@ -397,6 +482,7 @@ impl CheckedValue {
             Self::Bool(_) => CheckedType::Bool,
             Self::Integer { ty, .. } => CheckedType::Integer(*ty),
             Self::Float { ty, .. } => CheckedType::Float(*ty),
+            Self::ConstGeneric { ty, .. } => CheckedType::Integer(*ty),
             Self::NumericIdentity { ty, .. } => *ty,
             Self::Array { ty, .. } => *ty,
             Self::Struct { ty, .. } => *ty,
@@ -1325,7 +1411,8 @@ pub(crate) enum CheckedExpression {
         value: Box<CheckedExpression>,
         target_domain: CheckedTargetDomainObligation,
     },
-    ArrayLength {
+    ArrayMeasure {
+        measure: CheckedMeasure,
         root: CheckedArrayRoot,
         length: CheckedConst,
     },
@@ -1366,7 +1453,8 @@ pub(crate) enum CheckedExpression {
         layout_ceiling: CheckedLayoutCeiling,
         length: Box<CheckedExpression>,
     },
-    BufferLength {
+    BufferMeasure {
+        measure: CheckedMeasure,
         root: CheckedBufferRoot,
     },
     BufferIndex {
@@ -1383,7 +1471,8 @@ pub(crate) enum CheckedExpression {
         element: CheckedFlatElement,
         origins: Vec<CheckedSliceOrigin>,
     },
-    SliceLength {
+    SliceMeasure {
+        measure: CheckedMeasure,
         root: CheckedSliceRoot,
     },
     SliceIndex {
@@ -1493,9 +1582,9 @@ impl CheckedExpression {
         match self {
             Self::Constant(_)
             | Self::NamedConstant { .. }
-            | Self::ArrayLength { .. }
-            | Self::BufferLength { .. }
-            | Self::SliceLength { .. } => None,
+            | Self::ArrayMeasure { .. }
+            | Self::BufferMeasure { .. }
+            | Self::SliceMeasure { .. } => None,
             Self::UserCall { call, .. } | Self::SystemCall { call, .. } => Some(call),
             Self::Binding { carrier, .. }
             | Self::IntegerOperation { carrier, .. }
@@ -1547,14 +1636,14 @@ impl CheckedExpression {
             } => operation.result_type(*operand_type),
             Self::BooleanOperation { .. } | Self::EnumEquality { .. } => CheckedType::Bool,
             Self::ArrayFill { ty, .. } => *ty,
-            Self::ArrayLength { .. } => CheckedType::Integer(IntegerType::U64),
+            Self::ArrayMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::ArrayIndex { element_type, .. } => *element_type,
             Self::BufferFill { element, .. } => CheckedType::Buffer { element: *element },
             Self::BufferVacant { element, .. } => CheckedType::Buffer {
                 element: CheckedFlatElement::Nominal(*element),
             },
             Self::BufferFits { .. } => CheckedType::Bool,
-            Self::BufferLength { .. } => CheckedType::Integer(IntegerType::U64),
+            Self::BufferMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
             Self::SliceOf {
                 region, element, ..
@@ -1562,7 +1651,7 @@ impl CheckedExpression {
                 region: *region,
                 element: *element,
             },
-            Self::SliceLength { .. } => CheckedType::Integer(IntegerType::U64),
+            Self::SliceMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::SliceIndex { root, .. } => root.element.ty(),
             Self::BoxNew { nominal, .. } | Self::ArenaNew { nominal, .. } => {
                 CheckedType::Nominal(*nominal)
@@ -2042,9 +2131,9 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         CheckedExpression::Constant(_)
         | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }
-        | CheckedExpression::ArrayLength { .. }
-        | CheckedExpression::BufferLength { .. }
-        | CheckedExpression::SliceLength { .. }
+        | CheckedExpression::ArrayMeasure { .. }
+        | CheckedExpression::BufferMeasure { .. }
+        | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::SliceOf { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowAddressed { .. }

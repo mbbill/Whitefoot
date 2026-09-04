@@ -1,9 +1,9 @@
 fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
-  define room = len(table);
+  define spare = len(table);
   requires lo < hi;
-  requires hi <= room;
+  requires hi <= spare;
 } {
-  doc "The written certificate sums lo < hi and the published division image 2*half <= span into 2*(mid - hi) <= -1. Over the integers that halves to mid < hi, which with hi <= room discharges the subscript below [PRF-1, ENT-6, OP-4].";
+  doc "The written certificate sums lo < hi and the published division image 2*half <= span into 2*(mid - hi) <= -1. Over the integers that halves to mid < hi, which with hi <= spare discharges the subscript below [PRF-1, ENT-6, OP-4].";
   let span = hi - lo;
   let half = span / 2_u64;
   let mid = lo + half;

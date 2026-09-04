@@ -45,7 +45,7 @@ whose published relations contradict each other. The batch that carried it is
 B1 of the container and resource design under
 `research/investigations/containers-and-resources/`.
 
-v0.45 adds no rule and retires none (136 remain), and adds one grammar atom,
+v0.45 adds four rules and retires none (140 remain), and adds one grammar atom,
 `is`. A `fn_decl` may write an ordered result list, and a caller names its
 ordinals again with a destructuring `let` binder list or a `set` target list;
 a `return` writes one expression per declared result. [FN-1] numbers the
@@ -55,6 +55,20 @@ and target i from ordinal i, and [SET-1] commits a target list in written order.
 route and its ambiguity refusal, and adds the two [ENT-3.S12] destinations only
 a multi-result contract exercises. The batch that carried it is B1b of the same
 design.
+
+The same version adds that design's proof surface. [MSR-1] makes `len(P)`,
+`cap(P)`, `room(P)` and `head(P)` [ENT-2] terms over an admitted measure place
+and [OP-1] readers over the same places, with a measure table the rule requires
+to exist and a logical coordinate system whose origin is `head`. [MSR-2] states
+the support of a measure term as descriptor storage, so a write to a sibling
+field kills no measure and a write at an element position kills the measures of
+the written element and none of the run's own, and fixes the standing facts
+every measured value carries. [MSR-4] states once the complete ordered
+derivation of a numeric goal and retires [ENT-6]'s per-family route grants.
+[MSR-6] admits an in-scope const generic as a value, an endpoint and a clause
+operand. Adding the three readers also adds three members to
+`ReservedLowerNames`, so no writer declaration may be spelled `cap`, `room` or
+`head` any more. The batch that carried it is B2 of the same design.
 
 ## Outcome
 

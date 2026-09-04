@@ -129,7 +129,7 @@ impl IrBuilder<'_> {
                 width: 64,
                 signed: false,
             },
-            IrOperation::BufferLength { buffer },
+            IrOperation::BufferMeasure { buffer },
         )
     }
 

@@ -1,8 +1,8 @@
 fn fill_running_sum(out: &uniq buffer<u64>, count: own u64) -> result: own unit reads(out), writes(out) {
   doc "expect ACCEPT: every iteration writes deref(out)[i], killing that element's prior fact, but the header invariant is proved fresh against the current header batch each time, per P8.";
   let capacity = len(deref(out));
-  let room = count < capacity;
-  if room {
+  let spare = count < capacity;
+  if spare {
   } else {
     return unit;
   }

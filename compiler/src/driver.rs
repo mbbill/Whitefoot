@@ -2601,8 +2601,8 @@ command fn main() -> status: own ExitStatus pure {
             &[SourceInput::new(
                 "repaired.wf",
                 br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
-  define room = len(deref(data));
-  requires end <= room;
+  define spare = len(deref(data));
+  requires end <= spare;
 } {
   return 0_u64;
 }

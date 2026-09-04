@@ -1,0 +1,13 @@
+fn capacity_of<const n: u64>(fill: own u64) -> size: own u64 pure {
+  doc "A const generic read as a value.";
+  return n;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[MSR-6] an in-scope const generic is a value wherever a named const is. It is one `pbase` with no suffix, its exact type is the `gparam`'s written integer type, and it is fixed at [FN-2] instantiation, so a concrete instance reads a mathematical constant while the one source-canonical symbolic instance reads the symbolic constant term [ENT-2] clause (c) already fixes. Before this rule the same spelling was a [TYPE-5] unresolved use reporting `available: [ConstGeneric]`, so a capacity-parametric function could not name its own bound.";
+  let size = capacity_of::<4>(fill: 0_u64);
+  if size == 4_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

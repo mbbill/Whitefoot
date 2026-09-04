@@ -378,8 +378,8 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
 }
 
 fn update(pool: &uniq Pool) -> result: own unit reads(pool.left), writes(pool.left, pool.count) {
-  let room = len(deref(pool).left);
-  let ok = 1_u64 < room;
+  let spare = len(deref(pool).left);
+  let ok = 1_u64 < spare;
   if ok {
     set deref(pool).left[1_u64] = 13_u64;
     set deref(pool).count = 1_u64;
@@ -388,8 +388,8 @@ fn update(pool: &uniq Pool) -> result: own unit reads(pool.left), writes(pool.le
 }
 
 fn observe(pool: &Pool) -> result: own u64 reads(pool.left, pool.count) {
-  let room = len(deref(pool).left);
-  let ok = 1_u64 < room;
+  let spare = len(deref(pool).left);
+  let ok = 1_u64 < spare;
   let count = deref(pool).count;
   if ok {
     let value = deref(pool).left[1_u64];
@@ -506,8 +506,8 @@ fn replacement() -> result: own u16 pure {
 }
 
 fn update(columns: own Columns) -> result: own Columns reads(columns.left), writes(columns.left) {
-  let room = len(columns.left);
-  let ok = 1_u64 < room;
+  let spare = len(columns.left);
+  let ok = 1_u64 < spare;
   if ok {
     set columns.left[1_u64] = replacement();
   }

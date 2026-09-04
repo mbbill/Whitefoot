@@ -556,10 +556,10 @@ command fn main() -> status: own ExitStatus pure {
 fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
     let source =
         br#"fn fill(dst: &uniq buffer<u64>, mark: own u64) -> result: own u64 reads(dst), writes(dst) {
-  let room = len(deref(dst));
+  let spare = len(deref(dst));
   let k = 0_u64;
   loop @go {
-    let done = k >= room;
+    let done = k >= spare;
     if done {
       break @go;
     }

@@ -1,13 +1,13 @@
 fn clamp_and_read(b: own buffer<u8>, idx: own u64, stride: own u64) -> result: own u8 reads(b) {
-  let room = len(b);
-  let in_range = idx < room;
+  let spare = len(b);
+  let in_range = idx < spare;
   if in_range {
   } else {
     return 0_u8;
   }
   let cursor = idx;
   set cursor = idx +wrap stride;
-  let still_in_range = cursor < room;
+  let still_in_range = cursor < spare;
   if still_in_range {
   } else {
     return 0_u8;

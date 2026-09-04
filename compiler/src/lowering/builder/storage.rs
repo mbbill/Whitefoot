@@ -125,10 +125,10 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         CheckedExpression::Constant(_)
         | CheckedExpression::NamedConstant { .. }
         | CheckedExpression::Binding { .. }
-        | CheckedExpression::ArrayLength { .. }
-        | CheckedExpression::BufferLength { .. }
+        | CheckedExpression::ArrayMeasure { .. }
+        | CheckedExpression::BufferMeasure { .. }
         | CheckedExpression::SliceOf { .. }
-        | CheckedExpression::SliceLength { .. }
+        | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }
         | CheckedExpression::BorrowBox { .. }
         | CheckedExpression::BorrowSystemResource { .. }

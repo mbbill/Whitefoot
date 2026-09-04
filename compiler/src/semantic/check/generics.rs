@@ -31,15 +31,19 @@ pub(super) enum GenericParameter {
         declaration: DeclarationId,
         bound: GenericBound,
     },
+    /// One const `gparam`. The written integer type is retained because
+    /// [MSR-6] admits the parameter as a value, whose exact type is that
+    /// written type.
     Const {
         declaration: DeclarationId,
+        ty: IntegerType,
     },
 }
 
 impl GenericParameter {
     pub(super) const fn declaration(self) -> DeclarationId {
         match self {
-            Self::Type { declaration, .. } | Self::Const { declaration } => declaration,
+            Self::Type { declaration, .. } | Self::Const { declaration, .. } => declaration,
         }
     }
 }
@@ -1571,7 +1575,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         declaration,
                         bound: GenericBound::Unbounded,
                     } => GenericArgument::Type(CheckedType::Generic(declaration)),
-                    GenericParameter::Const { declaration } => {
+                    GenericParameter::Const { declaration, .. } => {
                         GenericArgument::Const(CheckedConst::Parameter(declaration))
                     }
                 };
@@ -1710,6 +1714,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     } if declaration == expected
                 )
         }))
+    }
+
+    /// The written integer type of one const `gparam` [MSR-6].
+    ///
+    /// A const generic is declared by exactly one function or nominal
+    /// template, and its `gparam` fixes its type once; scanning the templates
+    /// reads that one declaration rather than re-deriving it from a use.
+    pub(super) fn const_generic_type(
+        &self,
+        declaration: DeclarationId,
+    ) -> Result<IntegerType, CheckStop> {
+        self.function_templates
+            .iter()
+            .flat_map(|template| template.generic_parameters.iter())
+            .chain(
+                self.nominal_templates
+                    .iter()
+                    .flat_map(|template| template.generic_parameters.iter()),
+            )
+            .find_map(|parameter| match parameter {
+                GenericParameter::Const {
+                    declaration: candidate,
+                    ty,
+                } if *candidate == declaration => Some(*ty),
+                _ => None,
+            })
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn type_parameters(template: &FunctionTemplate) -> Vec<DeclarationId> {
@@ -1873,14 +1904,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .tree
                     .first_child_with(node, Production::Type)?
                     .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                if self.integer_type(ty)?.is_none() {
+                let Some(ty) = self.integer_type(ty)? else {
                     return self.issue_node(
                         SemanticRule::Const1,
                         ty,
                         SemanticIssueKind::InvalidConstValue,
                     );
-                }
-                parameters.push(GenericParameter::Const { declaration });
+                };
+                parameters.push(GenericParameter::Const { declaration, ty });
                 continue;
             }
             let declaration = self
@@ -2122,11 +2153,11 @@ fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<Nominal
             ..
         } => collect_type_nominals(operand_type, output),
         GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::ArrayMeasure { element, .. }
         | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferLength { element }
+        | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceLength { element, .. }
+        | GoalOperation::SliceMeasure { element, .. }
         | GoalOperation::SliceIndex { element, .. } => {
             collect_flat_element_nominals(element, output);
         }
@@ -2179,7 +2210,8 @@ fn collect_value_nominals(value: &CheckedValue, output: &mut Vec<NominalId>) {
                 collect_value_nominals(field, output);
             }
         }
-        CheckedValue::Unit
+        CheckedValue::ConstGeneric { .. }
+        | CheckedValue::Unit
         | CheckedValue::Bool(_)
         | CheckedValue::Integer { .. }
         | CheckedValue::Float { .. } => {}
@@ -2238,11 +2270,11 @@ fn rewrite_operation_nominals(
             ..
         } => rewrite_type_nominals(operand_type, checkpoint, replacements)?,
         GoalOperation::ArrayFill { element, .. }
-        | GoalOperation::ArrayLength { element, .. }
+        | GoalOperation::ArrayMeasure { element, .. }
         | GoalOperation::ArrayIndex { element, .. }
-        | GoalOperation::BufferLength { element }
+        | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
-        | GoalOperation::SliceLength { element, .. }
+        | GoalOperation::SliceMeasure { element, .. }
         | GoalOperation::SliceIndex { element, .. } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
         }
@@ -2327,7 +2359,8 @@ fn rewrite_value_nominals(
                 rewrite_value_nominals(field, checkpoint, replacements)?;
             }
         }
-        CheckedValue::Unit
+        CheckedValue::ConstGeneric { .. }
+        | CheckedValue::Unit
         | CheckedValue::Bool(_)
         | CheckedValue::Integer { .. }
         | CheckedValue::Float { .. } => {}

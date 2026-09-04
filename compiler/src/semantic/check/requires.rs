@@ -431,9 +431,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         if matches!(
             checked,
-            CheckedExpression::ArrayLength { .. }
-                | CheckedExpression::BufferLength { .. }
-                | CheckedExpression::SliceLength { .. }
+            CheckedExpression::ArrayMeasure { .. }
+                | CheckedExpression::BufferMeasure { .. }
+                | CheckedExpression::SliceMeasure { .. }
         ) {
             if atoms.len() != 1 {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -441,28 +441,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let argument = self.build_clause_atom(atoms[0], None, bindings, expanded_bindings)?;
             let row = match (checked, argument.ty()) {
                 (
-                    CheckedExpression::ArrayLength { length, .. },
+                    CheckedExpression::ArrayMeasure {
+                        measure, length, ..
+                    },
                     CheckedType::Array {
                         element,
                         length: argument_length,
                     },
-                ) if argument_length == *length => GoalOperation::ArrayLength {
+                ) if argument_length == *length => GoalOperation::ArrayMeasure {
+                    measure: *measure,
                     element,
                     length: *length,
                 },
-                (CheckedExpression::BufferLength { root, .. }, CheckedType::Buffer { element })
-                    if element == root.element =>
-                {
-                    GoalOperation::BufferLength { element }
-                }
                 (
-                    CheckedExpression::SliceLength { root, .. },
+                    CheckedExpression::BufferMeasure { measure, root },
+                    CheckedType::Buffer { element },
+                ) if element == root.element => GoalOperation::BufferMeasure {
+                    measure: *measure,
+                    element,
+                },
+                (
+                    CheckedExpression::SliceMeasure { measure, root },
                     CheckedType::Slice { region, element },
                 ) if expanded_bindings.get(&root.binding).is_some_and(|source| {
                     source.ty() == CheckedType::Slice { region, element }
                 }) =>
                 {
-                    GoalOperation::SliceLength { region, element }
+                    GoalOperation::SliceMeasure {
+                        measure: *measure,
+                        region,
+                        element,
+                    }
                 }
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };
@@ -618,6 +627,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             ));
         }
+        // [MSR-6] a clause operand is an in-scope const generic wherever it
+        // is a named const. It is a constant and not a measure former, so it
+        // contributes no place support; the ordinary place-use judgment has
+        // already folded its value for this concrete instance, and the clause
+        // reads that value rather than re-resolving the parameter.
+        if let Some(declaration) = self.clause_const_generic_base(atom)? {
+            let Some(CheckedExpression::Constant(value)) = checked else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            return Ok(ExpandedClauseExpression::Datum(
+                ExpandedClauseDatum::Literal {
+                    value: value.clone(),
+                    origin: PostconditionConstantOrigin::ConstGeneric { declaration },
+                },
+            ));
+        }
         let place = self
             .tree
             .first_child_with(atom, Production::Place)?
@@ -627,6 +652,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         Ok(result)
+    }
+
+    /// The const generic one clause `atom` names directly [MSR-6], if any.
+    ///
+    /// A const generic is one `pbase` with no `deref` wrapping and no
+    /// suffix; every other place shape resolves through the ordinary walk.
+    fn clause_const_generic_base(&self, atom: NodeId) -> Result<Option<DeclarationId>, CheckStop> {
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return Ok(None);
+        };
+        if !self
+            .tree
+            .children_with(place, Production::Psuffix)?
+            .is_empty()
+        {
+            return Ok(None);
+        }
+        let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
+            return Ok(None);
+        };
+        if self.has_fixed(pbase, FixedTerminal::Deref)? {
+            return Ok(None);
+        }
+        let usage = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
+        Ok(match usage.target() {
+            ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::ConstGeneric,
+            } => Some(declaration),
+            _ => None,
+        })
     }
 
     fn build_clause_place(

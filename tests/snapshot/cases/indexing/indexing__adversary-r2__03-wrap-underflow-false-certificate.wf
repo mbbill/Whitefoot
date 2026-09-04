@@ -1,8 +1,8 @@
 fn probe(table: own buffer<u8>, a: own u64) -> found: own u8 reads(table) contract {
-  define room = len(table);
-  requires a <= room;
+  define spare = len(table);
+  requires a <= spare;
 } {
-  doc "expect REJECT: idx=a-wrap 1 is falsely certified idx < room from a <= room; at a=0, idx wraps to u64::MAX, far outside table";
+  doc "expect REJECT: idx=a-wrap 1 is falsely certified idx < spare from a <= spare; at a=0, idx wraps to u64::MAX, far outside table";
   let idx = a -wrap 1_u64;
   let bound_room = len(table);
   invariant bound: idx < bound_room {

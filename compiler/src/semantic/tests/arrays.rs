@@ -55,7 +55,7 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             &body[1],
             CheckedStatement::Let {
-                value: CheckedExpression::ArrayLength {
+                value: CheckedExpression::ArrayMeasure {
                     length: CheckedConst::Value(4),
                     ..
                 },

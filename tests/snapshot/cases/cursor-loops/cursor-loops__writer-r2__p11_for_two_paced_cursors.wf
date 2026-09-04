@@ -4,8 +4,8 @@ fn double_step_sum(source: own buffer<u64>) -> total: own u64 reads(source) {
   let fast = 0_u64;
   let total = 0_u64;
   for (i in 0_u64..length) {
-    let room = fast < length;
-    if room {
+    let spare = fast < length;
+    if spare {
       let value = source[fast];
       set total = total +wrap value;
       set fast = fast +wrap 2_u64;

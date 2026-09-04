@@ -15,8 +15,8 @@ use crate::{
 
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
-    CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedMode,
-    CheckedNominalKind, CheckedNumericType, CheckedType,
+    CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedType,
 };
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
@@ -102,8 +102,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if spelling == "box_new" {
             return self.check_box_new(node, function, bindings, loop_depth);
         }
-        if spelling == "len" {
-            return self.check_flat_length(node, function, bindings, loop_depth);
+        if let Some(measure) = measure_former(spelling) {
+            return self.check_flat_measure(node, measure, function, bindings, loop_depth);
         }
         if spelling == "slice_of" {
             return self.check_slice_of(node, function, bindings, loop_depth);
@@ -845,5 +845,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         Ok(atoms)
+    }
+}
+
+/// The [MSR-1] measure one operation spelling names, if it names one.
+///
+/// The four spellings are one operation family over one place [OP-1]; this is
+/// the selection of the row within it and the only place a spelling reaches a
+/// measure.
+const fn measure_former(spelling: &str) -> Option<CheckedMeasure> {
+    match spelling.as_bytes() {
+        b"len" => Some(CheckedMeasure::Length),
+        b"cap" => Some(CheckedMeasure::Capacity),
+        b"room" => Some(CheckedMeasure::Room),
+        b"head" => Some(CheckedMeasure::Head),
+        _ => None,
     }
 }

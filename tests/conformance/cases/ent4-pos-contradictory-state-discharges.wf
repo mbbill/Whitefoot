@@ -1,7 +1,7 @@
 fn get(b: own buffer<u8>, j: own u64) -> result: own u8 reads(b) {
   doc "This case admits the subscript only on ordinary executed control that establishes its real bound. A written proof conclusion creates a fact only after its premises are checked, so it cannot manufacture an unreachable state.";
-  let room = len(b);
-  let inside = j < room;
+  let spare = len(b);
+  let inside = j < spare;
   if inside {
     return b[j];
   }

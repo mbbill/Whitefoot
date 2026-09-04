@@ -1,14 +1,14 @@
 fn pick_byte(b: own buffer<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
-  doc "ACCEPT: the two arms prove the same relation from different comparisons (`<` vs `>`), and ENT-5's join carries i < room to the shared subscript, discharging OP-4.";
-  let room = len(b);
+  doc "ACCEPT: the two arms prove the same relation from different comparisons (`<` vs `>`), and ENT-5's join carries i < spare to the shared subscript, discharging OP-4.";
+  let spare = len(b);
   if pick {
-    let direct_bound = i < room;
+    let direct_bound = i < spare;
     if direct_bound {
     } else {
       return 0_u8;
     }
   } else {
-    let reversed_bound = room > i;
+    let reversed_bound = spare > i;
     if reversed_bound {
     } else {
       return 0_u8;

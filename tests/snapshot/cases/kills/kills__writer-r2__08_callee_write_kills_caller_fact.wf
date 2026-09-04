@@ -5,8 +5,8 @@ struct ByteVec {
 
 fn push_one(v: &uniq ByteVec, x: own u8) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
-  let cap = len(deref(v).buf);
-  let has_room = count < cap;
+  let limit = len(deref(v).buf);
+  let has_room = count < limit;
   if has_room {
   } else {
     return unit;

@@ -610,19 +610,50 @@ prefix of it to a call whose `requires` bounds that prefix by the buffer's
 length. The habit — and the reading of [ENT-5] an unguided writer forms in
 twenty minutes — is that the callee's write killed the length fact, so `let
 room = len(line);` has to be re-bound after every call that wrote through the
-borrow. The write did not kill it. [ENT-5] kills, for each length term
-`len(P)`, the root binding of `P` but not `P`'s element storage: an element
-write never kills a length fact, and the compiler honours that across a callee
-boundary. Only re-binding the root itself — a fresh `buffer_new`, a `set` of
-the whole binding — kills it.
+borrow. The write did not kill it. Under v0.45 the support of a measure term
+over `P` is `P`'s **descriptor storage** [MSR-2] — the measure words the value
+carries — together with every holder a prefix of `P` reads through and the
+support of every offset in `P`. An element write overlaps the descriptor
+storage of the written element and none of `P`'s own, so it kills no measure of
+`P`, and the compiler honours that across a callee boundary. Only a write to
+`P`'s own descriptor storage or to a prefix of it — a fresh `buffer_new`, a
+`set` of the whole binding, a `replace` of `P` — kills it.
+
+**Correction, v0.45.** The pattern used to say the support was `P`'s *root
+binding*, and the compiler used to read it that way. That is a strictly larger
+support than [MSR-2] states, and it cost a real fact: a write to a **sibling
+field** of the same struct killed the measure of a field beside it, so
+`set frame.flags = 1_u64;` killed `len(frame.tail)`. Descriptor storage is the
+place itself, so a sibling-field write now kills neither, and the length fact
+survives a write to anything but the run's own descriptor. The compiler still
+classifies a projected callee write through a `&uniq buffer<T>` actual from the
+actual's shape rather than from what the callee does; that gap is tracked as
+the conformance case `ent5-neg-callee-uniq-buffer-replace-kills-length` and is
+not repaired here.
 
 Pattern: bind the length once, above the loop and above every write, and
 discharge every later requirement from that one binding.
 
 ```whitefoot
-let room = len(line);
-let fits = end <= room;
+let spare = len(line);
+let fits = end <= spare;
 ```
+
+**Correction, v0.45.** The binding above was spelled `room` until v0.45. `cap`,
+`room` and `head` are [OP-1] reader spellings now [MSR-1], so all three joined
+`ReservedLowerNames` and no writer declaration may use them: `let room = ...;`
+is a [FORM-3] `ReservedName` rejection. The measure a writer wanted `room` for
+is the reader `room(P)`, and a binding that holds a length wants a name of its
+own. The 2026-08-28 blind-writer probe cited below is a dated artifact and
+still writes the old spelling.
+
+Under v0.45 a measure other than the length is available in the same
+positions: `cap(P)`, `room(P)` and `head(P)` are [OP-1] readers and [ENT-2]
+terms exactly where `len(P)` is [MSR-1], and every measured value carries the
+standing facts `len(P) <= cap(P)`, `head(P) <= cap(P)` and
+`len(P) + room(P) = cap(P)` with no writer statement. A `requires` written
+over `cap` therefore discharges a subscript stated over `len` with nothing in
+between.
 
 Under v0.44 the same fact is stated directly in the contract
 that consumes it, with no binding and no `contract_define` at all: a
@@ -747,10 +778,10 @@ outside the loop being taken in index order.
 
 ```whitefoot
 let page = buffer_new(8_u64, 0_u8);
-let room = len(page);
+let spare = len(page);
 for @scan (index in 0_u64..8_u64) {
   /* reserve, open, and read into the iteration's own data buffer */
-  let writable = index < room;
+  let writable = index < spare;
   if writable {
     set page[index] = data[0_u64];
   }
@@ -853,14 +884,14 @@ is an ordinary result (P12):
     if shrink {
       set hi = candidate;
     }
-    if hi <= room {
+    if hi <= spare {
     } else {
       return 0_u64;
     }
 ```
 
 That one guard is enough for a whole binary search: `hi` narrows on one arm of
-the three-way comparison and `lo` on another, re-testing `hi <= room` at the
+the three-way comparison and `lo` on another, re-testing `hi <= spare` at the
 end of the body restores the header invariant on every path, and the midpoint's
 own two-premise `mid < hi` certificate (P14) then carries that bound down to
 the subscript, which needs no guard of its own. The

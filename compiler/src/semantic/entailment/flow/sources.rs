@@ -14,8 +14,8 @@
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
     BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerArgumentSource,
-    CheckedIntegerOperation, CheckedMatchArm, CheckedNominalKind, CheckedSetTarget,
-    CheckedSliceSource, CheckedType, CheckedValue, IntegerType,
+    CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure, CheckedNominalKind, CheckedSetTarget,
+    CheckedSliceSource, CheckedType, CheckedValue, IntegerType, MeasuredKind,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -558,7 +558,12 @@ impl Analyzer<'_, '_> {
                     return true;
                 };
                 let place = self.bound_place(binding);
-                let length_term = self.length_term(place, None);
+                let length_term = self.place_measure_term(
+                    CheckedMeasure::Length,
+                    place,
+                    MeasuredKind::Buffer,
+                    None,
+                );
                 let event = self.binding_event(event, FlowEventKind::S6, node_path);
                 state.establish(
                     &Relation::Equal {
@@ -602,9 +607,23 @@ impl Analyzer<'_, '_> {
                         Some(*length),
                     ),
                 };
-                let source_length = self.length_term(place, array_length);
+                let source_length = self.place_measure_term(
+                    CheckedMeasure::Length,
+                    place,
+                    if array_length.is_some() {
+                        MeasuredKind::Array
+                    } else {
+                        MeasuredKind::Buffer
+                    },
+                    array_length,
+                );
                 let slice_place = self.bound_place(binding);
-                let slice_length = self.length_term(slice_place, None);
+                let slice_length = self.place_measure_term(
+                    CheckedMeasure::Length,
+                    slice_place,
+                    MeasuredKind::Slice,
+                    None,
+                );
                 let event = self.binding_event(event, FlowEventKind::S6, node_path);
                 state.establish(
                     &Relation::Equal {
@@ -616,7 +635,7 @@ impl Analyzer<'_, '_> {
                 );
                 true
             }
-            _ => match self.length_operand(value) {
+            _ => match self.measure_operand(value) {
                 Some(source_length) => {
                     if let Some(bound) = self.bound_term(destination, value) {
                         let event = self.binding_event(event, FlowEventKind::S6, node_path);
@@ -636,32 +655,44 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// The length term one `len::<T>(P)` call reads, over the same place the
-    /// obligation judgment forms for P, so both name one term [ENT-2].
-    pub(super) fn length_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
-        let (place, array_length) = match value {
-            CheckedExpression::ArrayLength { root, length, .. } => {
-                (self.array_root_place(root), Some(*length))
-            }
-            CheckedExpression::BufferLength { root, .. } => (
+    /// The measure term one [MSR-1] measure former reads, over the same
+    /// place the obligation judgment forms for P, so both name one term
+    /// [ENT-2].
+    pub(super) fn measure_operand(&mut self, value: &CheckedExpression) -> Option<TermId> {
+        let (measure, place, measured, array_length) = match value {
+            CheckedExpression::ArrayMeasure {
+                measure,
+                root,
+                length,
+            } => (
+                *measure,
+                self.array_root_place(root),
+                MeasuredKind::Array,
+                Some(*length),
+            ),
+            CheckedExpression::BufferMeasure { measure, root } => (
+                *measure,
                 PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
                     deref: self.is_holder(root.binding),
                     fields: root.fields.clone(),
                 },
+                MeasuredKind::Buffer,
                 None,
             ),
-            CheckedExpression::SliceLength { root, .. } => (
+            CheckedExpression::SliceMeasure { measure, root } => (
+                *measure,
                 PlaceTerm {
                     root: PlaceRoot::Binding(root.binding),
                     deref: self.is_holder(root.binding),
                     fields: Vec::new(),
                 },
+                MeasuredKind::Slice,
                 None,
             ),
             _ => return None,
         };
-        Some(self.length_term(place, array_length))
+        Some(self.place_measure_term(measure, place, measured, array_length))
     }
 
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.

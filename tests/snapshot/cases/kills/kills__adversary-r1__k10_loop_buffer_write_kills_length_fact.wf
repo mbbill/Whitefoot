@@ -3,10 +3,10 @@ struct Sink {
 }
 
 fn shrink_then_read(dst: &uniq Sink, i: own u64) -> value: own u8 reads(dst.buf), writes(dst.buf), allocates(heap) contract {
-  define room = len(deref(dst).buf);
-  requires i < room;
+  define spare = len(deref(dst).buf);
+  requires i < spare;
 } {
-  doc "expect REJECT [OP-4]: replace deref(dst).buf swaps in a 1-element buffer, killing the requires(i < room) fact tied to the old length before the index; a wrong accept lets i=3 read past the shrunk 1-element buffer.";
+  doc "expect REJECT [OP-4]: replace deref(dst).buf swaps in a 1-element buffer, killing the requires(i < spare) fact tied to the old length before the index; a wrong accept lets i=3 read past the shrunk 1-element buffer.";
   let smaller = buffer_new(1_u64, 0_u8);
   let old = replace deref(dst).buf = move smaller;
   return deref(dst).buf[i];

@@ -1610,7 +1610,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 length,
                 maximum_length,
             } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
-            IrOperation::BufferLength { buffer } => self.emit_buffer_length(result, ty, *buffer),
+            IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
             IrOperation::BufferIndex {
                 buffer,
                 offset,
@@ -1626,7 +1626,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::SliceFromBuffer { buffer } => {
                 self.emit_slice_from_buffer(result, ty, *buffer)
             }
-            IrOperation::SliceLength { slice } => self.emit_slice_length(result, ty, *slice),
+            IrOperation::SliceMeasure { slice } => self.emit_slice_length(result, ty, *slice),
             IrOperation::SliceIndex {
                 slice,
                 offset,

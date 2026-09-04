@@ -4,19 +4,19 @@ enum Pick {
 }
 
 fn get(b: own buffer<u8>, i: own u64, outer: own Bool, choice: own Pick) -> result: own u8 reads(b) {
-  doc "expect REJECT: the outer true branch checks the bound via a nested match on both arms, but the outer false branch skips the check entirely, so the join after the outer if does not carry i < room for i = len(b) taking outer = False.";
-  let room = len(b);
+  doc "expect REJECT: the outer true branch checks the bound via a nested match on both arms, but the outer false branch skips the check entirely, so the join after the outer if does not carry i < spare for i = len(b) taking outer = False.";
+  let spare = len(b);
   if outer {
     match choice {
       Narrow() => {
-        let inside_n = i < room;
+        let inside_n = i < spare;
         if inside_n {
         } else {
           return 0_u8;
         }
       }
       Wide() => {
-        let inside_w = i < room;
+        let inside_w = i < spare;
         if inside_w {
         } else {
           return 0_u8;

@@ -1,15 +1,15 @@
 fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own u32 reads(data) contract {
-  define room = len(deref(data));
-  requires start <= room;
-  requires width <= room;
+  define spare = len(deref(data));
+  requires start <= spare;
+  requires width <= spare;
 } {
   if start +defined width {
   } else {
     return 0_u32;
   }
   let end = start + width;
-  let room = len(deref(data));
-  if end <= room {
+  let spare = len(deref(data));
+  if end <= spare {
   } else {
     return 0_u32;
   }
@@ -22,7 +22,7 @@ fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own 
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "ACCEPT: the dominating branch establishes end <= room, then the for-loop's automatic i < end fact composes with it under [OP-4]'s two-premise automatic rule, so the window subscript needs no written invariant.";
+  doc "ACCEPT: the dominating branch establishes end <= spare, then the for-loop's automatic i < end fact composes with it under [OP-4]'s two-premise automatic rule, so the window subscript needs no written invariant.";
   let data = buffer_new(6_u64, 0_u32);
   set data[0_u64] = 1_u32;
   set data[1_u64] = 2_u32;

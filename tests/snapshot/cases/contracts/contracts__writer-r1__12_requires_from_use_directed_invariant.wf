@@ -1,12 +1,12 @@
 fn combined_probe(table: own buffer<u8>, first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, third: own u64, third_limit: own u64) -> byte: own u8 reads(table) contract {
-  define room = len(table);
+  define spare = len(table);
   requires first <= first_limit;
   requires second <= second_limit;
   requires third <= third_limit;
   requires first_limit <= 3_u64;
   requires second_limit <= 3_u64;
   requires third_limit <= 3_u64;
-  requires room >= 10_u64;
+  requires spare >= 10_u64;
 } {
   invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
     use first <= first_limit;

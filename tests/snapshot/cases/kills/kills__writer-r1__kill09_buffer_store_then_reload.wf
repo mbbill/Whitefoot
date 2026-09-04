@@ -1,7 +1,7 @@
 fn store_then_double(out: &uniq buffer<u32>, at: own u64, value: own u32) -> result: own u32 reads(out), writes(out) {
-  doc "expect ACCEPT: set deref(out)[at] kills the buffer's prior image, so the immediately following read of the same slot must reuse the room fact already proved for the write, not a fresh unproved one.";
-  let room = len(deref(out));
-  let in_bounds = at < room;
+  doc "expect ACCEPT: set deref(out)[at] kills the buffer's prior image, so the immediately following read of the same slot must reuse the spare fact already proved for the write, not a fresh unproved one.";
+  let spare = len(deref(out));
+  let in_bounds = at < spare;
   if in_bounds {
   } else {
     return 0_u32;

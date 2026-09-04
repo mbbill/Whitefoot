@@ -1,7 +1,7 @@
 fn get(b: own buffer<u8>, i: own u64) -> result: own u8 reads(b) {
   doc "Source S1: a match whose scrutinee has comparison origin establishes that relation at the True() arm's entry and its exact negation at the False() arm's entry [ENT-3]. The guarded arm discharges the subscript with no runtime bounds branch [OP-4].";
-  let room = len(b);
-  let inside = i < room;
+  let spare = len(b);
+  let inside = i < spare;
   if inside {
     return b[i];
   } else {

@@ -246,7 +246,15 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         }
         LexicalUseRole::ConstValue => vec![DeclarationClass::NamedConst],
         LexicalUseRole::PlaceBase => {
-            vec![DeclarationClass::NamedConst, DeclarationClass::Value]
+            // [MSR-6] a `pbase` admits an in-scope const generic beside a
+            // named const: a const generic is a monomorphization-time
+            // constant and already an [ENT-2] symbolic constant term, so
+            // this admission adds a spelling and no fact source.
+            vec![
+                DeclarationClass::NamedConst,
+                DeclarationClass::ConstGeneric,
+                DeclarationClass::Value,
+            ]
         }
         LexicalUseRole::IdentifierCallee => {
             if operation_id(spelling).is_some() {

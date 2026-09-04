@@ -9,7 +9,9 @@
 use crate::{DeclarationId, NodePath, PreludeDeclarationId, SourceOrigin};
 
 use super::goal::GoalProjection;
-use super::model::{BindingId, CheckedIntegerOperation, CheckedType, CheckedValue, FunctionId};
+use super::model::{
+    BindingId, CheckedIntegerOperation, CheckedMeasure, CheckedType, CheckedValue, FunctionId,
+};
 
 /// One admitted concrete selector and its resolver-owned source identities.
 #[allow(dead_code)]
@@ -84,7 +86,7 @@ pub(crate) enum RelationDatum {
         value: CheckedValue,
         origin: PostconditionConstantOrigin,
     },
-    Length(PostconditionPlace),
+    Measure(CheckedMeasure, PostconditionPlace),
 }
 
 impl RelationDatum {
@@ -94,7 +96,7 @@ impl RelationDatum {
                 *ty
             }
             Self::Literal { value, .. } => value.ty(),
-            Self::Length(_) => CheckedType::Integer(super::model::IntegerType::U64),
+            Self::Measure(..) => CheckedType::Integer(super::model::IntegerType::U64),
         }
     }
 
@@ -115,9 +117,11 @@ pub(crate) enum PostconditionConstantOrigin {
         type_parameter: DeclarationId,
         one: bool,
     },
+    /// One in-scope const generic named as a clause operand [MSR-6]. Its
+    /// value lives in the datum itself, concrete or symbolic; this origin
+    /// retains only the declaration the spelling resolved to.
     ConstGeneric {
         declaration: DeclarationId,
-        value: u64,
     },
 }
 
@@ -158,7 +162,7 @@ pub(crate) enum PostconditionReturnDatum {
         value: CheckedValue,
         origin: PostconditionConstantOrigin,
     },
-    Length(PostconditionReturnPlace),
+    Measure(CheckedMeasure, PostconditionReturnPlace),
 }
 
 /// Complete checked place identity for a selected result term or `len(P)`.

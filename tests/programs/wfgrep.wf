@@ -134,11 +134,11 @@ fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u6
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds. The destination's capacity is a written operand rather than a measure of a &uniq state parameter, so the published bound is a fact about a value this caller supplied [MSR-3].";
-  let room = len(deref(destination));
-  let admitted = filled <= room;
+  let spare = len(deref(destination));
+  let admitted = filled <= spare;
   let length = len(text);
   if admitted {
-    for @append (at in filled..room) {
+    for @append (at in filled..spare) {
       let taken = at -wrap filled;
       let done = taken >= length;
       if done {
@@ -147,7 +147,7 @@ fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u6
       let byte = text[taken];
       set deref(destination)[at] = byte;
     }
-    return room;
+    return spare;
   } else {
     return filled;
   }
@@ -210,8 +210,8 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
 
 fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
-  let room = len(deref(store));
-  let inside = index < room;
+  let spare = len(deref(store));
+  let inside = index < spare;
   if inside {
     let value = deref(store)[index];
     return value;
@@ -279,7 +279,7 @@ fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> re
     set probe = probe / 10_u64;
     set digits = digits +wrap 1_u64;
   }
-  let room = len(deref(destination));
+  let spare = len(deref(destination));
   let glyphs = len(digit_glyphs);
   let end = at +wrap digits;
   let cursor = end;
@@ -293,7 +293,7 @@ fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> re
     let digit = rest % 10_u64;
     let known = digit < glyphs;
     if known {
-      let writable = cursor < room;
+      let writable = cursor < spare;
       if writable {
         let glyph = digit_glyphs[digit];
         set deref(destination)[cursor] = glyph;
@@ -556,8 +556,8 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
       set status = 6_u8;
       break @chunks;
     }
-    let room = 4096_u64 -wrap carry;
-    let overlong = room == 0_u64;
+    let spare = 4096_u64 -wrap carry;
+    let overlong = spare == 0_u64;
     if overlong {
       set status = 6_u8;
       break @chunks;
@@ -627,8 +627,8 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
         set matched = 1_u8;
         let stop = terminator +wrap 1_u64;
         let span = stop -wrap scan;
-        let head = path_length +wrap 24_u64;
-        let record = head +wrap span;
+        let front = path_length +wrap 24_u64;
+        let record = front +wrap span;
         let need = filled +wrap record;
         let overfull = need > 8192_u64;
         if overfull {
@@ -749,7 +749,7 @@ fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead,
 }
 
 fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, prefix_length: own u64, pattern: &buffer<u8>, pattern_length: own u64, out: &uniq Output, err: &uniq Output) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err), allocates(heap) {
-  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no source-level depth cap; stack availability remains outside this version's portable result model. Two program bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
+  doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no source-level depth limit; stack availability remains outside this version's portable result model. Two program bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
   let matched = 0_u8;
   let failed = 0_u8;
   let entries = buffer_new(8192_u64, 0_u8);

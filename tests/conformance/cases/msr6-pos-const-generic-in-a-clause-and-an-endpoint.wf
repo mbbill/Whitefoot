@@ -1,0 +1,19 @@
+fn walk_bound<const n: u64>(source: own buffer<u8>) -> last: own u8 reads(source) contract {
+  requires n < len(source);
+} {
+  doc "A const generic as a clause operand and as a counted range endpoint.";
+  for (at in 0_u64..n) {
+    let seen = at;
+  }
+  return source[n];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[MSR-6] the `pbase` admission carries the const generic into the two other positions a named const already reaches: the `for_stmt` endpoint [ENT-2] and the clause operand [MSR-5]. The requirement is stated over the parameter, the counted loop's upper endpoint is the same parameter, and the subscript at that offset discharges from the requirement after instantiation folds the parameter to its mathematical constant.";
+  let run = buffer_new(8_u64, 0_u8);
+  let last = walk_bound::<4>(source: move run);
+  if last == 0_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

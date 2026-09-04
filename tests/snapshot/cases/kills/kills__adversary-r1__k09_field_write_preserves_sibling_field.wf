@@ -5,9 +5,9 @@ struct Cursor {
 }
 
 fn read_after_tag_write(table: own buffer<u8>, cursor: own Cursor) -> value: own u8 reads(table, cursor.idx), writes(cursor.tag) contract {
-  define room = len(table);
+  define spare = len(table);
   requires cursor.idx < cursor.limit;
-  requires cursor.limit <= room;
+  requires cursor.limit <= spare;
 } {
   doc "expect ACCEPT: writing cursor.tag does not touch cursor.idx or cursor.limit, so cursor.idx < cursor.limit survives the write; sanity check against over-killing unrelated fields.";
   set cursor.tag = 9_u8;
@@ -22,8 +22,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   } else {
     return exit_status(code: 1_u8);
   }
-  let room = len(table);
-  let fits = start.limit <= room;
+  let spare = len(table);
+  let fits = start.limit <= spare;
   if fits {
   } else {
     return exit_status(code: 1_u8);

@@ -175,9 +175,9 @@ fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit read
     let glyphs = len(digit_glyphs);
     let known = digit < glyphs;
     let capacity = len(scratch);
-    let room = written < capacity;
+    let spare = written < capacity;
     if known {
-      if room {
+      if spare {
         let glyph = digit_glyphs[digit];
         set scratch[written] = glyph;
         set written = written +wrap 1_u64;

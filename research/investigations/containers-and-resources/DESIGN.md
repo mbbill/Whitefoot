@@ -5578,6 +5578,90 @@ compiler-capability refusal rather than a language restriction: [FN-1] states th
 ordinal receives the ceiling and provenance judgments independently, and deriving them per
 ordinal is the work that has not been done.
 
+### 6.0c B2 landed (v0.45)
+
+**The proof surface is no longer paper.** [MSR-1], [MSR-2], [MSR-4] and [MSR-6] are written
+into the active specification as four added rules, and [OP-1], [OP-4], [OP-7], [TYPE-6],
+[ENT-2], [ENT-5], [ENT-6], [INV-1] and [MSR-5] are amended in place to read them. The
+compiler carries all four: the four measure terms and their [OP-1] readers, descriptor
+storage as the support of a measure, one numeric goal disposition with a
+compiler-owned affine atom per live measure term, and the const generic as a value.
+Eight conformance cases carry it:
+
+```text
+| case                                                        | expected verdict |
+|-------------------------------------------------------------|------------------|
+| msr1-pos-the-four-measure-readers                           | run, exit 0      |
+| msr1-pos-subscript-obligation-against-len                   | run, exit 0      |
+| msr2-pos-sibling-field-write-keeps-the-measure              | run, exit 0      |
+| msr2-pos-element-write-keeps-the-measure                    | run, exit 0      |
+| msr2-neg-descriptor-write-kills-the-measure                 | reject, OP-4     |
+| msr4-pos-capacity-requirement-discharges-a-length-obligation| run, exit 0      |
+| msr6-pos-const-generic-as-a-value                           | run, exit 0      |
+| msr6-pos-const-generic-in-a-clause-and-an-endpoint          | run, exit 0      |
+```
+
+**Probe `r2_4` is accepted, and that is the batch's own measured result.** The program
+this section recorded as root-granular — a `struct` with a `flags: u64` beside a
+`tail: buffer<u8>`, `let size = len(frame.tail);`, then `set frame.flags = 1_u64;`, then
+`frame.tail[3_u64]` — was an `[OP-4] UndischargedBoundsObligation` with the residual
+`3_u64 < len(frame.tail)` at this branch's tip and compiles now. Descriptor storage is
+the whole repair: the support of the measure is the resolved place of `frame.tail`, not
+of `frame`, so the sibling write overlaps nothing. `docs/patterns.md` P16 carries the
+correction, because the pattern said *root binding* where [MSR-2] says descriptor
+storage.
+
+**Probe `q10` is accepted.** `fn capacity_of<const n: u64>(...) { return n; }` compiles,
+and the same parameter is a `for_stmt` endpoint and a clause operand in the same
+program. That is [S21] in all three positions.
+
+> **Correction, decided 2026-09-04, from B2's implementation.** [MSR-1] said a measure
+> former over an unmeasured type "is an [OP-1] rejection at the `call`". The compiler's
+> pre-existing and correct judgment is the ordinary [TYPE-5] operand rejection at the
+> place, carrying the measured types the table has a row for; [OP-1] owns the arity and
+> written-type-argument failures, which is what [MSR-5] already said. The rule text now
+> says [TYPE-5], and no compiler behaviour changed.
+
+**What did not land, and why it could not.** Four of §7's B2 tests name a *run of runs* or
+a *wrapped run*, and neither exists in v0.45's type system. [TYPE-2] admits only a **flat
+element type** — an integer, a float, `Bool`, `unit`, or a struct or enum of those — so no
+measured type is an admitted element type: `buffer<buffer<u8>>` is
+`Semantics/Unsupported: CompositeValues` at the parameter, `array<buffer<u8>, 4>` is a
+[TYPE-2] rejection, and `array<array<u8, 4>, 4>` is the same. Consequently:
+
+- **`len(P[i])` is stated and unexercised.** [MSR-1]'s subscript admission is written into
+  [ENT-2] clause (b) and the compiler forms a measure term over any admitted measure
+  place, but no program can reach a subscripted one. This is not a compiler-capability
+  refusal — there is nothing to refuse — and it needs the container types.
+- **The `set` at an element position of a run of runs is not expressible**, for the same
+  reason. What is expressible is the half [MSR-2] states over storage: an element write of
+  a **scalar** kills nothing, because the killed set is empty rather than excepted, and
+  `msr2-pos-element-write-keeps-the-measure` pins it.
+- **An element-position `replace` is not expressible at all.** [SET-2] requires the
+  target's final selected type to be affine, and every flat element type is copy, so
+  `replace p[i] = e;` is a [SET-2] hard error before any measure question arises. Both
+  halves of §7's `replace` test — the descriptor's measures dying, the scalar's nothing —
+  wait on an affine element type, which is B7's.
+- **The wrapped run is B7's.** Every row of this version's measure table gives `head` the
+  exact value zero, so the injectivity sentence is exercised only at the identity map.
+  `msr1-pos-subscript-obligation-against-len` runs two disjoint ranges over one run at
+  `head = 0`; the two-disjoint-ranges-over-a-**wrapped**-run test needs a row whose `head`
+  can be nonzero.
+
+**The compiler still classifies a projected callee write from the actual's shape.** A
+write through a `&uniq buffer<T>` actual is read as an element write regardless of what
+the callee does, which is why `ent5-neg-callee-uniq-buffer-replace-kills-length` remains
+`xfail` and did not turn XPASS here. [MSR-2] restated the *granularity* over storage; the
+*classification* of what a callee write touches is [CALL-3]'s, and B3 is where that case
+flips. Nothing in B2 was allowed to flip it early.
+
+**One surface question the design does not settle, left to the owner.** `clause_expr`
+admits one operand, or two operands around one `infix_op` or `compare_op` [MSR-5], so a
+clause cannot write `len(run) + room(run) == cap(run)` or any other three-operand relation
+over measures. The capacity identity is therefore reachable by the checker as an automatic
+premise and unwritable by the writer as a clause. That is the production B1 landed and
+this batch did not touch it.
+
 ### 6.1 What the compiler did in this session
 
 ```text

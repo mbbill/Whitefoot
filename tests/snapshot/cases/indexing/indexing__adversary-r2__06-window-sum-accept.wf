@@ -1,15 +1,15 @@
 fn window_sum(buf: own buffer<u8>, offset: own u64, length: own u64) -> total: own u64 reads(buf) {
-  doc "expect ACCEPT: runtime-checked offset+length within room, so every i in offset..end is < room and buf[i] is in bounds";
-  let room = len(buf);
+  doc "expect ACCEPT: runtime-checked offset+length within spare, so every i in offset..end is < spare and buf[i] is in bounds";
+  let spare = len(buf);
   let end = offset +wrap length;
-  let fits = end <= room;
+  let fits = end <= spare;
   let ordered = offset <= end;
   let sum = 0_u64;
   if fits {
     if ordered {
       for (
         i in offset..end,
-        invariant within: end <= room
+        invariant within: end <= spare
       ) {
         let byte = buf[i];
         let widened = cvt::<u8, u64>(byte);

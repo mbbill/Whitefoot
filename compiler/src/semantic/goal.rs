@@ -2,7 +2,8 @@ use crate::{DeclarationId, NodePath};
 
 use super::model::{
     BindingId, CheckedBooleanOperation, CheckedConst, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedNumericType, CheckedType, CheckedValue, FunctionId,
+    CheckedIntegerOperation, CheckedMeasure, CheckedNumericType, CheckedType, CheckedValue,
+    FunctionId,
 };
 
 /// One function requirement, split into predicate and occurrence identity.
@@ -213,7 +214,8 @@ pub(crate) enum GoalOperation {
         element: CheckedFlatElement,
         length: CheckedConst,
     },
-    ArrayLength {
+    ArrayMeasure {
+        measure: CheckedMeasure,
         element: CheckedFlatElement,
         length: CheckedConst,
     },
@@ -223,7 +225,8 @@ pub(crate) enum GoalOperation {
         element: CheckedFlatElement,
         length: CheckedConst,
     },
-    BufferLength {
+    BufferMeasure {
+        measure: CheckedMeasure,
         element: CheckedFlatElement,
     },
     /// One buffer element value whose own OP-4 obligation has already been
@@ -238,7 +241,8 @@ pub(crate) enum GoalOperation {
         element: CheckedType,
         maximum_length: u64,
     },
-    SliceLength {
+    SliceMeasure {
+        measure: CheckedMeasure,
         region: DeclarationId,
         element: CheckedFlatElement,
     },

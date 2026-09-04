@@ -1,9 +1,9 @@
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "expect: ACCEPT - an element write never kills a length fact [ENT-5]; index 3 stays proven by len(buf)=4 after writing index 0";
   let buf = buffer_new(4_u64, 0_u8);
-  let cap = len(buf);
-  let last = cap -wrap 1_u64;
-  let ok = last < cap;
+  let limit = len(buf);
+  let last = limit -wrap 1_u64;
+  let ok = last < limit;
   if ok {
   } else {
     return exit_status(code: 1_u8);

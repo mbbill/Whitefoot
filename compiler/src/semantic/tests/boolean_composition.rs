@@ -414,9 +414,9 @@ fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() 
     let conjoined =
         br#"fn read_pair(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let room = len(deref(input));
-  let at_ok = at < room;
-  let next_ok = next < room;
+  let spare = len(deref(input));
+  let at_ok = at < spare;
+  let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
     let first = deref(input)[at];
@@ -433,9 +433,9 @@ command fn main() -> status: own ExitStatus pure {
     let separate =
         br#"fn read_pair(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let room = len(deref(input));
-  let at_ok = at < room;
-  let next_ok = next < room;
+  let spare = len(deref(input));
+  let at_ok = at < spare;
+  let next_ok = next < spare;
   if at_ok {
     if next_ok {
       let first = deref(input)[at];
@@ -474,9 +474,9 @@ command fn main() -> status: own ExitStatus pure {
 fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
     let source = br#"fn window(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let room = len(deref(input));
-  let at_ok = at < room;
-  let next_ok = next < room;
+  let spare = len(deref(input));
+  let at_ok = at < spare;
+  let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
     let first = deref(input)[at];
@@ -495,9 +495,9 @@ command fn main() -> status: own ExitStatus pure {
     assert!(summary.obligations.iter().all(|o| o.discharged));
     let else_edge = br#"fn window(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let room = len(deref(input));
-  let at_ok = at < room;
-  let next_ok = next < room;
+  let spare = len(deref(input));
+  let at_ok = at < spare;
+  let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
     return 0_u8;
@@ -530,9 +530,9 @@ fn band_over_derived_bindings_proves_no_unnamed_bound() {
         br#"fn read_three(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let far = at +wrap 2_u64;
-  let room = len(deref(input));
-  let at_ok = at < room;
-  let next_ok = next < room;
+  let spare = len(deref(input));
+  let at_ok = at < spare;
+  let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
     let first = deref(input)[at];
@@ -557,9 +557,9 @@ command fn main() -> status: own ExitStatus pure {
     let disjoined =
         br#"fn read_pair(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let room = len(deref(input));
-  let at_ok = at < room;
-  let next_ok = next < room;
+  let spare = len(deref(input));
+  let at_ok = at < spare;
+  let next_ok = next < spare;
   let either = bor(at_ok, next_ok);
   if either {
     return deref(input)[next];

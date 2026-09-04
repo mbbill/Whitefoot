@@ -1,0 +1,23 @@
+fn read_halves(run: own buffer<u8>) -> total: own u64 reads(run) contract {
+  requires 8_u64 <= len(run);
+} {
+  doc "Two disjoint logical ranges over one run.";
+  let seen = 0_u64;
+  for (at in 0_u64..4_u64) {
+    let byte = run[at];
+  }
+  for (at in 4_u64..8_u64) {
+    let byte = run[at];
+  }
+  return seen;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[MSR-1, OP-4] a subscript offset is a logical offset: it names the slot at physical offset (head + i) mod cap, so its obligation is against len and never against cap. Every row of this version's measure table gives head the exact value zero, so the map i |-> (head + i) mod cap is the identity here and the injectivity sentence's conclusion - two disjoint logical ranges of one run describe disjoint storage - holds immediately from len <= cap, which [MSR-2] publishes as a standing fact rather than as an obligation any occurrence submits. The two counted loops walk two disjoint ranges of one run and every subscript discharges against len.";
+  let run = buffer_new(8_u64, 0_u8);
+  let total = read_halves(run: move run);
+  if total == 0_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

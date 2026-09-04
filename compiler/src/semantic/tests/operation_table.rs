@@ -1,4 +1,5 @@
-//! Full-row extraction locks for the [OP-1] operation table.
+//! Full-row extraction locks for the [OP-1] operation table and the [MSR-1]
+//! measure table.
 //!
 //! The `op` column has been locked to the compiler's family inventory for
 //! several versions (`resolution::catalog`), but `domain`, `signature`, and
@@ -26,8 +27,8 @@
 use std::collections::{BTreeSet, HashSet};
 
 use crate::semantic::model::{
-    CheckedFloatOperation, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedType,
-    FloatType, IntegerType,
+    CheckedFloatOperation, CheckedIntegerErrorClass, CheckedIntegerOperation, CheckedMeasure,
+    CheckedType, FloatType, IntegerType, MeasureCell, MeasuredKind,
 };
 
 /// One extracted row of the `wf-ops` table, cell for cell.
@@ -256,7 +257,7 @@ const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor",
 /// value operands. Listing them explicitly is what makes the coverage
 /// assertion below two-sided — a new row is a failure unless someone decides
 /// which side it belongs on.
-const UNMODELLED_ROW_SPELLINGS: [&str; 12] = [
+const UNMODELLED_ROW_SPELLINGS: [&str; 15] = [
     "buffer_fits",
     "buffer_vacant",
     "eeq",
@@ -264,6 +265,9 @@ const UNMODELLED_ROW_SPELLINGS: [&str; 12] = [
     "cvt",
     "reinterpret",
     "len",
+    "cap",
+    "room",
+    "head",
     "slice_of",
     "box_new",
     "arena_new",
@@ -511,5 +515,115 @@ fn the_domain_column_decides_which_operand_types_are_accepted() {
     }
     for (spelling, _) in BOOLEAN_SPELLINGS {
         assert_eq!(row_of(&rows, spelling).domain, "Bool", "{spelling}");
+    }
+}
+
+/// One extracted row of the `wf-measures` table [MSR-1].
+#[derive(Debug, Eq, PartialEq)]
+struct MeasureRow {
+    measured: String,
+    cells: Vec<String>,
+}
+
+/// [MSR-1]'s measure table, extracted from the active specification by fence
+/// info string exactly as the operation table above is.
+fn measure_rows() -> Vec<MeasureRow> {
+    let mut fences = crate::ACTIVE_KERNEL_SPEC_TEXT.split("\n```wf-measures\n");
+    let _ = fences.next();
+    let body = fences
+        .next()
+        .expect("the active specification has one wf-measures fence")
+        .split("\n```")
+        .next()
+        .expect("the wf-measures fence is terminated");
+    assert!(
+        fences.next().is_none(),
+        "the wf-measures schema names exactly one table"
+    );
+    let mut lines = body.lines().filter(|line| line.starts_with('|'));
+    let schema = lines.next().expect("the table has a column schema");
+    assert_eq!(
+        schema
+            .trim_matches('|')
+            .split('|')
+            .map(str::trim)
+            .collect::<Vec<_>>(),
+        vec!["measured type", "len", "cap", "room", "head"],
+        "the first row of a wf-measures fence is its column schema"
+    );
+    lines
+        .filter(|line| !line.trim_matches('|').starts_with('-'))
+        .map(|line| {
+            let mut cells = line
+                .trim_matches('|')
+                .split('|')
+                .map(|cell| cell.trim().to_owned())
+                .collect::<Vec<_>>();
+            assert_eq!(cells.len(), 5, "a wf-measures row has exactly five cells");
+            let measured = cells.remove(0);
+            MeasureRow { measured, cells }
+        })
+        .collect()
+}
+
+/// The measure table the compiler reads is the one the specification writes.
+///
+/// The compiler's table is code [`CheckedMeasure::cell`], and [MSR-1] says the
+/// table is data the rule requires to exist rather than rule text. Nothing
+/// else compares the two, and a cell that drifts is exactly the class of
+/// defect the operation-table lock above was added for: a measure would keep
+/// proving a standing fact the specification no longer states.
+#[test]
+fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
+    let rows = measure_rows();
+    let expected = [
+        (MeasuredKind::Array, "array<T, N>"),
+        (MeasuredKind::Buffer, "buffer<T>"),
+        (MeasuredKind::Slice, "slice<'r, T>"),
+    ];
+    assert_eq!(
+        rows.iter()
+            .map(|row| row.measured.as_str())
+            .collect::<Vec<_>>(),
+        expected.iter().map(|(_, name)| *name).collect::<Vec<_>>(),
+        "the measure table gives every measured type this version has a row"
+    );
+    let measures = [
+        CheckedMeasure::Length,
+        CheckedMeasure::Capacity,
+        CheckedMeasure::Room,
+        CheckedMeasure::Head,
+    ];
+    for (row, (measured, name)) in rows.iter().zip(expected) {
+        for (cell, measure) in row.cells.iter().zip(measures) {
+            let (written, classification) = cell.rsplit_once(", ").unwrap_or_else(|| {
+                panic!(
+                    "{name}'s {} cell writes a classification",
+                    measure.spelling()
+                )
+            });
+            assert_eq!(
+                classification, "exact",
+                "every cell of this version's table is exact"
+            );
+            let compiled = measure.cell(measured);
+            match compiled {
+                MeasureCell::ExactConstant(value) => assert_eq!(
+                    written,
+                    value.to_string(),
+                    "{name}'s {} cell is the constant the compiler folds",
+                    measure.spelling()
+                ),
+                MeasureCell::ExactExtent => assert!(
+                    matches!(written, "N" | "allocated slots" | "viewed elements" | "len"),
+                    "{name}'s {} cell is the measured value's own extent, written {written}",
+                    measure.spelling()
+                ),
+                MeasureCell::Bounded | MeasureCell::Absent => panic!(
+                    "{name}'s {} cell is {compiled:?} where the specification writes {cell}",
+                    measure.spelling()
+                ),
+            }
+        }
     }
 }

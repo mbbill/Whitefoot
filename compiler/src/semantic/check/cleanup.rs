@@ -305,10 +305,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
-            | CheckedExpression::ArrayLength { .. }
-            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }

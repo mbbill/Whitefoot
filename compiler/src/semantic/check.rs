@@ -2178,10 +2178,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
-            | CheckedExpression::ArrayLength { .. }
-            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -2365,10 +2365,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedExpression::Constant(_)
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::Binding { .. }
-            | CheckedExpression::ArrayLength { .. }
-            | CheckedExpression::BufferLength { .. }
+            | CheckedExpression::ArrayMeasure { .. }
+            | CheckedExpression::BufferMeasure { .. }
             | CheckedExpression::SliceOf { .. }
-            | CheckedExpression::SliceLength { .. }
+            | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
             | CheckedExpression::BorrowAddressed { .. }
             | CheckedExpression::BorrowBox { .. }
@@ -2516,7 +2516,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            GoalOperation::ArrayLength { element, length } => GoalOperation::ArrayLength {
+            GoalOperation::ArrayMeasure {
+                measure,
+                element,
+                length,
+            } => GoalOperation::ArrayMeasure {
+                measure,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
@@ -2524,7 +2529,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            GoalOperation::BufferLength { element } => GoalOperation::BufferLength {
+            GoalOperation::BufferMeasure { measure, element } => GoalOperation::BufferMeasure {
+                measure,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
             GoalOperation::BufferIndex { element } => GoalOperation::BufferIndex {
@@ -2545,7 +2551,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     maximum_length,
                 }
             }
-            GoalOperation::SliceLength { region, element } => GoalOperation::SliceLength {
+            GoalOperation::SliceMeasure {
+                measure,
+                region,
+                element,
+            } => GoalOperation::SliceMeasure {
+                measure,
                 region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
@@ -2721,6 +2732,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty: *ty,
                 bits: *bits,
             },
+            // [MSR-6] a const generic is fixed at [FN-2] instantiation, so a
+            // concrete instance reads a mathematical constant and only the
+            // one symbolic instance keeps the declaration-anchored form.
+            CheckedValue::ConstGeneric { declaration, ty } => {
+                match signature.substitution.const_argument(*declaration) {
+                    Some(CheckedConst::Value(value)) => CheckedValue::Integer {
+                        ty: *ty,
+                        bits: value,
+                    },
+                    _ => CheckedValue::ConstGeneric {
+                        declaration: *declaration,
+                        ty: *ty,
+                    },
+                }
+            }
             CheckedValue::NumericIdentity { ty, one } => {
                 match self.instantiate_goal_type(*ty, signature, regions)? {
                     CheckedType::Integer(ty) => CheckedValue::Integer {

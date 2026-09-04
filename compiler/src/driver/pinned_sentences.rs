@@ -128,7 +128,7 @@ command fn main() -> status: own ExitStatus pure {
         name: "define-written-after-requires.wf",
         source: br#"fn count(end: own u64) -> lines: own u64 pure contract {
   requires end <= 8_u64;
-  define room = 8_u64;
+  define spare = 8_u64;
 } {
   return 0_u64;
 }
@@ -1116,8 +1116,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",
         source: br#"fn need(names: &buffer<u8>, pos: own u64) -> out: own u64 pure contract {
-  define room = len(deref(names));
-  requires pos <= room;
+  define spare = len(deref(names));
+  requires pos <= spare;
 } {
   return pos;
 }

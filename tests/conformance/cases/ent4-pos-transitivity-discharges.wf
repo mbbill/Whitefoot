@@ -1,9 +1,9 @@
 fn get(b: own buffer<u8>, i: own u64, j: own u64) -> result: own u8 reads(b) {
-  doc "Closure rule (1): ordinary executed control establishes i at most j and j below room, from which ENT-4 derives i below room and discharges the subscript [OP-4]. No unchecked conclusion stands in for either caller-dependent branch.";
-  let room = len(b);
+  doc "Closure rule (1): ordinary executed control establishes i at most j and j below spare, from which ENT-4 derives i below spare and discharges the subscript [OP-4]. No unchecked conclusion stands in for either caller-dependent branch.";
+  let spare = len(b);
   let ordered = i <= j;
   if ordered {
-    let inside = j < room;
+    let inside = j < spare;
     if inside {
       return b[i];
     }

@@ -1,7 +1,7 @@
 fn copy_window(src: own buffer<u8>, start: own u64, width: own u64, dst: &uniq buffer<u8>) -> written: own u64 reads(src, dst), writes(dst) {
   doc "ACCEPT: copies one start..start+width window into a caller-owned destination buffer; both the source and destination subscripts are tested against their real lengths before every store, so a short destination or a runaway width simply stops the copy early.";
   let capacity = len(src);
-  let room = len(deref(dst));
+  let spare = len(deref(dst));
   let count = 0_u64;
   loop @copy (
     invariant progress: count <= width
@@ -14,7 +14,7 @@ fn copy_window(src: own buffer<u8>, start: own u64, width: own u64, dst: &uniq b
     match start +checked count {
       Ok(value: source_at) => {
         let in_src = source_at < capacity;
-        let in_dst = count < room;
+        let in_dst = count < spare;
         if in_src {
         } else {
           break @copy;

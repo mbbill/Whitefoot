@@ -1284,7 +1284,7 @@ command fn main() -> status: own ExitStatus pure {
         };
         for length in arguments {
             let GoalExpression::Operation {
-                row: GoalOperation::SliceLength { region, .. },
+                row: GoalOperation::SliceMeasure { region, .. },
                 arguments,
                 ..
             } = length
@@ -1362,7 +1362,7 @@ command fn main() -> status: own ExitStatus pure {
             assert!(matches!(
                 length,
                 GoalExpression::Operation {
-                    row: GoalOperation::ArrayLength {
+                    row: GoalOperation::ArrayMeasure {
                         length: CheckedConst::Value(3),
                         ..
                     },

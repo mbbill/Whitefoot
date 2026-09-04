@@ -19,7 +19,7 @@
 use super::super::postcondition::{
     NormalizedRelation, PostconditionPlaceRoot, RelationDatum, RelationTemplate,
 };
-use crate::semantic::model::{CheckedValue, IntegerType};
+use crate::semantic::model::{CheckedMeasure, CheckedValue, IntegerType};
 
 /// The abstract term one operand denotes in the declaration-domain closure:
 /// an offset from a named term, where term `0` is the zero term.
@@ -37,7 +37,9 @@ enum OperandKey {
     Result,
     Parameter(u32, Vec<u32>),
     NamedConst(crate::DeclarationId, Vec<u32>),
-    Length(u32, Vec<u32>),
+    /// One measure of one formal place [MSR-1]: two clauses name one term
+    /// only when they name the same measure of the same place.
+    Measure(CheckedMeasure, u32, Vec<u32>),
 }
 
 /// The declared relations of one contract, as difference bounds over
@@ -74,9 +76,9 @@ impl DeclaredSystem {
                 projections,
                 ..
             } => OperandKey::NamedConst(*declaration, projection_key(projections)),
-            RelationDatum::Length(place) => {
+            RelationDatum::Measure(measure, place) => {
                 let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
-                OperandKey::Length(ordinal, projection_key(&place.projections))
+                OperandKey::Measure(*measure, ordinal, projection_key(&place.projections))
             }
             RelationDatum::Literal { value, .. } => {
                 // A literal is the zero term displaced by its own

@@ -44,7 +44,7 @@ const fn prelude(
 
 /// Distinct OP-1 spellings in normative table order, with repeated `cvt`
 /// collapsed at its first occurrence as required by OP-1.
-pub(crate) const OPERATION_FAMILIES: [&str; 94] = [
+pub(crate) const OPERATION_FAMILIES: [&str; 97] = [
     "+wrap",
     "-wrap",
     "*wrap",
@@ -91,6 +91,9 @@ pub(crate) const OPERATION_FAMILIES: [&str; 94] = [
     "bnot",
     "cvt",
     "len",
+    "cap",
+    "room",
+    "head",
     "slice_of",
     "box_new",
     "arena_new",

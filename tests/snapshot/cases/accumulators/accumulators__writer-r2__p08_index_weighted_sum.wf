@@ -1,8 +1,8 @@
 fn small_sum(buf: own buffer<u8>) -> total: own u32 reads(buf) contract {
-  define room = len(buf);
-  requires room <= 4_u64;
+  define spare = len(buf);
+  requires spare <= 4_u64;
 } {
-  doc "ACCEPT: a contract-bounded buffer length lets the per-iteration invariant use the same small constant factor regardless of the actual room.";
+  doc "ACCEPT: a contract-bounded buffer length lets the per-iteration invariant use the same small constant factor regardless of the actual spare.";
   let length = len(buf);
   let sum = 0_u32;
   for (

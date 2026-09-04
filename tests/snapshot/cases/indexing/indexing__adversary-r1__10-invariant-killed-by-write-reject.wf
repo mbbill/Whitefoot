@@ -1,11 +1,11 @@
 fn shifted_read(buf: own buffer<u8>, offset: own u64, shift: own u64) -> value: own u8 reads(buf) contract {
-  define room = len(buf);
-  requires offset < room;
-  requires shift < room;
+  define spare = len(buf);
+  requires offset < spare;
+  requires shift < spare;
 } {
   doc "expect REJECT (OP-2/OP-4): offset is proven in range before it is overwritten by a set that adds shift; the requires facts about the old offset must not carry to the new value used in the subscript";
-  let room = len(buf);
-  invariant offset_in_range: offset < room;
+  let spare = len(buf);
+  invariant offset_in_range: offset < spare;
   set offset = offset + shift;
   let value = buf[offset];
   return value;

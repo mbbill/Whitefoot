@@ -1,8 +1,8 @@
-fn bsearch(table: own buffer<u32>, room: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
+fn bsearch(table: own buffer<u32>, spare: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
   define length = len(table);
-  requires room == length;
+  requires spare == length;
   requires lo <= hi;
-  requires hi <= room;
+  requires hi <= spare;
 } {
   doc "ACCEPT: recursive binary search; the midpoint is proved strictly inside lo..hi from the division image, so the subscript needs no local certificate and each recursive step re-establishes the contract.";
   let has_more = lo < hi;
@@ -23,9 +23,9 @@ fn bsearch(table: own buffer<u32>, room: own u64, target: own u32, lo: own u64, 
   }
   if candidate < target {
     let next_lo = mid + 1_u64;
-    return bsearch(table: move table, room: room, target: target, lo: next_lo, hi: hi);
+    return bsearch(table: move table, spare: spare, target: target, lo: next_lo, hi: hi);
   } else {
-    return bsearch(table: move table, room: room, target: target, lo: lo, hi: mid);
+    return bsearch(table: move table, spare: spare, target: target, lo: lo, hi: mid);
   }
 }
 
@@ -39,8 +39,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set table[5_u64] = 12_u32;
   set table[6_u64] = 14_u32;
   set table[7_u64] = 16_u32;
-  let room = len(table);
-  let found = bsearch(table: move table, room: room, target: 10_u32, lo: 0_u64, hi: room);
+  let spare = len(table);
+  let found = bsearch(table: move table, spare: spare, target: 10_u32, lo: 0_u64, hi: spare);
   match found {
     Some(value: index) => {
       if index == 4_u64 {

@@ -1,6 +1,6 @@
 fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(bytes) contract {
-  define room = len(bytes);
-  requires index < room;
+  define spare = len(bytes);
+  requires index < spare;
 } {
   return bytes[index];
 }

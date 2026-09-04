@@ -279,8 +279,8 @@ fn element_position_replace_through_a_unique_holder_accepts() {
 
 fn push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf) {
   let count = deref(v).fill;
-  let cap = len(deref(v).buf);
-  let has_room = count < cap;
+  let limit = len(deref(v).buf);
+  let has_room = count < limit;
   if has_room {
     let filled = Some<u32>(value: x);
     let vacant = replace deref(v).buf[count] = move filled;

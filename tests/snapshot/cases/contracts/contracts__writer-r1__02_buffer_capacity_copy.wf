@@ -1,7 +1,7 @@
 fn fill_prefix(out: &uniq buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
-  define room = len(deref(out));
+  define spare = len(deref(out));
   define amount = len(source);
-  requires amount <= room;
+  requires amount <= spare;
 } {
   let amount = len(source);
   for (offset in 0_u64..amount) {

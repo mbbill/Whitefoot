@@ -659,7 +659,7 @@ fn target_integer_result_bounds(
                             }
                         })
                 }
-                IrOperation::BufferLength { buffer } => {
+                IrOperation::BufferMeasure { buffer } => {
                     let Some(IrType::Buffer { element }) = function.value_type(*buffer) else {
                         return Err(TargetLayoutFailure::InvalidIr);
                     };

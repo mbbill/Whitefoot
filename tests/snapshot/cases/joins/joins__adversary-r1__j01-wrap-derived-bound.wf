@@ -1,15 +1,15 @@
 fn get(b: own buffer<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
-  doc "expect REJECT: wrap-arithmetic fact room >= i +wrap 1 does not imply i < room; i = u64::MAX with room = 4 gives i +wrap 1 = 0, so the guard is vacuously true while i is far out of bounds, so b[i] must not discharge.";
-  let room = len(b);
+  doc "expect REJECT: wrap-arithmetic fact spare >= i +wrap 1 does not imply i < spare; i = u64::MAX with spare = 4 gives i +wrap 1 = 0, so the guard is vacuously true while i is far out of bounds, so b[i] must not discharge.";
+  let spare = len(b);
   if pick {
     let stepped = i +wrap 1_u64;
-    let inside = room >= stepped;
+    let inside = spare >= stepped;
     if inside {
     } else {
       return 0_u8;
     }
   } else {
-    let inside2 = i < room;
+    let inside2 = i < spare;
     if inside2 {
     } else {
       return 0_u8;

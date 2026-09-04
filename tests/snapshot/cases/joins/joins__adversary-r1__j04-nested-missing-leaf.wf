@@ -6,25 +6,25 @@ enum Combo {
 }
 
 fn get(b: own buffer<u8>, i: own u64, combo: own Combo) -> result: own u8 reads(b) {
-  doc "expect REJECT: three of the four match leaves check i < room, but BothFalse() falls through unchecked, so b[i] must not discharge for i = room = len(b) taking BothFalse().";
-  let room = len(b);
+  doc "expect REJECT: three of the four match leaves check i < spare, but BothFalse() falls through unchecked, so b[i] must not discharge for i = spare = len(b) taking BothFalse().";
+  let spare = len(b);
   match combo {
     BothTrue() => {
-      let inside_a = i < room;
+      let inside_a = i < spare;
       if inside_a {
       } else {
         return 0_u8;
       }
     }
     FirstTrue() => {
-      let inside_b = i < room;
+      let inside_b = i < spare;
       if inside_b {
       } else {
         return 0_u8;
       }
     }
     SecondTrue() => {
-      let inside_c = i < room;
+      let inside_c = i < spare;
       if inside_c {
       } else {
         return 0_u8;

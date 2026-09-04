@@ -4,11 +4,11 @@ enum Kind {
 }
 
 fn fetch(b: own buffer<u8>, i: own u64, kind: own Kind, safe: own Bool) -> result: own u8 reads(b) {
-  doc "expected ACCEPT: the Margin arm nests an if/else that proves i < room from two different derivations, so an if_stmt nested inside a match arm must deliver through the last-statement recursion before the outer match/if join reaches the shared subscript.";
-  let room = len(b);
+  doc "expected ACCEPT: the Margin arm nests an if/else that proves i < spare from two different derivations, so an if_stmt nested inside a match arm must deliver through the last-statement recursion before the outer match/if join reaches the shared subscript.";
+  let spare = len(b);
   match kind {
     Exact() => {
-      let inside = i < room;
+      let inside = i < spare;
       if inside {
       } else {
         return 0_u8;
@@ -16,13 +16,13 @@ fn fetch(b: own buffer<u8>, i: own u64, kind: own Kind, safe: own Bool) -> resul
     }
     Margin() => {
       if safe {
-        let direct = i < room;
+        let direct = i < spare;
         if direct {
         } else {
           return 0_u8;
         }
       } else {
-        let far = i >= room;
+        let far = i >= spare;
         if far {
           return 0_u8;
         }

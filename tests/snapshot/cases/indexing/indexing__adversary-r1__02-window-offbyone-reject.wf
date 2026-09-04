@@ -1,9 +1,9 @@
 fn window_one_past(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
-  define room = len(buf);
+  define spare = len(buf);
   requires start < end;
-  requires end <= room;
+  requires end <= spare;
 } {
-  doc "expect REJECT (OP-4): only end <= room is proven, but the code reads buf[end], one past the proven window's last valid index end - 1";
+  doc "expect REJECT (OP-4): only end <= spare is proven, but the code reads buf[end], one past the proven window's last valid index end - 1";
   let value = buf[end];
   return value;
 }

@@ -6,8 +6,8 @@ fn sum_paced(limit: own u64) -> total: own u64 pure {
   loop (
     invariant paced: fast <= limit
   ) {
-    let room = fast < limit;
-    if room {
+    let spare = fast < limit;
+    if spare {
       set total = total +wrap fast;
       set fast = fast + 1_u64;
     }

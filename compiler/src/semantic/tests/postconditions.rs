@@ -637,11 +637,11 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
   requires filled <= capacity;
   ensures result <= capacity;
 } {
-  let room = len(deref(destination));
-  let admitted = filled <= room;
+  let spare = len(deref(destination));
+  let admitted = filled <= spare;
   let length = len(text);
   if admitted {
-    for @append (at in filled..room) {
+    for @append (at in filled..spare) {
       let taken = at -wrap filled;
       let done = taken >= length;
       if done {
@@ -650,7 +650,7 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
       let byte = text[taken];
       set deref(destination)[at] = byte;
     }
-    return room;
+    return spare;
   } else {
     return filled;
   }

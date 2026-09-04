@@ -1,7 +1,7 @@
 fn get(b: own buffer<u8>, i: own u64, half: own u64) -> result: own u8 reads(b) {
-  doc "expect ACCEPT: one arm proves i < half, the other proves half <= i and i < room; both partitions independently imply i < room given half <= room, so the join keeps the common bound and b[i] discharges.";
-  let room = len(b);
-  let half_ok = half <= room;
+  doc "expect ACCEPT: one arm proves i < half, the other proves half <= i and i < spare; both partitions independently imply i < spare given half <= spare, so the join keeps the common bound and b[i] discharges.";
+  let spare = len(b);
+  let half_ok = half <= spare;
   if half_ok {
   } else {
     return 0_u8;
@@ -11,7 +11,7 @@ fn get(b: own buffer<u8>, i: own u64, half: own u64) -> result: own u8 reads(b) 
   } else {
     let upper_start = i >= half;
     if upper_start {
-      let upper_end = i < room;
+      let upper_end = i < spare;
       if upper_end {
       } else {
         return 0_u8;

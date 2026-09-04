@@ -36,7 +36,7 @@ command fn main() -> status: own ExitStatus pure {
         assert!(matches!(
             first.body[0],
             CheckedStatement::Let {
-                value: CheckedExpression::SliceLength { .. },
+                value: CheckedExpression::SliceMeasure { .. },
                 ..
             }
         ));
@@ -92,8 +92,8 @@ fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
   let moved = move value;
   region {
     let holder = &uniq moved;
-    let room = len(deref(holder));
-    let nonempty = 0_u64 < room;
+    let spare = len(deref(holder));
+    let nonempty = 0_u64 < spare;
     if nonempty {
       let byte = deref(holder)[0_u64];
       set deref(holder)[0_u64] = byte;
@@ -108,8 +108,8 @@ fn slice_after_move(value: own buffer<u8>) -> result: own u8 reads(value) {
   let moved = move value;
   region {
     let view = slice_of(&moved);
-    let room = len(view);
-    let nonempty = 0_u64 < room;
+    let spare = len(view);
+    let nonempty = 0_u64 < spare;
     if nonempty {
       return view[0_u64];
     } else {
@@ -667,8 +667,8 @@ fn returned_slice_origins_drive_effects_and_alias_conflicts() {
 
 fn first(value: own slice<u8>) -> result: own u8 reads(value) {
   let returned = pass(value: move value);
-  let room = len(returned);
-  let ok = 0_u64 < room;
+  let spare = len(returned);
+  let ok = 0_u64 < spare;
   if ok {
     return returned[0_u64];
   } else {
@@ -773,8 +773,8 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let borrowed_input = br#"fn first(value: &slice<u8>) -> result: own u8 reads(value) {
-  let room = len(deref(value));
-  let ok = 0_u64 < room;
+  let spare = len(deref(value));
+  let ok = 0_u64 < spare;
   if ok {
     return deref(value)[0_u64];
   } else {

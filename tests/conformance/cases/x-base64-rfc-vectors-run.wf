@@ -20,8 +20,8 @@ fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, Inde
 }
 
 fn read_index(values: &buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values) {
-  let room = len(deref(values));
-  match require_index(index: index, limit: room) {
+  let spare = len(deref(values));
+  match require_index(index: index, limit: spare) {
     Ok(value: admitted) => {
       let value = deref(values)[admitted];
       return Ok<u8, IndexError>(value: value);
@@ -33,8 +33,8 @@ fn read_index(values: &buffer<u8>, index: own u64) -> result: own Result<u8, Ind
 }
 
 fn write_index(values: &uniq buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads(values), writes(values) {
-  let room = len(deref(values));
-  match require_index(index: index, limit: room) {
+  let spare = len(deref(values));
+  match require_index(index: index, limit: spare) {
     Ok(value: admitted) => {
       set deref(values)[admitted] = value;
       return Ok<unit, IndexError>(value: unit);

@@ -1,9 +1,9 @@
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "expected: ACCEPT -- a whole-place replace of the buffer kills its old length fact [ENT-5](a); a fresh len() reestablishes it.";
   let line = buffer_new(4_u64, 0_u8);
-  let room = len(line);
+  let spare = len(line);
   let first_end = 4_u64;
-  let first_fits = first_end <= room;
+  let first_fits = first_end <= spare;
   if first_fits {
   } else {
     return exit_status(code: 1_u8);
