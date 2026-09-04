@@ -2,13 +2,10 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.44 authority at SHA-256
-`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`.
-v0.44 supersedes v0.43 at
-`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`, whose
-bytes are archived at `spec/kernel-spec-v0.43.md`; the v0.40, v0.41, v0.42,
-v0.43, and v0.44 amendments at the end of this file bind their changed
-derivations.
+the active specification at `spec/kernel-spec.md`, whose version and digest
+are the chain tail in `governance/APPROVALS.md`; each superseded version is
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.44 amendments
+at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
@@ -26,25 +23,25 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
-**Active v0.44 statistics: 81 derived · 55 existence-only · 0 underived**
+**v0.44 statistics: 81 derived · 55 existence-only · 0 underived**
 (136 rules: v0.44 adds derived MSR-3 and CALL-6 and existence-only MSR-5 and
 CALL-4, retires no rule, and moves no existing row's status, so every other
 derivation status carries over from v0.43).
-**Superseded v0.43 statistics: 79 derived · 53 existence-only · 0 underived**
+**v0.43 statistics: 79 derived · 53 existence-only · 0 underived**
 (132 rules: v0.43 adds and retires no rule and moves no row's status — it
 amends OWN-3, OWN-11, FORM-8, and ENT-6 in place — so every derivation status
 carries over from v0.42).
-**Superseded v0.42 statistics: 79 derived · 53 existence-only · 0 underived**
+**v0.42 statistics: 79 derived · 53 existence-only · 0 underived**
 (132 rules: v0.42 adds existence-only FORM-8, retires no rule, and respells
 region positions only, so every other derivation status carries over from
 v0.41).
-**Superseded v0.41 statistics: 79 derived · 52 existence-only · 0 underived**
+**v0.41 statistics: 79 derived · 52 existence-only · 0 underived**
 (131 rules: v0.41 respells 21 rules and adds or retires none, so every
 derivation status carries over from v0.40).
-**Superseded v0.40 statistics: 79 derived · 52 existence-only · 0 underived**
+**v0.40 statistics: 79 derived · 52 existence-only · 0 underived**
 (131 rules: remove the nine historical rules named above, add existence-only
 INV-1 and PRF-1, and retain every other rule's derivation status).
-**Superseded v0.39 statistics: 86 derived · 52 existence-only · 0 underived**
+**v0.39 statistics: 86 derived · 52 existence-only · 0 underived**
 (138 rules).
 
 ## Re-grounding priority queue (weakest chains)

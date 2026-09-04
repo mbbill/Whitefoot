@@ -50,7 +50,7 @@ jobs:
           - stage: static
             run: >-
               make repository-invariants approval-history-integrity
-              spec-append-only spec-archive-integrity spec-digest-sync
+              spec-append-only spec-archive-integrity spec-prose-integrity
               && make -C compiler static
           # The fast half of the library suite, plus the partition proof that
           # the two halves between them are the whole suite.

@@ -3,21 +3,17 @@
 Status: IMPLEMENTED AND ACTIVATED as v0.40 on
 `codex/source-proof`.
 
-Active language authority: v0.44,
-`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
-which adds the fact machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]) over the
-v0.43 loop-body region block and associative join, the v0.42 canonical region
-spelling, the v0.41 comparison symbols, and the v0.40 proof surface this plan
-delivered.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.43 is
-archived at `spec/kernel-spec-v0.43.md` and the merge-time record is in
-`governance/APPROVALS.md`. The candidate that preceded activation hashed to
-`1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`;
-activation flipped its status line and changed no other byte. Activation is
-branch content: nothing merges to `main` until the owner approves the exact
-revision and canonical `make check` passes on that revision. This document
-records technical direction and sequencing; it grants no permission and adds
-no workflow gate.
+The active language authority is the specification at `spec/kernel-spec.md`;
+its version and digest are the chain tail in `governance/APPROVALS.md`. On top
+of the v0.40 proof surface this plan delivered, v0.41 added the comparison
+symbols and the call-site `::` delimiter, v0.42 the canonical region spelling,
+v0.43 the loop-body region block and the associative join, and v0.44 the fact
+machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]). Each superseded version is
+archived at `spec/kernel-spec-vN.md` with its merge-time record in
+`governance/APPROVALS.md`. Nothing merges to `main` until the owner approves
+the exact revision and canonical `make check` passes on that revision. This
+document records technical direction and sequencing; it grants no permission
+and adds no workflow gate.
 
 v0.43 carries two independent amendments. The first makes every `loop_stmt` and
 `for_stmt` body a region block [OWN-3, OWN-11]: the body introduces one unnamed

@@ -1,31 +1,22 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 68 (v0.44 adds the fact machinery: contract-clause measure operands,
-mode-keyed operand denotation with the call datum, the result vocabulary, and
-publication stated once)
+Revision: 69 (the specification identity lives only in the approval chain and
+the generated compiler identity; the candidate status is retired, so an
+amendment lands and activates in one change)
 
-The active language authority is v0.44, SHA-256
-`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`, carried by
-the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
-v0.43 at `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`,
-archived byte-for-byte at
-[`spec/kernel-spec-v0.43.md`](../spec/kernel-spec-v0.43.md). The merge-time
-approval record is in
-[`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
-with the owner's merge approval of the exact revision containing it; the batch
-record for v0.39 remains [batch 0091](done/0091-par3-judgment.md). The
-execution plan is [`docs/current-plan.md`](current-plan.md).
-Project law is the [`Constitution`](constitution.md), and the operational
-process is [`WORKFLOW.md`](WORKFLOW.md).
+The active language authority is the specification carried by the stable path
+[`spec/kernel-spec.md`](../spec/kernel-spec.md); its version and exact digest
+are the tail of the `ACTIVE-SPEC:` chain in
+[`governance/APPROVALS.md`](../governance/APPROVALS.md), where each
+activation's merge-time record lives and becomes effective with the owner's
+merge approval of the exact revision containing it. Superseded versions are
+archived byte-for-byte as `spec/kernel-spec-vN.md`. The batch record for v0.39
+remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
+[`docs/current-plan.md`](current-plan.md). Project law is the
+[`Constitution`](constitution.md), and the operational process is
+[`WORKFLOW.md`](WORKFLOW.md).
 
-The stable path carries those exact **ACTIVE v0.44** bytes; the candidate that
-preceded activation hashed to
-`1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`, and
-activation flipped its status line and changed no other byte. The outgoing
-v0.43 bytes are archived and the chain in
-[`governance/APPROVALS.md`](../governance/APPROVALS.md) carries the new
-`ACTIVE-SPEC: v0.44` line.
 v0.42 adds [FORM-8], one canonical region spelling. A REGIONID is written
 exactly where the document does not otherwise fix the region: a declaration
 writes a name only to relate two of its own positions or to name an
@@ -381,9 +372,8 @@ creating writer trust or weakening the checked safety envelope.
   the separately invoked adapter remains `Pass=393 Fail=1 Skip=13`, with only
   the pre-existing OWN-3 unsupported boundary. Commit `d495d8c` records the
   paired requirement-enforcement re-decision and passes MCTS lint. Task 0048 is
-  terminal. Exact-approved v0.27 became active at
-  `bbd7250084123bbce3267f741f30f6c12efc73c341ff8d361dd1b19d9502090f`,
-  with byte-identical outgoing v0.26 archived at
+  terminal. Exact-approved v0.27 became active (its identity is the v0.27
+  line of the chain in `governance/APPROVALS.md`), with byte-identical outgoing v0.26 archived at
   `spec/kernel-spec-v0.26.md`. It activates the bounded PRV-1/PRV-2/PRV-3
   explicit-dataflow gate over the retained requirement bridge. The approved
   real-program migration replaces eleven DEFLATE claims with value branches,
