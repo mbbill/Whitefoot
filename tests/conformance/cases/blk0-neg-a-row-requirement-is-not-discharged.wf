@@ -1,0 +1,13 @@
+fn overfill() -> result: own FixedVector<u8, 2> pure {
+  doc "A third placement into a two-slot run has no room, and the row's own requirement is what refuses it.";
+  let empty = seq_fixed::<u8, 2>();
+  let one = seq_place(vector: move empty, value: 7_u8);
+  let two = seq_place(vector: move one, value: 8_u8);
+  let three = seq_place(vector: move two, value: 9_u8);
+  return move three;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0: the per-row requirement discharge under MSR-4 is part of this rule's judgment, and the diagnostic names the operation rather than citing a source clause.";
+  return exit_status(code: 0_u8);
+}

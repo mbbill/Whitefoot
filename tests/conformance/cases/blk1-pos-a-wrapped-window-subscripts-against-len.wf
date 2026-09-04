@@ -1,0 +1,24 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-1: after a front removal and two back placements the window wraps, head is nonzero, and a subscript is still a logical offset whose obligation is against len.";
+  let empty = seq_fixed::<u8, 3>();
+  let one = seq_place(vector: move empty, value: 10_u8);
+  let two = seq_place(vector: move one, value: 20_u8);
+  let three = seq_place(vector: move two, value: 30_u8);
+  let (rest, dropped) = seq_take_front(vector: move three);
+  if dropped == 10_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let wrapped = seq_place(vector: move rest, value: 40_u8);
+  let at_zero = wrapped[0_u64];
+  if at_zero == 20_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let at_two = wrapped[2_u64];
+  if at_two == 40_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  return exit_status(code: 0_u8);
+}
