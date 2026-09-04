@@ -8,7 +8,7 @@ reader who reads only this file has the whole design.
 **Eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03 and
 2026-09-04.** Round
 7 confirmed the architecture — the brand, the partition, R1, R2, D1, D2, `[CALL-6]`'s
-publication surface, the window, the copy `slice` — and broke the *arithmetic* around it
+publication surface, the window, the copy `Slice` — and broke the *arithmetic* around it
 in one shape, stated by two lenses in the same week. F1: **a fact computed at one point
 and used at another, with the rule naming only the judgment and not the point.** F2: **a
 repair that relocates the defect to the key rather than removing it.** `[MSR-3]` keyed a
@@ -77,18 +77,18 @@ Three dispositions the owner made on the seventh draft's three open items:
   carries. 3.L.8 walks it and prices it honestly, and Q18 puts the kernel row back to the
   owner if a driver's `E` cannot afford the second run.
 - **`[S30]` the seven `[SYS-8]` range operations over views is ADOPTED.** The gap round 7
-  found beside it, that a helper handed `&uniq mut_slice<u8>` cannot publish what it
+  found beside it, that a helper handed `&uniq MutSlice<u8>` cannot publish what it
   filled, is closed by `[S31]` below, and it is closed without a row.
 
 **Three further decisions of 2026-09-04 empty 3.S's PROPOSED list. Nothing in this file
 is proposed now.**
 
 > **`[S31]` `seq_reslice` is NOT adopted as an operation (owner-decided 2026-09-04).**
-> Forming a shared `slice<'r, T>` from a `mut_slice<'r, T>` is the ordinary
+> Forming a shared `Slice<'r, T>` from a `MutSlice<'r, T>` is the ordinary
 > **shared child reborrow of a unique loan**, which `[OWN-6]` already admits for places: a
 > probe on the v0.42 build accepts `peek(x: &deref(x))` inside a region block where
 > `x: &uniq u64`. This design states it as that rule applied to **views** rather than as a
-> kernel row. The child `slice` carries the parent's origin set and range, its loan is a
+> kernel row. The child `Slice` carries the parent's origin set and range, its loan is a
 > shared child of the exclusive one under `[OWN-6]`, and the parent may not be written
 > while the child lives. `seq_reslice` is deleted from this file, `[VIEW-6]`'s
 > "no helper library over views" restriction is restated, and the fill-and-publish helper
@@ -1174,7 +1174,7 @@ by exact identity.
 >    position's type is `Heap` or is a type whose own brand resolves by clause 1 to the
 >    entry heap, and an **implicit region parameter**, one per occurrence, otherwise.
 >
-> A **loan** region — the region of `slice<'r, T>` or `mut_slice<'r, T>` — is never a
+> A **loan** region — the region of `Slice<'r, T>` or `MutSlice<'r, T>` — is never a
 > store region, and an elided one is always an implicit region parameter. The entry
 > heap's store region has no written spelling, because `main` declares no region
 > parameter ([S22]). When the entry selects no `command.heap` there is no entry heap's
@@ -1206,7 +1206,7 @@ absent. Each store's measures are its rows' declared relations and are published
 nominals and from which `box<T>`, `arena<'r, T>` and `buffer<T>` retire; [TYPE-7]
 475-479, whose deref domain becomes the two borrow modes alone; [GRAM-3] 204-215, whose
 `box`, `arena` and `buffer` productions retire in favour of TYPEIDs with `targs` and
-whose `slice` production is joined by `mut_slice`; [STOR-1] 675-683, whose storage-class
+whose `Slice` production is joined by `MutSlice`; [STOR-1] 675-683, whose storage-class
 list at 675 gains the two runs; [OWN-10] 640-644 at 643; [FN-7] 1216-1255, whose table
 gains ordinal 5, whose 1218 is **kept**, whose 1245-1246 gains the row, and whose 1220
 gains `allocates` over a labelled input. *Depends:* [OWN-3] 578 and 580; [OWN-12] 650 and
@@ -1248,8 +1248,8 @@ r4 F1-a7.
 
 **[PROV-3] Provenance is for loans, a loan reaches a logical range, a loan ends where its
 value's liveness ends, and a loan-bearing value owns nothing.** [OWN-5]'s finite origin
-set, today defined for `slice<'r, T>`, generalizes to the two views and to nothing else.
-A **loan-bearing** type is `slice<'r,T>` or `mut_slice<'r,T>`; a value of one carries a
+set, today defined for `Slice<'r, T>`, generalizes to the two views and to nothing else.
+A **loan-bearing** type is `Slice<'r,T>` or `MutSlice<'r,T>`; a value of one carries a
 finite set of origins, each an origin place paired with the half-open **logical** index
 range the value reaches of it [MSR-1].
 
@@ -1262,12 +1262,12 @@ boundary by [FN-1] 1041-1047's rule. The **resolved** set is the set minus
 
 **A loan-bearing value owns nothing** (L10): what it reaches belongs to its origin, so no
 obligation of what it reaches is ever a property of the view. [PROV-6] reads that twice,
-and it is why a `slice<'r, T>` can be **copy** ([S27]).
+and it is why a `Slice<'r, T>` can be **copy** ([S27]).
 
 **A loan begins where its value is formed or copied and ends where that value's own
 liveness ends** — for an affine view its consume or release, for a **copy** view its last
-use, which [ENT-5] already computes. Each copy of a `slice` holds **its own** shared loan
-on the same ranges, which [OWN-5] admits without limit; a `mut_slice` stays affine
+use, which [ENT-5] already computes. Each copy of a `Slice` holds **its own** shared loan
+on the same ranges, which [OWN-5] admits without limit; a `MutSlice` stays affine
 because [OWN-5] 606 refuses two exclusive loans on one range.
 
 Four uses, and no fifth:
@@ -1301,7 +1301,7 @@ ranges, which gains the address-computation and resolved-set sentences, whose 60
 view's loan strength on its resolved origin set is exclusive", and whose 601-604 is
 restated over the loan-bearing predicate; [OWN-7] 629-633; [SET-1] 481-511, whose 488-490
 becomes *a target path may traverse a view value exactly when that view's loan strength
-is exclusive*, admitting the `mut_slice` element write probe `p7` refuses today; [SET-2]
+is exclusive*, admitting the `MutSlice` element write probe `p7` refuses today; [SET-2]
 513-528, whose region-bearing target rejection is replaced by use 3 and [VIEW-4]; [EFF-1]
 1369-1390 at 1386, which generalizes to a loan-bearing **parameter** and to no other
 position; [EFF-2] 1392-1439 at 1406-1410. *Depends:* [FN-1] 1041-1047; [OWN-7] 630, whose
@@ -1739,8 +1739,11 @@ other state — no per-slot tag, no occupancy bitmap, no runtime discriminant. A
 `v[i]` selects the element at **logical** offset `i` [MSR-1] and carries the ordinary
 [OP-4] obligation `i < len(v)`, against `len` and never against `cap` or `head`. A
 `Vector<'s, T>` of capacity one is a single stored value, so the language needs no box
-nominal. `array<T, n>` is retained as the `len = cap = n`, `head = Z` case with no
-typestate and a copy-only element domain.
+nominal. `array<T, n>` **retires** [S34]: it was the `len = cap = n`, `head = Z` case, and a
+`FixedVector<T, n>` whose four measures are standing facts is that case with no runtime
+descriptor word, so a `const` of `FixedVector<T, n>` type with exactly `n` literal
+entries is the const-eligible form [CONST-1], lowers to element storage only, and
+materializes its descriptor from the standing facts at each use.
 
 **Why a window and not a prefix, and what it costs.** The prefix made L12's last clause
 false: a queue is not arithmetic over append and remove-at-the-end, and the price was a
@@ -1898,7 +1901,7 @@ refused. **And the clause quantifies over a
 source-declared `fn`** and not over the compiler-owned domains, because a [BLK-0] or
 [SYS-2] row is a declaration record whose relations are complete over everything it writes
 and whose behaviour no body can vary — L11's second sentence — so
-`seq_mut_slice(vector: &uniq 'r v)` and `read_at(destination: &uniq mut_slice<u8>, ...)`
+`seq_mut_slice(vector: &uniq 'r v)` and `read_at(destination: &uniq MutSlice<u8>, ...)`
 are unaffected.
 
 **A source nominal may declare region parameters** — `struct Chunk['s] { page:
@@ -1938,12 +1941,12 @@ L13. *History:* r7 F1-8; r6 F1-1, F1-2.
 ```text
 | type              | reads | writes elements | changes length     | loan      | class  |
 |-------------------|-------|-----------------|--------------------|-----------|--------|
-| slice<'r, T>      | yes   | no              | no                 | shared    | copy   |
-| mut_slice<'r, T>  | yes   | yes             | no                 | exclusive | affine |
+| Slice<'r, T>      | yes   | no              | no                 | shared    | copy   |
+| MutSlice<'r, T>   | yes   | yes             | no                 | exclusive | affine |
 ```
 
-`slice<'r, T>` keeps v0.41's name (owner-decided): the Rust precedent is exact and a
-rename buys a reader nothing. `mut_slice<'r, T>` **[S6]** is the one added view, because
+`Slice<'r, T>` is v0.41's `slice` under [S35]'s capitalization; its semantics are
+Rust's slice's, which is why nothing but the case changes. `MutSlice<'r, T>` **[S6, S35]** is the one added view, because
 [SET-1] 488-490 makes every slice-rooted target unwritable and probe `p7` is the refusal.
 Each is an `own` value carrying a region `'r`, each is loan-bearing [PROV-3], and its
 measures are [MSR-1]'s rows with `head` exact at `Z` because a view is formed only over an
@@ -1953,30 +1956,30 @@ unwrapped window [VIEW-2].
 Affinity on the shared view buys no safety — a second copy is a second **shared** loan,
 which [OWN-5] admits without limit, and a value that owns nothing has nothing to
 double-free — and costs a re-formation at every second use (probes `s4`, `s5`).
-`mut_slice` stays affine because [OWN-5] 606 refuses two exclusive loans on one range.
+`MutSlice` stays affine because [OWN-5] 606 refuses two exclusive loans on one range.
 **What the decision also costs is now stated where round 7 found it**: a copy view is
 never consumed, so its loan ends at its last use [PROV-3], and [LIV-2]'s copy case would
 admit a `set` at a view target with no consume, which [VIEW-4] now refuses.
 
-Three consequences rules read. A `slice` operand is used **without `move`** [OWN-1] 564,
+Three consequences rules read. A `Slice` operand is used **without `move`** [OWN-1] 564,
 so `collect(out: move buf, source: line)` is the call spelling and a `move` is
-`[OWN-1] MoveOfCopy` (probe `x14`). A `slice` is never linear, never released and never
+`[OWN-1] MoveOfCopy` (probe `x14`). A `Slice` is never linear, never released and never
 destructured. And an exclusive view and a shared read of one run cannot both be live,
 which is [OWN-5]'s ordinary conflict (probe `s6`) and which Q19 records as the cost it is.
 
 *Judgment:* the [OWN-1] classification of the two view types, which [PROV-3] use 1,
 [LIV-2] condition 1, [VIEW-4] and [CALL-3] read. *Publishes:* the two types, their loan
 strengths, their ownership classes, and the loan-bearing predicate. *Amends:* [TYPE-2]
-357-360, [OWN-1] 563-571 at 563-564, which gains `mut_slice` as affine and **moves `slice`
+357-360, [OWN-1] 563-571 at 563-564, which gains `MutSlice` as affine and **moves `Slice`
 to copy**, and [CONST-2] 546-559, [OP-7] 939-947 and [OP-1] 771-849's `slice_of` row.
 *Law:* L10. *History:* r7 F1-6, F1-12, F5-7; r6 the owner's [S27].
 
 **[VIEW-2] Formation, the loan the view value holds, and the non-wrap premise.**
 
 ```text
-seq_slice['r, T](vector: &'r V)          -> own slice<'r, T>      reads(vector)   // [S10]
+seq_slice['r, T](vector: &'r V)          -> own Slice<'r, T>      reads(vector)   // [S10]
     requires head(vector) + len(vector) <= cap(vector)
-seq_mut_slice['r, T](vector: &uniq 'r V) -> own mut_slice<'r, T>  reads(vector)
+seq_mut_slice['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>  reads(vector)
     requires head(vector) + len(vector) <= cap(vector)
 ```
 
@@ -2013,7 +2016,7 @@ statement's right-hand side**. Two forms are therefore refused:
 >
 > **`set p = e;` where `p`'s type is loan-bearing is a hard error on the same terms.**
 > [LIV-2] condition 1's third disjunct makes a **copy** target dead at the commit with
-> nothing consumed, and [S27] made `slice<'r, T>` copy — so the seventh draft's stated
+> nothing consumed, and [S27] made `Slice<'r, T>` copy — so the seventh draft's stated
 > ground for not reaching a `set` ("which for an affine target means its previous value
 > was consumed") is exactly false at the one target type that matters. The mechanical fix
 > is `bind a new view under a new let`.
@@ -2036,7 +2039,7 @@ r7 F1-6, F5-7; r6 F1-1.
 **[VIEW-6] Views are never stored, and a view result declares its origin.** A view is
 never stored [BLK-4] and never returned except under this rule. [FN-1] 1023-1036's
 slice-result ceiling applies unchanged to each view type: a function whose written result
-is `own slice<'r, T>` (respectively `mut_slice`) has the ceiling containing
+is `own Slice<'r, T>` (respectively `MutSlice`) has the ceiling containing
 `immutable-const` and the formal-view origin of every parameter whose written mode and
 type are exactly that same view type with the same formal region and element type.
 
@@ -2049,18 +2052,18 @@ written with one region returns three views each aliasing all three inputs.
 [FN-1]'s containment check forbids a helper from manufacturing a view of storage it
 reaches through a borrow, so [VIEW-2]'s two formers are usable only in the function that
 directly owns the run: **no helper library forms a view over a run it does not own**. What
-the seventh draft recorded beside it, that a helper handed `&uniq mut_slice<u8>` can fill
+the seventh draft recorded beside it, that a helper handed `&uniq MutSlice<u8>` can fill
 its destination and cannot publish it, is **no longer a restriction of this design**.
 
 **A helper handed a view may reborrow it shared, so the fill-and-publish helper is
-writable** (owner-decided 2026-09-04, [S31]). Forming a shared `slice<'r, T>` from a
-`mut_slice<'r, T>` is the ordinary **shared child reborrow of a unique loan** that
+writable** (owner-decided 2026-09-04, [S31]). Forming a shared `Slice<'r, T>` from a
+`MutSlice<'r, T>` is the ordinary **shared child reborrow of a unique loan** that
 [OWN-6] 613-627 already admits for places, applied to a view rather than to a place; a
 probe on the v0.42 build accepts `peek(x: &deref(x))` inside a region block where
-`x: &uniq u64`. The child `slice` carries the parent's **origin set and range**, its loan
+`x: &uniq u64`. The child `Slice` carries the parent's **origin set and range**, its loan
 is a shared child of the parent's exclusive one, **the parent may not be written while the
 child lives**, and the parent resumes where the child's own liveness ends [PROV-3]. So a
-helper whose parameter is `destination: &uniq mut_slice<'r, u8>` fills that destination,
+helper whose parameter is `destination: &uniq MutSlice<'r, u8>` fills that destination,
 forms the child, and hands it to `write_once`; the child's origin is the parameter's
 formal-view origin, which is inside [FN-1]'s ceiling, so the child may also be that
 helper's result. **No row is added for it**: `seq_reslice` is not adopted, because a
@@ -2080,11 +2083,11 @@ F4-5; r1 F4-7; the owner's [S31].
 operations [SYS-8] 2488-2527 take views instead of `buffer<u8>`, with fixed modes:
 
 ```text
-a destination the operation writes  ->  &uniq 'd mut_slice<'r, u8>
-a source the operation reads        ->  &'s slice<'r, u8>
+a destination the operation writes  ->  &uniq 'd MutSlice<'r, u8>
+a source the operation reads        ->  &'s Slice<'r, u8>
 ```
 
-so `read_at(file: &ReadFile, destination: &uniq mut_slice<u8>, file_offset: own u64,
+so `read_at(file: &ReadFile, destination: &uniq MutSlice<u8>, file_offset: own u64,
 start: own u64, end: own u64) -> result: own ReadOutcome`, whose three regions relate
 nothing and are all elided. Both are borrows of the **descriptor**, so the view survives
 the call and a destination can be filled by a loop of reads, which an `own` destination
@@ -2300,7 +2303,7 @@ descriptor-storage-overlapping event [MSR-2].
 **Round 7's fourth BREAK is why the classification is stated over storage.** The seventh
 draft said the write "kills every fact whose support overlaps the viewed **element
 storage** and kills no measure term over that origin". When `T` is itself measured —
-`mut_slice<'r, Vector<u8>>` over a `FixedVector<Vector<u8>, 8>`, which [PROV-6]'s
+`MutSlice<'r, Vector<u8>>` over a `FixedVector<Vector<u8>, 8>`, which [PROV-6]'s
 ownership closure newly makes affine and therefore passable by value — the viewed element
 storage **is** the descriptor storage of the origin's elements, so clause 1 killed exactly
 what clause 2 preserved, and a callee could replace and free a caller's inner run while the
@@ -2333,7 +2336,7 @@ admitted **result** place, which today's result-datum restriction to fragment in
 forbids (probe `q7`).
 
 ```wf-design
-fn collect['s](out: own Vector<'s, u8>, source: own slice<u8>)
+fn collect['s](out: own Vector<'s, u8>, source: own Slice<u8>)
     -> (rest: own Vector<'s, u8>, written: own u64)
     reads(out, source), writes(out) contract {
   requires len(source) <= room(out);
@@ -3340,7 +3343,7 @@ projection the rule already applies to `reads` and `writes`. Two statements that
 from one provider therefore conflict, and two from distinct providers do not; with
 [PROV-6] the same is true of two that only release.
 
-[PAR-2] 2000-2033's permission for a fill through a `mut_slice` needs two amendments. The
+[PAR-2] 2000-2033's permission for a fill through a `MutSlice` needs two amendments. The
 **loan** condition is stated over **iteration-formed** loans: every exclusive loan formed
 by a statement of `B` is rooted in a binding `B` introduces, and a loan formed before `L`
 on a root every footprint of `B` reaches only through 2005's refined single-element ranges
@@ -3433,6 +3436,8 @@ records each decision with the alternatives weighed). Nothing in it is proposed.
 |   resident [S2]            |                       | before the run exists                                    |
 | a run of slots, store-      | Vector<'s, T>         | one type at two regions; its capacity is a measure      |
 |   resident [S1]            |   (brand elided)      | because a growth policy must change it                   |
+| a run that is always full  | FixedVector<T, n>,    | array<T, n> retires [S34]: a full FixedVector with four  |
+|   [S34]                    |   len = cap = n       | standing-fact measures is that case, rodata as a const   |
 | the store's handle [S3, S4]| Heap<'s>, Arena<..>   | a value you must hold to allocate — and, under D3, to    |
 |                            |                       | get the derived release                                  |
 | the brand's spelling       | written iff the       | 3.K.0's determination principle, over regions only;      |
@@ -3450,8 +3455,8 @@ records each decision with the alternatives weighed). Nothing in it is proposed.
 | return a wrapped window    | a library drain,      | writable in wf, so L18 keeps it out of the kernel;       |
 |   to its origin            |   3.L.8               | [S29] is withdrawn and Q18 is the owner's question       |
 | read a measure [S11]       | len, cap, room, head  | one quantity, one name, term and reader alike            |
-| a read-only view [S5]      | slice<'r, T>          | v0.41's own name, kept; it is copy [S27]                 |
-| a writable view [S6]       | mut_slice<'r, T>      | element writes only; affine, because [OWN-5] refuses two |
+| a read-only view [S35]     | Slice<'r, T>          | copy [S27]; capitalized like every compiler-owned nominal |
+| a writable view [S35]      | MutSlice<'r, T>       | element writes only; affine, because [OWN-5] refuses two |
 |                            |                       | exclusive loans on one range                             |
 | form a view [S10]          | seq_slice,            | the two formers follow the two type names                |
 |                            | seq_mut_slice         |                                                          |
@@ -3550,8 +3555,9 @@ row that also records a surviving depended sentence marks it **bold** (condition
 | [GRAM-5]        | 258-280   | +clause_expr; atom and atom_list untouched. LANDED in v0.44      | [MSR-5]                     |
 | [GRAM-9]        | 328-332   | unchanged; named because [MSR-5] moves the amendment away        | [MSR-5]                     |
 | [GRAM-11]       | 345-350   | a fourth callee class in all three sentences                     | [BLK-0]                     |
-| [TYPE-2]        | 357-360   | +5 nominals (2 providers, 2 runs, mut_slice); box/arena/buffer   | [PROV-1], [BLK-1], [BLK-2], |
-|                 |           | retire; the flat-element restriction is not inherited            | [VIEW-1]                    |
+| [TYPE-2]        | 357-360   | +5 nominals (2 providers, 2 runs, MutSlice); box, arena, buffer  | [PROV-1], [BLK-1], [BLK-2], |
+|                 |           | and array retire [S34]; the flat-element restriction is not      | [VIEW-1]                    |
+|                 |           | inherited; a full FixedVector const is const-eligible [CONST-1]  |                             |
 | [TYPE-5]        | 370-394   | the written-argument criterion covers a fourth callee class and  | [BLK-0]                     |
 |                 |           | becomes per-argument. **379 survives and [PROV-1], [BLK-4] and   |                             |
 |                 |           | [LIV-2] depend on it; 383-386's mandatory construct arguments    |                             |
@@ -3615,7 +3621,7 @@ row that also records a surviving depended sentence marks it **bold** (condition
 |                 |           | against len, in logical coordinates; a subscripted measure place |                             |
 |                 |           | in an erased clause discharges at its own attach site            |                             |
 | [OP-5]          | 926-931   | "and contract predicate" narrows to a source condition           | [MSR-5]                     |
-| [OP-7]          | 939-947   | slice_of retires; cap, room and head join the structural         | [VIEW-1]                    |
+| [OP-7]          | 939-947   | slice_of and array_new retire; cap, room and head join the       | [VIEW-1]                    |
 |                 |           | operations                                                       |                             |
 | [OP-9]          | 974-1001  | the ceiling table gains A.1's derived rows, the region-bearing   | [RES-5], [BLK-0]            |
 |                 |           | exclusion is lifted, advance<T> is fixed, and the predicate      |                             |
@@ -3759,7 +3765,7 @@ language rules: 132 at v0.42, plus the 51 of 3.K, none reusing a live or retired
 lowercase grammar atoms: minus 5 for the retired `heap` and `arena` effect atoms, the
 retired `buffer` and `box` type productions and `slice_of` (`arena` is one atom serving
 both a production and an effect entry, and retires once), plus 5 for `resource_closed`,
-`dispose`, `linear`, `saturating` and `mut_slice`; net zero. Grammar productions: plus
+`dispose`, `linear`, `saturating` and `MutSlice`; net zero. Grammar productions: plus
 2, being `clause_expr` and `dispose_stmt`; changed, 10, being `let_stmt`,
 `return_stmt`, `set_stmt`, `result_binding`, `program_kind`, `struct_decl`, `enum_decl`,
 `contract_block`, `effect`, `affine_factor`, with `requires_clause`/`ensures_clause`
@@ -3768,7 +3774,7 @@ counted once as a pair. **Statement forms** — a different count from productio
 target list is a changed `set_stmt`. `ReservedLowerNames`: plus 3, `cap`, `room` and
 `head`; [RES-9]'s six store designators are a closed set resolved inside a `saturating`
 clause and enter no general lexical domain. Nominal types: plus 5, being 2 providers, 2
-runs and `mut_slice`; `slice` is unchanged. Declaration domains: plus 1, with one
+runs and `MutSlice`; `Slice` is unchanged. Declaration domains: plus 1, with one
 `container_declaration_ordinal`. Entry input rows: plus 1. Compound punctuation tokens:
 unchanged. [SYS-2]'s normative inventory counts change with [VIEW-7], [RES-6], [RES-7]
 and [RES-9] and are recomputed when those rules are written into the spec, not asserted
@@ -3794,7 +3800,7 @@ owner. **Every rule id in that list is retired and none is reused.**
 **Writer doctrine this design invalidates**, which `docs/patterns.md` must carry in
 the same batch. **P16** ("One length fact above the writes") rests on hoisting a length
 above a sequence of `&uniq` callee writes; [BLK-4] refuses the parameter it hoists
-across, so the pattern is rewritten over `&uniq mut_slice<u8>`, where [CALL-3] keeps the
+across, so the pattern is rewritten over `&uniq MutSlice<u8>`, where [CALL-3] keeps the
 fact, and over the value-in / value-out form, where the fact is the result's. P16 gains
 a second correction from [MSR-2] — a length fact survives a write to a **sibling
 field**, which probe `r2_4` shows today's compiler killing. **P17**'s field-by-field
@@ -3834,8 +3840,8 @@ three of them on 2026-09-04.
 | S2  | FixedVector<T, n>                           | compiler-owned nominal  | ADOPTED   |
 | S3  | Heap<'s>                                    | compiler-owned nominal  | ADOPTED   |
 | S4  | Arena<'s, bytes, align>                     | compiler-owned nominal  | ADOPTED   |
-| S5  | slice<'r, T> keeps its v0.41 name           | naming decision         | ADOPTED   |
-| S6  | mut_slice<'r, T>                            | compiler-owned nominal  | ADOPTED   |
+| S5  | slice<'r, T> keeps its v0.41 name           | naming decision         | see S35   |
+| S6  | mut_slice<'r, T>                            | compiler-owned nominal  | see S35   |
 | S7  | seq_fixed, seq_arena, seq_arena_proved,     | operation names         | ADOPTED   |
 |     |   seq_heap                                  |                         |           |
 | S8  | seq_place, seq_place_front, seq_take,       | operation names         | ADOPTED   |
@@ -3864,7 +3870,7 @@ three of them on 2026-09-04.
 |     |                                             |                         | then S33  |
 | S26 | saturating(d) over a store DESIGNATOR       | contract clause         | ADOPTED,  |
 |     |                                             |                         | AMENDED   |
-| S27 | slice<'r, T> is copy; mut_slice is affine   | ownership class         | ADOPTED   |
+| S27 | Slice<'r, T> is copy; mut_slice is affine   | ownership class         | ADOPTED   |
 | S28 | on_propagate { ... }                        | scope section           | REJECTED  |
 | S29 | seq_rebase                                  | operation row           | WITHDRAWN |
 | S30 | the seven [SYS-8] range-bearing operations  | system-row change       | ADOPTED   |
@@ -3873,7 +3879,31 @@ three of them on 2026-09-04.
 |     |   (the reborrow is [OWN-6]'s, [VIEW-6])     |                         |           |
 | S32 | a linearity bound on a generic parameter    | generics surface        | ADOPTED   |
 | S33 | reserve_file -> own ReserveOutcome          | system-row change       | ADOPTED   |
+| S34 | array<T, n> retires; FixedVector<T, n> is   | type retirement         | ADOPTED   |
+|     |   the one fixed run, const-eligible full    |                         |           |
+| S35 | Slice<'r, T>, MutSlice<'r, T>               | naming decision         | ADOPTED   |
+|     |   (supersede S5 and S6's spellings)         |                         |           |
 ```
+
+**Two entries decided 2026-09-04, after B1 landed, when the owner asked why
+`array<T, n>` had survived the redesign.** The seven falsifier rounds asked whether the
+design was sound, closed, consistent, writable and linear; none asked whether the old
+surface was completely replaced, and 1.4's partition test asks what must enter the kernel,
+not what must leave it. `buffer`, `box` and `arena` retired because their semantics
+blocked a rule; `array` blocked nothing and was kept in one sentence of [BLK-1] with no
+ground. **S34**: `array<T, n>` retires with its `array_new` row. It was exactly the
+`len = cap = n`, `head = Z` case of a run, which A.1 already tabulated as four exact
+constants, so a `FixedVector<T, n>` whose four measures are standing facts is that case
+with no runtime descriptor word: a `const` of `FixedVector<T, n>` type with exactly `n`
+literal entries is the const-eligible form [CONST-1], lowers to element storage only, and
+materializes its descriptor from the standing facts at each use; a subscript's `i < len`
+discharges from `len = n`. One fixed run, one spelling. **S35**: every compiler-owned
+container, store and view nominal is capitalized — `Vector`, `FixedVector`, `Heap`,
+`Arena`, `Slice`, `MutSlice` — and only the primitive types stay lowercase. This
+supersedes S5's name (kept on 2026-09-03 because only semantics earn a rename) and S6's
+spelling; the operation names `seq_slice` and `seq_mut_slice` [S10] are unchanged. Every
+normative section of this file now writes `Slice` and `MutSlice`; section 6 quotes
+probes as they were run, in the old spelling.
 
 **The decided entries, one ground each.** **S1-S2**: `array<T, n>` requires `n` live
 values, which for affine `T` is exactly what a writer building a run does not have, and
@@ -3884,7 +3914,7 @@ constructible; **under D3 they carry a second job**, since the presence of one i
 signature is what makes the derived release available in that scope. **S5-S6**:
 [SET-1] 488-490 makes every slice-rooted target unwritable, so no writable view exists
 and a system operation cannot fill a caller's run without taking the run (probe `p7`);
-`slice` keeps its name because **only semantics earn a rename**. **S7-S11**: each moves a
+`slice` kept its name on 2026-09-03 because **only semantics earn a rename**; S35 renames it `Slice` on 2026-09-04 for the one-rule naming scheme. **S7-S11**: each moves a
 checker-maintained boundary, mints a store, forms a view, or reads a measure no run
 exposes; no rule reads a name, so the scheme is a readability choice. **S12**: a
 store-backed value's release is a structural walk of a type the writer did not declare,
@@ -3983,8 +4013,8 @@ this language has no spelling for a view of two ranges. Q18 puts the kernel row 
 the owner if `E` cannot afford the second run.
 
 **S30, the seven [SYS-8] range-bearing operations over views. ADOPTED.** `read_at`,
-`write_once` and the five others take `&uniq 'd mut_slice<'r, u8>` for a destination and
-`&'s slice<'r, u8>` for a source in place of `buffer<u8>` [VIEW-7]. *Needed because* it
+`write_once` and the five others take `&uniq 'd MutSlice<'r, u8>` for a destination and
+`&'s Slice<'r, u8>` for a source in place of `buffer<u8>` [VIEW-7]. *Needed because* it
 is goal A's container half: without it a heap-free program cannot do I/O, since
 `buffer<u8>` is heap-only, and no wf program can change a [SYS-2] declaration record.
 *Alternatives:* (a) do not change them — a marked program has no I/O at all; (b) take the
@@ -3997,16 +4027,16 @@ and **[S31] closes it without a row**.
 
 **S31, `seq_reslice`. NOT ADOPTED as an operation, and the capability is admitted without
 one (owner-decided 2026-09-04).** The proposal was one added [VIEW] row,
-`seq_reslice['r, T](window: &mut_slice<'r, T>) -> own slice<'r, T>`. *The gap it was for*
-is real: a helper handed `&uniq mut_slice<u8>` can fill its destination and, under S30
+`seq_reslice['r, T](window: &MutSlice<'r, T>) -> own Slice<'r, T>`. *The gap it was for*
+is real: a helper handed `&uniq MutSlice<u8>` can fill its destination and, under S30
 alone, could not publish it, because `write_once` wants a `&slice`, A.2's `seq_slice`
 forms a view from a **run** borrow and not from a view, and forming a second loan on the
 run itself is [OWN-5]'s ordinary conflict (probe `s6`). *The owner's ruling:* forming a
-shared `slice<'r, T>` from a `mut_slice<'r, T>` is the **ordinary shared child reborrow of
+shared `Slice<'r, T>` from a `MutSlice<'r, T>` is the **ordinary shared child reborrow of
 a unique loan** that [OWN-6] 613-627 already admits for places, and a probe on the v0.42
 build accepts `peek(x: &deref(x))` inside a region block where `x: &uniq u64`. So this
-design states it as **that rule applied to views** and not as a kernel row: a `slice`
-formed from a `mut_slice` carries the parent's origin set and range, its loan is a shared
+design states it as **that rule applied to views** and not as a kernel row: a `Slice`
+formed from a `MutSlice` carries the parent's origin set and range, its loan is a shared
 child of the exclusive one under [OWN-6], and the parent cannot be written while the child
 lives. *Why a row would have been wrong:* two spellings for one semantics, which 3.K.10
 exists to prevent, and [VIEW-6]'s ceiling already contains the child, whose origin is the
@@ -4270,7 +4300,7 @@ destination.
 **`collect`, the one program every draft has carried.**
 
 ```wf-design
-fn collect['s](out: own Vector<'s, u8>, source: own slice<u8>)
+fn collect['s](out: own Vector<'s, u8>, source: own Slice<u8>)
     -> (rest: own Vector<'s, u8>, written: own u64)
     reads(out, source), writes(out) contract {
   requires len(source) <= room(out);
@@ -5168,7 +5198,7 @@ non-overlapping. The relations reach both targets through [CALL-6]'s S13 and [CA
 **`let line = seq_slice(vector: &input);`** discharges [VIEW-2]'s
 `head(input) + len(input) <= cap(input)` from `filled`'s `head(result) <= 0_u64` and the
 standing `len <= cap` — one clause and one standing fact, in the unordered-pair family.
-`line` is a `slice` and is therefore **copy** [S27], so it is passed without `move`; its
+`line` is a `Slice` and is therefore **copy** [S27], so it is passed without `move`; its
 loan begins at the formation and ends at its **last use** [PROV-3], which is the
 `collect` call. That end condition is round 7's: under the seventh draft a copy view's
 loan ended at a consume it never has, so it froze `input` for the rest of the function
@@ -5447,7 +5477,7 @@ L18's addition clause then requires this exact walk beside it, which is what thi
 has now written. **Recommend the library form until a real driver's `E` is computed.**
 
 **Q19 is new. What does an exclusive view cost a run that is also read?**
-A `mut_slice` holds an exclusive loan for its whole life [PROV-3], so a run may not have
+A `MutSlice` holds an exclusive loan for its whole life [PROV-3], so a run may not have
 a live writable view and a live shared read at the same time — probe `s6` is that
 conflict at v0.41. Every program that alternates writing a run through a view with
 reading it re-forms the writable view at each alternation, which for `wfgrep`'s
@@ -6138,7 +6168,7 @@ Second in the live-defect order and needing none of the new types: today's
 Test: **`ent5-neg-callee-uniq-buffer-replace-kills-length.wf` turns XPASS**, rejecting
 at [OP-4] with residual `9_u64 < len(line)`; plus probe `q8`'s program, whose accept
 becomes the same rejection; plus one positive case pinning [CALL-1]; plus a callee
-writing through a `mut_slice<'r, Vector<u8>>` killing `len(origin[0])` and keeping
+writing through a `MutSlice<'r, Vector<u8>>` killing `len(origin[0])` and keeping
 `len(origin)`, which is [CALL-3]'s storage restatement. `docs/patterns.md` P16 is
 corrected in the same change. **This batch flips a conformance case from `xfail`, which
 is conformance evidence; the disposition is recorded in `governance/APPROVALS.md` with
@@ -6162,7 +6192,7 @@ the `heap` parameter removed **rejected** as `LinearValueNotConsumed` naming the
 **probe `x4`'s program rejected with `LinearValuePartiallyConsumed`** and its
 destructuring-consume repair compiling, while the same consume reinitialised by a
 [LIV-2] commit is **accepted**; a `dispose` through a shared borrow rejected at [OWN-1];
-a `dispose` of a `slice<'r, Vector<u8>>` rejected at the loan-bearing operand condition;
+a `dispose` of a `Slice<'r, Vector<u8>>` rejected at the loan-bearing operand condition;
 a `dispose` of a type one of whose release-graph nodes is modifier-linear rejected; a
 `dispose` with no live provider binding rejected as `DisposeHasNoProvider` and accepted
 once the parameter is added, with the resolved binding appearing in the effect row;
@@ -6212,18 +6242,18 @@ evidence and is recorded in `governance/APPROVALS.md`.
 
 **B8. Views, loans, ranges.** Rules: [VIEW-1], [VIEW-2], [VIEW-4], [VIEW-6], [PROV-3].
 [PROV-3] lands here because views are its only user. Tests: an element write through a
-`mut_slice` accepted where probe `p7` is [SET-1] today; **a `slice` used twice without
-`move` accepted and a `move` of one rejected at `MoveOfCopy`**; **a `set` at a `slice`
+`MutSlice` accepted where probe `p7` is [SET-1] today; **a `Slice` used twice without
+`move` accepted and a `move` of one rejected at `MoveOfCopy`**; **a `set` at a `Slice`
 binding rejected by [VIEW-4]**, which probe `setslice` shows is new capability, and a
 `replace` at one rejected the same way; **a run appended to after a copy view of it went
 dead accepted, and the same append while the view is still used rejected**, which is the
-loan's new end condition; two `mut_slice`s on one run rejected at the second formation
-and two `slice`s accepted; a write to `k` while a view formed at `table[k]` is live
-rejected citing the view's loan; **a `slice` formed as a shared child of a live
-`mut_slice` accepted, an element write through the parent while that child lives
+loan's new end condition; two `MutSlice`s on one run rejected at the second formation
+and two `Slice`s accepted; a write to `k` while a view formed at `table[k]` is live
+rejected citing the view's loan; **a `Slice` formed as a shared child of a live
+`MutSlice` accepted, an element write through the parent while that child lives
 rejected, and the same write accepted after the child's last use**, which is [S31]'s
 ruling and [PROV-3]'s end condition; a fill-and-publish helper that fills its
-`&uniq mut_slice<u8>` destination, forms the child and returns it accepted at [VIEW-6]'s
+`&uniq MutSlice<u8>` destination, forms the child and returns it accepted at [VIEW-6]'s
 ceiling; and a two-result signature with two same-region view results rejected at
 [VIEW-6].
 
@@ -6240,10 +6270,10 @@ and accepted under `arena_frame`**; a helper lending a provider onward compiling
 denied [PAR-1] permission.
 
 **B10. System I/O over views, and the handle table.** Rules: [VIEW-7], [RES-9]. Tests:
-`tests/programs/wfgrep.wf` migrated to 3.L.3's `filled` and `mut_slice`, compiling with
+`tests/programs/wfgrep.wf` migrated to 3.L.3's `filled` and `MutSlice`, compiling with
 no `allocates` entry anywhere on its call graph — the first program that demonstrates
 goal A's container half end to end; **a marked `main` that opens one file in a loop,
-reads it into a `filled` destination over a `mut_slice`, and publishes a demand of one
+reads it into a `filled` destination over a `MutSlice`, and publishes a demand of one
 on the named store `handles`**; an open that fails on every attempt whose handle records
 all come back; **a `match` over `reserve_file`'s three arms deriving `room(handles) = 0`
 on `Exhausted` and deriving nothing about `room` on `Failed`**, which is [S33] and
@@ -6284,7 +6314,7 @@ and B10's marked file program failing **[QUAL-2] qualification** rather than a s
 rejection when the profile cannot carry its `handles` demand.
 
 **B13. `par` and the envelope.** Rules: [RUN-2], [RUN-3]. Tests: a `filled` plus
-`mut_slice` plus counted subscript fill receiving [PAR-2] permission in an unmarked
+`MutSlice` plus counted subscript fill receiving [PAR-2] permission in an unmarked
 program; **the same loop inside a `resource_closed` entry failing [QUAL-2] because the
 permission judgment granted a permission**, and passing once the loop is written so it
 does not — which is [RUN-1]'s auditable obligation under test, and which the
@@ -6319,7 +6349,6 @@ one of `exact`, `bounded` or `absent`**, which is what [MSR-1] requires.
 ```text
 | measured type            | len                | cap             | room      | head       |
 |--------------------------|--------------------|-----------------|-----------|------------|
-| array<T, n>              | n, exact           | n, exact        | 0, exact  | 0, exact   |
 | FixedVector<T, n>        | initialized slots, | n, exact        | cap - len,| window     |
 |                          |   exact            |                 |   exact   |   origin,  |
 |                          |                    |                 |           |   bounded  |
@@ -6354,9 +6383,11 @@ publishes `head(result) = head(vector)` exactly, and only `seq_place_front` and
 | Vector<'s, T>               | (32, 16)   a descriptor: pointer, cap, len, head       |
 | FixedVector<T, n>           | T's pair repeated n times, plus (16, 8) for len and    |
 |                             |   head, with aggregate alignment max(align(T), 8)      |
-| slice<'r,T>, mut_slice<'r,T>| (32, 16)                                               |
-| array<T, n>                 | T's pair repeated n times, as [OP-9] 992 already fixes |
+| Slice<'r,T>, MutSlice<'r,T>| (32, 16)                                               |
 ```
+
+A `const` of `FixedVector<T, n>` type is element storage only [S34], because its `len`
+and `head` are standing facts; the descriptor is materialized at each use.
 
 **A `FixedVector`'s descriptor carries `len` and `head` and not `cap`**: `n` is the type
 constant and [MSR-2] already makes it a standing fact with empty support.
@@ -6442,11 +6473,11 @@ Readers                       ([OP-1] table rows, not this domain)              
   len(p) / cap(p) / room(p) / head(p)                -> own u64                     pure
 
 Views                                                                             [S10]
-  seq_slice['r, T](vector: &'r V)          -> own slice<'r, T>        reads(vector)
+  seq_slice['r, T](vector: &'r V)          -> own Slice<'r, T>        reads(vector)
       requires head(vector) + len(vector) <= cap(vector)
       len(result) = len(vector), cap(result) = len(vector),
       room(result) = 0,          head(result) = 0
-  seq_mut_slice['r, T](vector: &uniq 'r V) -> own mut_slice<'r, T>    reads(vector)
+  seq_mut_slice['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>    reads(vector)
       requires head(vector) + len(vector) <= cap(vector)
       as the row above
 ```
@@ -6461,7 +6492,7 @@ its relation is the length it was handed [MSR-3]. **The four per-slot rows are t
 because L12 is**, and the front pair is what makes a queue a run rather than a run of
 `Option`. **There is no fifth boundary row**: returning a wrapped window to its origin is
 3.L.8's drain, which L18 keeps out of the kernel and Q18 puts back to the owner. **And
-there is no third view row**: forming a shared `slice` from a `mut_slice` is [OWN-6]'s
+there is no third view row**: forming a shared `Slice` from a `MutSlice` is [OWN-6]'s
 child reborrow [VIEW-6], so `seq_reslice` is not adopted [S31] and the count stays at
 twelve.
 **Nothing here is total at a capacity boundary**, because an overwriting form would need
