@@ -45,7 +45,7 @@ whose published relations contradict each other. The batch that carried it is
 B1 of the container and resource design under
 `research/investigations/containers-and-resources/`.
 
-v0.45 adds seven rules and retires none (143 remain), and adds four grammar
+v0.45 adds twelve rules and retires none (148 remain), and adds four grammar
 atoms: `is`, `dispose`, `linear` and `affine`. A `fn_decl` may write an ordered result list, and a caller names its
 ordinals again with a destructuring `let` binder list or a `set` target list;
 a `return` writes one expression per declared result. [FN-1] numbers the
@@ -102,6 +102,19 @@ and `affine` -- and [FORM-3] excludes all three from IDENT. In this version the
 ambient heap is the only store whose reclamation is a release and it is not a
 value, so every scope holds it and nothing is linear here by the capability
 criterion. The batch that carried it is B5 of the same design.
+
+The same version adds that design's container half: [PROV-1] puts a store's
+identity in a region and that region in the type of every value the store
+backs, [BLK-0] makes the container and store operations one compiler-owned
+generic declaration domain admitted to every unit, [BLK-1] states the two runs
+and the one window whose initialized storage is the `len` slots beginning at
+`head` modulo `cap`, and [BLK-2] and [BLK-3] are the inventory's four formation
+rows, one frame reservation, and four boundary operations. `Vector`,
+`FixedVector`, `Heap` and `Arena` are four compiler-owned nominals and a
+`struct` or `enum` may declare region parameters. The batch that carried it is
+B7a of the same design; its second half carries the confinement rule, the
+retirement of the old container types, and the lowering of the nine
+operations.
 
 ## Outcome
 

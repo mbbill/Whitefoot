@@ -5887,6 +5887,139 @@ a generic function `affine`; both are renamed with no change of expectation, rul
 or status, because `[FORM-3]` now excludes those spellings from IDENT. The conformance
 change is recorded in `governance/APPROVALS.md`.
 
+### 6.0g B7a landed (v0.45)
+
+**The brand, the two runs and the kernel declaration domain are in the specification, and
+the front half of them is in the compiler.** `[PROV-1]`, `[BLK-0]`, `[BLK-1]`, `[BLK-2]`
+and `[BLK-3]` are five added rules, and `[TYPE-2]`, `[TYPE-3]`, `[TYPE-5]`, `[TYPE-6]`,
+`[CONST-1]`, `[OWN-1]`, `[FN-2]`, `[FN-7]`, `[OP-1]`, `[OP-4]`, `[OP-9]`, `[MSR-1]`,
+`[MSR-2]`, `[MSR-3]`, `[ENT-3.S13]`, `[STOR-1]`, `[STOR-3]`, `[STOR-5]`, `[PROV-6]`,
+`[PROG-1]`, `[SYS-3]` and `[DIAG-1]` are amended in place. `struct_decl` and `enum_decl`
+each gain an optional `region_params` [S20]; no production and no atom is added.
+`Vector`, `FixedVector`, `Heap` and `Arena` [S1-S4] are four compiler-owned nominals of
+the nominal-type TYPEID domain, and the nine operations [S7-S9] are one fourth admitted
+declaration source beside the prelude and the system domain. Eleven conformance cases
+carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| prov1-pos-a-store-branded-run-in-a-field                 | accept           |
+| prov1-pos-a-nominal-declares-a-store-region              | accept           |
+| prov1-neg-a-provider-in-a-stored-position                | reject, STOR-5   |
+| prov1-neg-an-extent-elides-its-store-region              | reject, FORM-8   |
+| prov1-neg-a-source-nominal-collides-with-a-container     | reject, TYPE-6   |
+| blk0-neg-a-source-function-collides-with-a-kernel-row    | reject, TYPE-6   |
+| blk1-neg-a-construct-names-a-run                         | reject, BLK-1    |
+| blk1-neg-a-construct-names-a-provider                    | reject, BLK-1    |
+| blk1-pos-both-runs-are-nameable-types                    | accept           |
+| blk2-pos-a-formation-row-builds-an-empty-run             | accept, pending  |
+| blk3-pos-a-boundary-row-moves-the-back-boundary          | accept, pending  |
+```
+
+**Probes `r2_6` and `m05` are accepted.** `struct Chunk['s] { page: Vector<'s, u8>; }`
+compiles where both are parse errors at this branch's tip, and `struct Bytes { v:
+Vector<u8>; }` compiles with no written region at all, which is [PROV-1]'s brand
+resolution under test in both of its clauses at once. A provider in the same position is
+`[STOR-5]`, which is the half of the intensional split this version enforces.
+
+**What did not land, and why, item by item.** This batch is the front half of B7 and the
+back half is not deferred by choice of scope alone; three of the four reasons are
+measured and are recorded here rather than in a report.
+
+- **A call to a kernel-domain row is an explicit unsupported capability.** The domain's
+  records, spellings, argument names, result lists and collisions are resolved and
+  judged, and the call stops at `Semantics/Unsupported: ContainerRuntime` rather than at
+  any source rule. What is missing is two things at once: the window lowering `[BLK-1]`
+  fixes — a subscript in logical coordinates, a descriptor of `len` and `head` beside the
+  slots, and the four boundary operations over them — and the relation publication
+  `[CALL-6]` carries for a *record* rather than for a verified `fn` summary. The second
+  is the larger: this compiler's publication path is keyed to a source `fn_decl`'s
+  `FunctionSignature`, its `[FN-8]` requirement templates and its `[FN-9]` relation
+  templates, all of which are anchored at a source node for diagnostics, and a
+  compiler-owned record has no such node. Synthesizing one would put a fabricated
+  `NodePath` into every diagnostic the row can raise, which is the defect `[DIAG-1]`
+  exists to prevent. The honest shape is a second publication source keyed on the row,
+  and it is one piece of work with the lowering.
+- **A value of one of the four types is the same unsupported capability at execution.**
+  A signature that carries one, and a measure former or a subscript over one, are checked
+  as source — the type is nameable, branded, confined, laid out and measured — and stop
+  before lowering, exactly as an `arena<'r, T>` value has stopped since v0.31. Every
+  positive test of this batch is therefore a declaration rather than an execution.
+- **`command.heap` cannot be spelled.** [S22]'s row is `command.heap as heap: own Heap`,
+  and `heap` is the atom [EFF-1] fixes for `allocates(heap)`, which [FORM-3] therefore
+  excludes from IDENT: the label tail and the binder are both unwritable, and no
+  compiler change repairs that. The row is recorded in [FN-7] as DEFERRED with its delta
+  and lands with [PROV-4]'s `allocates(path)`, which retires the atom. **This is a
+  collision between two adopted surface decisions, [S22] and the [EFF-1] atom [S23]
+  replaces, and it is the reason the general store has no source route in this version.**
+  [PROV-1] is written so that the entry heap's store region exists in every unit whether
+  or not the entry holds the provider, so brand resolution is unaffected; what is absent
+  is the provider *value*.
+- **`array<T, n>` does not retire.** [S34] retires it together with `array_new`, and the
+  corpus holds **ninety-nine `array_new` occurrences across sixty-five `.wf` sources and
+  a hundred and fifteen more inside the compiler's own embedded test sources**. Each has
+  exactly one replacement, 3.L.3's `filled`, which is a source generic over a formation
+  row and three loop invariants — so the respell cannot be done before the formation row
+  compiles, and doing it after is a per-program proof obligation rather than a rename.
+  Retiring the spelling now would leave the specification and the compiler disagreeing
+  about a hundred accepted programs, which is the defect the branch rule forbids. The
+  retirement is recorded as DEFERRED with its delta and goes with the rows.
+- **`arena_extent` is not a row of this version.** Its per-activation refusal quantifies
+  over call-graph components, execution contexts and `[PAR]` windows that this version's
+  resource judgment does not state, and a reservation whose per-activation identity is
+  unchecked publishes `len(result) == 0_u64` falsely from the second activation. The
+  frame form carries the region-locality and loop-free conditions and is stated;
+  `arena_extent` is DEFERRED with a records delta of one.
+- **Confinement is `[BLK-4]`'s and is B7b's.** `[STOR-5]` states the half `[PROV-1]`
+  needs — a provider is region-bearing and a store-branded run is not — and defers the
+  position closure and the `&uniq` parameter refusal with a delta of one numbered rule.
+  `[FN-2]`'s blanket region-bearing-argument rejection narrows to loan-bearing and
+  provider arguments in the same change, which is what makes `Option<Vector<'s, T>>`
+  well-formed.
+- **A run of runs is not expressible.** A run's element domain in this version is the
+  flat-element domain buffer formation already has, so `FixedVector<Vector<'s, u8>, 8>` —
+  3.L.4's pool — is `CompositeValues` unsupported, and `[MSR-1]`'s subscripted measure
+  place stays stated and unexercised. The same restriction is why a run whose element
+  type derives a release action of its own is refused rather than lowered.
+- **A use of a region-parametric nominal writes no region argument yet.** `struct
+  Chunk['s]` is declarable and its fields may name `'s`, and `Chunk<'a>` at a use is a
+  `[TYPE-5]` rejection, because a nominal instance's identity in this compiler is its
+  type-and-const substitution and region arguments are not part of it. The consequence
+  is that the two-instances-at-two-regions test §7 asks for is not written: it needs the
+  region axis in `GenericSubstitution`, which is the same change that gives a nominal's
+  region parameters their instantiation check.
+- **`[CALL-4]`'s three v0.44 admissions stay deferred.** A measured result, a measure
+  over a result place, and a route over a non-prelude variant were re-batched here
+  because this is where a measured result first exists — and it does not exist yet, since
+  no row hands a run back. The route half is separately blocked on the same shape: a
+  clause's retained route identity is a PRE-1 declaration ordinal, and generalizing it is
+  one change with the measured-result widening rather than two.
+  `call4-neg-measured-result-not-admitted` therefore keeps its recorded `reject FN-9`
+  verdict, and the flip §7 anticipated does not happen in this batch.
+- **Nothing of 3.L landed under `tests/programs/`.** Every one of `vacant`, `filled`,
+  `collect`, the pool, `try_place`, `try_take`, `bs_new`, `bs_reserve`, `rebase` and
+  `take_at` calls a kernel-domain row, so each is the unsupported capability above. The
+  two smallest of them are written as the two `pending` conformance cases instead, which
+  is where the corpus schema puts a program the toolchain cannot yet reach.
+
+> **Correction, decided 2026-09-04, from B7a's implementation.** [PROV-1]'s brand
+> resolution said an elided store region at a parameter or result position denotes "an
+> implicit region parameter, one per occurrence" whenever it is not the entry heap's. The
+> only position that reading reaches is an `Arena`, whose store region is one the caller
+> must choose — and [FORM-8] already writes exactly such a region at every position. The
+> clause is therefore stated as [FORM-8]'s own judgment: an elided store region never
+> denotes an extent, and eliding one is that rule's canonical-spelling rejection. No
+> second region-minting mechanism is needed and none is added.
+
+> **Correction, decided 2026-09-04, from B7a's implementation.** [BLK-4]'s
+> `ConfinedTypeWithoutStore` refusal is written in this file over "an entry selecting no
+> `command.heap`". Since the entry heap's store region is minted before `main` in every
+> unit and only the provider *value* depends on the entry row, the refusal is about
+> reachability of a provider rather than existence of a region, and it belongs with the
+> rest of the confinement judgment. [PROV-1] therefore states that the region always
+> exists, and [STOR-5] carries the refusal in its DEFERRED clause.
+
 ### 6.1 What the compiler did in this session
 
 ```text

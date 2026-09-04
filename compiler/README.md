@@ -250,6 +250,14 @@ supports them:
 This list is an implementation map, not a second language specification. The
 compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
+The largest such gap today is the container half of the active specification:
+the four compiler-owned nominals `Vector`, `FixedVector`, `Heap` and `Arena`
+are named, branded, confined, laid out and measured by the ordinary source
+judgments, and the nine [BLK-0] kernel-domain operations are resolved and
+collide as declarations, while a call to a row and a value of one of the four
+at execution both stop as an explicit unsupported capability, because the
+window lowering [BLK-1] fixes and the relation publication [CALL-6] carries for
+those rows are not implemented.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 

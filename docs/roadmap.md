@@ -52,7 +52,7 @@ interval it stands for, so nested joins reach the flat join's image and
 acceptance stops depending on the shape of the control join. The repair only
 adds images: no program v0.42 accepted is refused.
 
-v0.45 adds seven rules and retires none (143 remain), and adds four grammar
+v0.45 adds twelve rules and retires none (148 remain), and adds four grammar
 atoms: `is`, `dispose`, `linear` and `affine`. A `fn_decl` may write an
 ordered result list, `-> (kept: own u64, spare: own u64)`, and a caller names its ordinals again with a destructuring `let`
 binder list or a `set` target list; a `return` writes one expression per
@@ -119,6 +119,27 @@ and `affine` -- and [FORM-3] excludes all three from IDENT. In this version the
 ambient heap is the only store whose reclamation is a release and it is not a
 value, so every scope holds it and nothing is linear here by the capability
 criterion. The batch that carried it is B5 of the same design.
+
+The same version adds that design's container half. [PROV-1] makes a store's
+identity a region, puts that region in the type of every value the store backs,
+admits at most one reserving occurrence per region, and resolves every elided
+store brand by one rule: the enclosing nominal's sole region parameter at a
+stored position, the entry heap's store region at a parameter or result
+position. [BLK-0] states that the container and store operations are one
+compiler-owned generic declaration domain, admitted to every unit as the system
+domain is, each operation one complete signature record whose written arguments
+are decided per argument, whose value arguments are named, and every one of
+whose rows is complete over every measure it writes on every exit. [BLK-1]
+states the two runs and the one window -- exactly the `len` slots beginning at
+`head` modulo `cap`, the rest raw -- the subscript in logical coordinates whose
+obligation is against `len`, and the affine element domain the window makes
+sound. [BLK-2] and [BLK-3] are the inventory: four formation rows, one frame
+reservation, and the four boundary operations, each taking its run by value and
+handing it back. `Vector`, `FixedVector`, `Heap` and `Arena` are four
+compiler-owned nominals, and a `struct` or `enum` may declare region
+parameters. The batch that carried it is B7a of the same design; the
+confinement rule, the retirement of the old container types, and the lowering
+of the nine operations are its second half.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`

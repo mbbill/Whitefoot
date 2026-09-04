@@ -1166,6 +1166,44 @@ is the statement for the one place where the peak is the point.
 Replaces: holding a value to the end of its scope because there was no way to
 say otherwise.
 
+## P25. Write a store's region only where it relates two positions
+
+Problem: the two runs and the two providers carry the store that backs them in
+their own types [PROV-1], so every one of them names a region. Writing that
+region everywhere would put a region parameter on every hosted nominal and
+every hosted signature, and the design counted fifteen brand occurrences and
+twelve call-site brand arguments in one byte-string program before it stopped.
+
+Pattern: write the region exactly where it relates two positions, and elide it
+everywhere else. An elided store brand at a field, an enum payload, a run
+element, or a written type argument denotes the enclosing nominal's sole region
+parameter when it declares one, and the entry heap's store region otherwise; at
+a parameter or a result it denotes the entry heap's store region. So a nominal
+over the one general store declares no region and writes none:
+
+```whitefoot
+struct Bytes {
+  v: Vector<u8>;
+}
+```
+
+and a nominal over a bump extent declares exactly one and writes it at the one
+field that must be branded to it:
+
+```whitefoot
+struct Chunk['s] {
+  page: Vector<'s, u8>;
+}
+```
+
+The rule is the ordinary [FORM-8] discipline read over stores: a region a
+reader cannot check and a transposition cannot catch is deleted, and a region
+the caller must choose is written. A bump extent's own region is always the
+second kind, so an `Arena` writes it at every position: `Arena<4096, 16>` is a
+[FORM-8] rejection and `Arena<'s, 4096, 16>` is the form.
+
+Replaces: putting a region parameter on every declaration that touches a run.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph
