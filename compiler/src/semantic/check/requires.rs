@@ -429,11 +429,50 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             });
         }
 
+        // [CALL-4] a measure over a result place: the operand is the
+        // clause's own result datum, so there is no atom below it to expand.
+        if let CheckedExpression::PostconditionResultMeasure {
+            measure,
+            ordinal,
+            ty,
+        } = checked
+        {
+            let measured = super::expressions::flat_storage::measured_kind_of(*ty)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let (element, constant) = match *ty {
+                CheckedType::FixedVector { element, length } => (Some(element), Some(length)),
+                CheckedType::Vector { element, .. } => (Some(element), None),
+                CheckedType::Extent { bytes, .. } => (None, Some(bytes)),
+                CheckedType::Array { element, length } => (Some(element), Some(length)),
+                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
+                    (Some(element), None)
+                }
+                _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            };
+            return Ok(ExpandedClauseExpression::Operation {
+                row: GoalOperation::ContainerMeasure {
+                    measure: *measure,
+                    measured,
+                    element,
+                    constant,
+                },
+                type_arguments: Vec::new(),
+                const_arguments: Vec::new(),
+                result: CheckedType::Integer(super::super::model::IntegerType::U64),
+                arguments: vec![ExpandedClauseExpression::Datum(
+                    ExpandedClauseDatum::Result {
+                        ordinal: *ordinal,
+                        ty: *ty,
+                    },
+                )],
+            });
+        }
         if matches!(
             checked,
             CheckedExpression::ArrayMeasure { .. }
                 | CheckedExpression::BufferMeasure { .. }
                 | CheckedExpression::SliceMeasure { .. }
+                | CheckedExpression::ContainerMeasure { .. }
         ) {
             if atoms.len() != 1 {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
@@ -471,6 +510,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         measure: *measure,
                         region,
                         element,
+                    }
+                }
+                // [MSR-1] a run's or a bump extent's measure. The measured
+                // kind and the written constant are the row's identity, and
+                // the operand's own type is what fixes both.
+                (CheckedExpression::ContainerMeasure { measure, root }, argument_type)
+                    if argument_type == root.ty =>
+                {
+                    let measured = root
+                        .measured()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    GoalOperation::ContainerMeasure {
+                        measure: *measure,
+                        measured,
+                        element: root.element(),
+                        constant: root.type_constant(),
                     }
                 }
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),

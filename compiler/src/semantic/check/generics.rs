@@ -2270,8 +2270,14 @@ fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<Nominal
         | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
         | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. } => {
+        | GoalOperation::SliceIndex { element, .. }
+        | GoalOperation::RunIndex { element, .. } => {
             collect_flat_element_nominals(element, output);
+        }
+        GoalOperation::ContainerMeasure { element, .. } => {
+            if let Some(element) = element {
+                collect_flat_element_nominals(element, output);
+            }
         }
         GoalOperation::NumericConversion { .. }
         | GoalOperation::Reinterpret { .. }
@@ -2391,8 +2397,14 @@ fn rewrite_operation_nominals(
         | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
         | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. } => {
+        | GoalOperation::SliceIndex { element, .. }
+        | GoalOperation::RunIndex { element, .. } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+        }
+        GoalOperation::ContainerMeasure { element, .. } => {
+            if let Some(element) = element {
+                rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+            }
         }
         GoalOperation::NumericConversion { .. }
         | GoalOperation::Reinterpret { .. }

@@ -1186,6 +1186,81 @@ pub(crate) struct CheckedSliceRoot {
     pub(crate) element: CheckedFlatElement,
 }
 
+/// The base place of one compiler-owned measured value: a run [BLK-1] or a
+/// bump extent [PROV-1].
+///
+/// [MSR-2] makes a measure's support the resolved place of the measured value
+/// itself, so the root is the binding plus the field selections that reach it
+/// and never the binding alone. The type is retained because it is what
+/// selects the measure table's row and, for a `FixedVector`, carries the
+/// capacity constant that is stored nowhere at run time.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedContainerRoot {
+    pub(crate) binding: BindingId,
+    pub(crate) fields: Vec<u32>,
+    /// `FixedVector<T, n>`, `Vector<'s, T>`, or `Arena<'s, bytes, align>`.
+    pub(crate) ty: CheckedType,
+}
+
+impl CheckedContainerRoot {
+    /// The measure-table row this place selects [MSR-1].
+    pub(crate) const fn measured(&self) -> Option<MeasuredKind> {
+        match self.ty {
+            CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
+            CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
+            CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
+            _ => None,
+        }
+    }
+
+    /// The element type of a run, which a bump extent has none of.
+    pub(crate) const fn element(&self) -> Option<CheckedFlatElement> {
+        match self.ty {
+            CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                Some(element)
+            }
+            _ => None,
+        }
+    }
+
+    /// The written constant a `FixedVector`'s capacity and an `Arena`'s byte
+    /// extent are [MSR-2]; a `Vector`'s capacity is a descriptor word and has
+    /// none.
+    pub(crate) const fn type_constant(&self) -> Option<CheckedConst> {
+        match self.ty {
+            CheckedType::FixedVector { length, .. } => Some(length),
+            CheckedType::Extent { bytes, .. } => Some(bytes),
+            _ => None,
+        }
+    }
+}
+
+/// The resolved type, const and region arguments of one [BLK-0] kernel-domain
+/// call.
+///
+/// A row's own parameters are owner-local and never enter source lookup
+/// [BLK-0], so this is what one call fixes for them: the element type, the run
+/// type the `vector` operand supplies [BLK-3], the const arguments the call
+/// wrote or an operand supplied, and the store region.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedKernelInstance {
+    /// The element type `T`.
+    pub(crate) element: CheckedType,
+    /// The run type `V` [BLK-3], where the row declares one.
+    pub(crate) run: Option<CheckedType>,
+    /// `n`, the `FixedVector` capacity.
+    pub(crate) capacity: Option<CheckedConst>,
+    /// `bytes` and `align`, the two `Arena` constants.
+    pub(crate) bytes: Option<CheckedConst>,
+    pub(crate) align: Option<CheckedConst>,
+    /// The store region `'s` [PROV-1].
+    pub(crate) region: Option<DeclarationId>,
+    /// The layout ceiling of `T` [OP-9]: `size_ceiling(T)` and
+    /// `align_ceiling(T)` are the two compile-time constants the bump rows
+    /// name.
+    pub(crate) element_ceiling: CheckedLayoutCeiling,
+}
+
 /// One member of the finite static origin set carried by a direct slice value.
 ///
 /// The set is a conservative summary: one runtime slice descriptor points at
@@ -1437,6 +1512,33 @@ pub(crate) enum CheckedExpression {
         /// extension is off.
         result_borrow: Option<CheckedResultBorrow>,
     },
+    /// One call to a [BLK-0] kernel-domain row.
+    ///
+    /// The row is a compiler-owned declaration record and not a source
+    /// `fn_decl`, so its identity here is the `container_declaration_ordinal`
+    /// [BLK-0] rather than a [`FunctionId`], and the diagnostics that arise
+    /// in this domain name the row instead of citing a source node.
+    KernelCall {
+        /// The row's zero-based `container_declaration_ordinal` [BLK-0].
+        operation: u8,
+        row: crate::KernelRow,
+        /// Exact source call occurrence and declared-order argument atoms.
+        call: NodePath,
+        /// This call's resolution of the row's own type, const and region
+        /// parameters.
+        instance: Box<CheckedKernelInstance>,
+        argument_nodes: Vec<NodePath>,
+        arguments: Vec<CheckedExpression>,
+        /// Pre-transfer caller images, exactly as an ordinary call retains
+        /// them, so [ENT-3.S13] can mint this call's call datums.
+        goal_arguments: Vec<super::goal::GoalExpression>,
+        /// The row's declared requirement list instantiated at this call, in
+        /// declared order [BLK-0]. Each is submitted under [MSR-4].
+        requirements: Vec<super::goal::ConcreteGoal>,
+        /// The declared result type: one value, or the compiler-owned
+        /// result-list nominal that carries an ordered result list [CALL-4].
+        result: CheckedType,
+    },
     /// One call to an admitted [SYS-2] system operation, by index into the
     /// system operation catalog. Arguments follow declared parameter order.
     SystemCall {
@@ -1542,6 +1644,37 @@ pub(crate) enum CheckedExpression {
     BufferMeasure {
         measure: CheckedMeasure,
         root: CheckedBufferRoot,
+    },
+    /// One [MSR-1] measure of one declared result place [CALL-4].
+    ///
+    /// A result binder is the clause's own datum and not a place, so a
+    /// measure over it is read here rather than through the ordinary indexed
+    /// place. It exists only inside an [FN-9] clause, is discarded with the
+    /// clause's typing, and never reaches lowering.
+    PostconditionResultMeasure {
+        measure: CheckedMeasure,
+        ordinal: u32,
+        ty: CheckedType,
+    },
+    /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1], read
+    /// as its [OP-1] reader row. One quantity, one name, term and reader
+    /// alike.
+    ContainerMeasure {
+        measure: CheckedMeasure,
+        root: CheckedContainerRoot,
+    },
+    /// One discharged source subscript read of a run [OP-4, BLK-1].
+    ///
+    /// The offset is a logical one and its obligation is against `len`; the
+    /// storage it selects is slot `(head + i) mod cap`, which the lowering
+    /// computes and no source rule mentions.
+    RunIndex {
+        carrier: NodePath,
+        root: CheckedContainerRoot,
+        element_type: CheckedType,
+        offset: Box<CheckedExpression>,
+        obligation: NodePath,
+        target_domain: CheckedTargetDomainObligation,
     },
     BufferIndex {
         carrier: NodePath,
@@ -1670,8 +1803,12 @@ impl CheckedExpression {
             | Self::NamedConstant { .. }
             | Self::ArrayMeasure { .. }
             | Self::BufferMeasure { .. }
+            | Self::ContainerMeasure { .. }
+            | Self::PostconditionResultMeasure { .. }
             | Self::SliceMeasure { .. } => None,
-            Self::UserCall { call, .. } | Self::SystemCall { call, .. } => Some(call),
+            Self::UserCall { call, .. }
+            | Self::SystemCall { call, .. }
+            | Self::KernelCall { call, .. } => Some(call),
             Self::Binding { carrier, .. }
             | Self::IntegerOperation { carrier, .. }
             | Self::FloatOperation { carrier, .. }
@@ -1685,6 +1822,7 @@ impl CheckedExpression {
             | Self::BufferVacant { carrier, .. }
             | Self::BufferFits { carrier, .. }
             | Self::BufferIndex { carrier, .. }
+            | Self::RunIndex { carrier, .. }
             | Self::SliceOf { carrier, .. }
             | Self::SliceIndex { carrier, .. }
             | Self::BoxNew { carrier, .. }
@@ -1710,7 +1848,8 @@ impl CheckedExpression {
             Self::NamedConstant { value, .. } => value.ty(),
             Self::Binding { ty, .. }
             | Self::UserCall { result: ty, .. }
-            | Self::SystemCall { result: ty, .. } => *ty,
+            | Self::SystemCall { result: ty, .. }
+            | Self::KernelCall { result: ty, .. } => *ty,
             Self::IntegerOperation { result, .. } | Self::NumericConversion { result, .. } => {
                 *result
             }
@@ -1729,8 +1868,11 @@ impl CheckedExpression {
                 element: CheckedFlatElement::Nominal(*element),
             },
             Self::BufferFits { .. } => CheckedType::Bool,
-            Self::BufferMeasure { .. } => CheckedType::Integer(IntegerType::U64),
+            Self::BufferMeasure { .. }
+            | Self::ContainerMeasure { .. }
+            | Self::PostconditionResultMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::BufferIndex { root, .. } => root.element.ty(),
+            Self::RunIndex { element_type, .. } => *element_type,
             Self::SliceOf {
                 region, element, ..
             } => CheckedType::Slice {
@@ -2268,6 +2410,8 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::BufferMeasure { .. }
+        | CheckedExpression::ContainerMeasure { .. }
+        | CheckedExpression::PostconditionResultMeasure { .. }
         | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::SliceOf { .. }
         | CheckedExpression::BorrowBuffer { .. }
@@ -2279,6 +2423,7 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         | CheckedExpression::Project { .. } => Vec::new(),
         CheckedExpression::UserCall { arguments, .. }
         | CheckedExpression::SystemCall { arguments, .. }
+        | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2298,6 +2443,7 @@ pub(crate) fn expression_children(expression: &CheckedExpression) -> Vec<&Checke
         CheckedExpression::BufferVacant { length, .. }
         | CheckedExpression::BufferFits { length, .. } => vec![length.as_ref()],
         CheckedExpression::BufferIndex { offset, .. }
+        | CheckedExpression::RunIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => vec![offset.as_ref()],
         CheckedExpression::ConstructStruct { fields, .. }
         | CheckedExpression::ConstructEnum { fields, .. } => fields.iter().collect(),

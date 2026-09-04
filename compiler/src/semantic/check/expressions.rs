@@ -1,5 +1,5 @@
 mod calls;
-mod flat_storage;
+pub(in crate::semantic::check) mod flat_storage;
 mod places;
 
 use std::collections::HashMap;

@@ -275,6 +275,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::UserCall { arguments, .. }
             | CheckedExpression::SystemCall { arguments, .. }
+            | CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -301,6 +302,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
+            | CheckedExpression::RunIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
                 self.collect_expression_release_sites(offset, sites)?;
             }
@@ -317,6 +319,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::Binding { .. }
             | CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }

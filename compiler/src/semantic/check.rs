@@ -4,7 +4,7 @@ mod contracts;
 mod control;
 mod ensures;
 mod entry_form;
-mod expressions;
+pub(in crate::semantic::check) mod expressions;
 mod floats;
 mod generics;
 mod linearity;
@@ -292,10 +292,14 @@ struct NominalTemplate {
 }
 
 /// A nominal instance a derived type named, awaiting interning.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum PendingNominal {
     /// [STOR-2] a box over this referent.
     Box(CheckedType),
+    /// The compiler-owned result-list nominal of a [BLK-0] row that declares
+    /// an ordered result list [CALL-4]. A row's list is fixed by its own
+    /// instance and has no written form for the interning pass to find.
+    ResultList(Vec<(String, CheckedType)>),
     /// [STOR-2] an `arena<'r, T>` instance over this region and content.
     Arena(DeclarationId, CheckedType),
     /// The one compiler-owned region allocation-list nominal [STOR-3].
@@ -1510,6 +1514,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             PendingNominal::Box(referent) => {
                                 self.intern_box_nominal(referent)?;
                             }
+                            PendingNominal::ResultList(results) => {
+                                self.intern_result_list_nominal(&results)?;
+                            }
                             PendingNominal::Arena(region, content) => {
                                 self.intern_arena_nominal(region, content)?;
                             }
@@ -1758,25 +1765,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 );
             }
-            // The same TEMPORARY capability stop for the four compiler-owned
-            // container and provider nominals [TYPE-2]: they are named,
-            // branded, confined and measured by the ordinary source
-            // judgments, and the window lowering [BLK-1] fixes is not
-            // implemented yet.
-            if self.type_reaches_container(parameter.ty)? {
-                return self.unsupported(
-                    UnsupportedSemanticFeature::ContainerRuntime,
-                    self.tree
-                        .node_with_path(&parameter.node_path)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-                );
-            }
-        }
-        if self.type_reaches_container(signature.result)? {
-            return self.unsupported(
-                UnsupportedSemanticFeature::ContainerRuntime,
-                signature.effects_node,
-            );
         }
         let function = CheckedFunction {
             id: signature.id,
@@ -2186,7 +2174,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })
                     .collect::<Result<Vec<_>, CheckStop>>()?;
             }
+            // A [BLK-0] row's requirement list is declaration data, so the
+            // call instantiated it while it was checked and there is nothing
+            // to install from the source inventory here.
             CheckedExpression::SystemCall { arguments, .. }
+            | CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2213,6 +2205,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
+            | CheckedExpression::RunIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
                 self.install_expression_call_requirements(offset, requirements)?;
             }
@@ -2229,6 +2222,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::Binding { .. }
             | CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
@@ -2384,6 +2379,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::UserCall { arguments, .. }
             | CheckedExpression::SystemCall { arguments, .. }
+            | CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }
@@ -2410,6 +2406,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedExpression::ArrayIndex { offset, .. }
             | CheckedExpression::BufferIndex { offset, .. }
+            | CheckedExpression::RunIndex { offset, .. }
             | CheckedExpression::SliceIndex { offset, .. } => {
                 Self::install_expression_allocation_bounds(offset, bounds)?;
             }
@@ -2421,6 +2418,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedExpression::Binding { .. }
             | CheckedExpression::ArrayMeasure { .. }
             | CheckedExpression::BufferMeasure { .. }
+            | CheckedExpression::ContainerMeasure { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::SliceOf { .. }
             | CheckedExpression::SliceMeasure { .. }
             | CheckedExpression::BorrowBuffer { .. }
@@ -2613,6 +2612,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 measure,
                 region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            GoalOperation::ContainerMeasure {
+                measure,
+                measured,
+                element,
+                constant,
+            } => GoalOperation::ContainerMeasure {
+                measure,
+                measured,
+                element: element
+                    .map(|element| self.instantiate_goal_flat_element(element, signature, regions))
+                    .transpose()?,
+                constant: constant
+                    .map(|constant| self.instantiate_goal_const(constant, signature))
+                    .transpose()?,
+            },
+            GoalOperation::RunIndex {
+                measured,
+                element,
+                constant,
+            } => GoalOperation::RunIndex {
+                measured,
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                constant: constant
+                    .map(|constant| self.instantiate_goal_const(constant, signature))
+                    .transpose()?,
             },
             GoalOperation::SliceIndex { region, element } => GoalOperation::SliceIndex {
                 region: self.instantiate_goal_region(region, signature, regions)?,
@@ -2936,6 +2961,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::IntegerDomain => SemanticRule::Op2,
                         super::entailment::ObligationFamily::AllocationFit => SemanticRule::Op9,
                         super::entailment::ObligationFamily::SystemRange => SemanticRule::Sys8,
+                        super::entailment::ObligationFamily::KernelRequirement => {
+                            SemanticRule::Blk0
+                        }
                     },
                     Self::Call(_) => SemanticRule::Fn8,
                 }
@@ -3248,6 +3276,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 mechanical_fix: "when the range must be valid, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the system range",
                             },
                         },
+                        // [BLK-0]: a diagnostic arising in this domain cites
+                        // BLK-0 and names the operation in its payload,
+                        // exactly as an [OP-1] diagnostic names its family.
+                        // The row is a declaration record with no source
+                        // node, so the payload carries the row's own ordinal
+                        // and the position of the requirement in that row's
+                        // declared list and never a fabricated `NodePath`.
+                        super::entailment::ObligationFamily::KernelRequirement => {
+                            let operation = outcome
+                                .kernel_row
+                                .and_then(|row| {
+                                    crate::KERNEL_OPERATIONS.get(usize::from(row)).copied()
+                                })
+                                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                            SemanticIssue {
+                                rule: SemanticRule::Blk0,
+                                location,
+                                kind: SemanticIssueKind::UndischargedKernelRequirement(Box::new(
+                                    crate::UndischargedKernelRequirementDetail {
+                                        operation: operation.spelling,
+                                        operation_ordinal: outcome
+                                            .kernel_row
+                                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                                        requirement: u32::from(outcome.conjunct),
+                                        instantiated_goal: residual.to_owned(),
+                                        disposition: if outcome.refuted {
+                                            crate::CallRequirementDisposition::Refuted
+                                        } else {
+                                            crate::CallRequirementDisposition::Unproved
+                                        },
+                                        mechanical_fix: "when the operation must succeed, establish the entire instantiated row requirement with a verified requirement, a source invariant, or explicit finite proof steps before the call; use a dominating branch only when rejection is intended program behavior; otherwise restructure the call",
+                                    },
+                                )),
+                            }
+                        }
                     }))
                 }
                 Rejection::Call(outcome) => {

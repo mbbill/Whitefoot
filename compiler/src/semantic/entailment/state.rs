@@ -1522,7 +1522,7 @@ fn tie_component(node: &DerivationNode, index: usize) -> Option<u32> {
                 transfer_events,
                 ..
             } = detail.as_ref();
-            let fixed = [summary.summary.function.0, summary.summary.component];
+            let fixed = summary.summary.identity();
             fixed
                 .get(index)
                 .copied()
@@ -4382,14 +4382,16 @@ mod tests {
                 },
                 relation: s12.clone(),
                 summary: VerifiedPostconditionSummaryRef {
-                    summary: VerifiedPostconditionSummary {
-                        function: FunctionId(0),
-                        block: NodePath {
-                            components: vec![0, 0],
+                    summary: crate::semantic::entailment::RelationProvenance::Verified(
+                        VerifiedPostconditionSummary {
+                            function: FunctionId(0),
+                            block: NodePath {
+                                components: vec![0, 0],
+                            },
+                            relation_ordinal: 0,
+                            component: 0,
                         },
-                        relation_ordinal: 0,
-                        component: 0,
-                    },
+                    ),
                 },
                 substitutions: Vec::new(),
                 transfer_events: Vec::new(),

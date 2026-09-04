@@ -28,7 +28,6 @@ mod state;
 mod term;
 
 pub(crate) use state::DerivationId;
-#[cfg(test)]
 pub(crate) use state::DerivationRootKind;
 #[cfg(test)]
 pub(crate) use state::GoalId;
@@ -174,6 +173,10 @@ pub(crate) enum ObligationFamily {
     AllocationFit,
     /// One independent half-open system range goal [SYS-8].
     SystemRange,
+    /// One declared requirement of a [BLK-0] kernel-domain row, submitted at
+    /// a call to that row and judged under [MSR-4] exactly as every other
+    /// consumer's obligation is.
+    KernelRequirement,
 }
 
 /// One exact single-binder affine image retained at a discharged OP-4 site.
@@ -238,6 +241,11 @@ pub(crate) struct ObligationOutcome {
     /// discharged Bounds occurrence. Every other family, and every unproved
     /// bounds occurrence, retains an empty list.
     pub(crate) affine_index_maps: Vec<ProvedAffineIndexMap>,
+    /// For a `KernelRequirement` occurrence, the row's zero-based
+    /// `container_declaration_ordinal` [BLK-0]. A record has no source node,
+    /// so the row's own identity is what the diagnostic names. Every other
+    /// family retains `None`.
+    pub(crate) kernel_row: Option<u8>,
 }
 
 /// Exact normalized identity of one obligation query in the function-local
@@ -811,11 +819,42 @@ pub(crate) struct VerifiedPostconditionSummary {
     pub(crate) component: u32,
 }
 
+/// Where one published relation comes from [CALL-6].
+///
+/// [ENT-3.S13]'s population is every callee whose declared relation list is
+/// published data: a source `fn_decl` with a verified [FN-9] summary, and
+/// every kernel-domain row [BLK-0], whose relations are declaration data
+/// rather than a body's proved consequence. A record has no source node, so
+/// its provenance names the row and the relation's position in that row's own
+/// declared list, exactly as an [OP-1] diagnostic names its family.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum RelationProvenance {
+    Verified(VerifiedPostconditionSummary),
+    Kernel {
+        operation: u8,
+        relation_ordinal: u32,
+    },
+}
+
+impl RelationProvenance {
+    /// The stable identity pair this provenance contributes to a derivation
+    /// node's structural key.
+    pub(crate) const fn identity(&self) -> [u32; 2] {
+        match self {
+            Self::Verified(summary) => [summary.function.0, summary.component],
+            Self::Kernel {
+                operation,
+                relation_ordinal,
+            } => [*operation as u32, *relation_ordinal],
+        }
+    }
+}
+
 /// Caller-local reference to an earlier-component verified
 /// summary. It intentionally carries no callee-local [`DerivationId`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct VerifiedPostconditionSummaryRef {
-    pub(crate) summary: VerifiedPostconditionSummary,
+    pub(crate) summary: RelationProvenance,
 }
 
 /// One concrete ordinary-call SCC in deterministic callee-before-caller

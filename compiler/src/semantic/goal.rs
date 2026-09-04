@@ -3,7 +3,7 @@ use crate::{DeclarationId, NodePath};
 use super::model::{
     BindingId, CheckedBooleanOperation, CheckedConst, CheckedFlatElement, CheckedFloatOperation,
     CheckedIntegerOperation, CheckedMeasure, CheckedNumericType, CheckedType, CheckedValue,
-    FunctionId,
+    FunctionId, MeasuredKind,
 };
 
 /// One function requirement, split into predicate and occurrence identity.
@@ -245,6 +245,26 @@ pub(crate) enum GoalOperation {
         measure: CheckedMeasure,
         region: DeclarationId,
         element: CheckedFlatElement,
+    },
+    /// One [MSR-1] measure of a run [BLK-1] or a bump extent [PROV-1]. The
+    /// measured kind is part of the row identity because the measure table
+    /// gives each its own row, and the written constant is what a
+    /// `FixedVector`'s capacity and an `Arena`'s byte extent are [MSR-2].
+    ContainerMeasure {
+        measure: CheckedMeasure,
+        measured: MeasuredKind,
+        /// The element type of a run; a bump extent has none.
+        element: Option<CheckedFlatElement>,
+        /// A `FixedVector`'s capacity or an `Arena`'s byte extent; a
+        /// `Vector`'s capacity is a descriptor word and has none.
+        constant: Option<CheckedConst>,
+    },
+    /// One run element value whose own [OP-4] obligation has already been
+    /// discharged before this expression is used as a proof operand.
+    RunIndex {
+        measured: MeasuredKind,
+        element: CheckedFlatElement,
+        constant: Option<CheckedConst>,
     },
     /// One slice element value whose own OP-4 obligation has already been
     /// discharged before this expression is used as a proof operand.

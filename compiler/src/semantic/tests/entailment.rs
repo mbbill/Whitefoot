@@ -1410,7 +1410,12 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ..
                 } = detail.as_ref();
                 assert_relation_terms_resolve(summary, relation);
-                assert!(!reference.summary.block.components().is_empty());
+                let crate::semantic::entailment::RelationProvenance::Verified(published) =
+                    &reference.summary
+                else {
+                    panic!("a source call publishes a verified summary");
+                };
+                assert!(!published.block.components().is_empty());
                 for parent in parents {
                     assert!(summary.derivations.nodes.get(parent.0 as usize).is_some());
                 }
@@ -1676,6 +1681,12 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ObligationFamily::Bounds => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::AllocationFit => assert_eq!(outcome.conjunct, 0),
                     ObligationFamily::SystemRange => assert!(outcome.conjunct <= 1),
+                    // [BLK-0]: one root per declared requirement of the row,
+                    // whose conjunct is that requirement's position in the
+                    // row's own list.
+                    ObligationFamily::KernelRequirement => {
+                        assert!(outcome.kernel_row.is_some());
+                    }
                     ObligationFamily::IntegerDomain => {
                         panic!("integer-domain roots use their own root class")
                     }

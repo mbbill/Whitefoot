@@ -12,10 +12,10 @@ use crate::{
 
 use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
-    CheckedConst, CheckedExpression, CheckedFlatElement, CheckedLayoutCeiling,
-    CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedFlatElement,
+    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
-    CheckedTargetDomainObligation, CheckedType, IntegerType, NominalId,
+    CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell, NominalId,
 };
 use super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, RequiredReferent, ResolvedPlace, SliceInfo,
@@ -70,6 +70,16 @@ enum CheckedIndexedPlace {
     Array(CheckedArrayPlace),
     Buffer(CheckedBufferPlace),
     Slice(CheckedSlicePlace),
+    /// One run or bump extent [BLK-1, PROV-1]: the two runs are indexable
+    /// bases [OP-4] and all three have a measure-table row [MSR-1].
+    Container(CheckedContainerPlace),
+}
+
+#[derive(Clone)]
+struct CheckedContainerPlace {
+    root: CheckedContainerRoot,
+    resolved: ResolvedPlace,
+    holder: Option<DeclarationId>,
 }
 
 fn add_layout_magnitude(
@@ -114,11 +124,17 @@ fn round_up_layout_magnitude(value: CheckedLayoutMagnitude, align: u64) -> Check
 }
 
 impl CheckedIndexedPlace {
-    const fn element_type(&self) -> CheckedType {
+    fn element_type(&self) -> CheckedType {
         match self {
             Self::Array(array) => array.element_type,
             Self::Buffer(buffer) => buffer.element_type,
             Self::Slice(slice) => slice.root.element.ty(),
+            // A bump extent is measured and not indexable, so an element type
+            // is asked of it only after [OP-4] has already refused it.
+            Self::Container(container) => container
+                .root
+                .element()
+                .map_or(CheckedType::Unit, |element| element.ty()),
         }
     }
 }
@@ -390,7 +406,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
-    fn layout_ceiling(
+    pub(in crate::semantic::check) fn layout_ceiling(
         &self,
         ty: CheckedType,
         node: NodeId,
@@ -559,6 +575,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.reject_named_operation_arguments(node, measure.spelling())?;
         self.reject_written_operation_type_argument(node)?;
         let atoms = self.operation_atoms(node, 1)?;
+        // [CALL-4] a measure over an admitted result place is an operand with
+        // no per-family admission. A result binder is the clause's own datum
+        // rather than a place, so the former reads it here instead of through
+        // the ordinary indexed place.
+        if let Some((ordinal, ty)) = self.postcondition_selector_is_bare_atom(atoms[0])?
+            && measured_kind_of(ty).is_some()
+        {
+            return Ok(TypedExpression::owned(
+                CheckedExpression::PostconditionResultMeasure {
+                    measure,
+                    ordinal,
+                    ty,
+                },
+                EffectSet::NONE,
+            ));
+        }
         // [OP-2] a measure former's selected element type is the base place's
         // own; the result is `own u64` for every row, so nothing else consults
         // it.
@@ -566,6 +598,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut effects = EffectSet::NONE;
         match &place {
             CheckedIndexedPlace::Array(_) => {}
+            // [MSR-2] a measure's support is the resolved place of the
+            // measured value itself, so reading one is an ordinary read of
+            // that place.
+            CheckedIndexedPlace::Container(container) => {
+                self.check_loan_access(
+                    bindings,
+                    container.holder,
+                    &container.resolved,
+                    AccessKind::Read,
+                    atoms[0],
+                )?;
+                for path in self.effect_paths_for_place(&container.resolved, bindings)? {
+                    effects.add_read(path);
+                }
+            }
             CheckedIndexedPlace::Buffer(buffer) => {
                 self.check_loan_access(
                     bindings,
@@ -622,6 +669,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     measure,
                     root: slice.root,
                 },
+                CheckedIndexedPlace::Container(container) => {
+                    // [MSR-1]: a measure the table gives no row is the
+                    // ordinary [TYPE-5] operand rejection, carried by the
+                    // measured types the table does have a row for.
+                    let measured = container
+                        .root
+                        .measured()
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    if matches!(measure.cell(measured), MeasureCell::Absent) {
+                        return self.issue_node(
+                            SemanticRule::Type5,
+                            atoms[0],
+                            SemanticIssueKind::type_mismatch(
+                                "a measured place whose measure table has this row",
+                                self.checked_type_name(container.root.ty)?,
+                            ),
+                        );
+                    }
+                    CheckedExpression::ContainerMeasure {
+                        measure,
+                        root: container.root,
+                    }
+                }
             },
             effects,
         ))
@@ -716,6 +786,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     )?;
                 }
             }
+            CheckedIndexedPlace::Container(container) => {
+                // [OP-4] admits exactly the two runs as indexable bases; a
+                // bump extent is measured and is not one.
+                if container.root.element().is_none() {
+                    return self.issue_node(
+                        SemanticRule::Op4,
+                        suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "an array, slice, buffer, or run base",
+                            self.checked_type_name(container.root.ty)?,
+                        ),
+                    );
+                }
+                self.check_loan_access(
+                    bindings,
+                    container.holder,
+                    &container.resolved,
+                    AccessKind::Read,
+                    suffix,
+                )?;
+            }
         }
         let offset_node = self
             .subscript_offset(suffix)?
@@ -753,6 +844,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 place: buffer.resolved.clone(),
                 kind: AccessKind::Read,
             }),
+            CheckedIndexedPlace::Container(container) => accesses.push(PlaceAccess {
+                place: container.resolved.clone(),
+                kind: AccessKind::Read,
+            }),
             CheckedIndexedPlace::Slice(slice) => {
                 if let Some(descriptor) = &slice.descriptor {
                     accesses.push(PlaceAccess {
@@ -785,6 +880,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::BufferIndex {
                     carrier: self.tree.path(use_node)?.clone(),
                     root: buffer.root,
+                    offset: Box::new(offset.expression),
+                    obligation,
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                }
+            }
+            CheckedIndexedPlace::Container(container) => {
+                for path in self.effect_paths_for_place(&container.resolved, bindings)? {
+                    effects.add_read(path);
+                }
+                let element_type = container
+                    .root
+                    .element()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .ty();
+                CheckedExpression::RunIndex {
+                    carrier: self.tree.path(use_node)?.clone(),
+                    root: container.root,
+                    element_type,
                     offset: Box::new(offset.expression),
                     obligation,
                     target_domain: CheckedTargetDomainObligation::ElementAddress,
@@ -880,6 +993,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 );
             }
+            // [BLK-3] element access over a run is the ordinary surface and
+            // needs no row: `set v[i] = e;` writes a copy element and
+            // `replace v[i] = e;` exchanges an affine one. Neither is a
+            // source rejection; the element-position window store is the
+            // capability this version does not lower.
+            CheckedIndexedPlace::Container(_) => {
+                return self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, node);
+            }
         }
         let offset_node = self
             .subscript_offset(suffix)?
@@ -907,7 +1028,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let element_type = match &indexed {
             CheckedIndexedPlace::Array(array) => array.element_type,
             CheckedIndexedPlace::Buffer(buffer) => buffer.root.element.ty(),
-            CheckedIndexedPlace::Slice(_) => {
+            CheckedIndexedPlace::Slice(_) | CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };
@@ -967,7 +1088,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })),
                 )
             }
-            CheckedIndexedPlace::Slice(_) => {
+            CheckedIndexedPlace::Slice(_) | CheckedIndexedPlace::Container(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };
@@ -1186,16 +1307,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             }
             // [MSR-1] gives the two runs and the bump extent a measure-table
-            // row and [OP-4] makes the two runs indexable bases, so neither a
-            // measure former nor a subscript over one is a source rejection;
-            // the window lowering [BLK-1] fixes is what is not implemented,
-            // so this is the same TEMPORARY capability stop a value of one of
-            // those types takes at a signature.
+            // row and [OP-4] makes the two runs indexable bases; a `Heap<'s>`
+            // has neither, so it falls through to the operand rejection
+            // below.
             CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
-            | CheckedType::Extent { .. }
-            | CheckedType::Heap { .. } => {
-                self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, anchor)
+            | CheckedType::Extent { .. } => {
+                let (Some(binding), Some(declaration)) = (binding, declaration) else {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                };
+                let resolved_fields = fields.clone();
+                Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
+                    root: CheckedContainerRoot {
+                        binding,
+                        fields,
+                        ty,
+                    },
+                    resolved: ResolvedPlace {
+                        root: declaration,
+                        fields: resolved_fields,
+                    },
+                    holder: None,
+                }))
             }
             _ => self.issue_node(
                 SemanticRule::Type5,
@@ -1206,6 +1339,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             ),
         }
+    }
+}
+
+/// The [MSR-1] measure-table row one type selects, if it has one.
+///
+/// It is the same table [`CheckedMeasure::cell`] reads; this is only the
+/// mapping from a checked type to its row, which the clause path needs before
+/// it has a place.
+pub(in crate::semantic::check) const fn measured_kind_of(
+    ty: CheckedType,
+) -> Option<super::super::super::model::MeasuredKind> {
+    use super::super::super::model::MeasuredKind;
+    match ty {
+        CheckedType::Array { .. } => Some(MeasuredKind::Array),
+        CheckedType::Buffer { .. } => Some(MeasuredKind::Buffer),
+        CheckedType::Slice { .. } => Some(MeasuredKind::Slice),
+        CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
+        CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
+        CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
+        _ => None,
     }
 }
 

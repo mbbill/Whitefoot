@@ -13,6 +13,7 @@
 //! kills, the joins, and the obligation judgment, and calls into the sources
 //! at each establishment point.
 
+mod kernel;
 mod sources;
 
 use sources::ValueImage;
@@ -506,11 +507,23 @@ struct IntegerDomainOperand {
 /// pending publication token.
 #[derive(Clone, Debug)]
 struct PreparedCall {
-    function: super::super::model::FunctionId,
+    callee: PreparedCallee,
     call: crate::NodePath,
     parents: Vec<DerivationId>,
     transfer_events: Vec<FlowEventId>,
     kills: Vec<KillEvent>,
+}
+
+/// Which callee one prepared call publishes from [CALL-6].
+///
+/// [ENT-3.S13]'s population is every callee whose declared relation list is
+/// published data: a source `fn_decl` with a verified [FN-9] summary, and
+/// every kernel-domain row [BLK-0], whose relations are declaration data.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PreparedCallee {
+    Source(super::super::model::FunctionId),
+    /// One row, by its `container_declaration_ordinal` [BLK-0].
+    Kernel(u8),
 }
 
 /// Result of judging one expression in source evaluation order.
@@ -1105,16 +1118,20 @@ impl Analyzer<'_, '_> {
                 .values
                 .iter()
                 .map(|value| {
-                    value.as_ref().map(|value| {
-                        self.postcondition_return_term(value).expect(
-                            "H1 selected-return datum must remain in the ENT-2 term fragment",
-                        )
-                    })
+                    value
+                        .as_ref()
+                        .and_then(|value| self.postcondition_return_term(value))
                 })
                 .collect::<Vec<_>>();
-            let relation = self
-                .instantiate_postcondition_relation(postcondition, &results)
-                .expect("H1 relation template must remain in the ENT-2 term fragment");
+            // [CALL-4] an ordinal whose destination is no [ENT-2] place
+            // makes only the relations naming it unavailable, which is what a
+            // measured result's value term is: the clause names its measure
+            // and never the value.
+            let Some(relation) =
+                self.instantiate_postcondition_relation(postcondition, &results, &selected.values)
+            else {
+                continue;
+            };
             let affine_target = affine_result.and_then(|result| {
                 self.postcondition_affine_target(postcondition, result, &states.affine)
             });
@@ -1436,12 +1453,13 @@ impl Analyzer<'_, '_> {
         &mut self,
         postcondition: &CheckedPostcondition,
         results: &[Option<TermId>],
+        returns: &[Option<PostconditionReturnDatum>],
     ) -> Option<Relation> {
         let operands = postcondition
             .relation
             .operands
             .iter()
-            .map(|operand| self.postcondition_relation_term(operand, results))
+            .map(|operand| self.postcondition_relation_term(operand, results, returns))
             .collect::<Option<Vec<_>>>()?;
         let [first, second] = operands.as_slice() else {
             return None;
@@ -1471,6 +1489,7 @@ impl Analyzer<'_, '_> {
         &mut self,
         datum: &RelationDatum,
         results: &[Option<TermId>],
+        returns: &[Option<PostconditionReturnDatum>],
     ) -> Option<TermId> {
         match datum {
             // [CALL-4] the datum names one declared result ordinal, and the
@@ -1490,16 +1509,28 @@ impl Analyzer<'_, '_> {
                 ty,
             } => self.postcondition_named_const_term(*declaration, projections, *ty),
             RelationDatum::Literal { value, .. } => self.postcondition_constant_term(value),
-            RelationDatum::Measure(measure, place) => {
-                let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
-                let binding = self.function.parameters.get(ordinal as usize)?.binding;
-                self.postcondition_measure_term(
-                    *measure,
-                    PlaceRoot::Binding(binding),
-                    &place.projections,
-                    place.ty,
-                )
-            }
+            RelationDatum::Measure(measure, place) => match place.root {
+                PostconditionPlaceRoot::Parameter { ordinal } => {
+                    let binding = self.function.parameters.get(ordinal as usize)?.binding;
+                    self.postcondition_measure_term(
+                        *measure,
+                        PlaceRoot::Binding(binding),
+                        &place.projections,
+                        place.ty,
+                    )
+                }
+                // [CALL-4] a measure over a result place is instantiated at
+                // that ordinal's own destination: at an exit, the place the
+                // selected return hands back.
+                PostconditionPlaceRoot::Result { ordinal } => {
+                    let datum = returns.get(ordinal as usize)?.as_ref()?;
+                    let PostconditionReturnDatum::Place(place) = datum else {
+                        return None;
+                    };
+                    let root = self.postcondition_return_place_root(place.root)?;
+                    self.postcondition_measure_term(*measure, root, &place.projections, place.ty)
+                }
+            },
         }
     }
 
@@ -1609,10 +1640,10 @@ impl Analyzer<'_, '_> {
             })
             .collect::<Vec<_>>();
         let measured = measured_kind(ty)?;
-        let array_length = match ty {
-            CheckedType::Array { length, .. } => Some(length),
-            _ => None,
-        };
+        // [MSR-2] the written constant a cell the table fixes as the type's
+        // own reads: an `array`'s length, a `FixedVector`'s capacity, and an
+        // `Arena`'s byte extent.
+        let array_length = type_constant(ty);
         Some(self.measure_term(
             measure,
             ProjectedPlaceTerm { root, projections },
@@ -2098,14 +2129,17 @@ impl Analyzer<'_, '_> {
                         projections,
                         ty,
                     } => operands.push((*ordinal, projections.clone(), None, *ty)),
+                    // A result-rooted measure names no operand and mints no
+                    // call datum [CALL-4].
                     RelationDatum::Measure(measure, place) => {
-                        let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
-                        operands.push((
-                            ordinal,
-                            place.projections.clone(),
-                            Some(*measure),
-                            place.ty,
-                        ));
+                        if let PostconditionPlaceRoot::Parameter { ordinal } = place.root {
+                            operands.push((
+                                ordinal,
+                                place.projections.clone(),
+                                Some(*measure),
+                                place.ty,
+                            ));
+                        }
                     }
                     RelationDatum::Result { .. }
                     | RelationDatum::NamedConst { .. }
@@ -2196,6 +2230,7 @@ impl Analyzer<'_, '_> {
         ))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn instantiate_call_postcondition_relation(
         &mut self,
         function: super::super::model::FunctionId,
@@ -2204,6 +2239,7 @@ impl Analyzer<'_, '_> {
         checked_arguments: &[CheckedExpression],
         arguments: &[GoalExpression],
         results: &[Option<TermId>],
+        result_places: &[Option<(PlaceRoot, Vec<GoalProjection>, CheckedType)>],
     ) -> Option<InstantiatedPostcondition> {
         let parameter_modes = self.context.callee(function)?.parameter_modes.clone();
         let mut substitutions = Vec::new();
@@ -2246,28 +2282,40 @@ impl Analyzer<'_, '_> {
                 RelationDatum::Literal { value, .. } => {
                     (self.postcondition_constant_term(value)?, None)
                 }
-                RelationDatum::Measure(measure, place) => {
-                    let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
-                    match self.interned_call_datum(
-                        call_path,
-                        ordinal,
-                        &place.projections,
-                        Some(*measure),
-                        place.ty,
-                    ) {
-                        Some(datum) => (datum, Some((ordinal, true))),
-                        None => (
-                            self.call_parameter_term(
-                                arguments.get(ordinal as usize)?,
-                                &place.projections,
-                                place.ty,
-                                Some(*measure),
-                                *parameter_modes.get(ordinal as usize)?,
-                            )?,
-                            Some((ordinal, false)),
-                        ),
+                RelationDatum::Measure(measure, place) => match place.root {
+                    PostconditionPlaceRoot::Parameter { ordinal } => {
+                        match self.interned_call_datum(
+                            call_path,
+                            ordinal,
+                            &place.projections,
+                            Some(*measure),
+                            place.ty,
+                        ) {
+                            Some(datum) => (datum, Some((ordinal, true))),
+                            None => (
+                                self.call_parameter_term(
+                                    arguments.get(ordinal as usize)?,
+                                    &place.projections,
+                                    place.ty,
+                                    Some(*measure),
+                                    *parameter_modes.get(ordinal as usize)?,
+                                )?,
+                                Some((ordinal, false)),
+                            ),
+                        }
                     }
-                }
+                    // [CALL-4] the destination supplies one place per
+                    // declared result ordinal, and this operand is that
+                    // place's measure rather than its value.
+                    PostconditionPlaceRoot::Result { ordinal } => {
+                        let (root, projections, ty) =
+                            result_places.get(ordinal as usize)?.as_ref()?;
+                        (
+                            self.postcondition_measure_term(*measure, *root, projections, *ty)?,
+                            None,
+                        )
+                    }
+                },
             };
             if let Some((formal, datum)) = formal {
                 substitutions.push(PostconditionCallSubstitution {
@@ -2319,7 +2367,7 @@ impl Analyzer<'_, '_> {
         available
             .discharged
             .then(|| VerifiedPostconditionSummaryRef {
-                summary: available.summary.clone(),
+                summary: super::RelationProvenance::Verified(available.summary.clone()),
             })
     }
 
@@ -2385,6 +2433,19 @@ impl Analyzer<'_, '_> {
         prepared: &PreparedCall,
         states: &mut ProofFlowState,
     ) {
+        // [CALL-6] a kernel-domain row publishes at exactly the same
+        // destination, from its own declared relation list [BLK-0].
+        if matches!(prepared.callee, PreparedCallee::Kernel(_)) {
+            let destinations = vec![Some((binding, Vec::new(), value.ty()))];
+            self.establish_kernel_relations(
+                statement,
+                &destinations,
+                value,
+                prepared,
+                &mut states.facts,
+            );
+            return;
+        }
         let CheckedExpression::UserCall {
             function,
             call,
@@ -2396,17 +2457,18 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        if *function != prepared.function
-            || *call != prepared.call
-            || fragment_type(*result).is_none()
-        {
+        if PreparedCallee::Source(*function) != prepared.callee || *call != prepared.call {
             return;
         }
-        let Some(result_term) =
-            self.postcondition_place_term(PlaceRoot::Binding(binding), &[], *result)
-        else {
+        // [CALL-4] the destination is one term when the ordinal's value is an
+        // [ENT-2] term, and is always the place a measure over that ordinal is
+        // taken over. A measured result has the second and not the first.
+        let result_term = fragment_type(*result)
+            .and_then(|_| self.postcondition_place_term(PlaceRoot::Binding(binding), &[], *result));
+        let result_place = Some((PlaceRoot::Binding(binding), Vec::new(), *result));
+        if result_term.is_none() && measured_kind(*result).is_none() {
             return;
-        };
+        }
         for available in self.available_postconditions(*function) {
             if available.variant.is_some() {
                 continue;
@@ -2417,7 +2479,8 @@ impl Analyzer<'_, '_> {
                 &available.relation,
                 arguments,
                 goal_arguments,
-                &[Some(result_term)],
+                &[result_term],
+                std::slice::from_ref(&result_place),
             ) else {
                 continue;
             };
@@ -2452,6 +2515,16 @@ impl Analyzer<'_, '_> {
         extra_kills: &[KillEvent],
         states: &mut ProofFlowState,
     ) {
+        if matches!(prepared.callee, PreparedCallee::Kernel(_)) {
+            self.establish_kernel_relations(
+                statement,
+                destinations,
+                value,
+                prepared,
+                &mut states.facts,
+            );
+            return;
+        }
         let CheckedExpression::UserCall {
             function,
             call,
@@ -2462,7 +2535,7 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
-        if *function != prepared.function || *call != prepared.call {
+        if PreparedCallee::Source(*function) != prepared.callee || *call != prepared.call {
             return;
         }
         // One term per result ordinal, in written order. A subscript place is
@@ -2470,6 +2543,10 @@ impl Analyzer<'_, '_> {
         // datum, so either leaves its ordinal without a term and makes only
         // the relations naming it unavailable.
         let mut result_terms = Vec::with_capacity(destinations.len());
+        // [CALL-4] the same destination is also the place a measure over that
+        // result ordinal is taken over, which a measured ordinal has and a
+        // fragment-integer value term does not.
+        let mut result_places = Vec::with_capacity(destinations.len());
         let mut anchor = None;
         for destination in destinations {
             let term = destination.as_ref().and_then(|(binding, fields, ty)| {
@@ -2480,6 +2557,12 @@ impl Analyzer<'_, '_> {
                 }
                 term
             });
+            result_places.push(destination.as_ref().map(|(binding, fields, ty)| {
+                if anchor.is_none() {
+                    anchor = Some(*binding);
+                }
+                (PlaceRoot::Binding(*binding), fields.clone(), *ty)
+            }));
             result_terms.push(term);
         }
         let Some(anchor) = anchor else {
@@ -2498,6 +2581,7 @@ impl Analyzer<'_, '_> {
                 arguments,
                 goal_arguments,
                 &result_terms,
+                &result_places,
             ) else {
                 continue;
             };
@@ -2558,7 +2642,7 @@ impl Analyzer<'_, '_> {
         else {
             return None;
         };
-        if *function != prepared.function
+        if PreparedCallee::Source(*function) != prepared.callee
             || *call != prepared.call
             || !target.fields.is_empty()
             || self.is_holder(target.binding)
@@ -2670,6 +2754,7 @@ impl Analyzer<'_, '_> {
                     arguments,
                     goal_arguments,
                     &[Some(result_term)],
+                    &[],
                 )?;
                 if instantiated
                     .substitutions
@@ -2761,7 +2846,7 @@ impl Analyzer<'_, '_> {
         let CheckedEnumType::Nominal(match_nominal) = enum_type else {
             return Vec::new();
         };
-        if *function != prepared.function
+        if PreparedCallee::Source(*function) != prepared.callee
             || *call != prepared.call
             || *result_nominal != match_nominal
         {
@@ -2810,6 +2895,7 @@ impl Analyzer<'_, '_> {
                 arguments,
                 goal_arguments,
                 &[Some(result_term)],
+                &[],
             ) else {
                 continue;
             };
@@ -3256,6 +3342,8 @@ impl Analyzer<'_, '_> {
                                 measure: Some(*measure),
                             })
                         }
+                        // A result place is not a parameter entry image.
+                        PostconditionPlaceRoot::Result { .. } => None,
                     },
                     RelationDatum::Result { .. }
                     | RelationDatum::NamedConst { .. }
@@ -4276,6 +4364,56 @@ impl Analyzer<'_, '_> {
                     vec![collection, self.goal_expression(offset, admitted_partial)?],
                 )
             }
+            // [MSR-1] a measure of a run or a bump extent, read as the same
+            // quantity the reader row loads.
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                let measured = root.measured()?;
+                let argument = self.goal_binding_place(
+                    root.binding,
+                    root.fields.iter().copied().map(GoalProjection::Field),
+                    root.ty,
+                );
+                build_operation(
+                    GoalOperation::ContainerMeasure {
+                        measure: *measure,
+                        measured,
+                        element: root.element(),
+                        constant: root.type_constant(),
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    CheckedType::Integer(IntegerType::U64),
+                    vec![argument],
+                )
+            }
+            CheckedExpression::RunIndex {
+                root,
+                element_type,
+                offset,
+                ..
+            } if admitted_partial => {
+                let measured = root.measured()?;
+                let element = root.element()?;
+                if element.ty() != *element_type {
+                    return None;
+                }
+                let collection = self.goal_binding_place(
+                    root.binding,
+                    root.fields.iter().copied().map(GoalProjection::Field),
+                    root.ty,
+                );
+                build_operation(
+                    GoalOperation::RunIndex {
+                        measured,
+                        element,
+                        constant: root.type_constant(),
+                    },
+                    Vec::new(),
+                    Vec::new(),
+                    *element_type,
+                    vec![collection, self.goal_expression(offset, admitted_partial)?],
+                )
+            }
             CheckedExpression::BufferMeasure { measure, root } => {
                 let argument = self.goal_binding_place(
                     root.binding,
@@ -4371,6 +4509,9 @@ impl Analyzer<'_, '_> {
             | CheckedExpression::ProjectValue { .. }
             | CheckedExpression::UserCall { .. }
             | CheckedExpression::SystemCall { .. }
+            | CheckedExpression::KernelCall { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
+            | CheckedExpression::RunIndex { .. }
             | CheckedExpression::ArrayIndex { .. }
             | CheckedExpression::BufferFill { .. }
             | CheckedExpression::BufferVacant { .. }
@@ -4886,7 +5027,8 @@ impl Analyzer<'_, '_> {
                 let node_measure = match row {
                     GoalOperation::ArrayMeasure { measure, .. }
                     | GoalOperation::BufferMeasure { measure, .. }
-                    | GoalOperation::SliceMeasure { measure, .. } => Some(*measure),
+                    | GoalOperation::SliceMeasure { measure, .. }
+                    | GoalOperation::ContainerMeasure { measure, .. } => Some(*measure),
                     _ => None,
                 };
                 for argument in arguments {
@@ -4980,6 +5122,7 @@ impl Analyzer<'_, '_> {
                     GoalOperation::ArrayMeasure { .. }
                         | GoalOperation::BufferMeasure { .. }
                         | GoalOperation::SliceMeasure { .. }
+                        | GoalOperation::ContainerMeasure { .. }
                 ) =>
             {
                 let [place] = arguments.as_slice() else {
@@ -4999,6 +5142,15 @@ impl Analyzer<'_, '_> {
                     GoalOperation::SliceMeasure { measure, .. } => {
                         (*measure, MeasuredKind::Slice, None)
                     }
+                    // [MSR-1]'s row for a run or a bump extent. The written
+                    // constant is what `measure_term` reads for a cell the
+                    // table fixes as the type's own constant [MSR-2].
+                    GoalOperation::ContainerMeasure {
+                        measure,
+                        measured,
+                        constant,
+                        ..
+                    } => (*measure, *measured, *constant),
                     _ => return None,
                 };
                 Some(self.measure_term(measure, path, measured, array_length))
@@ -5350,7 +5502,7 @@ impl Analyzer<'_, '_> {
                         return None;
                     }
                     Some(PreparedCall {
-                        function: *function,
+                        callee: PreparedCallee::Source(*function),
                         call: call.clone(),
                         parents,
                         transfer_events: Vec::new(),
@@ -5384,6 +5536,69 @@ impl Analyzer<'_, '_> {
                 ExpressionJudgment {
                     prepared_call: None,
                     reached: reaches_call && self.obligations_since_discharged(obligation_start),
+                }
+            }
+            // One [BLK-0] kernel-domain row. Its declared requirement list is
+            // record data, so each clause is submitted here as an obligation
+            // judged under [MSR-4] exactly as every other consumer's is.
+            CheckedExpression::KernelCall {
+                operation,
+                call,
+                arguments,
+                requirements,
+                ..
+            } => {
+                let obligation_start = self.obligations.len();
+                let mut actuals_reached = true;
+                for argument in arguments {
+                    actuals_reached &= self.judge_expression(argument, states).reached;
+                }
+                let actual_parents = self.obligations[obligation_start..]
+                    .iter()
+                    .map(|outcome| outcome.discharged.then_some(outcome.derivation).flatten())
+                    .collect::<Option<Vec<_>>>();
+                let mut goal_parents = Vec::with_capacity(requirements.len());
+                let mut goals_ok = actuals_reached;
+                if actuals_reached {
+                    for (ordinal, requirement) in requirements.iter().enumerate() {
+                        let derivation = self.judge_kernel_requirement(
+                            *operation,
+                            u8::try_from(ordinal).unwrap_or(u8::MAX),
+                            call,
+                            requirement.clone(),
+                            ProofContext::new(&states.facts, &states.affine),
+                        );
+                        match derivation {
+                            Some(derivation) => goal_parents.push(derivation),
+                            None => goals_ok = false,
+                        }
+                    }
+                }
+                let reached = actuals_reached && goals_ok;
+                let prepared_call = (|| {
+                    let mut parents = actual_parents?;
+                    if !reached || goal_parents.len() != requirements.len() {
+                        return None;
+                    }
+                    parents.extend(goal_parents);
+                    Some(PreparedCall {
+                        callee: PreparedCallee::Kernel(*operation),
+                        call: call.clone(),
+                        parents,
+                        transfer_events: Vec::new(),
+                        kills: Vec::new(),
+                    })
+                })();
+                // [ENT-3.S13] a kernel-domain row is a population member of
+                // the call-datum source, so its `own` operands and the
+                // `at the call` measures its relations name are minted here,
+                // at the same pre-transfer point.
+                if prepared_call.is_some() {
+                    self.establish_kernel_call_datums(expression, &mut states.facts);
+                }
+                ExpressionJudgment {
+                    prepared_call,
+                    reached,
                 }
             }
             CheckedExpression::ArrayIndex {
@@ -5554,6 +5769,48 @@ impl Analyzer<'_, '_> {
                 }
             }
         }
+    }
+
+    /// [BLK-0, MSR-4] one declared requirement of a kernel-domain row,
+    /// judged at the call.
+    ///
+    /// A record has no source node, so the outcome carries the row's own
+    /// ordinal and the requirement's position in the row's declared list;
+    /// [DIAG-1]'s location is the call itself.
+    fn judge_kernel_requirement(
+        &mut self,
+        operation: u8,
+        requirement: u8,
+        call: &crate::NodePath,
+        goal: ConcreteGoal,
+        context: ProofContext<'_>,
+    ) -> Option<DerivationId> {
+        let (disposition, _, derivation) = self.call_goal_disposition(&goal, context);
+        let ordinal = u32::try_from(self.obligations.len())
+            .expect("ENT obligation-root ordinal exceeds the u32 identity space");
+        if let Some(root) = derivation {
+            self.derivations
+                .add_root(DerivationRootKind::BoundsObligation(ordinal), root);
+        }
+        let discharged = disposition == CallGoalDisposition::Discharged;
+        let rendered = self.render_concrete_goal(&goal.root);
+        self.obligations.push(ObligationOutcome {
+            node_path: call.clone(),
+            family: ObligationFamily::KernelRequirement,
+            conjunct: requirement,
+            canonical_goal: Some(goal.root),
+            components: Vec::new(),
+            discharged,
+            refuted: disposition == CallGoalDisposition::Refuted,
+            contradictory: false,
+            residual: (!discharged).then_some(rendered),
+            derivation,
+            allocation_length_upper_bound: None,
+            allocation_length_upper_bound_derivation: None,
+            affine_index_maps: Vec::new(),
+            kernel_row: Some(operation),
+        });
+        discharged.then_some(derivation).flatten()
     }
 
     fn judge_call_goal(
@@ -6562,6 +6819,7 @@ impl Analyzer<'_, '_> {
             } else {
                 Vec::new()
             },
+            kernel_row: None,
         });
     }
 
@@ -6844,6 +7102,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound,
             allocation_length_upper_bound_derivation,
             affine_index_maps: Vec::new(),
+            kernel_row: None,
         });
     }
 
@@ -7043,6 +7302,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
+            kernel_row: None,
         });
     }
 
@@ -7140,6 +7400,7 @@ impl Analyzer<'_, '_> {
             allocation_length_upper_bound: None,
             allocation_length_upper_bound_derivation: None,
             affine_index_maps: Vec::new(),
+            kernel_row: None,
         });
     }
 
@@ -10416,6 +10677,34 @@ impl Analyzer<'_, '_> {
         } else {
             self.apply_kills(state, &target_kills);
         }
+        // [CALL-4] a `set` target is an S12 destination, and [CALL-6] puts
+        // the establishment after the call's own transfer, consumes and the
+        // target's commit and kills — which is exactly this point. A
+        // kernel-domain row publishes here from its own declared relation
+        // list [BLK-0]; a source callee keeps the narrow receiver route
+        // above, which is the only route [FN-9] gives it.
+        if commit_reached
+            && let Some(prepared) = prepared.as_ref()
+            && matches!(prepared.callee, PreparedCallee::Kernel(_))
+            && let CheckedSetTarget::Place(place) = target
+        {
+            let destinations = vec![Some((
+                place.binding,
+                place
+                    .fields
+                    .iter()
+                    .map(|field| GoalProjection::Field(*field))
+                    .collect::<Vec<_>>(),
+                place.ty,
+            ))];
+            self.establish_kernel_relations(
+                node_path,
+                &destinations,
+                value,
+                prepared,
+                &mut state.facts,
+            );
+        }
         // [ENT-3.S5, ENT-5]: the committed value exists only after the old
         // target facts have died. The equality names the commit value formed
         // above; when no source recognized the right-hand side, no commit
@@ -10826,13 +11115,22 @@ impl Analyzer<'_, '_> {
                 node_path, value, ..
             } => {
                 let affine_result = self.affine_pure_expression_form(value, &mut state.affine);
-                let judgment = self.expression_effects(value, state);
+                // [FN-9] the relation is queried "immediately before return
+                // transfer and edge cleanup": the returned value's own
+                // consume is that transfer, so it has not happened at the
+                // query point and its kills are applied after. Nothing reads
+                // the state between the two, because a return has no normal
+                // continuation.
+                let judgment = self.judge_expression(value, state);
+                let mut events = Vec::new();
+                self.collect_expression_kills(value, &mut events);
                 self.judge_postcondition_return(
                     node_path,
                     state,
                     affine_result.as_ref(),
                     judgment.reached,
                 );
+                self.apply_kills(state, &events);
                 false
             }
             CheckedStatement::Give {
@@ -12351,8 +12649,14 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
         GoalOperation::ArrayMeasure { .. }
         | GoalOperation::BufferMeasure { .. }
         | GoalOperation::SliceMeasure { .. } => render_operation_spelling("len", arguments),
+        // [MSR-1]: one quantity, one name, term and reader alike, so the
+        // residual names the measure the row reads rather than one of them.
+        GoalOperation::ContainerMeasure { measure, .. } => {
+            render_operation_spelling(measure.spelling(), arguments)
+        }
         GoalOperation::ArrayIndex { .. }
         | GoalOperation::BufferIndex { .. }
+        | GoalOperation::RunIndex { .. }
         | GoalOperation::SliceIndex { .. } => match arguments {
             [collection, offset] => format!("{collection}[{offset}]"),
             _ => "<invalid index goal>".to_owned(),
@@ -12539,6 +12843,16 @@ mod affine_pair_tests {
 
 /// The [MSR-1] measured type of one checked type, if the measure table gives
 /// it a row.
+/// The written constant one measured type carries, when a cell of its
+/// [MSR-1] row is that constant [MSR-2].
+const fn type_constant(ty: CheckedType) -> Option<CheckedConst> {
+    match ty {
+        CheckedType::Array { length, .. } | CheckedType::FixedVector { length, .. } => Some(length),
+        CheckedType::Extent { bytes, .. } => Some(bytes),
+        _ => None,
+    }
+}
+
 const fn measured_kind(ty: CheckedType) -> Option<MeasuredKind> {
     match ty {
         CheckedType::Array { .. } => Some(MeasuredKind::Array),

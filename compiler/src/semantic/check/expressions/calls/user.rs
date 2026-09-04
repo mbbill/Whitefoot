@@ -390,7 +390,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// by the resolved ultimate referent captured in `passed_borrow` before
     /// that transient checker metadata disappears.
     #[allow(clippy::too_many_arguments)]
-    fn call_goal_argument(
+    pub(in crate::semantic::check) fn call_goal_argument(
         &self,
         caller: super::super::super::super::model::FunctionId,
         call: &crate::NodePath,

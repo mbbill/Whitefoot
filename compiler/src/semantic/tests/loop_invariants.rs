@@ -936,7 +936,11 @@ command fn main() -> status: own ExitStatus pure {
             reaches_weigh_summary |= matches!(
                 retained,
                 DerivationNode::PostconditionCall { detail }
-                    if detail.summary.summary.function == weigh.id
+                    if matches!(
+                        &detail.summary.summary,
+                        crate::semantic::entailment::RelationProvenance::Verified(summary)
+                            if summary.function == weigh.id
+                    )
             );
             stack.extend(retained.parent_ids());
         }
@@ -1921,7 +1925,11 @@ command fn main() -> status: own ExitStatus pure {
             used_count_cells_summary |= matches!(
                 retained,
                 DerivationNode::PostconditionCall { detail }
-                    if detail.summary.summary.function == count_cells.id
+                    if matches!(
+                        &detail.summary.summary,
+                        crate::semantic::entailment::RelationProvenance::Verified(summary)
+                            if summary.function == count_cells.id
+                    )
             );
             stack.extend(retained.parent_ids());
         }

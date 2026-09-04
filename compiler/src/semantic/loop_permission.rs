@@ -719,6 +719,25 @@ impl<'check> Survey<'check, '_> {
                 root.binding,
                 rooted_place(self.places, root.binding, &root.fields),
             )),
+            // A run's or a bump extent's descriptor storage is the resolved
+            // place of the measured value itself [MSR-2].
+            CheckedExpression::ContainerMeasure { root, .. } => Some((
+                root.binding,
+                rooted_place(self.places, root.binding, &root.fields),
+            )),
+            CheckedExpression::RunIndex {
+                root, obligation, ..
+            } => {
+                let place = rooted_place(self.places, root.binding, &root.fields);
+                if let Some(map) = self.proven_affine_map_at(root.binding, obligation) {
+                    self.element_reads.push(ProvenElementRead {
+                        binding: root.binding,
+                        place: place.clone(),
+                        map,
+                    });
+                }
+                Some((root.binding, place))
+            }
             CheckedExpression::BufferIndex {
                 root, obligation, ..
             } => {
@@ -783,6 +802,8 @@ impl<'check> Survey<'check, '_> {
             | CheckedExpression::NamedConstant { .. }
             | CheckedExpression::UserCall { .. }
             | CheckedExpression::SystemCall { .. }
+            | CheckedExpression::KernelCall { .. }
+            | CheckedExpression::PostconditionResultMeasure { .. }
             | CheckedExpression::IntegerOperation { .. }
             | CheckedExpression::FloatOperation { .. }
             | CheckedExpression::NumericConversion { .. }
@@ -906,6 +927,13 @@ impl<'check> Survey<'check, '_> {
                     self.record_writes(&footprint);
                 }
                 self.may_suspend |= target_action.may_suspend();
+            }
+            // A [BLK-0] row's effect row is declaration data this analysis
+            // does not project, so a loop body that calls one has no computed
+            // footprint and is refused rather than permitted on an
+            // incomplete one.
+            CheckedExpression::KernelCall { .. } => {
+                self.refuse_form("a statement that calls a kernel-domain row");
             }
             _ => {}
         }

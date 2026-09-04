@@ -1893,6 +1893,14 @@ pub(super) fn collect_operand_reads(
                 rooted_place(places, root.binding, &root.fields),
             );
         }
+        CheckedExpression::ContainerMeasure { root, .. }
+        | CheckedExpression::RunIndex { root, .. } => {
+            read(
+                footprint,
+                node,
+                rooted_place(places, root.binding, &root.fields),
+            );
+        }
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => match root {
             CheckedArrayRoot::Binding { binding, fields } => {
@@ -1917,9 +1925,13 @@ pub(super) fn collect_operand_reads(
         }
         // [GRAM-9] forbids a call in argument position; if one ever reaches
         // here its whole footprint is unaccounted for.
-        CheckedExpression::UserCall { .. } | CheckedExpression::SystemCall { .. } => {
+        CheckedExpression::UserCall { .. }
+        | CheckedExpression::SystemCall { .. }
+        | CheckedExpression::KernelCall { .. } => {
             footprint.operand_unresolved = Some(node.clone());
         }
+        // One clause-only datum; no executable statement carries one.
+        CheckedExpression::PostconditionResultMeasure { .. } => {}
     }
     for child in expression_children(expression) {
         collect_operand_reads(places, child, node, footprint);

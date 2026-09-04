@@ -1,5 +1,6 @@
 mod conversions;
 mod floating;
+mod kernel;
 mod reinterpret;
 mod system;
 mod user;
@@ -55,13 +56,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 self.check_system_call(node, operation, function, bindings, loop_depth)
             }
-            // One [BLK-0] kernel-domain row. The domain's records, spellings
-            // and collisions are resolved; the window lowering [BLK-1] fixes
-            // and the relation publication [CALL-6] carries for these rows
-            // are not implemented yet, so a call stops as an explicit
-            // unsupported capability rather than as a source rejection.
-            ResolvedTarget::Kernel(_) => {
-                self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, node)
+            // One [BLK-0] kernel-domain row: a fourth callee class, checked
+            // from its own compiler-owned signature record.
+            ResolvedTarget::Kernel(id) => {
+                self.check_kernel_call(node, id.ordinal(), function, bindings, loop_depth)
             }
             _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
         }

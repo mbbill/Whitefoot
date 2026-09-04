@@ -8,6 +8,7 @@
 mod check;
 mod entailment;
 mod goal;
+mod kernel;
 mod loop_permission;
 mod model;
 pub(crate) mod permission;
@@ -43,13 +44,14 @@ pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission}
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedArraySetTarget, CheckedBodyDisposition,
     CheckedBooleanOperation, CheckedBufferRoot, CheckedBufferSetTarget, CheckedCommitValues,
-    CheckedConstructor, CheckedDrop, CheckedEntryForm, CheckedEnumType, CheckedExpression,
-    CheckedFlatElement, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
-    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure,
-    CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedProgramData,
-    CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
-    CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
-    MeasureCell, MeasuredKind, NominalId, PropagationContext,
+    CheckedConst, CheckedConstructor, CheckedContainerRoot, CheckedDrop, CheckedEntryForm,
+    CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
+    CheckedIntegerOperation, CheckedKernelInstance, CheckedLayoutCeiling, CheckedLayoutMagnitude,
+    CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
+    CheckedNumericType, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource,
+    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, MeasureCell,
+    MeasuredKind, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -109,6 +111,10 @@ pub enum SemanticRule {
     /// modifier, `dispose`, the destructuring consume, the partial-consume
     /// refusal, and the linearity bound on a generic parameter.
     Prov6,
+    /// The one compiler-owned kernel declaration domain: row resolution, the
+    /// per-row written-argument judgment, and the per-row requirement
+    /// discharge.
+    Blk0,
     /// The two runs, the one window, and what a slot may hold.
     Blk1,
     /// Explicit dereference of a borrow holder.
@@ -216,6 +222,7 @@ impl SemanticRule {
             Self::Liv1 => "LIV-1",
             Self::Liv2 => "LIV-2",
             Self::Prov6 => "PROV-6",
+            Self::Blk0 => "BLK-0",
             Self::Blk1 => "BLK-1",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
@@ -300,7 +307,8 @@ impl SemanticRule {
             Self::Own14 => Self::Liv1,
             Self::Liv1 => Self::Liv2,
             Self::Liv2 => Self::Prov6,
-            Self::Prov6 => Self::Blk1,
+            Self::Prov6 => Self::Blk0,
+            Self::Blk0 => Self::Blk1,
             Self::Blk1 => Self::Stor1,
             Self::Stor1 => Self::Stor4,
             Self::Stor4 => Self::Stor5,
@@ -372,36 +380,37 @@ impl SemanticRule {
             Self::Liv1 => 24,
             Self::Liv2 => 25,
             Self::Prov6 => 26,
-            Self::Blk1 => 27,
-            Self::Stor1 => 28,
-            Self::Stor4 => 29,
-            Self::Stor5 => 30,
-            Self::Op1 => 31,
-            Self::Op2 => 32,
-            Self::Op4 => 33,
-            Self::Op5 => 34,
-            Self::Op6 => 35,
-            Self::Op9 => 36,
-            Self::Fn1 => 37,
-            Self::Fn2 => 38,
-            Self::Fn3 => 39,
-            Self::Fn4 => 40,
-            Self::Fn6 => 41,
-            Self::Fn7 => 42,
-            Self::Fn8 => 43,
-            Self::Fn9 => 44,
-            Self::Call4 => 45,
-            Self::Eff1 => 46,
-            Self::Eff2 => 47,
-            Self::Err2 => 48,
-            Self::Err3 => 49,
-            Self::Sys2 => 50,
-            Self::Sys8 => 51,
-            Self::Ent2 => 52,
-            Self::Msr3 => 53,
-            Self::Call6 => 54,
-            Self::Inv1 => 55,
-            Self::Prf1 => 56,
+            Self::Blk0 => 27,
+            Self::Blk1 => 28,
+            Self::Stor1 => 29,
+            Self::Stor4 => 30,
+            Self::Stor5 => 31,
+            Self::Op1 => 32,
+            Self::Op2 => 33,
+            Self::Op4 => 34,
+            Self::Op5 => 35,
+            Self::Op6 => 36,
+            Self::Op9 => 37,
+            Self::Fn1 => 38,
+            Self::Fn2 => 39,
+            Self::Fn3 => 40,
+            Self::Fn4 => 41,
+            Self::Fn6 => 42,
+            Self::Fn7 => 43,
+            Self::Fn8 => 44,
+            Self::Fn9 => 45,
+            Self::Call4 => 46,
+            Self::Eff1 => 47,
+            Self::Eff2 => 48,
+            Self::Err2 => 49,
+            Self::Err3 => 50,
+            Self::Sys2 => 51,
+            Self::Sys8 => 52,
+            Self::Ent2 => 53,
+            Self::Msr3 => 54,
+            Self::Call6 => 55,
+            Self::Inv1 => 56,
+            Self::Prf1 => 57,
         }
     }
 }
@@ -478,6 +487,29 @@ pub struct UndischargedCallRequirementDetail {
     pub concrete_callee: String,
     /// The callee requirement occurrence's `requires_clause` path.
     pub requires_clause: NodePath,
+    /// Stable structural rendering of the complete instantiated typed goal.
+    pub instantiated_goal: String,
+    /// The exact non-discharged disposition.
+    pub disposition: CallRequirementDisposition,
+    /// The rule-selected mechanical restructuring.
+    pub mechanical_fix: &'static str,
+}
+
+/// The deterministic [BLK-0] kernel-row rejection payload.
+///
+/// A kernel-domain row is a compiler-owned declaration record and has no
+/// source node, so the payload names the operation and the position of the
+/// requirement in that row's own declared requirement list rather than a
+/// `requires_clause` occurrence. This is the same shape an [OP-1] diagnostic
+/// takes, which names its family rather than a declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UndischargedKernelRequirementDetail {
+    /// The row's exact IDENT spelling [BLK-0].
+    pub operation: &'static str,
+    /// The row's zero-based `container_declaration_ordinal` [BLK-0].
+    pub operation_ordinal: u8,
+    /// This requirement's position in the row's declared requirement list.
+    pub requirement: u32,
     /// Stable structural rendering of the complete instantiated typed goal.
     pub instantiated_goal: String,
     /// The exact non-discharged disposition.
@@ -787,6 +819,8 @@ pub enum SemanticIssueKind {
     /// The complete instantiated requirement at an ordinary call is refuted
     /// or unproved in the caller's pre-transfer state [FN-8].
     UndischargedCallRequirement(Box<UndischargedCallRequirementDetail>),
+    /// One undischarged [BLK-0] kernel-row requirement at a call to that row.
+    UndischargedKernelRequirement(Box<UndischargedKernelRequirementDetail>),
     /// A counted endpoint produced `own u64` but was not itself one preceding
     /// ENT-2 term or constant.
     InvalidCountedEndpoint {
