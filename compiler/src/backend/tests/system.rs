@@ -148,10 +148,10 @@ fn with_mutated_ir_for_overlap<ResultValue>(
 /// Reads one argument's bytes and returns their wrapping sum as the status.
 const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 reads(value), allocates(heap) {
   region 'v {
-    let length = host_bytes_len::<'v>(value: &'v value);
+    let length = host_bytes_len(value: &value);
     let bytes = buffer_new(length, 0_u8);
-    region 'd {
-      let copied = host_copy_bytes::<'v, 'd>(value: &'v value, destination: &uniq 'd bytes, start: 0_u64, end: length);
+    region {
+      let copied = host_copy_bytes(value: &'v value, destination: &uniq bytes, start: 0_u64, end: length);
       match move copied {
         Ok(value: next) => {
         }
@@ -182,8 +182,8 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
 }
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         let total = checksum(value: move text);
         let narrowed = cvt::<u64, u8>(total);
@@ -255,12 +255,12 @@ fn the_argument_lease_path_allocates_nothing_and_dispatches_on_nothing() {
     // Only the lease operations: no buffer, no copy, no text route.
     let source =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    let total = args_count::<'a>(args: &'a args);
-    match arg_get::<'a>(args: &'a args, position: total) {
+  region {
+    let total = args_count(args: &args);
+    match arg_get(args: &args, position: total) {
       Ok(value: text) => {
-        region 'v {
-          let length = host_bytes_len::<'v>(value: &'v text);
+        region {
+          let length = host_bytes_len(value: &text);
           match relative_path(value: move text) {
             Ok(value: path) => {
               let narrowed = cvt::<u64, u8>(length);
@@ -362,8 +362,8 @@ fn a_non_utf8_argument_round_trips_its_exact_bytes() {
 fn args_count_reports_the_complete_invocation_vector() {
     let source =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    let total = args_count::<'a>(args: &'a args);
+  region {
+    let total = args_count(args: &args);
     let narrowed = cvt::<u64, u8>(total);
     match narrowed {
       Ok(value: code) => {
@@ -391,8 +391,8 @@ fn args_count_reports_the_complete_invocation_vector() {
 fn relative_path_admits_by_construction_and_never_normalizes() {
     let source =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
@@ -437,11 +437,11 @@ fn relative_path_admits_by_construction_and_never_normalizes() {
 fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
     let source =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
-        region 'v {
-          match host_utf8_len::<'v>(value: &'v text) {
+        region {
+          match host_utf8_len(value: &text) {
             Ok(value: length) => {
               let narrowed = cvt::<u64, u8>(length);
               match narrowed {
@@ -494,13 +494,13 @@ fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
 #[test]
 fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
     let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         let bytes = buffer_new(2_u64, 7_u8);
         region 'v {
-          region 'd {
-            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 2_u64) {
+          region {
+            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 0_u64, end: 2_u64) {
               Ok(value: next) => {
                 return exit_status(code: 10_u8);
               }
@@ -552,13 +552,13 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
 #[test]
 fn an_out_of_range_copy_is_a_static_sys8_rejection() {
     let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         let bytes = buffer_new(2_u64, 7_u8);
         region 'v {
-          region 'd {
-            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 1_u64, end: 5_u64) {
+          region {
+            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 1_u64, end: 5_u64) {
               Ok(value: next) => {
                 return exit_status(code: 10_u8);
               }
@@ -694,8 +694,8 @@ command fn main() -> status: own ExitStatus pure {
 fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
     let source =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    let total = args_count::<'a>(args: &'a args);
+  region {
+    let total = args_count(args: &args);
     return exit_status(code: 0_u8);
   }
 }
@@ -729,8 +729,8 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
     // The same lossy target fails for a program that leases code units.
     let leases =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 0_u64) {
+  region {
+    match arg_get(args: &args, position: 0_u64) {
       Ok(value: text) => {
         return exit_status(code: 0_u8);
       }
@@ -757,9 +757,9 @@ fn a_target_without_directory_relative_resolution_rejects_component_opening() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
-    region 'n {
-      let permit = reserve_file::<'c>(factory: &uniq 'c files);
-      match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+    region {
+      let permit = reserve_file(factory: &uniq 'c files);
+      match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
         Ok(value: file) => {
         }
         Err(error: problem) => {
@@ -793,8 +793,8 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -820,8 +820,8 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
     let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 3_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 1_u64, end: 3_u64) {
         Ok(value: next) => {
           if next == 3_u64 {
             return exit_status(code: 0_u8);
@@ -867,9 +867,9 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 #[test]
 fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
       }
       Err(error: problem) => {
@@ -912,9 +912,9 @@ fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
 #[test]
 fn a_facility_without_an_approved_record_is_a_missing_mapping() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
       }
       Err(error: problem) => {
@@ -1057,8 +1057,8 @@ fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -1120,8 +1120,8 @@ fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
 fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
     let scalar =
         br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    let count = args_count::<'a>(args: &'a args);
+  region {
+    let count = args_count(args: &args);
   }
   return exit_status(code: 0_u8);
 }
@@ -1142,8 +1142,8 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
     });
 
     let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 0_u64) {
+  region {
+    match arg_get(args: &args, position: 0_u64) {
       Ok(value: text) => {
       }
       Err(error: absent) => {
@@ -1152,8 +1152,8 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
   }
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -1206,9 +1206,9 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
-    region 'n {
-      let permit = reserve_file::<'c>(factory: &uniq 'c files);
-      match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+    region {
+      let permit = reserve_file(factory: &uniq 'c files);
+      match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
         Ok(value: file) => {
         }
         Err(error: problem) => {
@@ -1260,13 +1260,13 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
-  region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         region 'l {
-          region 'd {
-            let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+          region {
+            let outcome = directory_next(source: &uniq 'l list, destination: &uniq destination, start: 0_u64, end: 64_u64);
           }
         }
       }
@@ -1324,13 +1324,13 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
 fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
-  region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         region 'l {
-          region 'd {
-            let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+          region {
+            let outcome = directory_next(source: &uniq 'l list, destination: &uniq destination, start: 0_u64, end: 64_u64);
           }
         }
       }

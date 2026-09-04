@@ -351,11 +351,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         mode: CheckedMode,
         ty: CheckedType,
     ) -> Result<String, CheckStop> {
-        Ok(format!(
-            "{} {}",
-            self.checked_mode_name(mode)?,
-            self.checked_type_name(ty)?
-        ))
+        let mode = self.checked_mode_name(mode)?;
+        let ty = self.checked_type_name(ty)?;
+        // [FORM-2] attaches `&` to what follows it, and a mode whose region
+        // [FORM-8] leaves unwritten ends in that `&`, so the rendering must
+        // not insert the separator the written form needs.
+        Ok(if mode.ends_with('&') {
+            format!("{mode}{ty}")
+        } else {
+            format!("{mode} {ty}")
+        })
     }
 
     /// One written mode, with the region spelled as the source spells it.
@@ -365,8 +370,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<String, CheckStop> {
         Ok(match mode {
             CheckedMode::Own => "own".to_owned(),
-            CheckedMode::Shared(region) => format!("&{}", self.region_spelling(region)),
-            CheckedMode::Unique(region) => format!("&uniq {}", self.region_spelling(region)),
+            CheckedMode::Shared(region) => match self.region_spelling(region).as_str() {
+                "" => "&".to_owned(),
+                spelling => format!("&{spelling}"),
+            },
+            CheckedMode::Unique(region) => match self.region_spelling(region).as_str() {
+                "" => "&uniq".to_owned(),
+                spelling => format!("&uniq {spelling}"),
+            },
         })
     }
 
@@ -374,10 +385,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// declaration is not reachable.
     ///
     /// A rendering is presentation: a region a diagnostic cannot name must not
-    /// turn a source rejection into a compiler failure.
+    /// turn a source rejection into a compiler failure. A region [FORM-8]
+    /// leaves unwritten has no source spelling at all: resolution mints it
+    /// under a name no source token can form, and rendering that name would
+    /// name a region the writer cannot write. It renders as the empty string,
+    /// which is exactly how the source spells it, and every caller that
+    /// splices a region into a longer form drops the separator with it.
     pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
-        self.declaration_spelling(region)
-            .unwrap_or_else(|_| format!("'region#{}", region.index()))
+        let spelling = self
+            .declaration_spelling(region)
+            .unwrap_or_else(|_| format!("'region#{}", region.index()));
+        if spelling.starts_with("'0_") {
+            return String::new();
+        }
+        spelling
     }
 
     pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
@@ -414,11 +435,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
-            CheckedType::Slice { region, element } => format!(
-                "slice<{}, {}>",
-                self.region_spelling(region),
-                self.checked_type_name(element.ty())?
-            ),
+            CheckedType::Slice { region, element } => {
+                let element = self.checked_type_name(element.ty())?;
+                match self.region_spelling(region).as_str() {
+                    "" => format!("slice<{element}>"),
+                    region => format!("slice<{region}, {element}>"),
+                }
+            }
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
             }

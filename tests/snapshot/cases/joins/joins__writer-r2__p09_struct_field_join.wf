@@ -3,7 +3,7 @@ struct Cursor {
   pos: u64;
 }
 
-fn cursor_read['a](c: &'a Cursor, wide: own Bool) -> result: own u8 reads(c.buf, c.pos) {
+fn cursor_read(c: &Cursor, wide: own Bool) -> result: own u8 reads(c.buf, c.pos) {
   doc "expected ACCEPT: the index and length are read once from struct fields through a shared borrow, then if/else arms establish pos < room from two different derivations before the join reaches the shared subscript.";
   let room = len(deref(c).buf);
   let pos = deref(c).pos;

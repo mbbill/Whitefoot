@@ -1,9 +1,9 @@
-fn consume['r](x: &uniq 'r i32) -> return_value: own unit pure {
+fn consume(x: &uniq i32) -> return_value: own unit pure {
   return unit;
 }
 
-fn forward['r](x: &uniq 'r i32) -> return_value: own unit pure {
-  consume::<'r>(x: x);
+fn forward(x: &uniq i32) -> return_value: own unit pure {
+  consume(x: x);
   return unit;
 }
 

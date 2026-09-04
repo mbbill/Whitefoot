@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::syntax::NodeId;
+use crate::syntax::terminal::TerminalPredicate;
 use crate::{
     DeclarationClass, DeclarationId, DeclarationRole, LexicalUseRole, Production, ResolvedTarget,
     ScopeId, SemanticCompilerFailure, SemanticIssueKind, SemanticRule, UnsupportedSemanticFeature,
@@ -336,17 +337,317 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .collect())
     }
 
-    pub(super) fn parse_mode(&self, node: NodeId) -> Result<CheckedMode, CheckStop> {
-        if self.has_fixed(node, crate::FixedTerminal::Own)? {
-            return Ok(CheckedMode::Own);
+    /// Whether one node writes a REGIONID of its own.
+    ///
+    /// [FORM-8] leaves the region unwritten wherever the surrounding text
+    /// already fixes it, so every region reader asks this first.
+    pub(super) fn writes_region(&self, node: NodeId) -> Result<bool, CheckStop> {
+        Ok(self
+            .tree
+            .direct_token_with(node, TerminalPredicate::RegionIdentifier)?
+            .is_some())
+    }
+
+    /// The region one construct declares at its own node.
+    ///
+    /// A named `region_stmt` declares it from its REGIONID; every elided
+    /// [FORM-8] position has its region minted by resolution at the owning
+    /// node under a spelling [FORM-3] admits from no source token, so the node
+    /// is the only route to it.
+    pub(super) fn region_declared_at(&self, node: NodeId) -> Result<DeclarationId, CheckStop> {
+        let path = self.tree.path(node)?;
+        self.resolved
+            .declarations()
+            .iter()
+            .find(|declaration| {
+                matches!(
+                    declaration.role(),
+                    DeclarationRole::RegionParameter | DeclarationRole::LocalRegion
+                ) && declaration.origin().node() == path
+            })
+            .map(crate::DeclarationRecord::id)
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
+    }
+
+    /// The region an elided `borrow_expr` denotes: the innermost `region_stmt`
+    /// lexically enclosing it [FORM-8].
+    ///
+    /// `None` means no `region_stmt` encloses the borrow, where [FORM-8]
+    /// requires the region to be written.
+    pub(super) fn enclosing_region(
+        &self,
+        node: NodeId,
+    ) -> Result<Option<DeclarationId>, CheckStop> {
+        let mut current = node;
+        while let Some(parent) = self.tree.parent(current)? {
+            match self.tree.production(parent)? {
+                Production::RegionStmt => return Ok(Some(self.region_declared_at(parent)?)),
+                Production::FnDecl => return Ok(None),
+                _ => {}
+            }
+            current = parent;
         }
-        let usage = self.use_at(node, LexicalUseRole::ModeRegion)?;
+        Ok(None)
+    }
+
+    /// The region one `borrow_expr` takes.
+    ///
+    /// [FORM-8] writes it exactly when it is not the innermost enclosing
+    /// `region_stmt`'s region, so a written name resolves by lookup and an
+    /// elided one by that enclosing block. `None` means the borrow elides its
+    /// region with no `region_stmt` enclosing it, which FORM-8 rejects.
+    pub(super) fn borrow_expr_region(
+        &self,
+        node: NodeId,
+    ) -> Result<Option<DeclarationId>, CheckStop> {
+        if !self.writes_region(node)? {
+            return self.enclosing_region(node);
+        }
+        let usage = self.use_at(node, LexicalUseRole::BorrowRegion)?;
         let ResolvedTarget::Source {
             declaration,
             class: DeclarationClass::Region,
         } = usage.target()
         else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        if self.enclosing_region(node)? == Some(declaration) {
+            return self.issue_node(
+                SemanticRule::Form8,
+                node,
+                SemanticIssueKind::RegionSpelling {
+                    mechanical_fix: "drop the region name: this borrow takes the region of the \
+`region` block that most closely encloses it",
+                },
+            );
+        }
+        Ok(Some(declaration))
+    }
+
+    /// The region a `slice` or `arena` type carries.
+    ///
+    /// [FORM-8] writes it only where it relates two positions of the owning
+    /// declaration or names an output-position region the caller chooses;
+    /// elsewhere resolution mints the position's own distinct region.
+    pub(super) fn type_region(&self, node: NodeId) -> Result<DeclarationId, CheckStop> {
+        if !self.writes_region(node)? {
+            return self.region_declared_at(node);
+        }
+        let usage = self.use_at(node, LexicalUseRole::TypeRegion)?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Region,
+        } = usage.target()
+        else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        Ok(declaration)
+    }
+
+    /// Every formal region of one callable boundary: the written
+    /// `region_params` first, then the region each parameter position leaves
+    /// unwritten [FORM-8], in parameter order.
+    ///
+    /// An unwritten position denotes a region distinct from every other, so
+    /// it occupies exactly that one position and no caller writes it; it is
+    /// still a formal region of the boundary, and a call substitutes it with
+    /// the region of the actual argument at that position.
+    pub(super) fn append_elided_formal_regions(
+        written: &mut Vec<DeclarationId>,
+        parameters: &[ParameterSignature],
+    ) {
+        for parameter in parameters {
+            for region in [
+                match parameter.mode {
+                    CheckedMode::Own => None,
+                    CheckedMode::Shared(region) | CheckedMode::Unique(region) => Some(region),
+                },
+                match parameter.ty {
+                    CheckedType::Slice { region, .. } => Some(region),
+                    _ => None,
+                },
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if !written.contains(&region) {
+                    written.push(region);
+                }
+            }
+        }
+    }
+
+    /// Every REGIONID written below `root`, in source order, as the owning
+    /// node and its exact spelling.
+    fn written_regions_below(&self, root: NodeId) -> Result<Vec<(NodeId, String)>, CheckStop> {
+        let classified = self.resolved.syntax().classified_bundle();
+        let mut found = Vec::new();
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            for terminal in self.tree.direct_token_indices(node)? {
+                let token = classified
+                    .tokens()
+                    .get(*terminal)
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                if !token
+                    .terminals()
+                    .contains(TerminalPredicate::RegionIdentifier)
+                {
+                    continue;
+                }
+                found.push((
+                    node,
+                    *terminal,
+                    std::str::from_utf8(self.tree.token_bytes(*terminal)?)
+                        .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
+                        .to_owned(),
+                ));
+            }
+            stack.extend_from_slice(self.tree.children(node)?);
+        }
+        found.sort_by_key(|(_, terminal, _)| *terminal);
+        Ok(found
+            .into_iter()
+            .map(|(node, _, name)| (node, name))
+            .collect())
+    }
+
+    /// [FORM-8] over one `fn_decl` or `fn_sig` boundary.
+    ///
+    /// A region name is written exactly where the same region is meant at two
+    /// or more positions of the declaration, or where an output position names
+    /// a region no parameter position names. `region_params` then lists
+    /// exactly those names, once each, in order of first written occurrence.
+    pub(super) fn check_declaration_region_spelling(&self, node: NodeId) -> Result<(), CheckStop> {
+        let mut inputs = Vec::new();
+        if let Some(parameters) = self.tree.first_child_with(node, Production::ParamList)? {
+            inputs = self.written_regions_below(parameters)?;
+        }
+        let mut outputs = Vec::new();
+        for production in [Production::ResultBinding, Production::Effects] {
+            if let Some(child) = self.tree.first_child_with(node, production)? {
+                outputs.extend(self.written_regions_below(child)?);
+            }
+        }
+        // [FORM-8] every output position writes its region: either the same
+        // region is meant at an input position, or no input determines it and
+        // the caller chooses it. An elided output region names nothing either
+        // way.
+        if let Some(result) = self
+            .tree
+            .first_child_with(node, Production::ResultBinding)?
+        {
+            let mut stack = vec![result];
+            while let Some(current) = stack.pop() {
+                let carries_region = match self.tree.production(current)? {
+                    Production::Mode => !self.has_fixed(current, crate::FixedTerminal::Own)?,
+                    Production::Type => {
+                        self.has_fixed(current, crate::FixedTerminal::Slice)?
+                            || self.has_fixed(current, crate::FixedTerminal::Arena)?
+                    }
+                    _ => false,
+                };
+                if carries_region && !self.writes_region(current)? {
+                    return self.issue_node(
+                        SemanticRule::Form8,
+                        current,
+                        SemanticIssueKind::RegionSpelling {
+                            mechanical_fix: "write this result region: name the parameter region \
+the result shares, or a region parameter of its own that the caller supplies",
+                        },
+                    );
+                }
+                stack.extend_from_slice(self.tree.children(current)?);
+            }
+        }
+        let input_names: Vec<&str> = inputs.iter().map(|(_, name)| name.as_str()).collect();
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for (_, name) in inputs.iter().chain(outputs.iter()) {
+            *counts.entry(name.as_str()).or_default() += 1;
+        }
+        let mut order: Vec<String> = Vec::new();
+        for (position, name) in inputs.iter().chain(outputs.iter()) {
+            let related = counts.get(name.as_str()).copied().unwrap_or_default() >= 2;
+            let caller_chosen = !input_names.contains(&name.as_str());
+            if !related && !caller_chosen {
+                return self.issue_node(
+                    SemanticRule::Form8,
+                    *position,
+                    SemanticIssueKind::RegionSpelling {
+                        mechanical_fix: "drop the region name: no other position of this \
+declaration names this region, so the position denotes one region of its own",
+                    },
+                );
+            }
+            if !order.iter().any(|written| written == name) {
+                order.push(name.clone());
+            }
+        }
+        let declared = match self.tree.first_child_with(node, Production::RegionParams)? {
+            Some(list) => self
+                .written_regions_below(list)?
+                .into_iter()
+                .map(|(_, name)| name)
+                .collect::<Vec<_>>(),
+            None => Vec::new(),
+        };
+        if declared != order {
+            let at = self
+                .tree
+                .first_child_with(node, Production::RegionParams)?
+                .unwrap_or(node);
+            return self.issue_node(
+                SemanticRule::Form8,
+                at,
+                SemanticIssueKind::RegionSpelling {
+                    mechanical_fix: "the region parameter list holds exactly the region names \
+this declaration writes, once each, in the order of their first written occurrence, and is \
+absent when it writes none",
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// Whether one region spelling occurs anywhere below `root`, ignoring the
+    /// `region_stmt` binder at `root` itself.
+    pub(super) fn region_is_referenced_below(
+        &self,
+        root: NodeId,
+        spelling: &str,
+    ) -> Result<bool, CheckStop> {
+        let mut stack = self.tree.children(root)?.to_vec();
+        while let Some(node) = stack.pop() {
+            if let Some(terminal) = self
+                .tree
+                .direct_token_with(node, TerminalPredicate::RegionIdentifier)?
+                && std::str::from_utf8(self.tree.token_bytes(terminal)?)
+                    .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
+                    == spelling
+            {
+                return Ok(true);
+            }
+            stack.extend_from_slice(self.tree.children(node)?);
+        }
+        Ok(false)
+    }
+
+    pub(super) fn parse_mode(&self, node: NodeId) -> Result<CheckedMode, CheckStop> {
+        if self.has_fixed(node, crate::FixedTerminal::Own)? {
+            return Ok(CheckedMode::Own);
+        }
+        let declaration = if self.writes_region(node)? {
+            let usage = self.use_at(node, LexicalUseRole::ModeRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            declaration
+        } else {
+            self.region_declared_at(node)?
         };
         Ok(if self.has_fixed(node, crate::FixedTerminal::Uniq)? {
             CheckedMode::Unique(declaration)
@@ -452,13 +753,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .parent(node)?
             .filter(|parent| self.tree.production(*parent) == Ok(Production::Atom))
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let usage = self.use_at(node, LexicalUseRole::BorrowRegion)?;
-        let ResolvedTarget::Source {
-            declaration: region,
-            class: DeclarationClass::Region,
-        } = usage.target()
-        else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        let Some(region) = self.borrow_expr_region(node)? else {
+            return self.issue_node(
+                SemanticRule::Form8,
+                node,
+                SemanticIssueKind::RegionSpelling {
+                    mechanical_fix: "write the region this borrow takes, or place the borrow \
+inside the `region` block whose region it takes",
+                },
+            );
         };
         let kind = if self.has_fixed(node, crate::FixedTerminal::Uniq)? {
             BorrowKind::Unique
@@ -559,7 +862,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Own10,
                 node,
                 SemanticIssueKind::InvalidBorrowLifetime {
-                    region: self.declaration_spelling(region)?,
+                    region: self.region_phrase(region)?,
                     binder: self.declaration_spelling(local.declaration)?,
                     mechanical_fix: OWN10_LOCAL_STORAGE.to_owned(),
                 },
@@ -761,7 +1064,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Own10,
                 node,
                 SemanticIssueKind::InvalidBorrowLifetime {
-                    region: self.declaration_spelling(region)?,
+                    region: self.region_phrase(region)?,
                     binder: self.declaration_spelling(local.declaration)?,
                     mechanical_fix: OWN10_LOCAL_STORAGE.to_owned(),
                 },
@@ -819,7 +1122,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Own10,
                 node,
                 SemanticIssueKind::InvalidBorrowLifetime {
-                    region: self.declaration_spelling(region)?,
+                    region: self.region_phrase(region)?,
                     binder: self.declaration_spelling(owner)?,
                     mechanical_fix: OWN10_LOCAL_STORAGE.to_owned(),
                 },
@@ -940,7 +1243,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return self.issue_node(
                         SemanticRule::Own10,
                         node,
-                        SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(holder)?, mechanical_fix: format!("a returned child reborrow names a region its holder's own region {} outlives; name {} itself, or a region {} outlives, on the returned reborrow", self.declaration_spelling(parent.region)?, self.declaration_spelling(parent.region)?, self.declaration_spelling(parent.region)?) },
+                        SemanticIssueKind::InvalidBorrowLifetime {
+                            region: self.region_phrase(region)?,
+                            binder: self.declaration_spelling(holder)?,
+                            // The holder's own region is what a legal
+                            // reborrow names. A region [FORM-8] leaves
+                            // unwritten has no name to give.
+                            mechanical_fix: match self.written_region_name(parent.region)? {
+                                Some(name) => format!(
+                                    "a returned child reborrow names a region its holder's own \
+region {name} outlives; name {name} itself, or a region {name} outlives, on the returned reborrow"
+                                ),
+                                None => "a returned child reborrow names a region its holder's \
+own region outlives; that region is unwritten here, so relate the holder's region to this result \
+and name it on the returned reborrow"
+                                    .to_owned(),
+                            },
+                        },
                     );
                 }
                 // [OWN-14] admission: a parameter or let-bound holder, never a
@@ -1257,7 +1576,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 BorrowKind::Shared => "&",
                                 BorrowKind::Unique => "&uniq",
                             },
-                            self.declaration_spelling(borrow.region)?
+                            self.region_phrase(borrow.region)?
                         ),
                     ),
                 );
@@ -1267,7 +1586,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own4,
                 node,
-                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(destination_region)?, binder: self.declaration_spelling(borrow.place.root)?, mechanical_fix: format!("the value's borrow is live for {}, and {} is not inside it; store or pass it under a region {} outlives, or introduce {} inside {}'s block", self.declaration_spelling(borrow.region)?, self.declaration_spelling(destination_region)?, self.declaration_spelling(borrow.region)?, self.declaration_spelling(destination_region)?, self.declaration_spelling(borrow.region)?) },
+                SemanticIssueKind::InvalidBorrowLifetime { region: self.region_phrase(destination_region)?, binder: self.declaration_spelling(borrow.place.root)?, mechanical_fix: format!("the value's borrow is live for {}, and {} is not inside it; store or pass it under a region {} outlives, or introduce {} inside {}'s block", self.region_phrase(borrow.region)?, self.region_phrase(destination_region)?, self.region_phrase(borrow.region)?, self.region_phrase(destination_region)?, self.region_phrase(borrow.region)?) },
             );
         }
         borrow.region = destination_region;

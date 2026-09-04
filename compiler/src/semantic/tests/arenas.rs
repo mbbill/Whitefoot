@@ -63,7 +63,7 @@ fn missing_main_still_rejects_when_nothing_else_does() {
 #[test]
 fn missing_main_wins_over_an_unsupported_capability() {
     with_semantics(
-        b"fn quiet['r](storage: own arena<'r, i32>) -> result: own unit pure {\n  return unit;\n}\n",
+        b"fn quiet(storage: own arena<i32>) -> result: own unit pure {\n  return unit;\n}\n",
         |outcome| {
             let SemanticOutcome::SourceIssue { issue } = outcome else {
                 panic!("a main-less unit must reject: {outcome:?}");
@@ -98,7 +98,7 @@ fn arena_content_views_stay_outside_the_slice_return_ceiling() {
 #[test]
 fn arena_content_borrows_obey_own10_with_the_arena_region() {
     assert_rule_kind(
-        br#"fn views['r, 's](storage: own arena<'r, array<u8, 2>>) -> result: own slice<'s, u8> pure {
+        br#"fn views['s](storage: own arena<array<u8, 2>>) -> result: own slice<'s, u8> pure {
   let view = slice_of(&'s deref(storage));
   return move view;
 }
@@ -119,8 +119,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn checked_arena_parameters_stop_at_the_explicit_runtime_gate() {
     assert_unsupported(
-        br#"fn views['r](storage: own arena<'r, array<u8, 2>>) -> result: own unit pure {
-  let view = slice_of(&'r deref(storage));
+        br#"fn views(storage: own arena<array<u8, 2>>) -> result: own unit pure {
+  region {
+    let view = slice_of(&deref(storage));
+  }
   return unit;
 }
 
@@ -143,7 +145,7 @@ fn local_arena_content_views_stop_at_the_explicit_runtime_gate() {
   let values = array_new::<u8, 2>(7_u8);
   region 'r {
     let a = arena_new::<'r, array<u8, 2>>(move values);
-    let view = slice_of(&'r deref(a));
+    let view = slice_of(&deref(a));
   }
   return exit_status(code: 0_u8);
 }
@@ -164,7 +166,7 @@ fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
     // A `uniq` child in the arena's own region, and the same borrow under a
     // nested region: `'r` outlives-or-equals both.
     assert_unsupported(
-        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
+        br#"fn bump(n: &uniq i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
@@ -172,7 +174,7 @@ fn arena_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
 command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
-    bump::<'r>(n: &uniq 'r deref(a));
+    bump(n: &uniq deref(a));
   }
   return exit_status(code: 0_u8);
 }
@@ -180,7 +182,7 @@ command fn main() -> status: own ExitStatus pure {
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"fn bump['r](n: &uniq 'r i32) -> result: own unit writes(n) {
+        br#"fn bump(n: &uniq i32) -> result: own unit writes(n) {
   set deref(n) = 42_i32;
   return unit;
 }
@@ -188,8 +190,8 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
-    region 'c {
-      bump::<'c>(n: &uniq 'c deref(a));
+    region {
+      bump(n: &uniq deref(a));
     }
   }
   return exit_status(code: 0_u8);
@@ -200,14 +202,14 @@ command fn main() -> status: own ExitStatus pure {
     // A shared borrow in argument position, and a `let`-bound holder, which
     // OWN-14 rejected outright as a non-argument reborrow position.
     assert_unsupported(
-        br#"fn peek['r](n: &'r i32) -> result: own i32 reads(n) {
+        br#"fn peek(n: &i32) -> result: own i32 reads(n) {
   return deref(n);
 }
 
 command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
-    let v = peek::<'r>(n: &'r deref(a));
+    let v = peek(n: &deref(a));
   }
   return exit_status(code: 0_u8);
 }
@@ -218,7 +220,7 @@ command fn main() -> status: own ExitStatus pure {
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
-    let h = &uniq 'r deref(a);
+    let h = &uniq deref(a);
   }
   return exit_status(code: 0_u8);
 }
@@ -250,17 +252,17 @@ fn arena_content_borrows_keep_their_region_rejections() {
     );
     // A caller-supplied region is never comparable to a local arena's [OWN-3].
     assert_rule_kind(
-        br#"fn hold['s](n: &uniq 's i32) -> result: own unit writes(n) {
+        br#"fn hold(n: &uniq i32) -> result: own unit writes(n) {
   set deref(n) = 1_i32;
   return unit;
 }
 
-fn outer['s]() -> result: own unit pure {
+fn outer['s](anchor: &'s i32) -> result: &'s i32 pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
-    hold::<'s>(n: &uniq 's deref(a));
+    hold(n: &uniq 's deref(a));
   }
-  return unit;
+  return anchor;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -275,7 +277,7 @@ command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     loop @once {
-      let h = &uniq 'r deref(a);
+      let h = &uniq deref(a);
       break @once;
     }
   }

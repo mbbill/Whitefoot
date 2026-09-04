@@ -1,14 +1,14 @@
-# Kernel Specification v0.41
+# Kernel Specification v0.42
 
-Status: ACTIVE v0.41
+Status: ACTIVE v0.42
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (131 remain); grammar productions +1/-0 (83 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +5/-0 (8 remain); token bytes +1/-0 (`!`, inside `!=` only); writer operation spellings +6/-6; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. The added production is `compare_op`; the added compound tokens are `==`, `!=`, `<=`, `>=`, and `::`; the respelled operations are the six integer comparisons, `ieq` `ine` `ilt` `ile` `igt` `ige` becoming `==` `!=` `<` `<=` `>` `>=`, which thereby leave `DotlessOperationNames` and `ReservedLowerNames`. This candidate carries the second FLOOR-5 spelling batch. Integer comparison joins integer arithmetic as an `infix` expression: one `compare_op` over two atoms, integer-only exactly as the arithmetic symbols are, while float and tag-only enum comparison keep their prefixed names. Call-site type application is delimited by `::` — `cvt::<u8, u32>(w)`, `open_file::<'f, 'n>(...)` — so that `IDENT "<"` begins only a comparison and every grammar decision keeps its two-token bound; constructors and type position are unchanged. In proof position the four ordered symbols replace `ile`, `ilt`, `ige`, and `igt` as the relation of a header invariant, a local invariant, and a relation-form use step; a multiplied relation-form use step is parenthesized, `use 3 * (a <= b);`, and a bare one is not. No rule's semantics changes: every comparison origin, contract-clause root, invariant relation, and diagnostic attribution is keyed on the same operation identities under their new spellings, and the accepted-program set is unchanged up to respelling.
-Selection ground: evidence-selected under the FLOOR-5 spelling rule (T1–T4 and its measured tiebreaks): the six integer comparisons are the most frequent operation class in the corpus, the positional comparison call was the last direction-sensitive positional form, v0.40's proof surface had already made the ordered comparisons relations over infix affine operands, and the `<` collision that cancelled the v0.23 comparison row is dissolved by the `::` delimiter without widening any parser decision beyond two tokens; the rulings and the rejected alternatives are recorded in `research/investigations/spelling-relief/SWEEP.md` and `governance/spec-evolution/comparison-symbols-v041-candidate.md`. Prior selection ground for the v0.40 proof surface remains: every writer-reachable partial operation must be proved before execution, while resource availability remains the explicitly deferred boundary [SCOPE-3]. Source control flow, verified contracts, machine-proved invariants, and finite writer-directed `use` steps form the complete writer proof surface; their checked conclusions may also authorize erased optimizations and optional parallel lowering. Prior selection ground for [PAR-3] remains the staged-pipeline design derived against the completion model and the io-completion benchmark's own measurements; first-principles derivation is recorded in `research/investigations/io-model/FIRST-PRINCIPLES.md`, followed by the implementation audit in `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`.
-
+META-5 delta declaration: numbered rules +1/-0 (132 remain); grammar productions +0/-0 (83 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. The added rule is [FORM-8]; no rule id is retired. No production is added or removed: `mode`, `borrow_expr`, `region_stmt`, and the `slice` and `arena` alternatives of `type` each gain one optional REGIONID decision, and no spelling is added.
+This candidate carries the third FLOOR-5 spelling batch and makes every region spelling forced. A REGIONID is written exactly where this document does not otherwise fix the region denoted and is absent everywhere else, so each region position has one legal spelling instead of today's uniformly written one. A declaration writes a region name exactly to relate two of its own positions, or to name one output-position region its parameters leave to the caller; every other position is unnamed and denotes a distinct region, and `region_params` lists exactly the written names in the order of their first written occurrence. A `borrow_expr` writes its region exactly when that region is not the innermost enclosing `region_stmt`'s, and a `region_stmt` writes its name exactly when the body still references it. A call's `::` type application writes exactly the callee region parameters no parameter position determines, and each remaining region parameter is the least of the actual argument regions at the formal positions naming it. Every liveness, outlives, exclusivity, storage-duration, provenance, effect, and confinement judgment is unchanged; only which of its regions the writer spells changes, and the accepted-program set is unchanged up to respelling. The seventeen system operation declarations in [SYS-2] and every arena-allocation effect entry are rendered in the same canonical form, so the counted declaration records change spelling without changing signature identity, parameter names, order, modes, types, effects, or count.
+Selection ground: minimality-selected under [FORM-1] and the owner ruling of record (2026-09-03) that one semantics has one spelling: today's uniformly written region is a second spelling wherever the region is already determined, and a written region that relates nothing carries no information a reader can act on. The rule is decidable from the owning declaration's own text at every position, so a writer chooses the legal spelling without a checker verdict. Prior selection ground for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as v0.41 recorded it, in `research/investigations/spelling-relief/SWEEP.md`, `governance/spec-evolution/comparison-symbols-v041-candidate.md`, `research/investigations/io-model/FIRST-PRINCIPLES.md`, and `research/investigations/io-model/IMPLEMENTATION-AUDIT.md`.
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
-R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
+R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
 
 ## 1. Scope and conformance
 
@@ -53,8 +53,9 @@ The left-attachment set contains `(`, `[`, `<`, `&`, `.`, `..`, and `::`.
 The right-attachment set contains `)`, `]`, `>`, `,`, `;`, `.`, `:`, `(`, `<`, `[`, `..`, and `::`.
 Between two consecutive terminals on the same line, emit zero bytes when the left terminal is in the left-attachment set or the right terminal is in the right-attachment set; otherwise emit exactly one ASCII space.
 A `<` or `>` terminal selected by `compare_op` [GRAM-5] is rendered as a member of neither set, so a comparison is `a < b` while a type-argument list is `f::<T>(x)` and `buffer<u8>`; this stated spacing overrides the generic attachment of those two bytes exactly as the `for` header's stated space does below.
-Thus function headers are `fn f()`, `fn f<T>()`, and `fn f['r]()`; subscripts are `p[i]`; a counted range is `lower..upper`; generic and square-bracket interiors are compact; `](`, `>(`, and `::<` are attached; and commas and colons attach to their left operand and have one space before the grammar-required following element.
+Thus function headers are `fn f()`, `fn f<T>()`, and `fn f['r](x: &'r i32)`; subscripts are `p[i]`; a counted range is `lower..upper`; generic and square-bracket interiors are compact; `](`, `>(`, and `::<` are attached; and commas and colons attach to their left operand and have one space before the grammar-required following element.
 Examples include `Result<i32, Overflow>`, `f(x: a, y: b)`, `cvt::<u8, u32>(w)`, `a <= b`, `conform i32: Zeroed`, `['r, 's]`, and `[10_u8, 20_u8]`.
+The same rules render an elided region [FORM-8] with no further sentence: a borrow mode is `&u8` or `&uniq Foo`, a borrow expression is `&p` or `&uniq p`, a region-free view type is `slice<u8>` or `arena<T>`, an unnamed region block opens `region {`, and a call whose region arguments are all determined writes no `::` application at all.
 
 Every nonempty physical line begins with exactly two ASCII spaces for each enclosing brace block.
 A closing brace is rendered after reducing the depth for the block it closes.
@@ -115,6 +116,34 @@ The lowercase spelling follows the primitive-type convention (TYPE-1: primitives
 An integer literal `-?d_T` is legal where its signed value lies in the closed range of T (signed `[-2^(K-1), 2^(K-1)-1]`, unsigned `[0, 2^K-1]`) and it has no leading zeros: the single digit `0` is its own form, a leading `-` is legal for signed T, and `-0` is written `0`.
 A float literal is legal only when it has the unique canonical spelling selected by [FORM-5] and denotes a finite value of its stated TYPE.
 An out-of-range integer, a leading-zero integer, a noncanonical float spelling, or a float decimal that rounds to a non-finite value is a hard error at check time [SCOPE-2]; a literal never denotes a wrapped, truncated, saturated, or undefined value.
+
+[FORM-8] Canonical region spelling.
+A REGIONID is written exactly at the positions where this document does not otherwise fix the region denoted, and is absent at every other position, so each region position has exactly one legal spelling [FORM-1].
+An absent REGIONID is neither a default nor a second meaning for a written one: the region is derived, in the class of the derived `let` binder mode [TYPE-5] and the derived match-binder mode [OWN-13], and an optional name whose absence resolves to the innermost enclosing construct is the unlabeled `break` form [TYPE-6] already carries [META-2].
+Every clause below is decided by reading the owning declaration's own text, so a writer chooses the one legal spelling from the declaration alone and never from a checker verdict.
+Being unnamed removes no obligation: an unnamed region has the ordinary extent, liveness, outlives, exclusivity, storage-duration, confinement, and loop judgments of the construct that introduces it [OWN-3, OWN-4, OWN-5, OWN-10, OWN-11, STOR-4].
+
+The region positions of one `fn_decl` or `fn_sig` are its input positions — every REGIONID slot of its `param` list, in a `param`'s `mode` and at any depth of its `type` — and its output positions — every REGIONID slot of its `result_binding` `rtype` at any depth, and the REGIONID of each `arena` entry of an `allocates` effect [EFF-1].
+`region_params` is a list of written names rather than a position, and a `reads` or `writes` `effect_path` names a place rather than a region [EFF-1], so neither is a position.
+A region name is written at a position exactly when the same region is meant at two or more positions of that same declaration, or when the position is an output position and that region is meant at no input position of that declaration.
+The first case is the only way to relate two positions; the second is the only region a caller must choose, because no actual argument determines it.
+Every other position is unnamed and denotes a region distinct from the region of every other position of that declaration.
+Every output position therefore writes its region: either an input position names the same region, which is the first case, or none does, which is the second.
+An unnamed output position is a hard error citing FORM-8 at its `mode` or `type` production, because nothing in the declaration or at a call determines the region such a result carries.
+`region_params` is written exactly when at least one name is written by that judgment; it then lists exactly those names, once each, in the order of their first written occurrence in that declaration, and it is absent otherwise.
+A declaration whose written names, name multiplicity, `region_params` membership, `region_params` order, or `region_params` presence differs from that rendering is a hard error citing FORM-8, using `SourceNode` at the owning `mode`, `type`, or `effect` production of the offending REGIONID, or at the complete `region_params` when the list itself is the defect.
+
+A `borrow_expr` [GRAM-5] writes its REGIONID exactly when the region it denotes is not the region of the innermost `region_stmt` lexically enclosing it; a `borrow_expr` no `region_stmt` encloses therefore always writes it.
+A `region_stmt` writes its REGIONID exactly when that name occurs at least once inside its body after this rule has been applied throughout that body, and is written `region { ... }` otherwise.
+An unnamed `region_stmt` introduces its region exactly as a named one does [OWN-3].
+A written region the innermost enclosing `region_stmt` already fixes, and an absent region at a `borrow_expr` no `region_stmt` encloses, are each a hard error citing FORM-8 at that `borrow_expr`; an unreferenced written `region_stmt` name is a hard error citing FORM-8 at that `region_stmt`.
+
+A `call` whose callee resolves to a user `fn` [FN-2] or to an admitted system operation [SYS-2] writes, as the leading region members of its `::` type application [GRAM-5], exactly those of the callee's region parameters that occupy no input position of the callee's declaration, in `region_params` order.
+A call whose complete type application would then be empty writes no `::` at all.
+Every other region parameter is determined by the call's own actual arguments and is not written: it is that one of the actual regions at the formal positions naming it which every actual region at those positions outlives-or-equals [OWN-3].
+When no actual region at those positions has that property the call is a hard error citing OWN-4, exactly as an unsatisfiable written region argument is today; the substituted region is otherwise the largest one every actual loan admits, so a related result region reaches as far as its inputs allow.
+Writing a determined region parameter, or omitting an undetermined one, is a hard error citing FORM-8 at the complete `call`.
+A retained-argument table operation still writes the region its row fixes, because no operand supplies it [TYPE-5, OP-1].
 
 [LEX-1] Lexicon policy: surface names label checked invariants, stated in this document self-containedly.
 Names are never borrowed from backend IR vocabulary (e.g. `noalias`), which names lowering consequences, not source invariants; and a name is borrowed from another language's convention only where a divergence census shows the semantics genuinely match.
@@ -206,10 +235,10 @@ input_label  := "command" "." IDENT "as"
 ```wf-ebnf GRAM-3
 type   := "i8"|"i16"|"i32"|"i64"|"u8"|"u16"|"u32"|"u64"|"f32"|"f64"|"unit"
         | TYPEID targs? | "array" "<" type "," const ">"
-        | "slice" "<" REGIONID "," type ">" | "box" "<" type ">"
-        | "arena" "<" REGIONID "," type ">" | "buffer" "<" type ">"
+        | "slice" "<" (REGIONID ",")? type ">" | "box" "<" type ">"
+        | "arena" "<" (REGIONID ",")? type ">" | "buffer" "<" type ">"
 rtype  := mode type
-mode   := "own" | "&" REGIONID | "&uniq" REGIONID
+mode   := "own" | "&" REGIONID? | "&uniq" REGIONID?
 targs  := "<" targ ("," targ)* ">"
 targ   := type | REGIONID | const
 ```
@@ -246,7 +275,7 @@ affine_term := affine_factor ("*" affine_factor)?
 affine_factor := literal | IDENT | "(" affine_expr ")"
 affine_add_op := "+" | "-"
 break_stmt  := "break" LABEL? ";"
-region_stmt := "region" REGIONID "{" stmt* "}"
+region_stmt := "region" REGIONID? "{" stmt* "}"
 give_stmt   := "give" expr ";"
 match_stmt  := "match" expr "{" arm+ "}"
 value_match := "match" expr "{" arm+ "}"
@@ -272,7 +301,7 @@ callee         := IDENT | OPNAME
 construct      := TYPEID targs? "(" fieldinit_list? ")"
 fieldinit_list := fieldinit ("," fieldinit)*
 fieldinit      := IDENT ":" atom
-borrow_expr    := "&" REGIONID place | "&uniq" REGIONID place
+borrow_expr    := "&" REGIONID? place | "&uniq" REGIONID? place
 atom_list      := atom ("," atom)*
 place          := pbase psuffix*
 pbase          := IDENT | "deref" "(" place ")"
@@ -371,7 +400,7 @@ Deliberate rounding is a separate DEFERRED float-round op family, never `cvt`.
 A `let` binder's mode and type are derived, never written: exactly the mode and type its selected right-hand side produces — an `ordinary_let_rhs` from its expression, which is always self-typed (operands are typed atoms, calls are typed by their [FN-1]/[OP-1]/[SYS-2] signatures, literals carry mandatory suffixes [FORM-5], constructions name their nominal and, when that nominal is generic, write its arguments); a `propagate_let_rhs` from the propagated Ok payload [ERR-3]; a `replace_let_rhs` at mode `own` from its target place's final selected type [SET-2]; a `value_match` or `value_if` from the derived common delivery type [GIVE-1], whose delivering `give`s are inside the same `let_stmt`, so the derivation stays statement-local.
 This is unique reconstruction, not inference: no binder's type depends on a later statement, an expected type, or any use site, and no two derivations can disagree [FORM-1].
 One form is excluded rather than reconstructed: a body `let` may not annotate a borrow with a region its right-hand side did not name, stating a destination the right-hand side satisfies by outlives [OWN-4] rather than equals, and a derived type is always the region the right-hand side itself produces.
-Call sites state explicitly exactly what their callee class requires: type, region, and const arguments for user generics [FN-2]; region arguments for system operations [SYS-2]; and, for exactly the retained-argument table operations — `cvt` and `reinterpret` (type pairs [OP-6, OP-8]), `array_new` (element type and const length [CONST-1]), `arena_new` (region and element type), `buffer_fits` and `buffer_vacant` (element type [OP-1, OP-9]), and `finf`/`fnan` (result type) — the written arguments their rows fix, because no operand can supply them.
+Call sites state explicitly exactly what their callee class requires: type and const arguments for user generics [FN-2]; the region arguments [FORM-8] leaves undetermined for a user generic or a system operation [SYS-2]; and, for exactly the retained-argument table operations — `cvt` and `reinterpret` (type pairs [OP-6, OP-8]), `array_new` (element type and const length [CONST-1]), `arena_new` (region and element type), `buffer_fits` and `buffer_vacant` (element type [OP-1, OP-9]), and `finf`/`fnan` (result type) — the written arguments their rows fix, because no operand can supply them.
 A `construct` of a generic nominal states that nominal's type and const arguments on the same ground and in every position, mandatorily: the source nominals under [FN-2], and the prelude generic nominals `Option<T>` and `Result<T, E>` through their variant constructors `None`, `Some`, `Ok`, and `Err`.
 A nullary `None()` has no operand to supply anything, and construction never consults an expected nominal type [TYPE-6], so the written arguments are the only supply there is; their absence, or a count other than the named nominal's parameter list, is a hard error citing TYPE-5 at the complete `construct`.
 The non-generic prelude nominals — `Bool`, `Overflow`, `DivError`, `NarrowError` — have no parameters and write nothing.
@@ -380,7 +409,8 @@ Argument types match declared parameter types exactly.
 After [SET-1] derives a writable target place of type T, the right-hand side of `set p = e;` must produce exactly `own T`; there is no mode coercion, type conversion, or target-selected operation overload.
 After the TYPE-7 implicit-read exclusivity below, a different right-hand-side mode or type is a hard error citing TYPE-5 at the complete `expr` child of the `set_stmt`, carrying expected `own T` and the actual mode and type.
 After [SET-2] derives a writable affine target place of type T, the right-hand side of `let x = replace p = e;` receives this same exact-`own T` judgment, located at the complete `expr` child of the `replace_let_rhs`.
-Redundant-explicit facts remain mandatory at every trust boundary — signatures with full modes, types, effect rows, and regions [FN-1], construction field names [GRAM-8], match binders [GRAM-10], call argument names [GRAM-11] — and are deleted exactly where reconstruction is unique and no transposition risk exists.
+Redundant-explicit facts remain mandatory at every trust boundary — signatures with full modes, types, and effect rows [FN-1], construction field names [GRAM-8], match binders [GRAM-10], call argument names [GRAM-11] — and are deleted exactly where reconstruction is unique and no transposition risk exists.
+A written region is such a fact only where it relates two positions or names a region the caller must choose; [FORM-8] deletes it everywhere else, because a region determined by its own position carries no fact a reader can check and no transposition it can catch.
 
 Every `fn_decl` and `fn_sig` has one mandatory `result_binding` whose written `rtype` fixes the callable result mode and type.
 The result name is a proof-only boundary spelling: it denotes no runtime slot, does not enter callable signature equality, and is unavailable in a function body.
@@ -402,7 +432,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | nominal-type TYPEID | source `struct_decl` and `enum_decl` names; PRE-1 nominal types; admitted system nominal types [SYS-1]; lexical type `gparam`s overlay this domain while live | `type` TYPEID and the TYPEID suffix of a FORM-5 generic numeric literal admit a live type generic where that form requires one, otherwise a nominal type |
 | constructor TYPEID | each source struct constructor under its struct TYPEID; every source enum `variant`; PRE-1 variants, classified as struct-constructor or enum-variant; admitted system constructors [SYS-1], classified as struct-constructor or enum-variant | the leading TYPEID of `construct` admits either class; the leading TYPEID of `arm` or `result_route` admits only enum-variant |
 | contract TYPEID | source `contract_decl` names and PRE-1 contract names, including `Int` and `Float` | the optional bound TYPEID of a type `gparam` and the contract TYPEID of `conform_decl` |
-| REGIONID | `region_params` and `region_stmt` | every REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` |
+| REGIONID | `region_params` and a named `region_stmt` | every written REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` [FORM-8] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
 | invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the bare-IDENT source of `proof_use` |
 
@@ -570,12 +600,12 @@ After any consuming use, the whole binding rooting `p` is dead (partial moves ki
 The [SET-2] replace commit is not a consuming use: it exchanges the stored value, leaves the target root live, and initializes its fresh binding as the moved-out value's sole owner.
 SET-1 and SET-2 recheck the live-root premise after their right-hand sides and never revive a dead binding.
 
-[OWN-2] Modes: `own` (owned), `&'r` (shared borrow in region `'r`), `&uniq 'r` (exclusive borrow in region `'r`).
-Modes are always written.
+[OWN-2] Modes: `own` (owned), `&` (shared borrow), `&uniq` (exclusive borrow); a borrow mode carries one region, written `&'r` or `&uniq 'r` where [FORM-8] writes it and `&` or `&uniq` where [FORM-8] elides it.
+The mode itself is always written.
 
 [OWN-3] Regions are lexical.
-`region 'r { ... }` introduces `'r`; `region_params` introduce caller-supplied regions.
-Region identifiers are unique within a function (parameters included).
+A `region_stmt` introduces one local region, named `region 'r { ... }` or unnamed `region { ... }`; `region_params` introduce the caller-supplied regions, and each unnamed declaration position introduces one further caller-supplied region [FORM-8].
+Region identifiers are unique within a function (parameters included); an unnamed region has no identifier and is distinct from every other region of that function.
 Outlives-or-equals is the total reflexive relation: `'a` outlives-or-equals `'b` iff `'a = 'b`, or `'a`'s block strictly encloses `'b`'s block, or `'a` is caller-supplied and `'b` is local.
 Distinct caller-supplied regions are incomparable: any rule requiring an order between them fails closed (reject).
 
@@ -643,7 +673,7 @@ For `p` rooted at a borrow of region `'b`: `'b` must outlive-or-equals `'a`.
 For `p` rooted in `arena<'r, T>` content: `'r` must outlive-or-equals `'a`.
 For `p` rooted at a named `const` item [CONST-2]: any region `'a` is legal; immutable static storage has program lifetime and outlives every region.
 
-[OWN-11] Loops: inside the body of an ordinary `loop_stmt` or a counted `for_stmt`, a `borrow_expr` may name only regions introduced inside that same loop body, and a binding declared outside that body may not be moved inside it (copies exempt).
+[OWN-11] Loops: inside the body of an ordinary `loop_stmt` or a counted `for_stmt`, a `borrow_expr` may denote only regions introduced inside that same loop body, whether it writes the name or elides it [FORM-8], and a binding declared outside that body may not be moved inside it (copies exempt).
 A counted binder may be copied and may be shared-borrowed only into a region introduced inside its body, but it may not be moved, uniquely borrowed, or otherwise transferred to a callee as a writable place; source writes are independently forbidden by [SET-1].
 These restrictions are checked for each enclosing loop, so nesting never grants an outer binding or region to an inner body.
 
@@ -1002,7 +1032,7 @@ The language defines no numeric frame limit, and `array_new` remains pure becaus
 
 ## 8. Functions, generics, contracts
 
-[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the named result's mode and type, one formal-path state-effect row, region parameters, the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates, one compiler-derived result-state routing summary, and one compiler-derived target summary.
+[FN-1] A concrete function's callable boundary states everything ordinary callers need: parameter modes and types, the named result's mode and type, one formal-path state-effect row, its region parameters and the unnamed regions of its remaining region positions [FORM-8], the ordered [FN-8] requirement GoalTemplates, the ordered verified [FN-9] normal-result RelationTemplates, one compiler-derived result-state routing summary, and one compiler-derived target summary.
 The result binder's spelling is mandatory but ignored by callable-signature equality and denotes no runtime storage.
 The written templates are checked interface propositions rather than trusted declarations; a caller consults only their verified finite summaries and never a callee body.
 The written effect paths state which parameter-supplied state the function observes or changes. The checker derives the exact same set from body accesses, direct system contracts, releases, and calls and checks it in both directions under [EFF-2].
@@ -1019,7 +1049,7 @@ Every other return mode or type mismatch is a hard error citing FN-1 at the `ret
 FN-9 adds a stricter result and return-expression shape only for a function that declares an `ensures_clause`; a function with none retains every return form admitted here.
 
 For a function whose written result is `own slice<'r, T>`, the written signature also determines one return-origin ceiling without additional syntax.
-The ceiling contains `immutable-const` and the formal-slice origin of every parameter whose written mode and type are exactly `own slice<'r, T>` using that same formal region declaration and element type.
+The ceiling contains `immutable-const` and the formal-slice origin of every parameter whose mode and type are exactly `own slice<'r, T>` denoting that same formal region and element type; an elided parameter region denotes a distinct region [FORM-8] and therefore never supplies the result.
 No parameter with a different mode, type, element type, or formal region is a supplier.
 In particular a borrow-mode parameter and an `arena<'r, U>` parameter are not implicit slice suppliers.
 Every explicit `return e;` producing that written result must have an [OWN-5] origin set contained in the ceiling.
@@ -1029,10 +1059,11 @@ OWN-10 independently rejects a returned origin whose storage is too short-lived.
 A function whose written result mode is `&'d` or `&uniq 'd` and whose direct result type is `slice<'r, T>` is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `return the direct own slice descriptor under its data region; do not return a borrow of a slice descriptor`.
 This specification has no signature summary that carries both the returned descriptor's source-place provenance and the underlying slice value's complete origin set.
 This rejection does not change any other returned-borrow judgment.
-A function whose written result mode is `&'b` or `&uniq 'b` determines the result's provenance from its written parameters alone: a parameter is a provenance candidate iff its written mode is a borrow of the result's kind in the result's formal region `'b` [OWN-6].
+A function whose result mode is `&'b` or `&uniq 'b` determines the result's provenance from its written parameters alone: a parameter is a provenance candidate iff its mode is a borrow of the result's kind in the result's formal region `'b` [OWN-6].
+Because a candidate shares `'b`, [FORM-8] writes `'b` at both positions; a function with no candidate writes `'b` at its result alone and its caller supplies that region.
 Exactly one candidate is the result's debtor, and zero candidates is legal — OWN-10 admits no `'b`-region borrow rooted in callee-local storage, so the only remaining source is named `const` storage, whose immutable program-lifetime extent needs no caller loan [CONST-2].
 The provenance judgment applies to a result whose written type is region-free; a region-bearing result type is rejected before it — a direct slice by this rule's slice sentence and an arena, in either result mode, by [STOR-4].
-Two or more candidates, a same-region parameter of the other borrow kind, or any parameter whose written type names `'b` leaves the source undetermined and is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `give the source parameter its own region so exactly one parameter shares the result's region and kind, or return the decision as a value and let the caller borrow from the source it names`.
+Two or more candidates, a same-region parameter of the other borrow kind, or any parameter whose type carries `'b` leaves the source undetermined and is a hard error citing FN-1 at the complete `rtype`, with `SourceCoordinate` equal to that production's complete checked half-open source extent and the restructuring `give the source parameter its own region so exactly one parameter shares the result's region and kind, or return the decision as a value and let the caller borrow from the source it names`.
 The declaration is the error and no call is required to reach it: [GRAM-9] admits a computed value only through a preceding `let`, so a result no caller can bind is unusable by construction.
 
 The signature-formation parts of these two slice-result judgments and of the borrow-result provenance judgment apply equally to a top-level `fn_decl` and a contract-member `fn_sig`: an `own slice` member has the same parameter-derived ceiling, a borrow-mode direct-slice member is rejected at that member's complete `rtype`, and a borrow-result member whose source its own parameters leave undetermined is rejected there too.
@@ -1090,7 +1121,7 @@ A call with no termination proof or a loop does not satisfy the return requireme
 This complete structural graph, its statement reachability, and every source call and invariant-declaration identity are retained for source audit even when [FN-8] later proves one concrete instance uninhabited.
 That proof changes only its checked body disposition and lowering authority; it never erases a source node or narrows the written effect row.
 
-[FN-2] Function and nominal generics are monomorphization-only; instantiation arguments are always explicit; expansion is compiler-side, pre-IR; instantiations are re-checked as concrete code.
+[FN-2] Function and nominal generics are monomorphization-only; type and const instantiation arguments are always explicit and region arguments are written exactly where [FORM-8] writes them; expansion is compiler-side, pre-IR; instantiations are re-checked as concrete code.
 Every contract definition and requirement or postcondition template is substituted separately for each concrete function instance.
 The [FN-8] uninhabited judgment is likewise instance-local and never propagates from one concrete substitution to its generic template or another instance.
 Every explicit type argument supplied to a function, source nominal, or PRE-1 nominal generic parameter must be region-free under [STOR-5].
@@ -1411,7 +1442,7 @@ Binding, moving, passing, returning, borrowing, reborrowing, and slicing preserv
 At a user or system call, each callee effect path selects its root formal's actual argument and appends its static field suffix to that actual's resolved place. Holder resolution then reaches the borrowed referent, and a slice actual projects through its complete [OWN-5] origin set. A projection rooted in one of the current function's formals contributes the corresponding current-function path. A projection rooted only in fresh local state contributes no enclosing effect.
 Thus a callee write through a child reborrow of incoming `&uniq` storage reaches the incoming formal path, while the same callee write through fresh local storage frames out. Equal lifetime arguments never merge two suppliers because lifetimes do not participate in this substitution.
 
-Resource-producing calls follow the same rule. For example, `reserve_file::<'r>(factory: &uniq 'r factory)` exhibits the callee's `writes(factory)` on the caller's `factory`; an open with `permit: move permit` exhibits `writes(permit)` only on that local permit; and later operations on the returned fresh local resource remain local. Creating the permit or resource establishes no hidden child-to-factory ancestry. Any externally visible change to the factory or namespace is the direct effect of the operation that changes that parameter and must appear in that operation's own row [EFF-5].
+Resource-producing calls follow the same rule. For example, `reserve_file(factory: &uniq factory)` exhibits the callee's `writes(factory)` on the caller's `factory`; an open with `permit: move permit` exhibits `writes(permit)` only on that local permit; and later operations on the returned fresh local resource remain local. Creating the permit or resource establishes no hidden child-to-factory ancestry. Any externally visible change to the factory or namespace is the direct effect of the operation that changes that parameter and must appear in that operation's own row [EFF-5].
 Framing an action on fresh local state out of the enclosing signature means only that it contributes no formal-rooted boundary path. The checked call still retains its instantiated nonempty effect on that local place. Eliminating it requires the ordinary closed-state, escape, result, release, and observer proof which justifies deleting any stateful call; absence from the enclosing row alone proves none of those facts. A target operation is lowered with its qualified physical side effects intact. The mandatory direct write on the creating factory, namespace, allocator, or permit prevents the enclosing call from becoming `pure` merely because the produced owner stayed local [EFF-5].
 
 The release contribution collects the effects of compiler-derived release.
@@ -2243,22 +2274,22 @@ enum ListOutcome {
 Sixteen operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
 
 ```
-fn args_count['a](args: &'a Args) -> result: own u64 reads(args);
-fn arg_get['a](args: &'a Args, position: own u64) -> result: own Result<HostString, ArgError> reads(args);
-fn host_bytes_len['v](value: &'v HostString) -> result: own u64 reads(value);
-fn host_copy_bytes['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination);
-fn host_utf8_len['v](value: &'v HostString) -> result: own Result<u64, Utf8Error> reads(value);
-fn host_copy_utf8['v, 'd](value: &'v HostString, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value, destination), writes(destination);
+fn args_count(args: &Args) -> result: own u64 reads(args);
+fn arg_get(args: &Args, position: own u64) -> result: own Result<HostString, ArgError> reads(args);
+fn host_bytes_len(value: &HostString) -> result: own u64 reads(value);
+fn host_copy_bytes(value: &HostString, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, CopyError> reads(value, destination), writes(destination);
+fn host_utf8_len(value: &HostString) -> result: own Result<u64, Utf8Error> reads(value);
+fn host_copy_utf8(value: &HostString, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value, destination), writes(destination);
 fn relative_path(value: own HostString) -> result: own Result<RelativePath, PathError> pure;
-fn open_read['c, 'p](permit: own FilePermit, root: &'c DirectoryRead, path: &'p RelativePath) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(permit);
-fn read_at['f, 'd](file: &'f ReadFile, destination: &uniq 'd buffer<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own ReadOutcome reads(file, destination), writes(destination);
-fn write_once['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output);
+fn open_read(permit: own FilePermit, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(permit);
+fn read_at(file: &ReadFile, destination: &uniq buffer<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own ReadOutcome reads(file, destination), writes(destination);
+fn write_once(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output);
 fn exit_status(code: own u8) -> result: own ExitStatus pure;
-fn open_directory['c, 'n](permit: own FilePermit, root: &'c DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(permit, root, name), writes(permit);
-fn open_directory_source['c](permit: own FilePermit, directory: &'c DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(permit, directory), writes(permit);
-fn directory_next['l, 'd](source: &uniq 'l DirectorySource, destination: &uniq 'd buffer<u8>, start: own u64, end: own u64) -> result: own ListOutcome reads(source, destination), writes(source, destination);
-fn open_file['c, 'n](permit: own FilePermit, root: &'c DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(permit, root, name), writes(permit);
-fn reserve_file['f](factory: &uniq 'f FileFactory) -> result: own FilePermit reads(factory), writes(factory);
+fn open_directory(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(permit, root, name), writes(permit);
+fn open_directory_source(permit: own FilePermit, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(permit, directory), writes(permit);
+fn directory_next(source: &uniq DirectorySource, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own ListOutcome reads(source, destination), writes(source, destination);
+fn open_file(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(permit, root, name), writes(permit);
+fn reserve_file(factory: &uniq FileFactory) -> result: own FilePermit reads(factory), writes(factory);
 ```
 
 The inventory is therefore exactly eighteen nominal types, forty enum-variant constructors, sixty-three variant fields, sixteen operations, twenty-two operation region parameters, and forty-four operation value parameters.
@@ -2783,7 +2814,7 @@ An array- or buffer-index target and a non-fragment target receive no commit val
 - S6 (length facts).
 `let b = buffer_new(n, v);` and `let b = buffer_vacant::<T>(n);` each establish len(b) = n on the normal continuation [OP-9], n read as term or constant.
 `let m = len(P);` for a tracked P establishes m = len(P).
-`let s = slice_of…(&'r P);` for a tracked P establishes len(s) = len(P).
+`let s = slice_of…(&P);` for a tracked P establishes len(s) = len(P).
 [ENT-3.S7]
 - S7 (constant-offset arithmetic).
 For `let s = p +wrap k;` with p a term of type T and k a constant in either operand position, when the closed state at that point derives `min(T) <= p + k` and `p + k <= max(T)` (as bounds on p through Z), s = p + k is established; `p -wrap k` with constant k establishes s = p - k under the dual range condition.
@@ -3239,8 +3270,8 @@ fn sign_of(x: own i32) -> result: own Sign pure {
 command fn main() -> status: own ExitStatus pure {
   doc "let-initializer match with give: a conditional value bound, then reused.";
   let a = 40_i32;
-  region 'r {
-    let p = &'r a;
+  region {
+    let p = &a;
     let v = match deref(p) +checked 2_i32 {
       Ok(value: w) => {
         give w;

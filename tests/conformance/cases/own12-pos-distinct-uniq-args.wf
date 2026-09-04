@@ -6,8 +6,8 @@ command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-12: distinct &uniq arguments do not alias - accepted.";
   let x = 0_i32;
   let y = 1_i32;
-  region 'r {
-    two::<'r>(a: &uniq 'r x, b: &uniq 'r y);
+  region {
+    two(a: &uniq x, b: &uniq y);
   }
   return exit_status(code: 0_u8);
 }

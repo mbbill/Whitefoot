@@ -134,13 +134,13 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Moves one enumeration handle and then uses the moved binding.";
   let scratch = buffer_new(64_u64, 0_u8);
-  region 'listing {
-    let permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    match open_directory_source::<'listing>(permit: move permit, directory: &'listing cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         let taken = move list;
-        region 'step {
-          match directory_next::<'step, 'step>(source: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+        region {
+          match directory_next(source: &uniq list, destination: &uniq scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {
@@ -172,7 +172,7 @@ fn program_bytes_still_cannot_become_a_path_value() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd), allocates(heap) {
   doc "Attempts to construct a relative path from program bytes.";
   let name = buffer_new(8_u64, 97_u8);
-  region 'attempt {
+  region {
     match relative_path(value: move name) {
       Ok(value: path) => {
       }
@@ -198,12 +198,12 @@ fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Omits one enumeration outcome from an otherwise complete match.";
   let scratch = buffer_new(64_u64, 0_u8);
-  region 'listing {
-    let permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    match open_directory_source::<'listing>(permit: move permit, directory: &'listing cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
-        region 'step {
-          match directory_next::<'step, 'step>(source: &uniq 'step list, destination: &uniq 'step scratch, start: 0_u64, end: 64_u64) {
+        region {
+          match directory_next(source: &uniq list, destination: &uniq scratch, start: 0_u64, end: 64_u64) {
             ListBytes(next: endpoint, entries: reported) => {
             }
             ListEnd() => {

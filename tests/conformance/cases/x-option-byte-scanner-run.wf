@@ -1,4 +1,4 @@
-fn find_byte['r](input: &'r buffer<u8>, needle: own u8) -> function_result: own Option<u64> reads(input) {
+fn find_byte(input: &buffer<u8>, needle: own u8) -> function_result: own Option<u64> reads(input) {
   let length = len(deref(input));
   for (offset in 0_u64..length) {
     let byte = deref(input)[offset];
@@ -18,9 +18,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set bytes[3_u64] = 40_u8;
   set bytes[4_u64] = 50_u8;
   set bytes[5_u64] = 60_u8;
-  region 'scan_region {
-    let view = &'scan_region bytes;
-    let present = find_byte::<'scan_region>(input: view, needle: 40_u8);
+  region {
+    let view = &bytes;
+    let present = find_byte(input: view, needle: 40_u8);
     match move present {
       None() => {
         return exit_status(code: 1_u8);
@@ -33,7 +33,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         }
       }
     }
-    let missing = find_byte::<'scan_region>(input: view, needle: 99_u8);
+    let missing = find_byte(input: view, needle: 99_u8);
     match move missing {
       None() => {
       }

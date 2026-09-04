@@ -1,7 +1,7 @@
 fn count_arguments(args: own Args) -> result: own u64 reads(args) {
   doc "Args is immutable, but args_count still observes the parameter-supplied argument snapshot. The exact row is reads(args), independent of the borrow lifetime.";
-  region 'a {
-    let total = args_count::<'a>(args: &'a args);
+  region {
+    let total = args_count(args: &args);
     return total;
   }
 }

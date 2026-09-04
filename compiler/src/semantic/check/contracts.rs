@@ -140,8 +140,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .dependent_declaration_at(node, DependentDeclarationRole::ContractMember)?
             .spelling()
             .to_owned();
-        let region_parameters = self.parse_region_parameters(node)?;
+        self.check_declaration_region_spelling(node)?;
+        let mut region_parameters = self.parse_region_parameters(node)?;
         let parameters = self.parse_parameters_with(node, &GenericSubstitution::default())?;
+        // [FORM-8] a member signature carries the same formal regions a
+        // top-level callable boundary does, written and unwritten alike, so
+        // the FN-3 comparison below sees the same list on both sides.
+        Checker::append_elided_formal_regions(&mut region_parameters, &parameters);
         let result_binding = self
             .tree
             .first_child_with(node, Production::ResultBinding)?

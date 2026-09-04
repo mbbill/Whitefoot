@@ -51,7 +51,7 @@ fn cascade(inh: own f64, w: own f64, h: own f64) -> result: own f64 pure {
   return final_h;
 }
 
-fn layout['b](node: &uniq 'b box<LNode>, inh: own f64) -> result: own f64 reads(node), writes(node) {
+fn layout(node: &uniq box<LNode>, inh: own f64) -> result: own f64 reads(node), writes(node) {
   match deref(deref(node)) {
     Leaf(w: lw, h: lh, out: lslot) => {
       let v = cascade(inh: inh, w: deref(lw), h: deref(lh));
@@ -61,8 +61,8 @@ fn layout['b](node: &uniq 'b box<LNode>, inh: own f64) -> result: own f64 reads(
     Branch(left: l, right: r, w: bw, h: bh, out: bslot) => {
       let own_h = cascade(inh: inh, w: deref(bw), h: deref(bh));
       let child_inh = fmul.strict(own_h, 0.5_f64);
-      let a = layout<'b>(node: move l, inh: child_inh);
-      let b = layout<'b>(node: move r, inh: child_inh);
+      let a = layout(node: move l, inh: child_inh);
+      let b = layout(node: move r, inh: child_inh);
       let kids = fadd.strict(a, b);
       let total = fadd.strict(kids, own_h);
       set deref(bslot) = total;
@@ -80,8 +80,8 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
     if done {
       break @reps;
     }
-    region 'tree {
-      let total = layout<'tree>(node: &uniq 'tree tree, inh: 16.0_f64);
+    region {
+      let total = layout(node: &uniq tree, inh: 16.0_f64);
       set last = total;
     }
     set i = i +wrap 1_u64;

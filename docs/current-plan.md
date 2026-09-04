@@ -3,16 +3,19 @@
 Status: IMPLEMENTED AND ACTIVATED as v0.40 on
 `codex/source-proof`.
 
-Active language authority: v0.41,
-`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`,
-which respells the six integer comparisons as symbols and delimits call-site
-type application with `::` over the v0.40 proof surface this plan delivered.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.40 is
-archived at `spec/kernel-spec-v0.40.md` and the merge-time record is in
-`governance/APPROVALS.md`. Activation is branch content: nothing merges to
-`main` until the owner approves the exact revision and canonical `make check`
-passes on that revision. This document records technical direction and
-sequencing; it grants no permission and adds no workflow gate.
+Active language authority: v0.42,
+`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`,
+which adds [FORM-8]'s one canonical region spelling over the v0.41 comparison
+symbols and the v0.40 proof surface this plan delivered.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.41 is
+archived at `spec/kernel-spec-v0.41.md` and the merge-time record is in
+`governance/APPROVALS.md`. The candidate that preceded activation hashed to
+`8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`;
+activation flipped its status line and changed no other byte. Activation is
+branch content: nothing merges to `main` until the owner approves the exact
+revision and canonical `make check` passes on that revision. This document
+records technical direction and sequencing; it grants no permission and adds
+no workflow gate.
 
 ## Outcome
 
@@ -106,7 +109,7 @@ and ordinary operation goals connect. A counted header carrying an invariant is
 multiline and has no trailing comma:
 
 ```wf
-fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32
+fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32
     reads(weights) contract {
   define room = len(deref(weights));
   requires count <= room;

@@ -1,4 +1,4 @@
-fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 writes(out) contract {
+fn probe(out: &uniq buffer<u8>, src: own buffer<u8>) -> result: own u64 writes(out) contract {
   define out_len = len(deref(out));
   define src_len = len(src);
   define groups = ishr.wrap(out_len, 2_u32);
@@ -8,8 +8,8 @@ fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 w
   let n = len(src);
   let i = 0_u64;
   let o = 0_u64;
-  region 's {
-    let alias = &uniq 's o;
+  region {
+    let alias = &uniq o;
     set deref(alias) = 1_u64;
   }
   loop @groups {

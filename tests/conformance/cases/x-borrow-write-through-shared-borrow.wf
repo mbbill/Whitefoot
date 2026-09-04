@@ -1,8 +1,8 @@
 command fn main() -> status: own ExitStatus pure {
   doc "OWN-5: writing through a shared borrow is illegal - only reads pass through a non-uniq holder.";
   let a = 1_i32;
-  region 'r {
-    let s = &'r a;
+  region {
+    let s = &a;
     set deref(s) = 9_i32;
   }
   return exit_status(code: 0_u8);

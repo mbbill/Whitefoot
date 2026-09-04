@@ -5,31 +5,31 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let data_a = buffer_new(1_u64, 0_u8);
   let data_b = buffer_new(1_u64, 0_u8);
   let pair = buffer_new(2_u64, 0_u8);
-  region 'arg_a {
-    match arg_get::<'arg_a>(args: &'arg_a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text_a) => {
-        region 'copy_a {
-          match host_copy_bytes::<'copy_a, 'copy_a>(value: &'copy_a text_a, destination: &uniq 'copy_a name_a, start: 0_u64, end: 32_u64) {
+        region {
+          match host_copy_bytes(value: &text_a, destination: &uniq name_a, start: 0_u64, end: 32_u64) {
             Ok(value: name_end_a) => {
-              region 'arg_b {
-                match arg_get::<'arg_b>(args: &'arg_b args, position: 2_u64) {
+              region {
+                match arg_get(args: &args, position: 2_u64) {
                   Ok(value: text_b) => {
-                    region 'copy_b {
-                      match host_copy_bytes::<'copy_b, 'copy_b>(value: &'copy_b text_b, destination: &uniq 'copy_b name_b, start: 0_u64, end: 32_u64) {
+                    region {
+                      match host_copy_bytes(value: &text_b, destination: &uniq name_b, start: 0_u64, end: 32_u64) {
                         Ok(value: name_end_b) => {
-                          region 'open {
-                            let permit_a = reserve_file::<'open>(factory: &uniq 'open files);
-                            let permit_b = reserve_file::<'open>(factory: &uniq 'open files);
-                            let opened_a = open_file::<'open, 'open>(permit: move permit_a, root: &'open cwd, name: &'open name_a, start: 0_u64, end: name_end_a);
-                            let opened_b = open_file::<'open, 'open>(permit: move permit_b, root: &'open cwd, name: &'open name_b, start: 0_u64, end: name_end_b);
+                          region {
+                            let permit_a = reserve_file(factory: &uniq files);
+                            let permit_b = reserve_file(factory: &uniq files);
+                            let opened_a = open_file(permit: move permit_a, root: &cwd, name: &name_a, start: 0_u64, end: name_end_a);
+                            let opened_b = open_file(permit: move permit_b, root: &cwd, name: &name_b, start: 0_u64, end: name_end_b);
                             match move opened_a {
                               Ok(value: file_a) => {
                                 match move opened_b {
                                   Ok(value: file_b) => {
                                     region 'files {
-                                      region 'data {
-                                        let read_a = read_at::<'files, 'data>(file: &'files file_a, destination: &uniq 'data data_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                                        let read_b = read_at::<'files, 'data>(file: &'files file_b, destination: &uniq 'data data_b, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                      region {
+                                        let read_a = read_at(file: &'files file_a, destination: &uniq data_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                        let read_b = read_at(file: &'files file_b, destination: &uniq data_b, file_offset: 0_u64, start: 0_u64, end: 1_u64);
                                         match move read_a {
                                           ReadBytes(next: next_a) => {
                                             if next_a == 1_u64 {
@@ -62,8 +62,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                     }
                                     set pair[0_u64] = data_a[0_u64];
                                     set pair[1_u64] = data_b[0_u64];
-                                    region 'output {
-                                      match write_once::<'output, 'output>(output: &uniq 'output out, source: &'output pair, start: 0_u64, end: 2_u64) {
+                                    region {
+                                      match write_once(output: &uniq out, source: &pair, start: 0_u64, end: 2_u64) {
                                         Ok(value: published) => {
                                           if published == 2_u64 {
                                             return exit_status(code: 0_u8);

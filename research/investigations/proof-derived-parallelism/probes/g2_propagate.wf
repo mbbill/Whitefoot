@@ -1,4 +1,4 @@
-fn probe['o](v: own u32, out: &uniq 'o buffer<u8>) -> result: own Result<unit, NarrowError> reads(out), writes(out), traps {
+fn probe(v: own u32, out: &uniq buffer<u8>) -> result: own Result<unit, NarrowError> reads(out), writes(out), traps {
   let room = len(deref(out));
   let ok = ilt(0_u64, room);
   claim probe_in_out: ok because "callers pass a nonempty buffer";
@@ -9,8 +9,8 @@ fn probe['o](v: own u32, out: &uniq 'o buffer<u8>) -> result: own Result<unit, N
 
 command fn main() -> status: own ExitStatus allocates(heap), traps {
   let packet = buffer_new(2_u64, 0_u8);
-  region 'run {
-    let outcome = probe<'run>(v: 300_u32, out: &uniq 'run packet);
+  region {
+    let outcome = probe(v: 300_u32, out: &uniq packet);
     match move outcome {
       Ok(value: success) => {
       }
@@ -18,8 +18,8 @@ command fn main() -> status: own ExitStatus allocates(heap), traps {
       }
     }
   }
-  region 'peek {
-    let view = &'peek packet;
+  region {
+    let view = &packet;
     let room = len(deref(view));
     let ok = ilt(0_u64, room);
     claim peek_in: ok because "the buffer has two bytes";

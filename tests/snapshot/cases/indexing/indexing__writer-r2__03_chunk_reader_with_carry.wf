@@ -1,4 +1,4 @@
-fn fold_chunks['r](data: &'r buffer<u8>, chunk_size: own u64) -> result: own u32 reads(data) contract {
+fn fold_chunks(data: &buffer<u8>, chunk_size: own u64) -> result: own u32 reads(data) contract {
   requires chunk_size > 0_u64;
 } {
   let length = len(deref(data));
@@ -24,8 +24,8 @@ fn fold_chunks['r](data: &'r buffer<u8>, chunk_size: own u64) -> result: own u32
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "ACCEPT: the buffer subscript is discharged by the for-loop's automatic i < length fact (length is the same len(deref(data)) expression), and every accumulator step uses +wrap so no arithmetic domain obligation remains open.";
   let data = buffer_new(6_u64, 3_u8);
-  region 'r {
-    let folded = fold_chunks::<'r>(data: &'r data, chunk_size: 3_u64);
+  region {
+    let folded = fold_chunks(data: &data, chunk_size: 3_u64);
     if folded == 18_u32 {
     } else {
       return exit_status(code: 1_u8);

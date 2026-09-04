@@ -52,8 +52,8 @@ fn wide_frame_source(depth: u64) -> Vec<u8> {
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{
   let count = 0_u64;
-  region 'invocation {{
-    set count = args_count::<'invocation>(args: &'invocation args);
+  region {{
+    set count = args_count(args: &args);
   }}
   match cvt::<u64, u8>(count) {{
     Ok(value: idx) => {{

@@ -1,0 +1,18 @@
+fn peek(value: &i32) -> result: own i32 reads(value) {
+  doc "Every region of this declaration occupies one position and relates to nothing, so no position writes one and the declaration carries no region parameter list [FORM-8].";
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The elided spellings compose: an unnamed region block, an unnamed borrow taking that block's region, and a call writing no type application because the callee's parameter determines its region.";
+  let a = 40_i32;
+  region {
+    let p = &a;
+    let v = peek(value: p);
+    if v == 40_i32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

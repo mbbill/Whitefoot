@@ -21,7 +21,7 @@ const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure c
   return n;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires length <= source_length;
 } {
@@ -33,8 +33,8 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
     } else {
       break @publish;
     }
-    region 'attempt {
-      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+    region {
+      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -52,11 +52,11 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let selector = 111_u8;
   let choice = buffer_new(8_u64, 0_u8);
   let chosen = 0_u64;
-  region 'pick {
-    match arg_get::<'pick>(args: &'pick args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
-        region 'copy {
-          match host_copy_bytes::<'copy, 'copy>(value: &'copy text, destination: &uniq 'copy choice, start: 0_u64, end: 8_u64) {
+        region {
+          match host_copy_bytes(value: &text, destination: &uniq choice, start: 0_u64, end: 8_u64) {
             Ok(value: next) => {
               set chosen = next;
             }
@@ -210,8 +210,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let phase_room = len(found);
   let phase_fits = count <= phase_room;
   if phase_fits {
-    region 'phase_publish {
-      match publish_all::<'phase_publish, 'phase_publish>(output: &uniq 'phase_publish out, source: &'phase_publish found, length: count) {
+    region {
+      match publish_all(output: &uniq out, source: &found, length: count) {
         Ok(value: published) => {
         }
         Err(error: problem) => {
@@ -261,8 +261,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         let selected_lead = selected_byte == mark;
         if selected_lead {
           set scratch[0_u64] = 88_u8;
-          region 'lead_write {
-            match publish_all::<'lead_write, 'lead_write>(output: &uniq 'lead_write out, source: &'lead_write scratch, length: 1_u64) {
+          region {
+            match publish_all(output: &uniq out, source: &scratch, length: 1_u64) {
               Ok(value: lead_published) => {
               }
               Err(error: lead_problem) => {
@@ -273,8 +273,8 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
         let selected_tail = selected_byte == 89_u8;
         if selected_tail {
           set scratch[0_u64] = 89_u8;
-          region 'tail_write {
-            match publish_all::<'tail_write, 'tail_write>(output: &uniq 'tail_write out, source: &'tail_write scratch, length: 1_u64) {
+          region {
+            match publish_all(output: &uniq out, source: &scratch, length: 1_u64) {
               Ok(value: tail_published) => {
               }
               Err(error: tail_problem) => {

@@ -10,7 +10,7 @@ enum PoolError {
   ArithmeticOverflow();
 }
 
-fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right, pool.count), writes(pool.left, pool.right, pool.count) {
+fn build(pool: &uniq Pool, depth: own u32) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right, pool.count), writes(pool.left, pool.right, pool.count) {
   doc "Build a complete tree bottom-up in two parallel buffers; index zero is the null sentinel.";
   let leaves = ishl.wrap(1_u64, depth);
   let start = deref(pool).count;
@@ -104,7 +104,7 @@ fn build['r](pool: &uniq 'r Pool, depth: own u32) -> function_result: own Result
   return Ok<u64, PoolError>(value: start);
 }
 
-fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right) {
+fn checksum(pool: &Pool, root: own u64) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right) {
   let left_room = len(deref(pool).left);
   let left_ok = root < left_room;
   if left_ok {
@@ -125,8 +125,8 @@ fn checksum['r](pool: &'r Pool, root: own u64) -> function_result: own Result<u6
     return Err<u64, PoolError>(error: error);
   }
   let right_child = deref(pool).right[root];
-  let left_count = propagate checksum::<'r>(pool: pool, root: left_child);
-  let right_count = propagate checksum::<'r>(pool: pool, root: right_child);
+  let left_count = propagate checksum(pool: pool, root: left_child);
+  let right_count = propagate checksum(pool: pool, root: right_child);
   let child_sum_defined = left_count +defined right_count;
   let children = if child_sum_defined {
     give left_count + right_count;
@@ -150,11 +150,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let right = buffer_new(capacity, 0_u64);
   let pool = Pool(left: move left, right: move right, count: 1_u64);
   let depth = 5_u32;
-  region 'tree {
-    let built = build::<'tree>(pool: &uniq 'tree pool, depth: depth);
+  region {
+    let built = build(pool: &uniq pool, depth: depth);
     match move built {
       Ok(value: root) => {
-        let checksum_result = checksum::<'tree>(pool: &'tree pool, root: root);
+        let checksum_result = checksum(pool: &pool, root: root);
         match move checksum_result {
           Ok(value: nodes) => {
             if nodes == 63_u64 {

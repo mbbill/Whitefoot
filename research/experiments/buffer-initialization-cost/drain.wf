@@ -2,8 +2,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   doc "Drains one named file through one reusable initialized buffer and reports a witness of what it read.";
   let page = buffer_new(4096_u64, 0_u8);
   let arguments = 0_u64;
-  region 'invocation {
-    set arguments = args_count::<'invocation>(args: &'invocation args);
+  region {
+    set arguments = args_count(args: &args);
   }
   let usable = arguments >= 2_u64;
   if usable {
@@ -13,21 +13,21 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let failed = 0_u8;
   let witness = 0_u8;
   let total = 0_u64;
-  region 'file_lease {
-    match arg_get::<'file_lease>(args: &'file_lease args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
-            region 'open_call {
-              let permit = reserve_file::<'open_call>(factory: &uniq 'open_call files);
-              match open_read::<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
+            region {
+              let permit = reserve_file(factory: &uniq files);
+              match open_read(permit: move permit, root: &cwd, path: &path) {
                 Ok(value: file) => {
                   let file_offset = 0_u64;
                   loop @chunks {
                     let taken = 0_u64;
                     let ended = 0_u8;
-                    region 'read_call {
-                      match read_at::<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call page, file_offset: file_offset, start: 0_u64, end: 4096_u64) {
+                    region {
+                      match read_at(file: &file, destination: &uniq page, file_offset: file_offset, start: 0_u64, end: 4096_u64) {
                         ReadBytes(next: delivered) => {
                           set taken = delivered;
                           set file_offset = file_offset +wrap delivered;

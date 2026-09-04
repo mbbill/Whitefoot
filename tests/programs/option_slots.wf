@@ -11,7 +11,7 @@ fn optvec_new(capacity: own u64) -> result: own OptVec allocates(heap) contract 
   return OptVec(buf: move empty, fill: 0_u64);
 }
 
-fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
+fn optvec_push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let has_room = count < cap;
@@ -33,7 +33,7 @@ fn optvec_push['a](v: &uniq 'a OptVec, x: own u32) -> result: own unit reads(v.b
   return unit;
 }
 
-fn optvec_pop['a](v: &uniq 'a OptVec) -> result: own u32 reads(v.buf, v.fill), writes(v.buf, v.fill) {
+fn optvec_pop(v: &uniq OptVec) -> result: own u32 reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
   let nonempty = count > 0_u64;
   if nonempty {
@@ -99,17 +99,17 @@ fn boxed_slots() -> result: own unit allocates(heap) {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let v = optvec_new(capacity: 4_u64);
-  region 'p {
-    optvec_push::<'p>(v: &uniq 'p v, x: 10_u32);
+  region {
+    optvec_push(v: &uniq v, x: 10_u32);
   }
-  region 'q {
-    optvec_push::<'q>(v: &uniq 'q v, x: 20_u32);
+  region {
+    optvec_push(v: &uniq v, x: 20_u32);
   }
-  region 'r {
-    optvec_push::<'r>(v: &uniq 'r v, x: 30_u32);
+  region {
+    optvec_push(v: &uniq v, x: 30_u32);
   }
-  region 's {
-    let top = optvec_pop::<'s>(v: &uniq 's v);
+  region {
+    let top = optvec_pop(v: &uniq v);
     if top == 30_u32 {
     } else {
       return exit_status(code: 1_u8);

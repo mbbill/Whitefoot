@@ -1,6 +1,6 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
-const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes['r](out: &uniq 'r buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
+const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
   define out_length = len(deref(out));
   define source_length = len(source);
   requires source_length <= out_length;
@@ -17,9 +17,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let length = 4_u64;
   let source = buffer_new(length, 7_u8);
   let output = buffer_new(length, 0_u8);
-  region 'copy_region {
-    let destination = &uniq 'copy_region output;
-    let written = copy_bytes::<'copy_region>(out: move destination, source: move source);
+  region {
+    let destination = &uniq output;
+    let written = copy_bytes(out: move destination, source: move source);
     if written != length {
       return exit_status(code: 1_u8);
     }

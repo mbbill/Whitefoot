@@ -506,7 +506,7 @@ command fn main() -> status: own ExitStatus pure {
 /// over the integers, so the midpoint subscript needs no written certificate.
 #[test]
 fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
-    let source = br#"fn probe['t](table: &'t buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+    let source = br#"fn probe(table: &buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
   define room = len(deref(table));
   requires lo < hi;
   requires hi <= room;
@@ -985,7 +985,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_buffer_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    let source = br#"fn increment['v](values: &'v buffer<u8>) -> result: own u8 reads(values) {
+    let source = br#"fn increment(values: &buffer<u8>) -> result: own u8 reads(values) {
   let room = len(deref(values));
   if 0_u64 < room {
     if deref(values)[0_u64] +defined 1_u8 {
@@ -1033,7 +1033,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    let source = br#"fn increment['v](values: own slice<'v, u8>) -> result: own u8 reads(values) {
+    let source = br#"fn increment(values: own slice<u8>) -> result: own u8 reads(values) {
   let room = len(values);
   if 0_u64 < room {
     if values[0_u64] +defined 1_u8 {

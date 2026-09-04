@@ -841,7 +841,7 @@ fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
 #[test]
 fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() {
     let source = format!(
-        r#"fn probe['t](table: &'t buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
+        r#"fn probe(table: &buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {{
   define room = len(deref(table));
   requires lo < hi;
   requires hi <= room;

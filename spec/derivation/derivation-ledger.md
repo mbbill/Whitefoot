@@ -2,11 +2,11 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.41 authority at SHA-256
-`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`.
-v0.41 supersedes v0.40 at
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, whose
-bytes are archived at `spec/kernel-spec-v0.40.md`; the v0.40 and v0.41
+the active v0.42 authority at SHA-256
+`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`.
+v0.42 supersedes v0.41 at
+`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`, whose
+bytes are archived at `spec/kernel-spec-v0.41.md`; the v0.40, v0.41, and v0.42
 amendments at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -16,15 +16,19 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 and v0.41 amendments below and the active specification define the
-changed rows. The table is not independent live source guidance. In
+the v0.40, v0.41, and v0.42 amendments below and the active specification
+define the changed rows. The table is not independent live source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
 `deny_claims`, strict-partition, runtime-latch, and proof-replay vocabulary does
 not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
-**Active v0.41 statistics: 79 derived · 52 existence-only · 0 underived**
+**Active v0.42 statistics: 79 derived · 53 existence-only · 0 underived**
+(132 rules: v0.42 adds existence-only FORM-8, retires no rule, and respells
+region positions only, so every other derivation status carries over from
+v0.41).
+**Superseded v0.41 statistics: 79 derived · 52 existence-only · 0 underived**
 (131 rules: v0.41 respells 21 rules and adds or retires none, so every
 derivation status carries over from v0.40).
 **Superseded v0.40 statistics: 79 derived · 52 existence-only · 0 underived**
@@ -1821,3 +1825,22 @@ keeps its chain, because the operation identities, comparison origins,
 contract-clause roots, invariant relations, and diagnostic attributions are
 unchanged under the new spellings. Statistics unchanged: 80 derived · 48
 existence-only · 0 underived.
+
+## v0.42 amendment — [FORM-8] canonical region spelling (activated 2026-09-03)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.42, at
+SHA-256 `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`,
+superseding v0.41
+(`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`), whose
+bytes are archived at `spec/kernel-spec-v0.41.md`. The candidate bytes hashed
+to `8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37` until
+the status line flipped to `ACTIVE v0.42`; no other byte changed at
+activation. The merge-time record is in `governance/APPROVALS.md`.
+
+This amendment binds the one row v0.42 adds; every other row's status carries
+over from v0.41, because v0.42 changes which regions a writer spells and no
+rule's judgment.
+
+| Rule | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| FORM-8 | A REGIONID is written exactly where the document does not otherwise fix the region denoted: a declaration relates two of its own positions or names an output-position region no parameter determines; a `borrow_expr` names a region other than the innermost enclosing `region_stmt`'s; a `region_stmt` name survives a reference inside it; a call's `::` application names the callee region parameters no parameter position determines | 🟡 existence-only | Existence derived: FORM-1/R3 require exactly one spelling per semantic construct, and a written region at a position the surrounding text already fixes is a second spelling of one semantics — the same defect FORM-1 removes everywhere else. The derived-fact class is TYPE-5's derived `let` binder mode and OWN-13's derived match-binder mode: a fact the checker determines is not written, and a fact it cannot determine is. The optional-name-resolving-to-the-innermost-enclosing-construct form is TYPE-6's unlabeled `break`, already META-2-clean. Form NOT derived: the exact position partition (input positions determine, output positions are written) is minimality-selected against the 2026-09-03 owner ruling that whether a region is written must be decidable from the declaration text alone, and no weak-writer trial has measured it. | Registered: the writer trial that would select this form against the alternatives — writing every region as today, eliding at every position and inferring the result region from the body, or a per-declaration opt-in — has not run. Corpus evidence only: over `tests/programs`, `tests/conformance/cases`, `tests/snapshot/cases`, and `tests/codegen/cases` the rule takes the corpus's written region tokens down by about nine tenths, and no declaration outside a small set of conformance cases relates two positions at all. |

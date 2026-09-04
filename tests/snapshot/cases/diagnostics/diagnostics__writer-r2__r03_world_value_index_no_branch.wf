@@ -1,7 +1,7 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   doc "EXPECT REJECT under Op4: index comes from args_count, a genuinely external world value the compiler cannot bound at compile time, so an invariant could never be written honestly here; the correct repair is a real dominating branch on index < room, not an invariant.";
-  region 'a {
-    let index = args_count::<'a>(args: &'a args);
+  region {
+    let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
     let room = len(bytes);
     let second = bytes[1_u64];

@@ -497,8 +497,8 @@ const RELEASES_ONE_DIRECTORY: &[u8] =
 /// at all, so every row it uses is one both target columns share.
 const READS_ITS_ARGUMENTS: &[u8] =
     br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  region 'a {
-    let total = args_count::<'a>(args: &'a args);
+  region {
+    let total = args_count(args: &args);
     let narrowed = cvt::<u64, u8>(total);
     match narrowed {
       Ok(value: code) => {
@@ -521,8 +521,8 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 3_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt::<u64, u8>(written);
           match narrowed {
@@ -553,9 +553,9 @@ fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
         r#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {{
   let name = buffer_new(1_u64, 65_u8);
   region 'c {{
-    region 'n {{
-      let permit = reserve_file::<'c>(factory: &uniq 'c files);
-      match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
+    region {{
+      let permit = reserve_file(factory: &uniq 'c files);
+      match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {{
         Ok(value: file) => {{
           return exit_status(code: 24_u8);
         }}
@@ -1047,8 +1047,8 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
     let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
         Ok(value: next) => {
         }
         Err(error: problem) => {
@@ -1099,8 +1099,8 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
-    region 's {{
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 2_u64) {{
+    region {{
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 2_u64) {{
         Ok(value: written) => {{
           let narrowed = cvt::<u64, u8>(written);
           match narrowed {{

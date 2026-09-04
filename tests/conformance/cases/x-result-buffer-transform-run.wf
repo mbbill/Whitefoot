@@ -23,7 +23,7 @@ fn abandon(result: own Result<buffer<u8>, DecodeError>) -> function_result: own 
   return unit;
 }
 
-fn success_matches['r](value: &'r buffer<u8>) -> result: own Bool reads(value) {
+fn success_matches(value: &buffer<u8>) -> result: own Bool reads(value) {
   let length = len(deref(value));
   let expected_length = length == 3_u64;
   if expected_length {
@@ -43,8 +43,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let success = transform(input: move success_input);
   match move success {
     Ok(value: transformed) => {
-      region 'verify_success {
-        let matches = success_matches::<'verify_success>(value: &'verify_success transformed);
+      region {
+        let matches = success_matches(value: &transformed);
         if matches {
         } else {
           return exit_status(code: 1_u8);

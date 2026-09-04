@@ -14,7 +14,7 @@ fn hex_digit(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one 64-bit value as sixteen lowercase hexadecimal digits, most significant first.";
   let cursor = at;
   let rest = value;
@@ -128,12 +128,12 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   }
   let wide = cvt<u32, u64>(total);
   let report = buffer_new(17_u64, 10_u8);
-  region 'summary {
-    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: wide);
+  region {
+    let first = spell_hex(destination: &uniq report, at: 0_u64, value: wide);
   }
   region 'o {
-    region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+    region {
+      match write_once(output: &'o out, source: &report, start: 0_u64, end: 17_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

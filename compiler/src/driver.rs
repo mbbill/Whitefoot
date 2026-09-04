@@ -658,20 +658,20 @@ mod tests {
     }
 
     /// The scratch buffer hoisted above the loop, which denies the staged
-    /// verdict at `&uniq 'd data`.
+    /// verdict at `&uniq data`.
     const DENIED_IO_LOOP: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
-              region 'd {
-                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+              region {
+                match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -700,9 +700,9 @@ mod tests {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -748,13 +748,13 @@ mod tests {
         assert!(
             notices[1].starts_with("PAR stage       hoisted.wf:5")
                 && notices[1].contains("condition 3")
-                && notices[1].ends_with("&uniq 'd data"),
+                && notices[1].ends_with("&uniq data"),
             "{notices:?}"
         );
         assert!(
             notices[2].starts_with("PAR place       hoisted.wf:5")
                 && notices[2].contains("denied")
-                && notices[2].contains("&uniq 'd data"),
+                && notices[2].contains("&uniq data"),
             "{notices:?}"
         );
         // A row that is not denied stays inside the full report: the notice
@@ -908,10 +908,10 @@ mod tests {
     /// one third of the idiom `tests/programs/dir_walk.wf` uses.
     #[test]
     fn a_child_reborrow_rejection_states_the_scope_rule_and_the_whole_idiom() {
-        let source = br#"fn walk['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
-  region 'source {
-    let permit = reserve_file::<'source>(factory: &uniq 'source deref(factory));
-    match open_file::<'source, 'c>(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
+        let source = br#"fn walk['c](factory: &uniq FileFactory, root: &'c DirectoryRead, name: &'c buffer<u8>) -> result: own u8 reads(factory, root, name), writes(factory) {
+  region {
+    let permit = reserve_file(factory: &uniq deref(factory));
+    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 1_u64) {
       Ok(value: handle) => {
       }
       Err(error: problem) => {
@@ -924,8 +924,8 @@ mod tests {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(16_u64, 0_u8);
   let code = 0_u8;
-  region 'call {
-    set code = walk::<'call, 'call>(factory: &uniq 'call files, root: &'call cwd, name: &'call name);
+  region {
+    set code = walk(factory: &uniq files, root: &cwd, name: &name);
   }
   return exit_status(code: code);
 }
@@ -1015,7 +1015,7 @@ command fn main() -> status: own ExitStatus pure {
         // [TYPE-6], reached in the resolver.
         let collision = br#"command fn main() -> status: own ExitStatus pure {
   let permit = 1_u64;
-  region 'inner {
+  region {
     let permit = 2_u64;
   }
   return exit_status(code: 0_u8);
@@ -1071,9 +1071,9 @@ command fn main() -> status: own ExitStatus pure {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -1127,14 +1127,14 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
     #[test]
     fn the_permission_ledger_reports_eligible_pairs_and_their_chains() {
         let eligible = format!(
-            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
+            "{TREE_PRELUDE}fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = fold::<'b>(node: move l);
-      let b = fold::<'b>(node: move r);
+      let a = fold(node: move l);
+      let b = fold(node: move r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -1146,8 +1146,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region 'tree {{
-    let total = fold::<'tree>(node: &uniq 'tree branch0);
+  region {{
+    let total = fold(node: &uniq branch0);
   }}
   return exit_status(code: 0_u8);
 }}
@@ -1178,7 +1178,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   return values[bounded];
 }}
 
-fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
+fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       let w = deref(leaf_w);
@@ -1187,8 +1187,8 @@ fn bubble['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), write
       return w;
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = bubble::<'b>(node: move l);
-      let b = bubble::<'b>(node: move r);
+      let a = bubble(node: move l);
+      let b = bubble(node: move r);
       let total = a +wrap b;
       set deref(slot) = total;
       return total;
@@ -1200,8 +1200,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region 'tree {{
-    let total = bubble::<'tree>(node: &uniq 'tree branch0);
+  region {{
+    let total = bubble(node: &uniq branch0);
     if total == 7_u64 {{
     }} else {{
       return exit_status(code: 1_u8);
@@ -1253,8 +1253,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
     fn the_permission_ledger_names_the_condition_that_refused_each_pair() {
         // Condition 2: two `&uniq` actuals resolve to one place, so the line
         // has to name both actuals as the writer wrote them.
-        let overlapping =
-            b"fn bump['r](slot: &uniq 'r u64) -> result: own u64 reads(slot), writes(slot) {
+        let overlapping = b"fn bump(slot: &uniq u64) -> result: own u64 reads(slot), writes(slot) {
   let seen = deref(slot);
   set deref(slot) = 7_u64;
   return seen;
@@ -1262,9 +1261,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 
 command fn main() -> status: own ExitStatus pure {
   let cell = 1_u64;
-  region 'r {
-    let lo = bump::<'r>(slot: &uniq 'r cell);
-    let hi = bump::<'r>(slot: &uniq 'r cell);
+  region {
+    let lo = bump(slot: &uniq cell);
+    let hi = bump(slot: &uniq cell);
     let total = imax(lo, hi);
   }
   return exit_status(code: 0_u8);
@@ -1273,7 +1272,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(
             ledger_of("bump.wf", overlapping),
             vec![
-                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: the exclusive loan of s1 overlaps the exclusive loan of s2 at &uniq 'r cell vs &uniq 'r cell"
+                "PAR denied      bump.wf:10  pair(bump, bump)  condition 2: the exclusive loan of s1 overlaps the exclusive loan of s2 at &uniq cell vs &uniq cell"
                     .to_owned()
             ]
         );
@@ -1311,14 +1310,14 @@ command fn main() -> status: own ExitStatus pure {
   return cvt::<u32, u8>(v);
 }
 
-fn stamp['o](slot: &uniq 'o u8) -> result: own u64 writes(slot) {
+fn stamp(slot: &uniq u8) -> result: own u64 writes(slot) {
   set deref(slot) = 9_u8;
   return 1_u64;
 }
 
-fn probe['o](v: own u32, slot: &uniq 'o u8) -> result: own Result<unit, NarrowError> writes(slot) {
+fn probe(v: own u32, slot: &uniq u8) -> result: own Result<unit, NarrowError> writes(slot) {
   let narrowed = propagate narrow(v: v);
-  let stamped = stamp::<'o>(slot: move slot);
+  let stamped = stamp(slot: move slot);
   return Ok<unit, NarrowError>(value: unit);
 }
 
@@ -1466,7 +1465,7 @@ command fn main() -> status: own ExitStatus pure {
     #[test]
     fn a_counted_loop_whose_callee_writes_carried_state_is_denied_by_condition_two() {
         let source =
-            b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
+            b"fn accum(slot: &uniq f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
   let bits = reinterpret::<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
@@ -1476,8 +1475,8 @@ command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region 'acc {
-      let one = accum::<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
+    region {
+      let one = accum(slot: &uniq total, x: 0.5_f64);
       set count = count +wrap one;
     }
   }
@@ -1489,7 +1488,7 @@ command fn main() -> status: own ExitStatus pure {
             vec![
                 "PAR loop        carrying.wf:10  loop  denied      condition 2: an iteration \
                  holds an exclusive loan on storage the iteration does not introduce, \
-                 at &uniq 'acc total"
+                 at &uniq total"
                     .to_owned()
             ]
         );
@@ -1532,7 +1531,8 @@ command fn main() -> status: own ExitStatus pure {
     /// contributes 10 where a full-range fold contributes 70.
     #[test]
     fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
-        let source = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
+        let source =
+            b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -1555,8 +1555,8 @@ command fn main() -> status: own ExitStatus pure {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
-  region 's {
-    let t = scan_until::<'s>(src: &'s data, needle: 7_u64);
+  region {
+    let t = scan_until(src: &data, needle: 7_u64);
     return exit_status(code: 0_u8);
   }
 }
@@ -1571,7 +1571,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
         // The same loop with the give removed is permitted, so the refusal is
         // about the exit edge and not about the shape.
-        let contained = b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
+        let contained =
+            b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -1590,8 +1591,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
-  region 's {
-    let t = scan_until::<'s>(src: &'s data, needle: 7_u64);
+  region {
+    let t = scan_until(src: &data, needle: 7_u64);
     return exit_status(code: 0_u8);
   }
 }
@@ -1660,9 +1661,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set total = total +wrap 1_u64;
           }
@@ -1688,13 +1689,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                 // one judgment cites the loop and the other its submission.
                 "PAR loop        staged.wf:3  loop  denied      condition 2: an iteration holds \
                  an exclusive loan on storage the iteration does not introduce, at \
-                 &uniq 'f files"
+                 &uniq files"
                     .to_owned(),
                 "PAR stage       staged.wf:3  for   permitted   staged at \
-                 open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, \
+                 open_file(permit: move permit, root: &'f cwd, name: &name, \
                  start: 0_u64, end: 4_u64); 4 places classified"
                     .to_owned(),
-                "PAR place       staged.wf:3  serialized-P  &uniq 'f files  every footprint \
+                "PAR place       staged.wf:3  serialized-P  &uniq files  every footprint \
                  element and loan touching it belongs to the prologue, and prologues run in \
                  index order without overlapping"
                     .to_owned(),
@@ -1734,9 +1735,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             let sum = left[0_u64] +wrap right[0_u64];
             let wide = cvt::<u8, u64>(sum);
@@ -1794,13 +1795,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
-              region 'd {
-                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+              region {
+                match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -1828,13 +1829,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
              retains a borrow past its own submission on storage the body writes and the \
              iteration does not introduce; instead, allocate the scratch storage inside the \
              loop body, so each iteration owns the buffer it reads and writes, at \
-             &uniq 'd data"
+             &uniq data"
         );
         // The table survives the denial, and it names the second place the
         // writer must move as well as the one the verdict cites.
         assert!(
             ledger.iter().any(|line| line.contains(
-                "denied        &uniq 'd data  the body writes it and a may-suspend call retains \
+                "denied        &uniq data  the body writes it and a may-suspend call retains \
                  a borrow of it past its own submission"
             )),
             "the denied place is in the table: {ledger:?}"
@@ -1864,13 +1865,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   for @scan (index in 0_u64..4_u64) {
     let byte = data[0_u64];
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             region 'h {
-              region 'd {
-                match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+              region {
+                match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                   ReadBytes(next: produced) => {
                     set total = total +wrap produced;
                   }
@@ -1898,7 +1899,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
              retains a borrow past its own submission on storage the body writes and the \
              iteration does not introduce; instead, allocate the scratch storage inside the \
              loop body, so each iteration owns the buffer it reads and writes, at \
-             &uniq 'd data"
+             &uniq data"
         );
         assert_eq!(
             ledger[2],
@@ -1919,7 +1920,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
              retains a borrow past its own submission on storage the body writes and the \
              iteration does not introduce; instead, allocate the scratch storage inside the \
              loop body, so each iteration owns the buffer it reads and writes, at \
-             &uniq 'd data, and the body writes it at set data[0_u64] = 7_u8;"
+             &uniq data, and the body writes it at set data[0_u64] = 7_u8;"
         );
     }
 
@@ -1937,9 +1938,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let shared = buffer_new(16_u64, 97_u8);
     for @scan (index in 0_u64..4_u64) {
       region 'f {
-        let permit = reserve_file::<'f>(factory: &uniq 'f files);
-        region 'n {
-          match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n shared, start: 0_u64, end: 4_u64) {
+        let permit = reserve_file(factory: &uniq files);
+        region {
+          match open_file(permit: move permit, root: &'f cwd, name: &shared, start: 0_u64, end: 4_u64) {
             Ok(value: handle) => {
             }
             Err(error: problem) => {
@@ -2023,14 +2024,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     #[test]
     fn the_permission_ledger_does_not_depend_on_whether_the_lowering_is_taken() {
         let source = format!(
-            "{TREE_PRELUDE}fn fold['b](node: &uniq 'b box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
+            "{TREE_PRELUDE}fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {{
   match deref(deref(node)) {{
     Leaf(w: leaf_w) => {{
       return deref(leaf_w);
     }}
     Branch(left: l, right: r, w: slot) => {{
-      let a = fold::<'b>(node: move l);
-      let b = fold::<'b>(node: move r);
+      let a = fold(node: move l);
+      let b = fold(node: move r);
       let total = imax(a, b);
       set deref(slot) = total;
       return total;
@@ -2042,8 +2043,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  region 'tree {{
-    let total = fold::<'tree>(node: &uniq 'tree branch0);
+  region {{
+    let total = fold(node: &uniq branch0);
   }}
   return exit_status(code: 0_u8);
 }}
@@ -2263,7 +2264,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         // interface: every [SYS-2] semantic identity now has an approved
         // implementation on this target, so no unsupported stop remains
         // between an accepted system program and its emitted module.
-        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region 's {\n      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
+        let writing =b"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {\n    region {\n      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {\n        Ok(value: written) => {\n          return exit_status(code: 0_u8);\n        }\n        Err(error: problem) => {\n          return exit_status(code: 1_u8);\n        }\n      }\n    }\n  }\n}\n";
         let llvm = compile(
             &[SourceInput::new("entry.wf", writing)],
             CompilerLimits::default(),
@@ -2295,7 +2296,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
                 "EFF-2",
             ),
             (
-                b"fn probe['f](file: &'f ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn probe(file: &ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 "EFF-1",
             ),
         ] {
@@ -2579,7 +2580,7 @@ command fn main() -> status: own ExitStatus pure {
 
         let contract = rejection(
             "contract.wf",
-            br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
+            br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
   requires end <= len(deref(data));
 } {
   return 0_u64;
@@ -2609,7 +2610,7 @@ command fn main() -> status: own ExitStatus pure {
         compile(
             &[SourceInput::new(
                 "repaired.wf",
-                br#"fn count['b](data: &'b buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
+                br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
   define room = len(deref(data));
   requires end <= room;
 } {
@@ -2662,7 +2663,7 @@ command fn main() -> status: own ExitStatus pure {
     fn an_effect_mismatch_publishes_both_rows_and_the_exact_difference() {
         let detail = rejection(
             "effects.wf",
-            br#"fn count['b](data: &'b buffer<u8>) -> lines: own u64 reads(data) {
+            br#"fn count(data: &buffer<u8>) -> lines: own u64 reads(data) {
   return 0_u64;
 }
 
@@ -2754,13 +2755,14 @@ command fn main() -> status: own ExitStatus pure {
     fn a_borrow_lifetime_rejection_names_the_region_the_binder_and_the_repair() {
         let detail = rejection(
             "lifetime.wf",
-            br#"fn sum['r](data: &'r buffer<u8>) -> out: own u64 reads(data) {
+            br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
   return len(deref(data));
 }
 
-fn caller['r](anchor: &'r buffer<u8>) -> out: own u64 allocates(heap) {
+fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> allocates(heap) {
   let local = buffer_new(4_u64, 0_u8);
-  return sum::<'r>(data: &'r local);
+  let counted = sum(data: &'r local);
+  return anchor;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -2816,11 +2818,11 @@ command fn main() -> status: own ExitStatus pure {
     /// differ in that and in nothing else.
     #[test]
     fn a_one_position_resource_is_offered_the_hoist_that_works() {
-        const EMIT: &str = r#"fn emit['o](out: &uniq 'o Output, value: own u8) -> written: own u64 reads(out), writes(out), allocates(heap) {
+        const EMIT: &str = r#"fn emit(out: &uniq Output, value: own u8) -> written: own u64 reads(out), writes(out), allocates(heap) {
   let one = buffer_new(1_u64, value);
   let sent = 0_u64;
-  region 'w {
-    match write_once::<'w, 'w>(output: &uniq 'w deref(out), source: &'w one, start: 0_u64, end: 1_u64) {
+  region {
+    match write_once(output: &uniq deref(out), source: &one, start: 0_u64, end: 1_u64) {
       Ok(value: n) => {
         set sent = n;
       }
@@ -2835,8 +2837,8 @@ command fn main() -> status: own ExitStatus pure {
             "{EMIT}
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
   for @scan (index in 0_u64..4_u64) {{
-    region 'p {{
-      let wrote = emit::<'p>(out: &uniq 'p out, value: 65_u8);
+    region {{
+      let wrote = emit(out: &uniq out, value: 65_u8);
     }}
   }}
   return exit_status(code: 0_u8);
@@ -2866,9 +2868,9 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   for @scan (index in 0_u64..4_u64) {{
     let name = buffer_new(16_u64, 97_u8);
     region 'f {{
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {{
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {{
+      let permit = reserve_file(factory: &uniq files);
+      region {{
+        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {{
           Ok(value: handle) => {{
             set total = total +wrap 1_u64;
           }}
@@ -2878,8 +2880,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
       }}
     }}
   }}
-  region 'p {{
-    let wrote = emit::<'p>(out: &uniq 'p out, value: 65_u8);
+  region {{
+    let wrote = emit(out: &uniq out, value: 65_u8);
   }}
   return exit_status(code: 0_u8);
 }}
