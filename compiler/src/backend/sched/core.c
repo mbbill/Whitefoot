@@ -30,7 +30,7 @@ wf_sched_stack *wf_sched_current_stack(wf_sched_core *core) {
 
 static wf_sched_stack *wf_sched_pool_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
-    wf_prim_lock();
+    wf_prim_lock(WF_PRIM_SECTION_FREE_POP);
     stack = core->free_head;
     if (stack != NULL) {
         core->free_head = stack->next;
@@ -41,7 +41,7 @@ static wf_sched_stack *wf_sched_pool_pop(wf_sched_core *core) {
 }
 
 static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
-    wf_prim_lock();
+    wf_prim_lock(WF_PRIM_SECTION_FREE_PUSH);
     stack->next = core->free_head;
     core->free_head = stack;
     wf_prim_unlock();
@@ -52,7 +52,7 @@ static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
  * asleep beside a ready stack (§6). */
 static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     int was_empty;
-    wf_prim_lock();
+    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
     stack->next = NULL;
     was_empty = core->ready_head == NULL;
     if (was_empty) {
@@ -69,7 +69,7 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
 
 static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
-    wf_prim_lock();
+    wf_prim_lock(WF_PRIM_SECTION_READY_POP);
     stack = core->ready_head;
     if (stack != NULL) {
         core->ready_head = stack->next;
@@ -229,15 +229,39 @@ static void wf_sched_execute(wf_sched_core *core, wf_sched_slot *slot) {
 void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
     wf_sched_stack *waiter;
     unsigned phase;
-    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_SEQ_CST);
+    /* COMPLETING first, DONE last: a joiner returns only on DONE, and an I/O
+     * record is a block of the joiner's frame, so the record must not be
+     * touched after DONE is stored (the enumerator reached a publisher
+     * reading the waiter of a frame that had already died, §11). */
+    wf_prim_store_u(&record->state, WF_SCHED_COMPLETING, WF_PRIM_SEQ_CST);
     waiter = wf_prim_load_p((void *const *)&record->waiter, WF_PRIM_SEQ_CST);
+    /* The registration is claimed before the waiter's phase is touched: a
+     * publisher that merely loaded the pointer could act on it late, after
+     * the parker had cancelled, run on, and parked again on another record,
+     * and would then notify a stack for an event that has not happened. The
+     * parker's cancel takes the registration back with the same
+     * compare-exchange, so exactly one of the two owns this park's wake
+     * (the enumerator reached the late publisher on S3, §11). */
+    if (waiter != NULL
+        && !wf_prim_cas_p((void **)&record->waiter, (void **)&waiter, NULL, WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST)) {
+        waiter = NULL;
+    }
+    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_SEQ_CST);
     if (waiter == NULL) {
+        return;
+    }
+    if (waiter == WF_SCHED_WAITER_IN_PLACE) {
+        /* A thread waiting in place has no stack to resume, only a park to
+         * end: the DONE store bumps nothing by itself (the enumerator
+         * reached the in-place waiter sleeping past another thread's
+         * drain, §11). */
+        wf_prim_wake();
         return;
     }
     /* Exactly one of the two transitions into READY runs for one park: the
      * SUSPENDING arm hands the enqueue to the commit, the SUSPENDED arm makes
-     * it here (§6). A RUNNING waiter cancelled after this call loaded it and
-     * has already read DONE, so there is nothing left to wake. */
+     * it here (§6). The owner of the wake finds the stack in no other phase:
+     * a cancel needs the registration this call has just taken. */
     phase = wf_prim_load_u(&waiter->phase, WF_PRIM_ACQUIRE);
     for (;;) {
         if (phase == WF_SCHED_STACK_SUSPENDING) {
@@ -258,9 +282,6 @@ void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
                 return;
             }
             continue;
-        }
-        if (phase == WF_SCHED_STACK_RUNNING) {
-            return;
         }
         wf_prim_fail("a publisher found its waiter in a phase no park reaches");
     }
@@ -316,35 +337,42 @@ static int wf_sched_park(
     }
     /* 2. register the wake */
     wf_prim_store_p((void **)&record->waiter, stack, WF_PRIM_SEQ_CST);
-    /* 3. re-read the record's state */
-    if (wf_prim_load_u(&record->state, WF_PRIM_SEQ_CST) == WF_SCHED_DONE) {
-        /* 4. already satisfied: cancel here, never switch. The publisher may
-         * have loaded the waiter and moved the phase to NOTIFIED; that
-         * notification is consumed, because it was never enqueued and this
-         * stack has read the condition it announces (§6). */
-        expected = WF_SCHED_STACK_SUSPENDING;
-        if (!wf_prim_cas_u(
-                &stack->phase, &expected, WF_SCHED_STACK_RUNNING,
-                WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+    /* 3. re-read the record's state. COMPLETING means the publisher is
+     * between its claim and its DONE store, a few instructions away. */
+    for (;;) {
+        unsigned state = wf_prim_load_u(&record->state, WF_PRIM_SEQ_CST);
+        if (state != WF_SCHED_COMPLETING) {
+            expected = state;
+            break;
+        }
+        wf_prim_yield();
+    }
+    if (expected == WF_SCHED_DONE) {
+        /* 4. already satisfied: take the registration back, and if that
+         * succeeds nobody will touch this stack's phase, so cancel here and
+         * never switch. If the publisher claimed it first, it owns this
+         * park's wake and will make the stack READY, so the park goes on to
+         * step 5 and is resumed the ordinary way (§6). */
+        void *registered = stack;
+        if (wf_prim_cas_p(
+                (void **)&record->waiter, &registered, NULL,
+                WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST
             )) {
-            if (expected != WF_SCHED_STACK_NOTIFIED) {
-                wf_prim_fail("a cancel found its stack neither SUSPENDING nor NOTIFIED");
-            }
+            expected = WF_SCHED_STACK_SUSPENDING;
             if (!wf_prim_cas_u(
                     &stack->phase, &expected, WF_SCHED_STACK_RUNNING,
                     WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
                 )) {
-                wf_prim_fail("a NOTIFIED stack changed phase under its cancel");
+                wf_prim_fail("a cancel that owned its registration found its stack not SUSPENDING");
             }
+            thread->counts.cancels += 1u;
+            if (target_was_ready) {
+                wf_sched_ready_push(core, target);
+            } else {
+                wf_sched_pool_push(core, target);
+            }
+            return 0;
         }
-        wf_prim_store_p((void **)&record->waiter, NULL, WF_PRIM_RELAXED);
-        thread->counts.cancels += 1u;
-        if (target_was_ready) {
-            wf_sched_ready_push(core, target);
-        } else {
-            wf_sched_pool_push(core, target);
-        }
-        return 0;
     }
     /* 5. switch, then commit on the target stack */
     thread->counts.parks += 1u;
@@ -386,50 +414,37 @@ static int wf_sched_idle_step(
     int was_ready;
     *left_for_status = 0;
     /* The bit goes up before the epoch is captured and before the last look,
-     * so a publisher that misses the bit is one whose push the look finds. */
-    {
-        unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
-        for (;;) {
-            if (wf_prim_cas_q(&core->idle, &idle, idle | bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
-                break;
-            }
-        }
+     * so a publisher that misses the bit is one whose push the look finds.
+     * The in-place waiter registers the same way, so a drain on another
+     * thread wakes it instead of storing DONE past its sleep. */
+    (void)wf_prim_or_q(&core->idle, bit, WF_PRIM_SEQ_CST);
+    if (on_record != NULL) {
+        wf_prim_store_p((void **)&on_record->waiter, WF_SCHED_WAITER_IN_PLACE, WF_PRIM_SEQ_CST);
     }
     epoch = wf_prim_epoch();
     if (wf_prim_progress(core)) {
         goto restart;
     }
-    if (on_record != NULL
-        && wf_prim_load_u(&on_record->state, WF_PRIM_ACQUIRE) == WF_SCHED_DONE) {
-        goto restart;
+    if (on_record != NULL) {
+        unsigned state = wf_prim_load_u(&on_record->state, WF_PRIM_ACQUIRE);
+        if (state == WF_SCHED_DONE || state == WF_SCHED_COMPLETING) {
+            goto restart;
+        }
     }
     ready = wf_sched_ready_pop(core);
     if (ready != NULL) {
         if (on_record != NULL) {
             /* The third line taken late: this stack parks with its own I/O as
              * the wake and switches to the stack that appeared (§2). */
-            {
-                unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
-                for (;;) {
-                    if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
-                        break;
-                    }
-                }
-            }
+            (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
             was_ready = 1;
+            thread->counts.late_parks += 1u;
             (void)wf_sched_park(core, on_record, ready, was_ready);
             return 1;
         }
         thread->pending_empty = thread->stack;
         wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
-        {
-            unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
-            for (;;) {
-                if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
-                    break;
-                }
-            }
-        }
+        (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
         wf_sched_switch_to(core, ready);
         return 1;
     }
@@ -445,27 +460,20 @@ static int wf_sched_idle_step(
             slot = wf_sched_find(core, thread);
         }
         if (slot != NULL) {
-            {
-                unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
-                for (;;) {
-                    if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
-                        break;
-                    }
-                }
-            }
+            (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
             wf_sched_execute(core, slot);
             return 1;
         }
     }
     wf_prim_park(epoch);
 restart:
-    {
-        unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
-        for (;;) {
-            if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
-                break;
-            }
-        }
+    (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
+    if (on_record != NULL) {
+        /* The in-place registration ends with the arm's turn; a publisher
+         * that claimed it already found the marker and woke. The late
+         * third line above overwrote it with the stack's own registration. */
+        void *marker = WF_SCHED_WAITER_IN_PLACE;
+        (void)wf_prim_cas_p((void **)&on_record->waiter, &marker, NULL, WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST);
     }
     return 1;
 }
@@ -476,9 +484,17 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
         wf_sched_stack *target;
         int was_ready;
         int left;
-        /* line one */
-        if (wf_prim_load_u(&record->state, WF_PRIM_ACQUIRE) == WF_SCHED_DONE) {
-            return;
+        /* line one; COMPLETING is DONE a few instructions from now */
+        for (;;) {
+            unsigned state = wf_prim_load_u(&record->state, WF_PRIM_ACQUIRE);
+            if (state == WF_SCHED_DONE) {
+                thread->counts.line_one += 1u;
+                return;
+            }
+            if (state != WF_SCHED_COMPLETING) {
+                break;
+            }
+            wf_prim_yield();
         }
         /* line two, with the home test (§4): only this thread's own deque */
         if (!is_io) {
@@ -517,7 +533,12 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
             }
             if (slot != NULL) {
                 wf_sched_execute(core, slot);
-            } else {
+            } else if (!wf_prim_progress(core)) {
+                /* The empty-handed turn drains before it pauses: the target
+                 * may be held by a stack parked on I/O whose completion only
+                 * a drain publishes, and with every other thread parked or
+                 * spinning nobody else drains it (the enumerator reached the
+                 * spin on S1 at one thread and three stacks, §11). */
                 wf_prim_yield();
             }
         }
@@ -571,7 +592,13 @@ static void wf_sched_scheduler_loop(void *argument) {
             thread->pending_empty = thread->stack;
             wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
             wf_prim_switch(&thread->stack->saved_sp, thread->host_sp);
-            wf_prim_fail("a host stack was switched to twice");
+            /* A thread that later takes this stack from the pool arrives
+             * here: an EMPTY stack's loop continues where it switched away,
+             * on whichever thread took it, with the obligations that thread
+             * left it. The enumerator reached this with a worker whose start
+             * followed the status post (§11 item 21). */
+            wf_sched_after_switch(core);
+            continue;
         }
     }
 }
@@ -638,6 +665,24 @@ int wf_sched_init(
     return 0;
 }
 
+int wf_sched_start_thread(wf_sched_core *core, unsigned index) {
+    wf_sched_thread *thread;
+    wf_sched_stack *stack;
+    if (index == 0u || index >= core->thread_count) {
+        return 1;
+    }
+    thread = &core->threads[index];
+    if (thread->stack != NULL) {
+        wf_prim_fail("a thread was started twice");
+    }
+    stack = wf_sched_pool_pop(core);
+    if (stack == NULL) {
+        return 1;
+    }
+    thread->stack = stack;
+    return 0;
+}
+
 int wf_sched_run(wf_sched_core *core, unsigned index, void (*entry)(void *), void *argument) {
     wf_sched_thread *thread;
     wf_sched_stack *stack;
@@ -648,13 +693,24 @@ int wf_sched_run(wf_sched_core *core, unsigned index, void (*entry)(void *), voi
     thread = &core->threads[index];
     thread->entry = entry;
     thread->entry_argument = argument;
-    /* A thread's first act is to take a pool stack; §5's floor is what makes
-     * this pop succeed, and item 21 is what checks it. */
-    stack = wf_sched_pool_pop(core);
-    if (stack == NULL) {
-        wf_prim_fail("a thread started with no stack to take");
+    if (index == 0u) {
+        /* The entry thread takes its own stack at the core's entry, before
+         * anything else can park (§5). */
+        stack = wf_sched_pool_pop(core);
+        if (stack == NULL) {
+            wf_prim_fail("the entry thread found no stack to take");
+        }
+        thread->stack = stack;
+    } else {
+        /* A worker's stack was taken for it by `wf_sched_start_thread` on
+         * the thread that created it: its own start may come arbitrarily
+         * late, after the entry thread has parked every free stack (the
+         * enumerator reached that on S1 at two threads, §11 item 21). */
+        stack = thread->stack;
+        if (stack == NULL) {
+            wf_prim_fail("a worker started without a stack reserved by its creator");
+        }
     }
-    thread->stack = stack;
     wf_prim_store_u(&stack->phase, WF_SCHED_STACK_RUNNING, WF_PRIM_RELAXED);
     wf_prim_set_bounds(stack->low, stack->high);
     wf_prim_switch(&thread->host_sp, stack->saved_sp);
@@ -748,5 +804,7 @@ void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out
         out->inline_runs += counts->inline_runs;
         out->exhausted_io_waits += counts->exhausted_io_waits;
         out->exhausted_compute_waits += counts->exhausted_compute_waits;
+        out->late_parks += counts->late_parks;
+        out->line_one += counts->line_one;
     }
 }

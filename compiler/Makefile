@@ -225,7 +225,8 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test sched-smoke
+completion-test: completion-core-read-test completion-default-route-test sched-smoke \
+	sched-enumerate
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
@@ -302,6 +303,32 @@ sched-smoke:
 	$(CC) $(COMPLETION_BASE_CFLAGS) $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c \
 		$(SCHED_DIR)/smoke.c -o "$(COMPLETION_TMP)/sched-smoke"
 	"$(COMPLETION_TMP)/sched-smoke"
+
+# The §11 gate: every interleaving of the core's primitive steps at the four
+# configurations §11 derives from §5's floor, (T=1,S=2), (T=1,S=3), (T=2,S=3)
+# and (T=2,S=4), with every invariant checked after every step rather than
+# once at the end. Two lane slots because I4's second half wants a power of two.
+sched-enumerate:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_ENUMERATE -DWF_SCHED_LANE_SLOTS=2u \
+		-DWF_SCHED_MAX_THREADS=4u -DWF_SCHED_MAX_STACKS=8u \
+		$(SCHED_DIR)/core.c $(SCHED_DIR)/enumerate.c $(SCHED_DIR)/schedules.c \
+		-o "$(COMPLETION_TMP)/sched-enumerate"
+	@# The four sweeps are independent and the two-thread ones are long, so
+	@# they run together and the target fails if any of them does.
+	@status=0; pids=""; \
+	for configuration in "1 2" "1 3" "2 3" "2 4"; do \
+		set -- $$configuration; \
+		"$(COMPLETION_TMP)/sched-enumerate" --threads $$1 --stacks $$2 \
+			> "$(COMPLETION_TMP)/sched-enumerate-t$$1s$$2.log" 2>&1 & \
+		pids="$$pids $$!"; \
+	done; \
+	for pid in $$pids; do wait "$$pid" || status=1; done; \
+	for configuration in "1 2" "1 3" "2 3" "2 4"; do \
+		set -- $$configuration; \
+		grep -v '^enumerate: \.\.\.' "$(COMPLETION_TMP)/sched-enumerate-t$$1s$$2.log"; \
+	done; \
+	exit $$status
 
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -512,4 +539,4 @@ completion-windows-cross:
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
-	completion-windows-cross
+	sched-enumerate completion-windows-cross

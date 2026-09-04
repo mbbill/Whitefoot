@@ -158,51 +158,144 @@ before the code lands.
    (T=2,S=4), checking every §11 item at every step. This slice is the merge
    gate; nothing in slices 2–3 lands while it fails.
 
-   **Status 2026-09-04 (handoff point).** The core exists and runs on real
-   threads; the enumerator does not exist yet.
-   - `compiler/src/backend/sched/core.h`, `core.c`: the record (state +
-     waiter), the stack header at the top of each pool stack, the four stack
-     phases plus the handshake's three, the ready list and free list under
-     the one mutex, the five-step park with the NOTIFIED-consuming cancel,
-     the publisher (`wf_sched_complete`), the rule (`wf_sched_join`, four
-     lines, I/O and compute arms of the fourth), the scheduler loop (four
-     priorities, step 4's capture-progress-retest-park window with the
-     entry's status test inside it), the Chase-Lev deque with atomic free
-     lists at both ends, `wf_sched_run` (a thread's first act is a switch to
-     a pool stack; the entry returns on its host stack after the status
-     post), per-thread counters. EMPTY stacks are pushed and parks committed
-     on the far side of every switch, from the stack switched to.
-   - `prim.h`: the seven primitives as one interface, host implementation of
-     the atomics inline; `prim_host.c`: the arm64/x86-64 switch, epoch park
-     on a mutex and condition variable, `mmap` reservation with guard pages,
-     the one mutex, `sched_yield`, and progress as a weak hook the bridge
-     will define in slice 3. The floor's bounds setter is a weak no-op until
-     `wf_floor.c` exports it.
-   - `smoke.c`, wired as `make -C compiler sched-smoke` under
-     `completion-test`: four threads, a device thread completing records,
-     two records outstanding in one frame, groups of four hand-outs whose
-     callees park on I/O, main's stack resumed on workers, status returned on
-     the entry thread. 300 consecutive runs and an ASan run pass. Not the
-     gate.
-   - **Not started: `enumerate.c` and the cargo wrapper.** The shape worked
-     out and not yet written: one OS thread; the controller on its own stack;
-     T simulated threads as coroutines on host stacks, each calling
-     `wf_sched_run`; every primitive announces its pending operation and
-     switches to the controller, which chooses the next enabled actor, then
-     performs the operation on resumption; the lock blocks a thread while
-     another holds it, the park blocks until the epoch moves; a device actor
-     whose steps complete the oldest submitted record and bump the epoch
-     (item 17's nondeterminism), while progress publishes every
-     kernel-completed record deterministically; DFS over a choice trace with
-     re-execution (the core is re-initialised per execution; the scenario
-     supplies `reset`); a step bound with the bounded count reported; the
-     invariants of §11 checked by the controller after every step (no state
-     with every thread asleep and a non-empty ready list; none with all
-     asleep and the status posted; no stack on two lists or held by two
-     threads; enqueue at most once per park) plus the scenario's own end
-     check. Plain DFS first; DPOR over conflicting primitive steps only if
-     the counts on (T=2,S=4) demand it. Scenarios are the §10 schedules
-     written against the core's ABI the way `smoke.c` is.
+   **Status 2026-09-04, evening: the core, the enumerator and the gate exist;
+   the enumeration passes at the four configurations.** Files, all under
+   `compiler/src/backend/sched/`: `core.h`, `core.c` (the core), `prim.h`
+   (the seven primitives, two implementations), `prim_host.c` (the host's),
+   `switch.h` (the one stack switch, shared by the host primitives and the
+   enumerator), `smoke.c` (real threads, `make -C compiler sched-smoke`),
+   `enumerate.h` (what a schedule is written against), `enumerate.c` (the
+   controlled scheduler, the checks, the searches), `schedules.c` (§10's
+   schedules as scenarios). The cargo wrapper is
+   `compiler/src/backend/tests/sched.rs`, one test per configuration, and
+   `make -C compiler sched-enumerate` runs the same four sweeps under
+   `completion-test`.
+
+   The enumerator is the shape the previous status described: one OS
+   thread; T simulated threads as coroutines on host stacks, each calling
+   `wf_sched_run`; every primitive announces its step and switches to the
+   controller, which chooses the next enabled process and lets it perform
+   the step on resumption; the lock blocks while held, the park until a
+   wake, a yield until another process has written shared state since the
+   yielder last returned from one (the only spin that can observe anything
+   new); a device process per submitted record whose one step completes it
+   and bumps the epoch, while target progress drains every completed record
+   deterministically, one announced step per record; the §11 invariants
+   after every step (the state machine's edges and who may take each, no
+   stack on two lists or executed by two threads, nothing committed or made
+   READY on a stack still being executed, exactly one enqueue per park, I2
+   at every deque write, I3 at every free-list pop, I4 at every step, no
+   idle sleeper beside a READY stack, the posted status or a hand-out), and
+   a terminal check for what liveness would hide (an entry that never
+   returned, a completion never drained, a stack parked with nothing left to
+   wake it, a spinner with nothing left to change what it spins on).
+
+   Three searches were built; two remain and the second is the gate. Plain
+   DFS with re-execution is the reference and is feasible at one thread
+   only. Dynamic partial-order reduction with sleep sets over the objects
+   each step touches needed 10^5 to 10^6 re-executions per schedule at two
+   threads, did not finish the heavier schedules, and was removed once the
+   third search existed. The explicit-state search checkpoints every state
+   (the live bytes of every stack, the core, the device, the checker's
+   bookkeeping, the schedule's state), digests it, never explores a state
+   twice, takes a step that touches no shared object (an unlock, a switch,
+   a yield's return, an owner's load of its own deque's bottom) alone, and
+   explores a device completion only where a thread's next step can observe
+   it (a progress pass, an epoch capture, a park, a blocked spin) or where
+   no thread can move. What made it fit was canonical state: the wake epoch
+   and the yield bookkeeping became per-thread flags, a wake reaches only a
+   thread inside its capture window, and the digest leaves out what the
+   protocol makes dead (the per-thread counters, a lane's steal seed, a
+   running stack's saved pointer, a deque's cells past the one being
+   claimed, a freed slot's record and frame, bookkeeping the checker has
+   consumed); each of those had made equal states hash apart, by an order
+   of magnitude in all. The core's counters are credited per explored step,
+   as the difference each step made, because a terminal reached twice is
+   pruned before it is counted. At one thread, where the full walk is
+   feasible, the search reaches exactly the arms the full walk reaches on
+   every schedule, and the cargo wrapper asserts that. The idle bitmap's
+   read-modify-writes and the section-named lock (finding 7) were made for
+   the reduction and stay: the first is the simpler core, the second costs
+   the host nothing.
+
+   **What the enumeration found in the core, each fixed in place and
+   marked with the schedule that reached it:**
+
+   1. *The entry thread's last pool stack was unresumable* (S20, T=2, S=3).
+      After the status post the entry thread switches to its host stack
+      and pushes the pool stack it left; a worker whose start came later
+      popped that stack and switched into the `wf_prim_fail` after the exit
+      switch. The far side of that switch now continues the loop like every
+      other EMPTY switch, with the arriving thread's obligations.
+   2. *A late publisher acted on a cancelled park* (S3, T=2, S=3). The
+      publisher loaded the waiter, the parker read DONE and cancelled, ran on
+      and finished, and the publisher then read a phase no park reaches; in
+      other orders it would have notified the stack for a later park's
+      event. A publisher now claims the registration with a
+      compare-exchange before touching the waiter's phase, and a parker that
+      finds DONE cancels only when it takes its registration back; when the
+      publisher claimed first the parker switches away and is resumed
+      through the ordinary arms. §6's cancel arm that consumes NOTIFIED
+      (§11 item 7) is therefore unreachable, and the enumerator fails an
+      execution that takes it; §6's sentence that a RUNNING waiter has
+      nothing left to wake is obsolete.
+   3. *The publisher touched a dead record* (S1, T=2, S=3, a crash). DONE
+      was stored before the waiter was read, DONE lets the joiner return,
+      and an I/O record is a block of the joiner's frame. The record now
+      goes PENDING, COMPLETING (the publisher claims), DONE (the publisher's
+      last touch); a joiner that meets COMPLETING waits for DONE; the same
+      hole would have let a compute slot be released and re-acquired under
+      a late publisher.
+   4. *The in-place waiter slept past another thread's drain.* The I/O arm
+      registers no stack, so a drain elsewhere stored DONE and woke nothing.
+      The arm registers `WF_SCHED_WAITER_IN_PLACE`, and a publisher that
+      claims the marker bumps the epoch.
+   5. *The compute arm never drained* (S1, T=1, S=3). Its empty-handed turn
+      only yielded; with the target held by a stack parked on I/O and no
+      other thread to drain, it spun forever. The turn now runs target
+      progress and yields only when there was nothing to drain.
+   6. *A worker start found no stack* (S1, T=2, S=3). §5's floor argument
+      assumed a worker takes its stack at its start; a start is scheduled
+      by the host and can come after the entry thread has parked every free
+      stack. `wf_sched_start_thread` takes the worker's stack on the thread
+      that creates it, at creation, where at most one stack is parked;
+      `wf_sched_run` for a worker finds it reserved. §11 item 21 is checked
+      at that pop.
+   7. *Primitive 1 gained the two read-modify-writes the idle bitmap uses,
+      and primitive 5's lock names its section* (`prim.h`). The first turns
+      five compare-exchange loops into one step each so two threads' bits
+      commute; the second lets a critical section be classified as a read
+      of its list when it pops an empty one. Both exist for the reduction;
+      the host ignores the section.
+
+   Observations that are not defects: with one thread an I/O completion
+   that arrived before the join still costs a park, because only a drain
+   stores DONE and only the idle step drains (S20's line one needs a second
+   thread); the late third line is unreachable with one thread for the same
+   reason. The state counts at two threads are the honest size of the
+   interleaving space at primitive granularity, so the schedules were sized
+   to it: S1's chain is three iterations and runs at one thread, where its
+   depth assertion (the pool used to S minus T) and S9's slot exhaustion
+   are reached at a few thousand states; S23 carries group C item 11's two
+   arms with one body (J1 compute, J2 a read, a read of main's own) at the
+   floor configurations, where those arms live; S5 asserts the depth at two
+   threads (the sibling's stack and main's park together); S22 keeps its
+   grandchild's read, because without it the crossed exhaustion at (2,4) is
+   unreachable, which its coverage check said. S8 (the floor's overflow
+   record), S10b (Windows) and S11 (retired) are not enumerable and are
+   absent from `schedules.c`.
+
+   The sweeps on this host (Linux, four cores, clang 18, `-O2`): (T=1, S=2)
+   fifteen schedules in 0.04 s; (T=1, S=3) fifteen in 0.05 s; (T=2, S=3)
+   eighteen in 9.8 s, the largest S22 at 2.6 million states; (T=2, S=4)
+   seventeen in 35 s, S22 at 12.3 million states and about half a gigabyte
+   for the table of states seen. The Makefile target runs the four together.
+
+   Not in this slice: item 24's recorder of a run's data and completion
+   order (the enumerator replays a printed sequence of picks, which is the
+   same mechanism) and a sanitizer build of the enumerator (its coroutine
+   stacks defeat the address sanitizer's stack model; the smoke runs clean
+   under ASan and UBSan on Linux).
 2. **Emitter** (design §8): the completion record as one opaque block of the
    submitting frame with its size and alignment as an ABI constant asserted on
    both sides; one lowering for every I/O operation, submit then join; the

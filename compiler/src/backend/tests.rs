@@ -29,6 +29,7 @@ mod reborrows;
 mod reinterpret;
 mod requires;
 mod resource_enums;
+mod sched;
 mod slices;
 mod stack_ledger;
 mod stackless;

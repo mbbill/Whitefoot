@@ -157,6 +157,10 @@ int main(void) {
     }
     for (index = 0; index < WORKERS; index += 1u) {
         pthread_attr_t attributes;
+        if (wf_sched_start_thread(&core, index + 1u) != 0) {
+            (void)fprintf(stderr, "no stack for worker %u\n", index + 1u);
+            return 1;
+        }
         pthread_attr_init(&attributes);
         pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
         if (pthread_create(&workers[index], &attributes, worker_main, (void *)(uintptr_t)(index + 1u)) != 0) {

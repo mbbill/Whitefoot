@@ -46,6 +46,18 @@ enum wf_prim_order {
  * aborts, the enumerator records the failure and stops the execution. */
 void wf_prim_fail(const char *reason);
 
+/* What a critical section of the one mutex is for (item 5). The host ignores
+ * it; the enumerator classifies the section by it: a push always writes its
+ * list, a pop writes only when the list is non-empty, and two sections that
+ * only read commute, which is what keeps two idle threads' polling from
+ * multiplying the interleavings to walk. */
+enum wf_prim_section {
+    WF_PRIM_SECTION_FREE_POP = 0,
+    WF_PRIM_SECTION_FREE_PUSH = 1,
+    WF_PRIM_SECTION_READY_POP = 2,
+    WF_PRIM_SECTION_READY_PUSH = 3
+};
+
 /* The calling thread's index in the core, 0 for the entry thread. Set once
  * by `wf_sched_run` before the thread's first switch. */
 unsigned wf_prim_thread_index(void);
@@ -82,6 +94,10 @@ int wf_prim_cas_q(
     enum wf_prim_order success,
     enum wf_prim_order failure
 );
+/* The two read-modify-writes of item 1, for the idle bitmap: one thread's bit
+ * goes up or down in one step, so two threads' bits commute. */
+unsigned long long wf_prim_or_q(unsigned long long *word, unsigned long long bits, enum wf_prim_order order);
+unsigned long long wf_prim_and_q(unsigned long long *word, unsigned long long bits, enum wf_prim_order order);
 
 #else
 
@@ -177,6 +193,16 @@ WF_PRIM_DEFINE_LOAD(wf_prim_load_q, unsigned long long)
 WF_PRIM_DEFINE_STORE(wf_prim_store_q, unsigned long long)
 WF_PRIM_DEFINE_CAS(wf_prim_cas_q, unsigned long long)
 
+static inline unsigned long long wf_prim_or_q(unsigned long long *word, unsigned long long bits, enum wf_prim_order order) {
+    (void)order;
+    return __atomic_fetch_or(word, bits, __ATOMIC_SEQ_CST);
+}
+
+static inline unsigned long long wf_prim_and_q(unsigned long long *word, unsigned long long bits, enum wf_prim_order order) {
+    (void)order;
+    return __atomic_fetch_and(word, bits, __ATOMIC_SEQ_CST);
+}
+
 static inline void *wf_prim_load_p(void *const *word, enum wf_prim_order order) {
     return (void *)__atomic_load_n(
         (const uintptr_t *)word, wf_prim_host_order(order) == __ATOMIC_RELAXED
@@ -240,8 +266,8 @@ void wf_prim_wake(void);
 unsigned char *wf_prim_reserve(unsigned count, size_t bytes);
 size_t wf_prim_stack_stride(size_t bytes);
 
-/* 5. The core's one mutex. */
-void wf_prim_lock(void);
+/* 5. The core's one mutex. The lock names the section it opens. */
+void wf_prim_lock(enum wf_prim_section section);
 void wf_prim_unlock(void);
 
 /* 6. The yield. */

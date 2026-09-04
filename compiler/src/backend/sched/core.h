@@ -31,13 +31,20 @@ extern "C" {
 
 /* ------------------------------------------------------------ the record */
 
-/* A record's state: PENDING from publication until its one publisher stores
- * DONE, and never back. A compute slot returns to its lane's free list and is
- * re-initialised at its next acquisition. */
+/* A record's state: PENDING from publication; COMPLETING while its one
+ * publisher claims the waiter; DONE after that, the publisher's last touch of
+ * the record, which is what lets the joiner's frame die or the slot be
+ * released the moment DONE is read. Never back. A compute slot returns to its
+ * lane's free list and is re-initialised at its next acquisition. */
 #define WF_SCHED_PENDING 1u
 #define WF_SCHED_DONE 2u
+#define WF_SCHED_COMPLETING 3u
 
 struct wf_sched_stack;
+
+/* The waiter a thread registers when it waits in place, inside the I/O arm
+ * of the fourth line: no stack to resume, but a sleeper to wake (§2, §6). */
+#define WF_SCHED_WAITER_IN_PLACE ((struct wf_sched_stack *)(uintptr_t)1)
 
 /* The record every join runs the rule over. `state` and `waiter` are the two
  * words the park handshake reads and writes (§6, steps 2 and 3); what follows
@@ -51,7 +58,11 @@ typedef struct wf_sched_record {
 /* A compute hand-out: the record, then the outlined call and its frame. The
  * emitted module names the frame; `wf_sched_slot_of` recovers the slot. */
 #define WF_SCHED_FRAME_BYTES 256u
+/* The enumerator builds with the smaller constant (design §11: two slots, a
+ * power of two and never three); the runtime with this one. */
+#if !defined(WF_SCHED_LANE_SLOTS)
 #define WF_SCHED_LANE_SLOTS 64u
+#endif
 #define WF_SCHED_NO_SLOT (~0u)
 
 struct wf_sched_lane;
@@ -113,8 +124,12 @@ typedef struct wf_sched_lane {
 
 /* -------------------------------------------------------------- the core */
 
+#if !defined(WF_SCHED_MAX_THREADS)
 #define WF_SCHED_MAX_THREADS 64u
+#endif
+#if !defined(WF_SCHED_MAX_STACKS)
 #define WF_SCHED_MAX_STACKS 1024u
+#endif
 
 /* The counters one thread keeps. */
 typedef struct wf_sched_statistics {
@@ -125,6 +140,10 @@ typedef struct wf_sched_statistics {
     unsigned long long inline_runs;
     unsigned long long exhausted_io_waits;
     unsigned long long exhausted_compute_waits;
+    /* The I/O arm's late third line: a READY stack found inside the arm. */
+    unsigned long long late_parks;
+    /* Joins that found their record DONE at line one. */
+    unsigned long long line_one;
 } wf_sched_statistics;
 
 /* What one thread knows: its lane, the stack it is on, the host stack it
@@ -186,11 +205,18 @@ int wf_sched_init(
     size_t stack_bytes
 );
 
-/* The first act of every thread: take a pool stack and switch to it, entering
- * the scheduler loop there. `entry`, if given, runs first on that stack; the
- * entry thread's is the program's main body, a worker's is nothing. Returns
- * on the host stack it was called on when the exit status is posted and this
- * is thread 0; a worker never returns. */
+/* Takes a pool stack for worker `thread` on the thread that is about to
+ * create it, so that the worker's own start, which may come arbitrarily late,
+ * finds its stack reserved. Returns 0, or 1 when no stack is free, in which
+ * case the creator does not create the thread. */
+int wf_sched_start_thread(wf_sched_core *core, unsigned thread);
+
+/* The first act of every thread: switch to its pool stack, the entry's taken
+ * here and a worker's by `wf_sched_start_thread`, entering the scheduler loop
+ * there. `entry`, if given, runs first on that stack; the entry thread's is
+ * the program's main body, a worker's is nothing. Returns on the host stack
+ * it was called on when the exit status is posted and this is thread 0; a
+ * worker never returns. */
 int wf_sched_run(wf_sched_core *core, unsigned thread, void (*entry)(void *), void *argument);
 
 /* Posts the program's exit status: makes every sleeper re-check, and lets the
