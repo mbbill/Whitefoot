@@ -1018,7 +1018,12 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   ordinary owned places or borrows. File opens consume proof-only one-shot
   `FilePermit` values produced by total `reserve_file(&uniq FileFactory)`;
   `DirectoryRead` is a shared selector, host exhaustion remains a typed open
-  result, and the permit is erased before the native ABI. Completion remains the sole language-level
+  result, and the permit is erased before the native ABI. That proof-only
+  permit is the stated gap under constitution T4 (2026-09-04): `close`
+  produces nothing the checker sees, so a pipeline overlaps it with a later
+  `open`, the host answers `EMFILE` for a schedule the sequential program never
+  produces, and the runtime hides it with the descriptor retirement ledger
+  (`compiler/src/backend/completion/contract.h:409-417`). Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
   io_uring work, Windows IOCP runtime, selective stackless slice, and component
   measurements were retained while the rejected group machinery was removed.
@@ -1059,7 +1064,24 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [run 33651024745](https://github.com/mbbill/Whitefoot/actions/runs/33651024745)
   passed on exact revision
   `a7c49c4d9876461739dd2c63b5600158facc403f`.
-- **Missing / next:** widen stackless lowering beyond single-instruction tail
+- **Missing / next:** back the `FilePermit` (constitution T4, owner ruling
+  2026-09-04): `FileFactory` carries a capacity fixed at program start and never
+  larger than the descriptors the target provides to this program;
+  `reserve_file` returns a `Result` whose exhaustion member is the program's own
+  source-order outcome; release returns the permit or its credit through one of
+  the explicit dispositions of FIRST-PRINCIPLES §12, so `close(held);
+  open(path)` is a move dependency the checker sequences; an `open` holding a
+  permit cannot fail for want of a descriptor, and `ResourceExhausted` names
+  only honest target exhaustion. This replaces the [SYS-10] sentences "This
+  first slice never returns or recycles the permit. Reserving it promises no
+  native descriptor, handle-table entry, kernel memory, or host quota: host
+  exhaustion remains the ordinary `ResourceExhausted` member of the open
+  operation's typed `IoError` result." It is a specification change and ships
+  with its derived work in one batch: the system-operation table and its
+  compiler-side signatures, conformance cases and verdicts, and the runtime,
+  where the retirement ledger, its award order, and the thread-holding retry
+  wait are deleted rather than ported (the park-on-miss design's §7 depends on
+  this deletion). Then widen stackless lowering beyond single-instruction tail
   chains; add a clock reading, keyed directory places, namespace mutation, and
   network, timer, cancellation, deadline, and finish-required output APIs only
   with complete ordinary ownership and target contracts. The remaining
