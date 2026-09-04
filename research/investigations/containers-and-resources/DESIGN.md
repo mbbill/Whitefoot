@@ -2138,8 +2138,14 @@ the commit.
 checker already computes; no search. This is the judgment [PROV-6]'s scope-exit refusal,
 [STK-1]'s tail premise and [STK-4]'s unreachable-exit sentence read. *Publishes:* the
 unconditional release set of every edge. *Amends:* [OWN-1] 563-571 at 563 and 566-567, and
-[OWN-11] 646-648 at 646. *Depends:* [PROV-6]'s per-scope linear predicate. *Law:* L17.
-*History:* r7 F4-1, F5-9, F5-15; r6 F3-I9; r1 F1-1, F1-2.
+[OWN-11] 646-648 at 646. *Depends:* [PROV-6]'s per-scope linear predicate. *Verified
+today:* **landed in v0.45** as the join half, conformance cases
+`liv1-neg-branches-disagree-on-liveness`, `liv1-pos-loop-moves-and-restores-an-outer-binding`
+and `liv1-neg-loop-leaves-an-outer-binding-dead` (6.0e); probe `f3`'s program is the
+rejection and probe `f5`'s shape is accepted. The loop-head instance keeps [OWN-11]'s own
+citation and reads the **structural** backedge, and the linear half is [PROV-6]'s and
+lands with B5; 6.0e records both. *Law:* L17. *History:* r7 F4-1, F5-9, F5-15; r6 F3-I9;
+r1 F1-1, F1-2.
 
 **[LIV-2] One `set` commit rule.** **Owner-decided 2026-09-03 (D2).** One statement
 writes places, and it replaces three: [SET-1]'s copy overwrite, the sixth draft's
@@ -2243,7 +2249,13 @@ reinitialisation exception is the other side of the read-out sentence; [OWN-5] 5
 *Verified today:* probes `q9`, `x5`, `t8`, `x2` and `x3` are [STOR-1] `AffineSetTarget`,
 probe `g5` is the same at a field, probe `p10` is `AffineSetTarget` at a live target and
 probe `w6` is [OWN-1] `UseAfterMove` at a dead one, and probe `w8` accepts a `set` at a
-`match` arm binder. *Law:* L10, L16, L17, L18. *History:* r7 F1-9, F1-15, F3-3, F4-8; r6
+`match` arm binder. **Landed in v0.45**: probe `q9`'s statement compiles and runs at a
+bare binding, a field and a `deref`, the swap and its rotation compile and run, and six
+conformance cases carry the rule (6.0e). Three parts did not land and 6.0e says why: the
+affine read-out at a **subscript**, which no constructible element type in this version
+can be written; `grid[k]` against `grid[i][j]`, which waits on B7's runs; and the target
+identifier that introduces a binding, DEFERRED in the rule text with a stated zero delta.
+*Law:* L10, L16, L17, L18. *History:* r7 F1-9, F1-15, F3-3, F4-8; r6
 the owner's D2, F3-1, F3-3.
 
 #### 3.K.6 `[CALL]`: what survives a call
@@ -5677,6 +5689,115 @@ clause cannot write `len(run) + room(run) == cap(run)` or any other three-operan
 over measures. The capacity identity is therefore reachable by the checker as an automatic
 premise and unwritable by the writer as a clause. That is the production B1 landed and
 this batch did not touch it.
+
+### 6.0e B4 landed (v0.45)
+
+**Liveness is a program-point property in the compiler, and the commit rule is written.**
+`[LIV-1]` and `[LIV-2]` are two added rules in the active specification, and `[OWN-1]`,
+`[OWN-11]`, `[SET-1]`, `[STOR-1]`, `[STOR-3]` and `[TYPE-5]` are amended in place to read
+them; `set_stmt` takes a value list after its target list, which is D2's own form. Nine
+conformance cases carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| liv1-neg-branches-disagree-on-liveness                   | reject, LIV-1    |
+| liv1-pos-loop-moves-and-restores-an-outer-binding        | run, exit 0      |
+| liv1-neg-loop-leaves-an-outer-binding-dead               | reject, OWN-11   |
+| liv2-pos-read-out-at-a-binding-a-field-and-a-deref       | run, exit 0      |
+| liv2-pos-read-out-keeps-the-root-and-its-other-fields    | run, exit 3      |
+| liv2-pos-swap-and-rotation                               | run, exit 5      |
+| liv2-neg-two-subscripts-of-one-run                       | reject, LIV-2    |
+| liv2-pos-two-fields-of-one-root                          | run, exit 9      |
+| liv2-pos-subscript-targets-commit-their-own-ordinals     | run, exit 2      |
+```
+
+**Probe `q9` is accepted, and so is the same statement at a field and at a `deref`.**
+`set c = bump(cell: move c);` compiles and runs; so do `set holder.run = grow(old: move
+holder.run);` and, inside a callee holding `out: &uniq buffer<u8>`, `set deref(out) =
+grow(old: move deref(out));`. The read-out sentence is what admits all three, and the
+`deref` case is admitted on exactly `[SET-2]`'s exchange ground. **Probe `f3`'s program is
+a `[LIV-1]` rejection naming the binding and both predecessors** where it was
+`Semantics/Unsupported: OwnershipJoin` at this branch's tip. **A loop that moves an outer
+binding and commits a value back into it before the backedge is accepted**, which is where
+probe `f5` was `[OWN-11]`. The swap `set (p, q) = move q, move p;` and its three-target
+rotation compile and run, and the copy pair reports the exchange in its exit code.
+
+**`[SET-1]`'s two B1b placeholders are gone.** The pairwise-distinct-target-roots refusal
+becomes `[LIV-2]`'s disjointness condition, so `set (pair.low, pair.high) = split(...);`
+is admitted and `set (v[i], v[j]) = ...;` is refused at the second target with both
+spellings named; and the compiler's `ResultListSubscriptTarget` stop is deleted, so a
+subscript is an ordinary target of a target list with its offset evaluated before the
+commit.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** `[LIV-1]` said `[OWN-11]`
+> 646's prohibition is *replaced* by the join agreement. It is replaced, but the loop-head
+> instance keeps `[OWN-11]`'s own citation rather than becoming a `LIV-1` diagnostic: the
+> rule that states a per-iteration obligation owns its violation, exactly as `[SET-1]`
+> owns the residue of its writability relation. The conformance case
+> `own11-neg-move-outer-in-loop` therefore keeps its recorded `reject OWN-11` verdict, and
+> no corpus verdict moved in this batch.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** The backedge `[OWN-11]`
+> reads is the **structural** one `[FN-1]`, not a reachability-filtered one. A body that
+> consumes an outer binding and then leaves by `break` or `return` is judged on the state
+> it reached, so `loop @l { match s { … } break @l; }` over an affine `s` stays the
+> `[OWN-11]` rejection it has always been. Reading reachability there would have admitted
+> a one-iteration consume that this clause always refused — a language change B4 has no
+> ground to make, and the one that would have moved a recorded conformance verdict.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** The read-out paragraph
+> said each target "is dead for the remainder of" the right-hand side's evaluation and did
+> not say what a second `move` of the same place is. The first implementation matched every
+> such `move` as a read-out and compiled `set c = pair(left: move c, right: move c);`,
+> which frees one run twice — the same class of hole round 7 found in the sixth draft's own
+> paragraph, one step further in. **One target is read out at most once**, and a later use
+> of what that read-out consumed is `[OWN-1]`'s ordinary rejection at that use; the rule
+> text now says so and three shapes are pinned against it.
+
+> **Correction, decided 2026-09-04, from B4's implementation.** `[LIV-2]` condition 2 said
+> "two subscripts of one run" are refused flatly. The rule as written refuses them on
+> `[OWN-7]`'s own terms — two subscripted places of one resolved base overlap unless their
+> offsets are both literals with unequal values — because that relation is already stated
+> and the ground the design gives ("the commit order would decide the result") is false for
+> two distinct literal offsets.
+
+**What did not land, and why.**
+
+- **`grid[k]` against `grid[i][j]`.** A run of runs has no admitted element type in this
+  version: `buffer<buffer<u8>>` is `CompositeValues` unsupported and `array<array<u8,4>,4>`
+  is a `[TYPE-2]` rejection, which 6.0c already recorded. Condition 2 is stated over
+  subscripted targets generally and is exercised over one run; **the nested case waits on
+  B7's runs**.
+- **The affine read-out at a subscript.** Every constructible element type in this version
+  is copy — `array_new` and `buffer_new` take a copy fill — so no `move v[i]` of an affine
+  element can be written at all. The compiler therefore matches a read-out at a bare
+  binding, a field and a `deref` and never at a subscript, where the two readings coincide
+  for every writable program. **B7's measured element types are where that changes.**
+- **A `set` target that resolves to no binding.** `[LIV-2]` says such an identifier
+  introduces one exactly as a `let` does. That is a declaration event in a `set` statement
+  and needs the resolver to mint a declaration for an unresolved target base; it is
+  **DEFERRED in the rule text with a stated zero delta** and is not implemented. Probe
+  `r4`'s repair does not need it: a target that names a live binding is a commit, which is
+  what the batch's `liv2-pos-two-fields-of-one-root` case exercises.
+- **`[LIV-1]`'s linear half.** The rule states the unconditional release over
+  `[STOR-3]`'s compiler-derived actions, which is the whole of what this version has. The
+  linear-in-this-scope obligation is `[PROV-6]`'s and lands in B5.
+- **A loop whose entering and committed values carry different ownership attributions**
+  still stops at `Semantics/Unsupported: OwnershipJoin`, because the loop-carried join of
+  `[EFF-2]` state origins is exact equality in this compiler and a union there needs a
+  fixed point no rule of this version states. `set c = consume(cell: move c);` inside a
+  `for` body is the measured shape: it compiles when the entering value comes from the
+  same call and stops when it comes from `buffer_new`. Liveness is judged before that
+  limit, so the limit can never stand in front of a `[LIV-1]` rejection.
+
+**One retired diagnostic.** `[STOR-1]`'s second restructuring — "the right-hand side
+consumes the target root, so replace cannot commit into it: bind the result under a new
+let, and combine it with the old value field by field", added after the 2026-08-28
+blind-writer trial — is deleted. The program it was written for is now accepted, and at a
+projected target whose root the right-hand side really did consume the rejection is
+`[OWN-1]`'s dead root, which offers the fresh `let` in its own sentence. `docs/patterns.md`
+P17 is rewritten around the admitted commit for the same reason.
 
 ### 6.1 What the compiler did in this session
 

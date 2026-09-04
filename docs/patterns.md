@@ -28,8 +28,9 @@ by v0.40, the unified-state
 completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
 2026-08-28 blind-writer trial found a writer lacking: the inline factory reserve
-inside P15, the hoisted length fact (P16), and the subtotal-returning walk
-(P17). P18 is the explicit buffer a loop holds in place of the output resource
+inside P15, the hoisted length fact (P16), and the accumulator fold (P17),
+whose rejection [LIV-2] removed by admitting the commit that reads its target
+out. P18 is the explicit buffer a loop holds in place of the output resource
 it may not hold. P19 is the join-image rule for a loop binding advanced under a
 condition, the one place the 2026-09-03 scenario sweep found the catalog
 misleading a writer. References to earlier versions describe historical evidence,
@@ -692,20 +693,48 @@ compiler never inserts a callee-side fallback check.
 Replaces: defensive re-measurement of a container after every call that wrote
 into it, which in a language without a length fact is the only way to be safe.
 
-## P17. Subtotal return instead of a threaded accumulator
+## P17. Commit the transformed value back into the place it came from
 
 Problem: a recursive walk accumulates counts into a record. Every other
 language writes `totals = walk(dir, totals)`. Here that record is affine —
 [OWN-1] makes every owned composite affine regardless of its field types, so
-three `u64`s in a struct need `move` at every use — and the assignment is a
-`set` on an affine place, which [STOR-1] refuses outright. Reaching for
-[STOR-1]'s `replace` does not save it either when the call consumed the target
-to compute the value: there is then no live owner to bind out, and [OWN-1]
-rejects the reuse.
+three `u64`s in a struct need `move` at every use — and the assignment writes
+an affine place, which the language refused outright before [LIV-2].
 
-Pattern: the walk returns its own subtotal, the caller binds it under a fresh
-`let`, and the fold is one `set` per field. `move` stays for the places where
-the record is used as a value — passed, returned, or rebound.
+Pattern: write the assignment. `set p = f(x: move p);` is one commit: the
+`move` of the target place is that target's read-out, the target is dead
+through the right-hand side, and the same statement reinitializes it, so the
+binding is live again afterwards and nothing is duplicated or dropped twice.
+
+```whitefoot
+set totals = walk(factory: &uniq deref(factory), directory: dir);
+```
+
+The same statement works at a field, at a `deref` of a live usable `&uniq`
+holder, and at a subscript, which is what makes it more than sugar for a
+rebind: `move p.f` and `move deref(h)` are the two places a two-statement
+rebind cannot reach, the first because a partial move kills the root and the
+second because content reached through a borrow may not be moved at all.
+
+```whitefoot
+set kept.bytes = collect(out: move kept.bytes, source: line);
+```
+
+Two targets are one commit when they do not overlap, and the value list is the
+swap the language has instead of an exchange operation:
+
+```whitefoot
+set (pair.low, pair.high) = split(bound: 4_u64);
+set (p, q) = move q, move p;
+```
+
+Two subscripts of one run are refused at [LIV-2]'s second condition, because
+the commit order would decide the result; write them as two statements.
+
+The subtotal return is still the right shape when the callee does not consume
+the value being committed, and the per-field fold is still ordinary: the fields
+are `u64`, [OWN-1] copies primitives, and the accumulation never touches the
+record as a value.
 
 ```whitefoot
 let sub = walk(factory: &uniq deref(factory), directory: dir);
@@ -713,42 +742,27 @@ set totals.lines = totals.lines +wrap sub.lines;
 set totals.bytes = totals.bytes +wrap sub.bytes;
 ```
 
-The fields are `u64`, and [OWN-1] copies primitives, so the fold is an ordinary
-`set` per field even though the record holding them is affine. That is the
-whole trick: the affinity is on the record, and the accumulation never touches
-the record as a value.
-
-`replace` is the right commit in the other case, and only in it: when the value
-being committed leaves the target's root alive, `replace` writes the new owner
-in and binds the previous one out, which is the only way to give an affine
-binding a new owner in place.
+`replace` is the commit for the other case, and only in it: when the value
+being committed does not consume the target's previous value, `replace` writes
+the new owner in and binds the previous one out.
 
 ```whitefoot
 let stale = replace totals = fresh(lines: 3_u64);
 ```
 
-Current value: this is a design the language pushes you to rather than a
-ceremony it charges you. A walk that returns its subtotal has no accumulator
-parameter to alias, so [OWN-6] never enters, and the caller's fold is the
-ordinary source-order `set` P15 wants on `lines` and `bytes` separately.
-
-Without the form, the two rejections a writer meets, in the order they meet
-them:
+Current value: the rejection this pattern used to route around is now exactly
+one rule and one sentence. A live affine target whose previous value the
+right-hand side does not read out is still [STOR-1]'s error, and its
+restructuring is `replace`:
 
 ```text
-whitefootc: Semantics/Source [OWN-1]: SemanticIssue { rule: Own1, …, kind: BareAffineUse
-{ mechanical_fix: "write `move p` for the affine place" } } at counts.wf:7:16 in line
-"  let totals = running;"
-
 whitefootc: Semantics/Source [STOR-1]: SemanticIssue { rule: Stor1, …, kind: AffineSetTarget
-{ target_type: "Counts", mechanical_fix: "the right-hand side consumes the target root, so
-replace cannot commit into it: bind the result under a new let, and combine it with the old
-value field by field" } } at counts.wf:14:7 in line
-"  set totals = walk(running: move totals);"
+{ target_type: "Cell", mechanical_fix: "use replace: let old = replace p = e; binds the
+previous owner" } } at cells.wf:8:7 in line "  set left = move right;"
 ```
 
-Replaces: a mutable accumulator parameter threaded by reference, and `+=` into
-a caller's struct.
+Replaces: a mutable accumulator parameter threaded by reference, `+=` into a
+caller's struct, and the three-line temporary-variable swap.
 
 ## P18. The loop's own buffer, published once
 

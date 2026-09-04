@@ -248,7 +248,10 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         SemanticRule::Own11,
         SemanticIssueKind::MoveOuterBindingInLoop {
-            mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
+            binding: "token".to_owned(),
+            mechanical_fix: "one iteration must leave every outer binding in the status the next \
+                             one starts from: commit a value back into it before the backedge, or \
+                             declare and consume it inside the body",
         },
     );
 

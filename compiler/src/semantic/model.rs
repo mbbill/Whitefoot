@@ -1775,6 +1775,49 @@ impl CheckedSetTarget {
     }
 }
 
+/// [LIV-2] the ordinal values one `set` target list commits.
+///
+/// The two shapes are the two right-hand sides the rule admits, and nothing
+/// below this point asks which spelling produced them: a result list projects
+/// ordinal i out of one call's value, and a written value list holds ordinal i
+/// as its own expression.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedCommitValues {
+    /// One call whose callee declares an ordered result list [CALL-4]; target
+    /// i takes result ordinal i, which is field i of that value.
+    ///
+    /// The call is boxed because a checked expression is the largest value in
+    /// this tree and the other shape holds its own in a `Vec`.
+    ResultList {
+        /// The callee's result-list nominal [CALL-4].
+        nominal: NominalId,
+        value: Box<CheckedExpression>,
+    },
+    /// A written value list: expression i is ordinal i, evaluated left to
+    /// right and committed after the last one is evaluated.
+    Written(Vec<CheckedExpression>),
+}
+
+impl CheckedCommitValues {
+    /// Every ordinal value, in written order. A result list holds its one
+    /// call value; a value list holds one expression per target.
+    pub(crate) fn expressions(&self) -> &[CheckedExpression] {
+        match self {
+            Self::ResultList { value, .. } => std::slice::from_ref(value.as_ref()),
+            Self::Written(values) => values,
+        }
+    }
+
+    /// Every ordinal value, mutably, for the passes that rewrite expressions
+    /// in place.
+    pub(crate) fn expressions_mut(&mut self) -> &mut [CheckedExpression] {
+        match self {
+            Self::ResultList { value, .. } => std::slice::from_mut(value.as_mut()),
+            Self::Written(values) => values,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PropagationContext {
     pub(crate) function: String,
@@ -1800,15 +1843,13 @@ pub(crate) enum CheckedStatement {
         nominal: NominalId,
         value: CheckedExpression,
     },
-    /// [GRAM-4, CALL-4] `set (x, y) = f(...);`. The same one evaluation, with
-    /// result ordinal i committed to target i under the ordinary [SET-1]
-    /// commit judgment, in written order.
+    /// [GRAM-4, CALL-4, LIV-2] `set (x, y) = rhs;`. The right-hand side is
+    /// evaluated once and completely, then ordinal i is committed to target i
+    /// at one commit, in written order.
     SetList {
         node_path: NodePath,
         targets: Vec<CheckedSetTarget>,
-        /// The callee's result-list nominal [CALL-4].
-        nominal: NominalId,
-        value: CheckedExpression,
+        values: CheckedCommitValues,
     },
     PropagateLet {
         /// Complete owning `let_stmt`, shared by Ok delivery and Err return.

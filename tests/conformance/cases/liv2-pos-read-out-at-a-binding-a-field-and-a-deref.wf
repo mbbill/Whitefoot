@@ -1,0 +1,30 @@
+struct Holder {
+  run: buffer<u8>;
+}
+
+fn grow(old: own buffer<u8>) -> bigger: own buffer<u8> reads(old), allocates(heap) {
+  doc "Consumes the run it is handed and hands back another.";
+  let seen = len(old);
+  let fresh = buffer_new(8_u64, 0_u8);
+  return move fresh;
+}
+
+fn refill(out: &uniq buffer<u8>) -> done: own unit reads(out), writes(out), allocates(heap) {
+  doc "The commit at a deref: the read-out is admitted on [SET-2]'s exchange ground.";
+  set deref(out) = grow(old: move deref(out));
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "LIV-2: probe q9's statement at each of the three place shapes a commit reinitializes. The right-hand side reads the target's previous value out, so the target is dead at the commit and every one of the three is admitted where [STOR-1] refused all three before.";
+  let bare = buffer_new(4_u64, 0_u8);
+  set bare = grow(old: move bare);
+  let run = buffer_new(4_u64, 0_u8);
+  let holder = Holder(run: move run);
+  set holder.run = grow(old: move holder.run);
+  let target = buffer_new(4_u64, 0_u8);
+  region {
+    let done = refill(out: &uniq target);
+  }
+  return exit_status(code: 0_u8);
+}

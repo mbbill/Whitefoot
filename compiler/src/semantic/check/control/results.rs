@@ -7,8 +7,7 @@ use crate::{
 };
 
 use super::super::super::model::{
-    BindingId, CheckedMode, CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType,
-    PropagationContext,
+    BindingId, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, PropagationContext,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType};
 use super::{ControlScope, StatementResult};
@@ -28,7 +27,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// that name a callee's result ordinals again, and both ask this one
     /// question of the value in front of them rather than of the callee's
     /// spelling or of the statement's shape.
-    fn result_list_of(&self, value: &super::super::TypedExpression) -> Option<crate::NominalId> {
+    pub(super) fn result_list_of(
+        &self,
+        value: &super::super::TypedExpression,
+    ) -> Option<crate::NominalId> {
         let CheckedType::Nominal(nominal) = value.expression.ty() else {
             return None;
         };
@@ -42,7 +44,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The declared result ordinals of a result-list nominal, in written
     /// order.
-    fn result_list_ordinals(
+    pub(super) fn result_list_ordinals(
         &self,
         nominal: crate::NominalId,
     ) -> Result<Vec<CheckedType>, CheckStop> {
@@ -56,7 +58,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The [TYPE-5] rejection a binder or target list receives when its
     /// right-hand side does not produce exactly that many result ordinals.
-    fn result_list_shape_rejection<T>(
+    pub(super) fn result_list_shape_rejection<T>(
         &self,
         call: NodeId,
         written: usize,
@@ -146,107 +148,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 value: value.expression,
             },
             value.effects,
-        ))
-    }
-
-    /// Checks `set (x, y) = f(...);` [GRAM-4, SET-1, TYPE-5, CALL-4].
-    ///
-    /// Every target is formed and judged by the ordinary [SET-1] target
-    /// judgment in written order, then the one call is evaluated, then each
-    /// commit is re-established exactly as a single-target `set` is. Two
-    /// targets rooted at one binding would make one statement's two commits
-    /// order-dependent; the general disjointness judgment is [LIV-2]'s, so
-    /// this version admits only pairwise distinct roots.
-    pub(super) fn check_result_list_set(
-        &self,
-        function: &FunctionSignature,
-        node: NodeId,
-        bindings: &mut HashMap<DeclarationId, LocalBinding>,
-        scope: ControlScope<'_>,
-    ) -> Result<StatementResult, CheckStop> {
-        let target_nodes = self.tree.children_with(node, Production::Place)?;
-        let call = self
-            .tree
-            .first_child_with(node, Production::Call)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let mut declarations = Vec::with_capacity(target_nodes.len());
-        let mut targets = Vec::with_capacity(target_nodes.len());
-        let mut effects = super::super::EffectSet::NONE;
-        for target_node in &target_nodes {
-            let affine_fix = self.set_affine_restructuring(*target_node, call)?;
-            let (declaration, target, target_effects) = self.check_set_target(
-                function,
-                *target_node,
-                bindings,
-                scope.loops.len(),
-                affine_fix,
-            )?;
-            if declarations
-                .iter()
-                .any(|(earlier, _)| *earlier == declaration)
-            {
-                return self.issue_node(
-                    SemanticRule::Set1,
-                    *target_node,
-                    SemanticIssueKind::InvalidSetTarget {
-                        root_class: "a root this statement already writes".to_owned(),
-                        required_classes: "one target list writes pairwise distinct roots",
-                    },
-                );
-            }
-            if !matches!(target, CheckedSetTarget::Place(_)) {
-                return self.unsupported(
-                    crate::UnsupportedSemanticFeature::ResultListSubscriptTarget,
-                    *target_node,
-                );
-            }
-            declarations.push((declaration, *target_node));
-            targets.push(target);
-            effects = effects.union(target_effects);
-        }
-        let value = self.check_call(function, call, bindings, scope.loops.len())?;
-        let Some(nominal) = self.result_list_of(&value) else {
-            return self.result_list_shape_rejection(call, targets.len(), &value);
-        };
-        let ordinals = self.result_list_ordinals(nominal)?;
-        if ordinals.len() != targets.len() {
-            return self.result_list_shape_rejection(call, targets.len(), &value);
-        }
-        for (target, ty) in targets.iter().zip(&ordinals) {
-            if target.ty() != *ty {
-                return self.issue_node(
-                    SemanticRule::Type5,
-                    call,
-                    SemanticIssueKind::type_mismatch(
-                        self.checked_type_name(target.ty())?,
-                        self.checked_type_name(*ty)?,
-                    ),
-                );
-            }
-        }
-        for (declaration, target_node) in &declarations {
-            if !bindings
-                .get(declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                .live
-            {
-                return self.issue_node(
-                    SemanticRule::Own1,
-                    *target_node,
-                    SemanticIssueKind::UseAfterMove {
-                        mechanical_fix: "introduce a new `let` binding before reuse",
-                    },
-                );
-            }
-        }
-        Ok(Self::continuing_statement(
-            CheckedStatement::SetList {
-                node_path: self.tree.path(node)?.clone(),
-                targets,
-                nominal,
-                value: value.expression,
-            },
-            value.effects.union(effects),
         ))
     }
 

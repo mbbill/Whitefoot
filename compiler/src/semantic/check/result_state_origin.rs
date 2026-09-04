@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use super::super::model::{
-    BindingId, CheckedExpression, CheckedFunction, CheckedLoopId, CheckedMatchArm,
-    CheckedResultStateOrigin, CheckedResultStatePath, CheckedSetTarget, CheckedStatement,
+    BindingId, CheckedCommitValues, CheckedExpression, CheckedFunction, CheckedLoopId,
+    CheckedMatchArm, CheckedResultStateOrigin, CheckedResultStatePath, CheckedSetTarget,
+    CheckedStatement,
 };
 use super::{CheckStop, Checker};
 
@@ -207,12 +208,28 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 }
                 Ok(OriginFlow::continuing(environment))
             }
-            CheckedStatement::SetList { targets, value, .. } => {
-                let origin = self.expression(value, &environment)?;
-                for (ordinal, target) in targets.iter().enumerate() {
-                    let field = u32::try_from(ordinal)
-                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
-                    let ordinal_origin = origin.clone().projected(&[field]);
+            CheckedStatement::SetList {
+                targets, values, ..
+            } => {
+                // [LIV-2] ordinal i's origin is result ordinal i of the one
+                // call, or the whole origin of written value i.
+                let mut ordinal_origins = Vec::with_capacity(targets.len());
+                match values {
+                    CheckedCommitValues::ResultList { value, .. } => {
+                        let origin = self.expression(value, &environment)?;
+                        for ordinal in 0..targets.len() {
+                            let field = u32::try_from(ordinal)
+                                .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                            ordinal_origins.push(origin.clone().projected(&[field]));
+                        }
+                    }
+                    CheckedCommitValues::Written(values) => {
+                        for value in values {
+                            ordinal_origins.push(self.expression(value, &environment)?);
+                        }
+                    }
+                }
+                for (target, ordinal_origin) in targets.iter().zip(ordinal_origins) {
                     let binding = target.binding();
                     let current = environment
                         .get(&binding)

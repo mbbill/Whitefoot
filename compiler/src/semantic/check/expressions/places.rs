@@ -149,7 +149,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let suffixes = self.tree.children_with(node, Production::Psuffix)?;
         let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
         let copy = self.is_copy_type(ty)?;
-        if !copy {
+        // [LIV-2] the read-out of a `deref` target of this statement's commit
+        // is admitted on exactly [SET-2]'s exchange ground: the exchange
+        // leaves the referent place owning one valid value at every program
+        // point, so the sole [OWN-5] exception covers this move as well.
+        let mut read_out_place = borrow.place.clone();
+        read_out_place.fields.extend_from_slice(&fields);
+        let read_out = !copy && options.explicit_move && self.take_commit_read_out(&read_out_place);
+        if !copy && !read_out {
             if options.explicit_move {
                 return self.issue_node(
                     SemanticRule::Own5,
@@ -222,7 +229,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 consume_root: false,
             }
         };
-        if copy {
+        // A read-out delivers the referent's own value: the previous owner
+        // leaves through this move and the commit reinitializes the place
+        // [LIV-2], so the value is `own` and carries no borrow.
+        if copy || read_out {
             return Ok(TypedExpression::owned_with_access(
                 expression,
                 effects,

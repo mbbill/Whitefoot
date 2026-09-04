@@ -25,10 +25,10 @@ use super::super::goal::{
 use super::super::model::expression_children;
 use super::super::model::{
     BindingId, CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation,
-    CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor, CheckedEnumType,
-    CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
-    CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode,
-    CheckedNominal, CheckedNominalKind, CheckedNumericType, CheckedProofUseSource,
+    CheckedArrayRoot, CheckedBooleanOperation, CheckedCommitValues, CheckedConst,
+    CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedFloatOperation, CheckedFunction,
+    CheckedIntegerOperation, CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure,
+    CheckedMode, CheckedNominal, CheckedNominalKind, CheckedNumericType, CheckedProofUseSource,
     CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
     MeasureCell, MeasuredKind, ValueInitializerKind,
 };
@@ -3008,8 +3008,13 @@ impl Analyzer<'_, '_> {
                 self.expression_writes_place(value, place)
                     || self.set_target_writes_place(target, place)
             }
-            CheckedStatement::SetList { targets, value, .. } => {
-                self.expression_writes_place(value, place)
+            CheckedStatement::SetList {
+                targets, values, ..
+            } => {
+                values
+                    .expressions()
+                    .iter()
+                    .any(|value| self.expression_writes_place(value, place))
                     || targets
                         .iter()
                         .any(|target| self.set_target_writes_place(target, place))
@@ -10205,28 +10210,36 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// [GRAM-4, SET-1, CALL-4] one `set` target list.
+    /// [GRAM-4, SET-1, CALL-4, LIV-2] one `set` target list.
     ///
-    /// Every target is judged, then the one call is judged, then every commit
-    /// kill applies on the same edge, and only then does each target receive
-    /// the published relations naming its result ordinal [ENT-3.S12]. There is
-    /// no commit value: [ENT-3.S5] gives a call right-hand side no image, so
-    /// no ordinal's commit establishes an equality of its own.
+    /// Every target is judged, then the whole right-hand side is judged — the
+    /// one call, or every written ordinal in order — then every commit kill
+    /// applies on the same edge, and only then does each target receive the
+    /// published relations naming its own ordinal [ENT-3.S12]. There is no
+    /// commit value: [ENT-3.S5] gives a call right-hand side no image, so no
+    /// ordinal's commit establishes an equality of its own.
     fn walk_set_list(
         &mut self,
         node_path: &crate::NodePath,
         targets: &[CheckedSetTarget],
-        value: &CheckedExpression,
+        values: &CheckedCommitValues,
         state: &mut ProofFlowState,
     ) {
         let mut target_reached = true;
         for target in targets {
             target_reached &= self.judge_set_target(target, state);
         }
-        let ExpressionJudgment {
-            prepared_call: prepared,
-            reached: value_reached,
-        } = self.expression_effects(value, state);
+        let mut ordinal_calls = Vec::with_capacity(targets.len());
+        let mut value_reached = true;
+        for value in values.expressions() {
+            let judgment = self.expression_effects(value, state);
+            value_reached &= judgment.reached;
+            ordinal_calls.push(judgment.prepared_call);
+        }
+        let prepared = match values {
+            CheckedCommitValues::ResultList { .. } => ordinal_calls.first().cloned().flatten(),
+            CheckedCommitValues::Written(_) => None,
+        };
         let commit_reached = target_reached && value_reached;
         for target in targets {
             invalidate_goal_origin_for_set(&mut state.facts, target);
@@ -10254,35 +10267,55 @@ impl Analyzer<'_, '_> {
         } else {
             self.apply_kills(state, &target_kills);
         }
-        let Some(prepared) = prepared else {
-            return;
-        };
         if !commit_reached {
             return;
         }
-        let destinations = targets
-            .iter()
-            .map(|target| match target {
-                CheckedSetTarget::Place(place) => Some((
-                    place.binding,
-                    place
-                        .fields
-                        .iter()
-                        .map(|field| GoalProjection::Field(*field))
-                        .collect(),
-                    place.ty,
-                )),
-                CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
-            })
-            .collect::<Vec<_>>();
-        self.establish_result_list_destinations(
-            node_path,
-            &destinations,
-            value,
-            &prepared,
-            &target_kills,
-            state,
-        );
+        let destination = |target: &CheckedSetTarget| match target {
+            CheckedSetTarget::Place(place) => Some((
+                place.binding,
+                place
+                    .fields
+                    .iter()
+                    .map(|field| GoalProjection::Field(*field))
+                    .collect::<Vec<_>>(),
+                place.ty,
+            )),
+            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+        };
+        match values {
+            CheckedCommitValues::ResultList { value, .. } => {
+                let Some(prepared) = prepared else {
+                    return;
+                };
+                let destinations = targets.iter().map(destination).collect::<Vec<_>>();
+                self.establish_result_list_destinations(
+                    node_path,
+                    &destinations,
+                    value,
+                    &prepared,
+                    &target_kills,
+                    state,
+                );
+            }
+            // [LIV-2] a written value list publishes per ordinal: ordinal i's
+            // own call establishes into target i and into no other, because
+            // no other target receives that value.
+            CheckedCommitValues::Written(values) => {
+                for ((target, value), prepared) in targets.iter().zip(values).zip(&ordinal_calls) {
+                    let Some(prepared) = prepared else {
+                        continue;
+                    };
+                    self.establish_result_list_destinations(
+                        node_path,
+                        &[destination(target)],
+                        value,
+                        prepared,
+                        &target_kills,
+                        state,
+                    );
+                }
+            }
+        }
     }
 
     fn walk_set(
@@ -10502,10 +10535,9 @@ impl Analyzer<'_, '_> {
             CheckedStatement::SetList {
                 node_path,
                 targets,
-                value,
-                ..
+                values,
             } => {
-                self.walk_set_list(node_path, targets, value, state);
+                self.walk_set_list(node_path, targets, values, state);
                 true
             }
             CheckedStatement::PropagateLet {
@@ -11571,12 +11603,29 @@ impl Analyzer<'_, '_> {
             CheckedStatement::SetList {
                 node_path,
                 targets,
-                value,
+                values,
                 ..
             } => {
                 if normal_reaches {
-                    for target in targets {
-                        self.collect_set_kills(node_path, target, value, kills);
+                    for (index, target) in targets.iter().enumerate() {
+                        // [LIV-2] a result list judges the one call once, at
+                        // the first target; a value list judges ordinal i
+                        // beside target i.
+                        match values {
+                            CheckedCommitValues::ResultList { value, .. } => {
+                                if index == 0 {
+                                    self.collect_set_kills(node_path, target, value, kills);
+                                } else {
+                                    self.collect_target_kill_only(node_path, target, kills);
+                                }
+                            }
+                            CheckedCommitValues::Written(values) => {
+                                let Some(value) = values.get(index) else {
+                                    continue;
+                                };
+                                self.collect_set_kills(node_path, target, value, kills);
+                            }
+                        }
                     }
                 }
                 normal_reaches
@@ -11675,6 +11724,27 @@ impl Analyzer<'_, '_> {
     ) {
         let mut events = Vec::new();
         self.collect_expression_kills(value, &mut events);
+        self.push_commit_kill(node_path, target, &mut events, kills);
+    }
+
+    /// One commit's own kill, for a target whose ordinal value another target
+    /// of the same statement already judged [LIV-2].
+    fn collect_target_kill_only(
+        &self,
+        node_path: &crate::NodePath,
+        target: &CheckedSetTarget,
+        kills: &mut LoopKills,
+    ) {
+        self.push_commit_kill(node_path, target, &mut Vec::new(), kills);
+    }
+
+    fn push_commit_kill(
+        &self,
+        node_path: &crate::NodePath,
+        target: &CheckedSetTarget,
+        events: &mut Vec<KillEvent>,
+        kills: &mut LoopKills,
+    ) {
         kills.set_bindings.insert(target.binding());
         match target {
             CheckedSetTarget::Place(place) => {
@@ -11714,7 +11784,7 @@ impl Analyzer<'_, '_> {
                 });
             }
         }
-        kills.push_event_group(events);
+        kills.push_event_group(std::mem::take(events));
     }
 
     fn apply_loop_kills_one(&mut self, state: &mut FactState, kills: &LoopKills) {

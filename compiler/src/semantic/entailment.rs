@@ -1152,7 +1152,9 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression_calls(caller, scrutinee, calls);
             }
-            CheckedStatement::SetList { targets, value, .. } => {
+            CheckedStatement::SetList {
+                targets, values, ..
+            } => {
                 for target in targets {
                     match target {
                         CheckedSetTarget::Place(_) => {}
@@ -1164,7 +1166,9 @@ pub(super) fn collect_statement_calls(
                         }
                     }
                 }
-                collect_expression_calls(caller, value, calls);
+                for value in values.expressions() {
+                    collect_expression_calls(caller, value, calls);
+                }
             }
             CheckedStatement::Set { target, value, .. }
             | CheckedStatement::Replace { target, value, .. } => {

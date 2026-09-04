@@ -1283,6 +1283,96 @@ command fn main() -> status: own ExitStatus pure {
             "drop the region arguments: every system operation's region occurs at one parameter position, so this call's own arguments determine it",
         ],
     },
+    // -------------------------------------------------------------------
+    // [LIV-1] and [LIV-2]: join-checked liveness and the one commit.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "branches-disagree-about-a-binding.wf",
+        source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  let n = len(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let c = buffer_new(4_u64, 0_u8);
+  let flag = 1_u64;
+  let taken = 0_u64;
+  if flag == 1_u64 {
+    set taken = measure(cell: move c);
+  } else {
+    set taken = 7_u64;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "LIV-1",
+        sentences: &[
+            r#"binding: "c""#,
+            r#"live_predecessor: "the `else` branch""#,
+            r#"dead_predecessor: "the `if` branch""#,
+            "every predecessor of a join agrees on a binding\'s live-or-dead status: consume it on every predecessor, on none, or commit a value back into it before the predecessor that consumed it reaches the join",
+        ],
+    },
+    Probe {
+        name: "one-iteration-leaves-an-outer-binding-dead.wf",
+        source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  let n = len(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let c = buffer_new(4_u64, 0_u8);
+  for (i in 0_u64..2_u64) {
+    let taken = measure(cell: move c);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "OWN-11",
+        sentences: &[
+            r#"binding: "c""#,
+            "one iteration must leave every outer binding in the status the next one starts from: commit a value back into it before the backedge, or declare and consume it inside the body",
+        ],
+    },
+    Probe {
+        name: "two-targets-of-one-commit-overlap.wf",
+        source: br#"fn two_bytes(bound: own u64) -> (low: own u8, high: own u8) pure {
+  return 1_u8, 2_u8;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let v = buffer_new(4_u64, 0_u8);
+  let i = 0_u64;
+  let j = 1_u64;
+  set (v[i], v[j]) = two_bytes(bound: 4_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "LIV-2",
+        sentences: &[
+            r#"first: "v[i]""#,
+            r#"second: "v[j]""#,
+            "one commit writes pairwise non-overlapping places; write the overlapping target in a statement of its own",
+        ],
+    },
+    Probe {
+        name: "a-commit-target-carrying-a-region.wf",
+        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(4_u64, 0_u8);
+  region {
+    let view = slice_of(&data);
+    let other = slice_of(&data);
+    set view = other;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "LIV-2",
+        sentences: &[
+            r#"target_type: "slice<u8>""#,
+            "a slice\'s static origin set and an arena\'s confinement are fixed at initialization; bind a new slice or arena under a new let",
+        ],
+    },
 ];
 
 /// Every sentence in the corpus is rendered by a program that reaches it.

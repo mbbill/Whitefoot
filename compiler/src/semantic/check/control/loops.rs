@@ -161,6 +161,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for state in &mut checked.break_states {
             state.end_slice_region(body_region);
         }
+        self.judge_backedge_liveness(node, &header_keys, &header_bindings, &body_bindings)?;
         if checked.can_continue
             && header_keys
                 .iter()
@@ -179,15 +180,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // input even when no local break is written. Local breaks join it;
         // breaks targeting an enclosing loop keep escaping normally.
         let mut continuation_states = vec![base_bindings];
+        let mut continuation_labels = vec!["the loop's exhausted edge".to_owned()];
         let mut escaping_break_states = Vec::new();
         for state in checked.break_states {
             if state.target == id {
                 continuation_states.push(state.bindings);
+                continuation_labels.push("a `break` edge of this loop".to_owned());
             } else {
                 escaping_break_states.push(state);
             }
         }
-        self.join_states(&base_keys, &continuation_states, node, bindings)?;
+        self.join_states(
+            &base_keys,
+            &continuation_states,
+            &continuation_labels,
+            node,
+            bindings,
+        )?;
 
         Ok(StatementResult {
             statement: CheckedStatement::CountedRange {
@@ -207,6 +216,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             give_states: checked.give_states,
             break_states: escaping_break_states,
         })
+    }
+
+    /// [OWN-11] the per-iteration judgment, which is [LIV-1]'s liveness
+    /// agreement read at this loop's head.
+    ///
+    /// The entering edge and the backedge are the loop head's two
+    /// predecessors. A binding declared outside the body whose status differs
+    /// between them would make one iteration start in a state the previous one
+    /// did not leave, which is exactly what the prohibition on moving an outer
+    /// binding into a loop body existed to prevent; a body that moves such a
+    /// binding and reinitializes it before the backedge [LIV-2] agrees and is
+    /// admitted.
+    ///
+    /// The backedge is the structural one [FN-1, LIV-1]: it is read whether or
+    /// not this body's own fallthrough is executable, so a body that consumes
+    /// an outer binding and then leaves by `break` or `return` is judged on
+    /// the state it reached, exactly as one that falls through is. Reading
+    /// reachability here instead would admit a one-iteration consume that this
+    /// clause has always refused, which is a language change and not this
+    /// rule's.
+    fn judge_backedge_liveness(
+        &self,
+        node: NodeId,
+        keys: &[DeclarationId],
+        entering: &HashMap<DeclarationId, LocalBinding>,
+        backedge: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<(), CheckStop> {
+        for key in keys {
+            let (Some(entering), Some(backedge)) = (entering.get(key), backedge.get(key)) else {
+                continue;
+            };
+            if entering.live == backedge.live {
+                continue;
+            }
+            return self.issue_node(
+                SemanticRule::Own11,
+                node,
+                SemanticIssueKind::MoveOuterBindingInLoop {
+                    binding: self.declaration_spelling(*key)?,
+                    mechanical_fix: "one iteration must leave every outer binding in the status \
+                                     the next one starts from: commit a value back into it before \
+                                     the backedge, or declare and consume it inside the body",
+                },
+            );
+        }
+        Ok(())
     }
 
     fn check_loop_invariant(
@@ -450,6 +505,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for state in &mut checked.break_states {
             state.end_slice_region(body_region);
         }
+        self.judge_backedge_liveness(node, &base_keys, &base_bindings, &body_bindings)?;
         if checked.can_continue
             && base_keys
                 .iter()
@@ -459,10 +515,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
 
         let mut own_break_states = Vec::new();
+        let mut own_break_labels: Vec<String> = Vec::new();
         let mut escaping_break_states = Vec::new();
         for state in checked.break_states {
             if state.target == id {
                 own_break_states.push(state.bindings);
+                own_break_labels.push("a `break` edge of this loop".to_owned());
             } else {
                 escaping_break_states.push(state);
             }
@@ -472,7 +530,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // structurally retained continuation bindings unchanged for that
         // empty join; ENT-5's proof flow marks the same continuation
         // contradictory, and lowering emits an unreachable exit block.
-        self.join_states(&base_keys, &own_break_states, node, bindings)?;
+        self.join_states(
+            &base_keys,
+            &own_break_states,
+            &own_break_labels,
+            node,
+            bindings,
+        )?;
         let backedge_drops = if checked.can_continue {
             self.live_affine_drops(&body_bindings, &preserved)?
         } else {

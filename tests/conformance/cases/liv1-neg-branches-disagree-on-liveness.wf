@@ -1,0 +1,18 @@
+fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  doc "Consumes the run it is handed and reports its length.";
+  let n = len(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "LIV-1: one branch consumes the run and the other does not, so the two predecessors of the join disagree about whether it is live there.";
+  let c = buffer_new(4_u64, 0_u8);
+  let flag = 1_u64;
+  let taken = 0_u64;
+  if flag == 1_u64 {
+    set taken = measure(cell: move c);
+  } else {
+    set taken = 7_u64;
+  }
+  return exit_status(code: 0_u8);
+}

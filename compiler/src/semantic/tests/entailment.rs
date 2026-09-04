@@ -132,11 +132,15 @@ fn collect_direct_calls<'checked>(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Set { value, .. }
-            | CheckedStatement::SetList { value, .. }
             | CheckedStatement::Replace { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. }
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),
+            CheckedStatement::SetList { values, .. } => {
+                for value in values.expressions() {
+                    record(value, callee, calls);
+                }
+            }
             CheckedStatement::PropagateLet { scrutinee, .. } => record(scrutinee, callee, calls),
             CheckedStatement::Evaluate(expression) => record(expression, callee, calls),
             CheckedStatement::Match {

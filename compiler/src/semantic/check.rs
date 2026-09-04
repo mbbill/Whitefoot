@@ -546,6 +546,11 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
     pending_nominals: RefCell<Vec<PendingNominal>>,
+    /// [LIV-2] the target places of the `set` commit whose right-hand side is
+    /// being checked, and whether that right-hand side has read each out.
+    /// Empty everywhere else: `check_commit` installs it around exactly that
+    /// one expression and removes it before any rejection leaves.
+    commit_read_outs: RefCell<Vec<control::CommitReadOut>>,
     prelude_nominals: HashMap<PreludeType, NominalId>,
     system_nominals: HashMap<u8, NominalId>,
     prelude_types: Vec<Option<PreludeType>>,
@@ -967,6 +972,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result_list_nominals: HashMap::new(),
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
+            commit_read_outs: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
             prelude_types: Vec::new(),
@@ -2035,7 +2041,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     self.install_expression_call_requirements(scrutinee, requirements)?;
                 }
-                CheckedStatement::SetList { targets, value, .. } => {
+                CheckedStatement::SetList {
+                    targets, values, ..
+                } => {
                     for target in targets {
                         match target {
                             CheckedSetTarget::Place(_) => {}
@@ -2051,7 +2059,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 )?,
                         }
                     }
-                    self.install_expression_call_requirements(value, requirements)?;
+                    for value in values.expressions_mut() {
+                        self.install_expression_call_requirements(value, requirements)?;
+                    }
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -2235,7 +2245,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     Self::install_expression_allocation_bounds(scrutinee, bounds)?;
                 }
-                CheckedStatement::SetList { targets, value, .. } => {
+                CheckedStatement::SetList {
+                    targets, values, ..
+                } => {
                     for target in targets {
                         match target {
                             CheckedSetTarget::Place(_) => {}
@@ -2253,7 +2265,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                         }
                     }
-                    Self::install_expression_allocation_bounds(value, bounds)?;
+                    for value in values.expressions_mut() {
+                        Self::install_expression_allocation_bounds(value, bounds)?;
+                    }
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {

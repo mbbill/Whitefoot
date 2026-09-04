@@ -38,19 +38,44 @@ struct PlaceUseOptions {
 ///
 /// [SET-1] and [SET-2] share the whole writability relation and differ only in
 /// the final selected type's required [OWN-1] class, so one judgment serves
-/// both and this says which side of it applies. The `set` side carries the
-/// [STOR-1] restructuring its own right-hand side admits: `replace` is the
-/// right answer only when the right-hand side leaves the target root alive, so
-/// the statement that knows the right-hand side chooses the sentence.
+/// both and this says which side of it applies. `replace` demands a
+/// region-free affine type at formation, while a commit's affine admission is
+/// [LIV-2]'s first condition and is judged at the commit, where the read-out
+/// is known; only the region-free demand, which no commit reinitializes
+/// either, is decidable from the type alone.
 #[derive(Clone, Copy)]
 pub(super) enum MutationForm {
-    /// `set p = e`, with the [STOR-1] restructuring `e` admits.
-    Set {
-        /// The fix [STOR-1] offers for an affine target of this statement.
-        affine_fix: &'static str,
-    },
+    /// `set p = e`, whose affine admission [LIV-2] judges at the commit.
+    Set,
     /// `replace p = e`.
     Replace,
+}
+
+/// One formed and judged mutation target [SET-1, SET-2, LIV-2].
+///
+/// The resolved place is what the commit writes and what every judgment
+/// stated over places reads: [LIV-2]'s pairwise disjointness, its read-out
+/// matching, and [OWN-5]'s loan state. It is not the written spelling: a
+/// `deref` target resolves through its holder to the borrowed place, so two
+/// targets that overlap are refused however they are spelled.
+pub(in crate::semantic::check) struct MutationTarget {
+    /// The source declaration the written place is rooted at: the value
+    /// binding for a bare, field or subscript target, the holder for a
+    /// `deref` target.
+    pub(in crate::semantic::check) declaration: DeclarationId,
+    /// The resolved place this target writes [OWN-6].
+    pub(in crate::semantic::check) place: ResolvedPlace,
+    /// Whether the write selects one element of `place` rather than `place`
+    /// itself, which is the granularity [MSR-2] states over storage.
+    pub(in crate::semantic::check) element: bool,
+    pub(in crate::semantic::check) target: CheckedSetTarget,
+    pub(in crate::semantic::check) effects: EffectSet,
+    /// A capability this compiler does not implement at this target, carried
+    /// rather than raised so that [DIAG-1]'s order holds: every source
+    /// rejection of the statement, [LIV-2]'s commit conditions included, is
+    /// judged before the stop, and no capability limit stands in front of a
+    /// rejection.
+    pub(in crate::semantic::check) unsupported: Option<UnsupportedSemanticFeature>,
 }
 
 impl MutationForm {
@@ -60,21 +85,18 @@ impl MutationForm {
     }
 }
 
-/// [STOR-1]'s ordinary restructuring: `replace` names the previous owner.
-pub(super) const STOR1_REPLACE: &str =
-    "use replace: let old = replace p = e; binds the previous owner";
-
-/// [STOR-1]'s restructuring when the right-hand side consumes the target root.
+/// [STOR-1]'s restructuring, which [LIV-2] leaves as the rule's only one:
+/// `replace` names the previous owner.
 ///
-/// `replace` cannot help there: it commits the value into the very root the
-/// right-hand side moved out of, so applying it produces the next rule's
-/// rejection instead of an accepted program. The blind-writer trial of
-/// 2026-08-28 recorded a writer spending two of six compile attempts on
-/// exactly that pair -- `[STOR-1]` offering `replace`, then `[OWN-1]`
-/// rejecting the result as a use after move -- so this offers the fresh `let`
-/// that `[OWN-1]` accepts.
-pub(super) const STOR1_FRESH_LET: &str = "the right-hand side consumes the target root, so replace cannot commit into it: \
-     bind the result under a new let, and combine it with the old value field by field";
+/// The second sentence this constant had beside it — the fresh `let` offered
+/// when the right-hand side consumed the target root — is retired with
+/// [LIV-2]. That shape is no longer a rejection at a complete binding: the
+/// consuming `move` is the target's read-out and the statement is accepted.
+/// At a projected target the root is genuinely dead at the commit, so the
+/// rejection there is [OWN-1]'s dead root, which offers the same fresh `let`
+/// in its own sentence.
+pub(in crate::semantic::check) const STOR1_REPLACE: &str =
+    "use replace: let old = replace p = e; binds the previous owner";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// [SET-2] target formation: exactly [SET-1]'s relation with the
@@ -85,7 +107,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         self.check_mutation_target(function, node, bindings, loop_depth, MutationForm::Replace)
     }
 
@@ -95,61 +117,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
-        affine_fix: &'static str,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
-        self.check_mutation_target(
-            function,
-            node,
-            bindings,
-            loop_depth,
-            MutationForm::Set { affine_fix },
-        )
-    }
-
-    /// Which [STOR-1] restructuring this `set` statement's right-hand side
-    /// admits.
-    ///
-    /// `replace` writes the new value into the target's own root and binds the
-    /// previous owner out of it. That works whenever the root is still alive at
-    /// the commit. It cannot work when the right-hand side moved the root away
-    /// to compute the value, because there is then no live owner to bind and
-    /// [OWN-1] rejects the reuse -- so a mechanical fix that offered `replace`
-    /// there spent an attempt and left the writer where they started. The
-    /// discriminator is exactly the written `move` of the target's root
-    /// somewhere in the value expression.
-    ///
-    /// This reads syntax, not the checked value: it runs before the target is
-    /// formed, so nothing here accepts or rejects anything. Only which of two
-    /// sentences a rejection prints depends on it.
-    pub(super) fn set_affine_restructuring(
-        &self,
-        target: NodeId,
-        value: NodeId,
-    ) -> Result<&'static str, CheckStop> {
-        let Some(root) = self.place_root_declaration(target)? else {
-            return Ok(STOR1_REPLACE);
-        };
-        for atom in self.tree.descendants_with(value, Production::Atom)? {
-            if !self.has_fixed(atom, FixedTerminal::Move)? {
-                continue;
-            }
-            let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
-                continue;
-            };
-            if self.place_root_declaration(place)? == Some(root) {
-                return Ok(STOR1_FRESH_LET);
-            }
-        }
-        Ok(STOR1_REPLACE)
+    ) -> Result<MutationTarget, CheckStop> {
+        self.check_mutation_target(function, node, bindings, loop_depth, MutationForm::Set)
     }
 
     /// The source declaration a written place is rooted at, when its base is a
     /// bare name.
     ///
     /// A `deref` base is rooted in a holder rather than in the storage the
-    /// place selects, and the question above is about the storage, so it
-    /// answers `None` and the ordinary restructuring stands.
-    fn place_root_declaration(&self, place: NodeId) -> Result<Option<DeclarationId>, CheckStop> {
+    /// place selects, so it answers `None`: the storage that place selects is
+    /// the referent's, not the holder's. [LIV-2] reads this to decide the one
+    /// target shape it reinitializes from dead, the complete binding.
+    pub(in crate::semantic::check) fn complete_binding_target(
+        &self,
+        place: NodeId,
+    ) -> Result<Option<DeclarationId>, CheckStop> {
         let Some(pbase) = self.tree.first_child_with(place, Production::Pbase)? else {
             return Ok(None);
         };
@@ -176,7 +158,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         form: MutationForm,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         let pbase = self
             .tree
             .first_child_with(node, Production::Pbase)?
@@ -241,7 +223,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(&declaration)
             .cloned()
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        if !local.live {
+        // [LIV-2] a commit whose target is a complete binding reinitializes
+        // that binding, so a dead one is the one root this formation admits;
+        // every projected, dereferenced or subscripted target of a dead root
+        // stays [OWN-1]'s rejection, because reinitializing one component of a
+        // dead root would leave the rest uninitialized.
+        let reinitializes = matches!(form, MutationForm::Set) && suffixes.is_empty();
+        if !local.live && !reinitializes {
             return self.issue_node(
                 SemanticRule::Own1,
                 node,
@@ -282,15 +270,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
 
-        Ok((
+        Ok(MutationTarget {
             declaration,
-            CheckedSetTarget::Place(CheckedWritablePlace {
+            place: resolved,
+            element: false,
+            target: CheckedSetTarget::Place(CheckedWritablePlace {
                 binding: local.binding,
                 fields,
                 ty,
             }),
             effects,
-        ))
+            unsupported: None,
+        })
     }
 
     /// The final selected type's [OWN-1] class judgment shared by the
@@ -302,7 +293,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
         form: MutationForm,
     ) -> Result<(), CheckStop> {
-        let MutationForm::Set { affine_fix } = form else {
+        let MutationForm::Set = form else {
             if self.is_copy_type(ty)? {
                 return self.issue_node(
                     SemanticRule::Set2,
@@ -331,13 +322,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             return Ok(());
         };
-        if !self.is_copy_type(ty)? {
+        // [LIV-2] an affine target's admission is judged at the commit, where
+        // the read-out is known; only the region-free demand [SET-2] states of
+        // a replacement target is decidable from the type alone, and a commit
+        // reinitializes no origin set or arena confinement either.
+        if !self.is_copy_type(ty)? && self.checked_type_is_region_bearing(ty)? {
             return self.issue_node(
-                SemanticRule::Stor1,
+                SemanticRule::Liv2,
                 node,
-                SemanticIssueKind::AffineSetTarget {
+                SemanticIssueKind::RegionBearingCommitTarget {
                     target_type: self.checked_type_name(ty)?,
-                    mechanical_fix: affine_fix,
+                    mechanical_fix: "a slice's static origin set and an arena's confinement \
+                                     are fixed at initialization; bind a new slice or arena \
+                                     under a new let",
                 },
             );
         }
@@ -1095,20 +1092,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                if !copy && local.loop_depth < options.loop_depth {
-                    return self.issue_node(
-                        SemanticRule::Own11,
-                        use_node,
-                        SemanticIssueKind::MoveOuterBindingInLoop {
-                            mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
-                        },
-                    );
-                }
+                // [LIV-2] a `move` of a target place of this statement's
+                // commit, or of a place reached through one, is that target's
+                // read-out: the previous value leaves, the root stays live,
+                // and the same statement reinitializes the target. It is not
+                // [OWN-1]'s root-killing consume and derives no residual
+                // cleanup of the root's unselected content.
+                let read_out = !copy
+                    && options.explicit_move
+                    && self.take_commit_read_out(&ResolvedPlace {
+                        root: declaration,
+                        fields: fields.clone(),
+                    });
                 // OWN-1 makes an affine projection consume its whole root.
                 // Its residual cleanup destroys every unselected resource
                 // field, so the loan access is the root rather than only the
-                // selected projection.
-                let access_fields = if copy { fields.clone() } else { Vec::new() };
+                // selected projection. A read-out consumes exactly its own
+                // place, so its access is that place.
+                let access_fields = if copy || read_out {
+                    fields.clone()
+                } else {
+                    Vec::new()
+                };
                 let access_kind = if copy {
                     AccessKind::Read
                 } else {
@@ -1124,7 +1129,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     access_kind,
                     use_node,
                 )?;
-                let residual_drops = if copy || fields.is_empty() {
+                let residual_drops = if copy || read_out || fields.is_empty() {
                     Vec::new()
                 } else {
                     let paths = self.residual_drop_paths(local.ty, &fields)?;
@@ -1141,7 +1146,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         })
                         .collect()
                 };
-                if !copy {
+                // [LIV-2] after its read-out the target is dead for the
+                // remainder of the right-hand side, and the commit reinitializes
+                // it. At a complete binding that is exactly this binding's own
+                // liveness, so the ordinary kill stands and the commit revives
+                // it; at a projection the root keeps its other content and only
+                // the target place is spent, which the commit's own read-out
+                // record carries.
+                if !copy && (!read_out || fields.is_empty()) {
                     bindings
                         .get_mut(&declaration)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?
@@ -1152,7 +1164,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     fields: access_fields,
                 };
                 let mut effects = EffectSet::NONE;
-                if matches!(access_kind, AccessKind::Read) {
+                // [LIV-2, EFF-2] a read-out reads the target's own storage,
+                // exactly as [SET-2]'s exchange does, and the commit writes it.
+                if matches!(access_kind, AccessKind::Read) || read_out {
                     for path in self.effect_paths_for_place(&access, bindings)? {
                         effects.add_read(path);
                     }
@@ -1192,7 +1206,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 .map(|origins| origins.projected(&fields)),
                             fields,
                             ty,
-                            consume_root: !copy,
+                            consume_root: !copy && !read_out,
                             residual_drops,
                         },
                         effects,
@@ -1319,7 +1333,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         form: MutationForm,
         root: (LocalBinding, OwnedContent),
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         let (local, content) = root;
         if !local.live {
             return self.issue_node(
@@ -1343,22 +1357,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             None,
             &ResolvedPlace {
                 root: local.declaration,
-                fields,
+                fields: fields.clone(),
             },
             AccessKind::Write,
             node,
         )?;
         self.check_mutation_target_class(node, ty, form)?;
-        // TEMPORARY capability stop, judged after every [OWN-1], [OWN-5], and
-        // [STOR-1] source rejection above.
-        match content {
-            OwnedContent::Arena { .. } => {
-                self.unsupported(UnsupportedSemanticFeature::ArenaRuntime, node)
-            }
-            OwnedContent::Boxed(_) => {
-                self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node)
-            }
-        }
+        // TEMPORARY capability stop, carried rather than raised: [LIV-2]'s
+        // commit conditions are source rejections and are judged first, so a
+        // live affine content target still reports [STOR-1] and only a form
+        // this compiler cannot lower reaches the stop.
+        let unsupported = Some(match content {
+            OwnedContent::Arena { .. } => UnsupportedSemanticFeature::ArenaRuntime,
+            OwnedContent::Boxed(_) => UnsupportedSemanticFeature::RegionsAndBorrows,
+        });
+        Ok(MutationTarget {
+            declaration: local.declaration,
+            place: ResolvedPlace {
+                root: local.declaration,
+                fields: fields.clone(),
+            },
+            element: false,
+            target: CheckedSetTarget::Place(CheckedWritablePlace {
+                binding: local.binding,
+                fields,
+                ty,
+            }),
+            effects: EffectSet::NONE,
+            unsupported,
+        })
     }
 
     fn check_dereferenced_set_target(
@@ -1367,7 +1394,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         pbase: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         form: MutationForm,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         // [SET-1] makes a `deref` target writable through either of two roots:
         // an explicit `deref` of a live usable `&uniq` holder, or a live
         // own-mode binding whose storage the `deref` reaches [STOR-1]. Only
@@ -1410,15 +1437,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 effects.add_read(path);
             }
         }
-        Ok((
+        Ok(MutationTarget {
             declaration,
-            CheckedSetTarget::Place(CheckedWritablePlace {
+            place: resolved,
+            element: false,
+            target: CheckedSetTarget::Place(CheckedWritablePlace {
                 binding: local.binding,
                 fields,
                 ty,
             }),
             effects,
-        ))
+            unsupported: None,
+        })
     }
 
     pub(super) fn check_match_expression(

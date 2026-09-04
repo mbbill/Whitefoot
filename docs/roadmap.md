@@ -52,13 +52,14 @@ interval it stands for, so nested joins reach the flat join's image and
 acceptance stops depending on the shape of the control join. The repair only
 adds images: no program v0.42 accepted is refused.
 
-v0.45 adds four rules and retires none (140 remain), and adds one grammar atom,
+v0.45 adds six rules and retires none (142 remain), and adds one grammar atom,
 `is`. A `fn_decl` may write an ordered result list, `-> (kept: own u64, spare:
 own u64)`, and a caller names its ordinals again with a destructuring `let`
 binder list or a `set` target list; a `return` writes one expression per
 declared result. [FN-1] numbers the ordinals and reads every result judgment per
 ordinal, [TYPE-5] derives binder i and target i from ordinal i, and [SET-1]
-commits a target list in written order over pairwise distinct roots. [CALL-4]
+commits a target list in written order, under the disjointness judgment [LIV-2]
+states. [CALL-4]
 widens the contract vocabulary to the ordinals: every ordinal is a datum of
 every clause, a route may name the ordinal it applies to with `when b is
 V(f: r):`, the binder may be omitted exactly when one ordinal has that enum
@@ -85,6 +86,24 @@ a value, a counted endpoint and a clause operand. The three readers are dotless
 operation spellings, so `ReservedLowerNames` gains all three and a writer
 declaration may no longer be spelled `cap`, `room` or `head`. The batch that
 carried it is B2 of the same design.
+
+The same version adds that design's liveness and commit rules. [LIV-1] makes a
+binding's live-or-dead status a property of a program point: every predecessor
+of every join and every loop head agrees on it, a disagreement is a hard error
+naming the binding and both predecessors, and because the status agrees, every
+binding live on an edge leaving a scope takes its compiler-derived release
+there unconditionally. [OWN-11]'s prohibition on moving an outer binding into a
+loop body becomes that rule's per-iteration reading at its own loop head.
+[LIV-2] states one `set` commit for one or more targets over one call or a
+written value list: every target is resolved before the right-hand side, a
+`move` of a target place or of a place reached through one is that target's
+read-out and kills no root, and all targets are reinitialised at one commit
+under three conditions -- the dead target, whose live affine case keeps
+[STOR-1]'s error; pairwise non-overlapping targets, which replaces [SET-1]'s
+pairwise-distinct-roots placeholder; and exact arity and type. `set p =
+f(x: move p);` is the transformation in place at a binding, a field, a `deref`
+and a subscript alike, and `set (p, q) = move q, move p;` is the swap. The
+batch that carried it is B4 of the same design.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`

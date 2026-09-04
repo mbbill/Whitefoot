@@ -903,11 +903,16 @@ fn statement_uses_any(statement: &CheckedStatement, bindings: &HashSet<BindingId
         | CheckedStatement::Replace { target, value, .. } => {
             set_target_uses_any(target, bindings) || expression_uses_any(value, bindings)
         }
-        CheckedStatement::SetList { targets, value, .. } => {
+        CheckedStatement::SetList {
+            targets, values, ..
+        } => {
             targets
                 .iter()
                 .any(|target| set_target_uses_any(target, bindings))
-                || expression_uses_any(value, bindings)
+                || values
+                    .expressions()
+                    .iter()
+                    .any(|value| expression_uses_any(value, bindings))
         }
         CheckedStatement::Proof(_) => false,
         CheckedStatement::Return { value, drops, .. }

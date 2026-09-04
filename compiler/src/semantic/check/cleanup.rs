@@ -110,7 +110,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::DestructuringLet { value, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
                 }
-                CheckedStatement::SetList { targets, value, .. } => {
+                CheckedStatement::SetList {
+                    targets, values, ..
+                } => {
                     for target in targets {
                         match target {
                             CheckedSetTarget::Place(_) => {}
@@ -122,7 +124,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                         }
                     }
-                    self.collect_expression_release_sites(value, sites)?;
+                    for value in values.expressions() {
+                        self.collect_expression_release_sites(value, sites)?;
+                    }
                 }
                 CheckedStatement::PropagateLet {
                     scrutinee,

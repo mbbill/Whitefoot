@@ -61,11 +61,15 @@ fn collect_statements(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value) => collect_expression(value, direct, edges),
-            CheckedStatement::SetList { targets, value, .. } => {
+            CheckedStatement::SetList {
+                targets, values, ..
+            } => {
                 for target in targets {
                     collect_set_target(target, direct, edges);
                 }
-                collect_expression(value, direct, edges);
+                for value in values.expressions() {
+                    collect_expression(value, direct, edges);
+                }
             }
             CheckedStatement::PropagateLet {
                 scrutinee,

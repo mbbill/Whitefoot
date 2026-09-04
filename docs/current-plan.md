@@ -45,7 +45,7 @@ whose published relations contradict each other. The batch that carried it is
 B1 of the container and resource design under
 `research/investigations/containers-and-resources/`.
 
-v0.45 adds four rules and retires none (140 remain), and adds one grammar atom,
+v0.45 adds six rules and retires none (142 remain), and adds one grammar atom,
 `is`. A `fn_decl` may write an ordered result list, and a caller names its
 ordinals again with a destructuring `let` binder list or a `set` target list;
 a `return` writes one expression per declared result. [FN-1] numbers the
@@ -69,6 +69,24 @@ derivation of a numeric goal and retires [ENT-6]'s per-family route grants.
 operand. Adding the three readers also adds three members to
 `ReservedLowerNames`, so no writer declaration may be spelled `cap`, `room` or
 `head` any more. The batch that carried it is B2 of the same design.
+
+The same version adds that design's liveness and commit rules. [LIV-1] makes a
+binding's live-or-dead status a property of a program point: every predecessor
+of every join and every loop head agrees on it, a disagreement is a hard error
+naming the binding and both predecessors, and because the status agrees, every
+binding live on an edge leaving a scope takes its compiler-derived release
+there unconditionally. [OWN-11]'s prohibition on moving an outer binding into a
+loop body becomes that rule's per-iteration reading at its own loop head.
+[LIV-2] states one `set` commit for one or more targets over one call or a
+written value list: every target is resolved before the right-hand side, a
+`move` of a target place or of a place reached through one is that target's
+read-out and kills no root, and all targets are reinitialised at one commit
+under three conditions -- the dead target, whose live affine case keeps
+[STOR-1]'s error; pairwise non-overlapping targets, which replaces [SET-1]'s
+pairwise-distinct-roots placeholder; and exact arity and type. `set p =
+f(x: move p);` is the transformation in place at a binding, a field, a `deref`
+and a subscript alike, and `set (p, q) = move q, move p;` is the swap. The
+batch that carried it is B4 of the same design.
 
 ## Outcome
 

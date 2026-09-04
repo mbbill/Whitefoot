@@ -162,11 +162,13 @@ impl IrBuilder<'_> {
         )
     }
 
-    pub(super) fn lower_buffer_set(
+    /// The buffer-element half of one [LIV-2] commit, over an ordinal value
+    /// the caller has already evaluated.
+    pub(super) fn lower_buffer_element_commit(
         &mut self,
         root: IrValueId,
         target: &CheckedBufferSetTarget,
-        value: &CheckedExpression,
+        value: IrValueId,
     ) -> Result<IrValueId, LoweringFailure> {
         let element = lower_flat_element(target.root.element)?;
         let buffer = self.project_buffer_root(root, &target.root)?;
@@ -182,7 +184,6 @@ impl IrBuilder<'_> {
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        let value = self.expression(value)?;
         if self.value_type(value)? != element.ty() {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }

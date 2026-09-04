@@ -2823,4 +2823,49 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   unchanged in id, expectation, and status: [MSR-2] restated the granularity of
   a measure kill over storage, while the classification of what a projected
   callee write touches is [CALL-3]'s and is not in this merge.
-ACTIVE-SPEC: v0.45 d779c19cd0b5527b8b2c4cd92ccd67f619b36b601cd7e4debab11c19d652b7b5 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B4, liveness and the one commit rule): v0.45 lands the containers
+  design's `[LIV]` family. Numbered rules +2/-0 (142 remain), being [LIV-1] and
+  [LIV-2]; grammar productions +0/-0 (84 remain); `set_stmt` changes again,
+  its parenthesized target list now taking one `call` or a value list of one
+  expression per target, which is the owner's decision D2 of 2026-09-03 that
+  `set (p, x) = x, p;` is the swap and that the language gets no exchange
+  operation. [OWN-1], [OWN-11], [SET-1], [STOR-1], [STOR-3] and [TYPE-5] are
+  amended in place. [LIV-1] makes a binding's live-or-dead status a property of
+  a program point: every predecessor of every join and every loop head agrees
+  on it, a disagreement is a hard error naming the binding and the two
+  predecessors, and because the status agrees every scope-exit release is
+  unconditional. [OWN-11]'s prohibition on moving an outer binding into a loop
+  body becomes that rule's per-iteration reading of the same agreement at its
+  own loop head, over the structural backedge, so a body that moves such a
+  binding and reinitializes it before the backedge is admitted and a body that
+  leaves it dead is not. [LIV-2] states one `set` commit for one or more
+  targets: every target is resolved before the right-hand side, a `move` of a
+  target place or of a place reached through one is that target's read-out and
+  kills no root, every target is dead through the evaluation, and all targets
+  are reinitialised at one commit, under three conditions — the dead target,
+  whose live affine case keeps [STOR-1]'s error and its one restructuring;
+  pairwise non-overlapping targets on [OWN-7]'s terms, which replaces [SET-1]'s
+  pairwise-distinct-roots placeholder; and exact arity and type. [OWN-1] revives
+  a dead binding only through such a commit at that complete binding. One clause
+  of [LIV-2] is DEFERRED with a stated zero delta: a target identifier that
+  resolves to no binding, which would introduce one as a `let` does.
+- CONFORMANCE BOUNDARY (B4): this batch ADDS nine conformance cases and their
+  nine manifest rows, and modifies, deletes and renames none; it changes no
+  adapter, runner, or collection wiring, and no existing case's source,
+  expectation, rule citation or status. The added ids are
+  `liv1-neg-branches-disagree-on-liveness` (expecting reject, LIV-1),
+  `liv1-neg-loop-leaves-an-outer-binding-dead` (expecting reject, OWN-11),
+  `liv2-neg-two-subscripts-of-one-run` (expecting reject, LIV-2),
+  `liv1-pos-loop-moves-and-restores-an-outer-binding` and
+  `liv2-pos-read-out-at-a-binding-a-field-and-a-deref` (run, exit 0),
+  `liv2-pos-read-out-keeps-the-root-and-its-other-fields` (run, exit 3),
+  `liv2-pos-swap-and-rotation` (run, exit 5),
+  `liv2-pos-two-fields-of-one-root` (run, exit 9) and
+  `liv2-pos-subscript-targets-commit-their-own-ordinals` (run, exit 2). Before
+  this batch the corpus holds 533 cases with the native adapter reporting
+  Pass=531, Xfail=1, Skip=1; after it the corpus holds 542 with the adapter
+  reporting Pass=540, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, and the recorded-verdict snapshot
+  corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 814e3131ce78fce98f1c0091b04ec94cb7a7b9480d0535f43915d9cf799537c7 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

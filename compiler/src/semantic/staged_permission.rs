@@ -604,11 +604,10 @@ fn statement_expressions(statement: &CheckedStatement) -> Vec<&CheckedExpression
         | CheckedStatement::DropExpression { value, .. }
         | CheckedStatement::Return { value, .. }
         | CheckedStatement::Give { value, .. } => vec![value],
-        CheckedStatement::Set { value, .. }
-        | CheckedStatement::SetList { value, .. }
-        | CheckedStatement::Replace { value, .. } => {
+        CheckedStatement::Set { value, .. } | CheckedStatement::Replace { value, .. } => {
             vec![value]
         }
+        CheckedStatement::SetList { values, .. } => values.expressions().iter().collect(),
         CheckedStatement::PropagateLet { scrutinee, .. }
         | CheckedStatement::Match { scrutinee, .. }
         | CheckedStatement::ValueMatchLet { scrutinee, .. } => vec![scrutinee],

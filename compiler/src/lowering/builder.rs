@@ -12,10 +12,10 @@ use crate::CheckedProgram;
 use crate::NodePath;
 use crate::semantic::CheckedSetTarget;
 use crate::semantic::{
-    BindingId, CheckedArrayRoot, CheckedConstructor, CheckedDrop, CheckedEntryForm,
-    CheckedExpression, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedParameter, CheckedProgramData, CheckedProjectedDrop, CheckedStatement, CheckedValue,
-    FunctionPermissions, MeasureCell, MeasuredKind,
+    BindingId, CheckedArrayRoot, CheckedArraySetTarget, CheckedCommitValues, CheckedConstructor,
+    CheckedDrop, CheckedEntryForm, CheckedExpression, CheckedMatchArm, CheckedMeasure, CheckedMode,
+    CheckedNominalKind, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
+    CheckedStatement, CheckedValue, FunctionPermissions, MeasureCell, MeasuredKind,
 };
 
 use super::*;
@@ -1022,11 +1022,8 @@ impl<'program> IrBuilder<'program> {
                     }
                 }
                 CheckedStatement::SetList {
-                    targets,
-                    nominal,
-                    value: expression,
-                    ..
-                } => self.set_list(targets, *nominal, expression)?,
+                    targets, values, ..
+                } => self.set_list(targets, values)?,
                 CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
                 CheckedStatement::Replace {
                     binding,
@@ -2017,62 +2014,54 @@ impl<'program> IrBuilder<'program> {
     /// written order, each committed to its target exactly as a single-target
     /// `set` commits. Every target of a checked target list is a plain place;
     /// a subscript target stops in the checker.
+    /// [LIV-2] one commit of a target list.
+    ///
+    /// The whole right-hand side is evaluated first — the one call, or every
+    /// written value in order — and only then is any target written, so a
+    /// statement whose targets and values name the same places, the swap
+    /// included, reads every previous value before the first commit.
     fn set_list(
         &mut self,
         targets: &[CheckedSetTarget],
-        nominal: crate::semantic::NominalId,
-        expression: &CheckedExpression,
+        values: &CheckedCommitValues,
     ) -> Result<(), LoweringFailure> {
-        let aggregate = self.expression(expression)?;
-        self.note_call_result(expression, aggregate)?;
-        if self.value_type(aggregate)? != IrType::Nominal(IrNominalId(nominal.0)) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
-        }
-        for (ordinal, target) in targets.iter().enumerate() {
-            let CheckedSetTarget::Place(place) = target else {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            };
-            let field =
-                u32::try_from(ordinal).map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
-            let value = self.project_struct_path(aggregate, &[field], true)?;
-            if self.value_type(value)? != lower_type(place.ty)? {
-                return Err(LoweringFailure::InvalidCheckedProgram);
-            }
-            let storage = self
-                .bindings
-                .get(&place.binding)
-                .copied()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-            let root = self.load_storage_value(storage)?;
-            let replacement = if place.fields.is_empty() {
-                if self.value_type(root)? != self.value_type(value)? {
+        let ordinals = match values {
+            CheckedCommitValues::ResultList { nominal, value } => {
+                let aggregate = self.expression(value)?;
+                self.note_call_result(value, aggregate)?;
+                if self.value_type(aggregate)? != IrType::Nominal(IrNominalId(nominal.0)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                value
-            } else {
-                self.replace_struct_path(root, &place.fields, value)?
-            };
-            let stored = match self.value_type(storage)? {
-                IrType::Address(referent) => {
-                    if self.value_type(replacement)? != referent.ty() {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
-                    }
-                    self.store_addressed(storage, replacement, referent)?;
-                    storage
+                let mut ordinals = Vec::with_capacity(targets.len());
+                for ordinal in 0..targets.len() {
+                    let field = u32::try_from(ordinal)
+                        .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
+                    ordinals.push(self.project_struct_path(aggregate, &[field], true)?);
                 }
-                _ => replacement,
-            };
-            if self.bindings.insert(place.binding, stored) != Some(storage) {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                ordinals
             }
+            CheckedCommitValues::Written(values) => {
+                if values.len() != targets.len() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let mut ordinals = Vec::with_capacity(values.len());
+                for value in values {
+                    ordinals.push(self.expression(value)?);
+                }
+                ordinals
+            }
+        };
+        for (target, value) in targets.iter().zip(ordinals) {
+            self.commit_target(target, value)?;
         }
         Ok(())
     }
 
-    fn set(
+    /// One target's write of an already-evaluated ordinal value [LIV-2].
+    fn commit_target(
         &mut self,
         target: &CheckedSetTarget,
-        value: &CheckedExpression,
+        value: IrValueId,
     ) -> Result<(), LoweringFailure> {
         let binding = target.binding();
         let storage = self
@@ -2081,68 +2070,26 @@ impl<'program> IrBuilder<'program> {
             .copied()
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
         let root = self.load_storage_value(storage)?;
+        if self.value_type(value)? != lower_type(target.ty())? {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
         let replacement = match target {
-            CheckedSetTarget::Place(target) => {
-                let value = self.expression(value)?;
-                if self.value_type(value)? != lower_type(target.ty)? {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                if target.fields.is_empty() {
+            CheckedSetTarget::Place(place) => {
+                if place.fields.is_empty() {
                     if self.value_type(root)? != self.value_type(value)? {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
                     value
                 } else {
-                    self.replace_struct_path(root, &target.fields, value)?
+                    self.replace_struct_path(root, &place.fields, value)?
                 }
             }
             CheckedSetTarget::ArrayIndex(target) => {
-                let array_type = lower_type(target.array_type)?;
-                let IrType::Array { element, length } = array_type else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                };
-                let array = if target.fields.is_empty() {
-                    root
-                } else {
-                    self.project_struct_path(root, &target.fields, false)?
-                };
-                if self.value_type(array)? != array_type
-                    || element.ty() != lower_type(target.element_type)?
-                    || Some(length) != target.length.value()
-                {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                // The subscript's bounds obligation is discharged at the
-                // source level [OP-4]; the offset is consumed directly with
-                // no runtime branch.
-                let index = self.expression(&target.offset)?;
-                if self.value_type(index)?
-                    != (IrType::Integer {
-                        width: 64,
-                        signed: false,
-                    })
-                {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let value = self.expression(value)?;
-                if self.value_type(value)? != element.ty() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
-                }
-                let replacement = self.define(
-                    array_type,
-                    IrOperation::InsertArray {
-                        aggregate: array,
-                        index,
-                        value,
-                    },
-                )?;
-                if target.fields.is_empty() {
-                    replacement
-                } else {
-                    self.replace_struct_path(root, &target.fields, replacement)?
-                }
+                self.lower_array_element_commit(root, target, value)?
             }
-            CheckedSetTarget::BufferIndex(target) => self.lower_buffer_set(root, target, value)?,
+            CheckedSetTarget::BufferIndex(target) => {
+                self.lower_buffer_element_commit(root, target, value)?
+            }
         };
         let stored = match self.value_type(storage)? {
             IrType::Address(referent) => {
@@ -2158,6 +2105,69 @@ impl<'program> IrBuilder<'program> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(())
+    }
+
+    /// [SET-1, LIV-2] the one-target commit: the right-hand side is
+    /// evaluated once and completely, then the one target is written by the
+    /// same commit a target list uses.
+    fn set(
+        &mut self,
+        target: &CheckedSetTarget,
+        value: &CheckedExpression,
+    ) -> Result<(), LoweringFailure> {
+        let value = self.expression(value)?;
+        self.commit_target(target, value)
+    }
+
+    /// The array-element half of one commit: the offset is consumed directly,
+    /// because its [OP-4] obligation was discharged at the source level and no
+    /// runtime branch remains.
+    fn lower_array_element_commit(
+        &mut self,
+        root: IrValueId,
+        target: &CheckedArraySetTarget,
+        value: IrValueId,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let array_type = lower_type(target.array_type)?;
+        let IrType::Array { element, length } = array_type else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let array = if target.fields.is_empty() {
+            root
+        } else {
+            self.project_struct_path(root, &target.fields, false)?
+        };
+        if self.value_type(array)? != array_type
+            || element.ty() != lower_type(target.element_type)?
+            || Some(length) != target.length.value()
+        {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let index = self.expression(&target.offset)?;
+        if self.value_type(index)?
+            != (IrType::Integer {
+                width: 64,
+                signed: false,
+            })
+        {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        if self.value_type(value)? != element.ty() {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let replacement = self.define(
+            array_type,
+            IrOperation::InsertArray {
+                aggregate: array,
+                index,
+                value,
+            },
+        )?;
+        if target.fields.is_empty() {
+            Ok(replacement)
+        } else {
+            self.replace_struct_path(root, &target.fields, replacement)
+        }
     }
 
     fn project_struct_path(

@@ -119,7 +119,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         let mut arms = Vec::with_capacity(arm_nodes.len());
         let mut normal_states = Vec::new();
+        // [LIV-1] one label per predecessor state, in the order the states are
+        // collected, so a liveness disagreement can name the two edges the
+        // writer wrote rather than two indices.
+        let mut normal_labels: Vec<String> = Vec::new();
         let mut give_states = Vec::new();
+        let mut give_labels: Vec<String> = Vec::new();
         let mut break_states = Vec::new();
         let mut effects = scrutinee.effects.clone();
         let mut all_paths_deliver = true;
@@ -146,11 +151,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 Vec::new()
             };
+            let label = format!("the `{}` arm", variant.name);
             if checked.can_continue {
                 normal_states.push(arm_bindings);
+                normal_labels.push(label.clone());
             }
             all_paths_deliver &= !checked.can_continue && checked.all_paths_deliver;
             effects = effects.union(checked.effects);
+            give_labels.extend(std::iter::repeat_n(
+                format!("a delivering edge of {label}"),
+                checked.give_states.len(),
+            ));
             give_states.extend(checked.give_states);
             break_states.extend(checked.break_states);
             arms.push(CheckedMatchArm {
@@ -168,9 +179,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 local_give_context.as_ref().and_then(GiveContext::delivered),
             )?;
-            self.join_states(&base_keys, &give_states, node, bindings)?;
+            self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
-            self.join_states(&base_keys, &normal_states, node, bindings)?;
+            self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
         }
         Ok(MatchResult {
             scrutinee: scrutinee.expression,
@@ -328,7 +339,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         let mut arms = Vec::with_capacity(2);
         let mut normal_states = Vec::new();
+        let mut normal_labels: Vec<String> = Vec::new();
         let mut give_states = Vec::new();
+        let mut give_labels: Vec<String> = Vec::new();
         let mut break_states = Vec::new();
         let mut effects = condition.effects.clone();
         let mut all_paths_deliver = true;
@@ -347,11 +360,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             } else {
                 Vec::new()
             };
+            let label = if variant.tag == 1 {
+                "the `if` branch".to_owned()
+            } else {
+                "the `else` branch".to_owned()
+            };
             if checked.can_continue {
                 normal_states.push(branch_bindings);
+                normal_labels.push(label.clone());
             }
             all_paths_deliver &= !checked.can_continue && checked.all_paths_deliver;
             effects = effects.union(checked.effects);
+            give_labels.extend(std::iter::repeat_n(
+                format!("a delivering edge of {label}"),
+                checked.give_states.len(),
+            ));
             give_states.extend(checked.give_states);
             break_states.extend(checked.break_states);
             arms.push(CheckedMatchArm {
@@ -369,9 +392,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 local_give_context.as_ref().and_then(GiveContext::delivered),
             )?;
-            self.join_states(&base_keys, &give_states, node, bindings)?;
+            self.join_states(&base_keys, &give_states, &give_labels, node, bindings)?;
         } else {
-            self.join_states(&base_keys, &normal_states, node, bindings)?;
+            self.join_states(&base_keys, &normal_states, &normal_labels, node, bindings)?;
         }
         Ok(MatchResult {
             scrutinee: condition.expression,
@@ -710,13 +733,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// [LIV-1] the join of every predecessor's ownership state.
+    ///
+    /// Liveness is judged first and is a source rejection: every predecessor
+    /// must agree on the live-or-dead status of every binding in scope, and a
+    /// disagreement names the binding and the two predecessors. Only then does
+    /// the checker's own capability limit on joining the remaining state
+    /// apply, so a disagreeing predecessor pair can never be answered with a
+    /// stop instead of a rejection.
     pub(super) fn join_states(
         &self,
         base_keys: &[DeclarationId],
         states: &[HashMap<DeclarationId, LocalBinding>],
+        labels: &[String],
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
     ) -> Result<(), CheckStop> {
+        if states.len() != labels.len() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
         let Some(first) = states.first() else {
             return Ok(());
         };
@@ -725,12 +760,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(key)
                 .cloned()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            for state in states.iter().skip(1) {
+            let mut live_predecessor = labels
+                .first()
+                .cloned()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            for (state, label) in states.iter().zip(labels).skip(1) {
                 let candidate = state
                     .get(key)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if candidate.live != joined.live {
+                    let (live, dead) = if joined.live {
+                        (live_predecessor.clone(), label.clone())
+                    } else {
+                        (label.clone(), live_predecessor.clone())
+                    };
+                    return self.issue_node(
+                        SemanticRule::Liv1,
+                        node,
+                        SemanticIssueKind::LivenessJoinDisagreement {
+                            binding: self.declaration_spelling(*key)?,
+                            live_predecessor: live,
+                            dead_predecessor: dead,
+                            mechanical_fix: "every predecessor of a join agrees on a binding's \
+                                             live-or-dead status: consume it on every predecessor, \
+                                             on none, or commit a value back into it before the \
+                                             predecessor that consumed it reaches the join",
+                        },
+                    );
+                }
                 if !joined.same_except_region_loans(candidate) {
                     return self.unsupported(UnsupportedSemanticFeature::OwnershipJoin, node);
+                }
+                if joined.live {
+                    live_predecessor.clone_from(label);
                 }
                 joined.merge_region_loans_from(candidate);
             }

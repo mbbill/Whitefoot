@@ -23,7 +23,7 @@ use super::super::borrows::{
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PlaceAccess, TypedExpression,
 };
-use super::{MutationForm, PlaceUseOptions};
+use super::{MutationForm, MutationTarget, PlaceUseOptions};
 
 #[derive(Clone)]
 pub(super) struct CheckedArrayPlace {
@@ -814,7 +814,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
         form: MutationForm,
-    ) -> Result<(DeclarationId, CheckedSetTarget, EffectSet), CheckStop> {
+    ) -> Result<MutationTarget, CheckStop> {
         let suffix = suffixes[subscript];
         if subscript + 1 != suffixes.len() {
             return self.issue_node(
@@ -895,7 +895,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         self.check_mutation_target_class(node, element_type, form)?;
         let mut effects = offset.effects;
-        let (declaration, target) = match indexed {
+        let (declaration, place, target) = match indexed {
             CheckedIndexedPlace::Array(array) => {
                 let Some(declaration) = array.declaration else {
                     return self.issue_node(
@@ -904,11 +904,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         SemanticIssueKind::ImmutableSetTarget,
                     );
                 };
+                let resolved = array.resolved_place().ok_or_else(|| {
+                    self.issue_value(
+                        SemanticRule::Const2,
+                        node,
+                        SemanticIssueKind::ImmutableSetTarget,
+                    )
+                })?;
                 let CheckedArrayRoot::Binding { binding, fields } = array.root else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
                 (
                     declaration,
+                    resolved,
                     CheckedSetTarget::ArrayIndex(Box::new(CheckedArraySetTarget {
                         binding,
                         fields,
@@ -932,6 +940,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 (
                     buffer.declaration,
+                    buffer.resolved.clone(),
                     CheckedSetTarget::BufferIndex(Box::new(CheckedBufferSetTarget {
                         root: buffer.root,
                         offset: offset.expression,
@@ -944,7 +953,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };
-        Ok((declaration, target, effects))
+        // [MSR-2, LIV-2] a subscript target writes one element of `place`,
+        // never the run's own storage, so disjointness and the measure kill
+        // both read the element flag rather than the place alone.
+        Ok(MutationTarget {
+            declaration,
+            place,
+            element: true,
+            target,
+            effects,
+            unsupported: None,
+        })
     }
 
     fn check_indexed_atom_place(

@@ -1,0 +1,15 @@
+fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  doc "Consumes the run it is handed and reports its length.";
+  let n = len(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "LIV-1, OWN-11, LIV-2: the body consumes an outer binding and commits a value back into it, so the backedge agrees with the entering edge.";
+  let c = buffer_new(4_u64, 0_u8);
+  for (i in 0_u64..2_u64) {
+    let taken = measure(cell: move c);
+    set c = buffer_new(4_u64, 0_u8);
+  }
+  return exit_status(code: 0_u8);
+}

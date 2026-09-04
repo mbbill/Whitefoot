@@ -390,7 +390,7 @@ mod tests {
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
         assert_eq!(report.productions, 84);
-        assert_eq!(report.decisions, 128);
+        assert_eq!(report.decisions, 129);
         assert_eq!(report.terminals, 107);
         run_parser_probes().expect("the compiler must parse its own probes");
     }

@@ -531,13 +531,57 @@ fn function_control_and_main_contract_are_checked_before_lowering() {
     );
 }
 
+/// [OWN-11] the per-iteration judgment, which is [LIV-1]'s liveness agreement
+/// read at a loop head.
+///
+/// A body that leaves an outer binding dead on the backedge is the rejection;
+/// a body that moves one and commits a value back into it before the backedge
+/// agrees with the entering edge and is accepted.
 #[test]
 fn loops_enforce_own11_for_outer_affine_moves() {
     assert_rule(
-        include_bytes!("../../../tests/conformance/cases/own11-neg-move-outer-in-loop.wf"),
+        br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  let n = len(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let c = buffer_new(4_u64, 0_u8);
+  for (i in 0_u64..2_u64) {
+    let taken = measure(cell: move c);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
         SemanticRule::Own11,
         SemanticIssueKind::MoveOuterBindingInLoop {
-            mechanical_fix: "move the binding before the loop or declare and consume it inside the loop body",
+            binding: "c".to_owned(),
+            mechanical_fix: "one iteration must leave every outer binding in the status the next \
+                             one starts from: commit a value back into it before the backedge, or \
+                             declare and consume it inside the body",
+        },
+    );
+    with_semantics(
+        br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+  let n = len(cell);
+  return n;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let c = buffer_new(4_u64, 0_u8);
+  for (i in 0_u64..2_u64) {
+    let taken = measure(cell: move c);
+    set c = buffer_new(4_u64, 0_u8);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!(
+                    "a body that reinitializes the outer binding agrees at the backedge: {outcome:?}"
+                );
+            };
         },
     );
     with_semantics(
@@ -826,8 +870,24 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
         b"enum Flag {\n  A();\n  B();\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let flag = A();\n  match flag {\n    A() => {\n    }\n    A() => {\n    }\n    B() => {\n    }\n  }\n  return exit_status(code: 0_u8);\n}\n",
         UnsupportedSemanticFeature::DuplicateMatchArm,
     );
+    // [LIV-1] a liveness disagreement at a join is a source rejection now, so
+    // the capability limit this control pins is the state a join still cannot
+    // merge: the loop's entering value carries a fresh owner's attribution and
+    // its committed value carries the callee's, which no rule of this version
+    // joins.
     assert_unsupported(
-        b"struct Cell {\n  value: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let cell = Cell(value: 1_i32);\n  let flag = True();\n  if flag {\n    let consumed = move cell;\n  }\n  return exit_status(code: 0_u8);\n}\n",
+        br#"fn consume(cell: own buffer<u8>) -> out: own buffer<u8> pure {
+  return move cell;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let c = buffer_new(4_u64, 0_u8);
+  for (i in 0_u64..2_u64) {
+    set c = consume(cell: move c);
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
         UnsupportedSemanticFeature::OwnershipJoin,
     );
 }
@@ -1112,17 +1172,18 @@ fn set_rejections_keep_their_exact_rule_owners() {
     );
 }
 
-/// [STOR-1] offers the restructuring its own right-hand side admits.
+/// [LIV-2] an affine `set` target is admitted exactly when it is dead at the
+/// commit.
 ///
-/// `replace` binds the previous owner out of the target's root, so it is the
-/// answer only while that root is still alive at the commit. When the value
-/// being committed consumed the root to compute itself, `replace` produces
-/// `[OWN-1] UseAfterMove` instead of an accepted program: a mechanical fix the
-/// next rule rejects is worse than no fix, because it spends an attempt. The
-/// third case here is the offered form, checked, so the pair cannot drift
-/// apart.
+/// The two halves of the rule's first condition are checked side by side: a
+/// live affine target whose previous value the right-hand side does not read
+/// out keeps [STOR-1]'s rejection and its one restructuring, and the same
+/// statement whose right-hand side consumes that value is the read-out and is
+/// accepted. The second program is probe `q9`'s shape, which [STOR-1] refused
+/// before this rule and which offered a fresh-`let` restructuring that the
+/// rule makes unnecessary.
 #[test]
-fn an_affine_set_offers_the_restructuring_its_right_hand_side_admits() {
+fn an_affine_set_is_admitted_exactly_when_its_target_is_dead_at_the_commit() {
     assert_rule(
         b"struct Cell {\n  value: i32;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let left = Cell(value: 1_i32);\n  let right = Cell(value: 2_i32);\n  set left = move right;\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Stor1,
@@ -1131,7 +1192,7 @@ fn an_affine_set_offers_the_restructuring_its_right_hand_side_admits() {
             mechanical_fix: "use replace: let old = replace p = e; binds the previous owner",
         },
     );
-    assert_rule(
+    with_semantics(
         br#"struct Counts {
   lines: u64;
   bytes: u64;
@@ -1144,17 +1205,18 @@ fn walk(running: own Counts) -> result: own Counts pure {
 command fn main() -> status: own ExitStatus pure {
   let totals = Counts(lines: 0_u64, bytes: 0_u64);
   set totals = walk(running: move totals);
+  let lines = totals.lines;
   return exit_status(code: 0_u8);
 }
 "#,
-        SemanticRule::Stor1,
-        SemanticIssueKind::AffineSetTarget {
-            target_type: "Counts".to_owned(),
-            mechanical_fix: "the right-hand side consumes the target root, so replace cannot \
-                             commit into it: bind the result under a new let, and combine it \
-                             with the old value field by field",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("the read-out and its commit must check: {outcome:?}");
+            };
         },
     );
+    // The two-statement form stays accepted: [LIV-2] adds a spelling and
+    // removes none.
     with_semantics(
         br#"struct Counts {
   lines: u64;
@@ -1180,9 +1242,77 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
-                panic!("the offered restructuring must check: {outcome:?}");
+                panic!("the two-statement form must check: {outcome:?}");
             };
         },
+    );
+}
+
+/// [LIV-2] after its read-out the target is dead for the remainder of the
+/// right-hand side.
+///
+/// Every shape that would consume one target's value twice is a rejection: the
+/// same place moved twice, the same field moved twice, and a field read out
+/// beside a move of the whole root. Without the sentence the first of these
+/// compiled and freed one run twice.
+#[test]
+fn a_read_out_target_is_dead_for_the_rest_of_the_right_hand_side() {
+    let expected = SemanticIssueKind::UseAfterMove {
+        mechanical_fix: "introduce a new `let` binding before reuse",
+    };
+    assert_rule(
+        br#"fn pair(left: own buffer<u8>, right: own buffer<u8>) -> out: own buffer<u8> pure {
+  return move left;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let c = buffer_new(4_u64, 0_u8);
+  set c = pair(left: move c, right: move c);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        expected.clone(),
+    );
+    assert_rule(
+        br#"struct Holder {
+  run: buffer<u8>;
+}
+
+fn pair(left: own buffer<u8>, right: own buffer<u8>) -> out: own buffer<u8> pure {
+  return move left;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let first = buffer_new(4_u64, 0_u8);
+  let holder = Holder(run: move first);
+  set holder.run = pair(left: move holder.run, right: move holder.run);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        expected.clone(),
+    );
+    assert_rule(
+        br#"struct Holder {
+  run: buffer<u8>;
+  spare: buffer<u8>;
+}
+
+fn take(left: own buffer<u8>, right: own Holder) -> out: own buffer<u8> pure {
+  return move left;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let first = buffer_new(4_u64, 0_u8);
+  let second = buffer_new(4_u64, 0_u8);
+  let holder = Holder(run: move first, spare: move second);
+  set holder.run = take(left: move holder.run, right: move holder);
+  return exit_status(code: 0_u8);
+}
+"#,
+        SemanticRule::Own1,
+        expected,
     );
 }
 

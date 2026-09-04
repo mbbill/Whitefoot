@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
+mod commit;
 mod loops;
 mod matches;
 mod proofs;
@@ -18,7 +19,9 @@ use super::super::model::{
     CheckedStatement, CheckedType, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
+use super::expressions::MutationTarget;
 use super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
+pub(super) use commit::CommitReadOut;
 use loops::{BreakState, LoopContext};
 
 pub(super) struct BlockResult {
@@ -364,69 +367,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     break_states: Vec::new(),
                 })
             }
-            // [GRAM-4, CALL-4] `set (x, y) = f(...);`: a target list commits
-            // the callee's result ordinals, target i taking ordinal i.
-            Production::SetStmt if self.tree.children_with(node, Production::Place)?.len() > 1 => {
-                self.check_result_list_set(function, node, bindings, scope)
-            }
-            Production::SetStmt => {
-                let target_node = self
-                    .tree
-                    .first_child_with(node, Production::Place)?
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-                let expression_node = self
-                    .tree
-                    .first_child_with(node, Production::Expr)?
-                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-
-                // SET-1 fixes this order: form and check the target first, then
-                // evaluate the RHS, then re-establish target writability. The
-                // right-hand side is read once before that, for its shape
-                // alone: [STOR-1]'s restructuring depends on whether the value
-                // being committed consumes the root it is committed into, and
-                // only this statement holds both nodes.
-                let affine_fix = self.set_affine_restructuring(target_node, expression_node)?;
-                let (declaration, target, target_effects) = self.check_set_target(
-                    function,
-                    target_node,
-                    bindings,
-                    scope.loops.len(),
-                    affine_fix,
-                )?;
-                let value =
-                    self.check_expression(function, expression_node, bindings, scope.loops.len())?;
-                if value.expression.ty() != target.ty() {
-                    return self.issue_node(
-                        SemanticRule::Type5,
-                        expression_node,
-                        SemanticIssueKind::type_mismatch(
-                            self.checked_type_name(target.ty())?,
-                            self.checked_type_name(value.expression.ty())?,
-                        ),
-                    );
-                }
-                if !bindings
-                    .get(&declaration)
-                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
-                    .live
-                {
-                    return self.issue_node(
-                        SemanticRule::Own1,
-                        target_node,
-                        SemanticIssueKind::UseAfterMove {
-                            mechanical_fix: "introduce a new `let` binding before reuse",
-                        },
-                    );
-                }
-                Ok(Self::continuing_statement(
-                    CheckedStatement::Set {
-                        node_path: self.tree.path(node)?.clone(),
-                        target,
-                        value: value.expression,
-                    },
-                    value.effects.union(target_effects),
-                ))
-            }
+            // [GRAM-4, SET-1, LIV-2] every written `set` is one commit: the
+            // targets are resolved and judged first, then the whole
+            // right-hand side, then the three admission conditions.
+            Production::SetStmt => self.check_commit(function, node, bindings, scope),
             Production::LoopStmt => self.check_loop(function, node, bindings, counters, scope),
             Production::ForStmt => {
                 self.check_counted_range(function, node, bindings, counters, scope)
@@ -695,8 +639,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [SET-2] fixes SET-1's order: form and check the target first
         // (its affine, region-free class judged inside), then evaluate the
         // right-hand side, then re-establish target-root liveness.
-        let (target_declaration, target, target_effects) =
-            self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
+        let MutationTarget {
+            declaration: target_declaration,
+            target,
+            effects: target_effects,
+            unsupported: target_unsupported,
+            ..
+        } = self.check_replace_target(function, target_node, bindings, scope.loops.len())?;
         let value =
             self.check_expression(function, expression_node, bindings, scope.loops.len())?;
         // [TYPE-5]: the right-hand side must produce exactly `own T`.
@@ -722,6 +671,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     mechanical_fix: "introduce a new `let` binding before reuse",
                 },
             );
+        }
+        // Every source rejection of this statement is judged above; a target
+        // this compiler cannot lower stops here and nowhere earlier [DIAG-1].
+        if let Some(feature) = target_unsupported {
+            return self.unsupported(feature, target_node);
         }
         let replacement_origins = self.state_origins_of_value(&value, bindings)?;
         let previous_whole_origins = bindings

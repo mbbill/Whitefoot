@@ -41,15 +41,15 @@ pub(crate) use permission::FunctionPermissions;
 pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission};
 
 pub(crate) use model::{
-    BindingId, CheckedArrayRoot, CheckedBodyDisposition, CheckedBooleanOperation,
-    CheckedBufferRoot, CheckedBufferSetTarget, CheckedConstructor, CheckedDrop, CheckedEntryForm,
-    CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
-    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
-    CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType,
-    CheckedParameter, CheckedProgramData, CheckedProjectedDrop, CheckedRuntimeTargetObligations,
-    CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource, CheckedStatement,
-    CheckedTargetDomainObligation, CheckedType, CheckedValue, MeasureCell, MeasuredKind, NominalId,
-    PropagationContext,
+    BindingId, CheckedArrayRoot, CheckedArraySetTarget, CheckedBodyDisposition,
+    CheckedBooleanOperation, CheckedBufferRoot, CheckedBufferSetTarget, CheckedCommitValues,
+    CheckedConstructor, CheckedDrop, CheckedEntryForm, CheckedEnumType, CheckedExpression,
+    CheckedFlatElement, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
+    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure,
+    CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedProgramData,
+    CheckedProjectedDrop, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
+    CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
+    MeasureCell, MeasuredKind, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -99,6 +99,12 @@ pub enum SemanticRule {
     Own12,
     /// Non-argument reborrow disposition and the returned reborrow.
     Own14,
+    /// Join-checked liveness: every predecessor of a join agrees on a
+    /// binding's live-or-dead status.
+    Liv1,
+    /// The one `set` commit: the read-out, the three admission conditions,
+    /// and the simultaneous reinitialization of every target.
+    Liv2,
     /// Explicit dereference of a borrow holder.
     Type7,
     /// Storage-class and affine replacement restrictions.
@@ -201,6 +207,8 @@ impl SemanticRule {
             Self::Own11 => "OWN-11",
             Self::Own12 => "OWN-12",
             Self::Own14 => "OWN-14",
+            Self::Liv1 => "LIV-1",
+            Self::Liv2 => "LIV-2",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
             Self::Stor4 => "STOR-4",
@@ -281,7 +289,9 @@ impl SemanticRule {
             Self::Own10 => Self::Own11,
             Self::Own11 => Self::Own12,
             Self::Own12 => Self::Own14,
-            Self::Own14 => Self::Stor1,
+            Self::Own14 => Self::Liv1,
+            Self::Liv1 => Self::Liv2,
+            Self::Liv2 => Self::Stor1,
             Self::Stor1 => Self::Stor4,
             Self::Stor4 => Self::Stor5,
             Self::Stor5 => Self::Op1,
@@ -349,35 +359,37 @@ impl SemanticRule {
             Self::Own11 => 21,
             Self::Own12 => 22,
             Self::Own14 => 23,
-            Self::Stor1 => 24,
-            Self::Stor4 => 25,
-            Self::Stor5 => 26,
-            Self::Op1 => 27,
-            Self::Op2 => 28,
-            Self::Op4 => 29,
-            Self::Op5 => 30,
-            Self::Op6 => 31,
-            Self::Op9 => 32,
-            Self::Fn1 => 33,
-            Self::Fn2 => 34,
-            Self::Fn3 => 35,
-            Self::Fn4 => 36,
-            Self::Fn6 => 37,
-            Self::Fn7 => 38,
-            Self::Fn8 => 39,
-            Self::Fn9 => 40,
-            Self::Call4 => 41,
-            Self::Eff1 => 42,
-            Self::Eff2 => 43,
-            Self::Err2 => 44,
-            Self::Err3 => 45,
-            Self::Sys2 => 46,
-            Self::Sys8 => 47,
-            Self::Ent2 => 48,
-            Self::Msr3 => 49,
-            Self::Call6 => 50,
-            Self::Inv1 => 51,
-            Self::Prf1 => 52,
+            Self::Liv1 => 24,
+            Self::Liv2 => 25,
+            Self::Stor1 => 26,
+            Self::Stor4 => 27,
+            Self::Stor5 => 28,
+            Self::Op1 => 29,
+            Self::Op2 => 30,
+            Self::Op4 => 31,
+            Self::Op5 => 32,
+            Self::Op6 => 33,
+            Self::Op9 => 34,
+            Self::Fn1 => 35,
+            Self::Fn2 => 36,
+            Self::Fn3 => 37,
+            Self::Fn4 => 38,
+            Self::Fn6 => 39,
+            Self::Fn7 => 40,
+            Self::Fn8 => 41,
+            Self::Fn9 => 42,
+            Self::Call4 => 43,
+            Self::Eff1 => 44,
+            Self::Eff2 => 45,
+            Self::Err2 => 46,
+            Self::Err3 => 47,
+            Self::Sys2 => 48,
+            Self::Sys8 => 49,
+            Self::Ent2 => 50,
+            Self::Msr3 => 51,
+            Self::Call6 => 52,
+            Self::Inv1 => 53,
+            Self::Prf1 => 54,
         }
     }
 }
@@ -533,6 +545,36 @@ pub enum SemanticIssueKind {
         /// Required STOR-1 restructuring.
         mechanical_fix: &'static str,
     },
+    /// [LIV-1] two predecessors of one join disagree about whether a binding
+    /// is live there.
+    LivenessJoinDisagreement {
+        /// The binding whose status the predecessors disagree about.
+        binding: String,
+        /// The predecessor that reaches the join with the binding live.
+        live_predecessor: String,
+        /// The predecessor that reaches the join with the binding dead.
+        dead_predecessor: String,
+        /// Exact restructuring required by LIV-1.
+        mechanical_fix: &'static str,
+    },
+    /// [LIV-2] two targets of one commit overlap, so the commit order would
+    /// decide the result.
+    OverlappingCommitTargets {
+        /// The earlier written target place.
+        first: String,
+        /// The later written target place, where the rejection is located.
+        second: String,
+        /// Exact restructuring required by LIV-2.
+        mechanical_fix: &'static str,
+    },
+    /// [LIV-2] an affine commit target's final selected type is region-bearing,
+    /// which no commit reinitializes.
+    RegionBearingCommitTarget {
+        /// Exact selected type.
+        target_type: String,
+        /// Exact restructuring required by LIV-2.
+        mechanical_fix: &'static str,
+    },
     /// A `replace` target's final selected type is not an admitted
     /// region-free affine type [SET-2].
     InvalidReplaceTarget {
@@ -597,8 +639,12 @@ pub enum SemanticIssueKind {
         /// Exact mechanical repair selected by TYPE-7.
         mechanical_fix: &'static str,
     },
-    /// A loop attempted to consume an affine binding declared outside it.
+    /// [OWN-11] a loop body left a binding declared outside it in a
+    /// different live-or-dead status than the entering edge did, so one
+    /// iteration would start in a state the previous one did not leave.
     MoveOuterBindingInLoop {
+        /// The outer binding whose status the backedge changed.
+        binding: String,
         /// Exact restructuring required by OWN-11.
         mechanical_fix: &'static str,
     },
@@ -1064,13 +1110,6 @@ pub enum UnsupportedSemanticFeature {
     /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
     /// function that would carry an arena value to execution stops here.
     ArenaRuntime,
-    /// A `set` target list [GRAM-4, CALL-4] one of whose targets is a
-    /// subscript place. Committing several indexed targets from one
-    /// statement needs the offset-evaluation order of [SET-1] stated over a
-    /// list of targets and a lowering that carries every offset across the
-    /// one call; neither is built, so the form stops here rather than
-    /// committing in an order this compiler has not selected.
-    ResultListSubscriptTarget,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.
