@@ -225,7 +225,7 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test
+completion-test: completion-core-read-test completion-default-route-test sched-smoke
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
@@ -292,6 +292,16 @@ completion-default-route-test:
 		unset WF_IO_HELPERS; WF_IO_NO_NATIVE_RING=1 \
 			"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"; \
 	fi
+
+# The scheduler core (src/backend/sched) on real threads, the real switch and
+# the real park: not the §11 gate, which is the enumerator, but the run that
+# has to pass before an enumeration is worth building.
+SCHED_DIR := src/backend/sched
+sched-smoke:
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(CC) $(COMPLETION_BASE_CFLAGS) $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c \
+		$(SCHED_DIR)/smoke.c -o "$(COMPLETION_TMP)/sched-smoke"
+	"$(COMPLETION_TMP)/sched-smoke"
 
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -501,5 +511,5 @@ completion-windows-cross:
 	completion-core-read-stress completion-core-read-tsan completion-tsan \
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
-	completion-default-route-sanitize completion-default-route-tsan \
+	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
 	completion-windows-cross

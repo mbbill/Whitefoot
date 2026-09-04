@@ -157,6 +157,52 @@ before the code lands.
    interleaving of primitive steps for (T=1,S=2), (T=1,S=3), (T=2,S=3),
    (T=2,S=4), checking every §11 item at every step. This slice is the merge
    gate; nothing in slices 2–3 lands while it fails.
+
+   **Status 2026-09-04 (handoff point).** The core exists and runs on real
+   threads; the enumerator does not exist yet.
+   - `compiler/src/backend/sched/core.h`, `core.c`: the record (state +
+     waiter), the stack header at the top of each pool stack, the four stack
+     phases plus the handshake's three, the ready list and free list under
+     the one mutex, the five-step park with the NOTIFIED-consuming cancel,
+     the publisher (`wf_sched_complete`), the rule (`wf_sched_join`, four
+     lines, I/O and compute arms of the fourth), the scheduler loop (four
+     priorities, step 4's capture-progress-retest-park window with the
+     entry's status test inside it), the Chase-Lev deque with atomic free
+     lists at both ends, `wf_sched_run` (a thread's first act is a switch to
+     a pool stack; the entry returns on its host stack after the status
+     post), per-thread counters. EMPTY stacks are pushed and parks committed
+     on the far side of every switch, from the stack switched to.
+   - `prim.h`: the seven primitives as one interface, host implementation of
+     the atomics inline; `prim_host.c`: the arm64/x86-64 switch, epoch park
+     on a mutex and condition variable, `mmap` reservation with guard pages,
+     the one mutex, `sched_yield`, and progress as a weak hook the bridge
+     will define in slice 3. The floor's bounds setter is a weak no-op until
+     `wf_floor.c` exports it.
+   - `smoke.c`, wired as `make -C compiler sched-smoke` under
+     `completion-test`: four threads, a device thread completing records,
+     two records outstanding in one frame, groups of four hand-outs whose
+     callees park on I/O, main's stack resumed on workers, status returned on
+     the entry thread. 300 consecutive runs and an ASan run pass. Not the
+     gate.
+   - **Not started: `enumerate.c` and the cargo wrapper.** The shape worked
+     out and not yet written: one OS thread; the controller on its own stack;
+     T simulated threads as coroutines on host stacks, each calling
+     `wf_sched_run`; every primitive announces its pending operation and
+     switches to the controller, which chooses the next enabled actor, then
+     performs the operation on resumption; the lock blocks a thread while
+     another holds it, the park blocks until the epoch moves; a device actor
+     whose steps complete the oldest submitted record and bump the epoch
+     (item 17's nondeterminism), while progress publishes every
+     kernel-completed record deterministically; DFS over a choice trace with
+     re-execution (the core is re-initialised per execution; the scenario
+     supplies `reset`); a step bound with the bounded count reported; the
+     invariants of §11 checked by the controller after every step (no state
+     with every thread asleep and a non-empty ready list; none with all
+     asleep and the status posted; no stack on two lists or held by two
+     threads; enqueue at most once per park) plus the scenario's own end
+     check. Plain DFS first; DPOR over conflicting primitive steps only if
+     the counts on (T=2,S=4) demand it. Scenarios are the §10 schedules
+     written against the core's ABI the way `smoke.c` is.
 2. **Emitter** (design §8): the completion record as one opaque block of the
    submitting frame with its size and alignment as an ABI constant asserted on
    both sides; one lowering for every I/O operation, submit then join; the

@@ -1,0 +1,752 @@
+/* The scheduler core. See `core.h` for the model and
+ * `research/investigations/io-model/PARK-ON-MISS.md` for the design each
+ * function cites by section. Shared state is reached only through `prim.h`. */
+
+#include "core.h"
+#include "prim.h"
+
+#include <string.h>
+
+/* --------------------------------------------------------------- threads */
+
+wf_sched_thread *wf_sched_current_thread(wf_sched_core *core) {
+    unsigned index = wf_prim_thread_index();
+    if (index >= core->thread_count) {
+        wf_prim_fail("a thread the core does not know");
+    }
+    return &core->threads[index];
+}
+
+wf_sched_stack *wf_sched_current_stack(wf_sched_core *core) {
+    return wf_sched_current_thread(core)->stack;
+}
+
+/* ------------------------------------------------------------ the lists */
+
+/* Both lists are under the one mutex (§5, §7.1 item 5). The mutex says who
+ * may touch their words; when a stack may be offered is the switch's rule
+ * below, and it is the reason every EMPTY push is made from the stack switched
+ * to. */
+
+static wf_sched_stack *wf_sched_pool_pop(wf_sched_core *core) {
+    wf_sched_stack *stack;
+    wf_prim_lock();
+    stack = core->free_head;
+    if (stack != NULL) {
+        core->free_head = stack->next;
+        stack->next = NULL;
+    }
+    wf_prim_unlock();
+    return stack;
+}
+
+static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
+    wf_prim_lock();
+    stack->next = core->free_head;
+    core->free_head = stack;
+    wf_prim_unlock();
+}
+
+/* Links one READY stack at the tail. The epoch is bumped only when the list
+ * was empty, which is the one transition that could otherwise leave a thread
+ * asleep beside a ready stack (§6). */
+static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
+    int was_empty;
+    wf_prim_lock();
+    stack->next = NULL;
+    was_empty = core->ready_head == NULL;
+    if (was_empty) {
+        core->ready_head = stack;
+    } else {
+        core->ready_tail->next = stack;
+    }
+    core->ready_tail = stack;
+    wf_prim_unlock();
+    if (was_empty) {
+        wf_prim_wake();
+    }
+}
+
+static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
+    wf_sched_stack *stack;
+    wf_prim_lock();
+    stack = core->ready_head;
+    if (stack != NULL) {
+        core->ready_head = stack->next;
+        if (core->ready_head == NULL) {
+            core->ready_tail = NULL;
+        }
+        stack->next = NULL;
+    }
+    wf_prim_unlock();
+    return stack;
+}
+
+/* ----------------------------------------------------------- the switch */
+
+static void wf_sched_scheduler_loop(void *argument);
+
+/* What every thread does on the far side of any switch: the obligations the
+ * switching thread left it. An EMPTY stack is pushed to the pool here, after
+ * the switch and from the stack switched to (§5); a park is committed here,
+ * on the target stack, never before the switch (§6 step 5). */
+static void wf_sched_commit_park(wf_sched_core *core, wf_sched_stack *parked);
+
+static void wf_sched_after_switch(wf_sched_core *core) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_stack *empty = thread->pending_empty;
+    wf_sched_stack *parked = thread->pending_commit;
+    thread->pending_empty = NULL;
+    thread->pending_commit = NULL;
+    if (empty != NULL) {
+        wf_sched_pool_push(core, empty);
+    }
+    if (parked != NULL) {
+        wf_sched_commit_park(core, parked);
+    }
+}
+
+/* Switches the calling thread from the stack it is on to `target`, which is
+ * either EMPTY (its loop continues where it switched away) or READY (its join
+ * resumes). The obligations are on the thread record, which the target reads
+ * first thing. */
+static void wf_sched_switch_to(wf_sched_core *core, wf_sched_stack *target) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_stack *from = thread->stack;
+    thread->stack = target;
+    wf_prim_store_u(&target->phase, WF_SCHED_STACK_RUNNING, WF_PRIM_RELAXED);
+    wf_prim_set_bounds(target->low, target->high);
+    wf_prim_switch(&from->saved_sp, target->saved_sp);
+    /* `from` was resumed, by this thread or another. Everything per thread is
+     * re-read from here on. */
+    wf_sched_after_switch(core);
+}
+
+/* ---------------------------------------------------------------- deque */
+
+/* Chase-Lev, as `par_runtime.c` had it: the owner pushes and pops at the
+ * newest end, thieves take from the oldest, and the buffer holds exactly as
+ * many cells as the lane has slots so a push needs no fullness test (I4). */
+
+_Static_assert(
+    (WF_SCHED_LANE_SLOTS & (WF_SCHED_LANE_SLOTS - 1u)) == 0u,
+    "the deque masks rather than divides, so the slot count is a power of two (I4)"
+);
+
+static void wf_sched_push(wf_sched_lane *lane, wf_sched_slot *slot) {
+    unsigned long long bottom = wf_prim_load_q(&lane->bottom, WF_PRIM_RELAXED);
+    lane->buffer[bottom & (WF_SCHED_LANE_SLOTS - 1u)] = slot;
+    wf_prim_store_q(&lane->bottom, bottom + 1u, WF_PRIM_SEQ_CST);
+}
+
+static wf_sched_slot *wf_sched_pop(wf_sched_lane *lane) {
+    unsigned long long bottom = wf_prim_load_q(&lane->bottom, WF_PRIM_RELAXED);
+    unsigned long long top = wf_prim_load_q(&lane->top, WF_PRIM_RELAXED);
+    wf_sched_slot *slot;
+    if ((long long)(bottom - top) <= 0) {
+        return NULL;
+    }
+    bottom -= 1u;
+    wf_prim_store_q(&lane->bottom, bottom, WF_PRIM_SEQ_CST);
+    top = wf_prim_load_q(&lane->top, WF_PRIM_SEQ_CST);
+    if ((long long)(bottom - top) < 0) {
+        wf_prim_store_q(&lane->bottom, bottom + 1u, WF_PRIM_RELAXED);
+        return NULL;
+    }
+    slot = lane->buffer[bottom & (WF_SCHED_LANE_SLOTS - 1u)];
+    if ((long long)(bottom - top) > 0) {
+        return slot;
+    }
+    if (!wf_prim_cas_q(&lane->top, &top, top + 1u, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
+        slot = NULL;
+    }
+    wf_prim_store_q(&lane->bottom, bottom + 1u, WF_PRIM_RELAXED);
+    return slot;
+}
+
+/* The newest entry, read without taking it: line two of the rule asks whether
+ * the target is it before popping. */
+static wf_sched_slot *wf_sched_newest(wf_sched_lane *lane) {
+    unsigned long long bottom = wf_prim_load_q(&lane->bottom, WF_PRIM_RELAXED);
+    unsigned long long top = wf_prim_load_q(&lane->top, WF_PRIM_RELAXED);
+    if ((long long)(bottom - top) <= 0) {
+        return NULL;
+    }
+    return lane->buffer[(bottom - 1u) & (WF_SCHED_LANE_SLOTS - 1u)];
+}
+
+static wf_sched_slot *wf_sched_steal(wf_sched_core *core, wf_sched_lane *victim) {
+    unsigned long long top = wf_prim_load_q(&victim->top, WF_PRIM_ACQUIRE);
+    unsigned long long bottom = wf_prim_load_q(&victim->bottom, WF_PRIM_ACQUIRE);
+    wf_sched_slot *slot;
+    if ((long long)(bottom - top) <= 0) {
+        return NULL;
+    }
+    slot = victim->buffer[top & (WF_SCHED_LANE_SLOTS - 1u)];
+    if (!wf_prim_cas_q(&victim->top, &top, top + 1u, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
+        return NULL;
+    }
+    wf_sched_current_thread(core)->counts.steals += 1u;
+    return slot;
+}
+
+static wf_sched_slot *wf_sched_find(wf_sched_core *core, wf_sched_thread *thread) {
+    unsigned count = core->thread_count;
+    unsigned offset;
+    unsigned step;
+    if (count < 2u) {
+        return NULL;
+    }
+    thread->lane->seed = thread->lane->seed * 6364136223846793005ull + 1442695040888963407ull;
+    offset = (unsigned)((thread->lane->seed >> 33) % count);
+    for (step = 0; step < count; step += 1u) {
+        unsigned index = offset + step;
+        wf_sched_lane *victim;
+        wf_sched_slot *slot;
+        if (index >= count) {
+            index -= count;
+        }
+        victim = &core->lanes[index];
+        if (victim == thread->lane) {
+            continue;
+        }
+        slot = wf_sched_steal(core, victim);
+        if (slot != NULL) {
+            return slot;
+        }
+    }
+    return NULL;
+}
+
+/* ------------------------------------------------------- the publisher */
+
+/* Runs one hand-out and publishes it: the compute side of the one protocol. */
+static void wf_sched_execute(wf_sched_core *core, wf_sched_slot *slot) {
+    slot->run(slot->frame);
+    wf_sched_complete(core, &slot->record);
+}
+
+void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
+    wf_sched_stack *waiter;
+    unsigned phase;
+    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_SEQ_CST);
+    waiter = wf_prim_load_p((void *const *)&record->waiter, WF_PRIM_SEQ_CST);
+    if (waiter == NULL) {
+        return;
+    }
+    /* Exactly one of the two transitions into READY runs for one park: the
+     * SUSPENDING arm hands the enqueue to the commit, the SUSPENDED arm makes
+     * it here (§6). A RUNNING waiter cancelled after this call loaded it and
+     * has already read DONE, so there is nothing left to wake. */
+    phase = wf_prim_load_u(&waiter->phase, WF_PRIM_ACQUIRE);
+    for (;;) {
+        if (phase == WF_SCHED_STACK_SUSPENDING) {
+            if (wf_prim_cas_u(
+                    &waiter->phase, &phase, WF_SCHED_STACK_NOTIFIED,
+                    WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+                )) {
+                return;
+            }
+            continue;
+        }
+        if (phase == WF_SCHED_STACK_SUSPENDED) {
+            if (wf_prim_cas_u(
+                    &waiter->phase, &phase, WF_SCHED_STACK_READY,
+                    WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+                )) {
+                wf_sched_ready_push(core, waiter);
+                return;
+            }
+            continue;
+        }
+        if (phase == WF_SCHED_STACK_RUNNING) {
+            return;
+        }
+        wf_prim_fail("a publisher found its waiter in a phase no park reaches");
+    }
+    (void)core;
+}
+
+/* ------------------------------------------------------------ the park */
+
+/* Step 5's commit, run on the target stack by whichever thread switched
+ * there (§6): SUSPENDING becomes SUSPENDED, or a NOTIFIED park becomes READY
+ * and is enqueued here, exactly once. */
+static void wf_sched_commit_park(wf_sched_core *core, wf_sched_stack *parked) {
+    unsigned expected = WF_SCHED_STACK_SUSPENDING;
+    if (wf_prim_cas_u(
+            &parked->phase, &expected, WF_SCHED_STACK_SUSPENDED,
+            WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+        )) {
+        return;
+    }
+    if (expected != WF_SCHED_STACK_NOTIFIED) {
+        wf_prim_fail("a commit found its stack neither SUSPENDING nor NOTIFIED");
+    }
+    if (!wf_prim_cas_u(
+            &parked->phase, &expected, WF_SCHED_STACK_READY,
+            WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+        )) {
+        wf_prim_fail("a NOTIFIED stack changed phase under its commit");
+    }
+    wf_sched_ready_push(core, parked);
+}
+
+/* Parks the calling stack on `record` and switches to `target`, which the
+ * caller has already taken from the ready list or the pool (§6's five steps).
+ * Returns 1 when the stack parked and has now been resumed, 0 when step 3
+ * found the record already DONE and the park was cancelled on this stack;
+ * then `target` is given back and the caller continues here. */
+static int wf_sched_park(
+    wf_sched_core *core,
+    wf_sched_record *record,
+    wf_sched_stack *target,
+    int target_was_ready
+) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_stack *stack = thread->stack;
+    unsigned expected = WF_SCHED_STACK_RUNNING;
+
+    /* 1. mark SUSPENDING */
+    if (!wf_prim_cas_u(
+            &stack->phase, &expected, WF_SCHED_STACK_SUSPENDING,
+            WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+        )) {
+        wf_prim_fail("a park began on a stack that was not RUNNING");
+    }
+    /* 2. register the wake */
+    wf_prim_store_p((void **)&record->waiter, stack, WF_PRIM_SEQ_CST);
+    /* 3. re-read the record's state */
+    if (wf_prim_load_u(&record->state, WF_PRIM_SEQ_CST) == WF_SCHED_DONE) {
+        /* 4. already satisfied: cancel here, never switch. The publisher may
+         * have loaded the waiter and moved the phase to NOTIFIED; that
+         * notification is consumed, because it was never enqueued and this
+         * stack has read the condition it announces (§6). */
+        expected = WF_SCHED_STACK_SUSPENDING;
+        if (!wf_prim_cas_u(
+                &stack->phase, &expected, WF_SCHED_STACK_RUNNING,
+                WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+            )) {
+            if (expected != WF_SCHED_STACK_NOTIFIED) {
+                wf_prim_fail("a cancel found its stack neither SUSPENDING nor NOTIFIED");
+            }
+            if (!wf_prim_cas_u(
+                    &stack->phase, &expected, WF_SCHED_STACK_RUNNING,
+                    WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE
+                )) {
+                wf_prim_fail("a NOTIFIED stack changed phase under its cancel");
+            }
+        }
+        wf_prim_store_p((void **)&record->waiter, NULL, WF_PRIM_RELAXED);
+        thread->counts.cancels += 1u;
+        if (target_was_ready) {
+            wf_sched_ready_push(core, target);
+        } else {
+            wf_sched_pool_push(core, target);
+        }
+        return 0;
+    }
+    /* 5. switch, then commit on the target stack */
+    thread->counts.parks += 1u;
+    thread->pending_commit = stack;
+    wf_sched_switch_to(core, target);
+    /* Resumed: the registration is cleared on every park exit (§6). */
+    wf_prim_store_p((void **)&record->waiter, NULL, WF_PRIM_RELAXED);
+    wf_sched_current_thread(core)->counts.resumes += 1u;
+    return 1;
+}
+
+/* Line three's precondition: a switch target, READY first, else free. */
+static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int *was_ready) {
+    wf_sched_stack *target = wf_sched_ready_pop(core);
+    if (target != NULL) {
+        *was_ready = 1;
+        return target;
+    }
+    *was_ready = 0;
+    return wf_sched_pool_pop(core);
+}
+
+/* ---------------------------------------------------------- the rule (§2) */
+
+/* Step 4 of the scheduler loop and the I/O arm of the fourth line are one
+ * sequence (§6): capture the epoch, flush and progress, re-test the ready
+ * list, then park on the captured epoch. `on_record`, when given, is the
+ * record this stack would park on if a READY stack appears, and the entry
+ * test is the entry thread's alone. Returns 1 when the loop must restart. */
+static int wf_sched_idle_step(
+    wf_sched_core *core,
+    wf_sched_record *on_record,
+    int *left_for_status
+) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    unsigned long long bit = 1ull << thread->index;
+    uint64_t epoch;
+    wf_sched_stack *ready;
+    int was_ready;
+    *left_for_status = 0;
+    /* The bit goes up before the epoch is captured and before the last look,
+     * so a publisher that misses the bit is one whose push the look finds. */
+    {
+        unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
+        for (;;) {
+            if (wf_prim_cas_q(&core->idle, &idle, idle | bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
+                break;
+            }
+        }
+    }
+    epoch = wf_prim_epoch();
+    if (wf_prim_progress(core)) {
+        goto restart;
+    }
+    if (on_record != NULL
+        && wf_prim_load_u(&on_record->state, WF_PRIM_ACQUIRE) == WF_SCHED_DONE) {
+        goto restart;
+    }
+    ready = wf_sched_ready_pop(core);
+    if (ready != NULL) {
+        if (on_record != NULL) {
+            /* The third line taken late: this stack parks with its own I/O as
+             * the wake and switches to the stack that appeared (§2). */
+            {
+                unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
+                for (;;) {
+                    if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
+                        break;
+                    }
+                }
+            }
+            was_ready = 1;
+            (void)wf_sched_park(core, on_record, ready, was_ready);
+            return 1;
+        }
+        thread->pending_empty = thread->stack;
+        wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
+        {
+            unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
+            for (;;) {
+                if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
+                    break;
+                }
+            }
+        }
+        wf_sched_switch_to(core, ready);
+        return 1;
+    }
+    if (on_record == NULL && thread->index == 0u
+        && wf_prim_load_u(&core->status_posted, WF_PRIM_SEQ_CST) != 0u) {
+        *left_for_status = 1;
+        goto restart;
+    }
+    if (on_record == NULL) {
+        /* One more look at the deques after the bit went up (§6). */
+        wf_sched_slot *slot = wf_sched_pop(thread->lane);
+        if (slot == NULL) {
+            slot = wf_sched_find(core, thread);
+        }
+        if (slot != NULL) {
+            {
+                unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
+                for (;;) {
+                    if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
+                        break;
+                    }
+                }
+            }
+            wf_sched_execute(core, slot);
+            return 1;
+        }
+    }
+    wf_prim_park(epoch);
+restart:
+    {
+        unsigned long long idle = wf_prim_load_q(&core->idle, WF_PRIM_RELAXED);
+        for (;;) {
+            if (wf_prim_cas_q(&core->idle, &idle, idle & ~bit, WF_PRIM_SEQ_CST, WF_PRIM_RELAXED)) {
+                break;
+            }
+        }
+    }
+    return 1;
+}
+
+void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
+    for (;;) {
+        wf_sched_thread *thread = wf_sched_current_thread(core);
+        wf_sched_stack *target;
+        int was_ready;
+        int left;
+        /* line one */
+        if (wf_prim_load_u(&record->state, WF_PRIM_ACQUIRE) == WF_SCHED_DONE) {
+            return;
+        }
+        /* line two, with the home test (§4): only this thread's own deque */
+        if (!is_io) {
+            wf_sched_slot *slot = (wf_sched_slot *)record;
+            if (slot->home == thread->lane && wf_sched_newest(thread->lane) == slot) {
+                wf_sched_slot *popped = wf_sched_pop(thread->lane);
+                if (popped == slot) {
+                    thread->counts.inline_runs += 1u;
+                    wf_sched_execute(core, slot);
+                    return;
+                }
+                if (popped != NULL) {
+                    wf_prim_fail("the newest entry changed under its owner");
+                }
+                /* A thief took it between the look and the pop: it is now
+                 * someone else's to finish, so fall through to line three. */
+            }
+        }
+        /* line three */
+        target = wf_sched_take_target(core, &was_ready);
+        if (target != NULL) {
+            (void)wf_sched_park(core, record, target, was_ready);
+            continue;
+        }
+        /* line four */
+        if (is_io) {
+            thread->counts.exhausted_io_waits += 1u;
+            (void)wf_sched_idle_step(core, record, &left);
+            continue;
+        }
+        thread->counts.exhausted_compute_waits += 1u;
+        {
+            wf_sched_slot *slot = wf_sched_pop(thread->lane);
+            if (slot == NULL) {
+                slot = wf_sched_find(core, thread);
+            }
+            if (slot != NULL) {
+                wf_sched_execute(core, slot);
+            } else {
+                wf_prim_yield();
+            }
+        }
+    }
+}
+
+/* ------------------------------------------------------ the scheduler loop */
+
+static void wf_sched_scheduler_loop(void *argument) {
+    wf_sched_core *core = argument;
+    wf_sched_after_switch(core);
+    for (;;) {
+        wf_sched_thread *thread = wf_sched_current_thread(core);
+        wf_sched_stack *ready;
+        wf_sched_slot *slot;
+        int left;
+        if (thread->entry != NULL) {
+            void (*entry)(void *) = thread->entry;
+            void *entry_argument = thread->entry_argument;
+            thread->entry = NULL;
+            thread->entry_argument = NULL;
+            entry(entry_argument);
+            continue;
+        }
+        /* 1. a READY stack */
+        ready = wf_sched_ready_pop(core);
+        if (ready != NULL) {
+            thread->pending_empty = thread->stack;
+            wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
+            wf_sched_switch_to(core, ready);
+            continue;
+        }
+        /* 2. own deque newest */
+        slot = wf_sched_pop(thread->lane);
+        if (slot != NULL) {
+            wf_sched_execute(core, slot);
+            continue;
+        }
+        /* 3. a steal */
+        slot = wf_sched_find(core, thread);
+        if (slot != NULL) {
+            wf_sched_execute(core, slot);
+            continue;
+        }
+        /* 4. the idle window, then the park */
+        (void)wf_sched_idle_step(core, NULL, &left);
+        if (left) {
+            /* The entry thread leaves for its host stack; the pool stack it is
+             * on is EMPTY and is pushed from there, after the switch (§5). */
+            thread = wf_sched_current_thread(core);
+            thread->pending_empty = thread->stack;
+            wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
+            wf_prim_switch(&thread->stack->saved_sp, thread->host_sp);
+            wf_prim_fail("a host stack was switched to twice");
+        }
+    }
+}
+
+/* ---------------------------------------------------------------- entry */
+
+int wf_sched_init(
+    wf_sched_core *core,
+    unsigned thread_count,
+    unsigned stack_count,
+    size_t stack_bytes
+) {
+    unsigned index;
+    if (thread_count == 0u || thread_count > WF_SCHED_MAX_THREADS) {
+        return 1;
+    }
+    if (stack_count < thread_count + 1u) {
+        stack_count = thread_count + 1u;
+    }
+    if (stack_count > WF_SCHED_MAX_STACKS) {
+        return 1;
+    }
+    memset(core, 0, sizeof(*core));
+    core->thread_count = thread_count;
+    core->stack_count = stack_count;
+    core->stack_bytes = stack_bytes;
+    core->stack_stride = wf_prim_stack_stride(stack_bytes);
+    core->reservation = wf_prim_reserve(stack_count, stack_bytes);
+    if (core->reservation == NULL) {
+        return 1;
+    }
+    for (index = 0; index < stack_count; index += 1u) {
+        unsigned char *low = core->reservation + (size_t)index * core->stack_stride;
+        unsigned char *high = low + core->stack_stride;
+        wf_sched_stack *stack = (wf_sched_stack *)(high - sizeof(wf_sched_stack));
+        unsigned char *top = (unsigned char *)((uintptr_t)stack & ~(uintptr_t)15);
+        memset(stack, 0, sizeof(*stack));
+        stack->phase = WF_SCHED_STACK_EMPTY;
+        stack->low = low;
+        stack->high = high;
+        stack->index = index;
+        stack->saved_sp = wf_prim_prepare_stack(top, wf_sched_scheduler_loop, core);
+        stack->next = core->free_head;
+        core->free_head = stack;
+        core->stacks[index] = stack;
+    }
+    for (index = 0; index < thread_count; index += 1u) {
+        wf_sched_lane *lane = &core->lanes[index];
+        unsigned slot;
+        lane->top = 0;
+        lane->bottom = 0;
+        lane->seed = 0x9e3779b97f4a7c15ull * (unsigned long long)(index + 1u);
+        for (slot = 0; slot < WF_SCHED_LANE_SLOTS; slot += 1u) {
+            lane->slots[slot].home = lane;
+            lane->slots[slot].record.state = WF_SCHED_DONE;
+            lane->slots[slot].record.waiter = NULL;
+            lane->slots[slot].next_free = slot + 1u;
+        }
+        lane->slots[WF_SCHED_LANE_SLOTS - 1u].next_free = WF_SCHED_NO_SLOT;
+        lane->free_head = 0;
+        core->threads[index].lane = lane;
+        core->threads[index].index = index;
+    }
+    return 0;
+}
+
+int wf_sched_run(wf_sched_core *core, unsigned index, void (*entry)(void *), void *argument) {
+    wf_sched_thread *thread;
+    wf_sched_stack *stack;
+    if (index >= core->thread_count) {
+        wf_prim_fail("a thread the core does not know started");
+    }
+    wf_prim_set_thread_index(index);
+    thread = &core->threads[index];
+    thread->entry = entry;
+    thread->entry_argument = argument;
+    /* A thread's first act is to take a pool stack; §5's floor is what makes
+     * this pop succeed, and item 21 is what checks it. */
+    stack = wf_sched_pool_pop(core);
+    if (stack == NULL) {
+        wf_prim_fail("a thread started with no stack to take");
+    }
+    thread->stack = stack;
+    wf_prim_store_u(&stack->phase, WF_SCHED_STACK_RUNNING, WF_PRIM_RELAXED);
+    wf_prim_set_bounds(stack->low, stack->high);
+    wf_prim_switch(&thread->host_sp, stack->saved_sp);
+    /* Only the entry thread returns here, on its host stack, with the status
+     * posted and the pool stack it left owed to the pool. */
+    thread = wf_sched_current_thread(core);
+    if (thread->pending_empty != NULL) {
+        wf_sched_pool_push(core, thread->pending_empty);
+        thread->pending_empty = NULL;
+    }
+    return core->status;
+}
+
+void wf_sched_post_status(wf_sched_core *core, int status) {
+    core->status = status;
+    wf_prim_store_u(&core->status_posted, 1u, WF_PRIM_SEQ_CST);
+    wf_prim_wake();
+}
+
+/* ------------------------------------------------------------ hand-outs */
+
+void *wf_sched_acquire(wf_sched_core *core, unsigned long bytes) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_lane *lane = thread->lane;
+    unsigned head;
+    wf_sched_slot *slot;
+    if (bytes > (unsigned long)WF_SCHED_FRAME_BYTES) {
+        return NULL;
+    }
+    /* The pop of a single-consumer, multi-producer list: read the head with
+     * acquire, read its successor, swing the head (I3, §7). */
+    head = wf_prim_load_u(&lane->free_head, WF_PRIM_ACQUIRE);
+    for (;;) {
+        unsigned next;
+        if (head == WF_SCHED_NO_SLOT) {
+            return NULL;
+        }
+        next = lane->slots[head].next_free;
+        if (wf_prim_cas_u(&lane->free_head, &head, next, WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE)) {
+            break;
+        }
+    }
+    slot = &lane->slots[head];
+    slot->record.state = WF_SCHED_PENDING;
+    slot->record.waiter = NULL;
+    return slot->frame;
+}
+
+void wf_sched_publish(wf_sched_core *core, void *frame, void (*run)(void *)) {
+    wf_sched_slot *slot = wf_sched_slot_of(frame);
+    slot->run = run;
+    wf_prim_store_u(&slot->record.state, WF_SCHED_PENDING, WF_PRIM_RELAXED);
+    wf_sched_push(slot->home, slot);
+    if (wf_prim_load_q(&core->idle, WF_PRIM_SEQ_CST) != 0ull) {
+        wf_prim_wake();
+    }
+}
+
+void wf_sched_join_frame(wf_sched_core *core, void *frame) {
+    wf_sched_join(core, &wf_sched_slot_of(frame)->record, 0);
+}
+
+void wf_sched_release(wf_sched_core *core, void *frame) {
+    wf_sched_slot *slot = wf_sched_slot_of(frame);
+    wf_sched_lane *lane = slot->home;
+    unsigned self = (unsigned)(slot - lane->slots);
+    unsigned head = wf_prim_load_u(&lane->free_head, WF_PRIM_RELAXED);
+    (void)core;
+    for (;;) {
+        slot->next_free = head;
+        if (wf_prim_cas_u(&lane->free_head, &head, self, WF_PRIM_RELEASE, WF_PRIM_RELAXED)) {
+            return;
+        }
+    }
+}
+
+void wf_sched_record_init(wf_sched_record *record) {
+    record->state = WF_SCHED_PENDING;
+    record->waiter = NULL;
+}
+
+void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out) {
+    unsigned index;
+    memset(out, 0, sizeof(*out));
+    for (index = 0; index < core->thread_count; index += 1u) {
+        const wf_sched_statistics *counts = &core->threads[index].counts;
+        out->parks += counts->parks;
+        out->cancels += counts->cancels;
+        out->resumes += counts->resumes;
+        out->steals += counts->steals;
+        out->inline_runs += counts->inline_runs;
+        out->exhausted_io_waits += counts->exhausted_io_waits;
+        out->exhausted_compute_waits += counts->exhausted_compute_waits;
+    }
+}
