@@ -112,9 +112,14 @@ line numbers are v0.41 at 30602914 and every range below was re-derived mechanic
 that file in this session. Region spellings are v0.42's. **Type and const arguments are
 always written** ([FN-2] 1124, probe `q4`).
 
-**Nothing here is implemented.** Section 3.K is draft rule text for a work branch, not an
-amendment; section 3.L is design text for programs that compile nowhere. Section 6
-separates what a compiler executed in this session from what is argued on paper.
+**B1's four rules are implemented and the rest of this file is not.** [MSR-3], [MSR-5],
+[CALL-4] and [CALL-6] landed as the v0.44 candidate (PR #17), each in a narrower form than
+this draft wrote; 6.0 records what landed and §3.K carries **four corrections decided
+2026-09-04** at their rules, being [MSR-5]'s production, [MSR-3]'s table row, [CALL-4]'s
+deferred routes and [ENT-3.S13]'s population. Every other rule of section 3.K is draft
+rule text for a work branch, not an amendment; section 3.L is design text for programs
+that compile nowhere. Section 6 separates what a compiler executed from what is argued on
+paper.
 
 Settled by the owner, and not reopened anywhere below:
 
@@ -959,7 +964,7 @@ borrow and not an own value.
 | a [BLK-0] or [SYS-2] declared relation, naming a result              | that result                      |
 | a [FN-8] `requires`, naming a parameter                              | that parameter's ENTRY datum     |
 | a [FN-9] `ensures`, naming an `own` or shared-borrow parameter       | that parameter's ENTRY datum     |
-| a [FN-9] `ensures`, naming a `&uniq` parameter                       | **inadmissible**                 |
+| a [FN-9] `ensures`, naming a `&uniq` parameter's MEASURE             | **inadmissible**                 |
 | a [FN-9] clause, naming a result binder                              | that result                      |
 | any of the above, read at the CALLER after substitution              | that call's CALL datum for a     |
 |                                                                      | parameter operand, the result    |
@@ -979,6 +984,16 @@ about an object at a point the callee cannot name (L11); probes `e2` and `e3` ar
 pair at v0.41. **What it costs:** after [BLK-4] the only `&uniq` parameter reaching a
 measured place is a provider, so *a user `fn` that lends a provider onward publishes
 nothing about that store's post-state* (Q17).
+
+> **Correction, decided 2026-09-04, from B1's implementation.** The eighth draft's table
+> row read "naming a `&uniq` parameter" while its *Judgment* line read "a `&uniq`
+> parameter's **measure**". Those are two rules, and the measure is the narrower one and
+> the one that landed; the row above now says the measure and the two agree. **A
+> non-measure operand over a `&uniq` parameter stays admissible in an `ensures`**,
+> `deref(p).count` for one. The reason is L11 and it reaches exactly that far: the callee
+> cannot name the caller's object at a point after its own writes, and only a measure the
+> callee's writes change is a claim about that point. A plain field read is a live term,
+> and the caller's own kill rules already govern it.
 
 **One sentence fixes what an [INV-1] affine atom over a measured place is keyed by.**
 
@@ -1003,7 +1018,10 @@ construct, rebind, payload and field placements' measured operands; [INV-1] 3101
 3109-3113. *Depends:* [ENT-2] 2693, whose one-static-term-per-statement argument is why a
 per-point datum is sound; [ENT-5] 2942-2946; [FN-8] 1275, whose borrow-versus-own actual
 split the call placement reuses; [OWN-13] 654, the event the payload placement attaches
-to. *Law:* L11, L16. *History:* r7 F1-1, F1-16; r6 F1-2, F4-2.
+to. *Verified today:* probes `e2` and `e3`; **the call placement landed**, conformance
+cases `msr3-pos-own-operand-call-datum` and `msr3-neg-uniq-state-measure-in-ensures`
+(6.0), the other five placements deferred with it. *Law:* L11, L16. *History:* r7 F1-1,
+F1-16; r6 F1-2, F4-2; B1 (row versus judgment).
 
 **[MSR-4] One numeric goal disposition, shared by every consumer.** [ENT-6] states once
 the complete ordered derivation of a numeric goal:
@@ -1039,35 +1057,59 @@ becomes one of the six steps. *Note:* an operation adds a goal, never a route. *
 L16. *History:* r7 F1 (step-1 hazard); r6 F1-4; r1 F4-3.
 
 **[MSR-5] The contract clause is the relation an invariant already is, over a wider
-operand set.** **[S17]** A `requires`, `ensures`, `header_invariant`, `invariant_stmt` or
-`proof_use` operand is a **term** of the [ENT-2] term language, not an `atom` of
-[GRAM-5]. v0.41 does half the work: a clause's root is already one `compare_op` over two
+operand set.** **[S17]** A `requires` or `ensures` operand is a **term** of the [ENT-2]
+term language, not an `atom` of [GRAM-5]; a `header_invariant`, an `invariant_stmt` and a
+`proof_use` reach the same operand set at [MSR-4] in B2 and keep their atom set until
+then. v0.41 does half the work: a clause's root is already one `compare_op` over two
 `expr`s and a `header_invariant` is already `affine_expr compare_op affine_expr`. What is
 left is the operand set — [GRAM-5] 258-280's `atom` has no `call` alternative, so
 `len(source) <= room(out)` derives nowhere and probe `q7` is that rejection:
 
 ```text
-clause_expr    := affine_expr compare_op affine_expr
-affine_factor  := literal | ent2_place | measure_term | "(" affine_expr ")"
+clause_expr    := (atom | call | construct)
+                  ((infix_op | compare_op) (atom | call | construct))?
 ```
 
-`requires_clause` and `ensures_clause` ([GRAM-2] 185-186) take a `clause_expr`;
-`ent2_place` is [ENT-2] 2681(a)'s place grammar and `measure_term` is [MSR-1]'s four
-formers. The `compare_op` is the grammar's own token and carries [INV-1] 3105's sentence
-in [FN-9]'s wider form: *the operator selects a proof-domain relation and performs no
-[OP-1] operation, so a `clause_expr` is not an expression and carries no [OP-5] type
-judgment*. A contract clause admits all six symbols where [INV-1] 3105 admits four, which
-is what lets [CALL-7]'s clauses state an exact relation in one clause where a header
-invariant costs two (Q14). `ent2_place` does not admit `Z`, which has no source spelling;
-wf source writes `0_u64`.
+`requires_clause` and `ensures_clause` ([GRAM-2] 185-186) take a `clause_expr`. It differs
+from an `expr` in exactly one way, a `call` and a `construct` standing where an `expr`
+admits only an `atom`, which is what lets a clause name a measure of a place on either
+side of its comparison; every other position keeps [GRAM-9]'s one-operation-over-two-atoms
+shape. The judgment is unchanged and is the one [FN-8] and [FN-9] already apply: the root
+has exact value mode and type `own Bool` under [OP-5], and every operand is a
+non-consuming datum or an operation-table form pure and total over its selected operand
+domain. A contract clause admits all six comparison symbols where [INV-1] 3105 admits
+four, which is what lets [CALL-7]'s clauses state an exact relation in one clause where a
+header invariant costs two (Q14). The measure formers are **table data** over the measured
+types, one row `len(P)` in v0.44 and `cap`, `room` and `head` when B7's types exist, each
+admitted for exactly the places [ENT-2] clause (b) admits a length term for. A clause
+operand that is neither an [ENT-2] term nor a constant stays an ordinary pure total
+operand and contributes no L0 projection; clause position makes nothing a term. `Z` has no
+source spelling; wf source writes `0_u64`.
 
-*Judgment:* the ordinary [FN-8]/[FN-9]/[INV-1] admission over the widened operand set.
-*Publishes:* nothing new. *Amends:* [GRAM-5] 258-280 (a new `clause_expr`; `atom` and
-`atom_list` unchanged), [GRAM-2] 168-202 at 185-186, [GRAM-4] 217-256's `affine_factor`,
-[OP-5] 926-931, [FN-8] 1257-1299 at 1262-1267, [FN-9] 1301-1365's operand list, and
-[INV-1] 3101-3156 at 3109-3113; [GRAM-9] 328-332 is unchanged. *Depends:* [INV-1] 3105,
-whose relation restriction and no-operation sentence this production reuses verbatim.
-*Verified today:* probe `q7`. *Law:* L16. *History:* r6 F3-8; r4 F3-5.
+**The affine surface is not widened here.** A `header_invariant`, an `invariant_stmt` and
+a `proof_use` keep [INV-1] 3109-3113's atom admission, so a measure term is a clause
+operand and not yet an affine atom; [MSR-4] widens the affine domain in B2, which is where
+the affine index has to range over measure terms.
+
+> **Correction, decided 2026-09-04, from B1's implementation.** The eighth draft wrote
+> `clause_expr := affine_expr compare_op affine_expr`. That production has a comparison at
+> the root and nothing else, so it drops every Bool-rooted clause the corpus writes today:
+> `requires ok;`, `requires band(nonzero, not_neg1);`, `requires buffer_fits::<T>(length);` and
+> `requires total /defined steps;`, the last being how a caller fixes an integer-domain
+> predicate for [OP-2]. It also contradicts [FN-8]'s retained `.defined` admission, which
+> this design keeps. The production above is what landed, and it is the correction: one
+> operand, or two operands around one `infix_op` or `compare_op`, with the Bool root
+> carried by the [OP-5] judgment rather than by the grammar.
+
+*Judgment:* the ordinary [FN-8]/[FN-9] admission over the widened operand set, unchanged
+by the widening. *Publishes:* nothing new. *Amends:* [GRAM-5] 258-280 (a new
+`clause_expr`; `atom` and `atom_list` unchanged), [GRAM-2] 168-202 at 185-186, [OP-5]
+926-931, [FN-8] 1257-1299 at 1262-1267, and [FN-9] 1301-1365's operand list; [GRAM-4]
+217-256's `affine_factor`, [INV-1] 3101-3156 at 3109-3113 and [GRAM-9] 328-332 are
+unchanged. *Depends:* [INV-1] 3105, whose relation restriction this rule reads in
+[FN-9]'s wider form. *Verified today:* probe `q7`; **landed**, conformance case
+`msr5-pos-two-measure-clause` (6.0). *Law:* L16. *History:* r6 F3-8; r4 F3-5; B1
+(production defect).
 
 **[MSR-6] A const generic is a value wherever a named const is.** **[S21]**
 [TYPE-6] 396-473's `pbase` admission at 401 gains **an in-scope const generic**, and
@@ -2349,8 +2391,19 @@ route, at each of the four destinations. *Amends:* [FN-9] 1301-1365, [ENT-3.S12]
 2822-2837's destination list, [GRAM-2] 168-202's `fn_decl` result shape, [GRAM-4]
 217-256's `let_stmt`, `set_stmt` and `return_stmt`, [FORM-2] 39-89's rendering, and
 [FN-1] 1005-1091 at 1005-1019. *Depends:* [CALL-6], which fixes where each lands.
-*Verified today:* probes `q7` and `x2`, `x1`, `q6`, `x13`. *Law:* L10, L11, L16.
-*History:* r6 F1-9, F4-12; r5 F4-2, F3-3.
+*Verified today:* probes `q7` and `x2`, `x1`, `q6`, `x13`; **the single-result vocabulary
+landed**, conformance case `call4-neg-measured-result-not-admitted` (6.0). *Law:* L10,
+L11, L16. *History:* r6 F1-9, F4-12; r5 F4-2, F3-3; B1 (three routes deferred).
+
+> **Correction, decided 2026-09-04, from B1's implementation.** Three of this rule's
+> admissions need machinery B1 does not have and **land in B7**, not here: a result of
+> **measured** type and a measure over a result place, each of which needs the result
+> binder to be a place-like datum rather than a fragment integer, and a route over **any**
+> variant of any returned enum, which needs resolver identity for variants beyond the
+> prelude `Ok`/`value`. `call4-neg-measured-result-not-admitted` pins the measured-result
+> refusal as a semantic admission refusal at [FN-9] and no longer a [GRAM-5] parse
+> rejection, which is the state the widening leaves it in. **[S16]'s ordered result list
+> did not land either** and goes to §7's B1b with the destinations that read it.
 
 **[CALL-6] Publication: how a declared relation becomes a fact, where it is computed,
 and where it is established.** This is the rule round 6 found missing and round 7 found
@@ -2359,13 +2412,14 @@ this rule or [FN-9]'s existing [ENT-3.S12] route, and nothing else publishes any
 
 **[ENT-3] gains one enumerated source, `S13`.**
 
-> **S13 (declaration-domain relations).** At an admitted [BLK-0] or [SYS-2] call, each
-> declared relation of the resolved row is **instantiated at the call**, by substituting
-> each operand at the denotation [MSR-3]'s table gives its parameter's **mode** — an `own`
-> formal by that actual's call datum, a shared-borrow formal by the live term, a `&uniq`
-> state formal by that place's post-state, a result binder by its destination below — and
-> its **support** is the ordinary L0 support of those substituted terms, taken at the
-> call.
+> **S13 (call datums, and declaration-domain relations).** At an ordinary source call
+> whose callee has an atomically published summary, and at an admitted [BLK-0] or [SYS-2]
+> call, each declared relation of the resolved callee or row is **instantiated at the
+> call**, by substituting each operand at the denotation [MSR-3]'s table gives its
+> parameter's **mode** — an `own` formal by that actual's call datum, a shared-borrow
+> formal by the live term, a `&uniq` state formal by that place's post-state, a result
+> binder by its destination below — and its **support** is the ordinary L0 support of
+> those substituted terms, taken at the call.
 >
 > It is **established** on the call's normal continuation, after the call's ordinary
 > transfer, consumes, borrow commits, target commit and kills, exactly in [ENT-5]
@@ -2377,6 +2431,19 @@ this rule or [FN-9]'s existing [ENT-3.S12] route, and nothing else publishes any
 > at or after the call**, whether that event lies before or after the arm on which the
 > relation is available; a relation whose support is dead is not available at all. A
 > relation over a call datum has empty support and no event kills it.
+
+> **Correction, decided 2026-09-04, from B1's implementation.** The eighth draft stated
+> S13's population as the declared relations of an admitted [BLK-0] or [SYS-2] call.
+> **No compiler-owned row carries a declared relation set in v0.44**, so that population
+> is empty at the tip and a source stated only over it would establish nothing. What
+> landed is the substitution half, over the population the language already has: at an
+> ordinary source call whose callee has an atomically published summary, each `own`
+> operand of each declared relation of the resolved callee mints one call datum [MSR-3]
+> and is established equal to that operand's exact pre-transfer term, at the call's
+> pre-transfer point and before that boundary's consumes, borrow commits, callee-effect
+> kills and target kills. The two halves are one source because the denotation table is
+> one table. **B7 extends S13's population to [BLK-0] rows** when those rows exist; it
+> does not take the label, and the label is not reused.
 
 **The establishment sentence is round 7's second BREAK.** The seventh draft deferred a
 routed relation's establishment *to* the arm and killed it from the establishment point,
@@ -2443,8 +2510,11 @@ every declared relation in the language. *Amends:* [ENT-3] 2730-2837, which gain
 [ENT-3.S12] 2822-2837's closed destination list; [FN-9] 1301-1365 at 1313, whose
 result-datum requirement is lifted for exactly the relations named above. *Depends:*
 [ENT-5] 2898-2905, whose establishment order this source reuses verbatim; [SET-2] 528;
-[MSR-3], which supplies the call datum and the denotation of every operand. *Law:* L11,
-L15, L16. *History:* r7 F1-2, F1-14, F3-I14; r6 F3-1, F3-2, F3-5.
+[MSR-3], which supplies the call datum and the denotation of every operand. *Verified
+today:* **the source-call half landed**, conformance cases
+`call6-pos-routed-relation-over-a-call-datum` and
+`call6-neg-contradictory-published-relations` (6.0). *Law:* L11, L15, L16. *History:* r7
+F1-2, F1-14, F3-I14; r6 F3-1, F3-2, F3-5; B1 (S13's population).
 
 **[CALL-5] No transport reads the actual's spelling.** The three transports are selected
 by the callee's declared parameter mode and type and by its declared contract. No rule of
@@ -3453,9 +3523,10 @@ row that also records a surviving depended sentence marks it **bold** (condition
 |                 |           | take a clause_expr                                               |                             |
 | [GRAM-3]        | 204-215   | box/arena/buffer productions retire; runs are ordinary TYPEIDs   | [PROV-1]                    |
 |                 |           | with targs; slice is joined by mut_slice                         |                             |
-| [GRAM-4]        | 217-256   | destructuring let and consume; set target list and value list;   | [CALL-4], [LIV-2], [MSR-5], |
-|                 |           | affine_factor GAINS terms; stmt gains dispose                    | [PROV-6]                    |
-| [GRAM-5]        | 258-280   | +clause_expr; atom and atom_list untouched                       | [MSR-5]                     |
+| [GRAM-4]        | 217-256   | destructuring let and consume; set target list and value list;   | [CALL-4], [LIV-2], [MSR-4], |
+|                 |           | affine_factor GAINS terms at [MSR-4] in B2, not at [MSR-5];      | [PROV-6]                    |
+|                 |           | stmt gains dispose                                               |                             |
+| [GRAM-5]        | 258-280   | +clause_expr; atom and atom_list untouched. LANDED in v0.44      | [MSR-5]                     |
 | [GRAM-9]        | 328-332   | unchanged; named because [MSR-5] moves the amendment away        | [MSR-5]                     |
 | [GRAM-11]       | 345-350   | a fourth callee class in all three sentences                     | [BLK-0]                     |
 | [TYPE-2]        | 357-360   | +5 nominals (2 providers, 2 runs, mut_slice); box/arena/buffer   | [PROV-1], [BLK-1], [BLK-2], |
@@ -5390,6 +5461,36 @@ probe names are quoted. **Probes `q1`-`q16` were run in this session** against t
 `p*`, `f*`, `g*`, `m*`, `r1_*`, `r2_*` and `t1`-`t14` are earlier rounds'. **No name
 denotes two probe sets.** No timing figure appears anywhere in this file.
 
+### 6.0 B1 landed (v0.44 candidate)
+
+**Four of 3.K's rules are no longer paper.** [MSR-3], [MSR-5], [CALL-4] and [CALL-6] are
+implemented as the v0.44 candidate (PR #17), each in the narrower form the four
+corrections above record. Six conformance cases carry them:
+
+```text
+| case                                        | expected verdict                    |
+|---------------------------------------------|-------------------------------------|
+| msr5-pos-two-measure-clause                 | run, exit 0                         |
+| msr3-pos-own-operand-call-datum             | run, exit 0                         |
+| msr3-neg-uniq-state-measure-in-ensures      | reject, MSR-3                       |
+| call6-pos-routed-relation-over-a-call-datum | run, exit 0                         |
+| call6-neg-contradictory-published-relations | reject, CALL-6                      |
+| call4-neg-measured-result-not-admitted      | reject, FN-9                        |
+```
+
+**The corpus consequence is the one this design argued for.** `tests/programs/wfgrep.wf`
+and `tests/programs/raw_deflate_boundary.wf` both carried an `append_slice` that published
+a bound through a **measure of a `&uniq` parameter**. Both now take `capacity: own u64`
+and state `requires capacity == len(deref(destination));` instead, so the bound is a fact
+about a value the caller supplied and the callee names no post-state it cannot reach
+(L11). That is [MSR-3]'s refusal taken as the writer's repair, and it is the first corpus
+evidence that the refusal is affordable rather than merely correct.
+
+**What did not land is recorded at its rule and re-batched in §7**: [CALL-4]'s measured
+result, its measure over a result place and its route over any variant of any returned
+enum go to B7; [S16]'s ordered result list and the destinations that read it go to
+§7's B1b; and [MSR-5]'s affine widening stays [MSR-4]'s in B2.
+
 ### 6.1 What the compiler did in this session
 
 ```text
@@ -5521,19 +5622,23 @@ hidden**: `bridge.c:670`'s first-use mapping inside the submit path, the floor's
 
 ### 6.3 Reasoned, and not verified anywhere
 
-- **Every rule in 3.K.** None is implemented and no compiler has seen any of the new
-  types, operations, terms, statements, modifiers or markers. `q7` restated: the whole
-  contract surface — [MSR-5]'s operands, [CALL-4]'s routes and result vocabulary,
-  [CALL-6]'s publication, [CALL-7]'s completeness — does not parse today.
+- **Every rule in 3.K except B1's four.** [MSR-3], [MSR-5], [CALL-4] and [CALL-6] landed
+  as the v0.44 candidate in their narrowed form (6.0); of the rest none is implemented and
+  no compiler has seen any of the new types, operations, terms, statements, modifiers or
+  markers. `q7` is answered for the clause operands and stands for the remainder of the
+  contract surface: [CALL-4]'s measured result and widened routes, [S16]'s result list and
+  [CALL-7]'s completeness do not parse or do not admit today.
 - **Every function in 3.L** and **every program in section 4**, written against 3.K and
   the unchanged v0.41 rules and walked against both; none was compiled.
 - **D3 itself.** That reading linearity against the scope removes one hundred and eight
   written statements without weakening L2, L3 or L17 is argued from [STOR-3]'s
   derived-release table, [LIV-1]'s join and [EFF-2] 1427, and is not executed. **6.4 asks
   for this first.**
-- **[CALL-6]'s S13 and its establishment point** — that instantiating at the call and
-  restricting to the arm is equivalent to [ENT-5]'s branch-conditioned facts, and that
-  killing from the call closes the channel without closing anything else.
+- **[CALL-6]'s S13 over a [BLK-0] row.** The source-call half is implemented and
+  `call6-pos-routed-relation-over-a-call-datum` is instantiation at the call with
+  restriction to the arm under test (6.0). What stays reasoned is the same claim over a
+  declaration-domain row, whose relations no v0.44 row carries, and the post-state
+  destination that only such a row can reach.
 - **[PROV-6]'s release graph** — that its least fixed point is the set of nodes the walk
   visits, that its acyclicity is the walk's termination condition, and that it keeps an
   arena-recursive structure compiling while refusing a heap-backed one. Probe `a8` is the
@@ -5556,9 +5661,11 @@ hidden**: `bridge.c:670`'s first-use mapping inside the submit path, the floor's
   **and** `arena<'r, U>`, and `check_mutation_target_class`
   (`compiler/src/semantic/check/expressions.rs:310-326`) tests only the slice variant.
   Benign at this tip; load-bearing for the batch that implements [PROV-3] use 3.
-- **[MSR-3]'s six placements**, checked by enumeration; **the current runtime's
-  closure**, which no existing target can be certified to meet; and **the claim that
-  `wfgrep` becomes heap-free**, whose substitution was never compiled.
+- **[MSR-3]'s other five placements**, checked by enumeration; the call placement is
+  implemented (6.0) and the entry, construct, rebind, payload and field placements are
+  not. **The current runtime's closure**, which no existing target can be certified to
+  meet; and **the claim that `wfgrep` becomes heap-free**, whose substitution was never
+  compiled, though its `append_slice` now compiles under [MSR-3]'s refusal.
 
 ### 6.4 Falsifiers this design asks for next
 
@@ -5920,26 +6027,43 @@ borrow whose loan is still live at the backedge refused by [OWN-11]'s unchanged
 per-iteration judgment; and every loop-body borrow in `tests/programs` migrated. §4 and
 3.L are written in this spelling and 3.K.0 says so.
 
-**B1. The fact machinery.** Rules: [MSR-3], [MSR-5], [CALL-4], [CALL-6]. **First,
-because round 7's two memory BREAKS are both in it and because nothing downstream is a
-fact without it.** Three things must be pinned here before anything reads them: *where a
-declared operand's denotation comes from* ([MSR-3]'s mode-keyed table), *where a
-declared relation is instantiated and where it is established* ([CALL-6]'s S13), and
-*what a contract may be written over* ([MSR-5] and [CALL-4], including a measure of a
-**result**). **Probe `q7` is why this is a batch and not a preamble**: `ensures
-len(kept) >= 1_u64;` on a run result is a `[GRAM-5]` **parse** error today, so the whole
-contract surface of this design — the operands, the routes, the result vocabulary and
-the publication — is new capability, and no later batch's test can be written until it
-exists. Tests: a two-`len` clause accepted where `q7` is a parse failure; a
-declaration-domain row's relation over an `own` operand establishing at a caller **as
-the call datum**, with the negative case pinned — a row whose relations instantiate to a
-contradiction refused at the row [CALL-6]; a routed relation established at the call and
-available only on its arm, with a write of the same store between the call and the arm
-killing it; probe `x1`'s per-variant `ensures` accepted and read at the caller's arm; a
+**B1. The fact machinery. Landed as the v0.44 candidate (PR #17).** Rules: [MSR-3],
+[MSR-5], [CALL-4], [CALL-6]. **First, because round 7's two memory BREAKS are both in it
+and because nothing downstream is a fact without it.** Three things had to be pinned here
+before anything read them: *where a declared operand's denotation comes from* ([MSR-3]'s
+mode-keyed table), *where a declared relation is instantiated and where it is established*
+([CALL-6]'s S13), and *what a contract may be written over* ([MSR-5] and [CALL-4]).
+**Probe `q7` is why this was a batch and not a preamble**: `ensures len(kept) >= 1_u64;`
+on a run result was a `[GRAM-5]` **parse** error, so the contract surface of this design
+was new capability and no later batch's test could be written until it existed. Tests, all
+six landed as conformance cases (6.0): a two-`len` clause accepted where `q7` is a parse
+failure; a callee's relation over an `own` operand establishing at a caller **as the call
+datum**, with the negative case pinned, a contract whose relations instantiate to a
+contradiction refused at the `fn_decl` [CALL-6]; a routed relation instantiated at the
+call and available only on its arm; a `&uniq` parameter's measure in a wf `ensures`
+**rejected**, which probes `e2`/`e3` located; and a measure over a result of measured type
+refused at [FN-9] rather than at the grammar, which pins the widening's boundary.
+
+**What B1 could not reach, and where it went** (decided 2026-09-04). Three of the eighth
+draft's B1 tests assumed machinery this batch does not build. *A measured result and*
+`len(result)` need the result binder to be a place-like datum and not a fragment integer,
+and *a per-variant route over any enum* needs resolver identity for variants beyond the
+prelude `Ok`/`value`: both are [CALL-4] admissions and **land in B7** with the runs and
+the measured types. *A two-result contract reaching both binders of a destructuring `let`,
+both targets of a `set` target list and both arms of a `match`* needs [S16] and **lands in
+B1b**. Probes `q12` and `q13` follow [MSR-3]'s rebind and payload placements and go with
+them.
+
+**B1b. Multi-return and the added destinations.** [S16]'s ordered result list, its
+`let (a, b) = f(...)` and `set` target-list binders, and [CALL-4]'s three added
+[ENT-3.S12] destinations, which only a multi-result contract exercises. **No rule of 3.K
+is added here**: [CALL-4] stays B1's and this batch lands admissions B1 deferred, exactly
+as B7 does for the measured result, so the arithmetic above is unchanged. Tests: a
 two-result contract reaching both binders of a destructuring `let`, both targets of a
-`set` target list and both arms of a `match`; a `&uniq` parameter's measure in a wf
-`ensures` **rejected**, which probes `e2`/`e3` locate today; and probes `q12` and `q13`
-accepted after the rebind and payload placements.
+`set` target list and both arms of a `match`; a route naming a result ordinal, and the
+omitted binder accepted only when one ordinal has that enum type; and a two-result
+declaration whose two results are the same enum type refused when the route is ambiguous
+[CALL-4].
 
 **B2. The proof surface.** Rules: [MSR-1], [MSR-2], [MSR-4], [MSR-6]. Tests: probe
 `q10` accepted after [MSR-6]; a goal discharged from `len + room = cap` as an affine
@@ -6018,7 +6142,14 @@ distinct types; **a `&uniq Vector<u8>` parameter rejected at [BLK-4], a `&uniq E
 `Env` holds a `FixedVector` rejected the same way, and probe `gen3`'s `&uniq Holder<T>`
 rejected at the type-parameter clause**, with the same declaration accepted under a [S32]
 bound that excludes a container nominal and a loan-bearing argument; and two reserving
-occurrences naming one region rejected at the second. This batch supersedes B3's
+occurrences naming one region rejected at the second. **B1's three deferred [CALL-4]
+admissions land here** (decided 2026-09-04), because this batch is where a result of
+measured type first exists: a result of **measured** type carrying `ensures
+len(result) >= 1_u64;` accepted where `call4-neg-measured-result-not-admitted` refuses it
+at [FN-9] today; a measure over a result place formed with a field projection; a route
+over a variant of a returned enum that is not the prelude `Ok`; and S13's population
+**extended** to [BLK-0] rows, with a row's declared relation establishing at a caller
+beside the source-call datums B1 landed. This batch supersedes B3's
 conformance case, whose program no longer typechecks; that disposition is conformance
 evidence and is recorded in `governance/APPROVALS.md`.
 
