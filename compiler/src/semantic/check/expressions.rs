@@ -1,4 +1,4 @@
-mod calls;
+pub(in crate::semantic::check) mod calls;
 pub(in crate::semantic::check) mod flat_storage;
 mod places;
 

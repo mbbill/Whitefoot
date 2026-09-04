@@ -1091,6 +1091,39 @@ a `proof_use` keep [INV-1] 3109-3113's atom admission, so a measure term is a cl
 operand and not yet an affine atom; [MSR-4] widens the affine domain in B2, which is where
 the affine index has to range over measure terms.
 
+> **Correction, decided 2026-09-04, from B7a2's execution of 3.L.** The amendment register
+> promised the written affine surface to B2 — "`affine_factor` GAINS terms at [MSR-4] in
+> B2" — and B2 widened the affine *domain* without widening the *production*, so a measure
+> term became an automatic premise and stayed unwritable. The consequence B7a2 measured is
+> that `invariant grown: len_of(built) >= at` is a GRAM-4 parse rejection at the former,
+> which retires every filling loop in 3.L: without the header relation, `seq_place`'s
+> `room_of(vector) > 0_u64` has no backedge premise, and `vacant`, `filled`, `collect`,
+> `rebase` and `pool_new` do not parse at all. The paragraph above is therefore wrong as
+> written, and B7a3 lands the half it withheld: [GRAM-4]'s `affine_factor` admits a
+> `call`, and [INV-1] admits exactly the four measure formers there over an admitted
+> measure place. The affine domain is unchanged — it already carried an atom per live
+> measure term — so what the production adds is the writer's ability to *state* the
+> relation, never a new derivation. The atom is retargeted by exactly the [ENT-5] events
+> that kill the term, which is what keeps a header conclusion from surviving the write
+> that refutes it.
+>
+> **The clause half of the same correction did not land, and the form the ruling states
+> cannot land as written.** B7a2 also measured that a clause operand may not be an
+> arithmetic expression — `ensures len_of(rest) <= len_of(vector) + 1_u64;` is a GRAM-2
+> rejection at the `+` — and the 2026-09-04 ruling gives the repair as
+> `clause_expr := <a Bool-rooted operand: atom | call | construct> | affine_expr
+> compare_op affine_expr`. That is the eighth draft's production with one alternative
+> restored, and the correction above it in this same rule is the reason it was replaced:
+> it has no infix alternative, so it still drops `requires total /defined steps;`, the
+> corpus program that fixes an integer-domain predicate for [OP-2], whose recorded verdict
+> is **accept**. Restoring the infix alternative beside an affine side is not available
+> either: `+`, `-` and `*` are both `infix_op` alternatives and affine operators, so
+> `a + b` in clause position would derive two ways and [GRAM-1] refuses an ambiguous
+> grammar. The unambiguous union needs the clause tail's operator set to be `infix_op`
+> minus those three, which is a fourth production this batch did not have owner sanction
+> to add. The defect stands and the two alternatives are recorded for the owner in the
+> batch report.
+
 > **Correction, decided 2026-09-04, from B1's implementation.** The eighth draft wrote
 > `clause_expr := affine_expr compare_op affine_expr`. That production has a comparison at
 > the root and nothing else, so it drops every Bool-rooted clause the corpus writes today:
@@ -3588,7 +3621,7 @@ row that also records a surviving depended sentence marks it **bold** (condition
 | [GRAM-3]        | 204-215   | box/arena/buffer productions retire; runs are ordinary TYPEIDs   | [PROV-1]                    |
 |                 |           | with targs; slice is joined by mut_slice                         |                             |
 | [GRAM-4]        | 217-256   | destructuring let and consume; set target list and value list;   | [CALL-4], [LIV-2], [MSR-4], |
-|                 |           | affine_factor GAINS terms at [MSR-4] in B2, not at [MSR-5];      | [PROV-6]                    |
+|                 |           | affine_factor GAINS the four measure formers as factors in B7a3 | [PROV-6], [INV-1]           |
 |                 |           | stmt gains dispose                                               |                             |
 | [GRAM-5]        | 258-280   | +clause_expr; atom and atom_list untouched. LANDED in v0.44      | [MSR-5]                     |
 | [GRAM-9]        | 328-332   | unchanged; named because [MSR-5] moves the amendment away        | [MSR-5]                     |
@@ -6144,6 +6177,70 @@ compiles, and the cause is not the kernel:
   published `room_of`. Either the rows gain the two clauses or the sentence says what the
   test says; the boundary rows publish `room_of` explicitly and the formation rows do not, so
   the inventory is inconsistent with itself either way.
+
+### 6.0h B7a3 landed (v0.45)
+
+**Two owner rulings of 2026-09-04, one defect of the six, and the completeness sentence.**
+
+- **[S36]: the readers are `len_of`, `cap_of`, `room_of` and `head_of`.** The owner's
+  ground is recorded verbatim in 3.S. `len`, `cap`, `room` and `head` leave
+  `ReservedLowerNames` and are ordinary identifiers again; the [ENT-2] and [MSR-1] terms
+  take the same four spellings, so one quantity keeps one name as term and as reader. The
+  respell covers 386 `.wf` sources, the compiler's embedded test sources and diagnostics,
+  the conformance manifest, the snapshot index and the live documentation, and no recorded
+  verdict moves. `docs/roadmap.md` gains `outline:FLOOR-6`, a namespaces candidate whose
+  first motivation is that this rename is a workaround for a flat name domain.
+- **[PROV-6]'s release-graph cycle refusal is deleted, not deferred.** The owner's ground
+  is the correction printed under [PROV-6] above. The compiler half went with it: the
+  derived release of a cyclic type is one release action per node type calling itself, and
+  the explicit heap worklist that kept that depth off the machine stack is gone — it
+  bought its bound with a `realloc` on the release path and an abort when the host refused
+  it, which is an allocation and a trap on a path [STOR-3] gives the empty effect row.
+  Three backend properties are restated in place and one is retired; the batch report
+  names each. `tests/programs/recursive_tree.wf` stays accepted and runs.
+- **[BLK-0]'s completeness sentence now says what its own test said.** Completeness is read
+  with [MSR-2]'s standing identity, so a row publishing `len_of` and `cap_of` of a place
+  has published its `room_of`, and `seq_arena`'s `Some` arm is complete as written. A.2's
+  note states the same sentence, and the inventory is consistent with itself: the boundary
+  rows publish `room_of` because their callers read it, the formation rows do not, and both
+  classes are complete.
+- **A loop invariant carries a measure term.** `affine_factor` admits a `call` and [INV-1]
+  admits exactly the four measure formers there, over an admitted measure place, resolving
+  in the same context that rule gives an IDENT. This is the promise the amendment register
+  made for B2 and B2 did not keep; the correction is printed under [MSR-5] above. The
+  affine domain is unchanged, so nothing is derived that was not derivable — what the
+  writer gains is the ability to *state* the relation. The atom is retargeted by exactly
+  the [ENT-5] events that kill the term, which is what stops a header conclusion from
+  outliving the write that refutes it. Three conformance cases carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| inv1-pos-a-measure-former-is-an-affine-factor            | run, exit 0      |
+| inv1-neg-a-measure-invariant-is-unproved                 | reject, INV-1    |
+| inv1-neg-an-affine-factor-is-not-a-measure-former        | reject, INV-1    |
+```
+
+**What B7a3 did not reach, and why.** Five of B7a2's six defects stand, and one of them
+cannot be repaired in the form the ruling gives.
+
+- **A clause operand still may not be arithmetic.** The correction under [MSR-5] above
+  states the finding in full: the ruling's production is the eighth draft's, whose own
+  correction in this file records why it was replaced — it drops
+  `requires total /defined steps;`, an accepted corpus program — and the union that keeps
+  the infix alternative is ambiguous, because `+`, `-` and `*` are both `infix_op`
+  alternatives and affine operators. The unambiguous union needs a fourth production for
+  the clause tail's operator set, which is surface this batch had no sanction to add.
+- **[MSR-3]'s rebind and payload placements are not landed**, so a parameter written back
+  in the body still loses its entry image and `try_place`'s contract is still unprovable.
+- **An element-position window store is still `ContainerRuntime`**, so 3.L.2's `take_at`
+  still has no route.
+- **A run's element domain is still the flat-element domain**, so a run at an unbounded
+  generic `T`, a run of affine elements and a run of runs are all still refused.
+- **Nothing of 3.L landed under `tests/programs/`.** `vacant` and `filled` need the
+  element domain, `take_at` needs the element store, and `try_place`, `try_take` and
+  `rebase` need both the arithmetic clause operand and the rebind placement. Each is
+  blocked on an item above rather than on the programs themselves.
 
 ### 6.1 What the compiler did in this session
 

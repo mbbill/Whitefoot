@@ -41,6 +41,12 @@ pub(crate) enum CheckedAffineExpressionKind {
         binding: BindingId,
         ty: IntegerType,
     },
+    /// [INV-1, MSR-1] one measure former written as an affine factor. The
+    /// inner expression is exactly the measure read the [OP-1] reader row
+    /// checks, so the affine domain reaches the same [ENT-2] term the
+    /// automatic derivation already carries an atom for; the invariant
+    /// evaluates nothing and reads no storage [INV-1].
+    Measure(Box<CheckedExpression>),
     Add(Box<CheckedAffineExpression>, Box<CheckedAffineExpression>),
     Subtract(Box<CheckedAffineExpression>, Box<CheckedAffineExpression>),
     MultiplyByConstant {

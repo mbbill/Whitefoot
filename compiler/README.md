@@ -264,9 +264,25 @@ though both types are named, branded, confined, laid out and measured by the
 ordinary source judgments. `seq_heap` additionally has no writable operand at
 all, because [FN-7]'s `command.heap` row is DEFERRED. Element-position writes
 into a run — `set v[i] = e;` and `replace v[i] = e;` — and a run whose element
-type is itself a run are the two further stops, each explicit.
+type is itself a run are the two further stops, each explicit. Beside them
+stand three source-surface gaps the container library needs and this compiler
+does not have: a contract clause whose side is an arithmetic expression, which
+is a GRAM-2 rejection at the operator; [MSR-3]'s deferred rebind and payload
+placements, so an `own` parameter written back in a body loses its entry image
+for every clause naming it; and a run whose element type is an unbounded
+generic or is itself affine.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
+
+A `header_invariant` and an `invariant_stmt` do carry a measure former as an
+affine factor [INV-1, GRAM-4], which is what lets a loop state the relation the
+operation it calls needs on the backedge. The factor's affine atom is
+retargeted by exactly the [ENT-5] events that kill its term, so a header
+conclusion never outlives the write that refutes it. The derived release of a
+type whose release graph has a cycle is one release action per node type
+calling itself [PROV-6]; the depth is the value's, which is the ordinary
+stack-availability question [SCOPE-3] defers for a program that is not
+`resource_closed`, and the stack ledger reports it as a `STACK cycle` row.
 
 ## Running and checking
 

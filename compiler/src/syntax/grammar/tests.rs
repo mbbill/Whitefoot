@@ -19,7 +19,7 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 87);
     assert_eq!(DECISIONS.len(), 137);
-    assert_eq!(SELECT_ROWS.len(), 6_194);
+    assert_eq!(SELECT_ROWS.len(), 6_296);
     assert_eq!(diagnostic_terminal_order().len(), 110);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
@@ -272,6 +272,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 6_194);
+    assert_eq!(total_rows, 6_296);
     assert!(saw_atom_only);
 }

@@ -143,9 +143,14 @@ checked from the row's own signature record, its requirement is discharged at
 the call under [MSR-4], its declared relations are published at the caller
 under [CALL-6], and the window, its subscript and the four boundary operations
 lower and run. [CALL-4]'s measured result and the measure over its bare result
-place land with those rows. The store -- the bump take, the extent reservation
-and the general store's provider value -- together with the confinement rule
-and the retirement of the old container types, is what remains.
+place land with those rows. B7a3 renames the four readers `len_of`, `cap_of`,
+`room_of` and `head_of` [S36], deletes [PROV-6]'s release-graph cycle refusal so a
+cyclic release recurses, and makes a measure former an affine factor of
+[INV-1], which is what a filling loop needs to state its own header relation.
+The store -- the bump take, the extent reservation and the general store's
+provider value -- together with the confinement rule, the arithmetic clause
+operand, the element-position window store and the retirement of the old
+container types, is what remains.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

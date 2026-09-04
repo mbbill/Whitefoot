@@ -117,9 +117,13 @@ a call to a row over a `FixedVector<T, n>` is checked, its requirement is
 discharged under [MSR-4], its declared relations are published at the caller
 under [CALL-6], and the window, its subscript and the four boundary operations
 lower and run. [CALL-4]'s measured result and the measure over its bare result
-place land with those rows. What remains is the store — the bump take, the
-extent reservation and the general store's provider value — together with the
-confinement rule and the retirement of the old container types.
+place land with those rows. B7a3 renames the four readers `len_of`, `cap_of`,
+`room_of` and `head_of` [S36], deletes [PROV-6]'s release-graph cycle refusal so
+a cyclic release is an ordinary recursive walk, and makes a measure former an
+affine factor of [INV-1]. What remains is the store — the bump take, the extent
+reservation and the general store's provider value — together with the
+confinement rule, an arithmetic clause operand, the element-position window
+store and the retirement of the old container types.
 
 ## Outcome
 

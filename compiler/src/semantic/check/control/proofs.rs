@@ -11,9 +11,9 @@ use super::super::super::entailment::affine::{
     normalize_bounded_less_equal,
 };
 use super::super::super::model::{
-    CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation, CheckedMode,
-    CheckedProofUse, CheckedProofUseSource, CheckedSourceProof, CheckedStatement, CheckedType,
-    CheckedValue, IntegerType,
+    CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation, CheckedExpression,
+    CheckedMode, CheckedProofUse, CheckedProofUseSource, CheckedSourceProof, CheckedStatement,
+    CheckedType, CheckedValue, IntegerType,
 };
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding};
 use super::StatementResult;
@@ -476,12 +476,84 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ));
         }
 
+        // [INV-1, MSR-1] one measure former as an affine factor. The relation
+        // evaluates nothing and reads no storage, so the factor reaches the
+        // resolved place and the measure row and stops there: no loan access,
+        // no effect, and no goal.
+        if let Some(call) = self.tree.first_child_with(node, Production::Call)? {
+            let expression = self.check_affine_measure(call, bindings, allowed_values, owner)?;
+            return Ok((
+                CheckedAffineExpression {
+                    node_path: self.tree.path(node)?.clone(),
+                    kind: CheckedAffineExpressionKind::Measure(Box::new(expression)),
+                },
+                None,
+            ));
+        }
+
         let nested = self
             .tree
             .first_child_with(node, Production::AffineExpr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let expression = self.check_affine_expression(nested, bindings, allowed_values, owner)?;
         Ok((expression, None))
+    }
+
+    /// [INV-1] the one `call` an affine factor admits: a measure former over
+    /// an admitted measure place.
+    fn check_affine_measure(
+        &self,
+        call: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+        owner: AffineProofOwner,
+    ) -> Result<CheckedExpression, CheckStop> {
+        let callee = self
+            .tree
+            .first_child_with(call, Production::Callee)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let usage = self.use_at_roles(
+            callee,
+            &[
+                LexicalUseRole::IdentifierCallee,
+                LexicalUseRole::OperationCallee,
+            ],
+        )?;
+        let ResolvedTarget::Operation(operation) = usage.target() else {
+            return self.invalid_affine_proof(
+                owner,
+                call,
+                "an affine factor calls something other than a measure former",
+                "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+            );
+        };
+        let spelling = crate::operation_family_spelling(operation)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let Some(measure) = super::super::expressions::calls::measure_former(spelling) else {
+            return self.invalid_affine_proof(
+                owner,
+                call,
+                "an affine factor calls something other than a measure former",
+                "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+            );
+        };
+        self.reject_named_operation_arguments(call, spelling)?;
+        self.reject_written_operation_type_argument(call)?;
+        let atoms = self.operation_atoms(call, 1)?;
+        let place = self.check_indexed_atom_place(atoms[0], bindings)?;
+        // [INV-1] the place resolves in the same context an IDENT does, and
+        // its root is one of the values that context admits.
+        if let Some(declaration) = place.root_declaration()
+            && !allowed_values.contains(&declaration)
+        {
+            return self.invalid_affine_proof(
+                owner,
+                atoms[0],
+                "an affine relation reads a value outside its admitted entry state",
+                "measure a value that exists before this proof point",
+            );
+        }
+        self.measure_of_indexed_place(measure, place, atoms[0])
     }
 
     fn invalid_affine_proof<ResultValue>(
@@ -528,9 +600,17 @@ enum AffineConversion<'expression> {
 
 /// Erases source-only paths and integer-type annotations while preserving the
 /// exact expression tree consumed by the single affine formation core.
+///
+/// The term identities here are local to this formation check, which decides
+/// only whether the written relation's arithmetic fits the fixed [INV-1]
+/// ceilings. A binding takes its own ordinal; a measure factor [MSR-1] takes
+/// one from the top of the same space, in the order the walk reaches distinct
+/// factors, because the checker has no [ENT-2] term registry at this point and
+/// the flow builds the real images itself.
 fn checked_affine_expression(source: &CheckedAffineExpression) -> Option<AffineExpression> {
     let mut pending = vec![AffineConversion::Visit(source)];
     let mut values = Vec::new();
+    let mut measures: Vec<&CheckedExpression> = Vec::new();
     while let Some(next) = pending.pop() {
         match next {
             AffineConversion::Visit(expression) => match &expression.kind {
@@ -539,6 +619,17 @@ fn checked_affine_expression(source: &CheckedAffineExpression) -> Option<AffineE
                 }
                 CheckedAffineExpressionKind::Local { binding, ty: _ } => {
                     values.push(AffineExpression::Term(AffineTermId::from_index(binding.0)));
+                }
+                CheckedAffineExpressionKind::Measure(measure) => {
+                    let index = measures
+                        .iter()
+                        .position(|seen| *seen == measure.as_ref())
+                        .unwrap_or_else(|| {
+                            measures.push(measure.as_ref());
+                            measures.len() - 1
+                        });
+                    let index = u32::MAX.checked_sub(u32::try_from(index).ok()?)?;
+                    values.push(AffineExpression::Term(AffineTermId::from_index(index)));
                 }
                 CheckedAffineExpressionKind::Add(left, right) => {
                     pending.push(AffineConversion::Add);

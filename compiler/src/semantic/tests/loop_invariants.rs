@@ -2617,3 +2617,70 @@ command fn main() -> status: own ExitStatus pure {
         );
     });
 }
+
+/// [INV-1, MSR-1] a measure former is an affine factor.
+///
+/// The relation a contract clause already states is statable at the other
+/// placement of the same rule, in the same spelling, and the checker proves it
+/// at the base and at every backedge. Before v0.45 widened `affine_factor` the
+/// same header was a GRAM-4 parse rejection at the former, which is what made
+/// every filling loop of the container library unwritable.
+#[test]
+fn a_measure_former_is_an_affine_factor_of_a_header_invariant() {
+    let source = br#"fn headroom(run: own buffer<u8>) -> total: own u64 reads(run) contract {
+  requires 8_u64 <= len_of(run);
+} {
+  doc "A header invariant over a measure of the run it scans.";
+  let seen = 0_u64;
+  for (
+    at in 0_u64..4_u64,
+    invariant reserved: seen + 4_u64 <= len_of(run)
+  ) {
+    let byte = run[at];
+  }
+  return seen;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let run = buffer_new(8_u64, 0_u8);
+  let total = headroom(run: move run);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "a measure factor is an ordinary affine factor: {outcome:?}"
+        );
+    });
+}
+
+/// [INV-1, MSR-2] a write that kills a measure retargets its affine image.
+///
+/// The image a measure factor reads is the one this program point holds, and
+/// the events that kill the [ENT-2] term retarget it, exactly as a write to a
+/// local retargets that local's image. Without that, the header conclusion
+/// would be a fact about a value the body replaced, and the subscript below
+/// would discharge from a length the run no longer has.
+#[test]
+fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
+    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "The measure the header names is replaced inside the body.";
+  let data = buffer_new(4_u64, 0_u8);
+  for (
+    i in 0_u64..1_u64,
+    invariant wide: 4_u64 <= len_of(data)
+  ) {
+    let old = replace data = buffer_new(1_u64, 0_u8);
+    let byte = data[3_u64];
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+            panic!("the replaced run's subscript must be refused: {outcome:?}");
+        };
+        assert_eq!(issue.rule(), SemanticRule::Op4);
+    });
+}

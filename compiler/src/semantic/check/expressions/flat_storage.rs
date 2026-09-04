@@ -26,7 +26,7 @@ use super::super::{
 use super::{MutationForm, MutationTarget, PlaceUseOptions};
 
 #[derive(Clone)]
-pub(super) struct CheckedArrayPlace {
+pub(in crate::semantic::check) struct CheckedArrayPlace {
     pub(super) root: CheckedArrayRoot,
     declaration: Option<DeclarationId>,
     array_type: CheckedType,
@@ -48,7 +48,7 @@ impl CheckedArrayPlace {
 }
 
 #[derive(Clone)]
-struct CheckedBufferPlace {
+pub(in crate::semantic::check) struct CheckedBufferPlace {
     root: CheckedBufferRoot,
     declaration: DeclarationId,
     element_type: CheckedType,
@@ -58,7 +58,7 @@ struct CheckedBufferPlace {
 }
 
 #[derive(Clone)]
-struct CheckedSlicePlace {
+pub(in crate::semantic::check) struct CheckedSlicePlace {
     root: CheckedSliceRoot,
     declaration: DeclarationId,
     descriptor: Option<BorrowInfo>,
@@ -66,7 +66,7 @@ struct CheckedSlicePlace {
 }
 
 #[derive(Clone)]
-enum CheckedIndexedPlace {
+pub(in crate::semantic::check) enum CheckedIndexedPlace {
     Array(CheckedArrayPlace),
     Buffer(CheckedBufferPlace),
     Slice(CheckedSlicePlace),
@@ -76,7 +76,7 @@ enum CheckedIndexedPlace {
 }
 
 #[derive(Clone)]
-struct CheckedContainerPlace {
+pub(in crate::semantic::check) struct CheckedContainerPlace {
     root: CheckedContainerRoot,
     resolved: ResolvedPlace,
     holder: Option<DeclarationId>,
@@ -124,6 +124,18 @@ fn round_up_layout_magnitude(value: CheckedLayoutMagnitude, align: u64) -> Check
 }
 
 impl CheckedIndexedPlace {
+    /// The declaration this place is rooted in, where it has one. A place
+    /// rooted in a named const has none, and no proof-point admission
+    /// restricts a const.
+    pub(in crate::semantic::check) const fn root_declaration(&self) -> Option<DeclarationId> {
+        match self {
+            Self::Array(array) => array.declaration,
+            Self::Buffer(buffer) => Some(buffer.declaration),
+            Self::Slice(slice) => Some(slice.declaration),
+            Self::Container(container) => Some(container.resolved.root),
+        }
+    }
+
     fn element_type(&self) -> CheckedType {
         match self {
             Self::Array(array) => array.element_type,
@@ -655,46 +667,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(TypedExpression::owned(
-            match place {
-                CheckedIndexedPlace::Array(array) => CheckedExpression::ArrayMeasure {
-                    measure,
-                    root: array.root,
-                    length: array.length,
-                },
-                CheckedIndexedPlace::Buffer(buffer) => CheckedExpression::BufferMeasure {
-                    measure,
-                    root: buffer.root,
-                },
-                CheckedIndexedPlace::Slice(slice) => CheckedExpression::SliceMeasure {
-                    measure,
-                    root: slice.root,
-                },
-                CheckedIndexedPlace::Container(container) => {
-                    // [MSR-1]: a measure the table gives no row is the
-                    // ordinary [TYPE-5] operand rejection, carried by the
-                    // measured types the table does have a row for.
-                    let measured = container
-                        .root
-                        .measured()
-                        .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-                    if matches!(measure.cell(measured), MeasureCell::Absent) {
-                        return self.issue_node(
-                            SemanticRule::Type5,
-                            atoms[0],
-                            SemanticIssueKind::type_mismatch(
-                                "a measured place whose measure table has this row",
-                                self.checked_type_name(container.root.ty)?,
-                            ),
-                        );
-                    }
-                    CheckedExpression::ContainerMeasure {
-                        measure,
-                        root: container.root,
-                    }
-                }
-            },
+            self.measure_of_indexed_place(measure, place, atoms[0])?,
             effects,
         ))
+    }
+
+    /// The [MSR-1] measure read over one already-resolved indexed place.
+    ///
+    /// It is the tail of the reader row above and the whole of an [INV-1]
+    /// affine measure factor, which reads no storage and forms no loan and
+    /// therefore reaches only this part.
+    pub(in crate::semantic::check) fn measure_of_indexed_place(
+        &self,
+        measure: CheckedMeasure,
+        place: CheckedIndexedPlace,
+        operand: NodeId,
+    ) -> Result<CheckedExpression, CheckStop> {
+        Ok(match place {
+            CheckedIndexedPlace::Array(array) => CheckedExpression::ArrayMeasure {
+                measure,
+                root: array.root,
+                length: array.length,
+            },
+            CheckedIndexedPlace::Buffer(buffer) => CheckedExpression::BufferMeasure {
+                measure,
+                root: buffer.root,
+            },
+            CheckedIndexedPlace::Slice(slice) => CheckedExpression::SliceMeasure {
+                measure,
+                root: slice.root,
+            },
+            CheckedIndexedPlace::Container(container) => {
+                // [MSR-1]: a measure the table gives no row is the
+                // ordinary [TYPE-5] operand rejection, carried by the
+                // measured types the table does have a row for.
+                let measured = container
+                    .root
+                    .measured()
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                if matches!(measure.cell(measured), MeasureCell::Absent) {
+                    return self.issue_node(
+                        SemanticRule::Type5,
+                        operand,
+                        SemanticIssueKind::type_mismatch(
+                            "a measured place whose measure table has this row",
+                            self.checked_type_name(container.root.ty)?,
+                        ),
+                    );
+                }
+                CheckedExpression::ContainerMeasure {
+                    measure,
+                    root: container.root,
+                }
+            }
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1105,7 +1131,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    fn check_indexed_atom_place(
+    pub(in crate::semantic::check) fn check_indexed_atom_place(
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,

@@ -1,0 +1,23 @@
+fn headroom(run: own buffer<u8>) -> total: own u64 reads(run) contract {
+  requires 8_u64 <= len_of(run);
+} {
+  doc "A header invariant states a relation over a measure of the run it scans.";
+  let seen = 0_u64;
+  for (
+    at in 0_u64..4_u64,
+    invariant reserved: seen + 4_u64 <= len_of(run)
+  ) {
+    let byte = run[at];
+  }
+  return seen;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[INV-1, MSR-1, MSR-5] a measure former is an affine factor of a header invariant. The relation the writer states is the one a contract clause already states, in the same spelling, and the checker proves it at the loop base and at every backedge over the same [ENT-2] measure term the automatic derivation of a numeric goal already carries an atom for.";
+  let run = buffer_new(8_u64, 0_u8);
+  let total = headroom(run: move run);
+  if total == 0_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

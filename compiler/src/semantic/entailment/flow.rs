@@ -3655,7 +3655,7 @@ impl Analyzer<'_, '_> {
         }
         self.promote_flow_contradiction(states);
         self.apply_kills_one(&mut states.facts, events);
-        Self::apply_affine_kills(&mut states.affine, events);
+        self.apply_affine_kills(&mut states.affine, events);
         self.invalidate_entry_images(states, events, None);
     }
 
@@ -3744,7 +3744,7 @@ impl Analyzer<'_, '_> {
         self.exit_affine_scopes_to(&mut states.affine, depth);
     }
 
-    fn exit_affine_scopes_to(&self, state: &mut AffineFlowState, depth: usize) {
+    fn exit_affine_scopes_to(&mut self, state: &mut AffineFlowState, depth: usize) {
         let exited = self
             .scopes
             .iter()
@@ -3753,6 +3753,21 @@ impl Analyzer<'_, '_> {
             .copied()
             .collect::<HashSet<_>>();
         state.values.retain(|binding, _| !exited.contains(binding));
+        // A measure of a place rooted in an exited binding has no image past
+        // that edge, exactly as the binding itself has none, so the next
+        // occurrence of that term mints a fresh atom [MSR-2].
+        let stale: Vec<TermId> = self
+            .measure_atoms
+            .keys()
+            .copied()
+            .filter(|term| {
+                self.measure_term_root(*term)
+                    .is_some_and(|binding| exited.contains(&binding))
+            })
+            .collect();
+        for term in stale {
+            self.measure_atoms.remove(&term);
+        }
     }
 
     fn exit_scopes_to(&mut self, states: &mut ProofFlowState, depth: usize) {
@@ -9278,6 +9293,16 @@ impl Analyzer<'_, '_> {
                         };
                         values.push(value);
                     }
+                    // [INV-1, MSR-2] a measure factor's image is the one this
+                    // program point holds for that term. It is retargeted by
+                    // exactly the events that kill the term, so a relation
+                    // proved before a write says nothing after it.
+                    CheckedAffineExpressionKind::Measure(measure) => {
+                        let term = self
+                            .checked_measure_term(measure)
+                            .ok_or(AffineCheckError::CoefficientMismatch)?;
+                        values.push(self.measure_atom(term));
+                    }
                     CheckedAffineExpressionKind::Add(left, right) => {
                         pending.push(Pending::Add);
                         pending.push(Pending::Visit(right));
@@ -9461,6 +9486,11 @@ impl Analyzer<'_, '_> {
                     name
                 }
             }
+            // [INV-1] a measure factor renders as the writer wrote it: the
+            // former over the place, never an internal term identity.
+            CheckedAffineExpressionKind::Measure(measure) => self
+                .render_affine_measure(measure)
+                .unwrap_or_else(|| "?".to_owned()),
             CheckedAffineExpressionKind::Add(left, right) => format!(
                 "({} + {})",
                 self.render_checked_affine_expression(left, counted_next_binder),
@@ -9483,6 +9513,31 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// The writer's own spelling of one [INV-1] affine measure factor.
+    fn render_affine_measure(&self, expression: &CheckedExpression) -> Option<String> {
+        let (measure, binding, fields) = match expression {
+            CheckedExpression::ArrayMeasure {
+                measure,
+                root: CheckedArrayRoot::Binding { binding, fields },
+                ..
+            } => (*measure, *binding, fields.as_slice()),
+            CheckedExpression::BufferMeasure { measure, root } => {
+                (*measure, root.binding, root.fields.as_slice())
+            }
+            CheckedExpression::SliceMeasure { measure, root } => (*measure, root.binding, &[][..]),
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                (*measure, root.binding, root.fields.as_slice())
+            }
+            _ => return None,
+        };
+        let place = self.render_place(&PlaceTerm {
+            root: PlaceRoot::Binding(binding),
+            deref: false,
+            fields: fields.to_vec(),
+        });
+        Some(format!("{}({place})", measure.spelling()))
+    }
+
     fn checked_affine_relation_inequality(
         &mut self,
         relation: &CheckedAffineRelation,
@@ -9500,9 +9555,19 @@ impl Analyzer<'_, '_> {
     /// a constant proposition after the source-written affine arithmetic has
     /// been normalized.
     fn checked_affine_relation_l0(&mut self, relation: &CheckedAffineRelation) -> Option<Relation> {
+        /// One leaf of the written relation, in the order the walk reaches it.
+        enum SourceLeaf {
+            Local(BindingId),
+            /// [INV-1] one measure factor, already interned as its [ENT-2]
+            /// term by the pre-pass below.
+            Measure(TermId),
+        }
+
         fn source_form(
             expression: &CheckedAffineExpression,
-            bindings: &mut Vec<BindingId>,
+            leaves: &mut Vec<SourceLeaf>,
+            measures: &[TermId],
+            visited: &mut usize,
             check: &mut AffineCheckState,
         ) -> Option<AffineForm> {
             match &expression.kind {
@@ -9510,51 +9575,95 @@ impl Analyzer<'_, '_> {
                     Some(AffineForm::constant(*value))
                 }
                 CheckedAffineExpressionKind::Local { binding, .. } => {
-                    let index = bindings
+                    let index = leaves
                         .iter()
-                        .position(|candidate| candidate == binding)
+                        .position(|candidate| matches!(candidate, SourceLeaf::Local(other) if other == binding))
                         .unwrap_or_else(|| {
-                            bindings.push(*binding);
-                            bindings.len() - 1
+                            leaves.push(SourceLeaf::Local(*binding));
+                            leaves.len() - 1
+                        });
+                    let index = u32::try_from(index).ok()?;
+                    Some(AffineForm::term(AffineTermId::from_index(index)))
+                }
+                CheckedAffineExpressionKind::Measure(_) => {
+                    let term = *measures.get(*visited)?;
+                    *visited = visited.checked_add(1)?;
+                    let index = leaves
+                        .iter()
+                        .position(|candidate| matches!(candidate, SourceLeaf::Measure(other) if *other == term))
+                        .unwrap_or_else(|| {
+                            leaves.push(SourceLeaf::Measure(term));
+                            leaves.len() - 1
                         });
                     let index = u32::try_from(index).ok()?;
                     Some(AffineForm::term(AffineTermId::from_index(index)))
                 }
                 CheckedAffineExpressionKind::Add(left, right) => {
-                    source_form(left, bindings, check)?
-                        .add(&source_form(right, bindings, check)?, check)
+                    source_form(left, leaves, measures, visited, check)?
+                        .add(
+                            &source_form(right, leaves, measures, visited, check)?,
+                            check,
+                        )
                         .ok()
                 }
                 CheckedAffineExpressionKind::Subtract(left, right) => {
-                    source_form(left, bindings, check)?
-                        .subtract(&source_form(right, bindings, check)?, check)
+                    source_form(left, leaves, measures, visited, check)?
+                        .subtract(
+                            &source_form(right, leaves, measures, visited, check)?,
+                            check,
+                        )
                         .ok()
                 }
                 CheckedAffineExpressionKind::MultiplyByConstant {
                     constant, value, ..
-                } => source_form(value, bindings, check)?
+                } => source_form(value, leaves, measures, visited, check)?
                     .scale(*constant, check)
                     .ok(),
             }
         }
 
-        let mut bindings = Vec::new();
+        // Interning needs `&mut self`, and the walk above does not have it, so
+        // the measure terms are resolved first in exactly the order that walk
+        // reaches them.
+        let mut measures = Vec::new();
+        self.collect_affine_measure_terms(&relation.left, &mut measures)?;
+        self.collect_affine_measure_terms(&relation.right, &mut measures)?;
+        let mut leaves = Vec::new();
+        let mut visited = 0;
         let mut check = AffineCheckState::new();
-        let left = source_form(&relation.left, &mut bindings, &mut check)?;
-        let right = source_form(&relation.right, &mut bindings, &mut check)?;
+        let left = source_form(
+            &relation.left,
+            &mut leaves,
+            &measures,
+            &mut visited,
+            &mut check,
+        )?;
+        let right = source_form(
+            &relation.right,
+            &mut leaves,
+            &measures,
+            &mut visited,
+            &mut check,
+        )?;
         let inequality =
             AffineInequality::from_bounded_forms(&left, &right, relation.bound, &mut check).ok()?;
         let mut term = |coefficient: super::affine::AffineCoefficient| {
-            let binding = *bindings.get(coefficient.term().index() as usize)?;
-            let fragment = fragment_type(CheckedType::Integer(self.affine_binding_type(binding)?))?;
-            Some(self.terms.intern(TermKind::Place(
-                PlaceTerm {
-                    root: PlaceRoot::Binding(binding),
-                    deref: false,
-                    fields: Vec::new(),
-                },
-                fragment,
-            )))
+            match leaves.get(coefficient.term().index() as usize)? {
+                SourceLeaf::Measure(term) => Some(*term),
+                SourceLeaf::Local(binding) => {
+                    let binding = *binding;
+                    let fragment =
+                        fragment_type(CheckedType::Integer(self.affine_binding_type(binding)?))?;
+                    Some(self.terms.intern(TermKind::Place(
+                        PlaceTerm {
+                            root: PlaceRoot::Binding(binding),
+                            deref: false,
+                            fields: Vec::new(),
+                        },
+                        fragment,
+                    )))
+                }
+            }
         };
         let (left, right) = match inequality.terms() {
             [] => (ZERO, ZERO),
@@ -9849,6 +9958,60 @@ impl Analyzer<'_, '_> {
     /// to another term shares that term's image. Every other measure gets one
     /// compiler-owned immutable atom, minted on first use and stable for the
     /// rest of the function walk.
+    /// The binding one measure term's place is rooted in, where it has one.
+    fn measure_term_root(&self, term: TermId) -> Option<BindingId> {
+        let root = match self.terms.kind(term) {
+            TermKind::Measure(_, place) => place.root,
+            TermKind::ProjectedMeasure(_, place) => place.root,
+            _ => return None,
+        };
+        match root {
+            PlaceRoot::Binding(binding) => Some(binding),
+            PlaceRoot::Constant(_) => None,
+        }
+    }
+
+    /// Every [INV-1] measure factor of one written affine expression, in the
+    /// order a left-to-right walk reaches it, interned as its [ENT-2] term.
+    fn collect_affine_measure_terms(
+        &mut self,
+        expression: &CheckedAffineExpression,
+        out: &mut Vec<TermId>,
+    ) -> Option<()> {
+        match &expression.kind {
+            CheckedAffineExpressionKind::Constant { .. }
+            | CheckedAffineExpressionKind::Local { .. } => {}
+            CheckedAffineExpressionKind::Measure(measure) => {
+                out.push(self.checked_measure_term(measure)?);
+            }
+            CheckedAffineExpressionKind::Add(left, right)
+            | CheckedAffineExpressionKind::Subtract(left, right) => {
+                self.collect_affine_measure_terms(left, out)?;
+                self.collect_affine_measure_terms(right, out)?;
+            }
+            CheckedAffineExpressionKind::MultiplyByConstant { value, .. } => {
+                self.collect_affine_measure_terms(value, out)?;
+            }
+        }
+        Some(())
+    }
+
+    /// The [ENT-2] measure term one [INV-1] affine measure factor names.
+    fn checked_measure_term(&mut self, expression: &CheckedExpression) -> Option<TermId> {
+        let goal = self.goal_expression(expression, false)?;
+        self.goal_operand(&goal)
+    }
+
+    /// The image this program point holds for one measure term.
+    ///
+    /// [MSR-4]'s automatic derivation reads a measure through
+    /// [`Self::measure_atom`], which is one immutable atom for the whole walk
+    /// because a goal is discharged from the fact state at its own point. A
+    /// written invariant is different: its conclusion is carried forward as a
+    /// fact over value images, so the image has to be retargeted by the
+    /// events that kill the term, exactly as a local's image is retargeted by
+    /// a write to that local. A measure the table fixes has no mutable image
+    /// at all, and reads as the standing fact [MSR-2] gives it.
     fn measure_atom(&mut self, term: TermId) -> AffineForm {
         let mut anchor = term;
         // The table relates a cell to a constant or to one other term, and
@@ -10388,12 +10551,25 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn apply_affine_kills(state: &mut AffineFlowState, events: &[KillEvent]) {
+    fn apply_affine_kills(&mut self, state: &mut AffineFlowState, events: &[KillEvent]) {
         state.values.retain(|binding, _| {
             !events
                 .iter()
                 .any(|event| Self::affine_event_kills_binding(*binding, event))
         });
+        // [MSR-2] a measure atom is retargeted on exactly the events that
+        // kill its term, exactly as a local's image is retargeted by a write
+        // to that local: the next occurrence of the term mints a fresh atom,
+        // so no conclusion published over the old one reaches past the write.
+        let stale: Vec<TermId> = self
+            .measure_atoms
+            .keys()
+            .copied()
+            .filter(|term| events.iter().any(|event| self.event_kills_term(*term, event)))
+            .collect();
+        for term in stale {
+            self.measure_atoms.remove(&term);
+        }
         // Published facts name immutable AffineTermId value identities, not
         // mutable bindings. Removing the map above prevents a replacement
         // value from matching an old image; retaining each theorem preserves
@@ -10423,7 +10599,7 @@ impl Analyzer<'_, '_> {
                 };
                 let proof_event = self.proof_event(kind, Some(event.source()));
                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
                 prepared.transfer_events.push(proof_event);
             }
@@ -10535,7 +10711,7 @@ impl Analyzer<'_, '_> {
             }
             for event in &target_kills {
                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(
                     state,
                     std::slice::from_ref(event),
@@ -10667,7 +10843,7 @@ impl Analyzer<'_, '_> {
             }
             for event in &target_kills {
                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(
                     state,
                     std::slice::from_ref(event),
@@ -12151,7 +12327,7 @@ impl Analyzer<'_, '_> {
     ) {
         self.promote_flow_contradiction(states);
         self.apply_loop_kills_one(&mut states.facts, kills);
-        Self::apply_affine_kills(&mut states.affine, &kills.events);
+        self.apply_affine_kills(&mut states.affine, &kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {

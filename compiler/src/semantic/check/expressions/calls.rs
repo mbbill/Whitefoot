@@ -859,7 +859,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 /// The four spellings are one operation family over one place [OP-1]; this is
 /// the selection of the row within it and the only place a spelling reaches a
 /// measure.
-const fn measure_former(spelling: &str) -> Option<CheckedMeasure> {
+pub(in crate::semantic::check) const fn measure_former(spelling: &str) -> Option<CheckedMeasure> {
     match spelling.as_bytes() {
         b"len_of" => Some(CheckedMeasure::Length),
         b"cap_of" => Some(CheckedMeasure::Capacity),

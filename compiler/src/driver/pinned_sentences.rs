@@ -1418,6 +1418,28 @@ command fn main() -> status: own ExitStatus pure {
             "write the store region this extent names: a bump extent's region is one the caller must choose, so it is written at every position",
         ],
     },
+    // -------------------------------------------------------------------
+    // [INV-1]: the one `call` an affine factor admits is a measure former.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "an-affine-factor-that-is-not-a-measure.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let limit = 4_u64;
+  let seen = 0_u64;
+  for (
+    at in 0_u64..4_u64,
+    invariant bounded: seen <= imin(limit, limit)
+  ) {
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "INV-1",
+        sentences: &[
+            "an affine factor calls something other than a measure former",
+            "write len_of(P), cap_of(P), room_of(P) or head_of(P) over a measured place",
+        ],
+    },
 ];
 
 /// Every sentence in the corpus is rendered by a program that reaches it.

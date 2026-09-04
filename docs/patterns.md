@@ -664,6 +664,25 @@ standing facts `len_of(P) <= cap_of(P)`, `head_of(P) <= cap_of(P)` and
 over `cap_of` therefore discharges a subscript stated over `len_of` with nothing
 in between.
 
+A measure former is also an **affine factor**, so the relation a clause states
+across a call is statable at a loop header or an `invariant_stmt` in the same
+spelling [INV-1, GRAM-4]:
+
+```whitefoot
+for (
+  at in 0_u64..count,
+  invariant reserved: written + 4_u64 <= len_of(destination)
+) {
+```
+
+That is the form a filling loop needs: without it the operation that consumes
+the room has no premise on the backedge, and the loop is unwritable rather than
+unproved. The factor is an ordinary proof obligation — the checker proves it at
+the base and at every backedge — and its image is retargeted by exactly the
+writes that kill the measure [MSR-2], so a header conclusion never survives the
+statement that refutes it. Only the four measure formers are admitted there;
+every other call in an affine position is an [INV-1] rejection naming them.
+
 Under v0.44 the same fact is stated directly in the contract
 that consumes it, with no binding and no `contract_define` at all: a
 `requires` and an `ensures` operand may be a measure of a place [MSR-5], so a

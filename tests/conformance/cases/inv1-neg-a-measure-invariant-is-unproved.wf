@@ -1,0 +1,20 @@
+fn headroom(run: own buffer<u8>) -> total: own u64 reads(run) contract {
+  requires 4_u64 <= len_of(run);
+} {
+  doc "The stated relation over the measure is wider than the requirement establishes.";
+  let seen = 0_u64;
+  for (
+    at in 0_u64..4_u64,
+    invariant reserved: 8_u64 <= len_of(run)
+  ) {
+    let byte = run[at];
+  }
+  return seen;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[INV-1] a measure factor is a proof obligation like any other affine factor: the caller's requirement gives four slots and the invariant states eight, so the base obligation fails at the loop header and the declaration is refused there rather than at the caller.";
+  let run = buffer_new(8_u64, 0_u8);
+  let total = headroom(run: move run);
+  return exit_status(code: 0_u8);
+}
