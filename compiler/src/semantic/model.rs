@@ -1705,7 +1705,8 @@ pub(crate) enum CheckedStatement {
     /// field i of the callee's result-list value.
     DestructuringLet {
         node_path: NodePath,
-        bindings: Vec<BindingId>,
+        /// Binder i and the type of result ordinal i, in written order.
+        bindings: Vec<(BindingId, CheckedType)>,
         /// The callee's result-list nominal [CALL-4].
         nominal: NominalId,
         value: CheckedExpression,

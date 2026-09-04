@@ -43,6 +43,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         record: &PostconditionResolutionRecord,
         result_type: CheckedType,
+        datums: Vec<(String, u32, CheckedType)>,
         check: impl FnOnce() -> Result<T, CheckStop>,
     ) -> Result<T, CheckStop> {
         let index = self
@@ -57,9 +58,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 record: index,
                 result_type,
             }));
+        let previous_datums =
+            std::mem::replace(&mut *self.active_result_datums.borrow_mut(), datums);
         let result = check();
         self.active_postcondition.set(previous);
+        *self.active_result_datums.borrow_mut() = previous_datums;
         result
+    }
+
+    /// The result datums one [FN-9] clause admits, by written spelling
+    /// [CALL-4].
+    ///
+    /// An unrouted clause admits every declared result ordinal's binder at
+    /// that ordinal's own type. A routed clause admits its fresh payload
+    /// datum for the ordinal the route names, and every other ordinal's
+    /// binder unchanged; the routed ordinal's own whole-result binder stays
+    /// unavailable [FN-9].
+    pub(super) fn postcondition_result_datums(
+        &self,
+        record: &PostconditionResolutionRecord,
+        signature: &FunctionSignature,
+        selector: &CheckedPostconditionSelector,
+    ) -> Vec<(String, u32, CheckedType)> {
+        let routed = selector.variant.is_some();
+        let mut datums = Vec::with_capacity(record.result_binders.len() + 1);
+        for (ordinal, binder) in record.result_binders.iter().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            if routed && ordinal == selector.ordinal {
+                continue;
+            }
+            let Some(declared) = signature.results.get(ordinal as usize) else {
+                continue;
+            };
+            datums.push((binder.spelling.clone(), ordinal, declared.ty));
+        }
+        if routed && let Some(field) = record.fields.first() {
+            datums.push((
+                field.candidate.spelling.clone(),
+                selector.ordinal,
+                selector.result_type,
+            ));
+        }
+        datums
+    }
+
+    /// The result ordinal and datum type one written selector spelling names
+    /// in the clause being checked, when it names one.
+    fn active_result_datum(&self, spelling: &str) -> Option<(u32, CheckedType)> {
+        self.active_result_datums
+            .borrow()
+            .iter()
+            .find(|(candidate, _, _)| candidate == spelling)
+            .map(|(_, ordinal, ty)| (*ordinal, *ty))
     }
 
     /// Supplies a value-only placeholder to the ordinary expression typer.
@@ -79,21 +131,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(context.record)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let atom_path = self.tree.path(atom)?.components();
-        let selector_inside = record.selector_uses.iter().any(|usage| {
+        let Some(usage) = record.selector_uses.iter().find(|usage| {
             let path = usage.origin.node().components();
             path.len() > atom_path.len() && path.starts_with(atom_path)
-        });
-        if !selector_inside {
+        }) else {
             return Ok(None);
-        }
-        Ok(Some(match context.result_type {
+        };
+        // [CALL-4] the spelling names a result ordinal, and its datum type is
+        // that ordinal's. An ordinal whose datum is not a fragment integer is
+        // outside [FN-9]'s admitted operand set in this version.
+        let ty = self
+            .active_result_datum(&usage.spelling)
+            .map_or(context.result_type, |(_, ty)| ty);
+        let _ = context;
+        Ok(Some(match ty {
             CheckedType::Integer(ty) => CheckedValue::Integer { ty, bits: 0 },
-            CheckedType::GenericInt(_) => CheckedValue::NumericIdentity {
-                ty: context.result_type,
-                one: false,
-            },
+            CheckedType::GenericInt(_) => CheckedValue::NumericIdentity { ty, one: false },
             _ => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
+                return self.issue_origin(
+                    SemanticRule::Fn9,
+                    &usage.origin,
+                    SemanticIssueKind::InvalidPostconditionSelector,
+                );
             }
         }))
     }
@@ -435,7 +494,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(function.node, Production::ContractBlock)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        self.with_postcondition_context(record, selector.result_type, || {
+        let datums = self.postcondition_result_datums(record, function, selector);
+        self.with_postcondition_context(record, selector.result_type, datums, || {
             let mut expanded_bindings = HashMap::<BindingId, ExpandedClauseExpression>::new();
             for (ordinal, parameter) in function.parameters.iter().enumerate() {
                 let local = bindings
@@ -697,8 +757,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         expanded: &ExpandedClauseExpression,
     ) -> Option<RelationDatum> {
         match expanded {
-            ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result { ty }) => {
-                Some(RelationDatum::Result { ty: *ty })
+            ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result { ordinal, ty }) => {
+                Some(RelationDatum::Result {
+                    ordinal: *ordinal,
+                    ty: *ty,
+                })
             }
             ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
                 ordinal,
@@ -804,19 +867,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let checked = self.build_checked_postcondition_inner(
             function, parameters, selector, relation, body, true,
         )?;
-        let fragment_returns =
-            checked
-                .selected_returns
-                .iter()
-                .all(|selected| match &selected.value {
-                    PostconditionReturnDatum::Place(place) => {
-                        matches!(place.ty, CheckedType::Integer(_))
-                    }
-                    PostconditionReturnDatum::Literal { value, .. } => {
-                        matches!(value.ty(), CheckedType::Integer(_))
-                    }
-                    PostconditionReturnDatum::Length(_) => true,
-                });
+        let fragment_returns = checked.selected_returns.iter().all(|selected| {
+            selected.values.iter().flatten().all(|value| match value {
+                PostconditionReturnDatum::Place(place) => {
+                    matches!(place.ty, CheckedType::Integer(_))
+                }
+                PostconditionReturnDatum::Literal { value, .. } => {
+                    matches!(value.ty(), CheckedType::Integer(_))
+                }
+                PostconditionReturnDatum::Length(_) => true,
+            })
+        });
         Ok(fragment_returns.then_some(checked))
     }
 
@@ -859,10 +920,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         self.collect_postcondition_binding_info(body, &mut binding_info);
 
+        // [FN-9, CALL-4] a return is selected for this clause only when every
+        // result ordinal the relation names evaluates there to one admitted
+        // datum; an ordinal the clause does not name imposes nothing.
+        let named = relation
+            .operands
+            .iter()
+            .filter_map(|datum| match datum {
+                RelationDatum::Result { ordinal, .. } => Some(*ordinal),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
         let mut selected_returns = Vec::new();
         self.collect_postcondition_returns(
             function,
             &selector,
+            &named,
             body,
             &binding_info,
             &mut selected_returns,
@@ -984,10 +1057,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn collect_postcondition_returns(
         &self,
         function: &FunctionSignature,
         selector: &CheckedPostconditionSelector,
+        named: &[u32],
         statements: &[CheckedStatement],
         binding_info: &HashMap<BindingId, PostconditionBindingInfo>,
         selected: &mut Vec<SelectedPostconditionReturn>,
@@ -997,53 +1072,55 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Return {
                     node_path, value, ..
                 } => {
-                    let selected_value = if selector.variant.is_none() {
-                        Some(value)
-                    } else {
-                        let CheckedType::Nominal(result_nominal) = function.result else {
-                            return Err(SemanticCompilerFailure::InvalidResolution.into());
-                        };
-                        if self
-                            .prelude_types
-                            .get(result_nominal.0 as usize)
-                            .and_then(|entry| *entry)
-                            .is_none_or(|ty| !matches!(ty, super::PreludeType::Result(_, _)))
-                        {
+                    // [GRAM-4, CALL-4] a `return e1, ..., en;` is checked as
+                    // one result-list value, so the ordinals are its fields;
+                    // a single-result return is the whole value.
+                    let ordinals: Vec<&CheckedExpression> = match (function.result_list, value) {
+                        (
+                            Some(list),
+                            CheckedExpression::ConstructStruct {
+                                nominal, fields, ..
+                            },
+                        ) if *nominal == list => fields.iter().collect(),
+                        (Some(_), _) => {
                             return Err(SemanticCompilerFailure::InvalidResolution.into());
                         }
-                        match value {
-                            CheckedExpression::ConstructEnum {
-                                nominal,
-                                variant,
-                                fields,
-                                ..
-                            } if *nominal == result_nominal
-                                && *variant == 0
-                                && fields.len() == 1 =>
-                            {
-                                fields.first()
-                            }
-                            CheckedExpression::ConstructEnum {
-                                nominal,
-                                variant,
-                                fields,
-                                ..
-                            } if *nominal == result_nominal
-                                && *variant == 1
-                                && fields.len() == 1 =>
-                            {
-                                None
-                            }
-                            _ => return self.invalid_postcondition_return(node_path),
-                        }
+                        (None, value) => vec![value],
                     };
-                    if let Some(value) = selected_value {
-                        let datum = self
-                            .postcondition_return_datum(value, node_path, binding_info)?
-                            .ok_or_else(|| self.invalid_postcondition_return_stop(node_path))?;
+                    let mut values = Vec::with_capacity(ordinals.len());
+                    let mut selected_at_all = true;
+                    for (ordinal, produced) in ordinals.into_iter().enumerate() {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return Err(SemanticCompilerFailure::CounterOverflow.into());
+                        };
+                        let routed = selector.variant.is_some() && ordinal == selector.ordinal;
+                        let produced = if routed {
+                            match self.postcondition_route_payload(
+                                function, ordinal, produced, node_path,
+                            )? {
+                                Some(payload) => payload,
+                                // A direct `Err` return is unselected for this
+                                // routed clause [FN-9].
+                                None => {
+                                    selected_at_all = false;
+                                    values.push(None);
+                                    continue;
+                                }
+                            }
+                        } else {
+                            produced
+                        };
+                        let datum =
+                            self.postcondition_return_datum(produced, node_path, binding_info)?;
+                        if datum.is_none() && named.contains(&ordinal) {
+                            return self.invalid_postcondition_return(node_path);
+                        }
+                        values.push(datum);
+                    }
+                    if selected_at_all {
                         selected.push(SelectedPostconditionReturn {
                             statement: node_path.clone(),
-                            value: datum,
+                            values,
                         });
                     }
                 }
@@ -1053,6 +1130,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         self.collect_postcondition_returns(
                             function,
                             selector,
+                            named,
                             &arm.body,
                             binding_info,
                             selected,
@@ -1064,6 +1142,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::Region { body, .. } => self.collect_postcondition_returns(
                     function,
                     selector,
+                    named,
                     body,
                     binding_info,
                     selected,
@@ -1072,6 +1151,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(())
+    }
+
+    /// The `Ok` payload one routed ordinal produces at a return, `None` for a
+    /// direct `Err`, and the [FN-9] rejection for every other Result shape.
+    fn postcondition_route_payload<'value>(
+        &self,
+        function: &FunctionSignature,
+        ordinal: u32,
+        value: &'value CheckedExpression,
+        node_path: &crate::NodePath,
+    ) -> Result<Option<&'value CheckedExpression>, CheckStop> {
+        let declared = function
+            .results
+            .get(ordinal as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let CheckedType::Nominal(result_nominal) = declared.ty else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        if self
+            .prelude_types
+            .get(result_nominal.0 as usize)
+            .and_then(|entry| *entry)
+            .is_none_or(|ty| !matches!(ty, super::PreludeType::Result(_, _)))
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        match value {
+            CheckedExpression::ConstructEnum {
+                nominal,
+                variant,
+                fields,
+                ..
+            } if *nominal == result_nominal && *variant == 0 && fields.len() == 1 => {
+                Ok(fields.first())
+            }
+            CheckedExpression::ConstructEnum {
+                nominal,
+                variant,
+                fields,
+                ..
+            } if *nominal == result_nominal && *variant == 1 && fields.len() == 1 => Ok(None),
+            _ => self.invalid_postcondition_return(node_path),
+        }
     }
 
     fn postcondition_return_datum(
@@ -1389,12 +1511,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }))
     }
 
+    /// The result ordinal and datum type a bare selector atom names, when the
+    /// atom is exactly one written result datum [FN-9, CALL-4].
     pub(super) fn postcondition_selector_is_bare_atom(
         &self,
         atom: NodeId,
-    ) -> Result<bool, CheckStop> {
+    ) -> Result<Option<(u32, CheckedType)>, CheckStop> {
         let Some(context) = self.active_postcondition.get() else {
-            return Ok(false);
+            return Ok(None);
         };
         let record = self
             .resolved
@@ -1402,22 +1526,96 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(context.record)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
-            return Ok(false);
+            return Ok(None);
         };
         let pbase = self
             .tree
             .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         let pbase_path = self.tree.path(pbase)?;
-        Ok(self.tree.children(pbase)?.is_empty()
-            && self
+        if !self.tree.children(pbase)?.is_empty()
+            || !self
                 .tree
                 .children_with(place, Production::Psuffix)?
                 .is_empty()
-            && record
-                .selector_uses
+        {
+            return Ok(None);
+        }
+        Ok(record
+            .selector_uses
+            .iter()
+            .find(|usage| usage.origin.node() == pbase_path)
+            .and_then(|usage| self.active_result_datum(&usage.spelling)))
+    }
+
+    /// The declared result ordinal one clause's result datum is anchored to
+    /// [CALL-4].
+    ///
+    /// An unrouted clause is anchored to the first ordinal admitted as a
+    /// result datum; every ordinal remains a datum of the clause, and the
+    /// anchor only fixes which one the selector's admission judgment reads.
+    /// A routed clause is anchored to the ordinal its written binder names,
+    /// or, when the binder is omitted, to the one ordinal whose enum type can
+    /// carry the route. Two such ordinals leave the route ambiguous, and the
+    /// declaration is a hard error citing CALL-4 at the clause.
+    fn postcondition_route_ordinal(
+        &self,
+        record: &PostconditionResolutionRecord,
+        signature: &FunctionSignature,
+        symbolic: bool,
+    ) -> Result<u32, CheckStop> {
+        let routed = record.class == PostconditionSelectorClass::Variant;
+        if !routed {
+            let anchor = record
+                .result_binders
                 .iter()
-                .any(|usage| usage.origin.node() == pbase_path))
+                .zip(&signature.results)
+                .position(|(_, declared)| self.postcondition_fragment_type(declared.ty, symbolic));
+            return u32::try_from(anchor.unwrap_or(0))
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow.into());
+        }
+        if let Some(spelling) = &record.route_ordinal {
+            let Some(named) = record
+                .result_binders
+                .iter()
+                .position(|binder| &binder.spelling == spelling)
+            else {
+                return self
+                    .issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
+            };
+            return u32::try_from(named)
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow.into());
+        }
+        let carriers = signature
+            .results
+            .iter()
+            .enumerate()
+            .filter(|(_, declared)| self.postcondition_route_carrier(declared.ty, symbolic))
+            .map(|(ordinal, _)| ordinal)
+            .collect::<Vec<_>>();
+        match carriers.as_slice() {
+            [only] => {
+                u32::try_from(*only).map_err(|_| SemanticCompilerFailure::CounterOverflow.into())
+            }
+            // Zero carriers is the ordinary route-admission refusal below,
+            // which reports the offending result type; anchor it at ordinal
+            // zero and let `validate_postcondition_selector` speak.
+            [] => Ok(0),
+            _ => self.issue_selector(record, SemanticIssueKind::AmbiguousResultRoute),
+        }
+    }
+
+    /// Whether one declared result type can carry a route in this version:
+    /// exactly `own Result<T, E>` with T a fragment integer [FN-9, CALL-4].
+    fn postcondition_route_carrier(&self, ty: CheckedType, symbolic: bool) -> bool {
+        let CheckedType::Nominal(nominal) = ty else {
+            return false;
+        };
+        matches!(
+            self.prelude_types.get(nominal.0 as usize).and_then(|entry| *entry),
+            Some(super::PreludeType::Result(value, _))
+                if self.postcondition_fragment_type(value, symbolic)
+        )
     }
 
     fn admit_postcondition_selector(
@@ -1426,11 +1624,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &FunctionSignature,
         symbolic: bool,
     ) -> Result<CheckedPostconditionSelector, CheckStop> {
-        if signature.result_mode != CheckedMode::Own {
+        if signature
+            .results
+            .iter()
+            .any(|entry| entry.mode != CheckedMode::Own)
+        {
             return self.issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
         }
 
-        let (admission, result_type) = match signature.result {
+        // [CALL-4] a route applies to exactly one declared result ordinal:
+        // the one its written binder names, or — when the binder is omitted —
+        // the one ordinal whose type carries the route's variant. Two ordinals
+        // that could carry it leave the route ambiguous and the declaration is
+        // refused here.
+        let ordinal = self.postcondition_route_ordinal(record, signature, symbolic)?;
+        let declared = signature
+            .results
+            .get(ordinal as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+
+        let (admission, result_type) = match declared.ty {
             ty if self.postcondition_fragment_type(ty, symbolic) => {
                 (SelectorAdmissionType::Fragment, ty)
             }
@@ -1444,20 +1657,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     (SelectorAdmissionType::ResultFragment, value)
                 }
-                _ => (SelectorAdmissionType::Invalid, signature.result),
+                _ => (SelectorAdmissionType::Invalid, declared.ty),
             },
-            CheckedType::Generic(_) if symbolic => {
-                (SelectorAdmissionType::Symbolic, signature.result)
-            }
-            _ => (SelectorAdmissionType::Invalid, signature.result),
+            CheckedType::Generic(_) if symbolic => (SelectorAdmissionType::Symbolic, declared.ty),
+            _ => (SelectorAdmissionType::Invalid, declared.ty),
         };
-        self.validate_postcondition_selector(record, admission)?;
+        self.validate_postcondition_selector(record, admission, ordinal)?;
 
         let (candidate, variant, field) = match record.class {
             PostconditionSelectorClass::Plain => (
                 record
-                    .plain_candidate
-                    .as_ref()
+                    .result_binders
+                    .get(ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 None,
                 None,
@@ -1489,7 +1700,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             block: record.block.clone(),
             selector: record.selector.clone(),
             candidate: candidate.origin.clone(),
-            ordinal: 0,
+            ordinal,
             variant,
             field,
             result_type,
@@ -1500,6 +1711,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         record: &PostconditionResolutionRecord,
         admission: SelectorAdmissionType,
+        ordinal: u32,
     ) -> Result<(), CheckStop> {
         let candidate = match record.class {
             PostconditionSelectorClass::Plain => {
@@ -1511,8 +1723,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
                 }
                 record
-                    .plain_candidate
-                    .as_ref()
+                    .result_binders
+                    .get(ordinal as usize)
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?
             }
             PostconditionSelectorClass::Variant => {
@@ -1601,11 +1813,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         record: &PostconditionResolutionRecord,
         kind: SemanticIssueKind,
     ) -> Result<T, CheckStop> {
+        // [CALL-4] owns the result ordinal and the route's ambiguity; every
+        // other selector rejection is [FN-9]'s admission.
+        let rule = if matches!(kind, SemanticIssueKind::AmbiguousResultRoute) {
+            SemanticRule::Call4
+        } else {
+            SemanticRule::Fn9
+        };
         let node = self
             .tree
             .node_with_path(&record.selector)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        self.issue_node(SemanticRule::Fn9, node, kind)
+        self.issue_node(rule, node, kind)
     }
 
     fn issue_origin<T>(

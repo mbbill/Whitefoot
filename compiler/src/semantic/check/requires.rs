@@ -46,15 +46,17 @@ pub(super) enum ExpandedClauseDatum {
         value: CheckedValue,
         origin: PostconditionConstantOrigin,
     },
-    Result {
-        ty: CheckedType,
-    },
+    /// One [FN-9] clause result datum: the declared result ordinal it
+    /// names [CALL-4] and that datum's type.
+    Result { ordinal: u32, ty: CheckedType },
 }
 
 impl ExpandedClauseDatum {
     pub(super) const fn ty(&self) -> CheckedType {
         match self {
-            Self::Parameter { ty, .. } | Self::NamedConst { ty, .. } | Self::Result { ty } => *ty,
+            Self::Parameter { ty, .. } | Self::NamedConst { ty, .. } | Self::Result { ty, .. } => {
+                *ty
+            }
             Self::Literal { value, .. } => value.ty(),
         }
     }
@@ -570,13 +572,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .result_type;
-            return Ok(if self.postcondition_selector_is_bare_atom(atom)? {
-                ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result { ty })
-            } else {
-                ExpandedClauseExpression::InvalidSelectorUse {
-                    ty: checked.map_or(ty, CheckedExpression::ty),
-                }
-            });
+            return Ok(
+                if let Some((ordinal, datum_type)) =
+                    self.postcondition_selector_is_bare_atom(atom)?
+                {
+                    ExpandedClauseExpression::Datum(ExpandedClauseDatum::Result {
+                        ordinal,
+                        ty: datum_type,
+                    })
+                } else {
+                    ExpandedClauseExpression::InvalidSelectorUse {
+                        ty: checked.map_or(ty, CheckedExpression::ty),
+                    }
+                },
+            );
         }
         if let Some(literal) = self
             .tree

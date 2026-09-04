@@ -764,19 +764,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .tree
                 .first_child_with(*binding, Production::Rtype)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let [name] = self.tree.direct_identifiers(*binding)?[..] else {
-                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
-            };
-            let name = std::str::from_utf8(self.tree.token_bytes(name)?)
-                .map(str::to_owned)
-                .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?;
+            // [FN-1] the binder spelling is out of callable-signature
+            // equality; the resolution record carries it where a route or a
+            // diagnostic names it.
             let (mode, ty) = self.parse_rtype_with(rtype, &substitution)?;
-            results.push(super::ResultSignature {
-                name,
-                mode,
-                ty,
-                rtype,
-            });
+            results.push(super::ResultSignature { mode, ty, rtype });
         }
         let [first_result, ..] = results.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());

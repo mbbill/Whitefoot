@@ -79,6 +79,9 @@ enum SelectorRole {
     PlainCandidate,
     VariantField,
     VariantCandidate,
+    /// The optional ordinal binder of a route, `when b is V(f: r):`
+    /// [GRAM-2, CALL-4]. It names a declared result and declares nothing.
+    ResultOrdinal,
 }
 
 struct RawRole {
@@ -380,17 +383,51 @@ fn build_postcondition_records(
     for block in blocks {
         let function = ancestor_with_production(topology, block, Production::FnDecl)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
-        let result_binding = topology
+        // [GRAM-2] the declaration writes one result or an ordered result
+        // list; every ordinal's binder is a candidate a clause may name
+        // [CALL-4].
+        let result_bindings = topology
             .node_children(function)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
             .iter()
             .copied()
-            .find(|child| {
+            .filter(|child| {
                 topology
                     .node(*child)
                     .is_some_and(|record| record.production == Production::ResultBinding)
             })
+            .collect::<Vec<_>>();
+        let result_binding = result_bindings
+            .first()
+            .copied()
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        let mut result_binders = Vec::with_capacity(result_bindings.len());
+        for binding in &result_bindings {
+            let [candidate] = roles
+                .iter()
+                .filter(|role| role.owner == *binding)
+                .collect::<Vec<_>>()[..]
+            else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            };
+            if !matches!(
+                candidate.kind,
+                RawRoleKind::Selector(SelectorRole::PlainCandidate)
+            ) {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            }
+            result_binders.push(build_postcondition_candidate(
+                topology,
+                scopes,
+                candidate,
+                None,
+                block,
+                declarations,
+                declaration_metas,
+                declaration_index,
+                roles,
+            )?);
+        }
         let route = topology
             .node_children(block)
             .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
@@ -404,34 +441,25 @@ fn build_postcondition_records(
         let selector = route.unwrap_or(result_binding);
         let selector_path = scopes.path(selector)?;
         let selector_roles: Vec<_> = roles.iter().filter(|role| role.owner == selector).collect();
-        let (class, plain_candidate, variant_target) = if route.is_none() {
-            let [candidate] = selector_roles.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
-            };
-            if !matches!(
-                candidate.kind,
-                RawRoleKind::Selector(SelectorRole::PlainCandidate)
-            ) {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
-            }
-            (
-                PostconditionSelectorClass::Plain,
-                Some(build_postcondition_candidate(
-                    topology,
-                    scopes,
-                    candidate,
-                    None,
-                    block,
-                    declarations,
-                    declaration_metas,
-                    declaration_index,
-                    roles,
-                )?),
-                None,
-            )
+        // An unrouted clause's selector node is the first result binder, whose
+        // candidate role is one of `result_binders` above; a routed clause's
+        // selector node is the route, which carries its variant and its
+        // optional ordinal binder [CALL-4].
+        let (class, route_ordinal, variant_target) = if route.is_none() {
+            (PostconditionSelectorClass::Plain, None, None)
         } else {
-            let [variant] = selector_roles.as_slice() else {
-                return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+            let (route_ordinal, variant) = match selector_roles.as_slice() {
+                [variant] => (None, *variant),
+                [ordinal, variant] => {
+                    if !matches!(
+                        ordinal.kind,
+                        RawRoleKind::Selector(SelectorRole::ResultOrdinal)
+                    ) {
+                        return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
+                    }
+                    (Some(ordinal.spelling.clone()), *variant)
+                }
+                _ => return Err(ResolutionCompilerFailure::InvalidRoleShape.into()),
             };
             if !matches!(
                 variant.kind,
@@ -447,7 +475,11 @@ fn build_postcondition_records(
                 })
                 .map(LexicalUseRecord::target)
                 .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
-            (PostconditionSelectorClass::Variant, None, Some(target))
+            (
+                PostconditionSelectorClass::Variant,
+                route_ordinal,
+                Some(target),
+            )
         };
 
         let mut field_roles: Vec<_> = roles
@@ -499,7 +531,7 @@ fn build_postcondition_records(
             return Err(ResolutionCompilerFailure::InvalidRoleShape.into());
         }
 
-        let candidate_spellings: Vec<&str> = plain_candidate
+        let candidate_spellings: Vec<&str> = result_binders
             .iter()
             .map(|candidate| candidate.spelling.as_str())
             .chain(fields.iter().map(|field| field.candidate.spelling.as_str()))
@@ -544,7 +576,8 @@ fn build_postcondition_records(
             block: scopes.path(block)?.clone(),
             selector: selector_path.clone(),
             class,
-            plain_candidate,
+            result_binders,
+            route_ordinal,
             fields,
             variant_target,
             provisional_uses,

@@ -168,6 +168,15 @@ impl PlaceMap {
                     summary.implicit_deref = implicit_deref;
                     summary.delivery_carrier = summary.holder.is_none();
                 }
+                // [CALL-4] every binder of a destructuring `let` is an
+                // ordinary fresh binding of its result ordinal's type.
+                CheckedStatement::DestructuringLet { bindings, .. } => {
+                    for (binding, ty) in bindings {
+                        let summary = self.summary_mut(*binding);
+                        summary.ty = Some(*ty);
+                        summary.delivery_carrier = true;
+                    }
+                }
                 CheckedStatement::PropagateLet {
                     binding, ok_type, ..
                 } => {

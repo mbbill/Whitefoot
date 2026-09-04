@@ -527,9 +527,6 @@ struct ExpressionJudgment {
 #[derive(Clone, Debug)]
 struct AvailablePostcondition {
     relation: RelationTemplate,
-    /// The declared result ordinal this clause's result datum names
-    /// [CALL-4]. A single-result declaration has ordinal zero.
-    ordinal: u32,
     variant: Option<crate::PreludeDeclarationId>,
     field: Option<crate::PreludeDeclarationId>,
     summary: VerifiedPostconditionSummary,
@@ -1090,11 +1087,20 @@ impl Analyzer<'_, '_> {
             else {
                 continue;
             };
-            let result = self
-                .postcondition_return_term(&selected.value)
-                .expect("H1 selected-return datum must remain in the ENT-2 term fragment");
+            // [CALL-4] one term per declared result ordinal, in written order.
+            let results = selected
+                .values
+                .iter()
+                .map(|value| {
+                    value.as_ref().map(|value| {
+                        self.postcondition_return_term(value).expect(
+                            "H1 selected-return datum must remain in the ENT-2 term fragment",
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
             let relation = self
-                .instantiate_postcondition_relation(postcondition, result)
+                .instantiate_postcondition_relation(postcondition, &results)
                 .expect("H1 relation template must remain in the ENT-2 term fragment");
             let affine_target = affine_result.and_then(|result| {
                 self.postcondition_affine_target(postcondition, result, &states.affine)
@@ -1237,6 +1243,7 @@ impl Analyzer<'_, '_> {
         match datum {
             RelationDatum::Result {
                 ty: CheckedType::Integer(_),
+                ..
             } => Some(result.clone()),
             RelationDatum::Parameter {
                 ordinal,
@@ -1415,13 +1422,13 @@ impl Analyzer<'_, '_> {
     fn instantiate_postcondition_relation(
         &mut self,
         postcondition: &CheckedPostcondition,
-        result: TermId,
+        results: &[Option<TermId>],
     ) -> Option<Relation> {
         let operands = postcondition
             .relation
             .operands
             .iter()
-            .map(|operand| self.postcondition_relation_term(operand, result))
+            .map(|operand| self.postcondition_relation_term(operand, results))
             .collect::<Option<Vec<_>>>()?;
         let [first, second] = operands.as_slice() else {
             return None;
@@ -1450,10 +1457,12 @@ impl Analyzer<'_, '_> {
     fn postcondition_relation_term(
         &mut self,
         datum: &RelationDatum,
-        result: TermId,
+        results: &[Option<TermId>],
     ) -> Option<TermId> {
         match datum {
-            RelationDatum::Result { .. } => Some(result),
+            // [CALL-4] the datum names one declared result ordinal, and the
+            // destination supplies that ordinal's term.
+            RelationDatum::Result { ordinal, .. } => *results.get(*ordinal as usize)?,
             RelationDatum::Parameter {
                 ordinal,
                 projections,
@@ -1618,7 +1627,6 @@ impl Analyzer<'_, '_> {
             .filter_map(|(postcondition, proof)| {
                 Some(AvailablePostcondition {
                     relation: postcondition.relation.clone(),
-                    ordinal: postcondition.selector.ordinal,
                     variant: postcondition.selector.variant,
                     field: postcondition
                         .selector
@@ -2101,14 +2109,19 @@ impl Analyzer<'_, '_> {
         template: &RelationTemplate,
         checked_arguments: &[CheckedExpression],
         arguments: &[GoalExpression],
-        result: TermId,
+        results: &[Option<TermId>],
     ) -> Option<InstantiatedPostcondition> {
         let parameter_modes = self.context.callee(function)?.parameter_modes.clone();
         let mut substitutions = Vec::new();
         let mut operands = Vec::with_capacity(template.operands.len());
         for (operand, datum) in template.operands.iter().enumerate() {
             let (term, formal) = match datum {
-                RelationDatum::Result { .. } => (result, None),
+                // [CALL-4] the destination supplies one term per declared
+                // result ordinal; an ordinal with none makes only this
+                // relation unavailable.
+                RelationDatum::Result { ordinal, .. } => {
+                    ((*results.get(*ordinal as usize)?)?, None)
+                }
                 RelationDatum::Parameter {
                     ordinal,
                     projections,
@@ -2310,7 +2323,7 @@ impl Analyzer<'_, '_> {
                 &available.relation,
                 arguments,
                 goal_arguments,
-                result_term,
+                &[Some(result_term)],
             ) else {
                 continue;
             };
@@ -2358,51 +2371,57 @@ impl Analyzer<'_, '_> {
         if *function != prepared.function || *call != prepared.call {
             return;
         }
-        for (index, destination) in destinations.iter().enumerate() {
-            let Ok(ordinal) = u32::try_from(index) else {
-                continue;
-            };
-            // A subscript place is no [ENT-2] term, so an ordinal committed to
-            // one has no destination term and its relations land nowhere.
-            let Some((binding, fields, ty)) = destination else {
-                continue;
-            };
-            if fragment_type(*ty).is_none() {
+        // One term per result ordinal, in written order. A subscript place is
+        // no [ENT-2] term and a non-fragment ordinal carries no relation
+        // datum, so either leaves its ordinal without a term and makes only
+        // the relations naming it unavailable.
+        let mut result_terms = Vec::with_capacity(destinations.len());
+        let mut anchor = None;
+        for destination in destinations {
+            let term = destination.as_ref().and_then(|(binding, fields, ty)| {
+                if fragment_type(*ty).is_none() {
+                    return None;
+                }
+                let term = self.postcondition_place_term(PlaceRoot::Binding(*binding), fields, *ty);
+                if term.is_some() && anchor.is_none() {
+                    anchor = Some(*binding);
+                }
+                term
+            });
+            result_terms.push(term);
+        }
+        let Some(anchor) = anchor else {
+            return;
+        };
+        for available in self.available_postconditions(*function) {
+            // A variant-routed relation is restricted to its arm [CALL-6];
+            // a binder or target list enters no arm.
+            if available.variant.is_some() {
                 continue;
             }
-            let Some(result_term) =
-                self.postcondition_place_term(PlaceRoot::Binding(*binding), fields, *ty)
-            else {
+            let Some(instantiated) = self.instantiate_call_postcondition_relation(
+                *function,
+                call,
+                &available.relation,
+                arguments,
+                goal_arguments,
+                &result_terms,
+            ) else {
                 continue;
             };
-            for available in self.available_postconditions(*function) {
-                if available.variant.is_some() || available.ordinal != ordinal {
-                    continue;
-                }
-                let Some(instantiated) = self.instantiate_call_postcondition_relation(
-                    *function,
-                    call,
-                    &available.relation,
-                    arguments,
-                    goal_arguments,
-                    result_term,
-                ) else {
-                    continue;
-                };
-                if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills)
-                    || !self.s12_substitutions_survive(&instantiated.substitutions, extra_kills)
-                {
-                    continue;
-                }
-                self.retain_direct_result(
-                    statement,
-                    *binding,
-                    &instantiated,
-                    &available,
-                    prepared,
-                    &mut states.facts,
-                );
+            if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills)
+                || !self.s12_substitutions_survive(&instantiated.substitutions, extra_kills)
+            {
+                continue;
             }
+            self.retain_direct_result(
+                statement,
+                anchor,
+                &instantiated,
+                &available,
+                prepared,
+                &mut states.facts,
+            );
         }
     }
 
@@ -2558,7 +2577,7 @@ impl Analyzer<'_, '_> {
                     &available.relation,
                     arguments,
                     goal_arguments,
-                    result_term,
+                    &[Some(result_term)],
                 )?;
                 if instantiated
                     .substitutions
@@ -2698,7 +2717,7 @@ impl Analyzer<'_, '_> {
                 &available.relation,
                 arguments,
                 goal_arguments,
-                result_term,
+                &[Some(result_term)],
             ) else {
                 continue;
             };
@@ -10212,13 +10231,9 @@ impl Analyzer<'_, '_> {
             } => {
                 let judgment = self.expression_effects(value, state);
                 let mut destinations = Vec::with_capacity(bindings.len());
-                for binding in bindings {
+                for (binding, ty) in bindings {
                     self.declare(*binding);
-                    destinations.push(
-                        self.summary(*binding)
-                            .and_then(|summary| summary.ty)
-                            .map(|ty| (*binding, Vec::new(), ty)),
-                    );
+                    destinations.push(Some((*binding, Vec::new(), *ty)));
                 }
                 if let Some(prepared) = &judgment.prepared_call
                     && judgment.reached

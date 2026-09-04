@@ -601,7 +601,13 @@ pub(crate) struct PostconditionResolutionRecord {
     pub(crate) block: NodePath,
     pub(crate) selector: NodePath,
     pub(crate) class: PostconditionSelectorClass,
-    pub(crate) plain_candidate: Option<PostconditionCandidateRecord>,
+    /// Every declared result ordinal's binder, in written order [GRAM-2].
+    /// A declaration writing one result has exactly one entry, and every
+    /// clause of either class may name any of them [CALL-4].
+    pub(crate) result_binders: Vec<PostconditionCandidateRecord>,
+    /// The route's written ordinal binder, `when b is V(f: r):`, when the
+    /// clause writes one [CALL-4].
+    pub(crate) route_ordinal: Option<String>,
     pub(crate) fields: Vec<PostconditionFieldRecord>,
     pub(crate) variant_target: Option<ResolvedTarget>,
     pub(crate) provisional_uses: Vec<LexicalUseRecord>,

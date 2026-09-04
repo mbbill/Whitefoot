@@ -136,7 +136,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
-            binder_ids.push(binding);
+            binder_ids.push((binding, ty));
         }
         Ok(Self::continuing_statement(
             CheckedStatement::DestructuringLet {

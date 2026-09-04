@@ -993,10 +993,13 @@ impl<'program> IrBuilder<'program> {
                     if self.value_type(aggregate)? != IrType::Nominal(IrNominalId(nominal.0)) {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
-                    for (ordinal, binding) in bindings.iter().enumerate() {
+                    for (ordinal, (binding, ty)) in bindings.iter().enumerate() {
                         let field = u32::try_from(ordinal)
                             .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
                         let value = self.project_struct_path(aggregate, &[field], true)?;
+                        if self.value_type(value)? != lower_type(*ty)? {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
                         if self.bindings.insert(*binding, value).is_some() {
                             return Err(LoweringFailure::InvalidCheckedProgram);
                         }

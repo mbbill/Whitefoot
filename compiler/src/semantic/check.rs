@@ -81,10 +81,6 @@ struct ParameterSignature {
 /// One declared result ordinal of a callable boundary [GRAM-2, FN-1].
 #[derive(Clone)]
 struct ResultSignature {
-    /// The written `result_binding` spelling. [FN-1] keeps it out of
-    /// callable-signature equality; a route names it [CALL-4] and a
-    /// diagnostic prints it.
-    name: String,
     mode: CheckedMode,
     ty: CheckedType,
     /// The ordinal's complete `rtype`, for a diagnostic at the declaration.
@@ -585,6 +581,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     postcondition_selectors: Vec<CheckedPostconditionSelector>,
     postcondition_unavailable_declarations: Vec<DeclarationId>,
     active_postcondition: Cell<Option<PostconditionCheckContext>>,
+    /// The result datums admitted in the [FN-9] clause currently being
+    /// checked: each written spelling with the result ordinal it names and
+    /// the type that datum has [CALL-4]. A declaration writing one result
+    /// contributes one row at ordinal zero. Set and restored beside
+    /// `active_postcondition`.
+    active_result_datums: RefCell<Vec<(String, u32, CheckedType)>>,
     contracts: Vec<ContractInfo>,
     contracts_by_declaration: HashMap<DeclarationId, usize>,
 }
@@ -987,6 +989,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             postcondition_selectors: Vec::new(),
             postcondition_unavailable_declarations: Vec::new(),
             active_postcondition: Cell::new(None),
+            active_result_datums: RefCell::new(Vec::new()),
             contracts: Vec::new(),
             contracts_by_declaration: HashMap::new(),
         })

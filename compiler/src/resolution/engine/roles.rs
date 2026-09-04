@@ -458,14 +458,42 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::ResultRoute => add_single(
-            classified,
-            owner,
-            &names,
-            RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant),
-            roles,
-            complete_counts,
-        )?,
+        // [GRAM-2, CALL-4] a route is `when V(f: r):` or `when b is V(f: r):`,
+        // where `b` names the result ordinal the route applies to. The ordinal
+        // binder names a declared result and declares nothing, so it carries a
+        // selector spelling exactly as a route's field name does.
+        Production::ResultRoute => match names.as_slice() {
+            [variant] => add_complete(
+                classified,
+                owner,
+                *variant,
+                RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant),
+                roles,
+                complete_counts,
+            )?,
+            [ordinal, variant] => {
+                if name_predicate(classified, *ordinal) != Some(TerminalPredicate::Identifier) {
+                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
+                }
+                add_complete(
+                    classified,
+                    owner,
+                    *ordinal,
+                    RawRoleKind::Selector(SelectorRole::ResultOrdinal),
+                    roles,
+                    complete_counts,
+                )?;
+                add_complete(
+                    classified,
+                    owner,
+                    *variant,
+                    RawRoleKind::LexicalUse(LexicalUseRole::EnsuresVariant),
+                    roles,
+                    complete_counts,
+                )?;
+            }
+            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
+        },
         Production::Fieldbind => {
             if let [field, binder] = names.as_slice() {
                 let selector_field =

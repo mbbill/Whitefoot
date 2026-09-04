@@ -135,6 +135,9 @@ pub enum SemanticRule {
     Fn8,
     /// Verified narrow normal-return relation.
     Fn9,
+    /// Contract vocabulary, the result ordinal, the routes, and where the
+    /// relations land.
+    Call4,
     /// Type-driven conditional form, and the `else` spellings it forbids.
     Gram6,
     /// Exact declared-order named user-call arguments.
@@ -215,6 +218,7 @@ impl SemanticRule {
             Self::Fn7 => "FN-7",
             Self::Fn8 => "FN-8",
             Self::Fn9 => "FN-9",
+            Self::Call4 => "CALL-4",
             Self::Gram6 => "GRAM-6",
             Self::Gram11 => "GRAM-11",
             Self::Gram8 => "GRAM-8",
@@ -293,7 +297,8 @@ impl SemanticRule {
             Self::Fn6 => Self::Fn7,
             Self::Fn7 => Self::Fn8,
             Self::Fn8 => Self::Fn9,
-            Self::Fn9 => Self::Eff1,
+            Self::Fn9 => Self::Call4,
+            Self::Call4 => Self::Eff1,
             Self::Eff1 => Self::Eff2,
             Self::Eff2 => Self::Err2,
             Self::Err2 => Self::Err3,
@@ -360,17 +365,18 @@ impl SemanticRule {
             Self::Fn7 => 38,
             Self::Fn8 => 39,
             Self::Fn9 => 40,
-            Self::Eff1 => 41,
-            Self::Eff2 => 42,
-            Self::Err2 => 43,
-            Self::Err3 => 44,
-            Self::Sys2 => 45,
-            Self::Sys8 => 46,
-            Self::Ent2 => 47,
-            Self::Msr3 => 48,
-            Self::Call6 => 49,
-            Self::Inv1 => 50,
-            Self::Prf1 => 51,
+            Self::Call4 => 41,
+            Self::Eff1 => 42,
+            Self::Eff2 => 43,
+            Self::Err2 => 44,
+            Self::Err3 => 45,
+            Self::Sys2 => 46,
+            Self::Sys8 => 47,
+            Self::Ent2 => 48,
+            Self::Msr3 => 49,
+            Self::Call6 => 50,
+            Self::Inv1 => 51,
+            Self::Prf1 => 52,
         }
     }
 }
@@ -754,6 +760,9 @@ pub enum SemanticIssueKind {
     InvalidRequires,
     /// An ensures selector does not match the concrete result class FN-9 admits.
     InvalidPostconditionSelector,
+    /// [CALL-4] a route omits its ordinal binder where two or more declared
+    /// result ordinals could carry it.
+    AmbiguousResultRoute,
     /// A variant selector does not spell exact `Ok(value: result)`.
     InvalidPostconditionFields {
         /// Exact closed field list required by the admitted selector.

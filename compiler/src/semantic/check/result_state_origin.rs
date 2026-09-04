@@ -200,7 +200,7 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 bindings, value, ..
             } => {
                 let origin = self.expression(value, &environment)?;
-                for (ordinal, binding) in bindings.iter().enumerate() {
+                for (ordinal, (binding, _)) in bindings.iter().enumerate() {
                     let field = u32::try_from(ordinal)
                         .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
                     environment.insert(*binding, origin.clone().projected(&[field]));

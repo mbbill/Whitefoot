@@ -65,6 +65,9 @@ pub(crate) enum NormalizedRelation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum RelationDatum {
     Result {
+        /// The declared result ordinal this datum names [CALL-4]. A
+        /// declaration writing one result has ordinal zero.
+        ordinal: u32,
         ty: CheckedType,
     },
     Parameter {
@@ -87,7 +90,9 @@ pub(crate) enum RelationDatum {
 impl RelationDatum {
     pub(crate) const fn ty(&self) -> CheckedType {
         match self {
-            Self::Result { ty } | Self::Parameter { ty, .. } | Self::NamedConst { ty, .. } => *ty,
+            Self::Result { ty, .. } | Self::Parameter { ty, .. } | Self::NamedConst { ty, .. } => {
+                *ty
+            }
             Self::Literal { value, .. } => value.ty(),
             Self::Length(_) => CheckedType::Integer(super::model::IntegerType::U64),
         }
@@ -137,7 +142,11 @@ pub(crate) enum PostconditionPlaceRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SelectedPostconditionReturn {
     pub(crate) statement: NodePath,
-    pub(crate) value: PostconditionReturnDatum,
+    /// The datum each declared result ordinal evaluates to at this return, in
+    /// written order [CALL-4]. An ordinal the return leaves outside the
+    /// [ENT-2] term fragment has no datum; a clause naming it is not selected
+    /// at this return. A declaration writing one result has one entry.
+    pub(crate) values: Vec<Option<PostconditionReturnDatum>>,
 }
 
 /// Exact ENT-2-shaped datum evaluated at a selected return.
