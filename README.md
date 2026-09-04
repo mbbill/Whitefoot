@@ -57,15 +57,18 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.43 is the active language authority, SHA-256
-`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`, carried by
-the stable [specification path](spec/kernel-spec.md). It carries two
-amendments: every loop body is now a region block, so a borrow written in the
-body takes that body's own region bare and dies with the iteration; and
-[ENT-6]'s control-flow join is repaired to be associative, so nested joins
-reach the image one flat join over the same branches reaches. It supersedes
-v0.42, whose outgoing bytes are preserved byte-for-byte at
-[`spec/kernel-spec-v0.42.md`](spec/kernel-spec-v0.42.md). The merge-time record
+Kernel specification v0.44 is the active language authority, SHA-256
+`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`, carried by
+the stable [specification path](spec/kernel-spec.md). It adds the fact
+machinery of the container design as four rules: a `requires` or `ensures`
+operand may be a measure of a place [MSR-5]; every contract operand has one
+denotation keyed on its parameter's mode, and an `own` operand denotes the
+call datum, the value at transfer [MSR-3]; the contract vocabulary over the
+one declared result is stated [CALL-4]; and publication is stated once, with
+a contract whose relations contradict each other refused at its declaration
+[CALL-6]. It supersedes
+v0.43, whose outgoing bytes are preserved byte-for-byte at
+[`spec/kernel-spec-v0.43.md`](spec/kernel-spec-v0.43.md). The merge-time record
 for that activation is in
 [governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
 with the owner's merge approval of the exact revision containing it.

@@ -3,15 +3,16 @@
 Status: IMPLEMENTED AND ACTIVATED as v0.40 on
 `codex/source-proof`.
 
-Active language authority: v0.43,
-`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`,
-which makes every loop body a region block and repairs [ENT-6]'s control-flow
-join, over the v0.42 canonical region spelling, the v0.41 comparison symbols,
-and the v0.40 proof surface this plan delivered.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.42 is
-archived at `spec/kernel-spec-v0.42.md` and the merge-time record is in
+Active language authority: v0.44,
+`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
+which adds the fact machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]) over the
+v0.43 loop-body region block and associative join, the v0.42 canonical region
+spelling, the v0.41 comparison symbols, and the v0.40 proof surface this plan
+delivered.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.43 is
+archived at `spec/kernel-spec-v0.43.md` and the merge-time record is in
 `governance/APPROVALS.md`. The candidate that preceded activation hashed to
-`1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`;
+`1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`;
 activation flipped its status line and changed no other byte. Activation is
 branch content: nothing merges to `main` until the owner approves the exact
 revision and canonical `make check` passes on that revision. This document
@@ -31,6 +32,22 @@ demux was accepted written as a flat `match` and refused written as nested
 `if`/`else`. Each input image is now normalized by folding earlier delta atoms
 back into the constant interval they stand for, so acceptance no longer depends
 on the shape of the join.
+
+v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
+or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`
+is a written clause where it was a parse rejection, and the define-per-measure
+spelling is gone. [MSR-3] gives every contract operand one denotation keyed on
+its parameter's mode: an `own` operand read at a caller denotes the call datum,
+the value at transfer, which no consume and no later write kills; a `&uniq`
+parameter's measure is inadmissible in a source-declared `ensures`, because the
+callee cannot name the caller's object at a point after its own writes.
+[CALL-4] states the contract vocabulary over the one result a declaration has
+and records the deferred widenings. [CALL-6] states once how a declared
+relation is instantiated at the call, established on the normal continuation,
+and restricted to its routed arm, and refuses at the declaration a contract
+whose published relations contradict each other. The batch that carried it is
+B1 of the container and resource design under
+`research/investigations/containers-and-resources/`.
 
 ## Outcome
 

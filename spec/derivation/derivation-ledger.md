@@ -2,12 +2,13 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.43 authority at SHA-256
-`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`.
-v0.43 supersedes v0.42 at
-`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`, whose
-bytes are archived at `spec/kernel-spec-v0.42.md`; the v0.40, v0.41, v0.42,
-and v0.43 amendments at the end of this file bind their changed derivations.
+the active v0.44 authority at SHA-256
+`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`.
+v0.44 supersedes v0.43 at
+`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`, whose
+bytes are archived at `spec/kernel-spec-v0.43.md`; the v0.40, v0.41, v0.42,
+v0.43, and v0.44 amendments at the end of this file bind their changed
+derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
@@ -16,7 +17,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40, v0.41, v0.42, and v0.43 amendments below and the active
+the v0.40 through v0.44 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -25,7 +26,11 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
-**Active v0.43 statistics: 79 derived · 53 existence-only · 0 underived**
+**Active v0.44 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.44 adds derived MSR-3 and CALL-6 and existence-only MSR-5 and
+CALL-4, retires no rule, and moves no existing row's status, so every other
+derivation status carries over from v0.43).
+**Superseded v0.43 statistics: 79 derived · 53 existence-only · 0 underived**
 (132 rules: v0.43 adds and retires no rule and moves no row's status — it
 amends OWN-3, OWN-11, FORM-8, and ENT-6 in place — so every derivation status
 carries over from v0.42).
@@ -1869,13 +1874,23 @@ status moves, so the statistics line above carries over from v0.42.
 | OWN-11 / OWN-3 / FORM-8 | Every `loop_stmt` and `for_stmt` body is itself a region block: it introduces one unnamed local region whose block is that body, a `borrow_expr` written directly in the body takes that region and is written bare, and a `region_stmt` that is the body's only statement is a hard error citing FORM-8 | 🟡 existence-only | Existence derived: OWN-11 already fixed the extent — a borrow formed in a loop body ends with the iteration — and a construct that has an extent has a region [OWN-3], so naming that region a region block adds no judgment and removes the ceremony a writer had to write to obtain it. The rejection follows from FORM-1 through the same one-spelling argument v0.42's FORM-8 rows use: a block whose block is the body denotes the region the body already introduces. Form NOT derived: the line between a redundant block and a narrower one is minimality-selected at "the block is the body's only statement", the coarsest place where OWN-6's statement-scope judgment still tells the two extents apart; a stricter line (any block ending where the iteration ends) makes shapes OWN-6 needs unwritable, and a looser one leaves two spellings of the body's own region. | Registered: no writer trial has measured whether writers reach for the bare form or keep opening a block out of habit. Corpus evidence only: across `tests/programs`, `tests/conformance/cases`, `tests/snapshot/cases`, and `tests/codegen/cases` exactly four blocks are the body's only statement, so the rejection is narrow and the accepted-program change is almost entirely the newly admitted bare borrow. |
 | ENT-6 | At a control-flow join every input image is first normalized by folding each delta atom an earlier join minted back into the constant interval it stands for; where the normalized inputs share one nonconstant form the join is that form plus one fresh delta atom over the hull of their constant intervals | 🟢 derived | Derived from ENT-6's own stated guarantee that image formation is source-structural and independent of proof success order. The v0.42 rule was not associative: a delta atom counted as an ordinary nonconstant term at the next join, so two joins in sequence lost an image one join over the same branches kept, and a three-way demux was accepted as a flat `match` and refused as nested `if`/`else` with no semantic difference between them. Folding is the unique normalization that makes the composed join equal the flat join while keeping every image sound: a delta atom stands for exactly its interval, so replacing it by that interval is an over-approximation that adds no fact. | None. The repair only adds images, so no program v0.42 rejected for another reason becomes accepted, and no program v0.42 accepted is refused. |
 
-## v0.44 candidate amendment — the fact machinery (candidate)
+## v0.44 amendment — the fact machinery (activated 2026-09-04)
 
-This amendment binds the four rows the v0.44 candidate adds. The active
-authority remains the active v0.43 authority until the owner activates the
-candidate; the statistics line above is unchanged because a candidate installs
-no identity. When it activates, the candidate adds four rules — one derived
-and three existence-only — and retires none.
+Specification binding: active `spec/kernel-spec.md`, headed v0.44, at
+SHA-256 `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
+superseding v0.43
+(`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`), whose
+bytes are archived at `spec/kernel-spec-v0.43.md`. The candidate bytes hashed
+to `1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b` until
+the status line flipped to `ACTIVE v0.44`; no other byte changed at
+activation. The merge-time record is in `governance/APPROVALS.md`.
+
+This amendment binds the four rows v0.44 adds; it retires none and moves no
+existing row's status. Two of the four are derived (MSR-3, CALL-6) and two are
+existence-only (MSR-5, CALL-4), which is what the statistics line above
+counts; the candidate-time preamble said one derived and three
+existence-only, which disagreed with its own table, and the table is the
+authority.
 
 | Rule | Statement | Status | Derivation | Open |
 | --- | --- | --- | --- | --- |

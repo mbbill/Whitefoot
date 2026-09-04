@@ -8,10 +8,9 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.43 guidance, and the writer forms of the
-v0.44 candidate on this branch are marked where they appear (P16, P21).
-It carries the loop-body region
-block and the associative [ENT-6] join v0.43 activates, the one canonical
+This document carries active v0.44 guidance, including the contract-clause
+measure operands and the call datum v0.44 activates (P16, P21), the loop-body
+region block and the associative [ENT-6] join introduced by v0.43, the one canonical
 region spelling introduced by [FORM-8] in v0.42, the comparison symbols and
 call-site `::` delimiter introduced by v0.41, the source-proof forms introduced
 by v0.40, the unified-state
@@ -619,7 +618,7 @@ let room = len(line);
 let fits = end <= room;
 ```
 
-Under the v0.44 candidate the same fact is stated directly in the contract
+Under v0.44 the same fact is stated directly in the contract
 that consumes it, with no binding and no `contract_define` at all: a
 `requires` and an `ensures` operand may be a measure of a place [MSR-5], so a
 callee writes `requires end <= len(destination);` where it used to write
@@ -944,8 +943,7 @@ body.
 
 ## P21. Hand the measure back by value, and never through a `&uniq`
 
-Status: the v0.44 candidate on this branch. Two of its rules decide one
-writer choice together.
+Status: active in v0.44. Two of its rules decide one writer choice together.
 
 Problem: a helper receives a run, does something with it, and the caller
 afterwards needs to know a measure of what it got back. The reflex is to lend
@@ -982,7 +980,7 @@ write the clauses that hold and check that they hold together; a clause added
 "to be safe" that contradicts an earlier one is not conservative, it is the
 end of every proof downstream of the call.
 
-Current value: measured on this branch. The `ensures` over a consumed
+Current value: measured on the v0.44 batch branch. The `ensures` over a consumed
 operand's measure is a real fact at the caller, where before v0.44 the
 consume in the same statement deleted it and the caller was left proving the
 measure again from its own allocation.
