@@ -1,0 +1,9 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "PROV-6: the operand's root type must not be loan-bearing and its release graph must contain no loan-bearing node. A view owns nothing, contributes no release-graph node, and therefore has no release action of its own to run early.";
+  let run = buffer_new(4_u64, 0_u8);
+  region {
+    let window = slice_of(&run);
+    dispose window;
+  }
+  return exit_status(code: 0_u8);
+}

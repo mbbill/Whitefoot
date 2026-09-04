@@ -195,6 +195,11 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 environment.insert(*binding, origin);
                 Ok(OriginFlow::continuing(environment))
             }
+            // [PROV-6] a disposed value binds nothing and leaves no origin.
+            CheckedStatement::Dispose { value, .. } => {
+                self.expression(value, &environment)?;
+                Ok(OriginFlow::continuing(environment))
+            }
             // [CALL-4] binder i takes result ordinal i, which is field i of
             // the one result-list value the call produced.
             CheckedStatement::DestructuringLet {

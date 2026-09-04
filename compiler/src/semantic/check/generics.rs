@@ -30,6 +30,10 @@ pub(super) enum GenericParameter {
     Type {
         declaration: DeclarationId,
         bound: GenericBound,
+        /// [PROV-6, S32] the written linearity class this parameter's body is
+        /// written for, when the declaration writes one. It is not a contract
+        /// bound: it selects no behavior and admits no member.
+        linearity: Option<super::linearity::LinearityClass>,
     },
     /// One const `gparam`. The written integer type is retained because
     /// [MSR-6] admits the parameter as a value, whose exact type is that
@@ -1566,14 +1570,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     GenericParameter::Type {
                         declaration,
                         bound: GenericBound::Int,
+                        ..
                     } => GenericArgument::Type(CheckedType::GenericInt(declaration)),
                     GenericParameter::Type {
                         declaration,
                         bound: GenericBound::Float,
+                        ..
                     } => GenericArgument::Type(CheckedType::GenericFloat(declaration)),
                     GenericParameter::Type {
                         declaration,
                         bound: GenericBound::Unbounded,
+                        ..
                     } => GenericArgument::Type(CheckedType::Generic(declaration)),
                     GenericParameter::Const { declaration, .. } => {
                         GenericArgument::Const(CheckedConst::Parameter(declaration))
@@ -1950,7 +1957,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Some(_) => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };
-            parameters.push(GenericParameter::Type { declaration, bound });
+            let linearity = self.written_linearity_bound(node)?;
+            parameters.push(GenericParameter::Type {
+                declaration,
+                bound,
+                linearity,
+            });
         }
         Ok(parameters)
     }
@@ -2045,7 +2057,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut bindings = Vec::with_capacity(parameters.len());
         for (parameter, argument) in parameters.iter().copied().zip(arguments) {
             let value = match parameter {
-                GenericParameter::Type { bound, .. } => {
+                GenericParameter::Type {
+                    bound,
+                    linearity,
+                    declaration,
+                } => {
                     let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
                         return self.issue_node(
                             argument_rule,
@@ -2086,6 +2102,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             argument,
                             SemanticIssueKind::type_mismatch(required, self.checked_type_name(ty)?),
                         );
+                    }
+                    // [PROV-6, S32] the linearity bound is checked at every
+                    // instantiation, against the class the argument's own
+                    // release graph gives it in this scope.
+                    if let Some(required) = linearity {
+                        let spelling = self
+                            .resolved
+                            .declarations()
+                            .iter()
+                            .find(|candidate| candidate.id() == declaration)
+                            .map_or_else(String::new, |candidate| candidate.spelling().to_owned());
+                        self.check_linearity_bound(&spelling, required, ty, argument)?;
                     }
                     GenericArgument::Type(ty)
                 }

@@ -147,7 +147,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 arm_scope,
             )?;
             let fallthrough_drops = if checked.can_continue {
-                self.live_affine_drops(&arm_bindings, &base_key_set)?
+                self.live_affine_drops(&arm_bindings, &base_key_set, arm_node)?
             } else {
                 Vec::new()
             };
@@ -356,7 +356,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .zip([(then_checked, then_bindings), (else_checked, else_bindings)])
         {
             let fallthrough_drops = if checked.can_continue {
-                self.live_affine_drops(&branch_bindings, &base_key_set)?
+                self.live_affine_drops(&branch_bindings, &base_key_set, node)?
             } else {
                 Vec::new()
             };

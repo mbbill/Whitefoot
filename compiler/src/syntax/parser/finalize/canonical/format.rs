@@ -39,6 +39,8 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
             | Production::BreakStmt
             | Production::ProofUse
             | Production::GiveStmt
+            // [PROV-6, FORM-2] `dispose p;` is a simple statement.
+            | Production::DisposeStmt
     );
     if fixed || (record.production == Production::InvariantStmt && record.body_open.is_none()) {
         return Ok(true);
@@ -60,6 +62,9 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
                     // side directly and renders on one line like every other
                     // non-initializer `let`.
                     | Production::Call
+                    // [PROV-6, GRAM-4] a destructuring consume takes its
+                    // operand `place` directly and renders the same way.
+                    | Production::Place
             )
         })
     }))

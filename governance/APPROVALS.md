@@ -2868,4 +2868,70 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 814e3131ce78fce98f1c0091b04ec94cb7a7b9480d0535f43915d9cf799537c7 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B5, linearity, the release and the destructuring forms): v0.45 lands
+  the containers design's `[PROV-6]`. Numbered rules +1/-0 (143 remain), being
+  [PROV-6]; grammar productions +3/-0 (87 remain), being `dispose_stmt`,
+  `region_param` and `linearity_bound`; unique fixed lowercase grammar atoms
+  +3/-0 (58 remain), being `dispose`, `linear` and `affine`, which [FORM-3]
+  therefore excludes from IDENT, so no source declaration, contract member or
+  callee may be spelled any of the three any more. `stmt` gains `dispose_stmt`,
+  `let_stmt` gains the destructuring consume `let N(f1: b1, ..., fk: bk) = move
+  v;`, `struct_decl` and `enum_decl` each gain an optional `linear` modifier,
+  `gparam`'s optional bound gains a linearity class beside its marker TYPEID,
+  and `region_params`'s members become `region_param`. These four spellings are
+  [S12], [S13], [S18] and [S32] as the owner adopted them on 2026-09-03 and
+  2026-09-04, and `dispose p;` takes no `using` list. [FORM-2], [TYPE-2],
+  [TYPE-3], [OWN-1], [LIV-1], [STOR-3], [FN-2] and [EFF-2] are amended in place.
+  [PROV-6] makes a value linear in a scope exactly when it owns, at any depth,
+  a value whose release action requires a capability that scope does not hold or
+  a value of a nominal declared `linear`, and affine there otherwise; one
+  release graph is what the compiler-derived release and `dispose p;` both walk;
+  a consume of a proper sub-place of a linear value is refused unless the same
+  statement's commit reinitialises it; and a written `affine` or `linear` bound
+  states the class a declaration is written for, checked at every instantiation.
+  In this version the ambient heap is the only store whose reclamation is a
+  release and it is not a value, so every scope holds it: nothing is linear here
+  by the capability criterion, every memory-reclamation action keeps the empty
+  row [EFF-2] already fixed, and no walk resolves a provider place. Two clauses are
+  DEFERRED with stated zero deltas. The first is the refusal of a type whose
+  release graph has a cycle: landing it retires
+  `tests/programs/recursive_tree.wf`, a heap-backed recursive enum this compiler
+  accepts today and three live tests compile, and that verdict move is the
+  owner's disposition rather than a checker capability, so this merge does not
+  make it. The second is the linearity-bound check over a region argument, which
+  decides nothing while every store a region names is reclaimed by its own
+  region release; the bound is read at the declaration and its type axis is
+  checked at every instantiation in both directions.
+- CONFORMANCE BOUNDARY (B5): this batch ADDS sixteen conformance cases and their
+  sixteen manifest rows, MODIFIES one existing case's source, and deletes and
+  renames none; it changes no adapter, runner, or collection wiring, and no
+  existing case's expectation, rule citation or status. The added ids are
+  `prov6-pos-dispose-runs-the-release-walk-early` and
+  `prov6-pos-linearity-bound-on-a-region-parameter` (run, exit 0),
+  `prov6-pos-linearity-bound-admits-the-instantiation` (run, exit 2),
+  `prov6-pos-linear-value-moved-out-whole` (run, exit 3),
+  `prov6-pos-commit-reinitialises-the-consumed-sub-place` (run, exit 5),
+  `prov6-pos-destructuring-consume-discharges-the-obligation` (run, exit 7),
+  `prov6-pos-dispose-writes-the-operands-storage-origin` (run, exit 9),
+  `prov6-neg-linear-value-not-consumed`,
+  `prov6-neg-linear-value-partially-consumed`,
+  `prov6-neg-dispose-of-a-view`,
+  `prov6-neg-dispose-of-a-modifier-linear-node`,
+  `prov6-neg-dispose-without-a-capability-leaf`,
+  `prov6-neg-linear-modifier-on-a-tag-only-enum` and
+  `prov6-neg-linearity-bound-refuses-the-instantiation` (each expecting reject,
+  PROV-6), `prov6-neg-dispose-through-a-shared-borrow` (reject, OWN-1) and
+  `prov6-neg-dispose-without-the-declared-write` (reject, EFF-2). The one
+  MODIFIED case is `reject-syseff-pure-member-binds-release`: its contract
+  member and conformance binding were spelled `dispose`, which [FORM-3] now
+  excludes from IDENT, so both are renamed `release`. Its id, expectation
+  (reject, FN-3), rule citation, status and doc are unchanged, and the rule
+  under test — a `pure` member bound to a function that exhibits a category
+  only through release — is untouched: the before/after boundary of that case
+  is exactly the member spelling. Before this batch the corpus holds 542 cases
+  with the native adapter reporting Pass=540, Xfail=1, Skip=1; after it the
+  corpus holds 558 with the adapter reporting Pass=556, Xfail=1, Skip=1. The one
+  xfail (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, and the recorded-verdict snapshot
+  corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 0de67b12995e7ad315a6b35ce7b5455a8960cbeb94aea3184a7631a817b61cda 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

@@ -1144,6 +1144,7 @@ pub(super) fn collect_statement_calls(
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
+            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => {

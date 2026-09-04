@@ -88,6 +88,15 @@ fn collect_statements(
                 collect_expression(value, direct, edges);
                 *direct = direct.union(release.row.target_action);
             }
+            // [PROV-6] `dispose p;` runs the release walk at the point it is
+            // written, so every action that walk performs is this
+            // statement's own.
+            CheckedStatement::Dispose { value, drops, .. } => {
+                collect_expression(value, direct, edges);
+                for drop in drops {
+                    *direct = direct.union(drop.release.row.target_action);
+                }
+            }
             CheckedStatement::Return { value, drops, .. }
             | CheckedStatement::Give { value, drops, .. } => {
                 collect_expression(value, direct, edges);

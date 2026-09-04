@@ -105,6 +105,10 @@ pub enum SemanticRule {
     /// The one `set` commit: the read-out, the three admission conditions,
     /// and the simultaneous reinitialization of every target.
     Liv2,
+    /// Linearity read against the scope: the release graph, the `linear`
+    /// modifier, `dispose`, the destructuring consume, the partial-consume
+    /// refusal, and the linearity bound on a generic parameter.
+    Prov6,
     /// Explicit dereference of a borrow holder.
     Type7,
     /// Storage-class and affine replacement restrictions.
@@ -209,6 +213,7 @@ impl SemanticRule {
             Self::Own14 => "OWN-14",
             Self::Liv1 => "LIV-1",
             Self::Liv2 => "LIV-2",
+            Self::Prov6 => "PROV-6",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
             Self::Stor4 => "STOR-4",
@@ -291,7 +296,8 @@ impl SemanticRule {
             Self::Own12 => Self::Own14,
             Self::Own14 => Self::Liv1,
             Self::Liv1 => Self::Liv2,
-            Self::Liv2 => Self::Stor1,
+            Self::Liv2 => Self::Prov6,
+            Self::Prov6 => Self::Stor1,
             Self::Stor1 => Self::Stor4,
             Self::Stor4 => Self::Stor5,
             Self::Stor5 => Self::Op1,
@@ -361,35 +367,36 @@ impl SemanticRule {
             Self::Own14 => 23,
             Self::Liv1 => 24,
             Self::Liv2 => 25,
-            Self::Stor1 => 26,
-            Self::Stor4 => 27,
-            Self::Stor5 => 28,
-            Self::Op1 => 29,
-            Self::Op2 => 30,
-            Self::Op4 => 31,
-            Self::Op5 => 32,
-            Self::Op6 => 33,
-            Self::Op9 => 34,
-            Self::Fn1 => 35,
-            Self::Fn2 => 36,
-            Self::Fn3 => 37,
-            Self::Fn4 => 38,
-            Self::Fn6 => 39,
-            Self::Fn7 => 40,
-            Self::Fn8 => 41,
-            Self::Fn9 => 42,
-            Self::Call4 => 43,
-            Self::Eff1 => 44,
-            Self::Eff2 => 45,
-            Self::Err2 => 46,
-            Self::Err3 => 47,
-            Self::Sys2 => 48,
-            Self::Sys8 => 49,
-            Self::Ent2 => 50,
-            Self::Msr3 => 51,
-            Self::Call6 => 52,
-            Self::Inv1 => 53,
-            Self::Prf1 => 54,
+            Self::Prov6 => 26,
+            Self::Stor1 => 27,
+            Self::Stor4 => 28,
+            Self::Stor5 => 29,
+            Self::Op1 => 30,
+            Self::Op2 => 31,
+            Self::Op4 => 32,
+            Self::Op5 => 33,
+            Self::Op6 => 34,
+            Self::Op9 => 35,
+            Self::Fn1 => 36,
+            Self::Fn2 => 37,
+            Self::Fn3 => 38,
+            Self::Fn4 => 39,
+            Self::Fn6 => 40,
+            Self::Fn7 => 41,
+            Self::Fn8 => 42,
+            Self::Fn9 => 43,
+            Self::Call4 => 44,
+            Self::Eff1 => 45,
+            Self::Eff2 => 46,
+            Self::Err2 => 47,
+            Self::Err3 => 48,
+            Self::Sys2 => 49,
+            Self::Sys8 => 50,
+            Self::Ent2 => 51,
+            Self::Msr3 => 52,
+            Self::Call6 => 53,
+            Self::Inv1 => 54,
+            Self::Prf1 => 55,
         }
     }
 }
@@ -544,6 +551,69 @@ pub enum SemanticIssueKind {
         target_type: String,
         /// Required STOR-1 restructuring.
         mechanical_fix: &'static str,
+    },
+    /// [PROV-6] a value linear in this scope is live on an edge leaving it,
+    /// where no compiler-derived release exists to carry it.
+    LinearValueNotConsumed {
+        /// The binding whose value is linear here.
+        binding: String,
+        /// The nominal whose `linear` declaration created the obligation.
+        obligation: String,
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-6] a consume of a proper sub-place of a value linear in this
+    /// scope, with no commit reinitializing that sub-place.
+    LinearValuePartiallyConsumed {
+        /// The nominal whose `linear` declaration created the obligation.
+        obligation: String,
+        /// The residual the consume would abandon.
+        residual: String,
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-6] the `linear` modifier on a nominal [OWN-1] classifies as copy.
+    LinearModifierOnCopyNominal {
+        /// The marked nominal.
+        nominal: String,
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-6] a `dispose` whose operand type reaches no capability-released
+    /// leaf, so the walk would reclaim nothing.
+    DisposeWithoutCapabilityLeaf {
+        /// The operand's exact type.
+        ty: String,
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-6] a `dispose` one of whose release-graph nodes carries the
+    /// `linear` modifier.
+    DisposeOfLinearNode {
+        /// The marked nominal reached by the walk.
+        nominal: String,
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-6] a `dispose` whose operand is or reaches a view, which owns
+    /// nothing.
+    DisposeOfLoanBearingOperand {
+        /// The operand's exact type.
+        ty: String,
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-6, S32] an instantiation whose argument's linearity class is not
+    /// the parameter's written bound.
+    LinearityBoundMismatch {
+        /// The bounded parameter's written spelling.
+        parameter: String,
+        /// The written bound.
+        bound: &'static str,
+        /// The written argument.
+        argument: String,
+        /// The argument's actual class.
+        actual: &'static str,
     },
     /// [LIV-1] two predecessors of one join disagree about whether a binding
     /// is live there.

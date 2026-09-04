@@ -171,7 +171,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
 
         let backedge_drops = if checked.can_continue {
-            self.live_affine_drops(&body_bindings, &header_preserved)?
+            self.live_affine_drops(&body_bindings, &header_preserved, node)?
         } else {
             Vec::new()
         };
@@ -538,7 +538,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
         )?;
         let backedge_drops = if checked.can_continue {
-            self.live_affine_drops(&body_bindings, &preserved)?
+            self.live_affine_drops(&body_bindings, &preserved, node)?
         } else {
             Vec::new()
         };
@@ -601,7 +601,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(StatementResult {
             statement: CheckedStatement::Break {
                 target: target.id,
-                drops: self.live_affine_drops(bindings, &target.preserved)?,
+                drops: self.live_affine_drops(bindings, &target.preserved, node)?,
             },
             can_continue: false,
             effects: EffectSet::NONE,

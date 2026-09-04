@@ -15,8 +15,8 @@ use crate::{
 };
 
 use super::super::model::{
-    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedSetTarget,
-    CheckedStatement, CheckedType, ValueInitializerKind,
+    BindingId, CheckedDrop, CheckedExpression, CheckedLoopId, CheckedMode, CheckedProjectedDrop,
+    CheckedSetTarget, CheckedStatement, CheckedType, ValueInitializerKind,
 };
 use super::borrows::ReborrowPosition;
 use super::expressions::MutationTarget;
@@ -274,7 +274,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     statement: CheckedStatement::Return {
                         node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
-                        drops: self.live_affine_drops(bindings, &HashSet::new())?,
+                        drops: self.live_affine_drops(bindings, &HashSet::new(), node)?,
                     },
                     can_continue: false,
                     effects: value.effects,
@@ -357,7 +357,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     statement: CheckedStatement::Give {
                         node_path: self.tree.path(node)?.clone(),
                         value: value.expression,
-                        drops: self.live_affine_drops(bindings, &context.preserved)?,
+                        drops: self.live_affine_drops(bindings, &context.preserved, node)?,
                     },
                     can_continue: false,
                     effects: value.effects,
@@ -376,9 +376,80 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 self.check_counted_range(function, node, bindings, counters, scope)
             }
             Production::BreakStmt => self.check_break(node, bindings, scope),
+            // [PROV-6, GRAM-4] `dispose p;` runs at this point exactly the
+            // release walk the scope exit would have run for `p`.
+            Production::DisposeStmt => self.check_dispose(function, node, bindings, scope),
             Production::RegionStmt => self.check_region(function, node, bindings, counters, scope),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
+    }
+
+    /// [PROV-6, GRAM-4] `dispose p;`.
+    ///
+    /// The admission is judged over `p`'s release graph before the operand's
+    /// own ownership consume, so a value the walk could never reclaim is
+    /// refused at the statement rather than after it has killed a binding.
+    fn check_dispose(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let place = self
+            .tree
+            .first_child_with(node, Production::Place)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        // The statement is one consuming use of `p`'s root [OWN-1], and every
+        // ownership rejection here — a shared-borrow root, a dead root, a live
+        // loan, a partial consume of a linear value — is that judgment's,
+        // asked first because [OWN-1] is defined before [PROV-6] [DIAG-1].
+        let value =
+            self.check_consumed_place(function, node, place, bindings, scope.loops.len(), false)?;
+        if value.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "dispose an own-mode value; a borrow owns nothing to release",
+                },
+            );
+        }
+        let ty = value.expression.ty();
+        self.dispose_admission(ty, node)?;
+        let whole_origins = self.state_origins_of_value(&value, bindings)?;
+        let paths = self.drop_paths(ty, Vec::new())?;
+        // [PROV-6, EFF-2] the statement writes `p`'s ultimate storage origin
+        // exactly as a commit writes its target's, and each release the walk
+        // runs contributes its own [SYS-5] row here rather than through the
+        // release contribution, because `dispose` is a written statement.
+        let mut effects = value.effects;
+        for access in &value.accesses {
+            for path in self.effect_paths_for_place(&access.place, bindings)? {
+                effects.add_write(path);
+            }
+        }
+        let mut drops = Vec::new();
+        for (fields, ty, release) in self.released_paths(paths)? {
+            let state_origins = whole_origins
+                .clone()
+                .map(|origins| origins.projected(&fields));
+            effects = effects.union(self.effects_of_row(release.row, state_origins.as_ref())?);
+            drops.push(CheckedProjectedDrop {
+                state_origins,
+                fields,
+                ty,
+                release,
+            });
+        }
+        Ok(Self::continuing_statement(
+            CheckedStatement::Dispose {
+                node_path: self.tree.path(node)?.clone(),
+                value: value.expression,
+                drops,
+            },
+            effects,
+        ))
     }
 
     fn check_let(
@@ -389,6 +460,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
+        // [PROV-6, GRAM-4] the destructuring consume is the one `let`
+        // alternative whose operand place is a direct child of the statement.
+        if let Some(place) = self.tree.first_child_with(node, Production::Place)? {
+            return self
+                .check_destructuring_consume(function, node, place, bindings, counters, scope);
+        }
         // [GRAM-4, CALL-4] a binder list takes its right-hand side's result
         // ordinals; a `call` directly under the `let_stmt` is that form and
         // no other selects it.
@@ -824,7 +901,7 @@ so the block is written `region { ... }`",
         let statements = self.tree.children_with(node, Production::Stmt)?;
         let mut checked = self.check_block(function, &statements, bindings, counters, scope)?;
         let fallthrough_drops = if checked.can_continue {
-            self.live_affine_drops(bindings, &base_keys)?
+            self.live_affine_drops(bindings, &base_keys, node)?
         } else {
             Vec::new()
         };
@@ -912,10 +989,14 @@ so the block is written `region { ... }`",
         Ok(false)
     }
 
+    /// The compiler-derived releases one edge leaving a scope carries
+    /// [STOR-3, LIV-1], and the [PROV-6] refusal of a value that is linear in
+    /// this scope and has no derived release to carry it there.
     fn live_affine_drops(
         &self,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         preserved: &HashSet<DeclarationId>,
+        edge: NodeId,
     ) -> Result<Vec<CheckedDrop>, CheckStop> {
         let mut live = bindings
             .iter()
@@ -926,6 +1007,15 @@ so the block is written `region { ... }`",
             .collect::<Vec<_>>();
         live.sort_by_key(|entry| std::cmp::Reverse(entry.1.binding.0));
         let mut drops = Vec::new();
+        for (_, local) in &live {
+            let name = self
+                .resolved
+                .declarations()
+                .iter()
+                .find(|declaration| declaration.id() == local.declaration)
+                .map_or_else(String::new, |declaration| declaration.spelling().to_owned());
+            self.reject_linear_value_not_consumed(local.ty, &name, edge)?;
+        }
         for (_, local) in live {
             if !self.is_copy_type(local.ty)? {
                 let paths = self.drop_paths(local.ty, Vec::new())?;

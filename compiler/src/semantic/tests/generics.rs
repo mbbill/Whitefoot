@@ -49,7 +49,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
-    let source = br#"fn affine<T: Float>(value: own T) -> result: own T pure {
+    let source = br#"fn nudge<T: Float>(value: own T) -> result: own T pure {
   let zero = 0_T;
   let one = 1_T;
   let shifted = fadd.strict(value, one);
@@ -57,8 +57,8 @@ fn float_bound_selects_operations_and_identities_for_every_concrete_instance() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let single = affine::<f32>(value: 2.0_f32);
-  let double = affine::<f64>(value: 4.0_f64);
+  let single = nudge::<f32>(value: 2.0_f32);
+  let double = nudge::<f64>(value: 4.0_f64);
   return exit_status(code: 0_u8);
 }
 "#;

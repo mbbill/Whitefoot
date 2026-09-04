@@ -1034,6 +1034,20 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::Evaluate(expression) => {
                     self.expression(expression)?;
                 }
+                // [PROV-6] `dispose p;` runs exactly the walk the scope exit
+                // would have run for this value, at the point it is written.
+                CheckedStatement::Dispose { value, drops, .. } => {
+                    let root = self.expression(value)?;
+                    let mut lowered = Vec::with_capacity(drops.len());
+                    for drop in drops {
+                        lowered.push(self.lower_projected_drop(root, drop)?);
+                    }
+                    for drop in lowered {
+                        self.current_block_mut()?
+                            .instructions
+                            .push(IrInstruction::Drop(drop));
+                    }
+                }
                 CheckedStatement::DropExpression {
                     value: expression,
                     release,
@@ -2285,7 +2299,13 @@ impl<'program> IrBuilder<'program> {
         root: IrValueId,
         drop: &CheckedProjectedDrop,
     ) -> Result<IrDrop, LoweringFailure> {
-        let value = self.project_struct_path(root, &drop.fields, false)?;
+        // [PROV-6] the release-graph walk visits the value's own node as well
+        // as its components, and the empty path names that node.
+        let value = if drop.fields.is_empty() {
+            root
+        } else {
+            self.project_struct_path(root, &drop.fields, false)?
+        };
         let ty = lower_type(drop.ty)?;
         if self.value_type(value)? != ty {
             return Err(LoweringFailure::InvalidCheckedProgram);

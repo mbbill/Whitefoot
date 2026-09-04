@@ -3,8 +3,8 @@
 Status: ACTIVE v0.45
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +6/-0 (142 remain), being [MSR-1], [MSR-2], [MSR-4], [MSR-6], [LIV-1] and [LIV-2]; grammar productions +0/-0 (84 remain); changed productions 5, being `fn_decl`, which takes an ordered result list, `result_route`, which takes an optional ordinal binder, `let_stmt`, which takes a parenthesized binder list over a `call`, `set_stmt`, whose parenthesized target list takes one `call` or a value list of one expression per target, and `return_stmt`, which takes one expression per declared result; unique fixed lowercase grammar atoms +1/-0 (55 remain), being `is`; compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +3/-0, being the readers `cap`, `room` and `head`, which are dotless and IDENT-shaped and therefore also add three members to `ReservedLowerNames` [OP-1], so no source declaration may use those three spellings any more; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-1, being [ENT-5]'s element-position carve-out, removed rather than narrowed. [ENT-3] gains no source label and retires none. [FORM-2], [TYPE-5], [SET-1], [FN-1], [FN-9], [CALL-4], [CALL-6], [ENT-3], [OP-1], [OP-4], [OP-7], [TYPE-6], [ENT-2], [ENT-5], [ENT-6], [INV-1], [MSR-5], [OWN-1], [OWN-11], [STOR-1] and [STOR-3] are amended; six rule ids are added and none is retired.
-This version lands multi-return, the proof surface and the commit rule of the containers design: the ordered result list and the two writer forms that name its ordinals again at a caller, then the four measure terms, descriptor-precise support, one numeric goal disposition, the const generic as a value, and finally join-checked liveness with the one `set` commit that reinitializes a place.
+META-5 delta declaration: numbered rules +7/-0 (143 remain), being [MSR-1], [MSR-2], [MSR-4], [MSR-6], [LIV-1], [LIV-2] and [PROV-6]; grammar productions +3/-0 (87 remain), being `dispose_stmt`, `region_param` and `linearity_bound`; changed productions 10, being `fn_decl`, which takes an ordered result list, `result_route`, which takes an optional ordinal binder, `let_stmt`, which takes a parenthesized binder list over a `call` and a destructuring consume over a nominal, `set_stmt`, whose parenthesized target list takes one `call` or a value list of one expression per target, `return_stmt`, which takes one expression per declared result, `stmt`, which gains `dispose_stmt`, `struct_decl` and `enum_decl`, each of which takes an optional `linear` modifier, `gparam`, whose optional bound takes a linearity class beside a marker TYPEID, and `region_params`, whose members are `region_param`; unique fixed lowercase grammar atoms +4/-0 (58 remain), being `is`, `linear`, `affine` and `dispose`, which [FORM-3] therefore excludes from IDENT, so no source declaration, contract member, or callee may be spelled `linear`, `affine`, or `dispose` any more; compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +3/-0, being the readers `cap`, `room` and `head`, which are dotless and IDENT-shaped and therefore also add three members to `ReservedLowerNames` [OP-1], so no source declaration may use those three spellings any more; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-1, being [ENT-5]'s element-position carve-out, removed rather than narrowed. [ENT-3] gains no source label and retires none. [FORM-2], [TYPE-2], [TYPE-3], [TYPE-5], [SET-1], [FN-1], [FN-2], [FN-9], [CALL-4], [CALL-6], [ENT-3], [OP-1], [OP-4], [OP-7], [TYPE-6], [ENT-2], [ENT-5], [ENT-6], [INV-1], [MSR-5], [OWN-1], [OWN-11], [LIV-1], [STOR-1], [STOR-3] and [EFF-2] are amended; seven rule ids are added and none is retired. Two clauses of [PROV-6] are DEFERRED with stated zero deltas: the refusal of a type whose release graph has a cycle, and the linearity-bound check over a region argument.
+This version lands multi-return, the proof surface, the commit rule and the linearity half of the containers design: the ordered result list and the two writer forms that name its ordinals again at a caller, then the four measure terms, descriptor-precise support, one numeric goal disposition, the const generic as a value, then join-checked liveness with the one `set` commit that reinitializes a place, and finally linearity read against the scope with the release graph, the `linear` modifier, the early release and the destructuring consume.
 The first amendment is the grammar, which gives a `fn_decl` a parenthesized list of two or more `result_binding`s, a `let_stmt` a parenthesized binder list whose right-hand side is a `call`, a `set_stmt` a parenthesized target list over the same or over a written value list [LIV-2], and a `return_stmt` one expression per declared result. [FORM-2] states the one space each of the three lists keeps before its `(`, overriding the generic right attachment of `(` exactly as the `for` header does, and makes a destructuring `let` line-bearing.
 The second amendment, [FN-1], states what a result list is: each `result_binding` is one result ordinal, numbered from zero in written order, every result judgment reads per ordinal, and a caller names the ordinals again only through the binder list or the target list, because no expression position produces a result list. [TYPE-5] derives binder i and target i from result ordinal i, and [SET-1] commits a target list in written order under the ordinary commit judgment, over the targets [LIV-2]'s second condition admits.
 The third, [CALL-4], widens the contract vocabulary to the ordinals: every ordinal is a datum of every clause, a route may name the ordinal it applies to with `when b is V(f: r):`, the ordinal binder may be omitted exactly when one ordinal has that enum type, and a route two ordinals could carry is refused at the declaration, where the ordinal set is fixed. [FN-9] admits an unrouted clause over every ordinal it names, keeps the routed ordinal's whole-result binder unavailable while every other ordinal's binder remains a datum, and reads each result datum at a selected return from its own ordinal's returned expression.
@@ -15,7 +15,15 @@ The sixth, [MSR-4], states once the complete ordered derivation of a numeric goa
 The seventh, [MSR-6], admits an in-scope const generic as a `pbase` [TYPE-6], and with it as a `for_stmt` endpoint and a clause operand.
 The eighth, [LIV-1], makes a binding's live-or-dead status a property of a program point: every predecessor of every join and every loop head agrees on it, a disagreement is a hard error naming the binding and the two predecessors, and because the status agrees, every scope-exit release is unconditional. [OWN-11]'s prohibition on moving an outer binding into a loop body becomes that rule's per-iteration reading of the same agreement at its own loop head, so a body that moves a binding and reinitializes it before the backedge is admitted and a body that leaves it dead is not.
 The ninth, [LIV-2], states one `set` commit for `n >= 1` targets over one call or a value list: every target place is resolved before the right-hand side, each target's previous value is read out there — a `move` of a target place, or of a place reached through one, being that read-out and killing no root — every target is dead through that evaluation, and all targets are reinitialized at one commit. Its three conditions are the dead target, whose live affine case keeps [STOR-1]'s error, pairwise non-overlapping targets, which replaces [SET-1]'s pairwise-distinct-roots placeholder, and exact arity and type. [OWN-1] revives a dead binding only through such a commit at that complete binding, and `set (p, q) = move q, move p;` is the swap.
-Selection ground: evidence-selected. The result list is selected by the containers-and-resources design session's R1, which makes every transforming operation return the value it was handed plus what it computed, and by that design's record that the two-field struct per operation the surviving spelling costs is admitted on cost rather than on expressibility; the ordinal binder is selected by that design's sixth falsifier round, where a function with two same-typed enum results left a variant route ambiguous in three ways and one of them unsound. The two added destinations are selected by the same design's observation that without them a multi-result contract publishes nothing, because the closed destination list of [ENT-3.S12] names neither. The four measure terms, descriptor-precise support and the one goal disposition are selected by that same design's [MSR] family and by its measured falsifier evidence: probe `r2_4` showed a length fact killed by a write to a sibling field, which descriptor storage repairs, and its seventh falsifier round reached memory three times through a contradictory published state, which is why the disposition states contradiction first and once. The const generic as a value is selected by probe `q10`, where a capacity-parametric function could not name its own bound. Join-checked liveness and the one commit rule are selected by the same design's owner decision D2 of 2026-09-03, which fixed the commit as the single writer form for transforming a place in situ and refused an exchange operation, and by its seventh falsifier round, which found the sixth draft's commit paragraph admitting no instance at all; probe `q9` is the `set` at a live affine local that [STOR-1] refuses today and this version admits, and probe `f3` is the branch pair a checker capability limit answered with a stop instead of a rejection. Prior selection ground for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
+The tenth amendment is [PROV-6], which makes linearity the reclamation half of affine read against the scope: a value is linear in a scope exactly when it owns, at any depth, a value whose release action requires a capability that scope does not hold or a value of a nominal declared `linear`, and affine there otherwise.
+One release graph is the object the compiler-derived release and the added `dispose p;` both walk, one `linear` modifier states the logical obligation the capability criterion cannot see, `let N(f: a, ...) = move v;` is the whole destructuring that discharges it, a consume of a proper sub-place of a linear value is refused unless the same statement's commit reinitializes it, and a written `affine` or `linear` bound on a generic or region parameter states the class a declaration was written for.
+The walk and the provider write are gained by [STOR-3], and by [EFF-2] with it; [OWN-1] gains `dispose` and the destructuring consume in its consuming-use list, [LIV-1] gains the linear value it may not carry off a scope, [TYPE-2] and [TYPE-3] gain the modifier, and [FN-2] gains the bound that is not a contract bound.
+In this version the ambient heap is the only store whose reclamation is a release, and it is not a value, so every scope holds it: nothing is linear here by the capability criterion, every heap-backed release stays the derived release under the empty row, and the modifier is the whole of what a writer can state.
+
+Selection ground: evidence-selected. The result list is selected by the containers-and-resources design session's R1, which makes every transforming operation return the value it was handed plus what it computed, and by that design's record that the two-field struct per operation the surviving spelling costs is admitted on cost rather than on expressibility; the ordinal binder is selected by that design's sixth falsifier round, where a function with two same-typed enum results left a variant route ambiguous in three ways and one of them unsound. The two added destinations are selected by the same design's observation that without them a multi-result contract publishes nothing, because the closed destination list of [ENT-3.S12] names neither. The four measure terms, descriptor-precise support and the one goal disposition are selected by that same design's [MSR] family and by its measured falsifier evidence: probe `r2_4` showed a length fact killed by a write to a sibling field, which descriptor storage repairs, and its seventh falsifier round reached memory three times through a contradictory published state, which is why the disposition states contradiction first and once. The const generic as a value is selected by probe `q10`, where a capacity-parametric function could not name its own bound. Linearity read against the scope is selected by that design's owner decision D3 of 2026-09-03, measured rather than argued: a scope-blind criterion costs one written statement per (value, edge), which its seventh falsifier round counted at forty in one entry function and sixty-eight in one decoder, and the repair a writer takes is to invert every hosted function into a single exit; read against the scope those are the ordinary derived release, and the free is more visible than forty scattered statements because it appears in an effect row where probe `r2_5` shows this compiler emits it under none.
+The release graph is selected by that round's finding that the seventh draft's cycle refusal was stated over a sub-graph reached *through leaves*, which reaches nothing, while its walk quantified a different graph, so an arena-recursive structure inside a heap-backed one was accepted with a runtime-depth walk.
+The `linear` modifier's admission condition is selected by probe `q11`, a tag-only enum used twice bare, and [S32]'s bound by the three fail-closed refusals that design records, each of which costs a program a writer needs.
+Join-checked liveness and the one commit rule are selected by the same design's owner decision D2 of 2026-09-03, which fixed the commit as the single writer form for transforming a place in situ and refused an exchange operation, and by its seventh falsifier round, which found the sixth draft's commit paragraph admitting no instance at all; probe `q9` is the `set` at a live affine local that [STOR-1] refuses today and this version admits, and probe `f3` is the branch pair a checker capability limit answered with a stop instead of a rejection. Prior selection ground for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
 R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
@@ -71,7 +79,7 @@ Every nonempty physical line begins with exactly two ASCII spaces for each enclo
 A closing brace is rendered after reducing the depth for the block it closes.
 A match-arm header is therefore one level inside its match, and statements in the arm body are two levels inside it.
 
-The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list [GRAM-4].
+The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, `give_stmt`, and `dispose_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list or a destructuring consume [GRAM-4, PROV-6].
 Each renders completely on one line, including its final semicolon.
 
 The generically block-bearing productions are `struct_decl`, `enum_decl`, `contract_decl`, `conform_decl`, the body of `fn_decl`, `contract_block`, `region_stmt`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
@@ -218,9 +226,9 @@ Every production maps 1:1 to one core-tree node kind; there is no desugaring.
 ```wf-ebnf GRAM-2
 program      := item*
 item         := fn_decl | struct_decl | enum_decl | contract_decl | conform_decl | const_decl
-struct_decl  := "struct" TYPEID generics? "{" doc? field* "}"
+struct_decl  := "linear"? "struct" TYPEID generics? "{" doc? field* "}"
 field        := IDENT ":" type ";"
-enum_decl    := "enum" TYPEID generics? "{" doc? variant* "}"
+enum_decl    := "linear"? "enum" TYPEID generics? "{" doc? variant* "}"
 variant      := TYPEID "(" vfield_list? ")" ";"
 vfield_list  := vfield ("," vfield)*
 vfield       := IDENT ":" type
@@ -243,8 +251,10 @@ const_decl   := "const" IDENT ":" type "=" cvalue ";"
 fn_bind      := IDENT "=" IDENT ";"
 doc          := "doc" STRING ";"
 generics     := "<" gparam ("," gparam)* ">"
-gparam       := TYPEID (":" TYPEID)? | "const" IDENT ":" type
-region_params:= "[" REGIONID ("," REGIONID)* "]"
+gparam       := TYPEID (":" (TYPEID | linearity_bound))? | "const" IDENT ":" type
+region_params:= "[" region_param ("," region_param)* "]"
+region_param := REGIONID (":" linearity_bound)?
+linearity_bound:= "affine" | "linear"
 param_list   := param ("," param)*
 param        := input_label? IDENT ":" mode type
 input_label  := "command" "." IDENT "as"
@@ -268,11 +278,12 @@ targ   := type | REGIONID | const
 ```wf-ebnf GRAM-4
 stmt        := let_stmt | set_stmt | expr_stmt | return_stmt | loop_stmt
              | for_stmt | invariant_stmt | break_stmt | region_stmt
-             | if_stmt | match_stmt | give_stmt
+             | if_stmt | match_stmt | give_stmt | dispose_stmt
 let_stmt    := "let" ( IDENT "="
                ( ordinary_let_rhs | propagate_let_rhs | replace_let_rhs
                | value_match | value_if )
-               | "(" IDENT ("," IDENT)+ ")" "=" call ";" )
+               | "(" IDENT ("," IDENT)+ ")" "=" call ";"
+               | TYPEID "(" fieldbind_list? ")" "=" "move" place ";" )
 if_stmt     := "if" expr "{" stmt* "}" ("else" (if_stmt | "{" stmt* "}"))?
 value_if    := "if" expr "{" stmt* "}" "else" (value_if | "{" stmt* "}")
 ordinary_let_rhs:= expr ";"
@@ -299,6 +310,7 @@ affine_add_op := "+" | "-"
 break_stmt  := "break" LABEL? ";"
 region_stmt := "region" REGIONID? "{" stmt* "}"
 give_stmt   := "give" expr ";"
+dispose_stmt:= "dispose" place ";"
 match_stmt  := "match" expr "{" arm+ "}"
 value_match := "match" expr "{" arm+ "}"
 arm            := TYPEID "(" fieldbind_list? ")" "=>" "{" stmt* "}"
@@ -410,11 +422,13 @@ Callee kind is resolved by name lookup [OP-1], the same partition that already s
 (`Bool` is a prelude enum, §15, not a primitive.)
 
 [TYPE-2] Composite types: `struct`, `enum`, `array<T, N>` (N a constant-expression, [CONST-1]), `slice<'r, T>` (region-carrying view), `box<T>` (heap-owned unique), `arena<'r, T>` (region-bounded owned), `buffer<T>` (heap-owned, runtime-length, flat contiguous {data-pointer, u64 length} value; affine single-owner; length fixed at allocation, no in-place growth).
+A `struct` or `enum` declaration may carry the `linear` modifier [GRAM-2], which states a logical must-consume obligation on values of that nominal in every scope and changes no component, layout, or construction route [PROV-6].
 The opaque system types [SYS-2] are a distinct class: they are nominal, have no writer-visible component, and are constructed only by system operations and standard entry bindings. v0 `array` element type T must be copy (a primitive or tag-only enum, per the OWN-1 copy amendment).
 A `buffer` element type T must be copy or a region-free [STOR-5] affine type; construction is gated per operation — `buffer_new` fills only copy elements, and `buffer_vacant` constructs `Option`-element buffers [OP-1, OP-9] — so an affine-element buffer type outside those constructors is well-formed but has no v0 construction route, exactly the formation/construction distinction this rule already draws for its element domains.
 Affine elements leave and enter their slots only through [SET-2] element replacement and are read in place through borrowed `match` [OWN-13]; the element exchange never changes the buffer's length [ENT-5].
 
 [TYPE-3] Nameability: every constructible type/mode/effect has a canonical, finite, writable name requiring no compiler execution.
+The `linear` modifier and a generic parameter's linearity bound are properties of a declaration and not components of a type name: two instances of one nominal have one name whether or not its declaration is marked, and no name spells a linearity class [PROV-6].
 
 [TYPE-4] There are no implicit conversions.
 Representation change is the single explicit op `cvt::<Src, Dst>(x)`.
@@ -633,7 +647,8 @@ Enum-typed consts and written generic construction arguments in const position a
 
 [OWN-1] Every value has exactly one owner.
 Values are classified copy or affine: primitives (TYPE-1), shared borrows, and tag-only enums (every variant nullary; `Bool` is the canonical case) copy on use; all other values (owned composites, `box`, `arena`, `slice` as `&uniq`, uniq borrows) are affine.
-An affine place rooted in a live own-mode binding is consumed exactly once by an explicit `move p`, by use as an own-place match scrutinee under [OWN-13], or by use as the direct bare affine `Result<T, E>` place operand of `propagate` under [ERR-3].
+An affine place rooted in a live own-mode binding is consumed exactly once by an explicit `move p`, by use as an own-place match scrutinee under [OWN-13], by use as the direct bare affine `Result<T, E>` place operand of `propagate` under [ERR-3], by the `move place` of a destructuring consume, or by the `place` of a `dispose` statement [PROV-6].
+This classification is refined by [PROV-6] and replaced by nothing: a value affine here is linear in a scope that cannot discharge its reclamation, and a consume of a proper sub-place of such a value is that rule's partial-consume rejection rather than this rule's ordinary root kill.
 Every other bare `place` expression of affine type is a hard error, and `move p` on a copy value is a hard error (copy values are used bare — one spelling per meaning, FORM-1).
 The bare-affine mechanical fix is position-conditional: in a function body it is write `move p`, while in a `contract_block`, where [FN-8] rejects `move` itself, it is restate the definition or clause over copy operands or non-consuming admitted reads, so the repair never instructs a spelling FN-8 forbids.
 Resolving and evaluating the target of SET-1 or SET-2 does not by itself read, copy, or move the selected value or its affine owner.
@@ -755,6 +770,7 @@ The loop-head instance is [OWN-11]'s per-iteration judgment, which owns its stat
 This agreement is judged before any capability limit of a conforming checker reports an unsupported join, so a disagreeing predecessor pair is a source rejection and never a stop.
 Because the status agrees at every join, whether a compiler-derived release runs on an edge leaving a scope is not runtime state: on every edge leaving a scope — a `break`, a `give`, a `propagate` error edge, and the function-return edge included — every binding of that scope that is live on that edge takes its compiler-derived release there, unconditionally, and a binding that is dead takes none [STOR-3].
 Which release runs inside a live value may still be selected by that value's own discriminant, exactly as an enum's derived drop selects on its variant today.
+A binding whose value is linear in that scope [PROV-6] takes no compiler-derived release on such an edge and is refused there instead, because in that scope no derived release exists to carry it.
 This rule states the liveness premise [SET-1], [SET-2] and [LIV-2] recheck after a right-hand side, and the premise [OWN-11] reads at a backedge; it adds no scope-exit action and removes none.
 
 [LIV-2] One `set` commit.
@@ -785,6 +801,75 @@ A commit derives no drop, release, finalizer, or cleanup edge [STOR-3]: a copy t
 A target identifier that resolves to no binding in scope, which would introduce one exactly as a `let` does, is DEFERRED with recorded delta [META-5]; its delta is numbered rules +0 and grammar productions +0.
 The checked program retains each target path, each discharged target check, each ordinal's value, each read-out, the post-right-hand-side liveness and writability judgments, and the one commit before lowering [DIAG-2].
 
+[PROV-6] Linearity is the reclamation half of affine, read against the scope, and closed under ownership.
+A value is linear in a scope exactly when it owns, at any depth, either a value whose release action requires a capability that scope does not hold, or a value of a nominal whose declaration carries the `linear` modifier [GRAM-2]; it is affine in that scope otherwise.
+This rule refines [OWN-1]'s copy/affine classification and replaces none of it: a copy value is never linear, and a value this rule does not make linear keeps exactly the disposition [OWN-1] and [STOR-3] give it.
+A type owns its fields, its enum variant payloads, its `box` referent, its `arena` content, and the elements of a run it is; a loan-bearing type owns nothing, a type being loan-bearing exactly when its complete type after substitution is or reaches `slice<'r, T>` [STOR-5].
+A written type argument is owned through the field, payload, or element position it lands in and never by the type that writes it.
+
+A type's release action requires a capability exactly when its own reclamation is a release to a store whose provider is a value.
+A scope holds that capability exactly when a binding of that store's provider type is live at that point in that function, reached directly or through a borrow; a binding of a provider type enters a function only as a parameter or as an entry input [FN-7], so a scope whose values take a compiler-derived release of that store says so in its own parameter list and its effect row carries `writes` of that provider place [EFF-2].
+In this version the heap-backed types `box<T>` and `buffer<T>` [STOR-1] are the capability-released types and the ambient heap is their sole provider.
+The ambient heap is not a value: no writable type names it [TYPE-3] and no `effect_path` can be rooted at it [EFF-1], so every scope holds it.
+No value is therefore linear in this version by the capability criterion; every heap-backed release is exactly the compiler-derived release [STOR-3] already runs on every leaving edge [LIV-1], resolves no provider place, and carries the empty row.
+The version in which a store's provider is a written value is the first in which a scope that does not hold one exists; this rule's statement does not change there.
+
+The `linear` modifier is one optional atom on `struct_decl` and `enum_decl` [GRAM-2] and states a logical obligation, holding in every scope.
+It is admitted only on a nominal [OWN-1] classifies as affine; `linear` on a tag-only enum, which [OWN-1] makes copy, is a hard error citing PROV-6 at that `enum_decl`, with the restructuring `give a variant a payload, or put the obligation on the value the issuer hands out`.
+A storage obligation is never written: a value whose release action requires a capability is linear by the criterion above exactly where that capability is absent, so marking a store-derived type is redundant and marks nothing the criterion does not already see.
+
+A value linear in this scope leaves it by exactly two routes: moved out whole, or destructured whole.
+A value affine in this scope has those two, plus `dispose p;`, plus the one compiler-derived release [STOR-3] carries on every leaving edge.
+A binding whose value is linear in this scope and which is live on an edge leaving that scope is a hard error citing PROV-6 at that edge's statement, naming the binding and the `linear` declaration or the absent capability that made its value linear, and offering exactly the routes that remain.
+
+`let N(f1: b1, ..., fk: bk) = move v;` [GRAM-4] is the destructuring consume: it consumes a value of nominal struct type `N` and binds every declared field of `N` in declaration order to a fresh IDENT.
+Its field names are judged exactly as [GRAM-10] judges an `arm`'s: every declared field of `N` is written exactly once as `IDENT ":" IDENT` in declared order, and a missing, extra, repeated, misspelled, or out-of-order field name is a hard error citing GRAM-10 and `N`'s declared field list.
+Its binders are ordinary `let` binders of the enclosing block, fresh under [TYPE-6] exactly as [CALL-4]'s binder list's are, and not arm-scoped.
+Each binder receives its field's declared type and `own` mode [TYPE-5], the statement is one consuming use of `v` [OWN-1], and no residual of `v` survives it, so the statement derives no release of the consumed value's own storage [STOR-3].
+An own-place `match` [OWN-13] is the enum form of the same destructuring.
+
+The release graph of a type `T` has as its nodes the types reachable from `T` through fields, enum variant payloads, `box` referents, `arena` content, and run elements; a loan-bearing value contributes no node.
+A type's release action is non-empty by the least fixed point of three clauses: a capability-released type is non-empty, a compiler-owned system resource type [STOR-3] is non-empty, and any type owning a non-empty type is non-empty.
+The graph has an edge from a node to a sub-node exactly when that sub-node's release action is non-empty.
+One walk performs both the compiler-derived release and `dispose`, and it visits exactly the nodes of that graph in [STOR-3]'s order — every field of a struct in declaration order, an enum's active variant's payload selected by the discriminant, every element of a run in ascending index order — releasing at each capability-released leaf to the store its own type names and spending that store's resolved provider, and running each other non-empty leaf's ordinary release action.
+A field, payload, or element whose release action is empty is never visited, and a container's elements are visited before its backing is released, so a release of a full container needs no emptiness premise.
+A type whose release graph has a cycle makes that walk's depth a runtime quantity rather than a compile-time constant.
+Refusing such a type at its `struct_decl` or `enum_decl` in every program, naming the cycle, with the restructuring `hold the cells in a run and link by index`, is DEFERRED with recorded delta [META-5]; its delta is numbered rules +0 and grammar productions +0.
+It is deferred rather than landed because it retires an accepted heap-backed recursive program in this repository's own corpus, and which programs a language rule retires is not a checker capability question.
+Until it lands, every judgment of this rule that reads the graph reads each node once, which terminates on a cyclic graph and is exactly the node set this version's release actions need.
+
+`dispose p;` [GRAM-4] is the early release: it runs at the point it is written the same walk the scope exit would run, and it names no capability.
+It is admitted only when `p`'s release graph contains at least one capability-released leaf, when this scope holds the capability of every such leaf, and when no node of that graph — `p`'s own type included — is linear by the modifier.
+A `p` whose release graph contains no capability-released leaf is a hard error citing PROV-6 at the complete `place`, with the restructuring `this value's release action reclaims no capability; let the scope exit run it`.
+A `p` one of whose release-graph nodes carries the `linear` modifier is a hard error citing PROV-6 at the complete `place`, naming that node, with the restructuring `take the value apart with let N(f: a, ...) = move v; and discharge the marked component`; the modifier can be written only on a struct or an enum, which the walk never treats as a leaf, so the condition is stated over nodes and `p`'s own type is one of them.
+For each capability-released leaf, let `'s` be the store region its type names and `P('s)` the provider type of `'s`'s store; the statement resolves the innermost live binding of this function whose type is `P('s)`, reached directly or through a borrow, and writes it.
+No such binding in scope, or only one reached through a shared borrow, is a hard error citing PROV-6 at the complete `place` with the missing parameter rendered.
+In this version every capability-released leaf names the ambient heap, whose provider is not a value, so no binding is resolved and no provider write is contributed.
+The statement is one consuming use of `p`'s root [OWN-1]: `p` must be rooted in a live own-mode binding of this function, so a `p` reached through a shared or an exclusive borrow receives [OWN-1]'s ordinary rejection at the complete `place`.
+That root's type must not be loan-bearing and its release graph must contain no loan-bearing node; either violation is a hard error citing PROV-6 at the complete `place`, with the restructuring `a view owns nothing and has no release action of its own; release the value it views`.
+The statement exhibits one write of `p`'s ultimate storage origin, the same origin [LIV-2] writes at a commit, beside the write of each resolved provider place, so [EFF-2] projects it exactly as it projects a commit's write.
+
+A consume of a proper sub-place of a value linear in this scope is a partial consume exactly when that sub-place is not reinitialised at the same statement's commit [LIV-2].
+A partial consume is a hard error citing PROV-6 at the complete consumed `place`, naming the residual, with the restructuring `destructure the whole value with let N(f: a, ...) = move v;`.
+The refusal is stated over the consume, so it reaches `dispose p.f;` exactly as it reaches `let x = move p.f;`.
+A [LIV-2] target list every member of which is reinitialised at that statement's one commit leaves no residual and is therefore not a partial consume; every other consume of a sub-place of such a value is.
+
+A declared region parameter `'s` is an arena region when the declaration writes a parameter or a result whose type places a store of `'s` under a region release [STOR-4], a heap region when it writes one whose store's provider is a value of heap type, and unconstrained otherwise; a value branded by an unconstrained `'s` is treated fail-closed as capability-released.
+A function that declares a region parameter `'s` may not let an own-mode value that owns, at any depth, a capability-released leaf branded `'s` reach a scope exit by a compiler-derived release unless `'s`'s class is arena or the declaration holds `'s`'s provider.
+Its four routes are exactly the ones above — move the value out by a result, destructure it whole, dispose it, or take the compiler-derived release — the last two available exactly under that condition.
+The check is at the declaration, over the body, once; a violation is a hard error citing PROV-6 at the `fn_decl`, naming the region, the binding, and both repairs.
+In this version the two region-branded types are `slice<'r, T>`, which is loan-bearing and owns nothing, and `arena<'r, T>`, whose storage is released with its region [STOR-4] and whose class is therefore arena, so no region-branded capability-released leaf exists and this obligation refuses no declaration this version can write.
+
+A region parameter written `'s: affine` or `'s: linear`, and a type parameter written `T: affine` or `T: linear` [GRAM-2], is bounded rather than unconstrained: the bound names the linearity class the declaration is written for, so the obligation above is checked once against the bound instead of fail-closed.
+`affine` names the class whose values need no capability at reclamation and are not marked by the modifier; `linear` names the class whose values need one or carry the modifier.
+The bound is always written and never inferred [FN-2].
+An instantiation whose type argument's class is not the written bound is a hard error citing PROV-6 at that instantiation's `call`, naming the parameter, the bound, and the argument.
+The same check over a region argument's store class is DEFERRED with recorded delta [META-5]; its delta is numbered rules +0 and grammar productions +0.
+It is deferred because every store a region names in this version is reclaimed by its own region release [STOR-4] and needs no capability, so the class of every region argument is fixed and the check decides nothing; the version whose stores have a provider value is the first in which a region argument has a class to compare.
+The bound is a linearity class and not a source contract: it satisfies no `contract` member, selects no behavior, and creates no bound-satisfaction judgment other than this one [FN-2, FN-3].
+
+The checked program retains, before lowering [DIAG-2], each scope's linear set, each `dispose` statement's walk and the write it exhibits, each destructuring consume's binder list, and each declaration bound that was checked.
+
 ## 6. Storage
 
 [STOR-1] Storage class is a function of type, stated once: `box<T>` is heap-owned; `arena<'r, T>` is arena-owned, bounded by `'r`; `buffer<T>` is heap-owned (one compiler-derived heap allocation, released by one compiler-derived free at owner scope-exit [STOR-3]); a `const` item [CONST-2] is immutable static storage (program-lifetime, read-only, never dropped); every other owned value is frame-resident (inline in its owner or the stack frame).
@@ -813,13 +898,14 @@ An external-resource termination under [SCOPE-3] likewise creates no source edge
 No exit duplicates an action already carried by an inner scope edge.
 
 The release action of a type is compiler-owned semantic data selected by that type, not a fixed enumeration of memory-reclamation actions.
+Which components of a value that action visits, and in which order, is [PROV-6]'s release graph and its one walk; the per-type actions below are the leaves that walk runs, and `dispose p;` runs the same walk earlier [PROV-6].
 A `box<T>` drop is one compiler-derived heap free.
 A `buffer<T>` drop with copy-typed elements is one compiler-derived heap free on every owner-scope exit, ordered like a `box<T>` drop.
 A `buffer<T>` drop with affine-typed elements [TYPE-2] is each element's compiler-derived drop in ascending index order followed by that same one heap free; for an element type whose own drop derives no action, the composite action remains exactly the heap free.
 An `arena<'r, T>` value's storage is released with its region [STOR-4].
 A `const` item [CONST-2] is never dropped.
 Every other frame-resident owned value [STOR-1] has no release action.
-Each of these memory-reclamation actions carries the empty effect row.
+Each of these memory-reclamation actions carries the empty effect row exactly when its walk spends no capability, and otherwise carries `writes` of each provider place the walk resolves [PROV-6, EFF-2]; in this version no provider is a value, so every one of them carries the empty row.
 
 A compiler-owned system resource type additionally fixes exactly one release action in its normative type contract.
 That action carries one ordinary state-effect row and one compiler-owned target contract.
@@ -1222,6 +1308,7 @@ A region-bearing argument is a hard error citing FN-2 at that complete `targ`, w
 Region-free arguments remain governed by the ordinary bound and substitution rules.
 The optional `generics` child admitted syntactically on a source `contract_decl` receives FN-3's explicit rejection and creates no contract template or contract monomorphization.
 A generic type parameter's written contract bound is admitted only when it resolves to the prelude `Int` or `Float` marker; a source-contract bound receives FN-3's explicit rejection and creates no bound-satisfaction or behavior-selection judgment.
+A written `affine` or `linear` bound on a type parameter or on a region parameter is not a contract bound at all: it is [PROV-6]'s linearity class, written and never inferred, read once at the declaration and checked at every instantiation by that rule, and it selects no behavior and admits no contract member.
 
 [FN-3] A source `contract` is a compile-time signature-and-law bundle.
 It has no `generics`; a contract declaration carrying that optional grammar child is a hard error citing FN-3.
@@ -1584,6 +1671,8 @@ A release action substitutes its released owner's resolved identity for the type
 
 This attribution reads only the release rows [STOR-3] fixes, and it does not retrofit memory reclamation into effect rows.
 A `box<T>` drop, a `buffer<T>` drop, an `arena<'r, T>` region release, and the absent drop of a `const` item [CONST-2] each carry the empty release row and therefore contribute nothing to any function's exhibited row; only a system resource type whose contract fixes a nonempty release row contributes one.
+A memory-reclamation action whose walk spends a capability instead carries `writes` of each provider place that walk resolves [PROV-6, STOR-3]; in this version no store's provider is a value, so no such action exists and the sentence above is the complete inventory.
+A `dispose p;` statement is not a release contribution: it is a written statement, so its one write of `p`'s ultimate storage origin and the write of each resolved provider place are body-syntactic contributions attributed exactly as a commit's write is [PROV-6, LIV-2].
 
 A [SET-1] commit is one write under this attribution, and a [SET-2] commit is one read and one write of the same target origin.
 A shared-holder commit is rejected [OWN-5] and contributes no accepted effect judgment.

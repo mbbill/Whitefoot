@@ -1044,6 +1044,128 @@ measure again from its own allocation.
 Replaces: publishing a caller's post-state through a `&uniq` parameter, and
 re-measuring a run the caller just handed away.
 
+## P22. Write `linear` for a logical obligation, and never for a storage one
+
+Status: active in v0.45. [PROV-6] states the criterion, the modifier and the
+two forms that discharge it.
+
+Problem: the writer wants a value that cannot be dropped by accident. The
+reflex is to reach for a marker on every owning type, and the reflex is wrong
+twice over: the storage obligation is already derived, and marking it costs a
+written statement at every scope exit of every value of that type, including
+in code the writer does not own.
+
+Pattern: mark nothing whose only cost of being dropped is memory. A run backed
+by a store is reclaimed by the compiler-derived release at every leaving edge
+[STOR-3, LIV-1], a view owns nothing, and any type that owns a marked value is
+linear by ownership without being marked itself. **Marking a store-derived
+type is always redundant and is a sign the criterion has been misread.** The
+modifier is for a *logical* obligation, and the whole test is one question:
+**would silently dropping this value be a bug?** The shapes that pass it are a
+lease from a pool, a transaction that must commit or roll back, a request that
+must be answered, a counted permit or ticket, and a builder that must be
+finished.
+
+```whitefoot
+linear struct Lease {
+  slot: u8;
+}
+
+fn hand_back(lease: own Lease) -> returned: own Lease pure {
+  return move lease;
+}
+```
+
+What the modifier buys is one sentence: it makes a discard **visible and
+deliberate**. The value must be moved out whole or destructured whole, and a
+destructuring is a legal consume that can throw the contents away — so a
+*directional* obligation, where the value must reach a specific holder, is
+bought by proving the return, not by the marker. Write the library's return
+operation as the proved spelling — total, under a `requires` the caller
+discharges from the take's own published relation — and the value has exactly
+one route on every path; the modifier is the visibility insurance beside that
+proof rather than a substitute for it.
+
+The admission condition is [PROV-6]'s: an affine nominal only. `linear` on a
+tag-only enum is a hard error, because such an enum is copy [OWN-1] and the
+marker would name a value the language duplicates on every use.
+
+Replaces: a marker on every owning type, and a comment asking the next writer
+to remember to use a value.
+
+## P23. Take the whole value apart in one statement
+
+Status: active in v0.45. [PROV-6] adds the form and states the refusal it
+repairs.
+
+Problem: the writer needs one field out of a value that must not be silently
+dropped. `let page = move chunk.page;` is a partial consume: [OWN-1] kills the
+whole root, and the residual — every other field — is abandoned in a scope
+that has no derived release to reclaim it. [PROV-6] refuses it and names the
+residual.
+
+Pattern: consume the whole value in one statement and bind every field.
+
+```whitefoot
+let Chunk(page: page, spare: spare) = move chunk;
+dispose page;
+```
+
+Every declared field is written exactly once, in declared order, as
+`field: binder`, exactly as a `match` arm writes its payload binders; each
+binder receives that field's declared type and `own` mode, and the binders are
+ordinary own bindings of the enclosing block. No residual survives the
+statement, so it derives no release of the consumed value's own storage.
+
+The one shape that is *not* a partial consume is the commit that puts a value
+back: `set chunk.page = exchange(taken: move chunk.page);` reads the target
+out and reinitialises it at the same statement's one commit [LIV-2], so it
+leaves no residual and the refusal does not reach it. That is the difference
+between transforming a component in place and abandoning the rest of the
+value.
+
+Replaces: a field-by-field sequence of moves out of a value whose first move
+already killed the root.
+
+## P24. `dispose` is the early release, not a free
+
+Status: active in v0.45. [PROV-6] states the statement and its admission.
+
+Problem: a value backed by a store stays alive to the end of its scope, and
+the scope is sometimes the whole program. Reserving a second run while the
+first is still live doubles the peak; a loop whose scope is the entry function
+holds every run it ever built.
+
+Pattern: run the release where the value stops being needed.
+
+```whitefoot
+let run = buffer_new(4_u64, 0_u8);
+let first = run[0_u64];
+dispose run;
+```
+
+`dispose p;` runs at the point it is written exactly the walk the scope exit
+would have run for `p`, and it names no capability: the store is determined by
+the value's own type and is never written. It is one consuming use of `p`'s
+root, so `p` must be rooted in a live own-mode binding of this function —
+content reached through a borrow may never be moved and this statement is no
+exception — and it exhibits one write of `p`'s ultimate storage origin, so the
+release a writer chooses appears in the effect row where the derived one does
+not.
+
+Three shapes it refuses, each for its own reason. A value whose release graph
+reaches no capability-released leaf has nothing to reclaim early; let the
+scope exit run it. A view owns nothing and has no release action of its own;
+release the value it views. And a value one of whose release-graph nodes
+carries the `linear` modifier must be taken apart with P23 first, so the
+marked component reaches a written statement rather than a silent walk.
+
+Do not reach for it by default. The derived release is correct and free; this
+is the statement for the one place where the peak is the point.
+
+Replaces: holding a value to the end of its scope because there was no way to
+say otherwise.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph

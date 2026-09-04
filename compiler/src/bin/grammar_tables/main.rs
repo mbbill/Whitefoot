@@ -122,6 +122,9 @@ const ENUM_ORDER: &[&str] = &[
     "proof_use",
     "compare_op",
     "clause_expr",
+    "dispose_stmt",
+    "region_param",
+    "linearity_bound",
 ];
 
 /// v0.33 deliberately replaces the old pseudo-statement contract grammar.

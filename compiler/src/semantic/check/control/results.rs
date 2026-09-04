@@ -151,6 +151,154 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
+    /// Checks `let N(f1: b1, ..., fk: bk) = move v;` [GRAM-4, PROV-6].
+    ///
+    /// The value is consumed whole and every declared field of `N` is bound
+    /// in declaration order, so no residual of `v` survives the statement and
+    /// nothing here derives a release of the consumed value's own storage.
+    pub(super) fn check_destructuring_consume(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        place: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut super::ControlCounters<'_>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let usage = self.use_at(node, LexicalUseRole::Construct)?;
+        let written = usage.spelling().to_owned();
+        let ResolvedTarget::Source {
+            declaration: nominal_declaration,
+            ..
+        } = usage.target()
+        else {
+            return self.destructuring_shape_rejection(node, &written);
+        };
+        let value =
+            self.check_consumed_place(function, node, place, bindings, scope.loops.len(), true)?;
+        if value.mode != CheckedMode::Own {
+            return self.issue_node(
+                SemanticRule::Own1,
+                node,
+                SemanticIssueKind::BareAffineUse {
+                    mechanical_fix: "destructure an own-mode value; a borrow owns nothing to take apart",
+                },
+            );
+        }
+        let CheckedType::Nominal(nominal) = value.expression.ty() else {
+            return self.destructuring_shape_rejection(node, &written);
+        };
+        if !self.nominal_instantiates(nominal, nominal_declaration)? {
+            return self.destructuring_shape_rejection(node, &written);
+        }
+        let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
+            return self.destructuring_shape_rejection(node, &written);
+        };
+        let fields = fields.clone();
+        let binders = match self
+            .tree
+            .first_child_with(node, Production::FieldbindList)?
+        {
+            Some(list) => self.tree.children_with(list, Production::Fieldbind)?,
+            None => Vec::new(),
+        };
+        if binders.len() != fields.len() {
+            return self.invalid_destructuring_fields(&written, &fields, node);
+        }
+        let whole_origins = self.state_origins_of_value(&value, bindings)?;
+        let mut binder_ids = Vec::with_capacity(fields.len());
+        for (ordinal, (written_binder, field)) in binders.into_iter().zip(&fields).enumerate() {
+            if self
+                .deferred_use_at(written_binder, crate::DeferredUseRole::MatchField)?
+                .spelling()
+                != field.name
+            {
+                return self.invalid_destructuring_fields(&written, &fields, written_binder);
+            }
+            let declaration = self.declaration_at(written_binder, crate::DeclarationRole::Let)?;
+            let binding = Self::allocate_binding(counters.next_binding)?;
+            counters
+                .binding_names
+                .push(declaration.spelling().to_owned());
+            let ordinal =
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            let state_origins = if self.type_carries_identity(field.ty)? {
+                whole_origins
+                    .clone()
+                    .map(|origins| origins.projected(&[ordinal]))
+            } else {
+                None
+            };
+            if bindings
+                .insert(
+                    declaration.id(),
+                    LocalBinding {
+                        binding,
+                        declaration: declaration.id(),
+                        mode: CheckedMode::Own,
+                        ty: field.ty,
+                        state_origins,
+                        live: true,
+                        loop_depth: scope.loops.len(),
+                        compiler_updated: false,
+                        borrow: None,
+                        slice: None,
+                        slice_loans: Vec::new(),
+                        suspended: false,
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            binder_ids.push((binding, field.ty));
+        }
+        Ok(Self::continuing_statement(
+            CheckedStatement::DestructuringLet {
+                node_path: self.tree.path(node)?.clone(),
+                bindings: binder_ids,
+                nominal,
+                value: value.expression,
+            },
+            value.effects,
+        ))
+    }
+
+    /// [TYPE-5] the destructuring consume's operand is not a value of the
+    /// nominal struct type it writes.
+    fn destructuring_shape_rejection<T>(
+        &self,
+        node: NodeId,
+        written: &str,
+    ) -> Result<T, CheckStop> {
+        self.issue_node(
+            SemanticRule::Type5,
+            node,
+            SemanticIssueKind::type_mismatch(
+                format!("an own value of struct type {written}"),
+                "a value of another type".to_owned(),
+            ),
+        )
+    }
+
+    /// [GRAM-10] the destructuring consume writes every declared field of its
+    /// nominal exactly once, in declared order.
+    fn invalid_destructuring_fields<T>(
+        &self,
+        written: &str,
+        fields: &[super::super::super::model::CheckedField],
+        node: NodeId,
+    ) -> Result<T, CheckStop> {
+        self.issue_node(
+            SemanticRule::Gram10,
+            node,
+            SemanticIssueKind::InvalidMatchFields {
+                variant: written.to_owned(),
+                declared_fields: fields.iter().map(|field| field.name.clone()).collect(),
+            },
+        )
+    }
+
     /// Checks `return e1, ..., en;` in a declaration that writes an ordered
     /// result list [GRAM-2, GRAM-4, FN-1, CALL-4].
     ///
@@ -198,7 +346,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     nominal,
                     fields,
                 },
-                drops: self.live_affine_drops(bindings, &HashSet::new())?,
+                drops: self.live_affine_drops(bindings, &HashSet::new(), node)?,
             },
             can_continue: false,
             effects,
@@ -266,7 +414,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if error_type != return_error_type {
             return self.invalid_propagation(propagate);
         }
-        let error_drops = self.live_affine_drops(bindings, &HashSet::new())?;
+        let error_drops = self.live_affine_drops(bindings, &HashSet::new(), propagate)?;
         let result_state_origins = self.state_origins_of_value(&value, bindings)?;
         let ok_state_origins = result_state_origins
             .clone()

@@ -174,6 +174,11 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("<=", "LessEqual"),
         (">=", "GreaterEqual"),
         ("::", "ColonColon"),
+        // v0.45 [PROV-6]: the declaration modifier, the linearity bound
+        // alternatives, and the early-release statement.
+        ("linear", "Linear"),
+        ("affine", "Affine"),
+        ("dispose", "Dispose"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;

@@ -10,33 +10,40 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 
 /// The committed inventory's own shape. That this data belongs to the active
 /// specification is checked by regenerating it from the active grammar, in
-/// `committed_tables_are_derived_from_the_active_grammar`. The 5,868 select
-/// rows are the complete two-position derivation of the current 84
+/// `committed_tables_are_derived_from_the_active_grammar`. The 6,180 select
+/// rows are the complete two-position derivation of the current 87
 /// productions, not a separately chosen test allowance.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 84);
-    assert_eq!(DECISIONS.len(), 129);
-    assert_eq!(SELECT_ROWS.len(), 5_989);
-    assert_eq!(diagnostic_terminal_order().len(), 107);
+    assert_eq!(productions().len(), 87);
+    assert_eq!(DECISIONS.len(), 135);
+    assert_eq!(SELECT_ROWS.len(), 6_180);
+    assert_eq!(diagnostic_terminal_order().len(), 110);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
     assert_eq!(productions()[13], Production::RequiresClause);
     assert_eq!(productions()[14], Production::EnsuresClause);
     assert_eq!(productions()[15], Production::ResultRoute);
-    assert_eq!(productions()[46], Production::ForStmt);
-    assert_eq!(productions()[47], Production::ForBinding);
-    assert_eq!(productions()[48], Production::HeaderInvariant);
-    assert_eq!(productions()[49], Production::InvariantStmt);
-    assert_eq!(productions()[50], Production::ProofUse);
+    // [PROV-6] `region_param` and `linearity_bound` are defined in [GRAM-2]
+    // after `region_params`, so every later production moves two places down
+    // the specification order, and `dispose_stmt`, defined in [GRAM-4] after
+    // `give_stmt`, moves everything after it one place further.
+    assert_eq!(productions()[27], Production::RegionParam);
+    assert_eq!(productions()[28], Production::LinearityBound);
+    assert_eq!(productions()[48], Production::ForStmt);
+    assert_eq!(productions()[49], Production::ForBinding);
+    assert_eq!(productions()[50], Production::HeaderInvariant);
+    assert_eq!(productions()[51], Production::InvariantStmt);
+    assert_eq!(productions()[52], Production::ProofUse);
+    assert_eq!(productions()[60], Production::DisposeStmt);
     // `compare_op` sits between `infix_op` and `atom` in [GRAM-5], so every
     // later production moves one place down the specification order; v0.44's
     // `clause_expr` sits between `atom_list` and `place` and moves the seven
     // after it one place further.
-    assert_eq!(productions()[66], Production::CompareOp);
-    assert_eq!(productions()[75], Production::ClauseExpr);
-    assert_eq!(productions()[82], Production::Effect);
-    assert_eq!(productions()[83], Production::EffectPath);
+    assert_eq!(productions()[69], Production::CompareOp);
+    assert_eq!(productions()[78], Production::ClauseExpr);
+    assert_eq!(productions()[85], Production::Effect);
+    assert_eq!(productions()[86], Production::EffectPath);
     assert_eq!(Production::ForStmt.index(), 68);
     assert_eq!(Production::ForBinding.index(), 69);
     assert_eq!(Production::HeaderInvariant.index(), 70);
@@ -52,53 +59,58 @@ fn complete_inventory_is_pinned() {
     assert_eq!(Production::AffineAddOp.index(), 80);
     assert_eq!(Production::ProofUse.index(), 81);
     assert_eq!(Production::ClauseExpr.index(), 83);
+    // [PROV-6] the three added productions take the enum's last three slots,
+    // so no earlier compiler-local index moves.
+    assert_eq!(Production::DisposeStmt.index(), 84);
+    assert_eq!(Production::RegionParam.index(), 85);
+    assert_eq!(Production::LinearityBound.index(), 86);
     // [LIV-2] the `set` target list's value list is its own repetition, and
     // every decision after it moves one place down the table.
-    assert_eq!(DECISIONS[64].production(), Production::SetStmt);
-    assert_eq!(DECISIONS[64].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[66].production(), Production::LoopStmt);
-    assert_eq!(DECISIONS[66].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[67].production(), Production::LoopStmt);
-    assert_eq!(DECISIONS[67].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[68].production(), Production::LoopStmt);
-    assert_eq!(DECISIONS[68].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[70].production(), Production::ForStmt);
-    assert_eq!(DECISIONS[70].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[71].production(), Production::ForStmt);
-    assert_eq!(DECISIONS[71].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[73].production(), Production::InvariantStmt);
-    assert_eq!(DECISIONS[73].kind(), DecisionKind::Choice);
-    assert_eq!(DECISIONS[74].production(), Production::InvariantStmt);
-    assert_eq!(DECISIONS[74].kind(), DecisionKind::Repeat1);
-    assert_eq!(DECISIONS[81].production(), Production::BreakStmt);
-    assert_eq!(DECISIONS[81].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[70].production(), Production::SetStmt);
+    assert_eq!(DECISIONS[70].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[72].production(), Production::LoopStmt);
+    assert_eq!(DECISIONS[72].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[73].production(), Production::LoopStmt);
+    assert_eq!(DECISIONS[73].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[74].production(), Production::LoopStmt);
+    assert_eq!(DECISIONS[74].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[76].production(), Production::ForStmt);
+    assert_eq!(DECISIONS[76].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[77].production(), Production::ForStmt);
+    assert_eq!(DECISIONS[77].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[79].production(), Production::InvariantStmt);
+    assert_eq!(DECISIONS[79].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[80].production(), Production::InvariantStmt);
+    assert_eq!(DECISIONS[80].kind(), DecisionKind::Repeat1);
+    assert_eq!(DECISIONS[87].production(), Production::BreakStmt);
+    assert_eq!(DECISIONS[87].kind(), DecisionKind::Optional);
     // [FORM-8] optional region spellings: the `slice` and `arena` type arms,
     // the two `mode` borrow arms, `region_stmt`, and the two `borrow_expr` arms.
-    assert_eq!(DECISIONS[43].production(), Production::Type);
-    assert_eq!(DECISIONS[43].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[44].production(), Production::Type);
-    assert_eq!(DECISIONS[44].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[47].production(), Production::Mode);
-    assert_eq!(DECISIONS[47].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[48].production(), Production::Mode);
-    assert_eq!(DECISIONS[48].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[82].production(), Production::RegionStmt);
-    assert_eq!(DECISIONS[82].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[103].production(), Production::BorrowExpr);
-    assert_eq!(DECISIONS[103].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[104].production(), Production::BorrowExpr);
-    assert_eq!(DECISIONS[104].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[19].production(), Production::ContractBlock);
-    assert_eq!(DECISIONS[19].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[20].production(), Production::ContractBlock);
-    assert_eq!(DECISIONS[20].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[49].production(), Production::Type);
+    assert_eq!(DECISIONS[49].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[50].production(), Production::Type);
+    assert_eq!(DECISIONS[50].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[52].production(), Production::Mode);
+    assert_eq!(DECISIONS[52].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[53].production(), Production::Mode);
+    assert_eq!(DECISIONS[53].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[88].production(), Production::RegionStmt);
+    assert_eq!(DECISIONS[88].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[109].production(), Production::BorrowExpr);
+    assert_eq!(DECISIONS[109].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[110].production(), Production::BorrowExpr);
+    assert_eq!(DECISIONS[110].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[21].production(), Production::ContractBlock);
     assert_eq!(DECISIONS[21].kind(), DecisionKind::Repeat0);
-    assert_eq!(DECISIONS[22].production(), Production::EnsuresClause);
-    assert_eq!(DECISIONS[22].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[22].production(), Production::ContractBlock);
+    assert_eq!(DECISIONS[22].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[23].production(), Production::ContractBlock);
+    assert_eq!(DECISIONS[23].kind(), DecisionKind::Repeat0);
+    assert_eq!(DECISIONS[24].production(), Production::EnsuresClause);
+    assert_eq!(DECISIONS[24].kind(), DecisionKind::Optional);
     // [CALL-4] the route's optional ordinal binder is its own decision.
-    assert_eq!(DECISIONS[23].production(), Production::ResultRoute);
-    assert_eq!(DECISIONS[23].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[25].production(), Production::ResultRoute);
+    assert_eq!(DECISIONS[25].kind(), DecisionKind::Optional);
 }
 
 #[test]
@@ -143,7 +155,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 129);
+    assert_eq!(decisions, 135);
 }
 
 #[test]
@@ -211,7 +223,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 129);
+    assert_eq!(DECISIONS.len(), 135);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -256,6 +268,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 5_989);
+    assert_eq!(total_rows, 6_180);
     assert!(saw_atom_only);
 }

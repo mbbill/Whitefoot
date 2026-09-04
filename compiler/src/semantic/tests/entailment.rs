@@ -135,6 +135,7 @@ fn collect_direct_calls<'checked>(
             | CheckedStatement::Replace { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. }
+            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. } => record(value, callee, calls),
             CheckedStatement::SetList { values, .. } => {
                 for value in values.expressions() {

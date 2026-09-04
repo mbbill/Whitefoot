@@ -1,0 +1,13 @@
+linear struct Chunk {
+  page: buffer<u8>;
+  spare: u8;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "PROV-6: a consume of a proper sub-place of a value linear in this scope, with no commit reinitialising that sub-place, abandons the residual the obligation was written for. The refusal is stated over the consume and names the destructuring consume as its repair.";
+  let run = buffer_new(4_u64, 0_u8);
+  let chunk = Chunk(page: move run, spare: 7_u8);
+  let page = move chunk.page;
+  dispose page;
+  return exit_status(code: 0_u8);
+}

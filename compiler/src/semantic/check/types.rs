@@ -875,6 +875,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 // A nested value initializer owns its own give set.
                 CheckedStatement::ValueMatchLet { .. } => {}
+                CheckedStatement::Dispose { .. } => {}
                 CheckedStatement::Loop { body, .. }
                 | CheckedStatement::CountedRange { body, .. }
                 | CheckedStatement::Region { body, .. } => {

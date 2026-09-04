@@ -1,0 +1,20 @@
+struct Pair {
+  page: buffer<u8>;
+  spare: u64;
+}
+
+fn look(holder: &Pair) -> size: own u64 reads(holder) {
+  doc "PROV-6: `dispose p;` is one consuming use of `p`'s root [OWN-1], so `p` must be rooted in a live own-mode binding of this function. Content reached through a borrow may never be moved, and this statement is no exception to that.";
+  dispose deref(holder);
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "The caller.";
+  let run = buffer_new(4_u64, 0_u8);
+  let pair = Pair(page: move run, spare: 1_u64);
+  region {
+    let n = look(holder: &pair);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -751,9 +751,16 @@ fn declaration_visibility(
         DeclarationRole::NamedConst
         | DeclarationRole::ConstGeneric
         | DeclarationRole::Parameter
-        | DeclarationRole::Let
         | DeclarationRole::CountedBinder
         | DeclarationRole::Invariant => node_end(topology, role.owner)?.value(),
+        // [PROV-6, GRAM-4] a destructuring consume's binder is owned by its
+        // `fieldbind`, and the whole statement is where it becomes visible,
+        // exactly as an ordinary `let` binder's own statement is.
+        DeclarationRole::Let => {
+            let owner = ancestor_with_production(topology, role.owner, Production::LetStmt)
+                .unwrap_or(role.owner);
+            node_end(topology, owner)?.value()
+        }
         DeclarationRole::MatchBinder => {
             let list = ancestor_with_production(topology, role.owner, Production::FieldbindList)
                 .ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;

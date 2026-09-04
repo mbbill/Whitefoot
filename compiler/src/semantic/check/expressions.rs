@@ -1129,6 +1129,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     access_kind,
                     use_node,
                 )?;
+                // [PROV-6] a consume of a proper sub-place of a value linear
+                // in this scope, with no commit reinitialising that sub-place,
+                // is a partial consume: the residual leaf is abandoned in a
+                // scope that has no derived release to reclaim it.
+                if !copy && !read_out && !fields.is_empty() {
+                    self.reject_partial_consume(local.ty, &fields, use_node)?;
+                }
                 let residual_drops = if copy || read_out || fields.is_empty() {
                     Vec::new()
                 } else {
@@ -1459,6 +1466,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
     ) -> Result<TypedExpression, CheckStop> {
         self.check_consuming_expression(function, node, bindings, loop_depth)
+    }
+
+    /// [PROV-6] the operand of a `dispose` statement or of a destructuring
+    /// consume: an ordinary consuming place use, judged by [OWN-1] exactly as
+    /// every other consuming position is.
+    pub(super) fn check_consumed_place(
+        &self,
+        function: &FunctionSignature,
+        use_node: NodeId,
+        place: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        explicit_move: bool,
+    ) -> Result<TypedExpression, CheckStop> {
+        self.check_place_use(
+            function,
+            use_node,
+            place,
+            bindings,
+            PlaceUseOptions {
+                explicit_move,
+                context: PlaceUseContext::Consuming,
+                loop_depth,
+            },
+        )
     }
 
     pub(super) fn check_construct(

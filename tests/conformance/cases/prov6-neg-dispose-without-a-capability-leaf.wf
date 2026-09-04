@@ -1,0 +1,6 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6: `dispose p;` is admitted only when `p`'s release graph contains at least one capability-released leaf. A frame-resident value's release action reclaims no capability, so there is nothing for the early release to run and the scope exit owns the whole disposition.";
+  let count = 4_u64;
+  dispose count;
+  return exit_status(code: 0_u8);
+}

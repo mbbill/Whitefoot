@@ -1,0 +1,9 @@
+linear struct Lease {
+  slot: u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6: a value linear in this scope is live on the edge leaving it, where no compiler-derived release exists to carry it. The modifier holds in every scope, so the two routes that remain are the whole move and the whole destructuring.";
+  let lease = Lease(slot: 3_u8);
+  return exit_status(code: 0_u8);
+}

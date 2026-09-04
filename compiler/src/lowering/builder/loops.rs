@@ -893,6 +893,7 @@ fn statement_uses_any(statement: &CheckedStatement, bindings: &HashSet<BindingId
         CheckedStatement::Let { value, .. }
         | CheckedStatement::DestructuringLet { value, .. }
         | CheckedStatement::Evaluate(value)
+        | CheckedStatement::Dispose { value, .. }
         | CheckedStatement::DropExpression { value, .. } => expression_uses_any(value, bindings),
         CheckedStatement::PropagateLet {
             scrutinee,

@@ -156,6 +156,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name,
             kind: CheckedNominalKind::Box { referent },
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -239,6 +240,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name: format!("({})", rendered.join(", ")),
             kind: CheckedNominalKind::Struct { fields },
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -281,6 +283,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name,
             kind: CheckedNominalKind::Arena { region, content },
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -316,6 +319,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name: "arena-region-storage".to_owned(),
             kind: CheckedNominalKind::ArenaStorage,
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -391,6 +395,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name: nominal.spelling.to_owned(),
             kind,
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);
@@ -557,6 +562,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             name,
             kind: CheckedNominalKind::Enum { variants },
+            linear: false,
         });
         self.nominal_nodes.push(None);
         self.nominal_states.push(2);

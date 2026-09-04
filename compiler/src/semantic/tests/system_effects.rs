@@ -183,14 +183,14 @@ fn a_pure_contract_member_cannot_bind_a_release_effectful_function() {
     // by presence: a `pure` member cannot bind a function that exhibits a
     // category only through release.
     assert_rule(
-        b"contract Disposer {\n  fn dispose(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn release(file: own ReadFile) -> result: own unit pure;\n}\n\nconform u64: Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn3,
         SemanticIssueKind::IncompatibleConformanceFunction,
     );
     // The same member row binds the same function when both declare the two
     // categories, so the presence comparison admits as well as rejects.
     assert_complete(
-        b"contract Disposer {\n  fn dispose(item: own ReadFile) -> result: own unit writes(item);\n}\n\nconform u64: Disposer {\n  dispose = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"contract Disposer {\n  fn release(item: own ReadFile) -> result: own unit writes(item);\n}\n\nconform u64: Disposer {\n  release = release_read_file;\n}\n\nfn release_read_file(file: own ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -511,7 +511,7 @@ fn pass_pair(pair: own Pair) -> result: own Pair pure {
   return move pair;
 }
 
-fn dispose(pair: own Pair) -> result: own unit writes(pair.first, pair.second) {
+fn release_pair(pair: own Pair) -> result: own unit writes(pair.first, pair.second) {
   let same = pass_pair(pair: move pair);
   return unit;
 }
@@ -675,7 +675,7 @@ fn direct_aggregate_construction_releases_every_input_leaf() {
   second: ReadFile;
 }
 
-fn dispose(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
+fn release_both(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first, second) {
   let pair = Pair(first: move first, second: move second);
   return unit;
 }
@@ -690,7 +690,7 @@ command fn main() -> status: own ExitStatus pure {
   second: ReadFile;
 }
 
-fn dispose(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first) {
+fn release_both(first: own ReadFile, second: own ReadFile) -> result: own unit writes(first) {
   let pair = Pair(first: move first, second: move second);
   return unit;
 }

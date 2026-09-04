@@ -1,9 +1,9 @@
 contract Disposer {
-  fn dispose(file: own ReadFile) -> function_result: own unit pure;
+  fn release(file: own ReadFile) -> function_result: own unit pure;
 }
 
 conform u64: Disposer {
-  dispose = release_read_file;
+  release = release_read_file;
 }
 
 fn release_read_file(file: own ReadFile) -> function_result: own unit writes(file) {

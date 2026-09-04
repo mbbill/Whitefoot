@@ -52,9 +52,9 @@ interval it stands for, so nested joins reach the flat join's image and
 acceptance stops depending on the shape of the control join. The repair only
 adds images: no program v0.42 accepted is refused.
 
-v0.45 adds six rules and retires none (142 remain), and adds one grammar atom,
-`is`. A `fn_decl` may write an ordered result list, `-> (kept: own u64, spare:
-own u64)`, and a caller names its ordinals again with a destructuring `let`
+v0.45 adds seven rules and retires none (143 remain), and adds four grammar
+atoms: `is`, `dispose`, `linear` and `affine`. A `fn_decl` may write an
+ordered result list, `-> (kept: own u64, spare: own u64)`, and a caller names its ordinals again with a destructuring `let`
 binder list or a `set` target list; a `return` writes one expression per
 declared result. [FN-1] numbers the ordinals and reads every result judgment per
 ordinal, [TYPE-5] derives binder i and target i from ordinal i, and [SET-1]
@@ -104,6 +104,21 @@ pairwise-distinct-roots placeholder; and exact arity and type. `set p =
 f(x: move p);` is the transformation in place at a binding, a field, a `deref`
 and a subscript alike, and `set (p, q) = move q, move p;` is the swap. The
 batch that carried it is B4 of the same design.
+
+The same version adds that design's linearity half. [PROV-6] makes a value
+linear in a scope exactly when it owns, at any depth, a value whose release
+action requires a capability that scope does not hold or a value of a nominal
+declared `linear`, and affine there otherwise. One release graph is what the
+compiler-derived release and the added `dispose p;` both walk; `let N(f: a,
+...) = move v;` consumes a value of nominal struct type whole; a consume of a
+proper sub-place of a linear value is refused unless the same statement's
+commit reinitialises it; and a written `affine` or `linear` bound on a generic
+or region parameter states the class a declaration was written for, checked at
+every instantiation. Three grammar atoms arrive with it -- `dispose`, `linear`
+and `affine` -- and [FORM-3] excludes all three from IDENT. In this version the
+ambient heap is the only store whose reclamation is a release and it is not a
+value, so every scope holds it and nothing is linear here by the capability
+criterion. The batch that carried it is B5 of the same design.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`

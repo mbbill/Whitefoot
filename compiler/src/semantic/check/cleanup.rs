@@ -110,6 +110,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedStatement::DestructuringLet { value, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
                 }
+                // [PROV-6, EFF-2] `dispose p;` is a written statement, so the
+                // walk it runs contributes to the body-syntactic row where
+                // the checker formed it, not to the release contribution.
+                CheckedStatement::Dispose { value, .. } => {
+                    self.collect_expression_release_sites(value, sites)?;
+                }
                 CheckedStatement::SetList {
                     targets, values, ..
                 } => {
@@ -328,7 +334,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Releases carry target execution metadata, not source effect atoms. A
     /// state-writing release must carry the ordinary structural origins of
     /// every state leaf it releases.
-    fn effects_of_row(
+    pub(super) fn effects_of_row(
         &self,
         row: SystemReleaseRow,
         origins: Option<&super::super::model::CheckedStateOrigins>,

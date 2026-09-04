@@ -320,21 +320,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return Ok(Vec::new());
         };
-        let path = self.tree.path(node)?;
-        let mut declarations = self
-            .resolved
-            .declarations()
-            .iter()
-            .filter(|declaration| {
-                declaration.role() == DeclarationRole::RegionParameter
-                    && declaration.origin().node() == path
-            })
-            .collect::<Vec<_>>();
-        declarations.sort_by_key(|declaration| declaration.origin().role_ordinal());
-        Ok(declarations
-            .into_iter()
-            .map(|declaration| declaration.id())
-            .collect())
+        // [GRAM-2, PROV-6] each member is one `region_param`, so the written
+        // order is the child order and each child owns exactly one region.
+        let mut declarations = Vec::new();
+        for member in self.tree.children_with(node, Production::RegionParam)? {
+            // [PROV-6, S32] a member may carry a linearity bound, read here at
+            // the declaration and checked at every instantiation. Every store
+            // a region names in this version is reclaimed by its own region
+            // release [STOR-4] and needs no capability, so no region argument
+            // fails a bound; the instantiation check lands with the version
+            // whose stores have a provider value.
+            let _bound = self.written_linearity_bound(member)?;
+            declarations.push(
+                self.declaration_at(member, DeclarationRole::RegionParameter)?
+                    .id(),
+            );
+        }
+        Ok(declarations)
     }
 
     /// Whether one node writes a REGIONID of its own.

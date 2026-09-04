@@ -517,6 +517,13 @@ impl<'check> Survey<'check, '_> {
             CheckedStatement::DestructuringLet { .. } | CheckedStatement::SetList { .. } => {
                 self.refuse_form("a statement that binds an ordered result list");
             }
+            // [PROV-6] the iteration footprint describes one written target
+            // per statement, and a release walk writes every capability-
+            // released leaf the value reaches, so this form is refused rather
+            // than given a footprint that does not describe it.
+            CheckedStatement::Dispose { .. } => {
+                self.refuse_form("a statement that runs a release walk");
+            }
             CheckedStatement::Set {
                 node_path,
                 target,

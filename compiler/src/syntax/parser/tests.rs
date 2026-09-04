@@ -556,6 +556,8 @@ i: f32; j: f64; k: unit; l: Name<T, 'r, n>; m: array<u8, n>;
 n: slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 }
 enum Choice<T> { doc "choice"; None(); Some(value: T); }
+linear struct Lease { doc "lease"; slot: u8; }
+linear enum Ticket { doc "ticket"; Open(value: u8); }
 contract Contract<T> {
 doc "contract";
 fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(heap arena 'r);
@@ -571,7 +573,7 @@ command fn entry(command.args as arguments: own i32, command.cwd as directory: o
 {
 return unit;
 }
-fn everything['r](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
+fn everything['r: affine, 's: linear](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
 -> result: own unit reads(shared, unique), writes(unique), allocates(heap arena 'r)
 contract {
 define pre = 0_i32 +wrap 1_i32;
@@ -609,6 +611,8 @@ use 0_i32 <= 0_i32;
 }
 region { give ordinary; }
 let named = ordinary;
+let Name(value: destructured) = move made;
+dispose named;
 match ordinary { Some(value: payload) => { give payload; } }
 if compared { let then_branch = ordinary; } else if chosen { break @again; } else { return unit; }
 }
@@ -639,7 +643,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 84);
+    assert_eq!(productions().len(), 87);
     assert_eq!(
         parsed
             .tree

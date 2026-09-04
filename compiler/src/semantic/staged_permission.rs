@@ -601,6 +601,7 @@ fn statement_expressions(statement: &CheckedStatement) -> Vec<&CheckedExpression
         CheckedStatement::Let { value, .. }
         | CheckedStatement::DestructuringLet { value, .. }
         | CheckedStatement::Evaluate(value)
+        | CheckedStatement::Dispose { value, .. }
         | CheckedStatement::DropExpression { value, .. }
         | CheckedStatement::Return { value, .. }
         | CheckedStatement::Give { value, .. } => vec![value],
@@ -828,6 +829,7 @@ impl<'check> FlowBuilder<'check> {
             | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. } => {
                 let node = self.new_node(statement);
                 self.set(node, vec![next], None);
@@ -1141,6 +1143,12 @@ impl<'check> StagedSurvey<'check, '_> {
             CheckedStatement::SetList { .. } => self.refuse_form(
                 "a `set` target list",
                 "commit the call's result ordinals in separate statements, so each footprint is read through a target this judgment resolves",
+            ),
+            // [PROV-6] a release walk writes every capability-released leaf
+            // its value reaches, which the staged window does not describe.
+            CheckedStatement::Dispose { .. } => self.refuse_form(
+                "a `dispose` statement",
+                "release the value at its scope exit, so no written statement performs a walk this judgment must describe",
             ),
             CheckedStatement::PropagateLet { scrutinee, .. }
             | CheckedStatement::Match { scrutinee, .. }
@@ -1682,6 +1690,7 @@ fn statement_citation(statement: &CheckedStatement) -> Option<NodePath> {
         | CheckedStatement::CountedRange { node_path, .. } => Some(node_path.clone()),
         CheckedStatement::Proof(proof) => Some(proof.node_path.clone()),
         CheckedStatement::Match { scrutinee, .. } => expression_citation(scrutinee),
+        CheckedStatement::Dispose { node_path, .. } => Some(node_path.clone()),
         CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
             expression_citation(value)
         }

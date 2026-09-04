@@ -127,12 +127,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         } else {
             Vec::new()
         };
+        let linear = self.declaration_is_linear(node)?;
         let template = NominalTemplate {
             declaration: declaration_id,
             node,
             name: declaration.spelling().to_owned(),
             role,
             generic_parameters,
+            linear,
         };
         let template_index = self.nominal_templates.len();
         if self
@@ -181,7 +183,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.register_prelude_nominals()?;
         self.complete_pending_source_nominals()?;
         self.reject_recursive_nominal_layouts()?;
-        self.validate_nominal_templates()
+        self.validate_nominal_templates()?;
+        self.validate_linear_modifiers()
+    }
+
+    /// [PROV-6] the `linear` modifier is admitted only on a nominal [OWN-1]
+    /// classifies as affine; a tag-only enum is copy and the modifier would
+    /// mark a value the language duplicates.
+    fn validate_linear_modifiers(&self) -> Result<(), CheckStop> {
+        for index in 0..self.nominals.len() {
+            let id = NominalId(
+                u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            );
+            let Some(node) = self.nominal_nodes.get(index).copied().flatten() else {
+                continue;
+            };
+            self.check_linear_modifier_admission(id, node)?;
+        }
+        Ok(())
     }
 
     pub(super) fn ensure_nominals_in_node(
@@ -641,12 +660,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             },
+            linear: template.linear,
         });
         self.nominals_by_declaration
             .entry(template.declaration)
             .or_default()
             .push(NominalInstance { id, substitution });
         Ok(id)
+    }
+
+    /// [TYPE-6] whether this nominal is an instance of that source
+    /// declaration.
+    pub(super) fn nominal_instantiates(
+        &self,
+        nominal: crate::NominalId,
+        declaration: crate::DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(template) = self.nominal_templates_by_declaration.get(&declaration) else {
+            return Ok(false);
+        };
+        Ok(self
+            .source_nominal_instances
+            .get(nominal.0 as usize)
+            .and_then(|entry| entry.as_ref())
+            .is_some_and(|(index, _)| index == template))
     }
 
     pub(super) fn ensure_source_nominal_instance(

@@ -2997,6 +2997,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
+            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. }
@@ -3061,6 +3062,7 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_)
             | CheckedStatement::Loop { .. }
@@ -10598,7 +10600,9 @@ impl Analyzer<'_, '_> {
                 }
                 true
             }
-            CheckedStatement::Evaluate(value) | CheckedStatement::DropExpression { value, .. } => {
+            CheckedStatement::Evaluate(value)
+            | CheckedStatement::Dispose { value, .. }
+            | CheckedStatement::DropExpression { value, .. } => {
                 let _ = self.expression_effects(value, state);
                 true
             }
@@ -11488,6 +11492,7 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_) => normal_reaches,
             CheckedStatement::Return { .. } => false,
@@ -11573,6 +11578,7 @@ impl Analyzer<'_, '_> {
             CheckedStatement::Let { value, .. }
             | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
+            | CheckedStatement::Dispose { value, .. }
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::PropagateLet {
                 scrutinee: value, ..

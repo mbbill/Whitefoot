@@ -239,7 +239,10 @@ fn classify_node(
                 _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
             }
         }
-        Production::RegionParams => add_all(
+        // [PROV-6] one `region_param` owns one REGIONID and, when written,
+        // its linearity bound; the bound is a fixed atom and satisfies no
+        // name predicate, so the name list here is still exactly the region.
+        Production::RegionParam => add_all(
             classified,
             owner,
             &names,
@@ -336,6 +339,28 @@ fn classify_node(
                 owner,
                 &names,
                 RawRoleKind::LexicalUse(role),
+                roles,
+                complete_counts,
+            )?;
+        }
+        // [PROV-6, GRAM-4] a destructuring consume writes the nominal it takes
+        // apart where every other `let` writes its binders; the TYPEID is a use
+        // of that nominal and the binders belong to the `fieldbind` list below.
+        Production::LetStmt
+            if names
+                .first()
+                .copied()
+                .and_then(|first| name_predicate(classified, first))
+                == Some(TerminalPredicate::TypeIdentifier) =>
+        {
+            let [nominal] = names.as_slice() else {
+                return Err(ResolutionCompilerFailure::InvalidRoleShape);
+            };
+            add_complete(
+                classified,
+                owner,
+                *nominal,
+                RawRoleKind::LexicalUse(LexicalUseRole::Construct),
                 roles,
                 complete_counts,
             )?;
@@ -498,6 +523,12 @@ fn classify_node(
             if let [field, binder] = names.as_slice() {
                 let selector_field =
                     ancestor_with_production(topology, owner, Production::ResultRoute).is_some();
+                // [PROV-6, GRAM-4] a destructuring consume's binders are
+                // ordinary `let` bindings of the enclosing block, exactly as
+                // [CALL-4]'s binder list's are; only a `match` arm's binder is
+                // arm-scoped and judged by [GRAM-10]'s freshness rule.
+                let destructuring_binder = !selector_field
+                    && ancestor_with_production(topology, owner, Production::Arm).is_none();
                 add_complete(
                     classified,
                     owner,
@@ -516,6 +547,8 @@ fn classify_node(
                     *binder,
                     if selector_field {
                         RawRoleKind::Selector(SelectorRole::VariantCandidate)
+                    } else if destructuring_binder {
+                        RawRoleKind::Declaration(DeclarationRole::Let)
                     } else {
                         RawRoleKind::Declaration(DeclarationRole::MatchBinder)
                     },

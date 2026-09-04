@@ -1597,6 +1597,22 @@ at every one. **`propagate` is [LIV-1]'s judgment and
 this rule does not restate it**; the seventh draft's second, wider sentence here refused a
 `propagate` on account of a binding it had nothing to do with, and is deleted.
 
+> **Landed 2026-09-04 (B5), with five halves not exercised and one clause deferred.**
+> [PROV-6] is in the active specification and in the compiler. The criterion, the release
+> graph and its walk, the modifier and its admission condition, the two routes, `dispose`
+> with its four refusals and its storage-origin write, the destructuring consume, the
+> partial-consume refusal with its [LIV-2] exception, and [S32]'s bound on a type and on a
+> region parameter are all landed; §6.0f lists the sixteen conformance cases. Five halves
+> have no instance in a version whose only store is the ambient heap, which is not a value
+> and which every scope therefore holds: the `heap`-parameter-removed rejection naming the
+> scope, `writes` of a resolved provider in a row, `DisposeHasNoProvider`, this rule's
+> refusal of a heap-branded instantiation at a bounded region parameter, and the
+> arena-backed sibling of probe `x6`. Each is recorded for **B7/B9**. The release graph's
+> **acyclicity refusal** is stated and DEFERRED with a zero delta: landing it retires
+> `tests/programs/recursive_tree.wf`, which this compiler accepts today, and which corpus
+> programs a language rule retires is the owner's disposition rather than a checker
+> capability. The walk itself visits each node once, so it terminates on a cyclic graph.
+
 *Judgment:* the linearity predicate, computed per scope from the criterion above, which
 is the judgment [LIV-1], [BLK-1], [STK-1] and [RES-10] read; the modifier's
 affine-nominal admission; `dispose`'s admission, resolution and two operand conditions;
@@ -5798,6 +5814,78 @@ blind-writer trial — is deleted. The program it was written for is now accepte
 projected target whose root the right-hand side really did consume the rejection is
 `[OWN-1]`'s dead root, which offers the fresh `let` in its own sentence. `docs/patterns.md`
 P17 is rewritten around the admitted commit for the same reason.
+
+### 6.0f B5 landed (v0.45)
+
+**Linearity, the release graph, the early release and the two destructuring forms are in
+the compiler.** `[PROV-6]` is one added rule in the active specification, and `[FORM-2]`,
+`[TYPE-2]`, `[TYPE-3]`, `[OWN-1]`, `[LIV-1]`, `[STOR-3]`, `[FN-2]` and `[EFF-2]` are
+amended in place to read it. Three grammar productions are added — `dispose_stmt`,
+`region_param` and `linearity_bound` — and three lowercase atoms with them: `dispose`,
+`linear` and `affine`, which `[FORM-3]` therefore excludes from IDENT, so no source
+declaration, contract member or callee may be spelled any of the three any more. `[S12]`,
+`[S13]`, `[S18]` and `[S32]` are the whole of the added surface, each as the owner adopted
+it, and `dispose p;` takes no `using` list. Sixteen conformance cases carry it:
+
+```text
+| case                                                     | expected verdict |
+|----------------------------------------------------------|------------------|
+| prov6-pos-dispose-runs-the-release-walk-early            | run, exit 0      |
+| prov6-pos-dispose-writes-the-operands-storage-origin     | run, exit 9      |
+| prov6-neg-dispose-without-the-declared-write             | reject, EFF-2    |
+| prov6-neg-linear-value-not-consumed                      | reject, PROV-6   |
+| prov6-pos-linear-value-moved-out-whole                   | run, exit 3      |
+| prov6-pos-destructuring-consume-discharges-the-obligation| run, exit 7      |
+| prov6-neg-linear-value-partially-consumed                | reject, PROV-6   |
+| prov6-pos-commit-reinitialises-the-consumed-sub-place    | run, exit 5      |
+| prov6-neg-dispose-through-a-shared-borrow                | reject, OWN-1    |
+| prov6-neg-dispose-of-a-view                              | reject, PROV-6   |
+| prov6-neg-dispose-of-a-modifier-linear-node              | reject, PROV-6   |
+| prov6-neg-dispose-without-a-capability-leaf              | reject, PROV-6   |
+| prov6-neg-linear-modifier-on-a-tag-only-enum             | reject, PROV-6   |
+| prov6-pos-linearity-bound-on-a-region-parameter          | run, exit 0      |
+| prov6-pos-linearity-bound-admits-the-instantiation       | run, exit 2      |
+| prov6-neg-linearity-bound-refuses-the-instantiation      | reject, PROV-6   |
+```
+
+**D3's own visibility claim is measured rather than asserted.** A function whose body is
+`dispose cell; return 4_u8;` over `cell: own buffer<u8>` must declare `writes(cell)`, and
+the same function without the statement declares `pure` and releases the same run at its
+scope exit under no effect at all. That pair is one conformance case and its negative
+control is the second: the early release is exactly as visible as D3 says, and the derived
+release is exactly as invisible as probe `r2_5` showed. What is **not** measured is the
+`writes` of a **provider**, because no provider is a value yet.
+
+**What the version does not reach, and why, item by item.** The capability criterion has
+no instance here: the ambient heap is the only store whose reclamation is a release, it is
+not a value, no `effect_path` can be rooted at it, and therefore every scope holds it. So
+`LinearValueNotConsumed` fires for the modifier and never for an absent capability; the
+`heap`-parameter-removed rejection naming the scope is **not exercised**. `writes(heap)`
+in a row is **not exercised**, because the walk resolves no provider place and the
+memory-reclamation actions keep the empty row `[EFF-2]` already fixed. `DisposeHasNoProvider`
+is **not exercised**, because no binding is resolved to spend. `[S32]`'s region axis is read
+at the declaration and checked at no instantiation, so a **heap-branded instantiation
+refused at the call** is **not exercised**; its type axis is, in both directions. The
+arena-backed sibling of probe `x6` is **not exercised**, because the refusal it contrasts
+with is deferred (below). Each of the five is recorded for **B7/B9**, the batches that make
+a store's provider a written value.
+
+**One clause is stated and deferred, and the reason is a corpus disposition rather than a
+capability.** `[PROV-6]`'s release graph is written and walked; its acyclicity refusal is
+DEFERRED with a stated zero delta. Refusing a type whose release graph has a cycle retires
+`tests/programs/recursive_tree.wf`, a heap-backed recursive enum this compiler accepts and
+three live tests compile — which is the honest consequence this design already records,
+and which programs a language rule retires is the owner's decision, not a checker's. Until
+it lands the walk visits each node of a cyclic graph once, which terminates. Probe `x6`'s
+self-referential heap type therefore still **compiles**, and the verdict pair the owner is
+asked to move is: `tests/programs/recursive_tree.wf`, **accept** today and **reject** under
+the refusal.
+
+**Two corpus repairs the added atoms forced.** `tests/conformance/cases/reject-syseff-pure-member-binds-release.wf`
+spelled a contract member `dispose`, and `compiler/src/semantic/tests/generics.rs` spelled
+a generic function `affine`; both are renamed with no change of expectation, rule citation
+or status, because `[FORM-3]` now excludes those spellings from IDENT. The conformance
+change is recorded in `governance/APPROVALS.md`.
 
 ### 6.1 What the compiler did in this session
 

@@ -7,6 +7,7 @@ mod entry_form;
 mod expressions;
 mod floats;
 mod generics;
+mod linearity;
 mod nominal_instances;
 mod nominals;
 mod publication;
@@ -278,6 +279,9 @@ struct NominalTemplate {
     name: String,
     role: DeclarationRole,
     generic_parameters: Vec<GenericParameter>,
+    /// [PROV-6] whether the declaration writes the `linear` modifier. Every
+    /// instance of a marked declaration is marked.
+    linear: bool,
 }
 
 /// A nominal instance a derived type named, awaiting interning.
@@ -1792,6 +1796,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
+            | CheckedStatement::Dispose { .. }
             | CheckedStatement::DropExpression { .. }
             | CheckedStatement::Proof(_)
             | CheckedStatement::Return { .. }
@@ -2033,6 +2038,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
+                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {
@@ -2237,6 +2243,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Let { value, .. }
                 | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
+                | CheckedStatement::Dispose { value, .. }
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
                 | CheckedStatement::Give { value, .. } => {

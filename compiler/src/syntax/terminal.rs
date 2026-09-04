@@ -218,10 +218,17 @@ pub enum FixedTerminal {
     ColonColon,
     /// `is`.
     Is,
+    /// `linear`.
+    Linear,
+    /// `affine`.
+    Affine,
+    /// `dispose`.
+    Dispose,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 102] = [
+    FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -249,6 +256,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::RightAngle,
     FixedTerminal::LeftBracket,
     FixedTerminal::RightBracket,
+    FixedTerminal::Affine,
     FixedTerminal::Dot,
     FixedTerminal::As,
     FixedTerminal::I8,
@@ -271,6 +279,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Ampersand,
     FixedTerminal::Uniq,
     FixedTerminal::Let,
+    FixedTerminal::Move,
     FixedTerminal::If,
     FixedTerminal::Else,
     FixedTerminal::Propagate,
@@ -289,6 +298,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Break,
     FixedTerminal::Region,
     FixedTerminal::Give,
+    FixedTerminal::Dispose,
     FixedTerminal::Match,
     FixedTerminal::FatArrow,
     FixedTerminal::PlusWrap,
@@ -313,7 +323,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::BangEqual,
     FixedTerminal::LessEqual,
     FixedTerminal::GreaterEqual,
-    FixedTerminal::Move,
     FixedTerminal::ColonColon,
     FixedTerminal::Deref,
     FixedTerminal::Pure,
@@ -432,6 +441,9 @@ impl FixedTerminal {
             Self::LessEqual => "<=",
             Self::GreaterEqual => ">=",
             Self::ColonColon => "::",
+            Self::Linear => "linear",
+            Self::Affine => "affine",
+            Self::Dispose => "dispose",
         }
     }
 
@@ -517,21 +529,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 107] = {
-    let mut predicates = [TerminalPredicate::Identifier; 107];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 110] = {
+    let mut predicates = [TerminalPredicate::Identifier; 110];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[99] = TerminalPredicate::Identifier;
-    predicates[100] = TerminalPredicate::TypeIdentifier;
-    predicates[101] = TerminalPredicate::RegionIdentifier;
-    predicates[102] = TerminalPredicate::Label;
-    predicates[103] = TerminalPredicate::OperationName;
-    predicates[104] = TerminalPredicate::Literal;
-    predicates[105] = TerminalPredicate::String;
-    predicates[106] = TerminalPredicate::Digits;
+    predicates[102] = TerminalPredicate::Identifier;
+    predicates[103] = TerminalPredicate::TypeIdentifier;
+    predicates[104] = TerminalPredicate::RegionIdentifier;
+    predicates[105] = TerminalPredicate::Label;
+    predicates[106] = TerminalPredicate::OperationName;
+    predicates[107] = TerminalPredicate::Literal;
+    predicates[108] = TerminalPredicate::String;
+    predicates[109] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -539,14 +551,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 99,
-            Self::TypeIdentifier => 100,
-            Self::RegionIdentifier => 101,
-            Self::Label => 102,
-            Self::OperationName => 103,
-            Self::Literal => 104,
-            Self::String => 105,
-            Self::Digits => 106,
+            Self::Identifier => 102,
+            Self::TypeIdentifier => 103,
+            Self::RegionIdentifier => 104,
+            Self::Label => 105,
+            Self::OperationName => 106,
+            Self::Literal => 107,
+            Self::String => 108,
+            Self::Digits => 109,
         }
     }
 
@@ -802,8 +814,13 @@ mod tests {
         assert_eq!(FixedTerminal::Invariant as u8, 91);
         assert_eq!(FixedTerminal::Use as u8, 92);
         assert_eq!(FixedTerminal::Is as u8, 98);
-        assert_eq!(TerminalPredicate::Identifier.index(), 99);
-        assert_eq!(TerminalPredicate::Digits.index(), 106);
+        // [PROV-6] the three added atoms take the enum's last three
+        // discriminants, so the external predicates start three places later.
+        assert_eq!(FixedTerminal::Linear as u8, 99);
+        assert_eq!(FixedTerminal::Affine as u8, 100);
+        assert_eq!(FixedTerminal::Dispose as u8, 101);
+        assert_eq!(TerminalPredicate::Identifier.index(), 102);
+        assert_eq!(TerminalPredicate::Digits.index(), 109);
     }
 
     #[test]

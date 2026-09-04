@@ -558,6 +558,10 @@ pub(crate) struct CheckedNominal {
     pub(crate) id: NominalId,
     pub(crate) name: String,
     pub(crate) kind: CheckedNominalKind,
+    /// [PROV-6] whether this nominal's source declaration carries the
+    /// `linear` modifier. Only a source `struct_decl` or `enum_decl` can, so
+    /// every compiler-owned nominal is false.
+    pub(crate) linear: bool,
 }
 
 impl CheckedNominal {
@@ -1939,6 +1943,14 @@ pub(crate) enum CheckedStatement {
     Break {
         target: CheckedLoopId,
         drops: Vec<CheckedDrop>,
+    },
+    /// [PROV-6] `dispose p;`. The consumed operand's release graph is walked
+    /// here instead of at the scope exit; the drop list is exactly the list
+    /// that exit would have carried for this value.
+    Dispose {
+        node_path: NodePath,
+        value: CheckedExpression,
+        drops: Vec<CheckedProjectedDrop>,
     },
     Region {
         /// The region's hidden arena allocation-list binding, present exactly

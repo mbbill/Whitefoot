@@ -1116,6 +1116,10 @@ impl<'check> Program<'check> {
             CheckedStatement::DropExpression { .. } => {
                 Err(InterposedRefusal::Form("a discarded expression statement"))
             }
+            // [PROV-6] `dispose p;` runs a release walk of its own, which is
+            // the same classification an interposed drop needs and does not
+            // have yet.
+            CheckedStatement::Dispose { .. } => Err(InterposedRefusal::Form("a dispose statement")),
             // Forms carrying their own control flow and their own drops. The
             // lowering already refuses them by splitting the block, so the
             // checker refusing them keeps the two in agreement.
@@ -1754,6 +1758,7 @@ fn push_nested_blocks<'check>(
         | CheckedStatement::SetList { .. }
         | CheckedStatement::Replace { .. }
         | CheckedStatement::Proof(_)
+        | CheckedStatement::Dispose { .. }
         | CheckedStatement::DropExpression { .. }
         | CheckedStatement::Evaluate(_)
         | CheckedStatement::Return { .. }
