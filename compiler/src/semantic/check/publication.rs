@@ -40,6 +40,8 @@ enum OperandKey {
     /// One measure of one formal place [MSR-1]: two clauses name one term
     /// only when they name the same measure of the same place.
     Measure(CheckedMeasure, u32, Vec<u32>),
+    /// One measure of one declared result place [CALL-4].
+    ResultMeasure(CheckedMeasure, u32, Vec<u32>),
 }
 
 /// The declared relations of one contract, as difference bounds over
@@ -76,10 +78,14 @@ impl DeclaredSystem {
                 projections,
                 ..
             } => OperandKey::NamedConst(*declaration, projection_key(projections)),
-            RelationDatum::Measure(measure, place) => {
-                let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
-                OperandKey::Measure(*measure, ordinal, projection_key(&place.projections))
-            }
+            RelationDatum::Measure(measure, place) => match place.root {
+                PostconditionPlaceRoot::Parameter { ordinal } => {
+                    OperandKey::Measure(*measure, ordinal, projection_key(&place.projections))
+                }
+                PostconditionPlaceRoot::Result { ordinal } => {
+                    OperandKey::ResultMeasure(*measure, ordinal, projection_key(&place.projections))
+                }
+            },
             RelationDatum::Literal { value, .. } => {
                 // A literal is the zero term displaced by its own
                 // mathematical value, exactly as [ENT-2] folds a constant

@@ -100,8 +100,16 @@ impl RelationDatum {
         }
     }
 
+    /// Whether this datum names a declared result ordinal [CALL-4], as the
+    /// value itself or as a measure over that ordinal's place.
     pub(crate) const fn contains_result(&self) -> bool {
-        matches!(self, Self::Result { .. })
+        match self {
+            Self::Result { .. } => true,
+            Self::Measure(_, place) => {
+                matches!(place.root, PostconditionPlaceRoot::Result { .. })
+            }
+            Self::Parameter { .. } | Self::NamedConst { .. } | Self::Literal { .. } => false,
+        }
     }
 }
 
@@ -137,7 +145,15 @@ pub(crate) struct PostconditionPlace {
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PostconditionPlaceRoot {
-    Parameter { ordinal: u32 },
+    Parameter {
+        ordinal: u32,
+    },
+    /// One declared result ordinal [CALL-4]: a measure over an admitted
+    /// result place is an operand with no per-family admission, exactly as a
+    /// measure over an admitted formal place is.
+    Result {
+        ordinal: u32,
+    },
 }
 
 /// One selected explicit normal return, already classified by H1 so H2 need

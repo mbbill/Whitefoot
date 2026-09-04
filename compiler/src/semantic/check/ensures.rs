@@ -29,6 +29,9 @@ enum SelectorAdmissionType {
     Fragment,
     ResultFragment,
     Symbolic,
+    /// [CALL-4] one declared result of measured type. Its value is no [ENT-2]
+    /// term, so only a measure over it is an admitted clause operand.
+    Measured,
     Invalid,
 }
 
@@ -600,7 +603,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let RelationDatum::Measure(_, place) = operand else {
                 continue;
             };
-            let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
+            // [CALL-4] a measure over a result place names no parameter, so
+            // [MSR-3]'s state-parameter inadmissibility does not reach it.
+            let PostconditionPlaceRoot::Parameter { ordinal } = place.root else {
+                continue;
+            };
             let Some(parameter) = function.parameters.get(ordinal as usize) else {
                 continue;
             };
@@ -787,30 +794,45 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     origin: origin.clone(),
                 })
             }
+            // [CALL-4] the clause operands of [FN-9] are terms, so a measure
+            // over an admitted formal place is an operand with no per-family
+            // admission, and so is one over an admitted result place.
             ExpandedClauseExpression::Operation {
                 row:
                     GoalOperation::ArrayMeasure { measure, .. }
                     | GoalOperation::BufferMeasure { measure, .. }
-                    | GoalOperation::SliceMeasure { measure, .. },
+                    | GoalOperation::SliceMeasure { measure, .. }
+                    | GoalOperation::ContainerMeasure { measure, .. },
                 arguments,
                 ..
             } => {
-                let [
-                    ExpandedClauseExpression::Datum(ExpandedClauseDatum::Parameter {
+                let [ExpandedClauseExpression::Datum(datum)] = arguments.as_slice() else {
+                    return None;
+                };
+                let (root, projections, ty) = match datum {
+                    ExpandedClauseDatum::Parameter {
                         ordinal,
                         projections,
                         ty,
-                    }),
-                ] = arguments.as_slice()
-                else {
-                    return None;
+                    } => (
+                        PostconditionPlaceRoot::Parameter { ordinal: *ordinal },
+                        projections.clone(),
+                        *ty,
+                    ),
+                    ExpandedClauseDatum::Result { ordinal, ty } => (
+                        PostconditionPlaceRoot::Result { ordinal: *ordinal },
+                        Vec::new(),
+                        *ty,
+                    ),
+                    ExpandedClauseDatum::NamedConst { .. }
+                    | ExpandedClauseDatum::Literal { .. } => return None,
                 };
                 Some(RelationDatum::Measure(
                     *measure,
                     PostconditionPlace {
-                        root: PostconditionPlaceRoot::Parameter { ordinal: *ordinal },
-                        projections: projections.clone(),
-                        ty: *ty,
+                        root,
+                        projections,
+                        ty,
                     },
                 ))
             }
@@ -1667,6 +1689,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 _ => (SelectorAdmissionType::Invalid, declared.ty),
             },
             CheckedType::Generic(_) if symbolic => (SelectorAdmissionType::Symbolic, declared.ty),
+            // [CALL-4] a result of measured type is admitted, and a measure
+            // over that result place is the operand it supplies.
+            ty if super::expressions::flat_storage::measured_kind_of(ty).is_some() => {
+                (SelectorAdmissionType::Measured, ty)
+            }
             _ => (SelectorAdmissionType::Invalid, declared.ty),
         };
         self.validate_postcondition_selector(record, admission, ordinal)?;
@@ -1724,7 +1751,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             PostconditionSelectorClass::Plain => {
                 if !matches!(
                     admission,
-                    SelectorAdmissionType::Fragment | SelectorAdmissionType::Symbolic
+                    SelectorAdmissionType::Fragment
+                        | SelectorAdmissionType::Symbolic
+                        | SelectorAdmissionType::Measured
                 ) {
                     return self
                         .issue_selector(record, SemanticIssueKind::InvalidPostconditionSelector);
