@@ -1,0 +1,11 @@
+fn append(vector: own FixedVector<u8, 4>, value: own u8) -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
+  requires room(vector) > 0_u64;
+} {
+  doc "Places one value at the back boundary of a run.";
+  return seq_place(vector: move vector, value: value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Declares the placement helper above and returns.";
+  return exit_status(code: 0_u8);
+}

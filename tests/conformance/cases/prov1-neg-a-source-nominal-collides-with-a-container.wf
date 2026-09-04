@@ -1,0 +1,8 @@
+struct Vector {
+  x: u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Declares a nominal whose spelling is a compiler-owned container's.";
+  return exit_status(code: 0_u8);
+}

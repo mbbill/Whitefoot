@@ -1,0 +1,9 @@
+fn build() -> result: own FixedVector<u8, 4> pure {
+  doc "Forms an empty frame-resident run of four slots.";
+  return seq_fixed::<u8, 4>();
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Declares the formation helper above and returns.";
+  return exit_status(code: 0_u8);
+}
