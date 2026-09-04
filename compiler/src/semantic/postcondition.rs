@@ -19,6 +19,10 @@ pub(crate) struct CheckedPostconditionSelector {
     pub(crate) block: NodePath,
     pub(crate) selector: NodePath,
     pub(crate) candidate: SourceOrigin,
+    /// The declared result ordinal this clause's result datum names
+    /// [CALL-4]. A declaration that writes one result has ordinal zero, the
+    /// route writes no ordinal binder, and every clause names it.
+    pub(crate) ordinal: u32,
     pub(crate) variant: Option<PreludeDeclarationId>,
     pub(crate) field: Option<PostconditionFieldIdentity>,
     pub(crate) result_type: CheckedType,

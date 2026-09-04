@@ -340,7 +340,18 @@ fn classify_node(
                 complete_counts,
             )?;
         }
-        Production::LetStmt | Production::ContractDefine => add_single(
+        // [GRAM-4] a `let` writes one binder or a parenthesized list of two or
+        // more, and every binder of either form is one ordinary `let`
+        // declaration in the statement's own scope [S16, CALL-4].
+        Production::LetStmt => add_all(
+            classified,
+            owner,
+            &names,
+            RawRoleKind::Declaration(DeclarationRole::Let),
+            roles,
+            complete_counts,
+        )?,
+        Production::ContractDefine => add_single(
             classified,
             owner,
             &names,

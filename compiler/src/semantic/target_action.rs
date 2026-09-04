@@ -58,8 +58,14 @@ fn collect_statements(
     for statement in statements {
         match statement {
             CheckedStatement::Proof(_) => {}
-            CheckedStatement::Let { value, .. } | CheckedStatement::Evaluate(value) => {
-                collect_expression(value, direct, edges)
+            CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
+            | CheckedStatement::Evaluate(value) => collect_expression(value, direct, edges),
+            CheckedStatement::SetList { targets, value, .. } => {
+                for target in targets {
+                    collect_set_target(target, direct, edges);
+                }
+                collect_expression(value, direct, edges);
             }
             CheckedStatement::PropagateLet {
                 scrutinee,

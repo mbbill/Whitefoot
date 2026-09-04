@@ -199,7 +199,23 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // static domain obligation before emission. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.43 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.44";
+// v0.45 result-list review (2026-09-04): [GRAM-2] lets a `fn_decl` write an
+// ordered result list and [GRAM-4] adds the destructuring `let` binder list,
+// the `set` target list, and the multi-expression `return` that write to it.
+// This does move a result shape, and only that one: a declaration that writes
+// two or more results hands its caller one ordinary owned aggregate of the
+// compiler-owned result-list nominal, and the binder and target lists are the
+// ordinary struct projections of it. No new representation exists — the
+// aggregate is emitted, returned, and projected exactly as a source `struct`
+// value already is, with the same host ABI rule, and every ordinal is an
+// ordinary owned value under the ordinary transfer, drop, and release rules.
+// [CALL-4]'s result ordinal, its ordinal-named route, and the two added
+// [ENT-3.S12] destinations are front-end contract surface over erased clause
+// syntax and add no emitted operation. No system operation, resource
+// representation, release row, entry form, or host ABI mapping changes, and
+// the entry's own result shape is unchanged, so the v0.44 mapping carries
+// forward complete.
+const REVIEWED_FOR: &str = "v0.45";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

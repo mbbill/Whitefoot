@@ -213,7 +213,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .descendants_with(function, Production::EnsuresClause)?
             .is_empty()
         {
-            return self.ensure_nominals_in_node(function, substitution);
+            self.ensure_nominals_in_node(function, substitution)?;
+            return self.ensure_result_list_nominal(function, substitution);
         }
         // Preserve the exact ordinary category order across the retained
         // subtree: every type, then every constructor, then every implicit
@@ -234,7 +235,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.ensure_source_constructor_instance(construct, substitution)?;
         }
         self.ensure_implicit_prelude_nominals(function, substitution, true)?;
+        self.ensure_result_list_nominal(function, substitution)?;
         self.reject_recursive_nominal_layouts()
+    }
+
+    /// Interns the compiler-owned result-list nominal of a `fn_decl` that
+    /// writes an ordered result list [GRAM-2, CALL-4].
+    ///
+    /// It is the callable's result type, so every pre-scan that precedes
+    /// `build_function_signature` runs this one walk; a single-result
+    /// declaration has no list and nothing is interned.
+    pub(super) fn ensure_result_list_nominal(
+        &mut self,
+        function: NodeId,
+        substitution: &GenericSubstitution,
+    ) -> Result<(), CheckStop> {
+        if self
+            .tree
+            .children_with(function, Production::ResultBinding)?
+            .len()
+            < 2
+        {
+            return Ok(());
+        }
+        let Some(results) = self.result_list_fields(function, substitution)? else {
+            return Ok(());
+        };
+        self.intern_result_list_nominal(&results).map(|_| ())
     }
 
     /// Interns only nominal instances read by `build_function_signature`.
@@ -251,15 +278,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             self.ensure_nominals_in_node(parameters, substitution)?;
         }
-        let result_binding = self
+        // [GRAM-2] a `fn_decl` writes one result or an ordered result list;
+        // every ordinal's `rtype` is a signature type, and a list also needs
+        // the compiler-owned nominal that carries the ordinals [CALL-4].
+        let result_bindings = self
             .tree
-            .first_child_with(function, Production::ResultBinding)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let result = self
-            .tree
-            .first_child_with(result_binding, Production::Rtype)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        self.ensure_nominals_in_node(result, substitution)
+            .children_with(function, Production::ResultBinding)?;
+        if result_bindings.is_empty() {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        }
+        for binding in &result_bindings {
+            let result = self
+                .tree
+                .first_child_with(*binding, Production::Rtype)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            self.ensure_nominals_in_node(result, substitution)?;
+        }
+        self.ensure_result_list_nominal(function, substitution)
     }
 
     pub(super) fn ensure_nominal_type(
@@ -852,6 +887,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.box_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         self.arena_nominals
+            .retain(|_, id| (id.0 as usize) < checkpoint);
+        self.result_list_nominals
             .retain(|_, id| (id.0 as usize) < checkpoint);
         if self
             .arena_storage_nominal

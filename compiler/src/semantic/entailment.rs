@@ -1140,6 +1140,7 @@ pub(super) fn collect_statement_calls(
         match statement {
             CheckedStatement::Proof(_) => {}
             CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
@@ -1148,6 +1149,20 @@ pub(super) fn collect_statement_calls(
             }
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression_calls(caller, scrutinee, calls);
+            }
+            CheckedStatement::SetList { targets, value, .. } => {
+                for target in targets {
+                    match target {
+                        CheckedSetTarget::Place(_) => {}
+                        CheckedSetTarget::ArrayIndex(target) => {
+                            collect_expression_calls(caller, &target.offset, calls);
+                        }
+                        CheckedSetTarget::BufferIndex(target) => {
+                            collect_expression_calls(caller, &target.offset, calls);
+                        }
+                    }
+                }
+                collect_expression_calls(caller, value, calls);
             }
             CheckedStatement::Set { target, value, .. }
             | CheckedStatement::Replace { target, value, .. } => {

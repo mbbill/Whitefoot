@@ -122,6 +122,8 @@ pub enum FixedTerminal {
     Else,
     /// `when`.
     When,
+    /// `is`.
+    Is,
     /// `give`.
     Give,
     /// `match`.
@@ -219,7 +221,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -238,6 +240,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
     FixedTerminal::Requires,
     FixedTerminal::Ensures,
     FixedTerminal::When,
+    FixedTerminal::Is,
     FixedTerminal::Law,
     FixedTerminal::Conform,
     FixedTerminal::Const,
@@ -381,6 +384,7 @@ impl FixedTerminal {
             Self::Define => "define",
             Self::Else => "else",
             Self::When => "when",
+            Self::Is => "is",
             Self::Give => "give",
             Self::Match => "match",
             Self::FatArrow => "=>",

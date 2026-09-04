@@ -881,8 +881,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.collect_give_state_origins(body, origins, fallback);
                 }
                 CheckedStatement::Let { .. }
+                | CheckedStatement::DestructuringLet { .. }
                 | CheckedStatement::PropagateLet { .. }
                 | CheckedStatement::Set { .. }
+                | CheckedStatement::SetList { .. }
                 | CheckedStatement::Replace { .. }
                 | CheckedStatement::Evaluate(_)
                 | CheckedStatement::DropExpression { .. }

@@ -167,6 +167,93 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(id)
     }
 
+    /// The ordered `(binder spelling, type)` rows of a `fn_decl`'s result
+    /// list, or `None` when an ordinal's mode is one this compiler cannot
+    /// carry in a result list yet.
+    ///
+    /// The mode judgment itself belongs to `build_function_signature`, which
+    /// reports it at the offending `rtype`; this reader is the shared walk
+    /// both the nominal pre-scan and the signature build take over the same
+    /// ordinals [GRAM-2, CALL-4].
+    pub(super) fn result_list_fields(
+        &self,
+        function: crate::syntax::NodeId,
+        substitution: &super::generics::GenericSubstitution,
+    ) -> Result<Option<Vec<(String, CheckedType)>>, CheckStop> {
+        let mut rows = Vec::new();
+        for binding in self
+            .tree
+            .children_with(function, crate::Production::ResultBinding)?
+        {
+            let [name] = self.tree.direct_identifiers(binding)?[..] else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            let name = std::str::from_utf8(self.tree.token_bytes(name)?)
+                .map(str::to_owned)
+                .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?;
+            let rtype = self
+                .tree
+                .first_child_with(binding, crate::Production::Rtype)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let (mode, ty) = self.parse_rtype_with(rtype, substitution)?;
+            if mode != super::super::model::CheckedMode::Own {
+                return Ok(None);
+            }
+            rows.push((name, ty));
+        }
+        Ok(Some(rows))
+    }
+
+    /// The compiler-owned nominal a `fn_decl`'s ordered result list denotes
+    /// [GRAM-2, CALL-4].
+    ///
+    /// A declaration that writes two or more results hands its caller one
+    /// value carrying them in written order, and every result ordinal is one
+    /// field of it. Nothing else in the language changes: the callable
+    /// boundary keeps exactly one result type, the ordinary transfer,
+    /// ownership, and lowering rules apply to it, and a destructuring binder
+    /// list is the projection that names the ordinals again at the caller.
+    /// The name is spelled with parentheses so no source TYPEID can collide
+    /// with it; nothing reads it but a diagnostic.
+    pub(super) fn intern_result_list_nominal(
+        &mut self,
+        results: &[(String, CheckedType)],
+    ) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.result_list_nominals.get(results) {
+            return Ok(*id);
+        }
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        let mut rendered = Vec::with_capacity(results.len());
+        let mut fields = Vec::with_capacity(results.len());
+        for (name, ty) in results {
+            rendered.push(format!("{name}: {}", self.checked_type_name(*ty)?));
+            fields.push(CheckedField {
+                name: name.clone(),
+                ty: *ty,
+            });
+        }
+        self.nominals.push(CheckedNominal {
+            id,
+            name: format!("({})", rendered.join(", ")),
+            kind: CheckedNominalKind::Struct { fields },
+        });
+        self.nominal_nodes.push(None);
+        self.nominal_states.push(2);
+        self.source_nominal_instances.push(None);
+        self.prelude_types.push(None);
+        if self
+            .result_list_nominals
+            .insert(results.to_vec(), id)
+            .is_some()
+        {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(id)
+    }
+
     pub(super) fn intern_arena_nominal(
         &mut self,
         region: crate::DeclarationId,

@@ -78,6 +78,19 @@ struct ParameterSignature {
     ty: CheckedType,
 }
 
+/// One declared result ordinal of a callable boundary [GRAM-2, FN-1].
+#[derive(Clone)]
+struct ResultSignature {
+    /// The written `result_binding` spelling. [FN-1] keeps it out of
+    /// callable-signature equality; a route names it [CALL-4] and a
+    /// diagnostic prints it.
+    name: String,
+    mode: CheckedMode,
+    ty: CheckedType,
+    /// The ordinal's complete `rtype`, for a diagnostic at the declaration.
+    rtype: NodeId,
+}
+
 #[derive(Clone)]
 struct FunctionSignature {
     id: FunctionId,
@@ -92,8 +105,18 @@ struct FunctionSignature {
     /// How many leading `region_parameters` entries the declaration writes.
     written_regions: usize,
     parameters: Vec<ParameterSignature>,
+    /// The callable result [FN-1]: the written result of a single-result
+    /// declaration, and the compiler-owned result-list value of a declaration
+    /// that writes an ordered result list [GRAM-2, CALL-4].
     result_mode: CheckedMode,
     result: CheckedType,
+    /// Every declared result ordinal in written order. A single-result
+    /// declaration has exactly one entry and it is the callable result above.
+    results: Vec<ResultSignature>,
+    /// The result-list nominal, for a declaration that writes two or more
+    /// results. `None` is the single-result form, whose callable result is
+    /// the written result itself.
+    result_list: Option<NominalId>,
     slice_return_ceiling: Vec<CheckedSliceOrigin>,
     effects_node: NodeId,
     declared_effects: EffectSet,
@@ -514,6 +537,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// `arena<'r, T>` instances by (region declaration, content type): the
     /// region is part of the type's identity [OWN-3, STOR-4].
     arena_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
+    /// The compiler-owned result-list nominal of a `fn_decl` that declares an
+    /// ordered result list [GRAM-2, CALL-4], keyed by the ordered result
+    /// binder spellings and types. Two declarations whose result lists agree
+    /// share one nominal; the value a multi-result callable hands back is one
+    /// value of it, and a destructuring binder list is its projection.
+    result_list_nominals: HashMap<Vec<(String, CheckedType)>, NominalId>,
     /// The one compiler-owned region allocation-list nominal, interned on
     /// first use [STOR-3].
     arena_storage_nominal: Option<NominalId>,
@@ -933,6 +962,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
             arena_nominals: HashMap::new(),
+            result_list_nominals: HashMap::new(),
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
@@ -1747,8 +1777,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedStatement::CountedRange { body, .. }
             | CheckedStatement::Region { body, .. } => Self::statements_contain_value_if(body),
             CheckedStatement::Let { .. }
+            | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
@@ -1990,6 +2022,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
+                | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
@@ -1998,6 +2031,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     self.install_expression_call_requirements(scrutinee, requirements)?;
+                }
+                CheckedStatement::SetList { targets, value, .. } => {
+                    for target in targets {
+                        match target {
+                            CheckedSetTarget::Place(_) => {}
+                            CheckedSetTarget::ArrayIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
+                            CheckedSetTarget::BufferIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
+                        }
+                    }
+                    self.install_expression_call_requirements(value, requirements)?;
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -2171,6 +2222,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for statement in statements {
             match statement {
                 CheckedStatement::Let { value, .. }
+                | CheckedStatement::DestructuringLet { value, .. }
                 | CheckedStatement::Evaluate(value)
                 | CheckedStatement::DropExpression { value, .. }
                 | CheckedStatement::Return { value, .. }
@@ -2179,6 +2231,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedStatement::PropagateLet { scrutinee, .. } => {
                     Self::install_expression_allocation_bounds(scrutinee, bounds)?;
+                }
+                CheckedStatement::SetList { targets, value, .. } => {
+                    for target in targets {
+                        match target {
+                            CheckedSetTarget::Place(_) => {}
+                            CheckedSetTarget::ArrayIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
+                            CheckedSetTarget::BufferIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
+                        }
+                    }
+                    Self::install_expression_allocation_bounds(value, bounds)?;
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {

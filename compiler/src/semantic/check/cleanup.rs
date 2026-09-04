@@ -106,7 +106,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<(), CheckStop> {
         for statement in statements {
             match statement {
-                CheckedStatement::Let { value, .. } => {
+                CheckedStatement::Let { value, .. }
+                | CheckedStatement::DestructuringLet { value, .. } => {
+                    self.collect_expression_release_sites(value, sites)?;
+                }
+                CheckedStatement::SetList { targets, value, .. } => {
+                    for target in targets {
+                        match target {
+                            CheckedSetTarget::Place(_) => {}
+                            CheckedSetTarget::ArrayIndex(target) => {
+                                self.collect_expression_release_sites(&target.offset, sites)?;
+                            }
+                            CheckedSetTarget::BufferIndex(target) => {
+                                self.collect_expression_release_sites(&target.offset, sites)?;
+                            }
+                        }
+                    }
                     self.collect_expression_release_sites(value, sites)?;
                 }
                 CheckedStatement::PropagateLet {

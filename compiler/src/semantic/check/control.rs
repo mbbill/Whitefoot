@@ -172,6 +172,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Ok(Self::continuing_statement(statement, value.effects))
             }
             Production::InvariantStmt => self.check_local_invariant(node, bindings),
+            // [FN-1, GRAM-4] a `return` writes exactly as many expressions as
+            // the enclosing declaration writes results, and expression i
+            // produces result ordinal i. A count mismatch is the ordinary
+            // FN-1 return-shape rejection at the `return_stmt`.
+            Production::ReturnStmt
+                if self.tree.children_with(node, Production::Expr)?.len()
+                    != function.results.len() =>
+            {
+                self.issue_node(SemanticRule::Fn1, node, SemanticIssueKind::ReturnMismatch)
+            }
+            Production::ReturnStmt if function.results.len() > 1 => {
+                self.check_result_list_return(function, node, bindings, scope)
+            }
             Production::ReturnStmt => {
                 let expression_node = self
                     .tree
@@ -351,6 +364,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     break_states: Vec::new(),
                 })
             }
+            // [GRAM-4, CALL-4] `set (x, y) = f(...);`: a target list commits
+            // the callee's result ordinals, target i taking ordinal i.
+            Production::SetStmt if self.tree.children_with(node, Production::Place)?.len() > 1 => {
+                self.check_result_list_set(function, node, bindings, scope)
+            }
             Production::SetStmt => {
                 let target_node = self
                     .tree
@@ -427,6 +445,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         counters: &mut ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
+        // [GRAM-4, CALL-4] a binder list takes its right-hand side's result
+        // ordinals; a `call` directly under the `let_stmt` is that form and
+        // no other selects it.
+        if let Some(call) = self.tree.first_child_with(node, Production::Call)? {
+            return self.check_destructuring_let(function, node, call, bindings, counters, scope);
+        }
         // [TYPE-5] a `let` binder's mode and type are derived, never written:
         // exactly what its selected right-hand side produces. Each arm below
         // therefore checks that right-hand side first and reads the binding's

@@ -751,15 +751,85 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [FORM-8] every region a parameter position leaves unwritten is a
         // formal region of this callable too.
         Self::append_elided_formal_regions(&mut region_parameters, &parameters);
-        let result_binding = self
+        // [GRAM-2] the declaration writes one result or an ordered result
+        // list. Every ordinal is judged by the ordinary result rules below;
+        // a list additionally hands its caller one value of the compiler-owned
+        // result-list nominal, which is this callable's result [CALL-4].
+        let result_bindings = self
             .tree
-            .first_child_with(template.node, Production::ResultBinding)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let rtype = self
-            .tree
-            .first_child_with(result_binding, Production::Rtype)?
-            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let (result_mode, result) = self.parse_rtype_with(rtype, &substitution)?;
+            .children_with(template.node, Production::ResultBinding)?;
+        let mut results = Vec::with_capacity(result_bindings.len());
+        for binding in &result_bindings {
+            let rtype = self
+                .tree
+                .first_child_with(*binding, Production::Rtype)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let [name] = self.tree.direct_identifiers(*binding)?[..] else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            let name = std::str::from_utf8(self.tree.token_bytes(name)?)
+                .map(str::to_owned)
+                .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?;
+            let (mode, ty) = self.parse_rtype_with(rtype, &substitution)?;
+            results.push(super::ResultSignature {
+                name,
+                mode,
+                ty,
+                rtype,
+            });
+        }
+        let [first_result, ..] = results.as_slice() else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        let single = results.len() == 1;
+        let rtype = first_result.rtype;
+        let (result_mode, result, result_list) = if single {
+            (first_result.mode, first_result.ty, None)
+        } else {
+            for entry in &results {
+                // [STOR-4] an arena ordinal has no legal producing return, the
+                // same judgment a single arena result receives.
+                if self.arena_instance(entry.ty)?.is_some() {
+                    return self.issue_node(
+                        SemanticRule::Stor4,
+                        entry.rtype,
+                        SemanticIssueKind::ArenaEscape {
+                            mechanical_fix: super::ARENA_ESCAPE_RESTRUCTURING,
+                        },
+                    );
+                }
+                // A `slice` ordinal needs [FN-1]'s parameter-derived
+                // return-origin ceiling stated over an ordinal rather than
+                // over the one written result. That derivation is not built
+                // yet, so the ordinal is an explicit capability refusal here
+                // instead of an unchecked escape.
+                if matches!(entry.ty, super::super::model::CheckedType::Slice { .. }) {
+                    return self
+                        .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, entry.rtype);
+                }
+            }
+            // A borrow-mode ordinal would have to carry its loan through the
+            // one value the boundary hands back, which this compiler cannot
+            // represent yet. It is an explicit capability refusal at the
+            // offending ordinal, never a source-language rejection.
+            let Some(fields) = self.result_list_fields(template.node, &substitution)? else {
+                let offending = results
+                    .iter()
+                    .find(|entry| entry.mode != super::super::model::CheckedMode::Own)
+                    .map_or(rtype, |entry| entry.rtype);
+                return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, offending);
+            };
+            let nominal = self
+                .result_list_nominals
+                .get(&fields)
+                .copied()
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            (
+                super::super::model::CheckedMode::Own,
+                super::super::model::CheckedType::Nominal(nominal),
+                Some(nominal),
+            )
+        };
         // [STOR-4] a value of type `arena<'r, T>` may not be returned, so a
         // result type naming an arena has no legal producing return and is
         // rejected at the callable boundary.
@@ -809,6 +879,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             parameters,
             result_mode,
             result,
+            results,
+            result_list,
             slice_return_ceiling,
             effects_node: effects,
             declared_effects,

@@ -2746,4 +2746,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
 - SPECIFICATION: v0.45 at the digest on the chain line below supersedes v0.44
   at `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
   whose outgoing bytes are preserved byte-for-byte as `spec/kernel-spec-v0.44.md`.
-ACTIVE-SPEC: v0.45 e925e16caec62047e091222f8d86e90dbfc50a4d51e1a588c1c0c01a5c8e3833 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 034b11d22f8dc0305bb78a1f22d966bb42e8f2fe1f038713ceaa768ae12115a3 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

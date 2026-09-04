@@ -1054,6 +1054,13 @@ pub enum UnsupportedSemanticFeature {
     /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
     /// function that would carry an arena value to execution stops here.
     ArenaRuntime,
+    /// A `set` target list [GRAM-4, CALL-4] one of whose targets is a
+    /// subscript place. Committing several indexed targets from one
+    /// statement needs the offset-evaluation order of [SET-1] stated over a
+    /// list of targets and a lowering that carries every offset across the
+    /// one call; neither is built, so the form stops here rather than
+    /// committing in an order this compiler has not selected.
+    ResultListSubscriptTarget,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

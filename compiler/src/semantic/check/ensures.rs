@@ -1489,6 +1489,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             block: record.block.clone(),
             selector: record.selector.clone(),
             candidate: candidate.origin.clone(),
+            ordinal: 0,
             variant,
             field,
             result_type,

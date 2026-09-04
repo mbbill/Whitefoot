@@ -63,6 +63,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution.into())
     }
 
+    /// Every declaration of one role at one node, in written order.
+    ///
+    /// A `let` writes one binder or a parenthesized binder list [GRAM-4], so
+    /// this reader answers for both; the single-binder reader above stays the
+    /// one every other carrier uses.
+    pub(super) fn declarations_at(
+        &self,
+        node: NodeId,
+        role: DeclarationRole,
+    ) -> Result<Vec<&crate::DeclarationRecord>, CheckStop> {
+        let path = self.tree.path(node)?;
+        let mut found = self
+            .resolved
+            .declarations()
+            .iter()
+            .filter(|declaration| declaration.role() == role && declaration.origin().node() == path)
+            .collect::<Vec<_>>();
+        found.sort_by_key(|declaration| declaration.origin().coordinate().start());
+        Ok(found)
+    }
+
     pub(super) fn optional_declaration_at(
         &self,
         node: NodeId,

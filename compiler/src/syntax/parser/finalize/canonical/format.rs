@@ -56,9 +56,82 @@ fn is_line_bearing(topology: &FinalizedTopology, node: NodeId) -> Result<bool, S
                 Production::OrdinaryLetRhs
                     | Production::PropagateLetRhs
                     | Production::ReplaceLetRhs
+                    // [GRAM-4] a destructuring `let` takes a `call` right-hand
+                    // side directly and renders on one line like every other
+                    // non-initializer `let`.
+                    | Production::Call
             )
         })
     }))
+}
+
+/// The terminal ordinal of the `(` a parenthesized list production opens, when
+/// this node selects the list form [GRAM-2, GRAM-4].
+///
+/// A `fn_decl` result list, a destructuring `let_stmt` binder list, and a
+/// `set_stmt` target list each render one space before that `(` [FORM-2]. The
+/// three are one question — which node selected a parenthesized list — so they
+/// share one answer rather than three near-identical walks.
+fn stated_space_open_paren(
+    topology: &FinalizedTopology,
+    node: NodeId,
+    record: &crate::syntax::parser::finalize::topology::NodeRecord,
+) -> Result<Option<u64>, Stop> {
+    let counted = |production: Production| -> Result<usize, Stop> {
+        let children = topology
+            .node_children(node)
+            .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+        Ok(children
+            .iter()
+            .filter(|child| {
+                topology
+                    .node(**child)
+                    .is_some_and(|nested| nested.production == production)
+            })
+            .count())
+    };
+    match record.production {
+        // `-> (a: own T, b: own U)`: the `(` is the terminal before the first
+        // `result_binding`, because the single-result form writes none.
+        Production::FnDecl => {
+            if counted(Production::ResultBinding)? < 2 {
+                return Ok(None);
+            }
+            let children = topology
+                .node_children(node)
+                .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+            let first = children
+                .iter()
+                .filter_map(|child| topology.node(*child))
+                .find(|child| child.production == Production::ResultBinding)
+                .map(|child| child.first_terminal)
+                .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
+            Ok(Some(
+                first
+                    .checked_sub(1)
+                    .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?,
+            ))
+        }
+        // `let (a, b) = f(...);` and `set (x, y) = f(...);`: the `(` is the
+        // terminal immediately after the introducer.
+        Production::LetStmt | Production::SetStmt => {
+            let selects_list = if record.production == Production::LetStmt {
+                counted(Production::Call)? != 0
+            } else {
+                counted(Production::Place)? >= 2
+            };
+            if !selects_list {
+                return Ok(None);
+            }
+            Ok(Some(
+                record
+                    .first_terminal
+                    .checked_add(1)
+                    .ok_or(CanonicalCompilerFailure::CounterOverflow)?,
+            ))
+        }
+        _ => Ok(None),
+    }
 }
 
 fn is_block_bearing(record: &crate::syntax::parser::finalize::topology::NodeRecord) -> bool {
@@ -178,6 +251,13 @@ pub(super) fn build_gap_styles(
                     mark_before(&mut gaps, topology, open, GapStyle::Spaced)?;
                 }
             }
+        }
+
+        // [FORM-2] a result list, a destructuring binder list, and a target
+        // list each keep one space before their `(`, overriding the generic
+        // right attachment of `(` exactly as the `for` header does.
+        if let Some(open) = stated_space_open_paren(topology, node, record)? {
+            mark_before(&mut gaps, topology, open, GapStyle::Spaced)?;
         }
 
         if !is_block_bearing(record) {

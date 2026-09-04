@@ -977,6 +977,38 @@ impl<'program> IrBuilder<'program> {
                     error_drops,
                     context,
                 )?,
+                // [GRAM-4, CALL-4] one evaluation of the call, then one
+                // projection per result ordinal in written order. The
+                // callable hands back one value of its result-list nominal
+                // and the ordinals are its fields, so this is the ordinary
+                // struct projection every other field read uses.
+                CheckedStatement::DestructuringLet {
+                    bindings,
+                    nominal,
+                    value: expression,
+                    ..
+                } => {
+                    let aggregate = self.expression(expression)?;
+                    self.note_call_result(expression, aggregate)?;
+                    if self.value_type(aggregate)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    for (ordinal, binding) in bindings.iter().enumerate() {
+                        let field = u32::try_from(ordinal)
+                            .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
+                        let value = self.project_struct_path(aggregate, &[field], true)?;
+                        if self.bindings.insert(*binding, value).is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        self.promote_binding_if_needed(*binding)?;
+                    }
+                }
+                CheckedStatement::SetList {
+                    targets,
+                    nominal,
+                    value: expression,
+                    ..
+                } => self.set_list(targets, *nominal, expression)?,
                 CheckedStatement::Set { target, value, .. } => self.set(target, value)?,
                 CheckedStatement::Replace {
                     binding,
@@ -1942,6 +1974,64 @@ impl<'program> IrBuilder<'program> {
         }
         self.promote_binding_if_needed(binding)?;
         self.set(target, value)
+    }
+
+    /// [GRAM-4, SET-1, CALL-4] `set (x, y) = f(...);`.
+    ///
+    /// One evaluation of the call, then one projection per result ordinal in
+    /// written order, each committed to its target exactly as a single-target
+    /// `set` commits. Every target of a checked target list is a plain place;
+    /// a subscript target stops in the checker.
+    fn set_list(
+        &mut self,
+        targets: &[CheckedSetTarget],
+        nominal: crate::semantic::NominalId,
+        expression: &CheckedExpression,
+    ) -> Result<(), LoweringFailure> {
+        let aggregate = self.expression(expression)?;
+        self.note_call_result(expression, aggregate)?;
+        if self.value_type(aggregate)? != IrType::Nominal(IrNominalId(nominal.0)) {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        for (ordinal, target) in targets.iter().enumerate() {
+            let CheckedSetTarget::Place(place) = target else {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            };
+            let field =
+                u32::try_from(ordinal).map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
+            let value = self.project_struct_path(aggregate, &[field], true)?;
+            if self.value_type(value)? != lower_type(place.ty)? {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+            let storage = self
+                .bindings
+                .get(&place.binding)
+                .copied()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            let root = self.load_storage_value(storage)?;
+            let replacement = if place.fields.is_empty() {
+                if self.value_type(root)? != self.value_type(value)? {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                value
+            } else {
+                self.replace_struct_path(root, &place.fields, value)?
+            };
+            let stored = match self.value_type(storage)? {
+                IrType::Address(referent) => {
+                    if self.value_type(replacement)? != referent.ty() {
+                        return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    self.store_addressed(storage, replacement, referent)?;
+                    storage
+                }
+                _ => replacement,
+            };
+            if self.bindings.insert(place.binding, stored) != Some(storage) {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+        }
+        Ok(())
     }
 
     fn set(

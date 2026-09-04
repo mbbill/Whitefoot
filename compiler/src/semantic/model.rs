@@ -1699,6 +1699,27 @@ pub(crate) enum CheckedStatement {
         binding: BindingId,
         value: CheckedExpression,
     },
+    /// [GRAM-4, CALL-4] `let (a, b) = f(...);`. One evaluation of a call whose
+    /// callee declares an ordered result list, and one fresh binding per
+    /// result ordinal in written order: binder i takes ordinal i, which is
+    /// field i of the callee's result-list value.
+    DestructuringLet {
+        node_path: NodePath,
+        bindings: Vec<BindingId>,
+        /// The callee's result-list nominal [CALL-4].
+        nominal: NominalId,
+        value: CheckedExpression,
+    },
+    /// [GRAM-4, CALL-4] `set (x, y) = f(...);`. The same one evaluation, with
+    /// result ordinal i committed to target i under the ordinary [SET-1]
+    /// commit judgment, in written order.
+    SetList {
+        node_path: NodePath,
+        targets: Vec<CheckedSetTarget>,
+        /// The callee's result-list nominal [CALL-4].
+        nominal: NominalId,
+        value: CheckedExpression,
+    },
     PropagateLet {
         /// Complete owning `let_stmt`, shared by Ok delivery and Err return.
         node_path: NodePath,

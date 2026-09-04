@@ -194,6 +194,45 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                 environment.insert(*binding, origin);
                 Ok(OriginFlow::continuing(environment))
             }
+            // [CALL-4] binder i takes result ordinal i, which is field i of
+            // the one result-list value the call produced.
+            CheckedStatement::DestructuringLet {
+                bindings, value, ..
+            } => {
+                let origin = self.expression(value, &environment)?;
+                for (ordinal, binding) in bindings.iter().enumerate() {
+                    let field = u32::try_from(ordinal)
+                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                    environment.insert(*binding, origin.clone().projected(&[field]));
+                }
+                Ok(OriginFlow::continuing(environment))
+            }
+            CheckedStatement::SetList { targets, value, .. } => {
+                let origin = self.expression(value, &environment)?;
+                for (ordinal, target) in targets.iter().enumerate() {
+                    let field = u32::try_from(ordinal)
+                        .map_err(|_| crate::SemanticCompilerFailure::CounterOverflow)?;
+                    let ordinal_origin = origin.clone().projected(&[field]);
+                    let binding = target.binding();
+                    let current = environment
+                        .get(&binding)
+                        .cloned()
+                        .unwrap_or(OriginSet::Unknown);
+                    let updated = match target {
+                        CheckedSetTarget::Place(place) if place.fields.is_empty() => ordinal_origin,
+                        CheckedSetTarget::Place(place)
+                            if self.checker.type_carries_identity(target.ty())? =>
+                        {
+                            current.replace_path(&place.fields, ordinal_origin)
+                        }
+                        CheckedSetTarget::Place(_)
+                        | CheckedSetTarget::ArrayIndex(_)
+                        | CheckedSetTarget::BufferIndex(_) => current,
+                    };
+                    environment.insert(binding, updated);
+                }
+                Ok(OriginFlow::continuing(environment))
+            }
             CheckedStatement::PropagateLet {
                 binding,
                 scrutinee,

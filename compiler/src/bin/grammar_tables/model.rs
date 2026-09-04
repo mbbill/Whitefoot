@@ -84,6 +84,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("contract", "Contract"),
         ("define", "Define"),
         ("when", "When"),
+        ("is", "Is"),
         ("law", "Law"),
         ("conform", "Conform"),
         ("const", "Const"),

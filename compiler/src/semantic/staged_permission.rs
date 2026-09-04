@@ -599,11 +599,14 @@ fn first_may_suspend_call(
 fn statement_expressions(statement: &CheckedStatement) -> Vec<&CheckedExpression> {
     match statement {
         CheckedStatement::Let { value, .. }
+        | CheckedStatement::DestructuringLet { value, .. }
         | CheckedStatement::Evaluate(value)
         | CheckedStatement::DropExpression { value, .. }
         | CheckedStatement::Return { value, .. }
         | CheckedStatement::Give { value, .. } => vec![value],
-        CheckedStatement::Set { value, .. } | CheckedStatement::Replace { value, .. } => {
+        CheckedStatement::Set { value, .. }
+        | CheckedStatement::SetList { value, .. }
+        | CheckedStatement::Replace { value, .. } => {
             vec![value]
         }
         CheckedStatement::PropagateLet { scrutinee, .. }
@@ -821,7 +824,9 @@ impl<'check> FlowBuilder<'check> {
             }
             CheckedStatement::Proof(_)
             | CheckedStatement::Let { .. }
+            | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. } => {
@@ -1127,6 +1132,17 @@ impl<'check> StagedSurvey<'check, '_> {
                 self.record(&footprint, segment, false);
                 self.value(value, &citation, segment);
             }
+            // [CALL-4] a binder or target list defines more than one place in
+            // one statement; the staged window describes one, so both forms
+            // deny here exactly as an expression statement does.
+            CheckedStatement::DestructuringLet { .. } => self.refuse_form(
+                "a destructuring `let`",
+                "bind the call's result ordinals in separate statements, so each footprint is read through a value initializer this judgment resolves",
+            ),
+            CheckedStatement::SetList { .. } => self.refuse_form(
+                "a `set` target list",
+                "commit the call's result ordinals in separate statements, so each footprint is read through a target this judgment resolves",
+            ),
             CheckedStatement::PropagateLet { scrutinee, .. }
             | CheckedStatement::Match { scrutinee, .. }
             | CheckedStatement::ValueMatchLet { scrutinee, .. } => {
@@ -1656,8 +1672,10 @@ const fn is_copy_element(element: CheckedFlatElement) -> bool {
 fn statement_citation(statement: &CheckedStatement) -> Option<NodePath> {
     match statement {
         CheckedStatement::Let { node_path, .. }
+        | CheckedStatement::DestructuringLet { node_path, .. }
         | CheckedStatement::PropagateLet { node_path, .. }
         | CheckedStatement::Set { node_path, .. }
+        | CheckedStatement::SetList { node_path, .. }
         | CheckedStatement::Replace { node_path, .. }
         | CheckedStatement::Return { node_path, .. }
         | CheckedStatement::Give { node_path, .. }

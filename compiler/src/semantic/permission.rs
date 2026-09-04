@@ -1043,6 +1043,13 @@ impl<'check> Program<'check> {
                     footprint: value_footprint(places, value, node_path),
                 })
             }
+            // [CALL-4] a binder or target list defines more than one place in
+            // one statement, and this window admits exactly one definition
+            // per statement. Refusal is the fail-closed direction: nothing
+            // here widens a permission it cannot describe.
+            CheckedStatement::DestructuringLet { .. } | CheckedStatement::SetList { .. } => Err(
+                InterposedRefusal::Form("a statement that binds an ordered result list"),
+            ),
             CheckedStatement::Set {
                 node_path,
                 target,
@@ -1741,8 +1748,10 @@ fn push_nested_blocks<'check>(
         | CheckedStatement::Region { body, .. }
         | CheckedStatement::CountedRange { body, .. } => blocks.push(body.as_slice()),
         CheckedStatement::Let { .. }
+        | CheckedStatement::DestructuringLet { .. }
         | CheckedStatement::PropagateLet { .. }
         | CheckedStatement::Set { .. }
+        | CheckedStatement::SetList { .. }
         | CheckedStatement::Replace { .. }
         | CheckedStatement::Proof(_)
         | CheckedStatement::DropExpression { .. }

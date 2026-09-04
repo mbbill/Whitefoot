@@ -7,7 +7,8 @@ use crate::{
 };
 
 use super::super::super::model::{
-    BindingId, CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, PropagationContext,
+    BindingId, CheckedMode, CheckedNominalKind, CheckedSetTarget, CheckedStatement, CheckedType,
+    PropagationContext,
 };
 use super::super::{CheckStop, Checker, FunctionSignature, LocalBinding, PreludeType};
 use super::{ControlScope, StatementResult};
@@ -20,6 +21,293 @@ const _: () = assert!(
 );
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// The result-list nominal a checked value carries, when it is one
+    /// [GRAM-2, CALL-4].
+    ///
+    /// A destructuring binder list and a `set` target list are the two places
+    /// that name a callee's result ordinals again, and both ask this one
+    /// question of the value in front of them rather than of the callee's
+    /// spelling or of the statement's shape.
+    fn result_list_of(&self, value: &super::super::TypedExpression) -> Option<crate::NominalId> {
+        let CheckedType::Nominal(nominal) = value.expression.ty() else {
+            return None;
+        };
+        (value.mode == CheckedMode::Own
+            && self
+                .result_list_nominals
+                .values()
+                .any(|other| *other == nominal))
+        .then_some(nominal)
+    }
+
+    /// The declared result ordinals of a result-list nominal, in written
+    /// order.
+    fn result_list_ordinals(
+        &self,
+        nominal: crate::NominalId,
+    ) -> Result<Vec<CheckedType>, CheckStop> {
+        match &self.nominal(nominal)?.kind {
+            CheckedNominalKind::Struct { fields } => {
+                Ok(fields.iter().map(|field| field.ty).collect())
+            }
+            _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
+        }
+    }
+
+    /// The [TYPE-5] rejection a binder or target list receives when its
+    /// right-hand side does not produce exactly that many result ordinals.
+    fn result_list_shape_rejection<T>(
+        &self,
+        call: NodeId,
+        written: usize,
+        value: &super::super::TypedExpression,
+    ) -> Result<T, CheckStop> {
+        self.issue_node(
+            SemanticRule::Type5,
+            call,
+            SemanticIssueKind::type_mismatch(
+                format!("an ordered result list of {written} results"),
+                self.checked_value_name(value.mode, value.expression.ty())?,
+            ),
+        )
+    }
+
+    /// Checks `let (a, b) = f(...);` [GRAM-4, TYPE-5, CALL-4].
+    ///
+    /// The call is evaluated once; binder i is an ordinary fresh `let`
+    /// binding of result ordinal i, at that ordinal's declared type and mode.
+    pub(super) fn check_destructuring_let(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        call: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut super::ControlCounters<'_>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let declarations = self
+            .declarations_at(node, crate::DeclarationRole::Let)?
+            .iter()
+            .map(|declaration| (declaration.id(), declaration.spelling().to_owned()))
+            .collect::<Vec<_>>();
+        let value = self.check_call(function, call, bindings, scope.loops.len())?;
+        let Some(nominal) = self.result_list_of(&value) else {
+            return self.result_list_shape_rejection(call, declarations.len(), &value);
+        };
+        let ordinals = self.result_list_ordinals(nominal)?;
+        if ordinals.len() != declarations.len() {
+            return self.result_list_shape_rejection(call, declarations.len(), &value);
+        }
+        let whole_origins = self.state_origins_of_value(&value, bindings)?;
+        let mut binder_ids = Vec::with_capacity(ordinals.len());
+        for (ordinal, ((declaration_id, spelling), ty)) in
+            declarations.into_iter().zip(ordinals).enumerate()
+        {
+            let binding = Self::allocate_binding(counters.next_binding)?;
+            counters.binding_names.push(spelling);
+            let field =
+                u32::try_from(ordinal).map_err(|_| SemanticCompilerFailure::CounterOverflow)?;
+            let state_origins = if self.type_carries_identity(ty)? {
+                whole_origins
+                    .clone()
+                    .map(|origins| origins.projected(&[field]))
+            } else {
+                None
+            };
+            if bindings
+                .insert(
+                    declaration_id,
+                    LocalBinding {
+                        binding,
+                        declaration: declaration_id,
+                        mode: CheckedMode::Own,
+                        ty,
+                        state_origins,
+                        live: true,
+                        loop_depth: scope.loops.len(),
+                        compiler_updated: false,
+                        borrow: None,
+                        slice: None,
+                        slice_loans: Vec::new(),
+                        suspended: false,
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            binder_ids.push(binding);
+        }
+        Ok(Self::continuing_statement(
+            CheckedStatement::DestructuringLet {
+                node_path: self.tree.path(node)?.clone(),
+                bindings: binder_ids,
+                nominal,
+                value: value.expression,
+            },
+            value.effects,
+        ))
+    }
+
+    /// Checks `set (x, y) = f(...);` [GRAM-4, SET-1, TYPE-5, CALL-4].
+    ///
+    /// Every target is formed and judged by the ordinary [SET-1] target
+    /// judgment in written order, then the one call is evaluated, then each
+    /// commit is re-established exactly as a single-target `set` is. Two
+    /// targets rooted at one binding would make one statement's two commits
+    /// order-dependent; the general disjointness judgment is [LIV-2]'s, so
+    /// this version admits only pairwise distinct roots.
+    pub(super) fn check_result_list_set(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let target_nodes = self.tree.children_with(node, Production::Place)?;
+        let call = self
+            .tree
+            .first_child_with(node, Production::Call)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let mut declarations = Vec::with_capacity(target_nodes.len());
+        let mut targets = Vec::with_capacity(target_nodes.len());
+        let mut effects = super::super::EffectSet::NONE;
+        for target_node in &target_nodes {
+            let affine_fix = self.set_affine_restructuring(*target_node, call)?;
+            let (declaration, target, target_effects) = self.check_set_target(
+                function,
+                *target_node,
+                bindings,
+                scope.loops.len(),
+                affine_fix,
+            )?;
+            if declarations
+                .iter()
+                .any(|(earlier, _)| *earlier == declaration)
+            {
+                return self.issue_node(
+                    SemanticRule::Set1,
+                    *target_node,
+                    SemanticIssueKind::InvalidSetTarget {
+                        root_class: "a root this statement already writes".to_owned(),
+                        required_classes: "one target list writes pairwise distinct roots",
+                    },
+                );
+            }
+            if !matches!(target, CheckedSetTarget::Place(_)) {
+                return self.unsupported(
+                    crate::UnsupportedSemanticFeature::ResultListSubscriptTarget,
+                    *target_node,
+                );
+            }
+            declarations.push((declaration, *target_node));
+            targets.push(target);
+            effects = effects.union(target_effects);
+        }
+        let value = self.check_call(function, call, bindings, scope.loops.len())?;
+        let Some(nominal) = self.result_list_of(&value) else {
+            return self.result_list_shape_rejection(call, targets.len(), &value);
+        };
+        let ordinals = self.result_list_ordinals(nominal)?;
+        if ordinals.len() != targets.len() {
+            return self.result_list_shape_rejection(call, targets.len(), &value);
+        }
+        for (target, ty) in targets.iter().zip(&ordinals) {
+            if target.ty() != *ty {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    call,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_type_name(target.ty())?,
+                        self.checked_type_name(*ty)?,
+                    ),
+                );
+            }
+        }
+        for (declaration, target_node) in &declarations {
+            if !bindings
+                .get(declaration)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .live
+            {
+                return self.issue_node(
+                    SemanticRule::Own1,
+                    *target_node,
+                    SemanticIssueKind::UseAfterMove {
+                        mechanical_fix: "introduce a new `let` binding before reuse",
+                    },
+                );
+            }
+        }
+        Ok(Self::continuing_statement(
+            CheckedStatement::SetList {
+                node_path: self.tree.path(node)?.clone(),
+                targets,
+                nominal,
+                value: value.expression,
+            },
+            value.effects.union(effects),
+        ))
+    }
+
+    /// Checks `return e1, ..., en;` in a declaration that writes an ordered
+    /// result list [GRAM-2, GRAM-4, FN-1, CALL-4].
+    ///
+    /// Expression i produces result ordinal i under exactly the ordinary
+    /// return judgment for that ordinal's written `rtype`, and the statement
+    /// hands back the one result-list value carrying them in written order.
+    /// Nothing below this point sees a second return shape.
+    pub(super) fn check_result_list_return(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        scope: ControlScope<'_>,
+    ) -> Result<StatementResult, CheckStop> {
+        let nominal = function
+            .result_list
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let expressions = self.tree.children_with(node, Production::Expr)?;
+        let mut fields = Vec::with_capacity(expressions.len());
+        let mut effects = super::super::EffectSet::NONE;
+        for (expression_node, declared) in expressions.iter().zip(&function.results) {
+            self.check_return_implicit_read(function, *expression_node, bindings)?;
+            let value =
+                self.check_expression(function, *expression_node, bindings, scope.loops.len())?;
+            if value.expression.ty() != declared.ty || value.mode != CheckedMode::Own {
+                return Err(CheckStop::source_issue(crate::SemanticIssue {
+                    rule: SemanticRule::Fn1,
+                    location: crate::SemanticLocation::SourceNode(
+                        self.tree.path(node)?.clone(),
+                        self.tree.coordinate(*expression_node)?,
+                    ),
+                    kind: SemanticIssueKind::ReturnMismatch,
+                }));
+            }
+            self.borrow_for_destination(CheckedMode::Own, &value, *expression_node)?;
+            effects = effects.union(value.effects);
+            fields.push(value.expression);
+        }
+        let node_path = self.tree.path(node)?.clone();
+        Ok(StatementResult {
+            statement: CheckedStatement::Return {
+                node_path: node_path.clone(),
+                value: super::super::super::model::CheckedExpression::ConstructStruct {
+                    carrier: node_path,
+                    nominal,
+                    fields,
+                },
+                drops: self.live_affine_drops(bindings, &HashSet::new())?,
+            },
+            can_continue: false,
+            effects,
+            all_paths_deliver: true,
+            direct_give: false,
+            give_states: Vec::new(),
+            break_states: Vec::new(),
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn check_propagate_let(
         &self,

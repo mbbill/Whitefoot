@@ -65,7 +65,7 @@ Every nonempty physical line begins with exactly two ASCII spaces for each enclo
 A closing brace is rendered after reducing the depth for the block it closes.
 A match-arm header is therefore one level inside its match, and statements in the arm body are two levels inside it.
 
-The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs`.
+The line-bearing simple productions are `field`, `variant`, `fn_sig`, `law`, `fn_bind`, `const_decl`, `doc`, `contract_define`, `requires_clause`, `ensures_clause`, `set_stmt`, `expr_stmt`, `return_stmt`, `proof_use`, `break_stmt`, and `give_stmt`, plus a `let_stmt` whose selected right-hand side is `ordinary_let_rhs`, `propagate_let_rhs`, or `replace_let_rhs` and a `let_stmt` whose selected binder is a parenthesized binder list [GRAM-4].
 Each renders completely on one line, including its final semicolon.
 
 The generically block-bearing productions are `struct_decl`, `enum_decl`, `contract_decl`, `conform_decl`, the body of `fn_decl`, `contract_block`, `region_stmt`, `match_stmt`, `value_match`, `if_stmt`, `value_if`, and `arm`.
@@ -76,6 +76,7 @@ An `invariant_stmt` carrying a proof block renders its introducer through `{` on
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
 A `proof_use` whose multiplied source is a parenthesized relation renders exactly one space between its `*` and that `(`, `use 3 * (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, while the relation's own affine parentheses keep the generic attachment.
+A `fn_decl` result list renders exactly one space between `->` and its `(`, a destructuring `let_stmt` exactly one space between `let` and its `(`, and a `set_stmt` target list exactly one space between `set` and its `(`; each of these three stated spaces overrides the generic right attachment of `(` exactly as the `for` header's does, so the canonical spellings are `-> (kept: own u64, spare: own u64)`, `let (kept, spare) = split(taken: move run);`, and `set (kept, spare) = split(taken: move run);` [GRAM-2, GRAM-4].
 A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
 A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 An ordinary `loop_stmt` without a parenthesized invariant header keeps the one-line introducer `loop` plus optional label through `{`.
@@ -218,14 +219,15 @@ variant      := TYPEID "(" vfield_list? ")" ";"
 vfield_list  := vfield ("," vfield)*
 vfield       := IDENT ":" type
 fn_decl      := program_kind? "fn" IDENT generics? region_params? "(" param_list? ")"
-                "->" result_binding effects contract_block? "{" doc? stmt* "}"
+                "->" ( result_binding | "(" result_binding ("," result_binding)+ ")" )
+                effects contract_block? "{" doc? stmt* "}"
 program_kind := "command"
 result_binding:= IDENT ":" rtype
 contract_block:= "contract" "{" contract_define* requires_clause* ensures_clause* "}"
 contract_define:= "define" IDENT "=" expr ";"
 requires_clause:= "requires" clause_expr ";"
 ensures_clause:= "ensures" ("when" result_route ":")? clause_expr ";"
-result_route:= TYPEID "(" fieldbind ")"
+result_route:= (IDENT "is")? TYPEID "(" fieldbind ")"
 contract_decl:= "contract" TYPEID generics? "{" doc? fn_sig* law* "}"
 fn_sig       := "fn" IDENT region_params? "(" param_list? ")" "->" result_binding effects ";"
 law          := "law" IDENT "(" (law_arg ("," law_arg)*)? ")" ";"
@@ -261,17 +263,19 @@ targ   := type | REGIONID | const
 stmt        := let_stmt | set_stmt | expr_stmt | return_stmt | loop_stmt
              | for_stmt | invariant_stmt | break_stmt | region_stmt
              | if_stmt | match_stmt | give_stmt
-let_stmt    := "let" IDENT "="
+let_stmt    := "let" ( IDENT "="
                ( ordinary_let_rhs | propagate_let_rhs | replace_let_rhs
                | value_match | value_if )
+               | "(" IDENT ("," IDENT)+ ")" "=" call ";" )
 if_stmt     := "if" expr "{" stmt* "}" ("else" (if_stmt | "{" stmt* "}"))?
 value_if    := "if" expr "{" stmt* "}" "else" (value_if | "{" stmt* "}")
 ordinary_let_rhs:= expr ";"
 propagate_let_rhs := "propagate" expr ";"
 replace_let_rhs := "replace" place "=" expr ";"
-set_stmt    := "set" place "=" expr ";"
+set_stmt    := "set" ( place "=" expr ";"
+               | "(" place ("," place)+ ")" "=" call ";" )
 expr_stmt   := call ";"
-return_stmt := "return" expr ";"
+return_stmt := "return" expr ("," expr)* ";"
 loop_stmt   := "loop" LABEL? ("(" header_invariant ("," header_invariant)* ")")?
                "{" stmt* "}"
 for_stmt    := "for" LABEL? "(" for_binding ("," header_invariant)* ")"

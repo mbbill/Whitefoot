@@ -23,12 +23,27 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
     for statement in statements {
         match statement {
             CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. } => collect_expression(value, bindings),
             CheckedStatement::PropagateLet { scrutinee, .. } => {
                 collect_expression(scrutinee, bindings);
+            }
+            CheckedStatement::SetList { targets, value, .. } => {
+                for target in targets {
+                    match target {
+                        CheckedSetTarget::Place(_) => {}
+                        CheckedSetTarget::ArrayIndex(target) => {
+                            collect_expression(&target.offset, bindings);
+                        }
+                        CheckedSetTarget::BufferIndex(target) => {
+                            collect_expression(&target.offset, bindings);
+                        }
+                    }
+                }
+                collect_expression(value, bindings);
             }
             CheckedStatement::Set { target, value, .. }
             | CheckedStatement::Replace { target, value, .. } => {

@@ -510,6 +510,13 @@ impl<'check> Survey<'check, '_> {
                 self.moved_places(value, node_path);
                 self.expression(value);
             }
+            // [CALL-4] a binder or target list writes more than one place in
+            // one statement. The iteration footprint below describes one
+            // written target per statement, so this form is refused rather
+            // than given a footprint that does not describe it.
+            CheckedStatement::DestructuringLet { .. } | CheckedStatement::SetList { .. } => {
+                self.refuse_form("a statement that binds an ordered result list");
+            }
             CheckedStatement::Set {
                 node_path,
                 target,

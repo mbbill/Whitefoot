@@ -527,6 +527,9 @@ struct ExpressionJudgment {
 #[derive(Clone, Debug)]
 struct AvailablePostcondition {
     relation: RelationTemplate,
+    /// The declared result ordinal this clause's result datum names
+    /// [CALL-4]. A single-result declaration has ordinal zero.
+    ordinal: u32,
     variant: Option<crate::PreludeDeclarationId>,
     field: Option<crate::PreludeDeclarationId>,
     summary: VerifiedPostconditionSummary,
@@ -1615,6 +1618,7 @@ impl Analyzer<'_, '_> {
             .filter_map(|(postcondition, proof)| {
                 Some(AvailablePostcondition {
                     relation: postcondition.relation.clone(),
+                    ordinal: postcondition.selector.ordinal,
                     variant: postcondition.selector.variant,
                     field: postcondition
                         .selector
@@ -2324,6 +2328,84 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// [ENT-3.S12, CALL-4] establishes, at each destination of a binder or
+    /// target list, every published relation naming that destination's result
+    /// ordinal.
+    ///
+    /// The destinations are given in written order, so destination i is
+    /// result ordinal i; `extra_kills` are the events the same statement's
+    /// commits contribute, which a substitution must survive exactly as it
+    /// must survive the call's own.
+    fn establish_result_list_destinations(
+        &mut self,
+        statement: &crate::NodePath,
+        destinations: &[Option<(BindingId, Vec<GoalProjection>, CheckedType)>],
+        value: &CheckedExpression,
+        prepared: &PreparedCall,
+        extra_kills: &[KillEvent],
+        states: &mut ProofFlowState,
+    ) {
+        let CheckedExpression::UserCall {
+            function,
+            call,
+            arguments,
+            goal_arguments,
+            ..
+        } = value
+        else {
+            return;
+        };
+        if *function != prepared.function || *call != prepared.call {
+            return;
+        }
+        for (index, destination) in destinations.iter().enumerate() {
+            let Ok(ordinal) = u32::try_from(index) else {
+                continue;
+            };
+            // A subscript place is no [ENT-2] term, so an ordinal committed to
+            // one has no destination term and its relations land nowhere.
+            let Some((binding, fields, ty)) = destination else {
+                continue;
+            };
+            if fragment_type(*ty).is_none() {
+                continue;
+            }
+            let Some(result_term) =
+                self.postcondition_place_term(PlaceRoot::Binding(*binding), fields, *ty)
+            else {
+                continue;
+            };
+            for available in self.available_postconditions(*function) {
+                if available.variant.is_some() || available.ordinal != ordinal {
+                    continue;
+                }
+                let Some(instantiated) = self.instantiate_call_postcondition_relation(
+                    *function,
+                    call,
+                    &available.relation,
+                    arguments,
+                    goal_arguments,
+                    result_term,
+                ) else {
+                    continue;
+                };
+                if !self.s12_substitutions_survive(&instantiated.substitutions, &prepared.kills)
+                    || !self.s12_substitutions_survive(&instantiated.substitutions, extra_kills)
+                {
+                    continue;
+                }
+                self.retain_direct_result(
+                    statement,
+                    *binding,
+                    &instantiated,
+                    &available,
+                    prepared,
+                    &mut states.facts,
+                );
+            }
+        }
+    }
+
     fn receiver_argument_overlaps(
         &self,
         expression: &CheckedExpression,
@@ -2817,6 +2899,7 @@ impl Analyzer<'_, '_> {
     ) -> bool {
         match statement {
             CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::Return { value, .. }
@@ -2828,6 +2911,12 @@ impl Analyzer<'_, '_> {
             | CheckedStatement::Replace { target, value, .. } => {
                 self.expression_writes_place(value, place)
                     || self.set_target_writes_place(target, place)
+            }
+            CheckedStatement::SetList { targets, value, .. } => {
+                self.expression_writes_place(value, place)
+                    || targets
+                        .iter()
+                        .any(|target| self.set_target_writes_place(target, place))
             }
             CheckedStatement::Break { .. } | CheckedStatement::Proof(_) => false,
             CheckedStatement::Match {
@@ -2865,8 +2954,10 @@ impl Analyzer<'_, '_> {
                 .iter()
                 .all(|statement| self.statement_falls_through(statement)),
             CheckedStatement::Let { .. }
+            | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
@@ -9791,6 +9882,140 @@ impl Analyzer<'_, '_> {
         judgment
     }
 
+    /// The [ENT-5] commit kill of one `set` target, and the goal-origin and
+    /// outcome state a whole-place commit invalidates. One target list's
+    /// commits are exactly this event per target, on the same edge.
+    fn collect_target_kill(
+        &mut self,
+        node_path: &crate::NodePath,
+        target: &CheckedSetTarget,
+        state: &mut ProofFlowState,
+        target_kills: &mut Vec<KillEvent>,
+    ) {
+        match target {
+            CheckedSetTarget::Place(place) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(place.binding),
+                    deref: self.is_holder(place.binding),
+                    fields: place.fields.clone(),
+                };
+                target_kills.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: false,
+                    source: node_path.clone(),
+                });
+                if place.fields.is_empty() {
+                    state.facts.origins.remove(&place.binding);
+                    state.facts.outcomes.remove(&place.binding);
+                }
+            }
+            CheckedSetTarget::ArrayIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.binding),
+                    deref: self.is_holder(target.binding),
+                    fields: target.fields.clone(),
+                };
+                target_kills.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
+            CheckedSetTarget::BufferIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.root.binding),
+                    deref: self.is_holder(target.root.binding),
+                    fields: target.root.fields.clone(),
+                };
+                target_kills.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
+        }
+    }
+
+    /// [GRAM-4, SET-1, CALL-4] one `set` target list.
+    ///
+    /// Every target is judged, then the one call is judged, then every commit
+    /// kill applies on the same edge, and only then does each target receive
+    /// the published relations naming its result ordinal [ENT-3.S12]. There is
+    /// no commit value: [ENT-3.S5] gives a call right-hand side no image, so
+    /// no ordinal's commit establishes an equality of its own.
+    fn walk_set_list(
+        &mut self,
+        node_path: &crate::NodePath,
+        targets: &[CheckedSetTarget],
+        value: &CheckedExpression,
+        state: &mut ProofFlowState,
+    ) {
+        let mut target_reached = true;
+        for target in targets {
+            target_reached &= self.judge_set_target(target, state);
+        }
+        let ExpressionJudgment {
+            prepared_call: prepared,
+            reached: value_reached,
+        } = self.expression_effects(value, state);
+        let commit_reached = target_reached && value_reached;
+        for target in targets {
+            invalidate_goal_origin_for_set(&mut state.facts, target);
+        }
+        let mut target_kills = Vec::new();
+        for target in targets {
+            self.collect_target_kill(node_path, target, state, &mut target_kills);
+        }
+        let establishes = commit_reached && prepared.is_some();
+        let target_event = establishes
+            .then(|| self.proof_event(FlowEventKind::PostconditionReceiverWrite, Some(node_path)));
+        if let Some(target_event) = target_event {
+            if !target_kills.is_empty() {
+                self.promote_flow_contradiction(state);
+            }
+            for event in &target_kills {
+                self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.invalidate_entry_images(
+                    state,
+                    std::slice::from_ref(event),
+                    Some(target_event),
+                );
+            }
+        } else {
+            self.apply_kills(state, &target_kills);
+        }
+        let Some(prepared) = prepared else {
+            return;
+        };
+        if !commit_reached {
+            return;
+        }
+        let destinations = targets
+            .iter()
+            .map(|target| match target {
+                CheckedSetTarget::Place(place) => Some((
+                    place.binding,
+                    place
+                        .fields
+                        .iter()
+                        .map(|field| GoalProjection::Field(*field))
+                        .collect(),
+                    place.ty,
+                )),
+                CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+            })
+            .collect::<Vec<_>>();
+        self.establish_result_list_destinations(
+            node_path,
+            &destinations,
+            value,
+            &prepared,
+            &target_kills,
+            state,
+        );
+    }
+
     fn walk_set(
         &mut self,
         node_path: &crate::NodePath,
@@ -9847,48 +10072,7 @@ impl Analyzer<'_, '_> {
             .as_ref()
             .and_then(|_| self.unsigned_division_dividend_form(value, &mut state.affine));
         let mut target_kills = Vec::new();
-        match target {
-            CheckedSetTarget::Place(place) => {
-                let spelled = PlaceTerm {
-                    root: PlaceRoot::Binding(place.binding),
-                    deref: self.is_holder(place.binding),
-                    fields: place.fields.clone(),
-                };
-                target_kills.push(KillEvent::Write {
-                    place: self.resolve(&spelled),
-                    element: false,
-                    source: node_path.clone(),
-                });
-                if place.fields.is_empty() {
-                    state.facts.origins.remove(&place.binding);
-                    state.facts.outcomes.remove(&place.binding);
-                }
-            }
-            CheckedSetTarget::ArrayIndex(target) => {
-                let spelled = PlaceTerm {
-                    root: PlaceRoot::Binding(target.binding),
-                    deref: self.is_holder(target.binding),
-                    fields: target.fields.clone(),
-                };
-                target_kills.push(KillEvent::Write {
-                    place: self.resolve(&spelled),
-                    element: true,
-                    source: node_path.clone(),
-                });
-            }
-            CheckedSetTarget::BufferIndex(target) => {
-                let spelled = PlaceTerm {
-                    root: PlaceRoot::Binding(target.root.binding),
-                    deref: self.is_holder(target.root.binding),
-                    fields: target.root.fields.clone(),
-                };
-                target_kills.push(KillEvent::Write {
-                    place: self.resolve(&spelled),
-                    element: true,
-                    source: node_path.clone(),
-                });
-            }
-        }
+        self.collect_target_kill(node_path, target, state, &mut target_kills);
         let receivers =
             if let (Some(prepared), Some(receiver_route)) = (prepared.as_ref(), receiver_route) {
                 self.prepare_direct_receiver(receiver_route, value, prepared, &target_kills)
@@ -10015,6 +10199,48 @@ impl Analyzer<'_, '_> {
                         &mut state.affine,
                     );
                 }
+                true
+            }
+            // [GRAM-4, CALL-4] `let (a, b) = f(...);`. The call is judged once;
+            // each binder is declared and receives the published relations
+            // naming its own result ordinal [ENT-3.S12].
+            CheckedStatement::DestructuringLet {
+                node_path,
+                bindings,
+                value,
+                ..
+            } => {
+                let judgment = self.expression_effects(value, state);
+                let mut destinations = Vec::with_capacity(bindings.len());
+                for binding in bindings {
+                    self.declare(*binding);
+                    destinations.push(
+                        self.summary(*binding)
+                            .and_then(|summary| summary.ty)
+                            .map(|ty| (*binding, Vec::new(), ty)),
+                    );
+                }
+                if let Some(prepared) = &judgment.prepared_call
+                    && judgment.reached
+                {
+                    self.establish_result_list_destinations(
+                        node_path,
+                        &destinations,
+                        value,
+                        prepared,
+                        &[],
+                        state,
+                    );
+                }
+                true
+            }
+            CheckedStatement::SetList {
+                node_path,
+                targets,
+                value,
+                ..
+            } => {
+                self.walk_set_list(node_path, targets, value, state);
                 true
             }
             CheckedStatement::PropagateLet {
@@ -10959,8 +11185,10 @@ impl Analyzer<'_, '_> {
     ) -> bool {
         match statement {
             CheckedStatement::Let { .. }
+            | CheckedStatement::DestructuringLet { .. }
             | CheckedStatement::PropagateLet { .. }
             | CheckedStatement::Set { .. }
+            | CheckedStatement::SetList { .. }
             | CheckedStatement::Replace { .. }
             | CheckedStatement::Evaluate(_)
             | CheckedStatement::DropExpression { .. }
@@ -11046,6 +11274,7 @@ impl Analyzer<'_, '_> {
     ) -> bool {
         match statement {
             CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Evaluate(value)
             | CheckedStatement::DropExpression { value, .. }
             | CheckedStatement::PropagateLet {
@@ -11069,6 +11298,21 @@ impl Analyzer<'_, '_> {
             } => {
                 if normal_reaches {
                     self.collect_set_kills(node_path, target, value, kills);
+                }
+                normal_reaches
+            }
+            // [CALL-4] every target of one target list commits on the same
+            // edge, so the loop-carried kill set is the union of the commits.
+            CheckedStatement::SetList {
+                node_path,
+                targets,
+                value,
+                ..
+            } => {
+                if normal_reaches {
+                    for target in targets {
+                        self.collect_set_kills(node_path, target, value, kills);
+                    }
                 }
                 normal_reaches
             }
