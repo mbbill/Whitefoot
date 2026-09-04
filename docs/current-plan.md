@@ -3,25 +3,21 @@
 Status: IMPLEMENTED AND ACTIVATED as v0.40 on
 `codex/source-proof`.
 
-Active language authority: v0.42,
-`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`,
-which adds [FORM-8]'s one canonical region spelling over the v0.41 comparison
-symbols and the v0.40 proof surface this plan delivered.
-`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.41 is
-archived at `spec/kernel-spec-v0.41.md` and the merge-time record is in
+Active language authority: v0.43,
+`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`,
+which makes every loop body a region block and repairs [ENT-6]'s control-flow
+join, over the v0.42 canonical region spelling, the v0.41 comparison symbols,
+and the v0.40 proof surface this plan delivered.
+`spec/kernel-spec.md` carries those exact ACTIVE bytes; the superseded v0.42 is
+archived at `spec/kernel-spec-v0.42.md` and the merge-time record is in
 `governance/APPROVALS.md`. The candidate that preceded activation hashed to
-`8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`;
+`1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`;
 activation flipped its status line and changed no other byte. Activation is
 branch content: nothing merges to `main` until the owner approves the exact
 revision and canonical `make check` passes on that revision. This document
 records technical direction and sequencing; it grants no permission and adds
 no workflow gate.
 
-The stable path now carries a **v0.43 CANDIDATE** over those bytes, declaring
-`CANDIDATE v0.43 supersedes v0.42 6b935d2e…`. A candidate is work-branch
-content, not an installed identity: canonical `make check` stops it at
-`spec-archive-integrity` until an activation archives the outgoing v0.42 bytes
-and records a new chain line, so the authority named above is unchanged.
 v0.43 carries two independent amendments. The first makes every `loop_stmt` and
 `for_stmt` body a region block [OWN-3, OWN-11]: the body introduces one unnamed
 region over exactly that body, a borrow written directly in the body takes it
