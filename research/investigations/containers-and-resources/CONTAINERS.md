@@ -113,7 +113,10 @@ the same six sentences of `DESIGN.md` 3.K.
   formal by that call's datum and each `writes` target by its post-state, establishes
   the relation on the normal continuation or at a selected arm, and gives it the
   ordinary L0 support of its substituted terms. Without that rule no proof route below
-  has a first step.
+  has a first step. **In v0.44 S13 is the source-call half only** (decided 2026-09-04):
+  no compiler-owned row carries a declared relation set yet, so the `writes`-target
+  post-state substitution is what B7 adds when the rows exist, and `DESIGN.md`'s
+  [CALL-6] record carries the correction.
 - **A hand-back contract is complete** [CALL-7]: a function that constructs a measured
   value or receives one `own` and returns it publishes every measure of it, exactly
   where the body establishes an exact value and two-sidedly otherwise. That is why the
