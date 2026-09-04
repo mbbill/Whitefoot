@@ -70,19 +70,23 @@ fn recursively_boxed_tree_executes_with_derived_cleanup() {
     assert!(llvm.contains("call ptr @malloc"));
     assert!(llvm.contains("icmp ne ptr"));
     assert!(llvm.contains("call void @free"));
-    // A recursive enum's derived drop is a traversal, not a level of one: the
-    // entry point sets up a worklist and runs it, and the per-node step hands
-    // each of the two boxed children to that worklist instead of descending
-    // into it. The two frees the straight-line helper used to perform are the
-    // traversal's, one for each block it takes off the list.
+    // A recursive enum's derived release is one release action per node type
+    // that enters itself at the closing edge of its release graph [PROV-6]:
+    // the owner deleted the cycle refusal on 2026-09-04 and ruled that the
+    // walk may recurse, so the worklist driver that kept the depth off the
+    // machine stack (an allocation and an abort on the release path) is gone.
+    // Each of the two boxed children is released by the same action, and each
+    // block is freed by the action that owns it.
     let entry = derived_drop(&llvm, "define private void @wf.drop.t");
-    assert!(entry.contains("call void @wf.drop.step."));
-    assert!(entry.contains("call void @wf.drop.run(ptr %work)"));
-    let step = derived_drop(&llvm, "define private void @wf.drop.step.");
-    assert_eq!(step.matches("call void @wf.drop.push").count(), 2);
-    assert!(!step.contains("call void @wf.drop.t"));
-    let traversal = derived_drop(&llvm, "define private void @wf.drop.run");
-    assert!(traversal.contains("call void @free(ptr %node)"));
+    let name = entry
+        .strip_prefix("define private void @")
+        .and_then(|rest| rest.split('(').next())
+        .expect("a derived release action name");
+    assert_eq!(entry.matches(&format!("call void @{name}(")).count(), 2);
+    assert_eq!(entry.matches("call void @free(").count(), 2);
+    assert!(!llvm.contains("@wf.drop.step."));
+    assert!(!llvm.contains("@wf.drop.push"));
+    assert!(!llvm.contains("@wf.drop.run"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
