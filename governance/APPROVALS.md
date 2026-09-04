@@ -2523,24 +2523,24 @@ ACTIVE-SPEC: v0.42 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0ee
   2's approval and rule 4's approval of the content recorded here; this record
   creates no separate approval step, and nothing in it asserts that the
   approval has been given.
-- SPECIFICATION: activate Whitefoot v0.43 at exact SHA-256
-  `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`.
-  It supersedes active v0.42 at SHA-256
-  `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`;
-  those outgoing bytes are preserved byte-for-byte as
-  `spec/kernel-spec-v0.42.md`. The candidate that preceded activation declared
-  `CANDIDATE v0.43 supersedes v0.42` and hashed to
-  `1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`;
-  activation flipped that status line to `ACTIVE v0.43` and changed no other
-  byte. Per the specification's own META-5 delta declaration: numbered rules
-  are +0/-0 and 132 remain, with no id added or retired; grammar productions
-  are +0/-0 and 83 remain, with no production added, removed, or given a new
-  decision; and
+- SPECIFICATION: install Whitefoot v0.43 as a work-branch CANDIDATE at exact
+  SHA-256
+  `1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`.
+  Its status line declares `CANDIDATE v0.43 supersedes v0.42
+  6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`. A
+  candidate is not an activated identity: this record adds no `ACTIVE-SPEC:`
+  line, writes no `spec/kernel-spec-v0.42.md` archive, and leaves the chain
+  tail at v0.42, so canonical `make check` stops the revision at
+  `spec-archive-integrity` with the candidate message until a later activation
+  archives the outgoing bytes and records the chain line. Per the
+  specification's own META-5 delta declaration: numbered rules are +0/-0 and
+  132 remain, with no id added or retired; grammar productions are +0/-0 and
+  83 remain, with no production added, removed, or given a new decision; and
   fixed lowercase atoms, compound punctuation tokens, token bytes, writer
   operation spellings, opaque system nominal spellings, runtime-trap families,
   entry forms, contract block forms, exception clauses, and the 203 system
   operations and declaration records are unchanged. [OWN-3], [OWN-11],
-  [FORM-8], and [ENT-6] are amended, and the specification carries **two
+  [FORM-8], and [ENT-6] are amended, and the candidate carries **two
   independent amendments**.
 
   The first makes every loop body a region block. The body of a `loop_stmt` or
@@ -2616,4 +2616,29 @@ ACTIVE-SPEC: v0.42 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0ee
 
   No other case changes its expectation kind, cited rule, or runnable status,
   and coverage remains complete at 132/132 rules.
+
+## 2026-09-04 — merge-time approval content: activate v0.43 (loop bodies as region blocks and the associative image join; no rule added or retired; 132 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.43 at exact SHA-256
+  `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`.
+  It supersedes active v0.42 at SHA-256
+  `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.42.md`. The candidate that preceded activation was
+  installed on `main` by the record above of 2026-09-03: it declared
+  `CANDIDATE v0.43 supersedes v0.42` and hashed to
+  `1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`;
+  activation flipped that status line to `ACTIVE v0.43` and changed no other
+  byte, so the META-5 delta declaration, the two independent amendments
+  ([OWN-3], [OWN-11], [FORM-8], [ENT-6] amended; numbered rules +0/-0, 132
+  remain), and the conformance boundary recorded there are the content
+  activated here. This record adds the `ACTIVE-SPEC:` chain line below and
+  the archive of the outgoing bytes, and nothing else.
+- CONFORMANCE BOUNDARY: this merge adds, modifies, deletes, or renames no
+  conformance case, manifest row, adapter, runner, or collection wiring; the
+  boundary recorded with the candidate on 2026-09-03 is unchanged.
 ACTIVE-SPEC: v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26
