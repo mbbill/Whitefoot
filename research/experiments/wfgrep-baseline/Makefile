@@ -1,6 +1,17 @@
 # WFGREP-BASELINE build and phase driver. Phases run in protocol order:
 #   build -> gen -> verify -> null-before -> bench -> null-after -> counters
 # Profiling is driven per PROTOCOL.md after the bench summaries exist.
+#
+# This driver is the record of the single run of 2026-08-06 (RESULTS.md),
+# retained with the frozen protocol. It is not replayable from HEAD: the
+# subject it measured is the tests/programs/wfgrep.wf of that day (its
+# digest is pinned in PROTOCOL.md), and that program became a recursive
+# search printing PATH:LINE:TEXT lines on 2026-08-18, so `verify` no longer
+# matches the pins and the timed phases would measure a different program.
+# MANIFEST.txt stays the pinned corpus and output identity that
+# ../wfgrep-double-walk/ still verifies its shape sources against. A replay
+# writes its JSON lines to the scratch root, never to the committed raw/
+# evidence of the frozen run.
 
 ROOT := $(abspath ../../..)
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
@@ -9,7 +20,7 @@ BUILD := $(WORK_ROOT)/build
 TMP := $(WORK_ROOT)/tmp
 CARGO_TARGET := $(WORK_ROOT)/cargo-target
 BUNDLE := $(abspath .)
-RAW ?= $(BUNDLE)/raw/wfgrep-baseline-1.jsonl
+RAW ?= $(WORK_ROOT)/replay.jsonl
 ENV := WFB_WORK_ROOT=$(WORK_ROOT) WFB_MANIFEST=$(BUNDLE)/MANIFEST.txt WFB_RAW=$(RAW)
 CLANG := /usr/bin/clang
 RUSTC := rustc
@@ -19,7 +30,7 @@ RUSTC := rustc
 build: prepare $(BUILD)/wfgrep $(BUILD)/wfgrep.raw.ll $(BUILD)/wfgrep.opt.ll $(BUILD)/wfgrep.s $(BUILD)/runner
 
 prepare:
-	mkdir -p $(BUILD) $(TMP) $(CARGO_TARGET) $(BUNDLE)/raw
+	mkdir -p $(BUILD) $(TMP) $(CARGO_TARGET)
 
 $(BUILD)/runner: runner.rs | prepare
 	$(RUSTC) --edition=2024 -C opt-level=2 -C panic=abort $< -o $@

@@ -25,6 +25,25 @@ bytes; only the compiler differs (base revision `23bb7b0` versus this
 branch). The verify phase matched the inherited WFGREP-BASELINE corpus
 pins and all 15 subject-case output/exit pins byte for byte.
 
+## Replay status (2026-09-03)
+
+The run above is complete and closed; this bundle is now its record, not a
+current driver.
+
+- The committed `raw/wide-scan-lowering-1.jsonl` (1,629 lines) hashes to
+  `f1aefae7fb5b669510ffc0ad2b21793c154613e1a9de5ad9b9734c021edfbbab`.
+  The digest pinned above names the bytes before commit `c4e82fba`
+  (2026-08-25) rewrote the
+  personal path string inside the one `identity` record; no sample or
+  summary value changed.
+- Both subjects were the `tests/programs/wfgrep.wf` of 2026-08-06, which
+  since commit `238ba7ce` (2026-08-18) is a recursive search printing
+  `PATH:LINE:TEXT` lines, and `base` needs the base-revision compiler
+  `23bb7b0` checked out at `BASE_ROOT`. The driver is therefore not
+  replayable from HEAD; it stays as the frozen protocol's record, and a
+  replay writes its JSON lines to the scratch root, never to the committed
+  raw file.
+
 ## Route (a) — closed as preregistered
 
 The base build's code-shape artifacts show no vector fast path in the
