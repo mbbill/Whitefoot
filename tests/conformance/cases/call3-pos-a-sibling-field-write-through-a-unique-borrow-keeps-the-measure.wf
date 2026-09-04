@@ -1,0 +1,28 @@
+struct Frame {
+  flags: u64;
+  tail: buffer<u8>;
+}
+
+fn mark(frame: &uniq Frame) -> marked: own unit reads(frame.flags), writes(frame.flags) {
+  doc "Writes the sibling scalar field and nothing else.";
+  let raised = deref(frame).flags +wrap 1_u64;
+  set deref(frame).flags = raised;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[CALL-3] for a parameter of no loan-bearing type the projected write kills measures as an ordinary descriptor-storage-overlapping [ENT-5] event [MSR-2], and the declared row is what says which storage that is. The callee's row names frame.flags, so the projection reaches frame.flags, which overlaps neither the descriptor storage of frame.tail nor any holder reached to it, and the bound size == len(frame.tail) taken before the call survives it. This is the caller's half of the sentence [MSR-2] states for a direct commit: the granularity is storage, and a call is judged by exactly the same overlap.";
+  let body = buffer_new(8_u64, 0_u8);
+  let frame = Frame(flags: 0_u64, tail: move body);
+  let size = len(frame.tail);
+  region {
+    mark(frame: &uniq frame);
+  }
+  if 3_u64 < size {
+    let byte = frame.tail[3_u64];
+    if byte == 1_u8 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

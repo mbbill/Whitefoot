@@ -5678,6 +5678,102 @@ over measures. The capacity identity is therefore reachable by the checker as an
 premise and unwritable by the writer as a clause. That is the production B1 landed and
 this batch did not touch it.
 
+### 6.0d B3 written, and blocked on its own order (v0.45)
+
+**D1 is closed, and the price is that §7's B3 paragraph is wrong about its own
+prerequisites.** [CALL-1], [CALL-2], [CALL-3] and [CALL-5] are written into the
+active specification as four added rules; [ENT-5]'s clause (b), [FN-9]'s
+entry-image sentence and [SYS-8] are amended in place; the compiler selects the
+transport from the callee's declared parameter mode and type and, for a
+declaration record with no body, from its declared contract; and the sweep's
+recorded unsound accept is an ordinary rejection:
+
+```text
+| case                                                        | expected verdict |
+|-------------------------------------------------------------|------------------|
+| ent5-neg-callee-uniq-buffer-replace-kills-length            | reject, OP-4     |
+| call1-pos-a-shared-borrow-keeps-every-fact                  | run, exit 0      |
+| call2-pos-an-own-operand-measure-reaches-the-result         | run, exit 0      |
+| call2-neg-a-result-carries-only-the-contract                | reject, OP-4     |
+| call3-pos-a-sibling-field-write-through-a-unique-borrow-... | run, exit 0      |
+| call3-neg-a-descriptor-write-through-a-unique-borrow-...    | reject, OP-4     |
+| call5-neg-an-element-only-body-kills-the-measure-the-same   | reject, OP-4     |
+| call5-neg-a-bound-borrow-actual-kills-the-same              | reject, OP-4     |
+```
+
+**The blocker, measured 2026-09-04 on `batch/0127-containers`.** With the rules
+in place the branch gate is not green. Three conformance cases, eight snapshot
+rows, forty-one compiler library tests and twelve of the twenty-eight sources in
+`tests/programs` move from accept to reject, and every one of them is the same
+sentence: a `&uniq` parameter whose referent type is
+measured selects no transport, so a call through it kills the caller's measures
+*whatever the callee's body does*, and a helper that only fills elements takes
+its caller's length with it. The three conformance cases are
+`x-requires-output-capacity-run` (a `copy_bytes(out: &uniq buffer<u8>, ...)`
+whose caller then reads `output[3_u64]`), `x-base64-rfc-vectors-run` (the same
+shape at `man_output[0_u64]`), and `x-child-reborrow-run`, which is the sharp
+one: its `proxy_byte` declares `requires 1_u64 < len(deref(out))`, calls
+`write_byte(out: &uniq deref(out))` through the same borrow, and then loses its
+**own precondition** at `set deref(out)[1_u64] = 9_u8;`.
+
+**Neither destination this design gives such a helper exists yet, and that is
+the whole finding.** §7 says B3 needs "none of the new types". It needs one of
+two things this version does not have:
+
+- **The by-value hand-back** [CALL-2] — `fn fill(out: own Vector<u8>, ...) -> (out: own Vector<u8>, ...) ensures len(out) == ...` — requires a measure over a **result place**, which [CALL-4] explicitly defers and §7 lands in **B7**.
+- **The view** [CALL-3] — a callee taking `MutSlice<'r, u8>` and writing element storage — requires a **writable view type**, which §7 lands in **B7**. Today's `slice<'r, T>` is the only loan-bearing row and no [SET-1] target reaches through it.
+
+So the two migrations B3's own rules name are both downstream of B3. The
+repair a writer can actually write today is a source branch re-establishing the
+bound below the call, whose false edge is not intended program behaviour — the
+shape this project's rules name as a source or compiler defect — and for
+`x-child-reborrow-run` there is no repair at all, because the fact the body
+loses is the one its contract already promised.
+
+> **Correction, decided 2026-09-04, from B3's implementation.** §7's B3
+> paragraph says this batch is "second in the live-defect order and needing none
+> of the new types". That is false as stated. [CALL-5]'s conservative default is
+> sound and its ordering is not: it withdraws a transport before either
+> replacement exists, so between B3 and B7 the language admits no way to write a
+> helper that fills a caller's run. B3 belongs **with or after** the batch that
+> lands the writable view and the measured result, or the corpus and the writer
+> pay for the interval. The rules themselves are unchanged by this correction;
+> only their place in the order is.
+
+> **Correction, decided 2026-09-04, from B3's implementation.** §7's B3 test
+> list names "probe `q8`'s program, whose accept becomes the same rejection".
+> `q8` is D1 written with every region elided, and at this branch's tip that
+> program is a [FORM-8] `RegionSpelling` rejection before any transport question
+> arises — v0.42's canonical region spelling, which §7's own B0a records as
+> landed, refuses the bare borrow. The [CALL-5] case that carries `q8`'s point
+> is therefore written with the borrow **bound to a name and moved into the
+> call**, which is a different checked argument shape reaching the same declared
+> parameter and is the same claim about the actual's spelling.
+
+**What [CALL-3] could not exercise, and where it goes.** §7 asks for a callee
+writing through a `MutSlice<'r, Vector<u8>>` that kills `len(origin[0])` and
+keeps `len(origin)`. Neither `Vector`, `MutSlice`, nor any measured element type
+exists in this version, so that program has no shape and the viewed-element half
+of [CALL-3] is stated and unexercised, exactly as [MSR-1]'s subscript admission
+is. It lands in **B7/B8** with the runs and the views, against the row whose
+element type is itself measured. What is expressible now is the storage
+restatement over today's types, and the two cases above are that: a callee whose
+declared row names a sibling field keeps the run's measure, and one whose row
+names the run-bearing field kills it — one minimal pair over one declared
+effect path.
+
+**The system operations were the one place the classification had to read a
+declared contract rather than a type.** `read_at`, `directory_next`,
+`host_copy_bytes` and `host_copy_utf8` all take `destination: &uniq buffer<u8>`
+and declare `writes(destination)`; classified by parameter type alone they
+would kill every caller's length and take the whole I/O corpus with them. They
+have no body, and [SYS-8] already states that the range-bearing family accesses
+its declared buffer over `[start, end)` — so that declared extent is the
+contract [CALL-5]'s second selector names, and [SYS-8] now says in one sentence
+that the extent is the complete one and is element storage. This is the same
+move [CALL-5] itself records for [RES-8]'s saturation fact: a declared clause is
+a selector, a body is not.
+
 ### 6.1 What the compiler did in this session
 
 ```text

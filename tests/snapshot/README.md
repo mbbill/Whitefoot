@@ -16,8 +16,9 @@ the survivors on every gate run and notice when one of them changes verdict.
 Only sweep programs whose author stated an expectation are here; a program with
 no stated expectation records a verdict nobody predicted, which is not worth a
 gate row. That excludes the sweep's known unsound accept, which is tracked
-where a language claim belongs — the conformance xfail case
-`ent5-neg-callee-uniq-buffer-replace-kills-length`.
+where a language claim belongs — the conformance case
+`ent5-neg-callee-uniq-buffer-replace-kills-length`, recorded `xfail` from the
+sweep until the [CALL] transports made it an ordinary rejection.
 
 ## What is here
 

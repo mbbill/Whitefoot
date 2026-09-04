@@ -1924,7 +1924,7 @@ pub(super) fn collect_operand_reads(
 /// The caller place one actual reaches, for a parameter whose row projects an
 /// access through it.
 fn argument_place(places: &PlaceMap, argument: &CheckedExpression) -> Option<ResolvedPlace> {
-    if let Some((place, _element, _entry_image)) = places.argument_referent(argument) {
+    if let Some((place, _entry_image)) = places.argument_referent(argument) {
         return Some(place);
     }
     match argument {

@@ -1808,7 +1808,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 signature
                     .parameters
                     .iter()
-                    .map(|parameter| (parameter.declaration, parameter.mode)),
+                    .map(|parameter| (parameter.declaration, parameter.mode, &parameter.ty)),
                 &signature.declared_effects.writes,
             ));
         }

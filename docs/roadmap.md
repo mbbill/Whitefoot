@@ -52,7 +52,7 @@ interval it stands for, so nested joins reach the flat join's image and
 acceptance stops depending on the shape of the control join. The repair only
 adds images: no program v0.42 accepted is refused.
 
-v0.45 adds four rules and retires none (140 remain), and adds one grammar atom,
+v0.45 adds eight rules and retires none (144 remain), and adds one grammar atom,
 `is`. A `fn_decl` may write an ordered result list, `-> (kept: own u64, spare:
 own u64)`, and a caller names its ordinals again with a destructuring `let`
 binder list or a `set` target list; a `return` writes one expression per
@@ -85,6 +85,26 @@ a value, a counted endpoint and a clause operand. The three readers are dotless
 operation spellings, so `ReservedLowerNames` gains all three and a writer
 declaration may no longer be spelled `cap`, `room` or `head`. The batch that
 carried it is B2 of the same design.
+
+The same version adds that design's call transports, which is where its last
+four added rules are, and they close the sweep's one recorded unsound accept.
+[CALL-1] states that a shared-borrow argument is a kill event for no fact
+supported by its actual's place; [CALL-2] that an `own` argument is a consuming
+use and that the result carries exactly the callee's declared relations;
+[CALL-3] that a projected write through a view reaches the viewed range's
+storage and no measure of the origin place, while every other parameter kills
+as an ordinary descriptor-storage event; and [CALL-5] that no transport reads
+the actual's spelling, the callee's body, or any summary derived from a body,
+so a parameter for which no transport is selected kills conservatively.
+[ENT-5]'s clause (b), [FN-9]'s entry-image sentence and [SYS-8] are amended in
+place. The batch that carried it is B3 of the same design, and it is **not
+merge-ready**: a `&uniq` parameter over a measured referent now selects no
+transport, so a helper that fills a caller's run takes that caller's measure
+with it, and both replacements the rules name — a measure over a result place
+and a writable view — are in a later batch. Three conformance cases, eight
+snapshot rows, forty-one compiler library tests and twelve of the twenty-eight
+sources in `tests/programs` move from accept to reject on that one sentence, and
+section 6.0d of the design records the ordering question that raises.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`

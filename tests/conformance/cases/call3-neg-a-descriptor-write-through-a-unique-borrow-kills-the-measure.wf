@@ -1,0 +1,28 @@
+struct Frame {
+  flags: u64;
+  tail: buffer<u8>;
+}
+
+fn refit(frame: &uniq Frame) -> refitted: own unit reads(frame.tail), writes(frame.tail), allocates(heap) {
+  doc "Replaces the run the field holds.";
+  let smaller = buffer_new(2_u64, 0_u8);
+  let discarded = replace deref(frame).tail = move smaller;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[CALL-3] the same rule's other half, over the same struct and the same guard: this callee's declared row names frame.tail, so the projection reaches the descriptor storage of frame.tail itself, the bound size == len(frame.tail) dies at the call, and the guard 3_u64 < size no longer says anything about the run the caller now holds. The subscript must be rejected at [OP-4] with the residual 3_u64 < len(frame.tail). Against the positive case beside it this is a minimal pair over one declared effect path.";
+  let body = buffer_new(8_u64, 0_u8);
+  let frame = Frame(flags: 0_u64, tail: move body);
+  let size = len(frame.tail);
+  region {
+    refit(frame: &uniq frame);
+  }
+  if 3_u64 < size {
+    let byte = frame.tail[3_u64];
+    if byte == 1_u8 {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

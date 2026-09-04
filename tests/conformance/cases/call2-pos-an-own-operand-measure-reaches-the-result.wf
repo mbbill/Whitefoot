@@ -1,0 +1,18 @@
+fn measure(source: own buffer<u8>) -> size: own u64 reads(source) contract {
+  ensures size == len(source);
+} {
+  doc "Consumes the run and hands back its length.";
+  let taken = len(source);
+  return taken;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[CALL-2] the result of a call carries exactly the callee's declared relations. The own argument is a consuming use, so every fact supported by line dies at the call; the declared relation names that operand's measure, which at the caller denotes the call datum [MSR-3], and a datum has empty support, so the consume the same statement performs cannot kill it. The caller therefore knows size == 10 after the call and knows it only from the contract.";
+  let line = buffer_new(10_u64, 0_u8);
+  let size = measure(source: move line);
+  if size == 10_u64 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

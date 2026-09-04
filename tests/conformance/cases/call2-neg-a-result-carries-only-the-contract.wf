@@ -1,0 +1,13 @@
+fn shrink(source: own buffer<u8>) -> smaller: own buffer<u8> allocates(heap) {
+  doc "Consumes the run and returns a shorter one, declaring no relation.";
+  let fresh = buffer_new(2_u64, 0_u8);
+  return move fresh;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[CALL-2] only the contract's facts exist on the result. The callee declares no relation, so nothing the caller knew about line reaches got: the result is a fresh binding and no fact of any argument flows to it. The subscript at offset 9 of the two-byte run the callee actually returned must therefore be rejected at [OP-4] with the residual 9_u64 < len(got), and the caller that wants a relation between what it handed over and what it got back has to read it from a contract or not have it.";
+  let line = buffer_new(10_u64, 0_u8);
+  let got = shrink(source: move line);
+  let tail = got[9_u64];
+  return exit_status(code: 0_u8);
+}

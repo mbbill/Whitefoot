@@ -56,10 +56,10 @@ use super::term::{
     ProjectedPlaceTerm, TermId, TermKind, TermTable, ZERO, integer_value, type_range,
 };
 use super::{
-    BoundsRequest, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedDerivationSet,
-    EntailmentContext, FunctionEntailment, FunctionPostconditionProof, JoinedSourceProofProvenance,
-    LoopInvariantOutcome, LoopInvariantProof, ObligationFamily, ObligationOutcome,
-    PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
+    BoundsRequest, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CallTransport,
+    CountedDerivationSet, EntailmentContext, FunctionEntailment, FunctionPostconditionProof,
+    JoinedSourceProofProvenance, LoopInvariantOutcome, LoopInvariantProof, ObligationFamily,
+    ObligationOutcome, PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
     PostconditionEntryImageOutcome, PostconditionExit, S7Derivation, SourceProofCertificateFailure,
     SourceProofCheck, SourceProofOutcome, VerifiedPostconditionSummary,
     VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
@@ -2515,7 +2515,7 @@ impl Analyzer<'_, '_> {
         }
         if self
             .argument_referent(expression)
-            .is_some_and(|(place, _, _)| place.overlaps(receiver))
+            .is_some_and(|(place, _)| place.overlaps(receiver))
         {
             return true;
         }
@@ -5074,10 +5074,7 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn argument_referent(
-        &self,
-        argument: &CheckedExpression,
-    ) -> Option<(ResolvedPlace, bool, bool)> {
+    fn argument_referent(&self, argument: &CheckedExpression) -> Option<(ResolvedPlace, bool)> {
         self.places.argument_referent(argument)
     }
 
@@ -5143,9 +5140,18 @@ impl Analyzer<'_, '_> {
                     else {
                         continue;
                     };
-                    if let Some((place, element, entry_image_only)) =
-                        self.argument_referent(argument)
-                    {
+                    // [CALL-5] The transport is the declared parameter's, not
+                    // the actual's: an unselected transport kills
+                    // conservatively, and only a viewed range confines the
+                    // write to element storage [CALL-1, CALL-2, CALL-3].
+                    let transport = callee
+                        .and_then(|callee| callee.parameter_transports.get(index).copied())
+                        .unwrap_or(CallTransport::Conservative);
+                    if transport == CallTransport::SharedBorrow {
+                        continue;
+                    }
+                    let element = transport.writes_element_storage();
+                    if let Some((place, entry_image_only)) = self.argument_referent(argument) {
                         for fields in writes {
                             let mut written = place.clone();
                             written.fields.extend_from_slice(fields);
@@ -5182,9 +5188,22 @@ impl Analyzer<'_, '_> {
                 for (index, argument) in arguments.iter().enumerate() {
                     let written =
                         u8::try_from(index).is_ok_and(|ordinal| writes.contains(&ordinal));
+                    // A system operation has no body: its declaration record
+                    // is its whole contract, so [CALL-5]'s selector reads that
+                    // record. [SYS-8] fixes the written extent of a
+                    // range-bearing operation inside `[start, end)` of its
+                    // declared buffer parameter, which is a viewed range
+                    // [CALL-3]; every other declared parameter selects its
+                    // transport from its declared mode and type alone.
+                    let transport = operation_row.map_or(CallTransport::Conservative, |row| {
+                        CallTransport::of_system_parameter(row, index)
+                    });
+                    if transport == CallTransport::SharedBorrow {
+                        continue;
+                    }
+                    let element = transport.writes_element_storage();
                     if written
-                        && let Some((place, element, entry_image_only)) =
-                            self.argument_referent(argument)
+                        && let Some((place, entry_image_only)) = self.argument_referent(argument)
                     {
                         if entry_image_only {
                             events.push(KillEvent::EntryImageHolderWrite {

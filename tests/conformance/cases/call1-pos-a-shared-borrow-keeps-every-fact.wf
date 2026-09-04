@@ -1,0 +1,17 @@
+fn inspect(source: &buffer<u8>) -> seen: own u8 reads(source) contract {
+  define spare = len(deref(source));
+  requires 0_u64 < spare;
+} {
+  doc "Reads one byte through a shared borrow.";
+  return deref(source)[0_u64];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[CALL-1] a call is a kill event for no fact supported by a shared-borrow actual's place. [OWN-5] admits no write through a shared holder, so a body can exhibit none and [EFF-2]'s both-ways row check admits none in the declared row; no writes occurrence therefore projects onto line and no [MSR-2] kill fires. The allocation fact len(line) = 10 survives the call and discharges the subscript at offset 9.";
+  let line = buffer_new(10_u64, 0_u8);
+  region {
+    let first = inspect(source: &line);
+  }
+  let tail = line[9_u64];
+  return exit_status(code: 0_u8);
+}

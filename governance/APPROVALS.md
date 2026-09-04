@@ -2797,8 +2797,8 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   [CALL-4] takes the ordinal-named route `when b is V(f: r):`, its
   omitted-binder condition, its ambiguity refusal at the declaration, and the
   two [ENT-3.S12] destinations only a multi-result contract exercises.
-- CONFORMANCE BOUNDARY: this merge ADDS thirteen conformance cases and their
-  thirteen manifest rows, MODIFIES the source of 30 existing cases by renaming
+- CONFORMANCE BOUNDARY (B1b and B2): these two batches ADD thirteen conformance
+  cases and their thirteen manifest rows, MODIFIES the source of 30 existing cases by renaming
   a binding whose spelling [OP-1] now reserves (listed under CONSEQUENCE
   above; no expectation, rule citation, status or manifest row of any of them
   changes), and deletes or renames none; it changes no adapter,
@@ -2818,9 +2818,84 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   exit 0) and `msr2-neg-descriptor-write-kills-the-measure` (expecting reject,
   OP-4). Before this merge the corpus holds 520 cases with the native adapter
   reporting Pass=518, Xfail=1, Skip=1; after it the corpus holds 533 with the
-  adapter reporting Pass=531, Xfail=1, Skip=1. The one xfail
+  adapter reporting Pass=531, Xfail=1, Skip=1. Through B2 the one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation, and status: [MSR-2] restated the granularity of
   a measure kill over storage, while the classification of what a projected
-  callee write touches is [CALL-3]'s and is not in this merge.
-ACTIVE-SPEC: v0.45 d779c19cd0b5527b8b2c4cd92ccd67f619b36b601cd7e4debab11c19d652b7b5 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+  callee write touches is [CALL-3]'s and is not in those two batches. B3 below
+  is the batch that changes that case's status.
+- CONTENT (B3, the type-derived call transports): v0.45 additionally lands the
+  containers design's [CALL] transports. Numbered rules +4/-0 (144 remain in
+  total for this version), being [CALL-1], [CALL-2], [CALL-3] and [CALL-5];
+  grammar productions +0/-0, grammar atoms +0/-0, writer operation spellings
+  +0/-0, and no surface of any kind is added by this batch. [ENT-5], [FN-9] and
+  [SYS-8] are amended in place. [CALL-1] states that a shared-borrow argument
+  is a kill event for no fact supported by its actual's place, on the whole
+  ground of [OWN-5]'s shared-holder prohibition and [EFF-2]'s both-ways row
+  check. [CALL-2] states that an `own` argument is a consuming use and that the
+  result carries exactly the callee's declared relations and no fact of any
+  argument. [CALL-3] states the kill classification over storage: a projected
+  write through a view reaches the viewed range's storage, including the
+  measures of a viewed element whose type has descriptor storage of its own,
+  and reaches no measure of the origin place, while every other parameter kills
+  as an ordinary descriptor-storage-overlapping [ENT-5] event. [CALL-5] states
+  that no transport reads the actual's spelling, the callee's body, or any
+  summary derived from a body, and that a parameter for which no transport is
+  selected kills conservatively. [ENT-5]'s clause (b) is amended so that what a
+  projected callee write reaches is [CALL-1] through [CALL-3]'s classification
+  and nothing else; [FN-9]'s entry-image sentence reads the same classification
+  at a call; and [SYS-8] states that the declared `[start, end)` extent of its
+  range-bearing family is the complete extent that family may change and is
+  element storage, which is what makes those rows viewed-range writes under
+  [CALL-3] rather than conservative ones.
+- CONSEQUENCE OF THE CONSERVATIVE DEFAULT, AND THE BATCH'S OWN BLOCKER: a
+  `&uniq` parameter whose referent type is measured selects no transport, so a
+  call through one kills that actual's measures whatever the callee's body
+  does. That is what closes D1 — the callee that replaced its referent can no
+  longer leave the caller a stale length — and it is also a live expressiveness
+  loss, because it applies equally to a helper that only writes elements. Both
+  destinations the design gives such a helper are unavailable in this version:
+  the by-value hand-back needs a measure over a result place, which [CALL-4]
+  defers, and the view needs a writable view type, which the container batch
+  adds. With this batch's compiler in place the branch gate is NOT green:
+  three conformance cases (`x-requires-output-capacity-run`,
+  `x-base64-rfc-vectors-run`, `x-child-reborrow-run`), eight snapshot rows,
+  forty-one compiler library tests, one `--bins` test and twelve of the
+  twenty-eight sources in `tests/programs` move from accept to reject, every one
+  of them this one phenomenon and none of them a second defect. Measured on this
+  revision: `conformance-run` Pass=536 Fail=3 Skip=1 over 540 cases,
+  `snapshot-run` Pass=483 Flip=8, `test-unit` 18 of 1420 failing,
+  `test-sampling` 23 of 70; `repository-invariants`,
+  `approval-history-integrity`, `spec-append-only`, `spec-archive-integrity`,
+  `spec-prose-integrity`, `make -C compiler static`, `make conformance` with
+  coverage 144/144, and `research-tests` all pass. Those cases, rows and
+  tests are left exactly as they stand: the repair the language offers today is
+  a source branch whose false edge is not intended program behaviour, which is
+  the shape this project's rules forbid, and `x-child-reborrow-run` has no
+  repair at all — its `proxy_byte` holds `requires 1_u64 < len(deref(out))` and
+  loses that very fact to its own inner call. This record is therefore NOT
+  ready for merge on B3's account, and the ordering question it raises — whether
+  B3 waits for the writable view and the measured result, or the corpus pays —
+  is the owner's.
+- CONFORMANCE BOUNDARY (B3): this merge ADDS seven conformance cases and their
+  seven manifest rows, being `call1-pos-a-shared-borrow-keeps-every-fact`,
+  `call2-pos-an-own-operand-measure-reaches-the-result` and
+  `call3-pos-a-sibling-field-write-through-a-unique-borrow-keeps-the-measure`
+  (each expecting run, exit 0) and `call2-neg-a-result-carries-only-the-contract`,
+  `call3-neg-a-descriptor-write-through-a-unique-borrow-kills-the-measure`,
+  `call5-neg-an-element-only-body-kills-the-measure-the-same` and
+  `call5-neg-a-bound-borrow-actual-kills-the-same` (each expecting reject,
+  OP-4). It MODIFIES exactly one existing case,
+  `ent5-neg-callee-uniq-buffer-replace-kills-length`: its manifest row's
+  `status` moves from `xfail` to `runnable`, its `reason` field is removed
+  because the tracked gap it named is closed, its `rules` list gains `CALL-5`
+  and `CALL-3`, and its `doc` and the `doc` statement in its program are
+  rewritten to cite the rule that now rejects it. Its `id` and its `expect`
+  — `reject`, rule `OP-4` — are unchanged, and the program's executable text is
+  byte-identical: the case always declared this rejection and this merge is the
+  first at which the compiler reaches it, which is a gap closing and not an
+  expectation weakening. It DELETES and RENAMES no case, and changes no
+  adapter, runner, or collection wiring. Before this batch the corpus holds 533
+  cases; after it, 540. The declared verdicts the compiler does not reach are
+  the three named under CONSEQUENCE above, which this merge leaves untouched.
+ACTIVE-SPEC: v0.45 550d1e76dfb5a425c9911a3d2c9618274eec0d7c97504b2af90be17a51e0afca 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

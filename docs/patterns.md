@@ -18,7 +18,10 @@ terms and their readers `len`, `cap`, `room` and `head`, also introduced by
 v0.45 (P16): a measured value carries the standing facts `len <= cap`,
 `head <= cap` and `len + room = cap` with no writer statement, a write to a
 sibling field kills no measure, and the three new reader spellings are reserved
-against every writer declaration — the contract-clause
+against every writer declaration — and the four call transports v0.45 also
+introduces (P16), which fix what a call kills from the callee's declaration and
+never from its body, so a call through a `&uniq` run kills that run's measures
+— the contract-clause
 measure operands and the
 call datum introduced by v0.44 (P16, P21), the loop-body
 region block and the associative [ENT-6] join introduced by v0.43, the one canonical
@@ -608,41 +611,58 @@ operations stay outstanding. The compiler fixes the available storage at two
 slots for the implemented form, and the selected target chooses a window no
 larger than those two slots.
 
-## P16. One length fact above the writes
+## P16. One length fact above the writes it survives
 
-Problem: a program fills a buffer through `&uniq` callees and then hands a
-prefix of it to a call whose `requires` bounds that prefix by the buffer's
-length. The habit — and the reading of [ENT-5] an unguided writer forms in
-twenty minutes — is that the callee's write killed the length fact, so `let
-room = len(line);` has to be re-bound after every call that wrote through the
-borrow. The write did not kill it. Under v0.45 the support of a measure term
-over `P` is `P`'s **descriptor storage** [MSR-2] — the measure words the value
-carries — together with every holder a prefix of `P` reads through and the
-support of every offset in `P`. An element write overlaps the descriptor
-storage of the written element and none of `P`'s own, so it kills no measure of
-`P`, and the compiler honours that across a callee boundary. Only a write to
-`P`'s own descriptor storage or to a prefix of it — a fresh `buffer_new`, a
-`set` of the whole binding, a `replace` of `P` — kills it.
+Problem: a program takes a measure of a run, writes into that run, and then
+hands a prefix of it to a call whose `requires` bounds that prefix by the run's
+length. Which writes the measure survives is the whole question, and the
+answer is one sentence per kind of write.
 
-**Correction, v0.45.** The pattern used to say the support was `P`'s *root
-binding*, and the compiler used to read it that way. That is a strictly larger
-support than [MSR-2] states, and it cost a real fact: a write to a **sibling
-field** of the same struct killed the measure of a field beside it, so
-`set frame.flags = 1_u64;` killed `len(frame.tail)`. Descriptor storage is the
-place itself, so a sibling-field write now kills neither, and the length fact
-survives a write to anything but the run's own descriptor. The compiler still
-classifies a projected callee write through a `&uniq buffer<T>` actual from the
-actual's shape rather than from what the callee does; that gap is tracked as
-the conformance case `ent5-neg-callee-uniq-buffer-replace-kills-length` and is
-not repaired here.
+Under v0.45 the support of a measure term over `P` is `P`'s **descriptor
+storage** [MSR-2] — the measure words the value carries — together with every
+holder a prefix of `P` reads through and the support of every offset in `P`. A
+write overlapping that storage kills the measure and no other write does. In
+the body that holds `P` this is exactly what a reader expects: an element write
+`set line[i] = b;` overlaps the descriptor storage of the written element and
+none of `P`'s own, so it kills no measure of `P`; a write to a **sibling
+field** of the same struct overlaps nothing of `P` either; and a fresh
+`buffer_new`, a `set` of the whole binding, or a `replace` of `P` kills it.
 
-Pattern: bind the length once, above the loop and above every write, and
-discharge every later requirement from that one binding.
+**At a call the classification is the callee's declaration, not the callee's
+body** [CALL-5]. A call through a `&'r` parameter kills nothing [CALL-1]. A
+call whose declared row names a field beside the run — `writes(frame.flags)` —
+reaches that field and leaves `len(frame.tail)` alone [CALL-3]. But a call
+whose declared row names a run behind a `&uniq` parameter — `writes(handle)`
+for `handle: &uniq buffer<u8>` — kills that run's measures **whatever the
+callee's body does with it**, because a body that writes one element and a
+body that replaces the whole referent are the same declaration to every reader
+of the signature and no rule may read a body to tell them apart.
+
+Pattern: bind the measure once, above the writes it survives, and take it
+again below any call that killed it.
 
 ```whitefoot
 let spare = len(line);
 let fits = end <= spare;
 ```
+
+**Correction, v0.45, from the call transports.** This pattern said the opposite
+of its third paragraph until v0.45: it said that a callee's write through a
+`&uniq` borrow never killed the caller's length, that `let spare = len(line);`
+after such a call was redundant ceremony, and that 34 of the 41 length bindings
+in the 2026-08-28 blind-writer trial existed only to re-establish a fact that
+had never died. That reading was true of the compiler and false of the
+language it was meant to describe: the compiler derived what a projected
+callee write reached from the **actual's syntactic shape**, so a `&uniq
+buffer<T>` argument was read as an element write no matter what the callee
+did, and a callee that replaced its referent left the caller holding a stale
+length it could use to index freed storage. That was the unsound accept the
+containers design records as D1 and the conformance case
+`ent5-neg-callee-uniq-buffer-replace-kills-length` tracked. [CALL-5] removes
+the shape from the judgment, so the re-bind after a call through a `&uniq`
+run is now necessary rather than redundant — and a helper that writes elements
+into a caller's run is, until that language has a writable view to take
+instead, a helper whose caller loses the measure.
 
 **Correction, v0.45.** The binding above was spelled `room` until v0.45. `cap`,
 `room` and `head` are [OP-1] reader spellings now [MSR-1], so all three joined
@@ -669,28 +689,30 @@ of one measure is what v0.44 removes; the hoisted binding above remains the
 right form for a *body* fact a loop reads many times, because a body is not a
 contract.
 
-The first line sits above the loop and above every `put_text` that writes
-through `&uniq line`. The second sits inside the loop after all of them,
-and it still discharges `emit_all`'s `requires length <= capacity`, because
-nothing between the two killed `len(line)`.
+The first line sits above every direct element write of `line` and above every
+call that writes a sibling field or takes `line` through a shared borrow. It
+does **not** sit above a call whose row writes `line` itself through a `&uniq`
+parameter: below such a call the binding says nothing about the run the caller
+now holds, and the measure has to be taken again.
 
 Evidence that it compiles as written:
 `research/experiments/blind-writer/2026-08-28/probes/probe_e_hoisted_length.wf`
 is a whole program in that shape — both length bindings above the loop, above
-every `put_text` and every `put_decimal` — and it is accepted.
+every `put_text` and every `put_decimal` — and it was accepted under the
+pre-[CALL-5] compiler this correction supersedes; it is a dated artifact and
+not current evidence for the placement above.
 
-Current value: the fact is load-bearing, not ceremony. It is the re-bind that
-is redundant, and the compiler accepts the re-bind, which is why the belief
-survives a whole program: 34 of the 41 length bindings in the five programs of
-the 2026-08-28 blind-writer trial existed only to re-establish a fact that had
-never died. Without that live fact, the call receives an [FN-8] rejection
-because nothing proves the callee's complete requirement. The repair is a
-dominating real branch, an already verified contract fact, or a local
-`invariant` whose optional written premises the checker can discharge. The
-compiler never inserts a callee-side fallback check.
+Current value: the fact is load-bearing, not ceremony, and where it is taken
+is now part of the pattern rather than a matter of taste. Without a live
+measure the call receives an [FN-8] rejection because nothing proves the
+callee's complete requirement. The repair is a dominating real branch, an
+already verified contract fact, a local `invariant` whose optional written
+premises the checker can discharge, or — below a call that killed it — simply
+reading the measure again. The compiler never inserts a callee-side fallback
+check.
 
-Replaces: defensive re-measurement of a container after every call that wrote
-into it, which in a language without a length fact is the only way to be safe.
+Replaces: defensive re-measurement of a container after **every** call,
+including the calls that cannot have changed its measures.
 
 ## P17. Subtotal return instead of a threaded accumulator
 

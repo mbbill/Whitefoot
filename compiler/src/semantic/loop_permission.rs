@@ -1255,7 +1255,7 @@ pub(super) fn borrows_only_iteration_own(
     );
     if is_borrow_form {
         match places.argument_referent(expression) {
-            Some((place, _, _)) if is_iteration_own(&place) => {}
+            Some((place, _)) if is_iteration_own(&place) => {}
             _ => return false,
         }
     }

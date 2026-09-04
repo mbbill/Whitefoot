@@ -1,0 +1,18 @@
+fn store_first(handle: &uniq buffer<u8>) -> stored: own unit writes(handle) contract {
+  define spare = len(deref(handle));
+  requires 0_u64 < spare;
+} {
+  doc "Writes one element position and never the descriptor.";
+  set deref(handle)[0_u64] = 65_u8;
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "[CALL-5] no transport reads the callee's body. This callee writes one element position and replaces nothing, and the caller's length nevertheless dies: the transport is selected by the declared parameter mode and type, a &uniq parameter whose referent type is measured selects no transport, and an unselected transport kills conservatively as an ordinary descriptor-storage event [CALL-3]. A body that replaces the referent and a body that writes one element are the same declaration to every reader of the signature, which is why this program and the replacing one beside it reach the same [OP-4] rejection with the residual 9_u64 < len(line).";
+  let line = buffer_new(10_u64, 0_u8);
+  region {
+    store_first(handle: &uniq line);
+  }
+  let tail = line[9_u64];
+  return exit_status(code: 0_u8);
+}
