@@ -172,5 +172,8 @@ fn the_byte_accessor_without_its_capacity_branch_is_an_op4_rejection() {
     assert_ne!(stripped, source, "the capacity branch must have been found");
     let failure = compile_rejection(&[("byte_string_unguarded.wf", stripped.as_bytes())]);
     assert!(failure.contains("[OP-4]"), "{failure}");
-    assert!(failure.contains("index < len_of(deref(s).buf)"), "{failure}");
+    assert!(
+        failure.contains("index < len_of(deref(s).buf)"),
+        "{failure}"
+    );
 }

@@ -620,7 +620,10 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
                     measure.spelling()
                 ),
                 MeasureCell::ExactExtent => assert!(
-                    matches!(written, "N" | "allocated slots" | "viewed elements" | "len_of"),
+                    matches!(
+                        written,
+                        "N" | "allocated slots" | "viewed elements" | "len_of"
+                    ),
                     "{name}'s {} cell is the measured value's own extent, written {written}",
                     measure.spelling()
                 ),

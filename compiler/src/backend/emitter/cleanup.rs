@@ -450,13 +450,7 @@ fn emit_enum_cleanup_body(
                 });
             }
         }
-        emit_cleanup_jobs(
-            program,
-            qualification,
-            output,
-            &mut temporary,
-            jobs,
-        )?;
+        emit_cleanup_jobs(program, qualification, output, &mut temporary, jobs)?;
         output.push_str("  br label %done\n");
     }
 

@@ -7257,7 +7257,10 @@ impl Analyzer<'_, '_> {
             comparison(end_goal, length_goal),
             end_term,
             length_term,
-            format!("{} <= len_of({buffer_spelling})", self.render_expression(end)),
+            format!(
+                "{} <= len_of({buffer_spelling})",
+                self.render_expression(end)
+            ),
             states,
         );
     }
@@ -9647,22 +9650,22 @@ impl Analyzer<'_, '_> {
         )?;
         let inequality =
             AffineInequality::from_bounded_forms(&left, &right, relation.bound, &mut check).ok()?;
-        let mut term = |coefficient: super::affine::AffineCoefficient| {
-            match leaves.get(coefficient.term().index() as usize)? {
-                SourceLeaf::Measure(term) => Some(*term),
-                SourceLeaf::Local(binding) => {
-                    let binding = *binding;
-                    let fragment =
-                        fragment_type(CheckedType::Integer(self.affine_binding_type(binding)?))?;
-                    Some(self.terms.intern(TermKind::Place(
-                        PlaceTerm {
-                            root: PlaceRoot::Binding(binding),
-                            deref: false,
-                            fields: Vec::new(),
-                        },
-                        fragment,
-                    )))
-                }
+        let mut term = |coefficient: super::affine::AffineCoefficient| match leaves
+            .get(coefficient.term().index() as usize)?
+        {
+            SourceLeaf::Measure(term) => Some(*term),
+            SourceLeaf::Local(binding) => {
+                let binding = *binding;
+                let fragment =
+                    fragment_type(CheckedType::Integer(self.affine_binding_type(binding)?))?;
+                Some(self.terms.intern(TermKind::Place(
+                    PlaceTerm {
+                        root: PlaceRoot::Binding(binding),
+                        deref: false,
+                        fields: Vec::new(),
+                    },
+                    fragment,
+                )))
             }
         };
         let (left, right) = match inequality.terms() {
@@ -10565,7 +10568,11 @@ impl Analyzer<'_, '_> {
             .measure_atoms
             .keys()
             .copied()
-            .filter(|term| events.iter().any(|event| self.event_kills_term(*term, event)))
+            .filter(|term| {
+                events
+                    .iter()
+                    .any(|event| self.event_kills_term(*term, event))
+            })
             .collect();
         for term in stale {
             self.measure_atoms.remove(&term);

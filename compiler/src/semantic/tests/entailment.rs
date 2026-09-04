@@ -2509,7 +2509,10 @@ command fn main() -> status: own ExitStatus pure {
         "2 < 4 by the implicit length equality"
     );
     assert!(!outcomes[1].discharged, "9 < 4 is not derivable");
-    assert_eq!(outcomes[1].residual.as_deref(), Some("9_u64 < len_of(table)"));
+    assert_eq!(
+        outcomes[1].residual.as_deref(),
+        Some("9_u64 < len_of(table)")
+    );
     assert!(outcomes[1].derivation.is_none());
     let root = obligation_root(&summary, 0);
     assert_root_contains(
@@ -5647,7 +5650,10 @@ command fn main() -> status: own ExitStatus pure {
         !runtime_bounds.discharged,
         "len_of(b) = n bounds nothing without a fact about n"
     );
-    assert_eq!(runtime_bounds.residual.as_deref(), Some("3_u64 < len_of(b)"));
+    assert_eq!(
+        runtime_bounds.residual.as_deref(),
+        Some("3_u64 < len_of(b)")
+    );
 }
 
 #[test]

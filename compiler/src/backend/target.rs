@@ -235,7 +235,6 @@ impl TargetStorageType {
     pub(super) fn bytes(length: u64) -> Self {
         Self::array(Self::integer(8), length)
     }
-
 }
 
 /// One logical slot in a generated frame.

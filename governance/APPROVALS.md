@@ -3072,4 +3072,51 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   expectation and status, the two skips that disappeared are the two rows named
   above, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0: no
   verdict of either corpus moved.
+- CONTENT (B7a3, the reader spellings, the recursive release and the invariant's
+  measure): no numbered rule is added or retired (148 remain) and no grammar
+  production is added or retired (87 remain). One production changes:
+  [GRAM-4]'s `affine_factor` admits a `call`, through which [INV-1] admits
+  exactly the four measure formers over an admitted measure place. Writer
+  operation spellings move +4/-4 within this version's own delta: the readers
+  are `len_of`, `cap_of`, `room_of` and `head_of` under the owner's ruling S36
+  of 2026-09-04, superseding v0.44's `len` and this version's earlier `cap`,
+  `room` and `head`, so `ReservedLowerNames` [OP-1] holds those four `_of`
+  spellings and the four bare words are ordinary identifiers a source
+  declaration may use again. The [ENT-2] and [MSR-1] measure terms take the same
+  four spellings, so one quantity keeps one name as term and as reader. [INV-1],
+  [MSR-5], [MSR-1], [GRAM-4], [OP-1], [BLK-0], [BLK-2], [BLK-3], [MSR-2],
+  [MSR-3], [CALL-4] and [PROV-6] are amended in place. [PROV-6] loses its
+  DEFERRED release-graph cycle clause under the owner's second ruling of the
+  same day: a cycle in a release graph can arise only where a heap is allowed,
+  so the derived release of a cyclic type is one release action per node type
+  entering itself and `tests/programs/recursive_tree.wf` stays accepted. The
+  DEFERRED count is therefore seven rather than eight. [BLK-0]'s completeness
+  sentence states the reading its own machine check already used: `room_of` is
+  the complement [MSR-2]'s standing identity determines, so a row publishing
+  `len_of` and `cap_of` of a place has published its `room_of`.
+- CONFORMANCE BOUNDARY (B7a3): this batch ADDS three conformance cases and their
+  three manifest rows, MODIFIES the source of seventy-nine existing cases and
+  the `doc` of sixteen existing manifest rows, and deletes and renames none; it
+  changes no adapter, runner, or collection wiring, and no existing case's id,
+  expectation, rule citation or status. The three added ids are
+  `inv1-pos-a-measure-former-is-an-affine-factor` (run, exit 0),
+  `inv1-neg-a-measure-invariant-is-unproved` (reject, INV-1) and
+  `inv1-neg-an-affine-factor-is-not-a-measure-former` (reject, INV-1). The
+  seventy-nine modifications are one mechanical respell and nothing else: every
+  occurrence of the measure readers `len`, `cap`, `room` and `head` becomes
+  `len_of`, `cap_of`, `room_of` and `head_of` under the owner's S36 ruling, and
+  every one of those cases keeps its expectation exactly. The same respell
+  touches one hundred and sixty-five snapshot case sources and thirty-four
+  `index.tsv` `doc` fields with no `verdict` column changed, and one further
+  snapshot source, `kills__writer-r2__09_region_exit_kills_borrow_fact`, has its
+  own helper declaration renamed from `room_of` to `borrowed_room`: B2's earlier
+  corpus repair had chosen `room_of` as a fresh identifier when `room` became
+  reserved, and S36 makes that exact spelling the reader, so the repair keeps the
+  case's recorded `accept` rather than moving it. Before this batch the corpus
+  holds 575 cases with the native adapter reporting Pass=573, Xfail=1, Skip=1;
+  after it the corpus holds 578 with the adapter reporting Pass=576, Xfail=1,
+  Skip=1. The one xfail (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and
+  the one skip are unchanged in id, expectation and status, and the
+  recorded-verdict snapshot corpus reports Pass=491, Flip=0: no verdict of
+  either corpus moved.
 ACTIVE-SPEC: v0.45 1d8a0fd737c73514a86d4f553525496c8ce5e02f90813a5fb41e4ceeda082908 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
