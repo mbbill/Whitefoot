@@ -3008,4 +3008,67 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   expectation and status, the two added skips are the two pending rows named
   above, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0: no
   verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 ddebbc4a7fc39034fc01f6eb5e9e075967a011a4241aa691cc87a5252d71c2bb 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B7a2, the frame-resident run at execution): no numbered rule is added
+  or retired (148 remain) and no grammar production, atom, token byte, entry
+  form, contract block form, system operation, kernel declaration record or
+  compiler-owned nominal spelling changes. [FN-9] and [CALL-4] are amended in
+  place, and [CALL-4] lands the first two of its own three v0.44 DEFERRED
+  admissions: a declared result may be of measured type [MSR-1], and a measure
+  over that bare result place is a clause operand, instantiated at that
+  ordinal's own destination [ENT-3.S12] and queried at a selected return over
+  the place that return hands back. [FN-9] states the same admission at its
+  operand list and at its unrouted-clause condition. The third admission — a
+  route over any variant of any returned enum — and the projected result place
+  formed with field-selection `psuffix`es, `deref` wrappings or subscripts stay
+  DEFERRED with their stated zero deltas, so the count of DEFERRED clauses is
+  unchanged at eight. Nothing else in the specification moves: what this batch
+  otherwise lands is the compiler catching up to [BLK-0], [BLK-1], [BLK-2],
+  [BLK-3], [MSR-4] and [CALL-6] as v0.45 already states them. A call to a
+  kernel-domain row over a `FixedVector<T, n>` is now checked from the row's own
+  signature record, its written arguments are judged per argument, its
+  requirement is submitted at the call and discharged under [MSR-4], its call
+  datums are minted at [ENT-3.S13]'s point, and its declared relations are
+  published at [CALL-4]'s destinations under [CALL-6]; the window, its
+  subscript at `(head + i) mod cap`, the four boundary operations and the run's
+  [STOR-3] release action all lower and execute. A diagnostic arising in that
+  domain cites BLK-0 and names the operation and the position of the
+  requirement in that row's own declared list, which is what a compiler-owned
+  record has instead of a source clause node, so no fabricated source location
+  enters [DIAG-1]. The store half is not lowered: `arena_frame`, `seq_arena`,
+  `seq_arena_proved` and `seq_heap` resolve, check and judge, and a call to one
+  stops as an explicit unsupported capability, so no `Vector<'s, T>` and no
+  `Arena<'s, bytes, align>` value exists at run time.
+- CONFORMANCE BOUNDARY (B7a2): this batch ADDS five conformance cases and their
+  five manifest rows, MODIFIES one existing case's source and one existing
+  case's status, deletes and renames none, and changes no adapter, runner, or
+  collection wiring. The added ids are
+  `blk3-pos-a-queue-preserves-its-order` and
+  `blk1-pos-a-wrapped-window-subscripts-against-len` (each run, exit 0),
+  `blk0-neg-a-row-requirement-is-not-discharged` and
+  `blk0-neg-a-written-argument-the-row-does-not-declare` (each reject, BLK-0),
+  and `call6-pos-a-row-relation-establishes-at-a-caller` (accept). Two existing
+  rows change status only: `blk2-pos-a-formation-row-builds-an-empty-run` and
+  `blk3-pos-a-boundary-row-moves-the-back-boundary` move from `pending` to
+  `runnable` and drop the `reason` the schema requires of a pending row,
+  because the capability that reason named now exists; each keeps its id, its
+  source, its expectation (accept) and its rule citation exactly. The one
+  MODIFIED case is `call4-neg-measured-result-not-admitted`. Its id, its
+  expectation (reject, FN-9), its rule citation and its status are unchanged,
+  and its before/after boundary is exactly two things: its declared effect row
+  moves from `reads(taken)` to `pure`, and its two `doc` lines and its manifest
+  `doc` say that the refusal is now the FN-9 proof rather than the FN-9
+  admission. The effect row was always wrong under [EFF-2] — a clause
+  contributes no effect and the body only hands the parameter back — and the
+  declaration's earlier FN-9 admission rejection was reached first, so the
+  correction is what the same program has always required rather than a
+  weakening: with the measured-result admission landed, the program is still
+  refused, now because its parameter arrives with no known length and the
+  relation it declares has no premise at the selected return. Before this batch
+  the corpus holds 569 cases with the native adapter reporting Pass=565,
+  Xfail=1, Skip=3; after it the corpus holds 574 with the adapter reporting
+  Pass=572, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) is unchanged in id,
+  expectation and status, the two skips that disappeared are the two rows named
+  above, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0: no
+  verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 3e0b071836ca0c98ba4017f4b03408fe3f829c477cee834100805018cd3b4c1a 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

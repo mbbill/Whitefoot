@@ -250,14 +250,21 @@ supports them:
 This list is an implementation map, not a second language specification. The
 compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
-The largest such gap today is the container half of the active specification:
-the four compiler-owned nominals `Vector`, `FixedVector`, `Heap` and `Arena`
-are named, branded, confined, laid out and measured by the ordinary source
-judgments, and the nine [BLK-0] kernel-domain operations are resolved and
-collide as declarations, while a call to a row and a value of one of the four
-at execution both stop as an explicit unsupported capability, because the
-window lowering [BLK-1] fixes and the relation publication [CALL-6] carries for
-those rows are not implemented.
+The largest such gap today is the store-backed half of the container
+specification. The frame-resident run executes: `seq_fixed` forms one,
+[BLK-3]'s four boundary operations move its boundaries, `len`, `cap`, `room`
+and `head` read its measures, a subscript reads the window at
+`(head + i) mod cap`, each row's requirement is discharged at the call under
+[MSR-4] and each row's declared relations are published at the caller under
+[CALL-6]. What is not implemented is the store: `arena_frame`,
+`seq_arena`, `seq_arena_proved` and `seq_heap` are resolved, checked and
+judged, and a call to one stops as an explicit unsupported capability, so no
+`Vector<'s, T>` and no `Arena<'s, bytes, align>` value exists at run time even
+though both types are named, branded, confined, laid out and measured by the
+ordinary source judgments. `seq_heap` additionally has no writable operand at
+all, because [FN-7]'s `command.heap` row is DEFERRED. Element-position writes
+into a run — `set v[i] = e;` and `replace v[i] = e;` — and a run whose element
+type is itself a run are the two further stops, each explicit.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 

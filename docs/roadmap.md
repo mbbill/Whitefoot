@@ -137,9 +137,15 @@ sound. [BLK-2] and [BLK-3] are the inventory: four formation rows, one frame
 reservation, and the four boundary operations, each taking its run by value and
 handing it back. `Vector`, `FixedVector`, `Heap` and `Arena` are four
 compiler-owned nominals, and a `struct` or `enum` may declare region
-parameters. The batch that carried it is B7a of the same design; the
-confinement rule, the retirement of the old container types, and the lowering
-of the nine operations are its second half.
+parameters. The batch that carried it is B7a of the same design, and B7a2 makes its
+frame-resident half execute: a call to a row over a `FixedVector<T, n>` is
+checked from the row's own signature record, its requirement is discharged at
+the call under [MSR-4], its declared relations are published at the caller
+under [CALL-6], and the window, its subscript and the four boundary operations
+lower and run. [CALL-4]'s measured result and the measure over its bare result
+place land with those rows. The store -- the bump take, the extent reservation
+and the general store's provider value -- together with the confinement rule
+and the retirement of the old container types, is what remains.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`

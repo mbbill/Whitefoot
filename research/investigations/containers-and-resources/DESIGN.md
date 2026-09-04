@@ -6020,6 +6020,96 @@ measured and are recorded here rather than in a report.
 > rest of the confinement judgment. [PROV-1] therefore states that the region always
 > exists, and [STOR-5] carries the refusal in its DEFERRED clause.
 
+**B7a2 landed, 2026-09-04: the frame-resident run executes.** The stop `ContainerRuntime`
+that B7a left on every call to a kernel-domain row is gone for the rows over
+`FixedVector<T, n>`, and the whole path behind it is real: `seq_fixed` forms a run,
+`seq_place`, `seq_place_front`, `seq_take` and `seq_take_front` move its boundaries, the
+four readers load its measures, a subscript reads the window at `(head + i) mod cap`, and
+LLVM comes out and runs.
+
+- **A record is a callee.** `compiler/src/semantic/kernel.rs` is the twelve rows' signature
+  data in the shape [BLK-0] states: generic parameters with the per-argument
+  `supplied` judgment, named value parameters with modes, an ordered result list, one
+  effect row, one requirement list and one relation list, every relation an ordinary
+  difference bound between two operands displaced by a constant. Two machine checks over
+  that table hold it to the rule: every row's parameter and result spellings equal the
+  resolver's, and every row is complete over every measure it writes on every exit.
+- **The publication path is keyed on the row, and no `NodePath` is fabricated.**
+  `PreparedCall` now carries a callee that is either a source `FunctionId` or a row's
+  `container_declaration_ordinal`; `RelationProvenance` is the same split inside a
+  derivation record. A row's relations are instantiated at the call and established at
+  exactly [CALL-4]'s destinations — a `let` binding, a destructuring binder list, a `set`
+  target — and its call datums are minted at [ENT-3.S13]'s point. An undischarged row
+  requirement is one obligation of a new family, cites BLK-0, and names the operation and
+  the position of the requirement in that row's own list, which is what a record has
+  instead of a clause node.
+- **[CALL-4]'s first two admissions land.** A declared result may be of measured type and
+  a measure over its bare result place is a clause operand, instantiated at that ordinal's
+  own destination. The projected result place and the route over a non-prelude variant
+  stay DEFERRED. `call4-neg-measured-result-not-admitted` keeps its recorded `reject FN-9`
+  verdict: with the admission lifted, the same program is refused by the proof instead,
+  because its parameter arrives with no known length.
+- **One ordering defect was found and fixed by that work.** [FN-9] queries a relation
+  "immediately before return transfer and edge cleanup", and this compiler was applying
+  the returned value's own consume kill first. For a fragment result that kill does not
+  exist, so the defect was invisible; for a measured result it deleted every fact about
+  the value being returned, and `ensures len(result) >= 2` was unprovable at a body that
+  had just built exactly that. The fix is the order the rule states.
+
+**Four defects in 3.L, each measured against the compiler.** None of §3.L's loop programs
+compiles, and the cause is not the kernel:
+
+- **A measure former has no written affine spelling, so no loop invariant can carry one.**
+  `invariant grown: len(built) >= at` is a `GRAM-4` parse rejection at `len`, because
+  [MSR-5] states in terms that [INV-1]'s `affine_factor` is deliberately *not* widened.
+  Every one of `vacant`, `filled`, `collect`, `rebase` and the pool's `pool_new` is written
+  with such invariants, and every one of them therefore fails to parse. Without them
+  `seq_place`'s `room(vector) > 0` is `Unproved` at the backedge, which is the diagnostic
+  the same programs give with the invariants deleted. **This is the single largest gap
+  between 3.L and the specification, and it is a `[MSR-5]`/`[INV-1]` question rather than
+  a `[BLK]` one.**
+- **A clause operand may not be an arithmetic expression.** `ensures len(rest) <= len(vector) + 1_u64;`
+  is a `GRAM-2` parse rejection at the `+`: [FN-9] admits two datums and no computed
+  operand. `try_place`, `try_take`, `take_at`, `pool_release` and `rebase` all write
+  such clauses. The kernel's own rows write the same shape and are unaffected, because a
+  record is not a source `contract_block` — but a writer cannot state a `+ 1` relation at
+  all, so no source helper can republish what a boundary row publishes.
+- **A parameter reassigned in the body loses its entry image, so `try_place`'s contract is
+  unprovable.** `set vector = seq_place(vector: move vector, ...)` kills the entry image of
+  `vector`, and [FN-9] then makes every clause naming it unproved — including
+  `ensures head(rest) == head(vector)`, which the compiler reports as `head(vector) = head(vector)`
+  Unproved. The repair is to bind a fresh name rather than write the parameter back.
+- **`take_at` needs an element-position `replace` into a run**, which is an explicit
+  unsupported capability in this compiler and is the one item of 3.L.2's table that the
+  boundary rows do not already reach.
+
+**What B7a2 did not reach, and why.**
+
+- **The store is not lowered.** `arena_frame`, `seq_arena`, `seq_arena_proved` and
+  `seq_heap` resolve, check, and judge their written arguments and requirements, and a call
+  to one stops at `Semantics/Unsupported: ContainerRuntime`. What is missing is the bump
+  take itself — the extent's frame reservation, the cursor advance, the `Option<Vector>`
+  refusal arm, and the routed half of publication that the `Some`/`None` arms need. The
+  publication machinery this batch built is what those rows will use; the routed
+  restriction and `advance<T>(count)` as a term are the two pieces it does not yet have.
+- **`Vector<'s, T>` therefore has no value.** Its type is nameable, branded, confined, laid
+  out and measured, its layout and its release action are in the backend, and the four
+  boundary rows are already generic over it — but no row that can produce one is lowered,
+  so no program can hold one.
+- **An element-position window store is unsupported.** `set v[i] = e;` and
+  `replace v[i] = e;` over a run stop as `ContainerRuntime`; the read path is complete.
+- **A run of runs is still `CompositeValues`.** A run's element domain in this compiler is
+  the flat-element domain, so `FixedVector<Vector<'s, u8>, 8>` — 3.L.4's pool — is
+  unsupported, and so is a generic run element at an unbounded `T`: `filled<T, const n>`
+  is refused at its symbolic instance for that reason and not for its loop.
+- **`[BLK-0]`'s completeness sentence and `seq_arena` disagree on one cell.** The `Some`
+  arm publishes `len`, `cap` and `head` of the new run and `len` and `cap` of the arena,
+  but not `room` of either; the compiler's completeness test reads the sentence with
+  [MSR-2]'s standing identity, so a row that publishes `len` and `cap` counts as having
+  published `room`. Either the rows gain the two clauses or the sentence says what the
+  test says; the boundary rows publish `room` explicitly and the formation rows do not, so
+  the inventory is inconsistent with itself either way.
+
 ### 6.1 What the compiler did in this session
 
 ```text

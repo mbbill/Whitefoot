@@ -112,9 +112,14 @@ and the one window whose initialized storage is the `len` slots beginning at
 rows, one frame reservation, and four boundary operations. `Vector`,
 `FixedVector`, `Heap` and `Arena` are four compiler-owned nominals and a
 `struct` or `enum` may declare region parameters. The batch that carried it is
-B7a of the same design; its second half carries the confinement rule, the
-retirement of the old container types, and the lowering of the nine
-operations.
+B7a of the same design, and B7a2 makes the frame-resident half of it execute:
+a call to a row over a `FixedVector<T, n>` is checked, its requirement is
+discharged under [MSR-4], its declared relations are published at the caller
+under [CALL-6], and the window, its subscript and the four boundary operations
+lower and run. [CALL-4]'s measured result and the measure over its bare result
+place land with those rows. What remains is the store — the bump take, the
+extent reservation and the general store's provider value — together with the
+confinement rule and the retirement of the old container types.
 
 ## Outcome
 
