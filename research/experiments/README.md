@@ -14,6 +14,11 @@ high-level sequencing; plans do not grant or withhold branch permission.
 
 ## Current flagship experiment evidence
 
+- `park-on-miss-switch-cost/` — the first §12 measurement of the park-on-miss
+  design: one hand-written stack switch against a condition-variable
+  park-and-wake on the same host. Measured 2026-09-04 (Darwin arm64): 9.8–10.4
+  ns per switch, 872–934 ns per park-and-wake, 84–95×; `swapcontext` 345–355
+  ns. The design's bar (a switch well under one park-and-wake) is met.
 - `wfgrep-baseline/` — the PERF-1 zero-change baseline of the frozen
   sequential wfgrep against the pinned system `grep -h -F`, preregistered
   with null-comparison precision gates per the RG-BASE lesson. Measured:

@@ -140,3 +140,60 @@ Sequenced after batch 1. The plan file is the specification of the work; its
 decisions file records why each mechanism is shaped as it is; implementation
 findings that contradict it are folded back into the plan on this branch
 before the code lands.
+
+### Slices (started 2026-09-04 on `io/t4-resource-relations`)
+
+0. **Measurements before a line of the compiler changes** (design §12). The
+   decisive one first: the cost of one hand-written stack switch against the
+   2.2 µs park-and-wake figure the tree measured, on this host; a switch that
+   is not well under it removes the design's reason to exist. Home:
+   `research/experiments/park-on-miss-switch-cost/`. The four-stage chain in
+   C on io_uring runs on the Linux runner later in the batch; record growth
+   per frame is reported from the stack ledger once slice 2 exists.
+1. **The scheduler core and its enumerator** (design §5–§7.1, §11). One C unit
+   that reaches shared state only through the seven primitives of §7.1, named
+   in one header; a cargo test that compiles that unit against a replacement
+   header and drives it with a controlled scheduler enumerating every
+   interleaving of primitive steps for (T=1,S=2), (T=1,S=3), (T=2,S=3),
+   (T=2,S=4), checking every §11 item at every step. This slice is the merge
+   gate; nothing in slices 2–3 lands while it fails.
+2. **Emitter** (design §8): the completion record as one opaque block of the
+   submitting frame with its size and alignment as an ABI constant asserted on
+   both sides; one lowering for every I/O operation, submit then join; the
+   direct family, the inline arm, `stackless.rs` and the Windows verdict fork
+   removed; compute join order reversed through one `compute_join_order`.
+3. **Runtime** (design §7): the core replaces both parallel runtimes and both
+   writer schedulers; the bridge, adapters and rings find the record by
+   address and lose their pools, capacity waits and tokens; the I/O joins park
+   the stack; the floor's entry runs `wf__main_body` on a pool stack selected
+   at link time; the Windows twins in `wf_floor_windows.c` and
+   `windows_bridge.c`.
+4. **Replay, the remaining measurements, docs, record** (design §11 item 24,
+   §12): the enumerator's recorder replays a run's data and completion order;
+   park cost and per-frame record growth measured; `LOOP-PIPELINE.md` §3.4
+   and the roadmap's two stackless items edited in place; batch record.
+
+Batch 2 is done with the surface the language has today: read-only files,
+directory enumeration, and the two standard outputs. That surface reaches
+every state of the scheduler through the enumeration harness and injected
+stubs, and it cannot exercise a real wait: a cached read does not wait, and a
+cold read waits briefly and uniformly.
+
+## After batch 2: the order the owner agreed on 2026-09-04
+
+The surface is validated first and widened one API at a time, and every new
+API passes the same T4 question the permit passed: the resource is a value in
+the signature, and every dependency between it and an existing resource is
+one the checker can see.
+
+3. **The first API that waits: `command.stdin` read.** One operation, one
+   resource, the same completion path. It is the first workload on which the
+   park-on-miss scheduler faces a real wait, so the first one whose numbers
+   say anything about the scheduler. Pipes and sockets are its kin and follow.
+4. **File write and create.** The threshold for writing real programs (the
+   compiler itself has to write files) and the second examination of the
+   resource accounting: write handles, the namespace effect of a create, and
+   their dependencies on directory reads, all expressed on the API the way the
+   permit is.
+5. Only then the rest of the roadmap's list: clock, timers, network,
+   cancellation, namespace mutation.
