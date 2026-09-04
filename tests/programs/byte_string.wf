@@ -96,15 +96,13 @@ fn bs_concat(destination: &uniq ByteString, source: &ByteString) -> result: own 
     set count = bs_len(s: &deref(source));
   }
   for @concat (at in 0_u64..count) {
-    region {
-      match bs_byte(s: &deref(source), index: at) {
-        Some(value: byte) => {
-          region {
-            bs_push(s: &uniq deref(destination), value: byte);
-          }
+    match bs_byte(s: &deref(source), index: at) {
+      Some(value: byte) => {
+        region {
+          bs_push(s: &uniq deref(destination), value: byte);
         }
-        None() => {
-        }
+      }
+      None() => {
       }
     }
   }

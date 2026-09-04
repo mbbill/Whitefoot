@@ -1092,9 +1092,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   doc "Writes one line per iteration to standard output.";
   let page = buffer_new(8_u64, 0_u8);
   for @scan (index in 0_u64..4_u64) {
-    region {
-      let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
-    }
+    let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
   }
   return exit_status(code: 0_u8);
 }

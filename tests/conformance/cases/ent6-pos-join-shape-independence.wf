@@ -1,0 +1,113 @@
+enum Lane {
+  A();
+  B();
+  C();
+  D();
+}
+
+fn pick(at: own u64) -> lane: own Lane pure {
+  doc "Selects one of four lanes from the counted position.";
+  let which = at % 4_u64;
+  let first = which == 0_u64;
+  if first {
+    return A();
+  }
+  let second = which == 1_u64;
+  if second {
+    return B();
+  }
+  let third = which == 2_u64;
+  if third {
+    return C();
+  }
+  return D();
+}
+
+fn flat(count: own u64, ba: own u64, bb: own u64, bc: own u64, bd: own u64) -> done: own u64 pure contract {
+  requires count <= 1000_u64;
+  requires ba <= 1000_u64;
+  requires bb <= 1000_u64;
+  requires bc <= 1000_u64;
+  requires bd <= 1000_u64;
+} {
+  doc "Four lanes over one flat match: one join.";
+  let la = ba;
+  let lb = bb;
+  let lc = bc;
+  let ld = bd;
+  for @split (
+    at in 0_u64..count,
+    invariant la_hi: la <= ba + at,
+    invariant lb_hi: lb <= bb + at,
+    invariant lc_hi: lc <= bc + at,
+    invariant ld_hi: ld <= bd + at
+  ) {
+    let lane = pick(at: at);
+    match lane {
+      A() => {
+        set la = la + 1_u64;
+      }
+      B() => {
+        set lb = lb + 1_u64;
+      }
+      C() => {
+        set lc = lc + 1_u64;
+      }
+      D() => {
+        set ld = ld + 1_u64;
+      }
+    }
+  }
+  return count;
+}
+
+fn nested(count: own u64, ba: own u64, bb: own u64, bc: own u64, bd: own u64) -> done: own u64 pure contract {
+  requires count <= 1000_u64;
+  requires ba <= 1000_u64;
+  requires bb <= 1000_u64;
+  requires bc <= 1000_u64;
+  requires bd <= 1000_u64;
+} {
+  doc "The same four lanes over three-level nested conditionals: three joins in sequence.";
+  let la = ba;
+  let lb = bb;
+  let lc = bc;
+  let ld = bd;
+  for @split (
+    at in 0_u64..count,
+    invariant la_hi: la <= ba + at,
+    invariant lb_hi: lb <= bb + at,
+    invariant lc_hi: lc <= bc + at,
+    invariant ld_hi: ld <= bd + at
+  ) {
+    let which = at % 4_u64;
+    let first = which == 0_u64;
+    if first {
+      set la = la + 1_u64;
+    } else {
+      let second = which == 1_u64;
+      if second {
+        set lb = lb + 1_u64;
+      } else {
+        let third = which == 2_u64;
+        if third {
+          set lc = lc + 1_u64;
+        } else {
+          set ld = ld + 1_u64;
+        }
+      }
+    }
+  }
+  return count;
+}
+
+command fn main() -> return_value: own ExitStatus pure {
+  doc "ENT-6: one branch set written flat and written nested reach the same joined image, so both are accepted.";
+  let a = flat(count: 4_u64, ba: 0_u64, bb: 0_u64, bc: 0_u64, bd: 0_u64);
+  let b = nested(count: 4_u64, ba: 0_u64, bb: 0_u64, bc: 0_u64, bd: 0_u64);
+  if a == b {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

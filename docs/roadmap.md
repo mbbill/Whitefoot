@@ -1,8 +1,9 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 65 (v0.42 makes every region spelling forced: a REGIONID is written
-exactly where the surrounding text does not already fix the region)
+Revision: 66 (the v0.43 candidate is installed on the stable path: every loop
+body is a region block, and the [ENT-6] control-flow join is made associative;
+the active authority remains v0.42 until the owner activates it)
 
 The active language authority is v0.42, SHA-256
 `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`, carried by
@@ -38,6 +39,33 @@ provenance, effect, or confinement judgment changes. Over the four `.wf` test
 corpora the rule takes 2623 written region tokens in 261 files to 260 in 75,
 and every remaining one carries a relation, a caller's choice, or an outer
 block a deeper one encloses.
+
+The stable path now carries the **v0.43 CANDIDATE** over those bytes, whose
+status line declares
+`CANDIDATE v0.43 supersedes v0.42 6b935d2e…`. A candidate is work-branch
+content, not an installed identity: canonical `make check` stops it at
+`spec-archive-integrity` until an activation archives the outgoing v0.42 bytes
+and records a new chain line, so the authority named above is unchanged.
+v0.43 carries two independent amendments and adds or retires no rule id.
+The first makes every `loop_stmt` and `for_stmt` body a region block
+[OWN-3, OWN-11]. The body introduces one unnamed local region whose block is
+that body, so a `borrow_expr` written directly in the body takes it, is written
+bare, and dies with the iteration — exactly the guarantee OWN-11 already gave,
+now with no writer ceremony. Because that region exists, a `region_stmt` that is
+the body's only statement is a second spelling of it and a hard error citing
+[FORM-8]; a block the body writes another statement beside is strictly narrower,
+is what [OWN-6]'s statement-scope judgment needs for a child reborrow, and stays
+legal. Across the four `.wf` test corpora exactly four blocks are the body's
+only statement.
+The second repairs [ENT-6]'s control-flow join, which was not associative: a
+delta atom minted by an earlier join counted as an ordinary nonconstant term at
+the next one, so two nested joins lost a binding image one flat join over the
+same branches kept, and a three-way demux was accepted written as a `match` and
+refused written as nested `if`/`else`. Each input image is now normalized before
+the comparison by folding every earlier delta atom back into the constant
+interval it stands for, so nested joins reach the flat join's image and
+acceptance stops depending on the shape of the control join. The repair only
+adds images: no program v0.42 accepted is refused.
 
 v0.40 carries source proof through the
 ordinary semantic compiler. It checks contracts, explicit loop-header

@@ -2516,3 +2516,103 @@ ACTIVE-SPEC: v0.41 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5
   No other case changes its expectation kind, cited rule, or runnable status,
   and coverage remains complete at 132/132 rules with [FORM-8] covered by case.
 ACTIVE-SPEC: v0.42 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761
+
+## 2026-09-03 — merge-time approval content: v0.43 loop-body regions and the [ENT-6] join repair (0 rules added; 132 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this record
+  creates no separate approval step, and nothing in it asserts that the
+  approval has been given.
+- SPECIFICATION: install Whitefoot v0.43 as a work-branch CANDIDATE at exact
+  SHA-256
+  `1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`.
+  Its status line declares `CANDIDATE v0.43 supersedes v0.42
+  6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`. A
+  candidate is not an activated identity: this record adds no `ACTIVE-SPEC:`
+  line, writes no `spec/kernel-spec-v0.42.md` archive, and leaves the chain
+  tail at v0.42, so canonical `make check` stops the revision at
+  `spec-archive-integrity` with the candidate message until a later activation
+  archives the outgoing bytes and records the chain line. Per the
+  specification's own META-5 delta declaration: numbered rules are +0/-0 and
+  132 remain, with no id added or retired; grammar productions are +0/-0 and
+  83 remain, with no production added, removed, or given a new decision; and
+  fixed lowercase atoms, compound punctuation tokens, token bytes, writer
+  operation spellings, opaque system nominal spellings, runtime-trap families,
+  entry forms, contract block forms, exception clauses, and the 203 system
+  operations and declaration records are unchanged. [OWN-3], [OWN-11],
+  [FORM-8], and [ENT-6] are amended, and the candidate carries **two
+  independent amendments**.
+
+  The first makes every loop body a region block. The body of a `loop_stmt` or
+  a `for_stmt` introduces one unnamed local region whose block is that body
+  [OWN-3, OWN-11], so a `borrow_expr` written directly in that body takes that
+  region, is written bare [FORM-8], and dies with the iteration — exactly the
+  guarantee [OWN-11] already made, now obtained with no writer ceremony. The
+  region has no REGIONID and no position can name it, so nothing outside the
+  body reaches it. Because that region exists, a `region_stmt` that is a loop
+  body's only statement has exactly the body as its block, is a second
+  spelling of one region, and is a hard error citing [FORM-8]; the mechanical
+  repair is to delete the block, keep its statements as the loop body, and
+  elide every REGIONID that named it. A `region_stmt` the body writes another
+  statement beside is not that second spelling and stays legal: its block is a
+  strict part of the body, and [OWN-6] admits a statement-scoped child
+  reborrow under a region whose block does not extend beyond the enclosing
+  statement, which a one-statement block inside a longer body satisfies and
+  the body's own region does not. The one exception to the rejection is a
+  block some `targ` region argument inside it must write its name at, because
+  no implicit region has a name that position could carry. A writer decides
+  the whole rule by reading the loop body alone, asking only whether the body
+  writes anything beside the block. No liveness, outlives, exclusivity,
+  storage-duration, provenance, effect, or confinement judgment changes; the
+  accepted-program set changes only by removing the redundant spelling and
+  admitting the bare one.
+
+  The second repairs [ENT-6]'s control-flow join, which was not associative. A
+  delta atom minted by an earlier join counted as an ordinary nonconstant term
+  at the next one, so two nested joins lost a binding image that one flat join
+  over the same branches kept, and a three-way demux was accepted written as a
+  `match` and refused written as nested `if`/`else` with no semantic
+  difference between them. At a join every input image is now normalized
+  first: each delta atom an earlier join minted is folded back into the
+  constant interval it stands for, that atom's coefficient times its interval
+  added to the input's constant, leaving one non-delta nonconstant form and
+  one closed constant interval. Where the normalized inputs share one
+  nonconstant form the join is that form plus one fresh delta atom over the
+  hull of their constant intervals; otherwise the binding still receives one
+  fresh full-type atom. Delta atoms remain ordinary shared atoms everywhere
+  except a join, so a relation formed over one after a join still holds at the
+  next. An input carrying no delta atom normalizes to its own constant, so the
+  rule is the v0.42 rule wherever no join has run. The repair only adds
+  images, so no program v0.42 accepted is refused, and acceptance no longer
+  depends on the shape of the control join. The rule stays source-structural
+  and decidable from the rule alone.
+- CONFORMANCE BOUNDARY: relative to this batch's base, the v0.42 activation
+  commit `c168ab2a` on `batch/0118-region-elision`, `tests/conformance`
+  content changes as follows. Under `tests/conformance/cases/`, 6 files are
+  added, 3 are modified, and none is deleted; git reports no rename.
+  `manifest.jsonl` is modified: the six added ids enter it and no existing
+  line changes. Added:
+  - `tests/conformance/cases/own11-pos-loop-body-region.wf`
+  - `tests/conformance/cases/form8-neg-region-block-is-the-loop-body.wf`
+  - `tests/conformance/cases/form8-pos-narrower-loop-region-block.wf`
+  - `tests/conformance/cases/ent6-pos-nested-join-keeps-the-flat-image.wf`
+  - `tests/conformance/cases/ent6-pos-join-shape-independence.wf`
+  - `tests/conformance/cases/ent6-neg-nested-join-does-not-invent-a-bound.wf`
+
+  Modified, with the reason each source moves:
+  - `own11-neg-borrow-outer-region` — the borrow now writes the outer region
+    name. Its old elided spelling denoted the region introduced outside the
+    loop; under [OWN-11] an elided borrow in a loop body takes the body's own
+    region, so the old source is an accepted program and the outer region has
+    to be named for the fault to be written at all. The normative content is
+    unchanged: a borrow inside a loop naming a region introduced outside it is
+    rejected citing OWN-11.
+  - `accept-par3-staged-denied-hoisted-scratch` and
+    `accept-par3-staged-denied-read-before-write` — each had a `region 'f`
+    block as its `for` body's only statement. [FORM-8] now rejects that
+    spelling, so the block is deleted, its statements become the loop body,
+    and `&'f cwd` becomes `&cwd` under the body's own region. Both keep their
+    declared expectation, cited rule, and staged-permission verdict.
+
+  No other case changes its expectation kind, cited rule, or runnable status,
+  and coverage remains complete at 132/132 rules.

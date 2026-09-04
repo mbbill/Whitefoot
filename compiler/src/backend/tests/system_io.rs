@@ -378,21 +378,17 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
                     let chunks = 0_u64;
                     let failed = False();
                     loop @drain {
-                      region 'f {
-                        region {
-                          match read_at(file: &'f file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 3_u64) {
-                            ReadBytes(next: n) => {
-                              set total = total +wrap n;
-                              set chunks = chunks +wrap 1_u64;
-                            }
-                            ReadEnd() => {
-                              break @drain;
-                            }
-                            ReadFailed(error: problem) => {
-                              set failed = True();
-                              break @drain;
-                            }
-                          }
+                      match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 3_u64) {
+                        ReadBytes(next: n) => {
+                          set total = total +wrap n;
+                          set chunks = chunks +wrap 1_u64;
+                        }
+                        ReadEnd() => {
+                          break @drain;
+                        }
+                        ReadFailed(error: problem) => {
+                          set failed = True();
+                          break @drain;
                         }
                       }
                     }
@@ -867,19 +863,15 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
                     let bytes = buffer_new(4096_u64, 0_u8);
                     let total = 0_u64;
                     loop @drain {
-                      region 'f {
-                        region {
-                          match read_at(file: &'f file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
-                            ReadBytes(next: n) => {
-                              set total = total +wrap n;
-                            }
-                            ReadEnd() => {
-                              break @drain;
-                            }
-                            ReadFailed(error: problem) => {
-                              return exit_status(code: 202_u8);
-                            }
-                          }
+                      match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
+                        ReadBytes(next: n) => {
+                          set total = total +wrap n;
+                        }
+                        ReadEnd() => {
+                          break @drain;
+                        }
+                        ReadFailed(error: problem) => {
+                          return exit_status(code: 202_u8);
                         }
                       }
                     }

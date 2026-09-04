@@ -136,7 +136,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &body_bindings,
             &allowed_invariant_values,
         )?;
-        let checked = self.check_block(
+        let mut checked = self.check_block(
             function,
             &executable_statements,
             &mut body_bindings,
@@ -146,6 +146,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: scope.give_context,
             },
         )?;
+        // [OWN-11] the body is its own region block, so every loan it opened
+        // in that region ends with the iteration: on the backedge before the
+        // carried-state comparison, and on every edge leaving the body.
+        let body_region = self.region_declared_at(node)?;
+        for local in body_bindings.values_mut() {
+            local.end_slice_region(body_region);
+        }
+        for state in &mut checked.give_states {
+            for local in state.values_mut() {
+                local.end_slice_region(body_region);
+            }
+        }
+        for state in &mut checked.break_states {
+            state.end_slice_region(body_region);
+        }
         if checked.can_continue
             && header_keys
                 .iter()
@@ -410,7 +425,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &body_bindings,
             &allowed_invariant_values,
         )?;
-        let checked = self.check_block(
+        let mut checked = self.check_block(
             function,
             &executable_statements,
             &mut body_bindings,
@@ -420,6 +435,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 give_context: scope.give_context,
             },
         )?;
+        // [OWN-11] the body is its own region block, so every loan it opened
+        // in that region ends with the iteration: on the backedge before the
+        // carried-state comparison, and on every edge leaving the body.
+        let body_region = self.region_declared_at(node)?;
+        for local in body_bindings.values_mut() {
+            local.end_slice_region(body_region);
+        }
+        for state in &mut checked.give_states {
+            for local in state.values_mut() {
+                local.end_slice_region(body_region);
+            }
+        }
+        for state in &mut checked.break_states {
+            state.end_slice_region(body_region);
+        }
         if checked.can_continue
             && base_keys
                 .iter()

@@ -370,6 +370,21 @@ struct AffineAtom {
     /// incoming constants, including negative constants.
     minimum: i128,
     maximum: i128,
+    /// Whether a structural join minted this atom to stand for the spread of
+    /// its inputs' constants. A delta atom is an ordinary shared atom between
+    /// joins, so correlations formed over it survive; a later join folds it
+    /// back into the interval it stands for so that nested joins reach the
+    /// image their flat equivalent reaches [ENT-6].
+    join_delta: bool,
+}
+
+/// One input image prepared for a structural join [ENT-6]: the part of it no
+/// earlier join minted, and the closed constant interval the folded delta
+/// atoms and the written constant together contribute.
+struct FoldedJoinImage {
+    form: AffineForm,
+    minimum: i128,
+    maximum: i128,
 }
 
 struct PostconditionExitProof {
@@ -7702,7 +7717,7 @@ impl Analyzer<'_, '_> {
 
     fn new_affine_atom(&mut self, ty: IntegerType) -> AffineForm {
         let (minimum, maximum) = type_range(ty);
-        self.new_affine_atom_with_interval(ty, minimum, maximum)
+        self.new_affine_atom_with_interval(ty, minimum, maximum, false)
     }
 
     fn new_affine_atom_with_interval(
@@ -7710,6 +7725,7 @@ impl Analyzer<'_, '_> {
         ty: IntegerType,
         minimum: i128,
         maximum: i128,
+        join_delta: bool,
     ) -> AffineForm {
         let index = u32::try_from(self.affine_atoms.len())
             .expect("affine value atoms exceed the u32 identity space");
@@ -7717,8 +7733,42 @@ impl Analyzer<'_, '_> {
             ty,
             minimum,
             maximum,
+            join_delta,
         });
         AffineForm::term(AffineTermId::from_index(index))
+    }
+
+    /// Folds every delta atom an earlier join minted back into the constant
+    /// interval it stands for [ENT-6].
+    ///
+    /// Without this, a delta atom counts as an ordinary nonconstant term at
+    /// the next join, so two joins in sequence lose an image one join over the
+    /// same branches keeps: acceptance would depend on whether the writer
+    /// spelled the branch set as nested conditionals or as one flat match.
+    fn fold_join_deltas(&self, value: &AffineForm) -> Option<FoldedJoinImage> {
+        let mut form = value.nonconstant_part();
+        let mut minimum = value.constant_value();
+        let mut maximum = minimum;
+        let mut check = AffineCheckState::new();
+        for coefficient in value.terms() {
+            let atom = self.affine_atoms.get(coefficient.term().index() as usize)?;
+            if !atom.join_delta {
+                continue;
+            }
+            let low = coefficient.coefficient().checked_mul(atom.minimum)?;
+            let high = coefficient.coefficient().checked_mul(atom.maximum)?;
+            minimum = minimum.checked_add(low.min(high))?;
+            maximum = maximum.checked_add(low.max(high))?;
+            let folded = AffineForm::term(coefficient.term())
+                .scale(coefficient.coefficient(), &mut check)
+                .ok()?;
+            form = form.subtract(&folded, &mut check).ok()?;
+        }
+        Some(FoldedJoinImage {
+            form,
+            minimum,
+            maximum,
+        })
     }
 
     fn new_affine_binding_atom(&mut self, binding: BindingId) -> Option<AffineForm> {
@@ -7850,40 +7900,50 @@ impl Analyzer<'_, '_> {
             }) {
                 first_value.clone()
             } else if let Some(ty) = self.affine_binding_type(binding) {
-                let same_nonconstant_part = states.iter().skip(1).all(|state| {
-                    state
-                        .affine
-                        .values
-                        .get(&binding)
-                        .is_some_and(|value| value.terms() == first_value.terms())
-                });
-                if same_nonconstant_part {
-                    let mut minimum = first_value.constant_value();
-                    let mut maximum = minimum;
-                    for state in states.iter().skip(1) {
-                        let constant = state
+                // [ENT-6] every input is normalized before the comparison: a
+                // delta atom an earlier join minted folds back into the
+                // constant interval it stands for, so what is compared is the
+                // part of the image no join invented. Nested joins therefore
+                // reach exactly the image one flat join over the same branches
+                // reaches, and acceptance stops depending on the join shape.
+                let folded = states
+                    .iter()
+                    .map(|state| {
+                        state
                             .affine
                             .values
                             .get(&binding)
-                            .expect("one join binding exists on every input")
-                            .constant_value();
-                        minimum = minimum.min(constant);
-                        maximum = maximum.max(constant);
-                    }
-                    let atom_start = self.affine_atoms.len();
-                    let delta = self.new_affine_atom_with_interval(ty, minimum, maximum);
-                    match first_value
-                        .nonconstant_part()
-                        .add(&delta, &mut AffineCheckState::new())
+                            .and_then(|value| self.fold_join_deltas(value))
+                    })
+                    .collect::<Option<Vec<_>>>();
+                match folded {
+                    Some(folded)
+                        if folded
+                            .iter()
+                            .skip(1)
+                            .all(|image| image.form == folded[0].form) =>
                     {
-                        Ok(value) => value,
-                        Err(_) => {
-                            self.affine_atoms.truncate(atom_start);
-                            self.new_affine_atom(ty)
+                        let minimum = folded
+                            .iter()
+                            .map(|image| image.minimum)
+                            .min()
+                            .expect("one join input exists");
+                        let maximum = folded
+                            .iter()
+                            .map(|image| image.maximum)
+                            .max()
+                            .expect("one join input exists");
+                        let atom_start = self.affine_atoms.len();
+                        let delta = self.new_affine_atom_with_interval(ty, minimum, maximum, true);
+                        match folded[0].form.add(&delta, &mut AffineCheckState::new()) {
+                            Ok(value) => value,
+                            Err(_) => {
+                                self.affine_atoms.truncate(atom_start);
+                                self.new_affine_atom(ty)
+                            }
                         }
                     }
-                } else {
-                    self.new_affine_atom(ty)
+                    _ => self.new_affine_atom(ty),
                 }
             } else {
                 continue;

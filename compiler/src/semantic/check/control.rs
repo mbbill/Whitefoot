@@ -773,6 +773,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<StatementResult, CheckStop> {
         let declaration = self.declaration_at(node, DeclarationRole::LocalRegion)?;
         let region = declaration.id();
+        // [FORM-8] a loop body is itself a region block [OWN-11], so a block
+        // that is the body's only statement has exactly the body's own block
+        // and is a second spelling of its region. The exception is a block
+        // some `targ` inside it must write the name at, because an implicit
+        // region has no name to put there.
+        if self.region_block_is_the_loop_body(node)?
+            && !(self.writes_region(node)?
+                && self.region_is_type_argument_below(node, declaration.spelling())?)
+        {
+            return self.issue_node(
+                SemanticRule::Form8,
+                node,
+                SemanticIssueKind::RegionSpelling {
+                    mechanical_fix: "the loop body is its own region; remove the region block, \
+keep its statements where they stand, and drop every region name it carried",
+                },
+            );
+        }
         // [FORM-8] the block writes its name exactly when its body still
         // references it after elision.
         if self.writes_region(node)?

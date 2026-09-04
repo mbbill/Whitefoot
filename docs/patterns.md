@@ -444,9 +444,7 @@ Pattern: construct the per-iteration scratch **inside** the loop body.
 for @scan (index in 0_u64..8192_u64) {
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
-  region {
-    let rendered = name_at(name: &uniq name, index: index);
-  }
+  let rendered = name_at(name: &uniq name, index: index);
   region 'f {
     let permit = reserve_file(factory: &uniq files);
     region {
@@ -774,10 +772,15 @@ every execution, and the loop is still rejected at [INV-1].
 The rule, in one line: every arm of a body join must leave a tracked binding
 with the same affine image, or with images differing only by a constant;
 otherwise the guard fact dies at the join and the header invariant cannot be
-re-established. [ENT-6]'s value-image join keeps an identical image, and joins
-images that share one nonconstant coefficient vector and differ only in their
-constant to that form plus a fresh delta atom over the incoming constant range.
-Every other combination gives the binding one fresh full-type atom. [ENT-5]'s
+re-established. [ENT-6]'s value-image join keeps an identical image; otherwise
+it normalizes each input by folding every delta atom an earlier join minted
+back into the constant interval it stands for, and where the inputs then share one
+nonconstant form it joins them to that form plus a fresh delta atom over the
+hull of their constant intervals. Every other combination gives the binding one
+fresh full-type atom. Because of that normalization the join is associative:
+one branch set written as nested `if`/`else` reaches exactly the image the same
+set written as one flat `match` reaches, so nesting the arms never costs a
+binding its image and the shapes below may be nested freely. [ENT-5]'s
 all-predecessor join then keeps only the bounds held on every input, so the
 correlation the writer is reasoning with — the delta is one exactly where
 `i < n` held — is precisely what the join discards, and [INV-1] proves the next
@@ -864,6 +867,68 @@ conclusion attached to the delta-atom join.
 Replaces: the reflex of restating the invariant inside each arm, and the belief
 that a relation true on every execution is therefore provable at a join the
 language deliberately does not make path-sensitive.
+
+## P20. The loop body is already the region
+
+Problem: a borrow taken inside a loop body must die with the iteration, and the
+reflex — carried over from every earlier version — is to wrap the body in a
+`region` block so that it does.
+
+Pattern: write the borrow bare. Under the v0.43 candidate every `loop_stmt` and
+`for_stmt` body is itself a region block: it introduces one unnamed region whose
+block is that body, so a borrow written directly in the body takes that region,
+dies with the iteration, and lets the outer binding be written again before the
+next one [OWN-11]. That is exactly the guarantee the wrapper used to buy, and it
+now costs nothing to write.
+
+```whitefoot
+for @concat (at in 0_u64..count) {
+  match bs_byte(s: &deref(source), index: at) {
+    Some(value: byte) => {
+      region {
+        bs_push(s: &uniq deref(destination), value: byte);
+      }
+    }
+    None() => {
+    }
+  }
+}
+```
+
+The inner block stays: it is not the loop body's only statement, it is the
+statement scope [OWN-6] needs for the `&uniq deref(destination)` child
+reborrow, and only the outer wrapper the body no longer needs is gone.
+
+Because that region exists, a `region` block that is the loop body's only
+statement is now a hard error citing [FORM-8]: its block is the body, so it is a
+second spelling of one region. Delete it and keep its statements as the body.
+
+A block the body writes another statement beside is a different region — it ends
+strictly earlier than the iteration — and stays legal, and there are two reasons
+to write one. The first is [OWN-6]: a statement-scoped child reborrow needs a
+region whose block does not extend beyond the enclosing statement, which a
+one-statement block inside a longer body gives and the body's own region does
+not. The second is a borrow that must be dead before a later statement of the
+same iteration writes the place it borrowed.
+
+```whitefoot
+for @append (i in 0_u64..count) {
+  let byte = deref(src)[i];
+  region {
+    let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
+  }
+}
+```
+
+Decide by reading the loop body alone: if the body writes nothing beside the
+block, the block is the body's own region under a second name and must go.
+
+Current value: mechanical. The corpus rewrite for the candidate removed four
+such blocks across `tests/` and touched nothing else, because most existing
+blocks were already narrower than their bodies.
+
+Replaces: the habit of opening a `region` block as the first line of every loop
+body.
 
 ## Known gaps (findings, not yet patterns)
 

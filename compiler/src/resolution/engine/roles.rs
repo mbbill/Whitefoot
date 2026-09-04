@@ -356,34 +356,40 @@ fn classify_node(
             roles,
             complete_counts,
         )?,
-        Production::LoopStmt => match names.as_slice() {
-            [] => {}
-            [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
-                add_complete(
-                    classified,
-                    owner,
-                    *label,
-                    RawRoleKind::Declaration(DeclarationRole::LoopLabel),
-                    roles,
-                    complete_counts,
-                )?;
+        Production::LoopStmt | Production::ForStmt => {
+            match names.as_slice() {
+                [] => {}
+                [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
+                    add_complete(
+                        classified,
+                        owner,
+                        *label,
+                        RawRoleKind::Declaration(DeclarationRole::LoopLabel),
+                        roles,
+                        complete_counts,
+                    )?;
+                }
+                _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
             }
-            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
-        },
-        Production::ForStmt => match names.as_slice() {
-            [] => {}
-            [label] if name_predicate(classified, *label) == Some(TerminalPredicate::Label) => {
-                add_complete(
-                    classified,
-                    owner,
-                    *label,
-                    RawRoleKind::Declaration(DeclarationRole::LoopLabel),
-                    roles,
-                    complete_counts,
-                )?;
-            }
-            _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
-        },
+            // [OWN-11] every loop body is a region block. The body's own
+            // region is unnamed and no position can write it [FORM-8], so its
+            // declaration is minted at the `loop` or `for` token under a
+            // spelling no source token can form, exactly as an unnamed
+            // `region_stmt`'s is.
+            add_elided_region(
+                classified,
+                owner,
+                direct,
+                if production == Production::LoopStmt {
+                    FixedTerminal::Loop
+                } else {
+                    FixedTerminal::For
+                },
+                DeclarationRole::LocalRegion,
+                roles,
+                complete_counts,
+            )?;
+        }
         Production::RegionStmt => {
             if names.is_empty() {
                 // [FORM-8] `region { ... }`: the block still introduces one

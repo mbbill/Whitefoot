@@ -204,9 +204,7 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    region {
-      let exclusive = &uniq i;
-    }
+    let exclusive = &uniq i;
   }
   return exit_status(code: 0_u8);
 }
@@ -223,9 +221,7 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
 
 command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    region {
-      overwrite(target: &uniq i);
-    }
+    overwrite(target: &uniq i);
   }
   return exit_status(code: 0_u8);
 }
@@ -256,12 +252,14 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
 
+    // [OWN-11] the loop body's own region is the one an elided borrow takes,
+    // so naming an outer region is now the only way to write this fault.
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let value = 0_u64;
-  region {
+  region 'r {
     for @items (i in 0_u64..1_u64) {
-      let shared = &value;
+      let shared = &'r value;
     }
   }
   return exit_status(code: 0_u8);

@@ -234,10 +234,8 @@ fn slice_loans_follow_structured_break_region_exits() {
     let ended_on_break = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
   loop @once {
-    region {
-      let view = slice_of(&values);
-      break @once;
-    }
+    let view = slice_of(&values);
+    break @once;
   }
   set values[0_u64] = 1_u8;
   return exit_status(code: 0_u8);
@@ -250,12 +248,14 @@ fn slice_loans_follow_structured_break_region_exits() {
         );
     });
 
+    // [OWN-11] the body's own region is what an elided borrow takes, so the
+    // outer region has to be named for this fault to be written at all.
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
-  region {
+  region 'r {
     loop @once {
-      let view = slice_of(&values);
+      let view = slice_of(&'r values);
       break @once;
     }
   }

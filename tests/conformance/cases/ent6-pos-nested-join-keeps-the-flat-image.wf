@@ -1,0 +1,41 @@
+fn demux(count: own u64, ba: own u64, bb: own u64, bc: own u64) -> done: own u64 pure contract {
+  requires count <= 1000_u64;
+  requires ba <= 1000_u64;
+  requires bb <= 1000_u64;
+  requires bc <= 1000_u64;
+} {
+  doc "Three-way demux written as nested conditionals: two joins in sequence, one per-iteration bound each.";
+  let la = ba;
+  let lb = bb;
+  let lc = bc;
+  for @split (
+    at in 0_u64..count,
+    invariant la_hi: la <= ba + at,
+    invariant lb_hi: lb <= bb + at,
+    invariant lc_hi: lc <= bc + at
+  ) {
+    let which = at % 3_u64;
+    let first = which == 0_u64;
+    if first {
+      set la = la + 1_u64;
+    } else {
+      let second = which == 1_u64;
+      if second {
+        set lb = lb + 1_u64;
+      } else {
+        set lc = lc + 1_u64;
+      }
+    }
+  }
+  return count;
+}
+
+command fn main() -> return_value: own ExitStatus pure {
+  doc "ENT-6: the nested-join image is the flat-join image, so this compiles exactly as its match-shaped twin does.";
+  let done = demux(count: 3_u64, ba: 0_u64, bb: 0_u64, bc: 0_u64);
+  if done == 3_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

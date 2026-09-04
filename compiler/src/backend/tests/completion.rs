@@ -359,15 +359,13 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..12_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          set opened = opened +wrap 1_u64;
+        }
+        Err(error: problem) => {
         }
       }
     }
@@ -386,14 +384,12 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
 const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..1_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+        }
+        Err(error: problem) => {
         }
       }
     }
