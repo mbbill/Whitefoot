@@ -2,82 +2,97 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> **seventh draft, after falsifier round 6 and the owner's decisions of 2026-09-03**;
+> **eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03**;
 > this file has been brought to that draft and carries no rule text of its own. Where
 > a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
 >
 > **Every language-surface addition below is now the owner's decision**, recorded in
-> `DESIGN.md` 3.S, which is a decision record rather than a proposal table. Three
-> items remain PROPOSED: `on_propagate` [S28], `seq_rebase` [S29], and the seven
-> [SYS-8] signatures over views [S30].
+> `DESIGN.md` 3.S. Three items remain PROPOSED: `seq_reslice` [S31], a linearity bound
+> on a generic parameter [S32], and `ReserveOutcome` [S33]. Of the seventh draft's three
+> open items, `on_propagate` [S28] is **REJECTED**, `seq_rebase` [S29] is **WITHDRAWN to
+> the library**, and the seven [SYS-8] signatures over views [S30] are **ADOPTED**.
 
 The resource half of the batch 0116 drafting round, reduced to the material
 `DESIGN.md` does not carry: the goals and non-goals it was written against, and the
 three writer's-eye migrations that show what a resource-closed program actually
 costs to write. The laws, the rules, the envelope algebra, the amendment register,
-the surface proposals, the open questions and the verified-versus-reasoned register
+the surface decisions, the open questions and the verified-versus-reasoned register
 are all in `DESIGN.md`.
 
 Tree read: `batch/0116-containers-and-resources` at `main 30602914`,
-`spec/kernel-spec.md` **v0.41 ACTIVE**. Bare line numbers are that file. Nothing here
-is implemented, and every clause and call is written in the v0.41 surface.
+`spec/kernel-spec.md` **v0.41 ACTIVE**, with **v0.42 merging**: v0.42 adds `[FORM-8]`
+canonical region spelling, over **regions only**. Bare line numbers are v0.41. Nothing
+here is implemented; every clause and call is written in the v0.41 surface, and **every
+type and const argument of a user generic is written** ([FN-2] 1124, probe `q4`).
 
-## What round 6 and the owner's decisions changed, so this file is not read as current
+## What round 7 and the owner's decisions changed, so this file is not read as current
 
-Seven things a reader of the sixth draft will look for and not find.
+Ten things a reader of an earlier draft will look for and not find. The first two are
+the owner's decisions of 2026-09-03.
 
-- **A domain of `E` is a store, not a kind, and it carries a KIND column** [RES-5].
-  Four *algebras* are defined — the cleanup-scratch domain is deleted, because a
-  compiler-derived walk is not a statement [RES-10] can attribute a transfer to and its
-  frame cost is ordinary frame cost [STK-3] — and a domain is a pair of an algebra and a
-  store identity. Each domain is **reusable capacity** or **consumable budget**, and
-  [RES-10]'s store-capacity route applies to the first only, because a store's own
-  refusal bounds what is **held** and says nothing about what is **spent**.
-- **An arena or frame take inside a loop is charged trips × size** unless the loop
-  encloses a region block that is entered and reset per iteration (owner-decided
-  2026-09-03). A divergent loop, or a runtime trip count with no bound, therefore makes
-  the program **not resource-closed**, and the diagnostic names the domain and the loop.
-  Round 6 built the counterexample the sixth draft admitted — a `pure`, heap-free
-  service loop taking 256 bytes per turn from a frame arena, certified bounded at the
-  store's capacity while the program silently stopped making progress after 256 turns.
-  Its author proposed re-keying **linearity** to fix it; the owner refused, because the
-  criterion is what a release *needs* and this is accounting.
-- **The map has a `retained` label and a `reset` transfer** [RES-10]. Without the
-  first, a service loop with no `break` — one of the two programs goal A exists for —
-  publishes an envelope with zero contribution from everything it does. Without the
-  second, a region block re-entered by a loop leaves a positive backedge delta and
-  the design's own recommended idiom for per-iteration scratch is refused.
-- **A lease that is dropped is a *visible* discard, and a lease that is *returned* is
-  a proof.** `Lease` is `linear` by declaration, which makes the discard a written
-  statement rather than a silence — and not impossible, because a destructuring consume
-  is a legal consume. A **directional** obligation is bought by proving the return:
-  `pool_release` is the **proved** spelling, total under `requires room(pool.free) >
-  0_u64`, so there is no refusal arm to discard. `DESIGN.md` Q0b records what changed.
-- **`advance<T>` is a closed expression in its formula and its `count` is [RES-3]'s
-  question** [RES-5]. Every take rounds the cursor to the store's own `align` and the
-  padding is charged once per run; whether the operand is closed is decided at the
-  acquisition, where premise 3 fails with the runtime value named. And **[RES-10]'s
-  transfers are stated per algebra**, so a 256-byte take is charged 256 and not one,
-  which the sixth draft's table got wrong for every domain but uniform slots.
-- **A cycle through the CAPABILITY-RELEASED-LEAF graph is refused at the type, in
-  every program** [PROV-6], and not only under the marker. The sixth draft stated the
-  refusal over **containment**, which refuses every recursive structure in every
-  program — including an arena-backed one whose release walk is empty — and
-  `tests/programs/recursive_tree.wf` is in the corpus today. Stating it over the graph
-  the walk follows keeps L3's no-abort clause true and costs no program.
-- **The `acquires from` column is derived over ACTIONS, and the exclusion is split at
-  the stage boundary** [RES-7]. Every may-suspend **action** acquires a submission and a
-  completion record, which reaches [SYS-2]'s seven operations **and [SYS-5]'s three
-  release actions** — a `ReadFile` close is a may-suspend action that reserves from the
-  same fixed table every read uses, and the sixth draft counted none of them. And the
-  test may not be a source rejection reading a figure the runtime publishes: the source
-  half publishes a per-store **declared demand**, and the capacity match is [QUAL-2]'s
-  qualification failure.
-- **`retained` composes by the same formula as every other label, and there is a
-  `return` label** [RES-10]. The sixth draft's `retained`-specific sequence clause lost
-  everything a program acquired before entering a divergent loop, and no label carried a
-  `return` edge at all, so a peak reached only on a returning path left the map.
-
+- **D3: linearity is read against the SCOPE, and the release is derived where the
+  capability is held.** A store-backed value is linear only in a scope that does not hold
+  the capability its release needs; in a scope that holds it — a signature carrying
+  `heap: &uniq Heap`, or `main` with the entry heap — the compiler derives the release on
+  every leaving edge and charges it to that scope's `writes(heap)`. [RES-10]'s derived
+  release transfer is where a hosted program's frees now appear, and **no `dispose`
+  ceremony survives**: `bs_reserve` keeps one `dispose old;` as the *early* release and
+  neither worked program has any. L2 is untouched — the capability is a held value named
+  at a parameter.
+- **D4: every loop body is implicitly a region block**, so a loop-body borrow of an outer
+  binding is written bare. A **named** `region 'a { }` inside a loop body is unaffected
+  and is still how a per-iteration store is reserved, because the implicit block has no
+  binder. The amendment has **not** landed; `DESIGN.md` 3.K.0 and §7's B0b say so.
+- **[RES-10] has TWO routes and the invariant route is deleted.** It asked [MSR-4] to
+  discharge a goal about `delta`, which is a component of the composition's own map and
+  not an [ENT-2] term of the language, so it could never fire; and the only thing an
+  [INV-1] header invariant can state is a **level**, which is the vacuous shape round 6
+  killed. What remains is (i) a trip-count bound that is a compile-time integer or a
+  closed expression [MSR-4] establishes from the loop's endpoints and the function's
+  verified `requires`, and (ii) the reusable-capacity route over `cap(store)` when every
+  acquisition on the loop's paths is `saturating`. **The backedge delta is computed by
+  the composition from the rows' declared deltas and is never proved.**
+- **`saturating(d)` takes a store DESIGNATOR, not a store region** [S26, AMENDED].
+  Every reusable-capacity domain in [RES-5] is a **runtime** store whose identity is not a
+  region, so keyed to a region the clause could not be written for any domain the route
+  that reads it applies to. The designator is a region name in scope or one of [RES-9]'s
+  **six spec-fixed runtime-store names** — `handles submissions completions tasks lanes
+  queue` — and [RES-7]'s source half quantifies over that closed set.
+- **The reset is a PAIRED transfer and the scope composition is new.** A block's map is
+  its body's map with each derived release and each store reset applied **at every label
+  at which that edge leaves the block**, and a reset cancels *by definition* exactly the
+  composed delta of that block's own map at that label on that store's domain. Without
+  the pairing the recommended per-iteration idiom composed to an interval and was refused
+  in both spellings; without the scope rule a `break`, a `give`, a `propagate` or a
+  `return` out of a region block carried the block's positive delta with the reset charged
+  nowhere.
+- **There is an OVERLAP composition and an extraction.** Statements an implementation may
+  execute with overlapping execution compose by the componentwise **sum** of peaks, and a
+  staged [PAR-3] permission by `k * p` for the runtime's published outstanding-work bound;
+  charging an overlap like a sequence let a marked driver's `read_at` loop hold `k`
+  submission records where `E` promised one. And one stated sentence turns the map into
+  `E`'s figure: the **max** over labels, never a sum.
+- **`E` carries a stack item per execution context, and the runtime's own materializations
+  are in it.** The shipping floor maps a 64 KiB alternate stack **per attaching thread**,
+  so a one-lane build has two, and the host thread's surviving stack was named nowhere;
+  [RES-1] makes an alternate stack a stack item, [STK-3] measures every live context, and
+  [RUN-4] makes `StartFailed` mandatory. Three [QUAL-2] failures of the shipping
+  implementation are recorded in `DESIGN.md` 6.2 rather than hidden.
+- **The handle table's refusal is not publishable today, and that is stated rather than
+  claimed.** Under [S25] `reserve_file`'s exhaustion is a **class** of an `IoError`
+  payload, and no [CALL-4] route is conditioned on a class, so the `Err` edge publishes
+  `len(factory)` alone and no marked program can derive `room(factory)` after a refusal.
+  [RES-6] records the gap and [S33] proposes the three-way outcome whose `Exhausted()` is
+  a variant.
+- **A reserving occurrence must be a statement of its own region block and of no loop
+  inside it** [PROV-5], and an extent item is named by (concrete instance, `region_stmt`
+  NodePath) so monomorphization gives two instances two items.
+- **A domain of `E` is a store and it carries a KIND column** [RES-5]; a cycle through the
+  **release graph** — the graph the release walk actually traverses — is refused at the
+  type in every program [PROV-6]; the `acquires from` column is derived over **actions**,
+  reaching [SYS-5]'s three release actions as well as [SYS-2]'s seven operations [RES-7];
+  and `retained` and `return` are labels that compose by the same formula as every other
+  [RES-10].
 ## 1. Goals and non-goals
 
 **Goal.** With the heap off, an accepted program is deterministic, never crashes,
@@ -141,9 +156,11 @@ of what "resource-closed" asks of a program.
 
 **And the run is affine, not linear**, which is R2's other half read from the writer's
 side: a frame-resident run needs no capability to reclaim, so it has an ordinary
-derived release and the marked program carries no `dispose` anywhere. That is the
-asymmetry `DESIGN.md` Q0c records: goal A's programs pay nothing for R2, and goal B's
-pay one statement per store-backed value.
+derived release and the marked program carries no `dispose` anywhere. **Under D3 the
+asymmetry that used to follow is gone**: a hosted program's store-backed values are
+affine too in every scope that holds the provider, so goal B pays a parameter and an
+effect row per capability-holding function rather than one written statement per value
+per leaving edge. `dispose` remains, as the *early* release a writer chooses.
 
 Where the ceiling genuinely is not a source constant, the answer is an
 `arena_extent` reservation, whose `region` item a deployment grants separately (L6),
@@ -215,14 +232,15 @@ statement; it is the proof, and not the modifier, that makes the return unavoida
 That is the honest division of labour between the two halves of this design.
 
 A **retaining** variant — one that keeps a lease across iterations — is bounded by
-neither route, and the sixth draft said otherwise. The free list is **not a domain**:
+neither route, and an earlier draft said otherwise. The free list is **not a domain**:
 frame placement's [RES-5] algebra has no acquire and no release, so [RES-10] computes
-nothing about it, and `saturating` is keyed to a **store region** [RES-8] while a
-`BlockPool<'s>` free list is not a store. A retaining pool is bounded by its element
-count, which is the `FixedVector`'s own type constant, and by the proved
-`pool_release` that keeps every lease returnable. That is the honest statement, and
-`saturating('s)` exists for the runtime record stores [RES-9] that genuinely are
-domains.
+nothing about it, and `saturating` takes a **store designator** [RES-8, S26] while a
+`BlockPool<'s>` free list is not a store at all. A retaining pool is bounded by its
+element count, which is the `FixedVector`'s own type constant, and by the proved
+`pool_release` that keeps every lease returnable. That is the honest statement, and the
+designators `saturating` exists for are a region name in scope and [RES-9]'s six
+spec-fixed runtime-store names — `handles submissions completions tasks lanes queue` —
+which are the reusable-capacity domains route (ii) applies to.
 
 **A per-iteration scratch extent is the shape the reset transfer exists for.** Write
 the region block inside the loop —
@@ -246,19 +264,26 @@ asserted in prose. **Without the block the same take is charged trips × 256 and
 loop is refused**, which is the owner's accounting ruling and the reason this idiom is
 the recommended one rather than a convenience.
 
-The diagnostic a writer gets when none of the three discharges applies names the
-loop and the value:
+The diagnostic a writer gets when neither route discharges names the loop and the value:
 
 ```text
 Semantics/Source [RES-3]: UnboundedStoreDemand
   domain: (bump extent, store region 'a reserved at "scratch")
   the loop at @serve has backedge delta +256 and no discharge
-  this domain's kind is consumable budget, so a store's own refusal bounds nothing
-  mechanical_fix: bound the loop with a compile-time constant trip count, state an
-    [INV-1] invariant over len(scratch) from which the backedge delta is <= 0, or
-    move the reservation inside the loop, where the block's own reset composes to a
-    zero backedge delta
+  this domain's kind is consumable budget, so a store's own refusal bounds nothing,
+    which is why route (ii) does not apply here
+  mechanical_fix: bound the loop with a trip count that is a compile-time integer or
+    a closed expression this function's own requires establishes [RES-10] route (i),
+    or move the reservation inside the loop, where the block's own paired reset
+    composes to a zero backedge delta
 ```
+
+**The route this diagnostic does not offer is the one round 7 deleted.** An earlier
+draft's second discharge asked [MSR-4] to prove `delta <= 0` from an [INV-1] header
+invariant over `len(scratch)`. `delta` is a component of [RES-10]'s own map and not a
+term of the language, so no goal could be formed; and a header invariant states a
+**level**, which bounds nothing about a backedge. Two routes remain and both test
+compile-time data.
 
 ## 3. Evidence
 

@@ -2,64 +2,74 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> **seventh draft, after falsifier round 6 and the owner's decisions of 2026-09-03**;
+> **eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03**;
 > this file has been brought to that draft and carries no rule text of its own. Where
 > a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
 >
 > **Every language-surface addition below is now the owner's decision**, recorded in
 > `DESIGN.md` 3.S, which is a decision record rather than a proposal table. Three
-> items remain PROPOSED and are marked where they occur: `on_propagate` [S28],
-> `seq_rebase` [S29], and the seven [SYS-8] signatures over views [S30].
+> items remain PROPOSED and are marked where they occur: `seq_reslice` [S31], a
+> linearity bound on a generic parameter [S32], and `ReserveOutcome` [S33]. Of the
+> seventh draft's three open items, `on_propagate` [S28] is **REJECTED**, `seq_rebase`
+> [S29] is **WITHDRAWN to the library** (`DESIGN.md` 3.L.8), and the seven [SYS-8]
+> signatures over views [S30] are **ADOPTED**.
 
 Tree read: `batch/0116-containers-and-resources` at `main 30602914`,
-`spec/kernel-spec.md` **v0.41 ACTIVE**. Bare three- and four-digit line numbers are
-that file. Nothing here is implemented, and the forms `DESIGN.md` adds compile
+`spec/kernel-spec.md` **v0.41 ACTIVE**, with **v0.42 merging**: v0.42 adds `[FORM-8]`
+canonical region spelling, over **regions only**. Bare three- and four-digit line
+numbers are v0.41. Nothing here is implemented, and the forms `DESIGN.md` adds compile
 nowhere. Every clause, call and comparison is written in the v0.41 surface: infix
-`== != < <= > >=`, and `::` before a call's type and region arguments.
+`== != < <= > >=`; **every type and const argument of a user generic is written**
+([FN-2] 1124, probe `q4`), and a region argument is written exactly where [FORM-8]
+writes it.
 
-## What round 6 and the owner's decisions changed, so this file is not read as current
+## What round 7 and the owner's decisions changed, so this file is not read as current
 
-Six things a reader of the sixth draft will look for and not find.
+Nine things a reader of an earlier draft will look for and not find. The first two are
+the owner's decisions of 2026-09-03 and govern every function below.
 
-- **No helper takes a container by `&uniq`, and now a rule says so.** [BLK-4]'s
-  fourth clause refuses a container nominal or a loan-bearing type as the direct or
-  indirect referent of a `&uniq` parameter of a source-declared `fn`, over the
-  reachability closure [PROV-4] computes. R1 was doctrine for one draft and round 6
-  wrote D1 again against it; doctrine refuses no declaration.
+- **D3: linearity is read against the SCOPE.** A store-backed value is linear only in a
+  scope that does not hold the capability its release needs. In a scope that holds it —
+  a function whose signature carries `heap: &uniq Heap`, or `main` with the entry heap —
+  the compiler derives the release on every leaving edge, charged to that scope's
+  `writes(heap)`. **Every `dispose` ceremony an earlier draft's walkthroughs carried is
+  gone**: `DESIGN.md` 3.L.5's `bs_reserve` keeps exactly one `dispose old;`, the *early*
+  release, and neither worked program has any.
+- **D4: every loop body is implicitly a region block.** A borrow of an outer binding
+  inside a loop body is written **bare**, and an explicit `region { }` as the loop body's
+  only enclosing block is a `[FORM]` rejection. That amendment has **not** landed;
+  `DESIGN.md` 3.K.0 and §7's B0b say so, and probes `q2` and `q3` are the evidence.
+- **The declaration domain has TWELVE operations, not thirteen.** `seq_rebase` is
+  withdrawn to the library under L18: returning a wrapped window to its origin is a drain
+  into a fresh run, written and priced in `DESIGN.md` 3.L.8.
+- **No helper takes a container by `&uniq`, and a rule says so.** [BLK-4]'s fourth
+  clause refuses a container nominal, a loan-bearing type **or an unbounded generic type
+  parameter** as the direct or indirect referent of a `&uniq` parameter of a
+  source-declared `fn`, over the reachability closure [PROV-4] computes. The generic
+  clause is round 7's: `&uniq Holder<T>` at `T = buffer<u8>` compiles today.
 - **Every contract that hands a measured value back is complete over every measure**
-  [CALL-7], and every declared relation becomes a fact by [CALL-6]'s S13. Round 6
-  found the sixth draft's three printed functions each incomplete in a way that stopped
-  a program — no `head`, so no constructed run could be viewed; no `room`, so no run
-  could be appended to twice — and found no rule at all stating how a row's relation
-  reaches the fact state.
-- **One `set` commit rule** (owner-decided): the right-hand side is evaluated with
-  every target dead, all targets are reinitialised at one commit, targets are pairwise
-  non-overlapping places, and a target that names a binding in scope is a **commit**
-  and not a redeclaration. The reinitializing `set`, the in-place exchange and the
-  multi-target form are one statement, and there is no swap or exchange operation
-  anywhere.
-- **A ring is not a library type.** [BLK-1]'s typestate is a *window*, so a queue, a
-  ring and a deque are all one `FixedVector<T, n>` used from both ends: no `Option`
-  per slot, no tag, ordinary element access, exact `len`. The fifth draft's
-  `Ring<T, n>` over `Option<T>` cost about seven times the memory of a hand-written
-  byte ring and deleted in-place slot mutation.
-- **`seq_exchange` is not a kernel row.** §3.1 writes the swap in three statements
-  over rows the kernel already has, which is why L18 removed it — and states what
-  writing it that way costs.
-- **A lease is `linear` by declaration, and its release is the PROVED spelling.**
-  The modifier makes a discard visible and deliberate; it does not make it impossible,
-  because a destructuring consume is a legal consume. A **directional** obligation is
-  bought by proving the return, so §3.4's `pool_release` is total under
-  `requires room(pool.free) > 0_u64` and has no refusal arm to discard.
-- **Every signature carries the row its body exhibits, in [EFF-1] 1369's canonical
-  order `reads, writes, allocates`.** A measure read through a borrow is `reads` at the
-  caller (probe `t10`), and an allocating row names the same provider path in all three
-  categories. Round 6 found the sixth draft writing `reads, allocates, writes` here and
-  the canonical order in `DESIGN.md` §4, so one of the two was a [FORM-1] hard error.
-- **A `replace` is a kill and never a publication** [SET-2] 528. A value whose
-  measures must survive is **constructed** into its owner through [MSR-3]'s construct
-  placement, which is what §3.3 now does.
-
+  [CALL-7], and **the obligation is decidable**: a syntactic per-measure, per-route clause
+  condition with three type-decidable exclusions. A clause both of whose sides follow from
+  [MSR-2]'s standing facts — `ensures head(result) <= cap(result);` — discharges nothing.
+- **One `set` commit rule** (D2): the right-hand side is evaluated with every target dead
+  from its own **read-out**, all targets are reinitialised at one commit, targets are
+  pairwise non-overlapping, and a target that names a binding in scope is a commit and not
+  a redeclaration. There is no swap or exchange operation anywhere.
+- **A ring is not a library type.** [BLK-1]'s typestate is a *window*, so a queue, a ring
+  and a deque are all one `FixedVector<T, n>` used from both ends: no `Option` per slot,
+  no tag, ordinary element access, exact `len`.
+- **A lease is `linear` by declaration, and its release is the PROVED spelling.** The
+  modifier makes a discard visible and deliberate; it does not make it impossible, because
+  a destructuring consume is a legal consume. A **directional** obligation is bought by
+  proving the return, so §3.4's `pool_release` is total under
+  `requires room(pool.free) > 0_u64` and has no refusal arm to discard. Its admission
+  condition is round 7's: the modifier is admitted only on an **affine** nominal, never on
+  a tag-only enum, which probe `q11` shows is copy today.
+- **Every signature carries the row its body exhibits, in [EFF-1] 1369's canonical order
+  `reads, writes, allocates`**, and **a `replace` is a kill and never a publication**
+  [SET-2] 528 — so a value whose measures must survive is **constructed** into its owner
+  through [MSR-3]'s construct placement, and a function returning a `replace`'s displaced
+  value is refused by [CALL-7].
 ## 1. What the library is for, and what it is not
 
 **For.** To discharge L18's obligation in both directions. A capability the fourth
@@ -137,6 +147,7 @@ per channel is not a closure; refusing the parameter is.
 Each item states its **proof route** — which kernel rule discharges each obligation,
 and which of those v0.41 already proves today. Where a probe from `DESIGN.md` 6.1 is
 the same arithmetic at v0.41 scale it is named.
+
 ### 3.1 Removal from the middle, clearing, and truncation
 
 **The transposition and `take_at` are written out in `DESIGN.md` 3.L.2**, with the
@@ -150,7 +161,6 @@ condition and is the three statements 3.L.2 walks.
 
 Clearing is a drain, and it is where the element class shows. For a non-linear
 element:
-
 ```wf-design
 fn clear_bytes<const n: u64>(vector: own FixedVector<u8, n>) -> result: own FixedVector<u8, n>
     reads(vector), writes(vector) contract {
@@ -161,10 +171,13 @@ fn clear_bytes<const n: u64>(vector: own FixedVector<u8, n>) -> result: own Fixe
 } {
   doc "Removes every element from the end.";
   let count = len(vector);
+  let origin = head(vector);
   for @drain (
     at in 0_u64..count,
     invariant left: len(vector) + at >= count,
-    invariant gone: len(vector) + at <= count
+    invariant gone: len(vector) + at <= count,
+    invariant still_lo: head(vector) >= origin,
+    invariant still_hi: head(vector) <= origin
   ) {
     set (vector, dropped) = seq_take(vector: move vector);
   }
@@ -173,22 +186,28 @@ fn clear_bytes<const n: u64>(vector: own FixedVector<u8, n>) -> result: own Fixe
 }
 ```
 
-**Proof route.** Both invariants have base `count + 0` against `count`.
-`seq_take`'s `len(vector) > 0` discharges from `left` and `at < count`. On the
-backedge `len` falls by one as `at` rises by one, each from `seq_take`'s own
-published `len(rest) = len(vector) - 1`. `done` is the [INV-1] exact-exhaustion
-conclusion at the continuation — probes `x1c` and `x1d` are that shape accepted
-today — and it is what carries the exit fact past the loop. `room` and `cap` follow
-from [MSR-2]'s identity and need no invariant, which is [CALL-7]'s completeness
-obligation discharged without a header cost. `dropped` is the second target of a
-[LIV-2] `set`; it names no binding in scope, so it declares one, scoped to the
+**Proof route.** `left` and `gone` have base `count + 0` against `count`; `still_lo` and
+`still_hi` have base `origin` against `origin`, `origin` being the [ENT-3.S6] equality
+`let origin = head(vector);` establishes over the live term. `seq_take`'s
+`len(vector) > 0` discharges from `left` and `at < count`. On the backedge `len` falls by
+one as `at` rises by one, each from `seq_take`'s own published
+`len(rest) = len(vector) - 1`, and the two `still_*` invariants are preserved by its
+published `head(rest) = head(vector)`. `done` is the [INV-1] exact-exhaustion conclusion
+at the continuation — probes `x1c` and `x1d` are that shape accepted today. **The two
+`head` invariants are round 7's addition**: [ENT-5] 2942-2946 removes every fact whose
+support the body writes at the backedge, so without them `head(result) == head(vector)`
+has no premise and [CALL-7] is undischarged for `head`; they cost two invariants because
+[INV-1] 3105 admits the four ordered relations and not `==` (`DESIGN.md` Q14). `room` and
+`cap` follow from [MSR-2]'s identity and need no invariant. `dropped` is the second target
+of a [LIV-2] `set`; it names no binding in scope, so it declares one, scoped to the
 enclosing block, and it is a `u8` that goes out of scope each iteration.
 
 For a **linear** element type the same loop must do something with `dropped`, and the
 signature says so: it carries the store's provider and its `writes` row, which is
-[PROV-6]'s virality made visible exactly where it should be. The library therefore
-has two functions with two signatures rather than one function with a condition on
-its element type.
+[PROV-6]'s virality made visible exactly where it should be — and under D3 it is also
+what makes the release *derived* in that body rather than written. The library therefore
+has two functions with two signatures rather than one function with a condition on its
+element type; [S32] is the relief.
 
 `truncate` is the same loop with `keep` as the endpoint and
 `requires keep <= len(vector);`.
@@ -223,15 +242,21 @@ replaced back, two moves of a 2072-byte record per completion. Under the window
 **One thing a ring gives up**, and it is [VIEW-2]'s
 `requires head(vector) + len(vector) <= cap(vector)`: a `slice` is one contiguous
 range and a wrapped window is two, so a run whose window has wrapped cannot be viewed
-until it is returned to its origin. **Round 6 found the sixth draft's stronger premise
-making `head` an absorbing state** — no row republished `head = 0`, so a ring that had
-served one front removal could never be viewed again, not after a drain and not after
-a refill, and every transmit path owed a permanent second run of full capacity plus an
-O(n) copy per flush. Two things repair it: the non-wrap premise, which an **empty** run
-satisfies from the standing `head <= cap` alone; and `seq_rebase` [S29, PROPOSED],
-whose rotate in place republishes `head = 0_u64` at a cost every real ring driver
-already pays before a bulk transfer. A staging run then becomes a copy a writer chooses
-rather than a duplicate the language charges.
+until it is returned to its origin. **`head` is an absorbing state** — no kernel row
+republishes `head = 0` — so a ring that has served one front removal cannot be viewed
+again until it is rebased. Two things carry it: the non-wrap premise, which an **empty**
+run satisfies from the standing `head <= cap` alone; and **`DESIGN.md` 3.L.8's `rebase`,
+a library function and not a kernel row** — a drain of the wrapped run front-to-back into
+a fresh run of the same capacity, under the same `flat` invariant every construction loop
+carries. [S29] proposed a kernel `seq_rebase` and is **withdrawn**, because L18 asks
+whether a writer can express the effect and this program is the answer. **What it costs
+is stated rather than hidden**: two runs of `n` slots live across the drain, so `E`
+carries `2n` where a kernel rotate would carry `n`, plus the same O(len) copy the rotate
+would have performed and a fresh spare per rebase. `DESIGN.md` Q18 puts the row back to
+the owner if a real driver's `E` cannot afford it, and records the deeper point that a
+real ring driver does not rotate at all — it hands the host two `iovec`s over the two
+halves, and this language has no spelling for a view of two ranges.
+
 ### 3.3 The growable vector and its growth policy
 
 **`Bytes`, `Grown`, `bs_new` and `bs_reserve` are declared and walked in `DESIGN.md`
@@ -269,7 +294,9 @@ whose measures must survive is constructed into its owner, not replaced into it.
 and the drain bounded by `total`. Its `dispose old;` then releases a run still holding
 `count - total` elements, and that is **correct**: [PROV-6]'s walk visits a container's
 elements before its backing, so the statement needs no emptiness premise. A writer
-reading "drain then dispose" will assume otherwise, which is why it is written down.
+reading "drain then dispose" will assume otherwise, which is why it is written down. It is
+also the one `dispose` the library writes: under D3 every other release in `byte_string.wf`
+is compiler-derived, because every scope holding a `Bytes` holds the `Heap` by signature.
 
 ### 3.4 The block pool, and where the obligation goes
 
@@ -290,6 +317,14 @@ route out — a run of a declaration-linear element type is linear whatever its 
 and neither `dispose` nor a destructuring consume reaches a run. `DESIGN.md` Q13
 records that shape and §2.1's release row marks the notion open at it; this file
 avoids it.
+
+**And `pool_new`'s refusal arm is legal, which is round 7's repair to [PROV-6]'s
+declaration obligation.** On that arm the partly-filled free list is live, holding up to
+seven arena-backed runs; it is not moved out and not destructured, and the obligation
+admits it because `'s`'s store class is fixed by the declaration's own `Arena<'s, ...>`
+parameter, so every `Vector<'s, u8>` is affine and takes the ordinary derived release. An
+earlier draft's version, quantified over "a value whose type names `'s`", refused this
+function and every function with a `slice` parameter.
 
 **And the release is the PROVED spelling, which is round 6's repair.** A checked
 `pool_release` returns the lease inside an `Option` on refusal; `Lease` is linear so
@@ -354,10 +389,12 @@ or a search the writer writes; the kernel's part is the stable run and the bound
 obligation, and a `FixedTable<T, n>` whose occupancy is a language typestate remains
 `DESIGN.md` Q6's question.
 
-**One price, stated rather than discovered** [PROV-6]: when `T` is linear the
-displaced `Option<T>` is linear too, so every `occupy` owes the caller a `match` on
-an arm the writer can see is dead. That is the correct consequence of type-based
-linearity, and the pattern owed to `docs/patterns.md` should say so.
+**One price, stated rather than discovered** [PROV-6]: when `T` is linear IN THIS SCOPE
+the displaced `Option<T>` is too, so every `occupy` owes the caller a `match` on an arm
+the writer can see is dead. Under D3 that is narrower than it was: a scope holding the
+capability gets the derived release and the arm is only the writer's own bookkeeping,
+while a scope without it must move the value out. It stays exactly as written for a `T`
+linear by the **modifier**, and the pattern owed to `docs/patterns.md` should say so.
 ### 3.6 The convenience forms
 
 The fourth draft's `update` statement and its `try` inventory rows are here, and none
@@ -398,6 +435,7 @@ The kernel keeps only the **proved** spelling of each operation, because the pro
 one is what cannot be written: a total operation at a capacity boundary either
 refuses — which is a branch a writer writes — or displaces something, which L9 forbids
 for an affine value.
+
 ## 4. From an unaware writer to an accepted program
 
 Four walkthroughs, each ending at a program the rules accept.
@@ -409,31 +447,45 @@ dominating branch on `room(v)`, a larger run before the loop, or §3.6's `try_pl
 Three of the four are discharged in this file, and the branch route exists only
 because [ENT-3.S6] generalizes over the four measures.
 
-**A linear value that reaches a scope exit.** `[PROV-6] LinearValueNotDisposed` names
-the binding, its store region, and the provider a `dispose` would need. In a
-compile-time-sized program it never fires, because a frame-resident run needs no
-capability to reclaim; in a hosted one it fires once per store-backed value per exit,
-and `DESIGN.md` 3.L.5's `bs_reserve` is what it looks like when it is satisfied. **The
-second diagnostic is R2's**: `[PROV-6] LinearValueNotConsumed` names a value that is
-linear by *declaration*, says that no leaf of it requires a capability so it cannot be
-disposed, and points at the two routes that remain. **The third is round 6's**:
-`[PROV-6] DisposeHasNoProvider` fires when no binding of the resolved store's provider
-type is live, and its mechanical fix names the parameter the function needs — because
-the capability a `dispose` spends is determined by the brand and is therefore never
-written.
+**A value that is linear *here* and reaches a scope exit.** Under D3 this fires only in
+a scope that does **not** hold the capability, and its name is
+`[PROV-6] LinearValueNotConsumed`. It names the binding, the leaf whose release needs a
+capability, the store that leaf's brand names, and the fact that no binding of that
+store's provider type is live in this scope — and its mechanical fix offers three routes:
+move the value out, destructure it, **or take `heap: &uniq Heap` as a parameter of this
+function, which makes the release compiler-derived on every leaving edge**. The third is
+D3's own repair and it is why a hosted program carries no `dispose` ceremony: in
+`byte_string.wf` a scope-blind criterion needed forty written statements in `main` alone,
+and under D3 it needs none. The same diagnostic covers a value that is linear by the
+**modifier**, which is linear in every scope; there it says so, and offers only the two
+routes that remain.
 
-**A linear value taken apart.** `let page = move chunk.page;` on a linear `Chunk`
-reports `[PROV-6] LinearValuePartiallyConsumed`, names the residual leaf, and points
-at `let Chunk(page: page, spare: spare) = move chunk;`. Probes `x4`, `g7` and `p6_partial`
-are the program that is accepted today, and the third shows the residual being freed
-by a derived drop. The refusal is stated over the **consume**, so it reaches
-`dispose chunk.page;` as well.
+**A `dispose` with no provider in scope.** `[PROV-6] DisposeHasNoProvider` fires when no
+binding of the resolved store's provider type is live, and its mechanical fix names the
+parameter the function needs — because the capability a `dispose` spends is determined by
+the brand and is therefore never written. `dispose` survives D3 as the **early** release
+a writer chooses: `DESIGN.md` 3.L.5's `bs_reserve` is the one place in the library that
+writes it, and it is the difference between a peak of one run and a peak of two.
 
-**Two runs, one function.** Two stores in scope means both brands are written at
-every position that names one, which is where the distinction is real; one store
-means none is written anywhere. `DESIGN.md` 3.K.0 states one criterion with one scope, and 3.L.5 counts the seven
-disposals R2 adds beside the brand items 3.K.0 removes.
+**A linear value taken apart.** `let page = move chunk.page;` on a value linear in this
+scope reports `[PROV-6] LinearValuePartiallyConsumed`, names the residual leaf, and
+points at `let Chunk(page: page, spare: spare) = move chunk;`. Probes `x4`, `g7` and
+`p6_partial` are the program accepted today, and the third shows the residual freed by a
+derived drop. The refusal is stated over the **consume**, so it reaches
+`dispose chunk.page;` as well — **but it does not reach a [LIV-2] commit**: a consume of
+a sub-place reinitialised at the same statement's commit is not a partial consume, which
+is what admits `set (kept.v, total) = collect(...)` and `bs_reserve`'s drain.
 
+**A confined type with no store.** `[BLK-4] ConfinedTypeWithoutStore` fires when a
+nominal with no region parameter holds a store-backed value and the entry selects no
+`command.heap`, so the elided brand resolves to an entry heap that does not exist. Its
+fix is to give the nominal a region parameter or to give the program a heap.
+
+**Two runs, one function.** Two stores in scope means both brands are written at every
+position that names one, which is where the distinction is real; one store means none is
+written anywhere, because [PROV-1]'s brand resolution sends an elided store brand at a
+parameter or result position of `Heap` or heap-derived type to the entry heap. That
+clause is what makes every hosted helper — `bs_reserve` included — declarable at all.
 ## 5. Evidence
 
 Every probe cited here is in `DESIGN.md` 6.1 with its verdict. The five this file
