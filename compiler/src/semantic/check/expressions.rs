@@ -389,6 +389,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// which is exactly how the source spells it, and every caller that
     /// splices a region into a longer form drops the separator with it.
     pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
+        // [PROV-1] the entry heap's store region has no written spelling at
+        // all: `main` declares no region parameter, so every position that
+        // names it names it by elision, and rendering the identity the
+        // compiler holds it under would name a region the writer cannot
+        // write.
+        if region.is_entry_heap_region() {
+            return String::new();
+        }
         let spelling = self
             .declaration_spelling(region)
             .unwrap_or_else(|_| format!("'region#{}", region.index()));
@@ -441,6 +449,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
+            }
+            CheckedType::FixedVector { element, length } => {
+                let length = self.checked_const_name(length)?;
+                format!(
+                    "FixedVector<{}, {length}>",
+                    self.checked_type_name(element.ty())?
+                )
+            }
+            CheckedType::Vector { region, element } => {
+                let element = self.checked_type_name(element.ty())?;
+                match self.region_spelling(region).as_str() {
+                    "" => format!("Vector<{element}>"),
+                    region => format!("Vector<{region}, {element}>"),
+                }
+            }
+            CheckedType::Heap { region } => match self.region_spelling(region).as_str() {
+                "" => "Heap".to_owned(),
+                region => format!("Heap<{region}>"),
+            },
+            CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => {
+                let bytes = self.checked_const_name(bytes)?;
+                let align = self.checked_const_name(align)?;
+                match self.region_spelling(region).as_str() {
+                    "" => format!("Arena<{bytes}, {align}>"),
+                    region => format!("Arena<{region}, {bytes}, {align}>"),
+                }
             }
         })
     }
@@ -1528,6 +1566,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedExpression::Constant(value),
                 EffectSet::NONE,
             ));
+        }
+        // [BLK-1] the four compiler-owned nominals contribute a constructor
+        // entry that exists to be refused: no `construct` produces a run, a
+        // provider, or a store.
+        if let ResolvedTarget::Container(id) = usage.target() {
+            let nominal =
+                crate::container_nominal(id).ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let restructuring = match nominal.shape {
+                crate::ContainerShape::Vector | crate::ContainerShape::FixedVector => {
+                    "form the run with a formation operation"
+                }
+                crate::ContainerShape::Heap | crate::ContainerShape::Arena => {
+                    "receive the provider as a parameter"
+                }
+            };
+            return self.issue_node(
+                SemanticRule::Blk1,
+                node,
+                SemanticIssueKind::ContainerConstruction {
+                    nominal: constructor_name,
+                    mechanical_fix: restructuring,
+                },
+            );
         }
         let constructor = match usage.target() {
             ResolvedTarget::Source { declaration, .. } => {

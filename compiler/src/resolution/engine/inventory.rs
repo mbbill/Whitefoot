@@ -348,6 +348,58 @@ fn collision_issue(
         )));
     }
 
+    // [DIAG-1] rank 5, read over the two compiler-owned container domains:
+    // the [TYPE-2] container and provider nominals and the [BLK-0] kernel
+    // operations enter every unit exactly as the system inventory does
+    // [SYS-3], so a source declaration of one of their spellings in the same
+    // domain is the same collision and neither declaration resolves.
+    let mut container_conflicts = Vec::new();
+    for class in &meta.entries {
+        let domain =
+            declaration_domain(*class).ok_or(ResolutionCompilerFailure::InvalidRoleShape)?;
+        for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
+            if nominal.spelling != declaration.spelling {
+                continue;
+            }
+            for entry in crate::CONTAINER_NOMINAL_CLASSES {
+                if declaration_domain(entry) != Some(domain) {
+                    continue;
+                }
+                container_conflicts.push(DeclarationConflict {
+                    domain,
+                    class: entry,
+                    origin: DeclarationOrigin::Container(crate::ContainerNominalId::new(
+                        u8::try_from(ordinal)
+                            .map_err(|_| ResolutionCompilerFailure::InvalidRoleShape)?,
+                    )),
+                });
+            }
+        }
+        for (ordinal, operation) in crate::KERNEL_OPERATIONS.iter().enumerate() {
+            if operation.spelling == declaration.spelling
+                && declaration_domain(crate::KERNEL_OPERATION_CLASS) == Some(domain)
+            {
+                container_conflicts.push(DeclarationConflict {
+                    domain,
+                    class: crate::KERNEL_OPERATION_CLASS,
+                    origin: DeclarationOrigin::Kernel(crate::KernelOperationId::new(
+                        u8::try_from(ordinal)
+                            .map_err(|_| ResolutionCompilerFailure::InvalidRoleShape)?,
+                    )),
+                });
+            }
+        }
+    }
+    sort_conflicts(&mut container_conflicts, tables.declarations);
+    if !container_conflicts.is_empty() {
+        return Ok(Some(collision(
+            declaration,
+            container_conflicts,
+            declaration_collision_rule(declaration),
+            COLLIDES_WITH_CONTAINER,
+        )));
+    }
+
     let mut same_scope = Vec::new();
     for candidate in tables
         .index
@@ -470,6 +522,7 @@ fn collect_domain_conflicts(
 /// guessing.
 const COLLIDES_WITH_PRELUDE: &str = "a source declaration never displaces, overrides, or shadows a PRE-1 prelude declaration of the same spelling and domain, and neither declaration resolves after the collision; rename this declaration";
 const COLLIDES_WITH_SYSTEM: &str = "a source declaration never displaces, overrides, or shadows an admitted system declaration of the same spelling and domain [SYS-1, SYS-3], and neither declaration resolves after the collision; rename this declaration";
+const COLLIDES_WITH_CONTAINER: &str = "a source declaration never displaces, overrides, or shadows a compiler-owned container nominal or kernel-domain operation of the same spelling and domain [TYPE-2, BLK-0], and neither declaration resolves after the collision; rename this declaration";
 const COLLIDES_IN_ONE_SCOPE: &str = "one scope declares each spelling once in a domain, so this is a redeclaration and not a shadow; rename this declaration, or delete the earlier one when nothing reads it";
 const COLLIDES_WITH_LIVE_OUTER: &str = "a declaration's scope ends with the block that declares it, and not where its value is consumed: a binding whose value was moved is dead as a value while its declaration stays live, so an inner declaration of the same spelling still collides with it. Rename the inner declaration, or close the block that declares the outer one before this point";
 
@@ -530,9 +583,35 @@ pub(super) fn conflict_key(
                 subtoken: 0,
             },
         ),
+        // [DIAG-1] orders the two compiler-owned container domains after the
+        // system inventory and before any source event, by their own
+        // ordinals: the nominal-type rows [TYPE-2] then the
+        // `container_declaration_ordinal` rows [BLK-0].
+        DeclarationOrigin::Container(id) => (
+            2,
+            EventKey {
+                source: 0,
+                start: u64::from(id.ordinal()),
+                end: 0,
+                path: Vec::new(),
+                role: 0,
+                subtoken: 0,
+            },
+        ),
+        DeclarationOrigin::Kernel(id) => (
+            3,
+            EventKey {
+                source: 0,
+                start: u64::from(id.ordinal()),
+                end: 0,
+                path: Vec::new(),
+                role: 0,
+                subtoken: 0,
+            },
+        ),
         DeclarationOrigin::Source(origin) => {
             let _ = declarations;
-            (2, EventKey::from_origin(origin))
+            (4, EventKey::from_origin(origin))
         }
     }
 }

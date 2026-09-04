@@ -2368,6 +2368,10 @@ impl<'program> IrBuilder<'program> {
 const fn fixed_measure(measure: CheckedMeasure, measured: MeasuredKind) -> Option<u64> {
     match measure.cell(measured) {
         MeasureCell::ExactConstant(value) => Some(value),
-        MeasureCell::ExactExtent | MeasureCell::Bounded | MeasureCell::Absent => None,
+        MeasureCell::ExactExtent
+        | MeasureCell::ExactTypeConstant
+        | MeasureCell::ExactRuntime
+        | MeasureCell::Bounded
+        | MeasureCell::Absent => None,
     }
 }

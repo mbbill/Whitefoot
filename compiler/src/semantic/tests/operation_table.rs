@@ -580,6 +580,9 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
         (MeasuredKind::Array, "array<T, N>"),
         (MeasuredKind::Buffer, "buffer<T>"),
         (MeasuredKind::Slice, "slice<'r, T>"),
+        (MeasuredKind::FixedVector, "FixedVector<T, n>"),
+        (MeasuredKind::Vector, "Vector<'s, T>"),
+        (MeasuredKind::Extent, "Arena<'s, bytes, align>"),
     ];
     assert_eq!(
         rows.iter()
@@ -594,19 +597,21 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
         CheckedMeasure::Room,
         CheckedMeasure::Head,
     ];
+    // [MSR-1]: exactly one cell class is *bounded* anywhere, and it is the one
+    // cell the two run rows share.
+    let mut bounded = 0_usize;
     for (row, (measured, name)) in rows.iter().zip(expected) {
         for (cell, measure) in row.cells.iter().zip(measures) {
-            let (written, classification) = cell.rsplit_once(", ").unwrap_or_else(|| {
-                panic!(
-                    "{name}'s {} cell writes a classification",
-                    measure.spelling()
-                )
-            });
-            assert_eq!(
-                classification, "exact",
-                "every cell of this version's table is exact"
-            );
+            let (written, classification) = cell
+                .rsplit_once(", ")
+                .unwrap_or((cell.as_str(), cell.as_str()));
             let compiled = measure.cell(measured);
+            assert_eq!(
+                classification,
+                compiled.classification(),
+                "{name}'s {} cell writes {classification} where the compiler reads {compiled:?}",
+                measure.spelling()
+            );
             match compiled {
                 MeasureCell::ExactConstant(value) => assert_eq!(
                     written,
@@ -619,11 +624,37 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
                     "{name}'s {} cell is the measured value's own extent, written {written}",
                     measure.spelling()
                 ),
-                MeasureCell::Bounded | MeasureCell::Absent => panic!(
-                    "{name}'s {} cell is {compiled:?} where the specification writes {cell}",
+                MeasureCell::ExactTypeConstant => assert!(
+                    matches!(written, "n" | "bytes"),
+                    "{name}'s {} cell is the type's own written constant, written {written}",
+                    measure.spelling()
+                ),
+                MeasureCell::ExactRuntime => assert!(
+                    matches!(
+                        written,
+                        "initialized slots" | "slots taken" | "cursor bytes" | "cap - len"
+                    ),
+                    "{name}'s {} cell is a runtime quantity of the descriptor, written {written}",
+                    measure.spelling()
+                ),
+                MeasureCell::Bounded => {
+                    bounded += 1;
+                    assert_eq!(
+                        written, "window origin",
+                        "the one bounded cell class is a run's window origin"
+                    );
+                }
+                MeasureCell::Absent => assert_eq!(
+                    written,
+                    "absent",
+                    "{name}'s {} cell is absent in both",
                     measure.spelling()
                 ),
             }
         }
     }
+    assert_eq!(
+        bounded, 2,
+        "the two run rows share the one bounded cell and nothing else is bounded"
+    );
 }

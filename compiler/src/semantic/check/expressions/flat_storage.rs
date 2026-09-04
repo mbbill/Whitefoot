@@ -448,6 +448,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             }
             CheckedType::Buffer { .. } => finish(CheckedLayoutMagnitude::Finite(32), 16),
+            // [OP-9]: a `Vector` descriptor and a provider are one
+            // (32, 16) pair each; a `FixedVector` is its element pair
+            // repeated `n` times followed by its two (8, 8) descriptor words,
+            // so its aggregate alignment is `max(align_ceiling(T), 8)`.
+            CheckedType::Vector { .. } | CheckedType::Heap { .. } | CheckedType::Extent { .. } => {
+                finish(CheckedLayoutMagnitude::Finite(32), 16)
+            }
+            CheckedType::FixedVector { element, length } => {
+                let length = length.value()?;
+                let element = self.layout_ceiling_inner(element.ty(), visiting)?;
+                let align = element.align.max(8);
+                let elements = multiply_layout_magnitude(element.stride, length);
+                let body = round_up_layout_magnitude(elements, 8);
+                finish(
+                    add_layout_magnitude(body, CheckedLayoutMagnitude::Finite(16)),
+                    align,
+                )
+            }
             CheckedType::Slice { .. } => None,
             CheckedType::Nominal(id) => {
                 if !visiting.insert(id) {
@@ -1166,6 +1184,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         mechanical_fix: "write `deref(holder)`",
                     },
                 )
+            }
+            // [MSR-1] gives the two runs and the bump extent a measure-table
+            // row and [OP-4] makes the two runs indexable bases, so neither a
+            // measure former nor a subscript over one is a source rejection;
+            // the window lowering [BLK-1] fixes is what is not implemented,
+            // so this is the same TEMPORARY capability stop a value of one of
+            // those types takes at a signature.
+            CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Extent { .. }
+            | CheckedType::Heap { .. } => {
+                self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, anchor)
             }
             _ => self.issue_node(
                 SemanticRule::Type5,

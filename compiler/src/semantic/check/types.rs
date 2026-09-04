@@ -350,6 +350,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     };
                     return Ok(ty);
                 }
+                ResolvedTarget::Container(id) => {
+                    return self.parse_container_type(node, id, substitution);
+                }
                 ResolvedTarget::System(id) => {
                     let index = crate::system_nominal_index(id, self.inventory())
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
@@ -400,7 +403,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ty,
                 SemanticIssueKind::RegionBearingStorage {
                     mechanical_fix:
-                        "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+                        "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
                 },
             );
         }
@@ -427,8 +430,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 continue;
             }
             match ty {
-                CheckedType::Slice { .. } => return Ok(true),
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                // [STOR-5]: a provider is region-bearing because a move would
+                // strand its own store, exactly as a loan is because storage
+                // would hide its provenance. A store-branded run is not: the
+                // store's identity travels in the type [PROV-1], so the
+                // position it occupies is itself confined to that store.
+                CheckedType::Slice { .. }
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. } => return Ok(true),
+                CheckedType::Array { element, .. }
+                | CheckedType::Buffer { element }
+                | CheckedType::FixedVector { element, .. }
+                | CheckedType::Vector { element, .. } => {
                     pending.push(element.ty());
                 }
                 CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
@@ -476,6 +489,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .is_some()
         {
             let usage = self.use_at(node, LexicalUseRole::Type)?;
+            // [STOR-5]: a provider a move would strand is region-bearing; a
+            // store-branded run is not, because its brand confines the
+            // position rather than hiding a provenance [PROV-1].
+            if let ResolvedTarget::Container(id) = usage.target()
+                && crate::container_nominal(id).is_some_and(|nominal| {
+                    matches!(
+                        nominal.shape,
+                        crate::ContainerShape::Heap | crate::ContainerShape::Arena
+                    )
+                })
+            {
+                return Ok(true);
+            }
             if let ResolvedTarget::Source {
                 declaration,
                 class: DeclarationClass::GenericType,
@@ -545,6 +571,171 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ok = self.parse_type_with(ok, substitution)?;
         let error = self.parse_type_with(error, substitution)?;
         Ok((ok, error))
+    }
+
+    /// One written `Vector`, `FixedVector`, `Heap`, or `Arena` type
+    /// [TYPE-2, BLK-1, PROV-1].
+    ///
+    /// Each is a TYPEID with `targs` [GRAM-3], so the argument list is read
+    /// positionally against the nominal's own parameter list, and a store
+    /// region left unwritten resolves by [PROV-1]'s brand rule: the enclosing
+    /// nominal's sole region parameter at a stored position, and the entry
+    /// heap's store region otherwise. A bump extent's region is one the
+    /// caller must choose and is therefore written at every position
+    /// [FORM-8].
+    fn parse_container_type(
+        &self,
+        node: NodeId,
+        id: crate::ContainerNominalId,
+        substitution: &GenericSubstitution,
+    ) -> Result<CheckedType, CheckStop> {
+        let shape = crate::container_nominal(id)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .shape;
+        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
+            None => Vec::new(),
+        };
+        let mut written_region = None;
+        let mut rest = arguments.as_slice();
+        if let Some(first) = arguments.first()
+            && self
+                .tree
+                .first_child_with(*first, Production::Type)?
+                .is_none()
+            && self
+                .tree
+                .first_child_with(*first, Production::Const)?
+                .is_none()
+        {
+            let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            written_region = Some(declaration);
+            rest = &arguments[1..];
+        }
+        let expected = match shape {
+            crate::ContainerShape::Vector => "Vector<'s, T> with one element type",
+            crate::ContainerShape::FixedVector => {
+                "FixedVector<T, n> with one element type and one capacity"
+            }
+            crate::ContainerShape::Heap => "Heap with no further argument",
+            crate::ContainerShape::Arena => "Arena<'s, bytes, align> with two constants",
+        };
+        let mismatch = |found: &str| -> Result<CheckedType, CheckStop> {
+            self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(expected, found),
+            )
+        };
+        let element_of = |argument: NodeId| -> Result<CheckedFlatElement, CheckStop> {
+            let element_node = self
+                .tree
+                .first_child_with(argument, Production::Type)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let element_type = self.parse_type_with(element_node, substitution)?;
+            match self.buffer_element(element_type)? {
+                Some(element) => Ok(element),
+                None => self
+                    .unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
+                    .map(|()| CheckedFlatElement::Unit),
+            }
+        };
+        match shape {
+            crate::ContainerShape::Vector => {
+                let [element] = rest else {
+                    return mismatch("a Vector type-argument list of a different length");
+                };
+                if self
+                    .tree
+                    .first_child_with(*element, Production::Type)?
+                    .is_none()
+                {
+                    return mismatch("a const argument in the Vector element position");
+                }
+                let element = element_of(*element)?;
+                Ok(CheckedType::Vector {
+                    region: written_region.unwrap_or_else(|| self.elided_store_region()),
+                    element,
+                })
+            }
+            crate::ContainerShape::FixedVector => {
+                if written_region.is_some() {
+                    return mismatch("a region argument on a FixedVector, which has no store");
+                }
+                let [element, length] = rest else {
+                    return mismatch("a FixedVector type-argument list of a different length");
+                };
+                if self
+                    .tree
+                    .first_child_with(*element, Production::Type)?
+                    .is_none()
+                {
+                    return mismatch("a const argument in the FixedVector element position");
+                }
+                let Some(length_node) = self.tree.first_child_with(*length, Production::Const)?
+                else {
+                    return mismatch("a type argument in the FixedVector capacity position");
+                };
+                let element = element_of(*element)?;
+                Ok(CheckedType::FixedVector {
+                    element,
+                    length: self.parse_const_expression_with(length_node, substitution)?,
+                })
+            }
+            crate::ContainerShape::Heap => {
+                if !rest.is_empty() {
+                    return mismatch("a Heap type-argument list with a further argument");
+                }
+                Ok(CheckedType::Heap {
+                    region: written_region.unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION),
+                })
+            }
+            crate::ContainerShape::Arena => {
+                let [bytes, align] = rest else {
+                    return mismatch("an Arena type-argument list of a different length");
+                };
+                let (Some(bytes_node), Some(align_node)) = (
+                    self.tree.first_child_with(*bytes, Production::Const)?,
+                    self.tree.first_child_with(*align, Production::Const)?,
+                ) else {
+                    return mismatch("a type argument in an Arena constant position");
+                };
+                // A bump extent's store region is one the caller must choose,
+                // so [FORM-8] writes it at every position and an elided one
+                // names no extent [PROV-1].
+                let Some(region) = written_region else {
+                    return self.issue_node(
+                        SemanticRule::Form8,
+                        node,
+                        SemanticIssueKind::RegionSpelling {
+                            mechanical_fix: "write the store region this extent names: a bump \
+extent's region is one the caller must choose, so it is written at every position",
+                        },
+                    );
+                };
+                Ok(CheckedType::Extent {
+                    region,
+                    bytes: self.parse_const_expression_with(bytes_node, substitution)?,
+                    align: self.parse_const_expression_with(align_node, substitution)?,
+                })
+            }
+        }
+    }
+
+    /// [PROV-1]'s brand resolution for an elided store region: the enclosing
+    /// nominal's sole region parameter at a stored position, and the entry
+    /// heap's store region everywhere else.
+    pub(in crate::semantic::check) fn elided_store_region(&self) -> crate::DeclarationId {
+        self.elided_store_brand
+            .get()
+            .unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION)
     }
 
     pub(super) fn option_type_argument_with(
@@ -1080,6 +1271,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Array { .. }
             | CheckedType::Slice { .. }
             | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. }
             | CheckedType::Generic(_) => vec![Vec::new()],
             CheckedType::Unit
             | CheckedType::Bool
@@ -1516,7 +1711,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_)
             | CheckedType::Nominal(_) => false,
-            CheckedType::Slice { .. } | CheckedType::Buffer { .. } => false,
+            // The `FixedVector` const form is [S34]'s and lands with
+            // `array`'s retirement; a run, a heap, and an extent are not
+            // static rodata in this version.
+            CheckedType::Slice { .. }
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => false,
         })
     }
 
@@ -1579,7 +1782,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Nominal(_)
             | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. } => None,
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => None,
         })
     }
 

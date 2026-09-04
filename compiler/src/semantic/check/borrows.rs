@@ -756,6 +756,14 @@ absent when it writes none",
     pub(super) fn borrowable_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Buffer { .. } | CheckedType::Slice { .. } => true,
+            // A store-resident run is a descriptor and a provider is its own
+            // handle, so each is already the thing a borrow carries; a
+            // frame-resident run is inline storage and is borrowed no more
+            // than an `array` is today [BLK-1, PROV-1].
+            CheckedType::Vector { .. } | CheckedType::Heap { .. } | CheckedType::Extent { .. } => {
+                true
+            }
+            CheckedType::FixedVector { .. } => false,
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
                 CheckedNominalKind::Struct { .. }
@@ -790,9 +798,16 @@ absent when it writes none",
             | CheckedType::Bool
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => true,
+            // A `Heap` or an `Arena` is a stored proof-only value whose
+            // cursor state a `&uniq` holder writes, so its borrow addresses
+            // that storage; a `Vector` is a descriptor and a `FixedVector` is
+            // not borrowable at all [BLK-1, PROV-1].
+            CheckedType::Heap { .. } | CheckedType::Extent { .. } => true,
             CheckedType::Buffer { .. }
             | CheckedType::Slice { .. }
             | CheckedType::Array { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::FixedVector { .. }
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_) => false,

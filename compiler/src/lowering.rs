@@ -139,7 +139,10 @@ impl IrAddressed {
             IrType::Address(_)
             | IrType::Array { .. }
             | IrType::Buffer { .. }
-            | IrType::Slice { .. } => return None,
+            | IrType::Slice { .. }
+            | IrType::FixedVector { .. }
+            | IrType::Vector { .. }
+            | IrType::Provider => return None,
         })
     }
 }
@@ -148,13 +151,42 @@ impl IrAddressed {
 pub enum IrType {
     Unit,
     Bool,
-    Integer { width: u8, signed: bool },
-    Float { width: u8 },
+    Integer {
+        width: u8,
+        signed: bool,
+    },
+    Float {
+        width: u8,
+    },
     Nominal(IrNominalId),
     Address(IrAddressed),
-    Array { element: IrFlatElement, length: u64 },
-    Buffer { element: IrFlatElement },
-    Slice { element: IrFlatElement },
+    Array {
+        element: IrFlatElement,
+        length: u64,
+    },
+    Buffer {
+        element: IrFlatElement,
+    },
+    Slice {
+        element: IrFlatElement,
+    },
+    /// One `FixedVector<T, n>` [BLK-1]: `n` inline slots followed by the two
+    /// descriptor words `len` and `head`. The capacity is the type constant
+    /// and is stored nowhere.
+    FixedVector {
+        element: IrFlatElement,
+        length: u64,
+    },
+    /// One `Vector<'s, T>` [BLK-1]: the descriptor `{ pointer, cap, len,
+    /// head }` over a run taken from the store `'s` names. The region is
+    /// erased here, having already decided the release action.
+    Vector {
+        element: IrFlatElement,
+    },
+    /// One provider value [PROV-1]. It is proof-only: the general store's
+    /// provider carries no runtime state at all, and the bump extent's
+    /// carries exactly its cursor.
+    Provider,
 }
 
 const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, LoweringFailure> {
@@ -206,6 +238,16 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
         CheckedType::Slice { element, .. } => IrType::Slice {
             element: lower_flat_element(element)?,
         },
+        CheckedType::FixedVector { element, length } => IrType::FixedVector {
+            element: lower_flat_element(element)?,
+            length: length
+                .value()
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        },
+        CheckedType::Vector { element, .. } => IrType::Vector {
+            element: lower_flat_element(element)?,
+        },
+        CheckedType::Heap { .. } | CheckedType::Extent { .. } => IrType::Provider,
     })
 }
 

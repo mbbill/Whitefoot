@@ -103,6 +103,60 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Whether one checked type is, or reaches at any depth, one of the four
+    /// compiler-owned container or provider nominals [TYPE-2].
+    ///
+    /// The walk is the ordinary reachability closure over fields, enum
+    /// variant payloads, run and flat-container elements, and `box` and
+    /// `arena` content, with a visited set because box content may close a
+    /// nominal cycle [STOR-2].
+    pub(in crate::semantic::check) fn type_reaches_container(
+        &self,
+        ty: CheckedType,
+    ) -> Result<bool, CheckStop> {
+        let mut pending = vec![ty];
+        let mut visited: std::collections::HashSet<CheckedType> = std::collections::HashSet::new();
+        while let Some(ty) = pending.pop() {
+            if !visited.insert(ty) {
+                continue;
+            }
+            match ty {
+                CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. }
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. } => return Ok(true),
+                CheckedType::Array { element, .. }
+                | CheckedType::Buffer { element }
+                | CheckedType::Slice { element, .. } => pending.push(element.ty()),
+                CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
+                    CheckedNominalKind::Box { referent } => pending.push(*referent),
+                    CheckedNominalKind::Arena { content, .. } => pending.push(*content),
+                    CheckedNominalKind::Struct { fields } => {
+                        pending.extend(fields.iter().map(|field| field.ty));
+                    }
+                    CheckedNominalKind::Enum { variants } => {
+                        pending.extend(
+                            variants
+                                .iter()
+                                .flat_map(|variant| variant.fields.iter())
+                                .map(|field| field.ty),
+                        );
+                    }
+                    CheckedNominalKind::ArenaStorage
+                    | CheckedNominalKind::SystemResource { .. } => {}
+                },
+                CheckedType::Unit
+                | CheckedType::Bool
+                | CheckedType::Integer(_)
+                | CheckedType::Float(_)
+                | CheckedType::Generic(_)
+                | CheckedType::GenericInt(_)
+                | CheckedType::GenericFloat(_) => {}
+            }
+        }
+        Ok(false)
+    }
+
     pub(super) fn is_copy_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Nominal(id) => self.nominal(id)?.is_copy(),
@@ -115,7 +169,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Generic(_)
             | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. } => false,
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => false,
         })
     }
 

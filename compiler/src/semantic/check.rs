@@ -194,6 +194,12 @@ enum ResultProvenance {
 fn type_carries_region(ty: CheckedType, region: DeclarationId) -> bool {
     match ty {
         CheckedType::Slice { region: slice, .. } => slice == region,
+        // A store brand is a component of the type [PROV-1], so a run, a
+        // heap, and an extent each carry their own store region here exactly
+        // as a slice carries its loan region.
+        CheckedType::Vector { region: store, .. }
+        | CheckedType::Heap { region: store }
+        | CheckedType::Extent { region: store, .. } => store == region,
         CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => true,
         CheckedType::Unit
         | CheckedType::Bool
@@ -201,6 +207,7 @@ fn type_carries_region(ty: CheckedType, region: DeclarationId) -> bool {
         | CheckedType::Float(_)
         | CheckedType::Nominal(_)
         | CheckedType::Buffer { .. }
+        | CheckedType::FixedVector { .. }
         | CheckedType::Array { .. } => false,
     }
 }
@@ -550,6 +557,12 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// Written by the `&self` checking path and drained by the `&mut self`
     /// driver between attempts at one function.
     pending_nominals: RefCell<Vec<PendingNominal>>,
+    /// [PROV-1] the region an elided store brand denotes at the position
+    /// being parsed: the enclosing nominal.s sole region parameter while a
+    /// `struct_decl` or `enum_decl` body is being read, and `None`
+    /// everywhere else, where the brand resolves to the entry heap's store
+    /// region.
+    elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
     /// [LIV-2] the target places of the `set` commit whose right-hand side is
     /// being checked, and whether that right-hand side has read each out.
     /// Empty everywhere else: `check_commit` installs it around exactly that
@@ -976,6 +989,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             result_list_nominals: HashMap::new(),
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
+            elided_store_brand: std::cell::Cell::new(None),
             commit_read_outs: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
@@ -1744,6 +1758,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 );
             }
+            // The same TEMPORARY capability stop for the four compiler-owned
+            // container and provider nominals [TYPE-2]: they are named,
+            // branded, confined and measured by the ordinary source
+            // judgments, and the window lowering [BLK-1] fixes is not
+            // implemented yet.
+            if self.type_reaches_container(parameter.ty)? {
+                return self.unsupported(
+                    UnsupportedSemanticFeature::ContainerRuntime,
+                    self.tree
+                        .node_with_path(&parameter.node_path)
+                        .ok_or(SemanticCompilerFailure::InvalidResolution)?,
+                );
+            }
+        }
+        if self.type_reaches_container(signature.result)? {
+            return self.unsupported(
+                UnsupportedSemanticFeature::ContainerRuntime,
+                signature.effects_node,
+            );
         }
         let function = CheckedFunction {
             id: signature.id,
@@ -2612,6 +2645,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
+            CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                length: self.instantiate_goal_const(length, signature)?,
+            },
+            CheckedType::Vector { region, element } => CheckedType::Vector {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+            },
+            CheckedType::Heap { region } => CheckedType::Heap {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+            },
+            CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => CheckedType::Extent {
+                region: self.instantiate_goal_region(region, signature, regions)?,
+                bytes: self.instantiate_goal_const(bytes, signature)?,
+                align: self.instantiate_goal_const(align, signature)?,
+            },
             CheckedType::Unit
             | CheckedType::Bool
             | CheckedType::Integer(_)
@@ -2644,7 +2697,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Generic(_)
             | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. } => {
+            | CheckedType::Buffer { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         })

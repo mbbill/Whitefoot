@@ -53,6 +53,11 @@ const COMMAND_INPUTS: [StandardInput; 5] = [
     input("stdout", "own Output", "Output"),
     input("stderr", "own Output", "Output"),
     input("files", "own FileFactory", "FileFactory"),
+    // [FN-7] DEFERRED: the sixth row, `command.heap as heap: own Heap`, by
+    // which a program obtains the one general store [PROV-1]. Its label tail
+    // is the spelling [EFF-1] fixes as the allocation atom of
+    // `allocates(heap)`, which [FORM-3] therefore excludes from IDENT, so no
+    // source can write the row until that atom retires.
 ];
 
 const COMMAND_RESULT: &str = "own ExitStatus";
@@ -416,6 +421,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let Ok(usage) = self.use_at(ty, LexicalUseRole::Type) else {
             return Ok(false);
         };
+        // [PROV-1] the entry heap's DEFERRED row would write the bare `Heap`,
+        // which is a compiler-owned container nominal [TYPE-2] rather than a
+        // [SYS-2] one; every row this table carries writes a system nominal,
+        // and this arm is what keeps the two classes one judgment.
+        if let ResolvedTarget::Container(id) = usage.target() {
+            return Ok(crate::container_nominal(id).is_some_and(|entry| entry.spelling == nominal));
+        }
         let ResolvedTarget::System(id) = usage.target() else {
             return Ok(false);
         };

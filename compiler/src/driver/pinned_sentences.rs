@@ -1373,6 +1373,51 @@ command fn main() -> status: own ExitStatus allocates(heap) {
             "a slice\'s static origin set and an arena\'s confinement are fixed at initialization; bind a new slice or arena under a new let",
         ],
     },
+    // -------------------------------------------------------------------
+    // [BLK-1] and [PROV-1]: the container nominals a construct may not name
+    // and the store region an extent always writes.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "a-construct-naming-a-run.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let made = FixedVector(len: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "BLK-1",
+        sentences: &[
+            r#"nominal: "FixedVector""#,
+            "form the run with a formation operation",
+        ],
+    },
+    Probe {
+        name: "a-construct-naming-a-provider.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let made = Heap(cursor: 0_u64);
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "BLK-1",
+        sentences: &[
+            r#"nominal: "Heap""#,
+            "receive the provider as a parameter",
+        ],
+    },
+    Probe {
+        name: "an-extent-eliding-its-store-region.wf",
+        source: br#"fn carve(extent: own Arena<4096, 16>) -> made: own u64 pure {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "write the store region this extent names: a bump extent's region is one the caller must choose, so it is written at every position",
+        ],
+    },
 ];
 
 /// Every sentence in the corpus is rendered by a program that reaches it.

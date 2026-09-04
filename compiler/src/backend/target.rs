@@ -972,6 +972,40 @@ impl LayoutComputer<'_, '_, '_, '_> {
                 self.flat_element(element)?;
                 Ok(Layout { size: 16, align: 8 })
             }
+            // A `Vector` descriptor is a pointer, a capacity, a length, and a
+            // window origin [BLK-1]; a provider is proof-only and carries at
+            // most its own cursor.
+            IrType::Vector { element } => {
+                self.flat_element(element)?;
+                Ok(Layout { size: 32, align: 8 })
+            }
+            IrType::Provider => Ok(Layout { size: 16, align: 8 }),
+            IrType::FixedVector { length: 0, element } => {
+                self.flat_element(element)?;
+                Ok(Layout { size: 16, align: 8 })
+            }
+            IrType::FixedVector { element, length } => {
+                let element = self.flat_element(element)?;
+                let stride = align_up(
+                    self.target,
+                    element.size,
+                    element.align,
+                    TargetObject::Representation,
+                )?;
+                let slots = checked_mul(stride, length, self.target, TargetObject::Representation)?;
+                let align = element.align.max(8);
+                let body = align_up(self.target, slots, 8, TargetObject::Representation)?;
+                let size = align_up(
+                    self.target,
+                    body.checked_add(16)
+                        .ok_or(TargetLayoutFailure::Unrepresentable(
+                            TargetObject::Representation,
+                        ))?,
+                    align,
+                    TargetObject::Representation,
+                )?;
+                Ok(Layout { size, align })
+            }
         }
     }
 

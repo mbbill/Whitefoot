@@ -102,6 +102,22 @@ enum StableCheckedType {
     Buffer {
         element: StableFlatElement,
     },
+    FixedVector {
+        element: StableFlatElement,
+        length: CheckedConst,
+    },
+    Vector {
+        region: DeclarationId,
+        element: StableFlatElement,
+    },
+    Heap {
+        region: DeclarationId,
+    },
+    Extent {
+        region: DeclarationId,
+        bytes: CheckedConst,
+        align: CheckedConst,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -568,9 +584,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 declaration,
                 class: DeclarationClass::Function,
             } => declaration,
-            // A system operation is not a user function template; recursion
-            // through it is impossible, so it contributes no cycle edge.
-            ResolvedTarget::Operation(_) | ResolvedTarget::System(_) => return Ok(None),
+            // A system operation and a kernel-domain row [BLK-0] are not user
+            // function templates; recursion through either is impossible, so
+            // neither contributes a cycle edge.
+            ResolvedTarget::Operation(_)
+            | ResolvedTarget::System(_)
+            | ResolvedTarget::Kernel(_) => {
+                return Ok(None);
+            }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
         let Some(index) = self.templates_by_declaration.get(&declaration).copied() else {
@@ -1297,6 +1318,51 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 StableCheckedType::Buffer { element }
             }
+            CheckedType::FixedVector { element, length } => {
+                let Some(element) = self.stabilize_flat_element(
+                    element,
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )?
+                else {
+                    return Ok(None);
+                };
+                if !allow_symbolic && !length.is_concrete() {
+                    return Ok(None);
+                }
+                StableCheckedType::FixedVector { element, length }
+            }
+            CheckedType::Vector { region, element } => {
+                let Some(element) = self.stabilize_flat_element(
+                    element,
+                    nominal_checkpoint,
+                    visiting,
+                    allow_symbolic,
+                )?
+                else {
+                    return Ok(None);
+                };
+                StableCheckedType::Vector { region, element }
+            }
+            CheckedType::Heap { region } => StableCheckedType::Heap { region },
+            CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => {
+                if !allow_symbolic && !bytes.is_concrete() {
+                    return Ok(None);
+                }
+                if !allow_symbolic && !align.is_concrete() {
+                    return Ok(None);
+                }
+                StableCheckedType::Extent {
+                    region,
+                    bytes,
+                    align,
+                }
+            }
         };
         Ok(Some(stable))
     }
@@ -1461,6 +1527,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             StableCheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.reify_flat_element(element)?,
+            },
+            StableCheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+                element: self.reify_flat_element(element)?,
+                length: *length,
+            },
+            StableCheckedType::Vector { region, element } => CheckedType::Vector {
+                region: *region,
+                element: self.reify_flat_element(element)?,
+            },
+            StableCheckedType::Heap { region } => CheckedType::Heap { region: *region },
+            StableCheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => CheckedType::Extent {
+                region: *region,
+                bytes: *bytes,
+                align: *align,
             },
         })
     }
@@ -2200,14 +2284,18 @@ fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
         CheckedType::Nominal(id) => output.push(id),
         CheckedType::Array { element, .. }
         | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element } => collect_flat_element_nominals(element, output),
+        | CheckedType::Buffer { element }
+        | CheckedType::FixedVector { element, .. }
+        | CheckedType::Vector { element, .. } => collect_flat_element_nominals(element, output),
         CheckedType::Unit
         | CheckedType::Bool
         | CheckedType::Integer(_)
         | CheckedType::Float(_)
         | CheckedType::Generic(_)
         | CheckedType::GenericInt(_)
-        | CheckedType::GenericFloat(_) => {}
+        | CheckedType::GenericFloat(_)
+        | CheckedType::Heap { .. }
+        | CheckedType::Extent { .. } => {}
     }
 }
 
@@ -2326,7 +2414,9 @@ fn rewrite_type_nominals(
         }
         CheckedType::Array { element, .. }
         | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element } => {
+        | CheckedType::Buffer { element }
+        | CheckedType::FixedVector { element, .. }
+        | CheckedType::Vector { element, .. } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
         }
         CheckedType::Unit
@@ -2336,6 +2426,8 @@ fn rewrite_type_nominals(
         | CheckedType::Generic(_)
         | CheckedType::GenericInt(_)
         | CheckedType::GenericFloat(_)
+        | CheckedType::Heap { .. }
+        | CheckedType::Extent { .. }
         | CheckedType::Nominal(_) => {}
     }
     Ok(())

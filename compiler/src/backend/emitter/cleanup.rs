@@ -179,6 +179,12 @@ pub(super) fn type_requires_cleanup(
     while let Some(current) = pending.pop() {
         match current {
             IrType::Buffer { .. } => return Ok(true),
+            // A store-resident run always reclaims its own storage; a
+            // frame-resident run reclaims none of its own and needs a walk
+            // only when its window holds values that do [STOR-3, BLK-1].
+            IrType::Vector { .. } => return Ok(true),
+            IrType::FixedVector { element, .. } => pending.push(element.ty()),
+            IrType::Provider => {}
             IrType::Nominal(id)
                 if matches!(
                     program.nominal(id).map(|nominal| nominal.kind()),
@@ -438,12 +444,38 @@ fn emit_cleanup_jobs(
                         }
                     }
                 }
+                // A store-resident run's release is one reclamation of its
+                // own run to its store, which for the general store is one
+                // free of its descriptor pointer [STOR-3, BLK-1]. A run
+                // whose element type derives a release action of its own is
+                // an explicit unsupported capability, refused at its type
+                // before lowering, so this arm reclaims the run and nothing
+                // else.
+                IrType::Vector { element } => {
+                    if type_requires_cleanup(program, element.ty())? {
+                        return Err(BackendFailure::InvalidIr);
+                    }
+                    let pointer = next_temporary(temporary)?;
+                    writeln!(
+                        output,
+                        "  %{pointer} = extractvalue {} {operand}, 0\n  call void @free(ptr %{pointer})",
+                        llvm_type(program, ty)?
+                    )
+                    .map_err(|_| BackendFailure::TextEmission)?;
+                }
+                // A frame-resident run reclaims no storage of its own.
+                IrType::FixedVector { element, .. } => {
+                    if type_requires_cleanup(program, element.ty())? {
+                        return Err(BackendFailure::InvalidIr);
+                    }
+                }
                 IrType::Unit
                 | IrType::Bool
                 | IrType::Integer { .. }
                 | IrType::Float { .. }
                 | IrType::Array { .. }
                 | IrType::Slice { .. }
+                | IrType::Provider
                 | IrType::Address(_) => {}
             },
         }
@@ -924,12 +956,26 @@ fn cleanup_edges(
                 | IrNominalKind::SystemResource(_) => {}
             }
         }
+        // A run's elements are reached through its own storage, which is an
+        // owning indirection for the store-resident run and an inline block
+        // for the frame-resident one [BLK-1].
+        IrType::Vector { element } => {
+            if type_requires_cleanup(program, element.ty())? {
+                edges.push((element.ty(), true));
+            }
+        }
+        IrType::FixedVector { element, .. } => {
+            if type_requires_cleanup(program, element.ty())? {
+                edges.push((element.ty(), false));
+            }
+        }
         IrType::Unit
         | IrType::Bool
         | IrType::Integer { .. }
         | IrType::Float { .. }
         | IrType::Array { .. }
         | IrType::Slice { .. }
+        | IrType::Provider
         | IrType::Address(_) => {}
     }
     Ok(edges)

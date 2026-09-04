@@ -348,16 +348,55 @@ pub(crate) enum CheckedType {
     Buffer {
         element: CheckedFlatElement,
     },
+    /// One `FixedVector<T, n>` [BLK-1]: a frame-resident run of `n` slots
+    /// whose initialized storage is the window `len` slots wide beginning at
+    /// `head`. `n` is the type constant; `len` and `head` are descriptor
+    /// words [OP-9].
+    FixedVector {
+        element: CheckedFlatElement,
+        length: CheckedConst,
+    },
+    /// One `Vector<'s, T>` [BLK-1]: a store-resident run taken from the store
+    /// the region `'s` names [PROV-1]. The region is part of the type's
+    /// identity, so two stores give two types.
+    Vector {
+        region: DeclarationId,
+        element: CheckedFlatElement,
+    },
+    /// One `Heap<'s>` [PROV-1]: the proof-only provider value of the general
+    /// store `'s` names. The one route by which a program would obtain it is
+    /// [FN-7]'s `heap` standard input, which is DEFERRED, so the type is
+    /// nameable and no source produces a value of it.
+    Heap {
+        region: DeclarationId,
+    },
+    /// One `Arena<'s, bytes, align>` [PROV-1]: the proof-only provider value
+    /// of the bump extent `'s` names, reserved by `arena_frame` [BLK-2].
+    Extent {
+        region: DeclarationId,
+        bytes: CheckedConst,
+        align: CheckedConst,
+    },
 }
 
 impl CheckedType {
     pub(crate) const fn is_concrete(self) -> bool {
         match self {
             Self::Generic(_) | Self::GenericInt(_) | Self::GenericFloat(_) => false,
-            Self::Array { element, length } => element.ty().is_concrete() && length.is_concrete(),
-            Self::Slice { element, .. } => element.ty().is_concrete(),
+            Self::Array { element, length } | Self::FixedVector { element, length } => {
+                element.ty().is_concrete() && length.is_concrete()
+            }
+            Self::Slice { element, .. } | Self::Vector { element, .. } => {
+                element.ty().is_concrete()
+            }
             Self::Buffer { element } => element.ty().is_concrete(),
-            Self::Unit | Self::Bool | Self::Integer(_) | Self::Float(_) | Self::Nominal(_) => true,
+            Self::Extent { bytes, align, .. } => bytes.is_concrete() && align.is_concrete(),
+            Self::Unit
+            | Self::Bool
+            | Self::Integer(_)
+            | Self::Float(_)
+            | Self::Nominal(_)
+            | Self::Heap { .. } => true,
         }
     }
 }
@@ -391,11 +430,34 @@ pub(crate) enum MeasureCell {
     ExactExtent,
     /// The measure is exactly this compile-time constant.
     ExactConstant(u64),
+    /// The measure is exactly the type's own written constant: an `array`'s
+    /// or a `FixedVector`'s capacity, or an `Arena`'s byte extent.
+    ExactTypeConstant,
+    /// The measure is exact and is an independent runtime quantity of the
+    /// value's own descriptor: a run's `len`, a `Vector`'s `cap`, and the
+    /// `room` [MSR-2]'s identity relates to the other two [BLK-1].
+    ExactRuntime,
     /// The measure is exact but only two-sidedly published by some writing
-    /// operation. No row of this version's table selects it.
+    /// operation. A run's `head` is the one cell of this class [BLK-3].
     Bounded,
     /// The type has no such measure.
     Absent,
+}
+
+impl MeasureCell {
+    /// The [MSR-1] classification word this cell writes in the specification's
+    /// own table: *exact*, *bounded*, or *absent*, and nothing else.
+    #[cfg(test)]
+    pub(crate) const fn classification(self) -> &'static str {
+        match self {
+            Self::ExactExtent
+            | Self::ExactConstant(_)
+            | Self::ExactTypeConstant
+            | Self::ExactRuntime => "exact",
+            Self::Bounded => "bounded",
+            Self::Absent => "absent",
+        }
+    }
 }
 
 impl CheckedMeasure {
@@ -426,6 +488,23 @@ impl CheckedMeasure {
                 MeasuredKind::Array | MeasuredKind::Buffer | MeasuredKind::Slice,
                 Self::Room | Self::Head,
             ) => MeasureCell::ExactConstant(0),
+            // The two runs and the bump extent [BLK-1, PROV-1]. A run's
+            // window is `len` slots beginning at `head` modulo `cap`, so
+            // `len` and `head` are descriptor words, `room` is the
+            // complement [MSR-2] already relates, and only a `Vector`'s
+            // capacity is a runtime quantity rather than a type constant.
+            (MeasuredKind::FixedVector | MeasuredKind::Vector, Self::Length)
+            | (MeasuredKind::FixedVector | MeasuredKind::Vector, Self::Room)
+            | (MeasuredKind::Vector, Self::Capacity)
+            | (MeasuredKind::Extent, Self::Length | Self::Room) => MeasureCell::ExactRuntime,
+            (MeasuredKind::FixedVector | MeasuredKind::Extent, Self::Capacity) => {
+                MeasureCell::ExactTypeConstant
+            }
+            (MeasuredKind::FixedVector | MeasuredKind::Vector, Self::Head) => MeasureCell::Bounded,
+            // A bump extent has no window; a general store has no row at
+            // all, and both are absences of table data rather than an
+            // exception clause (L6).
+            (MeasuredKind::Extent, Self::Head) => MeasureCell::Absent,
         }
     }
 }
@@ -436,6 +515,9 @@ pub(crate) enum MeasuredKind {
     Array,
     Buffer,
     Slice,
+    FixedVector,
+    Vector,
+    Extent,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]

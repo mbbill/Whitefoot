@@ -2118,6 +2118,16 @@ fn llvm_type(program: &IrProgram<'_, '_, '_>, ty: IrType) -> Result<String, Back
             llvm_type(program, element.ty())?
         )),
         IrType::Buffer { .. } | IrType::Slice { .. } => Ok("{ ptr, i64 }".to_owned()),
+        // A `Vector` descriptor is `{ pointer, cap, len, head }`; a
+        // `FixedVector` is its slots followed by `len` and `head`; a provider
+        // is proof-only and carries at most its own base and cursor
+        // [BLK-1, PROV-1, OP-9].
+        IrType::Vector { .. } => Ok("{ ptr, i64, i64, i64 }".to_owned()),
+        IrType::FixedVector { element, length } => Ok(format!(
+            "{{ [{length} x {}], i64, i64 }}",
+            llvm_type(program, element.ty())?
+        )),
+        IrType::Provider => Ok("{ ptr, i64 }".to_owned()),
         IrType::Address(_) => Ok("ptr".to_owned()),
         IrType::Nominal(id) => {
             let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;

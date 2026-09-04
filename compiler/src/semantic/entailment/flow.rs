@@ -1665,7 +1665,22 @@ impl Analyzer<'_, '_> {
                     None => (cell_measure != CheckedMeasure::Length)
                         .then_some(MeasureBound::Equal(extent)),
                 },
-                MeasureCell::Bounded | MeasureCell::Absent => None,
+                // [MSR-2]: a measure the table fixes as the type's own
+                // written constant is a standing fact with empty support; a
+                // run's `cap` is that constant and a `Vector`'s is not.
+                MeasureCell::ExactTypeConstant => match array_length {
+                    Some(CheckedConst::Value(value)) => {
+                        Some(MeasureBound::Constant(i128::from(value)))
+                    }
+                    Some(CheckedConst::Parameter(declaration)) => Some(MeasureBound::Equal(
+                        self.terms.intern(TermKind::ConstParameter(declaration)),
+                    )),
+                    Some(CheckedConst::Derived(_)) | None => None,
+                },
+                // An independent runtime quantity of the value's own
+                // descriptor: the standing facts [MSR-2] already publishes
+                // relate it to the others, and it carries no bound of its own.
+                MeasureCell::ExactRuntime | MeasureCell::Bounded | MeasureCell::Absent => None,
             };
             if let Some(bound) = bound {
                 self.terms.set_measure_bound(term, bound);
@@ -12528,6 +12543,9 @@ const fn measured_kind(ty: CheckedType) -> Option<MeasuredKind> {
     match ty {
         CheckedType::Array { .. } => Some(MeasuredKind::Array),
         CheckedType::Buffer { .. } => Some(MeasuredKind::Buffer),
+        CheckedType::FixedVector { .. } => Some(MeasuredKind::FixedVector),
+        CheckedType::Vector { .. } => Some(MeasuredKind::Vector),
+        CheckedType::Extent { .. } => Some(MeasuredKind::Extent),
         CheckedType::Slice { .. } => Some(MeasuredKind::Slice),
         _ => None,
     }

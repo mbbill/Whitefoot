@@ -386,9 +386,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_) => {}
+                // A `Heap` is dropped with the empty row and an `Arena` is
+                // released with its own region, so neither derives an owner-
+                // scope drop [STOR-3, BLK-2].
+                CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
                 CheckedType::Array { .. }
                 | CheckedType::Slice { .. }
-                | CheckedType::Buffer { .. } => {
+                | CheckedType::Buffer { .. }
+                | CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. } => {
                     drops.push((path, current));
                 }
                 CheckedType::Nominal(id) => {
@@ -457,6 +463,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::Array { .. }
                 | CheckedType::Slice { .. }
                 | CheckedType::Buffer { .. }
+                | CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. }
+                | CheckedType::Heap { .. }
+                | CheckedType::Extent { .. }
                     if selected =>
                 {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -468,9 +478,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 | CheckedType::GenericInt(_)
                 | CheckedType::GenericFloat(_)
                 | CheckedType::Generic(_) => {}
+                // A `Heap` is dropped with the empty row and an `Arena` is
+                // released with its own region, so neither derives an owner-
+                // scope drop [STOR-3, BLK-2].
+                CheckedType::Heap { .. } | CheckedType::Extent { .. } => {}
                 CheckedType::Array { .. }
                 | CheckedType::Slice { .. }
-                | CheckedType::Buffer { .. } => {
+                | CheckedType::Buffer { .. }
+                | CheckedType::FixedVector { .. }
+                | CheckedType::Vector { .. } => {
                     drops.push((path, current));
                 }
                 CheckedType::Nominal(id) => {

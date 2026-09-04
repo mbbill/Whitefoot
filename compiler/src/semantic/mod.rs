@@ -109,6 +109,8 @@ pub enum SemanticRule {
     /// modifier, `dispose`, the destructuring consume, the partial-consume
     /// refusal, and the linearity bound on a generic parameter.
     Prov6,
+    /// The two runs, the one window, and what a slot may hold.
+    Blk1,
     /// Explicit dereference of a borrow holder.
     Type7,
     /// Storage-class and affine replacement restrictions.
@@ -214,6 +216,7 @@ impl SemanticRule {
             Self::Liv1 => "LIV-1",
             Self::Liv2 => "LIV-2",
             Self::Prov6 => "PROV-6",
+            Self::Blk1 => "BLK-1",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
             Self::Stor4 => "STOR-4",
@@ -297,7 +300,8 @@ impl SemanticRule {
             Self::Own14 => Self::Liv1,
             Self::Liv1 => Self::Liv2,
             Self::Liv2 => Self::Prov6,
-            Self::Prov6 => Self::Stor1,
+            Self::Prov6 => Self::Blk1,
+            Self::Blk1 => Self::Stor1,
             Self::Stor1 => Self::Stor4,
             Self::Stor4 => Self::Stor5,
             Self::Stor5 => Self::Op1,
@@ -368,35 +372,36 @@ impl SemanticRule {
             Self::Liv1 => 24,
             Self::Liv2 => 25,
             Self::Prov6 => 26,
-            Self::Stor1 => 27,
-            Self::Stor4 => 28,
-            Self::Stor5 => 29,
-            Self::Op1 => 30,
-            Self::Op2 => 31,
-            Self::Op4 => 32,
-            Self::Op5 => 33,
-            Self::Op6 => 34,
-            Self::Op9 => 35,
-            Self::Fn1 => 36,
-            Self::Fn2 => 37,
-            Self::Fn3 => 38,
-            Self::Fn4 => 39,
-            Self::Fn6 => 40,
-            Self::Fn7 => 41,
-            Self::Fn8 => 42,
-            Self::Fn9 => 43,
-            Self::Call4 => 44,
-            Self::Eff1 => 45,
-            Self::Eff2 => 46,
-            Self::Err2 => 47,
-            Self::Err3 => 48,
-            Self::Sys2 => 49,
-            Self::Sys8 => 50,
-            Self::Ent2 => 51,
-            Self::Msr3 => 52,
-            Self::Call6 => 53,
-            Self::Inv1 => 54,
-            Self::Prf1 => 55,
+            Self::Blk1 => 27,
+            Self::Stor1 => 28,
+            Self::Stor4 => 29,
+            Self::Stor5 => 30,
+            Self::Op1 => 31,
+            Self::Op2 => 32,
+            Self::Op4 => 33,
+            Self::Op5 => 34,
+            Self::Op6 => 35,
+            Self::Op9 => 36,
+            Self::Fn1 => 37,
+            Self::Fn2 => 38,
+            Self::Fn3 => 39,
+            Self::Fn4 => 40,
+            Self::Fn6 => 41,
+            Self::Fn7 => 42,
+            Self::Fn8 => 43,
+            Self::Fn9 => 44,
+            Self::Call4 => 45,
+            Self::Eff1 => 46,
+            Self::Eff2 => 47,
+            Self::Err2 => 48,
+            Self::Err3 => 49,
+            Self::Sys2 => 50,
+            Self::Sys8 => 51,
+            Self::Ent2 => 52,
+            Self::Msr3 => 53,
+            Self::Call6 => 54,
+            Self::Inv1 => 55,
+            Self::Prf1 => 56,
         }
     }
 }
@@ -661,6 +666,15 @@ pub enum SemanticIssueKind {
     /// An affine value was used without its required consuming spelling.
     BareAffineUse {
         /// Exact mechanical repair required by OWN-1.
+        mechanical_fix: &'static str,
+    },
+    /// [BLK-1] a `construct` named one of the four compiler-owned container or
+    /// provider nominals. No construct produces a run, a provider, or a
+    /// store: each contributes a constructor entry that exists to be refused.
+    ContainerConstruction {
+        /// The nominal the construct named.
+        nominal: String,
+        /// Exact restructuring required by BLK-1.
         mechanical_fix: &'static str,
     },
     /// An affine buffer element was moved out of its slot; elements leave
@@ -1180,6 +1194,13 @@ pub enum UnsupportedSemanticFeature {
     /// lowering [STOR-2, STOR-3] is not implemented yet, so a checked
     /// function that would carry an arena value to execution stops here.
     ArenaRuntime,
+    /// Container and provider values at runtime [TYPE-2, BLK-1, PROV-1]. The
+    /// four compiler-owned nominals are named, branded, confined and
+    /// measured by the ordinary source judgments, and the window lowering the
+    /// nine [BLK-0] rows need is not implemented yet, so a checked function
+    /// that would carry one of those values to execution stops here rather
+    /// than lowering wrong code.
+    ContainerRuntime,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

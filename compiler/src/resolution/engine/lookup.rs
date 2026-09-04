@@ -109,6 +109,45 @@ pub(super) fn resolve_uses_deferred(
                 }
             }
         }
+        // The fourth admitted declaration source [BLK-0], plus the [TYPE-2]
+        // container and provider nominals. Both enter every unit on [SYS-3]'s
+        // terms, and both are admitted at exactly the roles a system entry
+        // is: a `type` TYPEID for a nominal and a `callee` IDENT for an
+        // operation.
+        for (ordinal, nominal) in crate::CONTAINER_NOMINALS.iter().enumerate() {
+            if nominal.spelling != use_record.spelling {
+                continue;
+            }
+            for class in crate::CONTAINER_NOMINAL_CLASSES {
+                if !universe.contains(&class) {
+                    continue;
+                }
+                available.insert(class);
+                if admissible.contains(&class)
+                    && system_admissible(use_record.role)
+                    && let Ok(ordinal) = u8::try_from(ordinal)
+                {
+                    candidates.push(ResolvedTarget::Container(crate::ContainerNominalId::new(
+                        ordinal,
+                    )));
+                }
+            }
+        }
+        for (ordinal, operation) in crate::KERNEL_OPERATIONS.iter().enumerate() {
+            if operation.spelling == use_record.spelling
+                && universe.contains(&crate::KERNEL_OPERATION_CLASS)
+            {
+                available.insert(crate::KERNEL_OPERATION_CLASS);
+                if admissible.contains(&crate::KERNEL_OPERATION_CLASS)
+                    && system_admissible(use_record.role)
+                    && let Ok(ordinal) = u8::try_from(ordinal)
+                {
+                    candidates.push(ResolvedTarget::Kernel(crate::KernelOperationId::new(
+                        ordinal,
+                    )));
+                }
+            }
+        }
         if universe.contains(&DeclarationClass::OperationFamily)
             && let Some(operation) = operation_id(&use_record.spelling)
         {

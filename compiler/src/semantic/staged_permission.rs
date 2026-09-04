@@ -1351,11 +1351,18 @@ impl<'check> StagedSurvey<'check, '_> {
             CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                 is_copy_element(element)
             }
+            // A run carries a window descriptor whose replication this
+            // judgment does not model, and a provider is one store; both are
+            // fail-closed here [BLK-1, PROV-1].
             CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_)
             | CheckedType::Nominal(_)
-            | CheckedType::Slice { .. } => false,
+            | CheckedType::Slice { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Heap { .. }
+            | CheckedType::Extent { .. } => false,
         }
     }
 

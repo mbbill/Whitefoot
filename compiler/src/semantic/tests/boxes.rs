@@ -180,7 +180,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn region_bearing_box_and_arena_content_reject_under_stor5() {
     let expected = SemanticIssueKind::RegionBearingStorage {
-        mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
+        mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
         br#"fn invalid(value: own box<slice<u8>>) -> result: own unit pure {
