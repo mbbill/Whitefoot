@@ -2736,3 +2736,14 @@ ACTIVE-SPEC: v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6
   conformance case, manifest row, adapter, runner, or collection wiring; the
   boundary recorded with the candidate on 2026-09-04 is unchanged.
 ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951
+
+## 2026-09-04 — merge-time approval content: kernel specification v0.45, the container and resource design (batch/0127-containers; record written in full at merge time)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. It is a work-branch draft
+  until then; its SPECIFICATION digest below is refreshed as the branch edits
+  the active file, and its CONTENT and CONFORMANCE BOUNDARY sections are
+  completed before the merge.
+- SPECIFICATION: v0.45 at the digest on the chain line below supersedes v0.44
+  at `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
+  whose outgoing bytes are preserved byte-for-byte as `spec/kernel-spec-v0.44.md`.
+ACTIVE-SPEC: v0.45 e925e16caec62047e091222f8d86e90dbfc50a4d51e1a588c1c0c01a5c8e3833 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

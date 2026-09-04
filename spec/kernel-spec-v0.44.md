@@ -1,6 +1,6 @@
-# Kernel Specification v0.45
+# Kernel Specification v0.44
 
-Status: ACTIVE v0.45
+Status: ACTIVE v0.44
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
 META-5 delta declaration: numbered rules +4/-0 (136 remain), being [MSR-3], [MSR-5], [CALL-4] and [CALL-6]; grammar productions +1/-0 (84 remain), being `clause_expr`; changed productions 2, being `requires_clause` and `ensures_clause`, each of which takes a `clause_expr` where it took an `expr`; unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. [ENT-3] gains one enumerated source, S13; no source label is retired or reused. [GRAM-6], [FN-8], [FN-9], [ENT-2], [ENT-3] and [ENT-5] are amended; no rule id is retired.
