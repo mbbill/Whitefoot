@@ -155,13 +155,23 @@ directions at once.
 
 ## Specification identity (not a separate workflow)
 
-The repository supports a `CANDIDATE vN+1 supersedes vN <sha256-of-vN>` status
-so a branch can revise `spec/kernel-spec.md` while checking its lineage with
-`make spec-candidate-integrity`. A candidate is not merge-ready: canonical
-`make check` accepts only an `ACTIVE` identity whose outgoing active bytes were
-archived and whose exact digest is present in the chain. Released versioned
-specification archives and existing approval records are append-only. These
-are artifact-integrity properties, not additional approval or workflow stages.
+`spec/kernel-spec.md` always declares `Status: ACTIVE vN` and hashes to the
+tail of the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`. An amendment
+lands as one change on a work branch: the amended active file titled and
+declared vN+1; the outgoing vN bytes archived as `spec/kernel-spec-vN.md`; the
+appended approval record, ending in its
+`ACTIVE-SPEC: vN+1 <sha256 of vN+1> <sha256 of vN>` line; and
+`compiler/src/spec_identity.rs` regenerated with
+`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`.
+`make spec-archive-integrity` checks the first three and `make -C compiler
+static` the fourth. There is no separate candidate state: a branch carrying an
+amended specification is merge-ready the moment its gate is green, and the
+owner's merge approval of that exact revision is the activation. No live
+document quotes the version or digest as the active authority; they live in
+the chain and the generated identity only (`make spec-prose-integrity`).
+Released versioned archives and existing approval records are append-only.
+These are artifact-integrity properties, not additional approval or workflow
+stages.
 
 ## Conformance integrity (not a separate workflow)
 

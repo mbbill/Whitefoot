@@ -57,20 +57,15 @@ priorities and repository discipline.
 
 ## Current state
 
-Kernel specification v0.44 is the active language authority, SHA-256
-`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`, carried by
-the stable [specification path](spec/kernel-spec.md). It adds the fact
-machinery of the container design as four rules: a `requires` or `ensures`
-operand may be a measure of a place [MSR-5]; every contract operand has one
-denotation keyed on its parameter's mode, and an `own` operand denotes the
-call datum, the value at transfer [MSR-3]; the contract vocabulary over the
-one declared result is stated [CALL-4]; and publication is stated once, with
-a contract whose relations contradict each other refused at its declaration
-[CALL-6]. It supersedes
-v0.43, whose outgoing bytes are preserved byte-for-byte at
-[`spec/kernel-spec-v0.43.md`](spec/kernel-spec-v0.43.md). The merge-time record
-for that activation is in
-[governance/APPROVALS.md](governance/APPROVALS.md), which becomes effective
+The active kernel specification is [`spec/kernel-spec.md`](spec/kernel-spec.md).
+Its version and exact SHA-256 are the tail of the `ACTIVE-SPEC:` chain in
+[governance/APPROVALS.md](governance/APPROVALS.md), generated into the compiler
+as `compiler/src/spec_identity.rs` and checked against the bytes by the gate;
+no other document quotes them. Every superseded version is archived
+byte-for-byte as `spec/kernel-spec-vN.md`. A specification change lands as one
+change: the amended active file with its `Status: ACTIVE vN` line, the archive
+of the outgoing bytes, the appended approval record ending in its chain line,
+and the regenerated compiler identity. The approval record becomes effective
 with the owner's merge approval of the exact revision containing it.
 
 v0.40 checks `requires`, `ensures`, loop-header `invariant` relations,
@@ -216,10 +211,11 @@ harness, validates conformance structure and rule coverage, runs every
 non-pending conformance case through the native compile-run adapter, checks the
 maintained research fixtures, and verifies the specification/archive identity
 chain. Gate results are revision-specific, so this overview carries no floating
-pass count. Canonical `make check` requires the exact ACTIVE identity and the
-outgoing archive. A work branch drafting a later version can use
-`make spec-candidate-integrity` before its own activation. A green result states
-only what the selected gate exercises and does not establish completeness.
+pass count. Canonical `make check` requires the stable specification file to
+carry an ACTIVE identity whose outgoing archive and chain line are present,
+and a specification change carries all three in the same revision. A green
+result states only what the selected gate exercises and does not establish
+completeness.
 
 ## License
 

@@ -283,66 +283,23 @@ fn titled_version(spec: &str) -> Option<&str> {
     spec.lines().next()?.strip_prefix("# Kernel Specification ")
 }
 
-/// The specification's own status declaration: the first non-blank line after
-/// the title.
-enum SpecStatus<'a> {
-    /// `Status: ACTIVE vN ...` — the installed authority.
-    Active { version: &'a str },
-    /// `Status: CANDIDATE vM supersedes vN <sha256-of-vN> ...` — a declared
-    /// work-branch candidate for the next active identity. Text after the
-    /// digest token is free prose, as on active status lines.
-    Candidate {
-        version: &'a str,
-        supersedes_version: &'a str,
-        supersedes_digest: &'a str,
-    },
-}
-
-fn spec_status(spec: &str) -> Result<SpecStatus<'_>, String> {
+/// The version named by the specification's own status line, the first
+/// non-blank line after the title, which must read `Status: ACTIVE vN ...`.
+/// There is no other status: an amended specification lands with its ACTIVE
+/// identity, the archive of the outgoing bytes, and its chain line in one
+/// change, so the stable file is always the installed authority.
+fn active_status_version(spec: &str) -> Result<&str, String> {
     let Some(line) = spec.lines().skip(1).find(|line| !line.trim().is_empty()) else {
         return Err("the specification has no status line".to_owned());
     };
-    if let Some(rest) = line.strip_prefix("Status: ACTIVE ") {
-        let Some(version) = rest.split_whitespace().next() else {
-            return Err(format!("the active status names no version: {line}"));
-        };
-        return Ok(SpecStatus::Active { version });
-    }
-    if let Some(rest) = line.strip_prefix("Status: CANDIDATE ") {
-        let mut fields = rest.split_whitespace();
-        let (Some(version), Some(keyword), Some(supersedes_version), Some(supersedes_digest)) =
-            (fields.next(), fields.next(), fields.next(), fields.next())
-        else {
-            return Err(format!(
-                "the candidate status is not `CANDIDATE vM supersedes vN <sha256>`: {line}"
-            ));
-        };
-        if keyword != "supersedes" || !is_digest(supersedes_digest) {
-            return Err(format!(
-                "the candidate status is not `CANDIDATE vM supersedes vN <sha256>`: {line}"
-            ));
-        }
-        return Ok(SpecStatus::Candidate {
-            version,
-            supersedes_version,
-            supersedes_digest,
-        });
-    }
-    Err(format!(
-        "the specification status is neither ACTIVE nor a declared CANDIDATE: {line}"
-    ))
-}
-
-/// The version token that succeeds `version`: the same major with the minor
-/// incremented, matching every activation in the recorded chain.
-fn successor_version(version: &str) -> Option<String> {
-    let rest = version.strip_prefix('v')?;
-    let (major, minor) = rest.split_once('.')?;
-    if major.is_empty() || !major.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let minor: u64 = minor.parse().ok()?;
-    Some(format!("v{major}.{}", minor.checked_add(1)?))
+    let Some(rest) = line.strip_prefix("Status: ACTIVE ") else {
+        return Err(format!(
+            "the specification status is not `ACTIVE vN`: {line}"
+        ));
+    };
+    rest.split_whitespace()
+        .next()
+        .ok_or_else(|| format!("the active status names no version: {line}"))
 }
 
 /// Check the activation chain against the specification actually embedded.
@@ -376,12 +333,8 @@ fn validate_activation_chain(
         ));
     }
 
-    match spec_status(spec) {
-        // An installed authority: today's exact behavior — the chain tail
-        // names these very bytes.
-        Ok(SpecStatus::Active {
-            version: status_version,
-        }) => {
+    match active_status_version(spec) {
+        Ok(status_version) => {
             if active.version != version {
                 errors.push(format!(
                     "the chain ends at {} but the active version is {version}",
@@ -407,57 +360,6 @@ fn validate_activation_chain(
                     "the chain records {} for {}, but its bytes hash to {digest}",
                     active.digest, active.version
                 ));
-            }
-        }
-        // A declared work-branch candidate: its own digest is deliberately
-        // not in the chain yet, so tail equality is replaced by the declared
-        // supersedes lineage — the supersedes digest must be the chain tail
-        // and the candidate version must be the tail's successor. Every
-        // self-consistency requirement stays. Green on a candidate means
-        // lineage and self-consistency only; canonical `make check` separately
-        // requires an installed ACTIVE identity before a merge.
-        Ok(SpecStatus::Candidate {
-            version: candidate,
-            supersedes_version,
-            supersedes_digest,
-        }) => {
-            if supersedes_digest != active.digest {
-                errors.push(format!(
-                    "the candidate supersedes digest {supersedes_digest}, but the chain \
-                     records {} for its tail {}",
-                    active.digest, active.version
-                ));
-            }
-            if supersedes_version != active.version {
-                errors.push(format!(
-                    "the candidate supersedes {supersedes_version}, but the chain ends at {}",
-                    active.version
-                ));
-            }
-            match successor_version(active.version) {
-                Some(expected) if expected == candidate => {}
-                Some(expected) => errors.push(format!(
-                    "the candidate is {candidate}, but the successor of the chain tail {} \
-                     is {expected}",
-                    active.version
-                )),
-                None => errors.push(format!(
-                    "the chain tail version {} has no computable successor",
-                    active.version
-                )),
-            }
-            if candidate != version {
-                errors.push(format!(
-                    "the compiled version is {version} but the specification declares \
-                     candidate {candidate}"
-                ));
-            }
-            match titled_version(spec) {
-                Some(titled) if titled == candidate => {}
-                Some(titled) => errors.push(format!(
-                    "the specification declares candidate {candidate} but is titled {titled}"
-                )),
-                None => errors.push("the specification has no title line".to_owned()),
             }
         }
         Err(error) => errors.push(error),
@@ -859,9 +761,6 @@ mod tests {
 
     const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-    /// A candidate's own digest: recorded nowhere, exactly as before its
-    /// activation.
-    const C: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
     fn chain_of(records: &str) -> Result<usize, Vec<String>> {
         validate_activation_chain(
@@ -985,82 +884,6 @@ mod tests {
                 "missing status error for {spec:?}: {errors:?}"
             );
         }
-    }
-
-    /// A declared candidate over the exact chain tail passes: supersedes
-    /// digest and version equal the tail, the candidate version is the tail's
-    /// successor, and the title agrees. Its own digest is deliberately
-    /// unchecked against the chain — it is not recorded until activation.
-    #[test]
-    fn declared_candidate_over_the_chain_tail_passes() {
-        let records = format!("ACTIVE-SPEC: v0.1 {A} -\nACTIVE-SPEC: v0.2 {B} {A}\n");
-        let spec =
-            format!("# Kernel Specification v0.3\n\nStatus: CANDIDATE v0.3 supersedes v0.2 {B}\n");
-        assert_eq!(validate_activation_chain(&records, "v0.3", &spec, C), Ok(2));
-    }
-
-    /// Failure direction one: a candidate whose supersedes digest is not the
-    /// chain tail must fail.
-    #[test]
-    fn candidate_with_wrong_supersedes_digest_fails() {
-        let records = format!("ACTIVE-SPEC: v0.1 {A} -\nACTIVE-SPEC: v0.2 {B} {A}\n");
-        let spec =
-            format!("# Kernel Specification v0.3\n\nStatus: CANDIDATE v0.3 supersedes v0.2 {A}\n");
-        let errors = validate_activation_chain(&records, "v0.3", &spec, C)
-            .expect_err("a candidate naming other lineage must fail");
-        assert!(
-            errors
-                .iter()
-                .any(|error| error.contains("supersedes digest"))
-        );
-    }
-
-    /// Failure direction two: a candidate whose self-consistency is broken
-    /// must fail — here the title disagrees with the declared candidate
-    /// version, and separately the version arithmetic skips a version.
-    #[test]
-    fn candidate_with_broken_self_consistency_fails() {
-        let records = format!("ACTIVE-SPEC: v0.2 {B} -\n");
-        let mistitled =
-            format!("# Kernel Specification v0.4\n\nStatus: CANDIDATE v0.3 supersedes v0.2 {B}\n");
-        let errors = validate_activation_chain(&records, "v0.3", &mistitled, C)
-            .expect_err("a mistitled candidate must fail");
-        assert!(errors.iter().any(|error| error.contains("titled")));
-
-        let skipping =
-            format!("# Kernel Specification v0.4\n\nStatus: CANDIDATE v0.4 supersedes v0.2 {B}\n");
-        let errors = validate_activation_chain(&records, "v0.4", &skipping, C)
-            .expect_err("a version-skipping candidate must fail");
-        assert!(errors.iter().any(|error| error.contains("successor")));
-    }
-
-    /// A malformed candidate declaration is an error, never a line to skip.
-    #[test]
-    fn malformed_candidate_status_fails() {
-        for status in [
-            "Status: CANDIDATE v0.3 supersedes v0.2",
-            "Status: CANDIDATE v0.3 replaces v0.2 <digest>",
-            "Status: CANDIDATE v0.3 supersedes v0.2 short",
-        ] {
-            let spec = format!("# Kernel Specification v0.3\n\n{status}\n");
-            let errors =
-                validate_activation_chain(&format!("ACTIVE-SPEC: v0.2 {B} -\n"), "v0.3", &spec, C)
-                    .expect_err("a malformed candidate declaration must fail");
-            assert!(
-                errors.iter().any(|error| error.contains("status")),
-                "no status error for {status:?}: {errors:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn successor_arithmetic_is_exact() {
-        use super::successor_version;
-        assert_eq!(successor_version("v0.29").as_deref(), Some("v0.30"));
-        assert_eq!(successor_version("v1.0").as_deref(), Some("v1.1"));
-        assert_eq!(successor_version("0.29"), None);
-        assert_eq!(successor_version("v0"), None);
-        assert_eq!(successor_version("vX.2"), None);
     }
 
     #[test]
