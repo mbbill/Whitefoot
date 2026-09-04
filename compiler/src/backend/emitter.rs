@@ -17,6 +17,7 @@ mod integer;
 mod operations;
 mod parallel;
 mod reinterpret;
+mod runs;
 mod slice;
 mod stackless;
 mod system;
@@ -667,6 +668,10 @@ enum IntrinsicDeclaration {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum FunctionSlot {
+    /// The frame slot one run operation writes its aggregate through
+    /// [BLK-1]: a frame-resident run's slots are inline, so indexing one at a
+    /// computed offset goes through storage.
+    RunStorage(IrValueId),
     ArrayFillValue(IrValueId),
     ArrayFillIndex(IrValueId),
     ArrayRoot(IrValueId),
@@ -767,6 +772,22 @@ impl FunctionFramePlan {
                         FunctionSlot::InsertArray(*result),
                         TargetStorageType::source(*ty),
                     )?,
+                    // [BLK-1] a frame-resident run's element access goes
+                    // through storage, because the slot index is computed.
+                    IrOperation::RunIndex { run, .. }
+                    | IrOperation::RunTaken { run, .. }
+                    | IrOperation::RunBoundary { run, .. } => {
+                        let run_type =
+                            function.value_type(*run).ok_or(BackendFailure::InvalidIr)?;
+                        if matches!(run_type, IrType::FixedVector { .. }) {
+                            push_function_slot(
+                                &mut specifications,
+                                &mut ordered,
+                                FunctionSlot::RunStorage(*result),
+                                TargetStorageType::source(run_type),
+                            )?;
+                        }
+                    }
                     IrOperation::SliceFromArray {
                         array: IrArrayRoot::Value(value),
                     } => {
@@ -1611,6 +1632,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 maximum_length,
             } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
             IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
+            IrOperation::SeqFixed => self.emit_seq_fixed(result, ty),
+            IrOperation::ContainerMeasure { measure, container } => {
+                self.emit_container_measure(result, ty, *measure, *container)
+            }
+            IrOperation::RunIndex {
+                run,
+                offset,
+                target_domain,
+            } => self.emit_run_index(result, ty, *run, *offset, *target_domain),
+            IrOperation::RunTaken { row, run } => self.emit_run_taken(result, ty, *row, *run),
+            IrOperation::RunBoundary { row, run, value } => {
+                self.emit_run_boundary(result, ty, *row, *run, *value)
+            }
             IrOperation::BufferIndex {
                 buffer,
                 offset,
@@ -1865,6 +1899,24 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let value_name = self.value_name(drop.value());
         match drop.ty() {
             IrType::Array { .. } | IrType::Slice { .. } => {}
+            // [STOR-3] a run's and a provider's release actions. A
+            // frame-resident run reclaims no storage of its own; a
+            // store-resident run's own run is reclaimed by its store's
+            // release [PROV-6]; and a bump extent's action resets its cursor,
+            // which at a frame extent's scope exit is the frame itself. Each
+            // still walks its elements when one derives a release action.
+            IrType::FixedVector { .. } | IrType::Vector { .. } | IrType::Provider => {
+                if type_requires_cleanup(self.program, drop.ty())? {
+                    emit_value_cleanup(
+                        self.program,
+                        self.qualification,
+                        &mut self.output,
+                        &mut self.temporary,
+                        drop.ty(),
+                        value_name.clone(),
+                    )?;
+                }
+            }
             IrType::Buffer { .. } => {
                 emit_value_cleanup(
                     self.program,

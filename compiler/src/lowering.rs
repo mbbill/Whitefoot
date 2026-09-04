@@ -741,6 +741,39 @@ impl IrSystemOperation {
     }
 }
 
+/// The [MSR-1] measure one reader row loads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrMeasure {
+    Length,
+    Capacity,
+    Room,
+    Head,
+}
+
+/// Which of [BLK-3]'s four boundary operations one run operation is.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrBoundary {
+    PlaceBack,
+    PlaceFront,
+    TakeBack,
+    TakeFront,
+}
+
+impl IrBoundary {
+    /// Whether this row moves the front boundary, which is the one that can
+    /// leave `head` nonzero [MSR-1].
+    #[must_use]
+    pub const fn front(self) -> bool {
+        matches!(self, Self::PlaceFront | Self::TakeFront)
+    }
+
+    /// Whether this row places a value rather than removing one.
+    #[must_use]
+    pub const fn places(self) -> bool {
+        matches!(self, Self::PlaceBack | Self::PlaceFront)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOperation {
     Constant(IrConstant),
@@ -822,6 +855,39 @@ pub enum IrOperation {
     },
     BufferMeasure {
         buffer: IrValueId,
+    },
+    /// [BLK-2] `seq_fixed`: one frame-resident run of the defined type's own
+    /// capacity, whose window is empty. Every slot is raw and the two
+    /// descriptor words are zero.
+    SeqFixed,
+    /// [MSR-1] one measure of a run or a bump extent, read as its [OP-1]
+    /// reader row loads it. A cell the measure table fixes as a constant
+    /// never reaches here.
+    ContainerMeasure {
+        measure: IrMeasure,
+        container: IrValueId,
+    },
+    /// One discharged source subscript read of a run [OP-4, BLK-1]: the
+    /// offset is a logical one and the storage read is slot
+    /// `(head + i) mod cap`. See [`Self::ArrayIndex`] for the discharge.
+    RunIndex {
+        run: IrValueId,
+        offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
+    /// [BLK-3] the run one boundary operation hands back: one store at the
+    /// boundary slot for a placement, and one boundary arithmetic for both.
+    RunBoundary {
+        row: IrBoundary,
+        run: IrValueId,
+        /// The placed element; a removal row has none.
+        value: Option<IrValueId>,
+    },
+    /// [BLK-3] the element a removal row hands back, read from the boundary
+    /// slot before the boundary moves.
+    RunTaken {
+        row: IrBoundary,
+        run: IrValueId,
     },
     /// One discharged source subscript read [OP-4]; see [`Self::ArrayIndex`].
     BufferIndex {

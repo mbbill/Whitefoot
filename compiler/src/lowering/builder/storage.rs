@@ -96,6 +96,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         }
         CheckedExpression::UserCall { arguments, .. }
         | CheckedExpression::SystemCall { arguments, .. }
+        | CheckedExpression::KernelCall { arguments, .. }
         | CheckedExpression::IntegerOperation { arguments, .. }
         | CheckedExpression::FloatOperation { arguments, .. }
         | CheckedExpression::BooleanOperation { arguments, .. }
@@ -120,6 +121,7 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::ProjectValue { value, .. } => collect_expression(value, bindings),
         CheckedExpression::ArrayIndex { offset, .. }
         | CheckedExpression::BufferIndex { offset, .. }
+        | CheckedExpression::RunIndex { offset, .. }
         | CheckedExpression::SliceIndex { offset, .. } => collect_expression(offset, bindings),
         CheckedExpression::BufferFill { length, value, .. } => {
             collect_expression(length, bindings);
@@ -132,6 +134,8 @@ fn collect_expression(expression: &CheckedExpression, bindings: &mut HashSet<Bin
         | CheckedExpression::Binding { .. }
         | CheckedExpression::ArrayMeasure { .. }
         | CheckedExpression::BufferMeasure { .. }
+        | CheckedExpression::ContainerMeasure { .. }
+        | CheckedExpression::PostconditionResultMeasure { .. }
         | CheckedExpression::SliceOf { .. }
         | CheckedExpression::SliceMeasure { .. }
         | CheckedExpression::BorrowBuffer { .. }

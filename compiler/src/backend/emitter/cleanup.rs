@@ -445,23 +445,19 @@ fn emit_cleanup_jobs(
                     }
                 }
                 // A store-resident run's release is one reclamation of its
-                // own run to its store, which for the general store is one
-                // free of its descriptor pointer [STOR-3, BLK-1]. A run
-                // whose element type derives a release action of its own is
-                // an explicit unsupported capability, refused at its type
-                // before lowering, so this arm reclaims the run and nothing
-                // else.
+                // own run to its store [STOR-3, BLK-1]. Every run this
+                // version can form is taken from a bump extent, whose own
+                // release at its region's scope exit reclaims the whole
+                // extent [PROV-6], so the run's action is empty and the
+                // reclamation is not performed twice. The general store's
+                // free lands with `seq_heap`, which is the row that first
+                // makes such a run. A run whose element type derives a
+                // release action of its own is an explicit unsupported
+                // capability, refused at its type before lowering.
                 IrType::Vector { element } => {
                     if type_requires_cleanup(program, element.ty())? {
                         return Err(BackendFailure::InvalidIr);
                     }
-                    let pointer = next_temporary(temporary)?;
-                    writeln!(
-                        output,
-                        "  %{pointer} = extractvalue {} {operand}, 0\n  call void @free(ptr %{pointer})",
-                        llvm_type(program, ty)?
-                    )
-                    .map_err(|_| BackendFailure::TextEmission)?;
                 }
                 // A frame-resident run reclaims no storage of its own.
                 IrType::FixedVector { element, .. } => {

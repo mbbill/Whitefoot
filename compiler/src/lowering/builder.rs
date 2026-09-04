@@ -4,6 +4,7 @@ mod buffers;
 mod loops;
 mod probe;
 mod results;
+mod runs;
 mod slices;
 mod split;
 mod storage;
@@ -1747,6 +1748,27 @@ impl<'program> IrBuilder<'program> {
                     None => self.lower_buffer_length(root),
                 }
             }
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                self.lower_container_measure(*measure, root)
+            }
+            // [FN-9] a clause-only datum: the checker discards it with the
+            // clause's typing, so no checked program carries one here.
+            CheckedExpression::PostconditionResultMeasure { .. } => {
+                Err(LoweringFailure::InvalidCheckedProgram)
+            }
+            CheckedExpression::RunIndex {
+                root,
+                offset,
+                target_domain,
+                ..
+            } => self.lower_run_index(root, offset, *target_domain),
+            CheckedExpression::KernelCall {
+                row,
+                instance,
+                arguments,
+                result,
+                ..
+            } => self.lower_kernel_call(*row, instance, arguments, *result),
             CheckedExpression::BufferIndex {
                 root,
                 offset,
