@@ -2,17 +2,19 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> **eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03**;
-> this file has been brought to that draft and carries no rule text of its own. Where
-> a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
+> **eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03 and
+> 2026-09-04**; this file has been brought to that draft and carries no rule text of its
+> own. Where a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
 >
 > **Every language-surface addition below is now the owner's decision**, recorded in
-> `DESIGN.md` 3.S, which is a decision record rather than a proposal table. Three
-> items remain PROPOSED and are marked where they occur: `seq_reslice` [S31], a
-> linearity bound on a generic parameter [S32], and `ReserveOutcome` [S33]. Of the
-> seventh draft's three open items, `on_propagate` [S28] is **REJECTED**, `seq_rebase`
-> [S29] is **WITHDRAWN to the library** (`DESIGN.md` 3.L.8), and the seven [SYS-8]
-> signatures over views [S30] are **ADOPTED**.
+> `DESIGN.md` 3.S, which is a decision record rather than a proposal table. **Nothing
+> is PROPOSED any more.** Of the seventh draft's three open items, `on_propagate` [S28]
+> is **REJECTED**, `seq_rebase` [S29] is **WITHDRAWN to the library** (`DESIGN.md`
+> 3.L.8), and the seven [SYS-8] signatures over views [S30] are **ADOPTED**; of the
+> eighth draft's three, decided 2026-09-04, `seq_reslice` [S31] is **NOT ADOPTED as an
+> operation** because a shared view over a writable one is [OWN-6]'s child reborrow
+> ([VIEW-6]), a linearity bound on a generic parameter [S32] is **ADOPTED**, and
+> `ReserveOutcome` [S33] is **ADOPTED**.
 
 Tree read: `batch/0116-containers-and-resources` at `main 30602914`,
 `spec/kernel-spec.md` **v0.41 ACTIVE**, with **v0.42 merging**: v0.42 adds `[FORM-8]`
@@ -207,7 +209,10 @@ signature says so: it carries the store's provider and its `writes` row, which i
 [PROV-6]'s virality made visible exactly where it should be — and under D3 it is also
 what makes the release *derived* in that body rather than written. The library therefore
 has two functions with two signatures rather than one function with a condition on its
-element type; [S32] is the relief.
+element type. **[S32] is adopted**, so the two are `clear<T: affine>` and
+`clear<T: linear>`: each declaration states the class its body was written for, each is
+checked once, and an instantiation that does not satisfy the bound is refused at the call
+(`DESIGN.md` [PROV-6]).
 
 `truncate` is the same loop with `keep` as the endpoint and
 `requires keep <= len(vector);`.

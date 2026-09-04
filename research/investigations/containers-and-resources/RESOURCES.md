@@ -2,15 +2,18 @@
 
 > **Superseded in place by `DESIGN.md`.** The integrated containers-and-resources
 > design is `DESIGN.md` beside this file; read it first. `DESIGN.md` is at its
-> **eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03**;
-> this file has been brought to that draft and carries no rule text of its own. Where
-> a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
+> **eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03 and
+> 2026-09-04**; this file has been brought to that draft and carries no rule text of its
+> own. Where a sentence here disagrees with `DESIGN.md`, `DESIGN.md` wins.
 >
 > **Every language-surface addition below is now the owner's decision**, recorded in
-> `DESIGN.md` 3.S. Three items remain PROPOSED: `seq_reslice` [S31], a linearity bound
-> on a generic parameter [S32], and `ReserveOutcome` [S33]. Of the seventh draft's three
+> `DESIGN.md` 3.S, and **nothing is PROPOSED any more**. Of the seventh draft's three
 > open items, `on_propagate` [S28] is **REJECTED**, `seq_rebase` [S29] is **WITHDRAWN to
-> the library**, and the seven [SYS-8] signatures over views [S30] are **ADOPTED**.
+> the library**, and the seven [SYS-8] signatures over views [S30] are **ADOPTED**; of
+> the eighth draft's three, decided 2026-09-04, `seq_reslice` [S31] is **NOT ADOPTED as
+> an operation** because a shared view over a writable one is [OWN-6]'s child reborrow,
+> a linearity bound on a generic parameter [S32] is **ADOPTED**, and `ReserveOutcome`
+> [S33] is **ADOPTED**.
 
 The resource half of the batch 0116 drafting round, reduced to the material
 `DESIGN.md` does not carry: the goals and non-goals it was written against, and the
@@ -78,12 +81,13 @@ the owner's decisions of 2026-09-03.
   [RES-1] makes an alternate stack a stack item, [STK-3] measures every live context, and
   [RUN-4] makes `StartFailed` mandatory. Three [QUAL-2] failures of the shipping
   implementation are recorded in `DESIGN.md` 6.2 rather than hidden.
-- **The handle table's refusal is not publishable today, and that is stated rather than
-  claimed.** Under [S25] `reserve_file`'s exhaustion is a **class** of an `IoError`
-  payload, and no [CALL-4] route is conditioned on a class, so the `Err` edge publishes
-  `len(factory)` alone and no marked program can derive `room(factory)` after a refusal.
-  [RES-6] records the gap and [S33] proposes the three-way outcome whose `Exhausted()` is
-  a variant.
+- **The handle table's refusal is a variant, and it is publishable.** Under [S25] alone
+  `reserve_file`'s exhaustion was a **class** of an `IoError` payload, and no [CALL-4]
+  route is conditioned on a class, so the `Err` edge published `len(factory)` alone and no
+  marked program could derive `room(factory)` after a refusal. **[S33] is adopted**: the
+  operation returns `own ReserveOutcome`, and [RES-6] publishes `room(factory) = 0` on the
+  `Exhausted()` arm through [CALL-4]'s existing per-variant route, so [RES-10]'s
+  reusable-capacity route may read the refusal beside `saturating` and `cap(store)`.
 - **A reserving occurrence must be a statement of its own region block and of no loop
   inside it** [PROV-5], and an extent item is named by (concrete instance, `region_stmt`
   NodePath) so monomorphization gives two instances two items.

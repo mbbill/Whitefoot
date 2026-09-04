@@ -5,7 +5,8 @@ amendment register. `RESOURCES.md` beside it keeps the writer's-eye resource mig
 and `CONTAINERS.md` the longer library functions of 3.L; neither carries rule text, and a
 reader who reads only this file has the whole design.
 
-**Eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03.** Round
+**Eighth draft, after falsifier round 7 and the owner's decisions of 2026-09-03 and
+2026-09-04.** Round
 7 confirmed the architecture — the brand, the partition, R1, R2, D1, D2, `[CALL-6]`'s
 publication surface, the window, the copy `slice` — and broke the *arithmetic* around it
 in one shape, stated by two lenses in the same week. F1: **a fact computed at one point
@@ -75,11 +76,34 @@ Three dispositions the owner made on the seventh draft's three open items:
   front-to-back into a fresh run under the same `flat` invariant every construction loop
   carries. 3.L.8 walks it and prices it honestly, and Q18 puts the kernel row back to the
   owner if a driver's `E` cannot afford the second run.
-- **`[S30]` the seven `[SYS-8]` range operations over views is ADOPTED.** One row is added
-  beside it as **PROPOSED**, `seq_reslice`, because a helper handed `&uniq mut_slice<u8>`
-  genuinely cannot publish what it filled: no operation forms a shared view over an
-  exclusive one, `write_once` wants a `&slice`, and forming a second loan on the run
-  conflicts under `[OWN-5]`.
+- **`[S30]` the seven `[SYS-8]` range operations over views is ADOPTED.** The gap round 7
+  found beside it, that a helper handed `&uniq mut_slice<u8>` cannot publish what it
+  filled, is closed by `[S31]` below, and it is closed without a row.
+
+**Three further decisions of 2026-09-04 empty 3.S's PROPOSED list. Nothing in this file
+is proposed now.**
+
+> **`[S31]` `seq_reslice` is NOT adopted as an operation (owner-decided 2026-09-04).**
+> Forming a shared `slice<'r, T>` from a `mut_slice<'r, T>` is the ordinary
+> **shared child reborrow of a unique loan**, which `[OWN-6]` already admits for places: a
+> probe on the v0.42 build accepts `peek(x: &deref(x))` inside a region block where
+> `x: &uniq u64`. This design states it as that rule applied to **views** rather than as a
+> kernel row. The child `slice` carries the parent's origin set and range, its loan is a
+> shared child of the exclusive one under `[OWN-6]`, and the parent may not be written
+> while the child lives. `seq_reslice` is deleted from this file, `[VIEW-6]`'s
+> "no helper library over views" restriction is restated, and the fill-and-publish helper
+> is writable.
+>
+> **`[S32]` a linearity bound on a generic parameter is ADOPTED (owner-decided
+> 2026-09-04).** `fn f<T: affine>`, `fn f<T: linear>` and `fn f['s: affine]` are written at
+> the declaration and checked at the instantiation. `[PROV-6]` and `[BLK-4]` each gain one
+> sentence reading the bound, and `gparam` and `region_params` each gain an optional
+> bound.
+>
+> **`[S33]` `reserve_file -> own ReserveOutcome` is ADOPTED (owner-decided 2026-09-04)**
+> in place of `[S25]`'s `Result`. `Reserved(value: FilePermit)`, `Exhausted()`
+> and `Failed(error: IoError)` are three variants, so `[CALL-4]`'s existing route
+> publishes `room(factory) = 0` on the refusal arm and `[RES-6]`'s gap closes.
 
 Tree read: `batch/0116-containers-and-resources` at `main` 30602914,
 `spec/kernel-spec.md` **v0.41 ACTIVE** at that tip, with **v0.42 merging**: v0.42 adds
@@ -111,6 +135,12 @@ Settled by the owner, and not reopened anywhere below:
 - Mutation of container state through `&uniq` is retired, and refused by a rule [BLK-4].
 - Multi-return `-> (a: own T, b: own U)` with `let (a, b) = f(...)`.
 - System I/O goes over views [S30].
+- A shared view formed over a writable one is [OWN-6]'s child reborrow and not an
+  operation [S31].
+- A generic parameter may carry a linearity bound, written at the declaration and checked
+  at the instantiation [S32].
+- A covered store's refusal is a variant of the operation's own outcome and not a class of
+  an error payload: `reserve_file` returns `ReserveOutcome` [S33].
 - Every rule is a deterministic function of program text and compiler version.
 - Linearity is derived from one criterion and the `linear` modifier exists for a logical
   obligation (D1); **the criterion is read against the scope** (D3).
@@ -417,8 +447,8 @@ a **variant of the operation's own outcome**, and not a member of a portable cla
 route can read.*
 The first half removes the circularity; the second is what makes a checked spelling worth
 writing: B8, R12. Round 6 showed the second half read too far, and round 7 showed the
-handle table's refusal conditioned on an `IoError` **class** no route publishes; [RES-6]
-records the cost and 3.S proposes the three-way outcome.
+handle table's refusal conditioned on an `IoError` **class** no route publishes; [S33] is
+the owner's repair, and [RES-6] states the relation the `Exhausted` variant publishes.
 
 **L9. Stock, not flow, and a total operation at a capacity boundary must say what it
 dropped.** *Resource-closedness bounds what is held at once and what is consumed
@@ -1505,12 +1535,23 @@ declaration.**
 > last two available exactly under that condition. The check is at the declaration, over
 > the body, once; a hard error citing PROV-6 at the `fn_decl` names the region, the
 > binding, and both repairs.
+>
+> **[S32]'s bound is read here** (owner-decided 2026-09-04): a region parameter written
+> `'s: affine` or `'s: linear`, and a type parameter written `T: affine` or `T: linear`,
+> is **bounded** rather than unconstrained, so this rule is checked once against the bound
+> instead of fail-closed, and an instantiation whose region or type argument does not
+> satisfy the bound is a hard error citing PROV-6 at the call, naming the parameter, the
+> bound and the argument.
 
 The population is the one the notion is about: it costs nothing to `pool_new` (its
 `Arena<'s, ...>` parameter fixes the class) or to `collect`, `render`, `drain`,
 `pool_take` and `pool_release` (each moves the value out), and it refuses exactly the
 **consuming** helper over an unconstrained region — `fn checksum['s](v: own Vector<'s,
-u8>) -> sum: own u64` — whose relief is [S32]. **`propagate` is [LIV-1]'s judgment and
+u8>) -> sum: own u64` — whose relief is [S32], now adopted. Written
+`fn checksum['s: affine](v: own Vector<'s, u8>) -> sum: own u64`, the declaration states
+the class its body was written for, the fail-closed treatment does not apply, and a
+heap-branded instantiation is refused at the call instead of the declaration being refused
+at every one. **`propagate` is [LIV-1]'s judgment and
 this rule does not restate it**; the seventh draft's second, wider sentence here refused a
 `propagate` on account of a binding it had nothing to do with, and is deleted.
 
@@ -1519,8 +1560,9 @@ is the judgment [LIV-1], [BLK-1], [STK-1] and [RES-10] read; the modifier's
 affine-nominal admission; `dispose`'s admission, resolution and two operand conditions;
 the release graph's acyclicity, a hard error at the `struct_decl` or `enum_decl`; the
 partial-consume refusal and its reinitialisation exception, with the restructuring
-`destructure the whole value with let N(f: a, ...) = move v;`; and the declaration-site
-region obligation. *Publishes:* the linear predicate per scope; the release events and
+`destructure the whole value with let N(f: a, ...) = move v;`; the declaration-site
+region obligation; and [S32]'s bound, read at the declaration and checked at every
+instantiation. *Publishes:* the linear predicate per scope; the release events and
 their order; the statement's write of `p` and of each resolved provider; and the walk's
 effect contribution, which [RES-10] charges and [RUN-3] reads. *Amends:* [STOR-3]
 688-719, whose `box<T>` and `buffer<T>` heap rows retire with their types and are
@@ -1805,7 +1847,12 @@ the closure is computed at the declaration, where a type parameter is opaque, an
 **today** — so R1 held for every declaration except the one a library writer naturally
 writes, and the defence was again [CALL-3]'s conservative kill, which round 5 defeated
 twice. Refusing the position rather than the reached type is fail-closed and decidable at
-the declaration; [S32]'s bound would re-admit it. **And the clause quantifies over a
+the declaration. **[S32]'s bound is what the clause reads** (owner-decided 2026-09-04): a
+type parameter carrying a linearity bound is decided by that bound at the declaration
+rather than fail-closed, so a `&uniq` referent that reaches it is admitted exactly when
+the bound admits no container nominal and no loan-bearing argument at any instantiation,
+the verdict stays one per declaration, and probe `gen3`'s unbounded `fn swapin<T>` stays
+refused. **And the clause quantifies over a
 source-declared `fn`** and not over the compiler-owned domains, because a [BLK-0] or
 [SYS-2] row is a declaration record whose relations are complete over everything it writes
 and whose behaviour no body can vary — L11's second sentence — so
@@ -1956,19 +2003,36 @@ region is a hard error citing VIEW-6 at the `result_binding` of the second**, wi
 restructuring `give each result its own formal region`; without it a three-output demux
 written with one region returns three views each aliasing all three inputs.
 
-Two real restrictions are recorded. [FN-1]'s containment check forbids a helper from
-manufacturing a view of storage it reaches through a borrow, so the two formers are usable
-only in the function that directly owns the run and **no helper library over views can
-exist in this version**. And a helper handed `&uniq mut_slice<u8>` can fill its
-destination and **cannot publish it**, because no operation forms a shared view over an
-exclusive one and `write_once` wants a `&slice` — which is [S31]'s `seq_reslice` and,
-until it is adopted, the reason every fill-and-publish function must be the run's owner. A
-release is not confined this way, because [PROV-6]'s walk compares types and not places.
+**One real restriction is recorded, and it is narrower than the seventh draft's two.**
+[FN-1]'s containment check forbids a helper from manufacturing a view of storage it
+reaches through a borrow, so [VIEW-2]'s two formers are usable only in the function that
+directly owns the run: **no helper library forms a view over a run it does not own**. What
+the seventh draft recorded beside it, that a helper handed `&uniq mut_slice<u8>` can fill
+its destination and cannot publish it, is **no longer a restriction of this design**.
 
-*Judgment:* [FN-1]'s ceiling containment at every `return_stmt`, plus the same-region
-result rejection. *Publishes:* the result's origin set. *Amends:* [FN-1] 1023-1036, by
-generalizing "slice" to "view" and by adding the same-region rejection. *Law:* L10, L11.
-*History:* r7 F4-5; r1 F4-7.
+**A helper handed a view may reborrow it shared, so the fill-and-publish helper is
+writable** (owner-decided 2026-09-04, [S31]). Forming a shared `slice<'r, T>` from a
+`mut_slice<'r, T>` is the ordinary **shared child reborrow of a unique loan** that
+[OWN-6] 613-627 already admits for places, applied to a view rather than to a place; a
+probe on the v0.42 build accepts `peek(x: &deref(x))` inside a region block where
+`x: &uniq u64`. The child `slice` carries the parent's **origin set and range**, its loan
+is a shared child of the parent's exclusive one, **the parent may not be written while the
+child lives**, and the parent resumes where the child's own liveness ends [PROV-3]. So a
+helper whose parameter is `destination: &uniq mut_slice<'r, u8>` fills that destination,
+forms the child, and hands it to `write_once`; the child's origin is the parameter's
+formal-view origin, which is inside [FN-1]'s ceiling, so the child may also be that
+helper's result. **No row is added for it**: `seq_reslice` is not adopted, because a
+kernel operation for a reborrow the language already performs is a second spelling for one
+semantics. A release is not confined this way, because [PROV-6]'s walk compares types and
+not places.
+
+*Judgment:* [FN-1]'s ceiling containment at every `return_stmt`, the same-region result
+rejection, and [OWN-6]'s child reborrow admission with a view as the parent. *Publishes:*
+the result's origin set, and the child loan's strength and range. *Amends:* [FN-1]
+1023-1036, by generalizing "slice" to "view" and by adding the same-region rejection.
+*Depends:* [OWN-6] 613-627's shared child reborrow, which is the formation this rule
+reads; [PROV-3], which fixes the child loan's extent. *Law:* L10, L11. *History:* r7
+F4-5; r1 F4-7; the owner's [S31].
 
 **[VIEW-7] System operations over views.** **[S30], ADOPTED.** The seven range-bearing
 operations [SYS-8] 2488-2527 take views instead of `buffer<u8>`, with fixed modes:
@@ -2677,22 +2741,33 @@ legally destructured and discarded — must-consume behaving correctly [PROV-6],
 must-return. A **proved** release under `requires room(pool.free) > 0_u64` has no refusal
 arm, so on every path the value goes back; 4.1 is written on it.
 
-**The runtime's handle table is a covered store, and its refusal is honestly short.**
-`reserve_file` **gains** `own Result<FilePermit, IoError>` in place of the total
-`own FilePermit` [SYS-2] 2261 declares today (owner-decided, [S25]), on the principle the
+**The runtime's handle table is a covered store, and its refusal is a variant.**
+`reserve_file` **gains** `own ReserveOutcome` in place of the total `own FilePermit`
+[SYS-2] 2261 declares today (owner-decided, [S25] and then [S33]), on the principle the
 owner stated with it: **a failure the environment can produce is exposed as a typed value;
-a failure we create ourselves is eliminated, and the type system carries it.** [SYS-7]
-2473-2486's closed class set is **unchanged**, which is why no second nominal is added —
-**and it is also why the `Err` edge publishes only `len(factory) = <call datum>`**. Round
-7 found the seventh draft claiming the edge establishes `room(factory) == Z` *"when the
-class is `ResourceExhausted`"*: a class is a member of the payload's class set and not a
-variant, no route in [CALL-4] is conditioned on one, and publishing it unconditionally
-over `Err` would be false for a `PermissionDenied` at a table that is not full. So the
-store's exhaustion fact is **not publishable in this design**, no marked program can
-derive `room(factory)` after a refusal, and [RES-10]'s reusable-capacity route reads
-`saturating` and `cap(store)` rather than the refusal. [S33] proposes the repair and Q20
-puts it to the owner. **The cost of S25 is measured on the right alternative**: a `match`
-or a `propagate` at eleven sites across five corpus programs, against a total
+a failure we create ourselves is eliminated, and the type system carries it.** Its three
+variants, and the relation each publishes:
+
+```text
+reserve_file(factory: &uniq FileFactory) -> outcome: own ReserveOutcome
+  Reserved(value: FilePermit):  len(factory) = <call datum> + 1
+  Exhausted():                  room(factory) = 0, len(factory) = <call datum>
+  Failed(error: IoError):       len(factory) = <call datum>
+```
+
+**The refusal relation is published on the `Exhausted` arm and there only**, by
+[CALL-4]'s existing per-variant route through [CALL-6]'s S13, so a marked program that
+matches that arm derives `room(factory) = 0` and [RES-10]'s reusable-capacity route reads
+it beside `saturating` and `cap(store)`. [SYS-7] 2473-2486's closed class set is
+**unchanged** and the `Failed` arm carries it, so a portable class set stays payload
+vocabulary and never becomes proof vocabulary. Round 7's finding is what forced the
+partition: the seventh draft claimed the edge establishes `room(factory) == Z` *"when the
+class is `ResourceExhausted`"*, and under S25's `Result` that was false twice over, because
+a class is a member of the payload's class set and not a variant, no route in [CALL-4] is
+conditioned on one, and publishing the relation unconditionally over `Err` is false for a
+`PermissionDenied` at a table that is not full. Two variants remove both, which is the
+shape Q20 puts to every covered store. **The cost is measured on the right alternative**:
+a third arm at eleven call sites across five corpus programs, against a total
 `reserve_file` over a proved capacity costing one header invariant per loop.
 
 No covered-resource failure is a trap, an abort, a process exit, a retry, or a promotion
@@ -2700,13 +2775,16 @@ to a larger store. The batch-0079 floor's `wf_resource_abort` site loses its
 allocation-refusal caller once allocation returns a value, and its release-walk callers
 once [PROV-6]'s release graph refuses a cycle outright.
 
-*Judgment:* the ordinary [ERR-3]/[OWN-13] handling of a `Result` or an `Option`, plus
-[MSR-4] discharge at the proved spelling. *Publishes:* the returned owner's identity on
-the refusal edge, and the store's own refusal relation where the store has measures and a
-variant to carry it, through [CALL-6]'s S13. *Amends:* [SYS-2] 2164-2307 at 2261; [SYS-7]
-2473-2486, **unchanged** and the reason no nominal is added; the batch 0079 exhaustion
+*Judgment:* the ordinary [ERR-3]/[OWN-13] handling of a `Result`, an `Option` or a system
+outcome nominal, plus [MSR-4] discharge at the proved spelling. *Publishes:* the returned
+owner's identity on the refusal edge, and the store's own refusal relation where the store
+has measures and a variant to carry it, through [CALL-6]'s S13. *Amends:* [SYS-2]
+2164-2307 at 2261, whose row gains `ReserveOutcome` and its three published relations, and
+2283-2285's proposition set; [SYS-7] 2473-2486, **unchanged**, which is why the class set
+carries the `Failed` arm and no route is conditioned on a class; the batch 0079 exhaustion
 floor; and [SCOPE-3] 27-31, whose heap-exhaustion sentence ceases to be true. *Depends:*
-[CALL-6]. *Law:* L3, L6, L8, L16. *History:* r7 F2-6; r6 F3-2, F2-2.
+[CALL-6]; [CALL-4]'s per-variant route, which publishes the `Exhausted` relation. *Law:*
+L3, L6, L8, L16. *History:* r7 F2-6; r6 F3-2, F2-2; the owner's [S33].
 
 **[RES-7] What bare resource-closedness does not cover, and where the exclusion is
 decided.** Disk space, the successful acquisition of a host object not exclusively
@@ -3254,9 +3332,8 @@ selected row. *Amends:* nothing. *Law:* L1. *History:* r5 F3-I22.
 
 #### 3.K.10 One name per concept
 
-**Every spelling in this table is the owner's, decided 2026-09-03** (3.S records each
-decision with the alternatives weighed), except the one 3.S marks PROPOSED, which is
-marked here too.
+**Every spelling in this table is the owner's, decided 2026-09-03 or 2026-09-04** (3.S
+records each decision with the alternatives weighed). Nothing in it is proposed.
 
 ```text
 | concept                    | spelling              | why                                                     |
@@ -3287,8 +3364,9 @@ marked here too.
 |                            |                       | exclusive loans on one range                             |
 | form a view [S10]          | seq_slice,            | the two formers follow the two type names                |
 |                            | seq_mut_slice         |                                                          |
-| re-view a writable view    | seq_reslice [S31]     | **PROPOSED**; without it a helper can fill a destination |
-|                            |                       | and cannot publish it [VIEW-6]                           |
+| re-view a writable view    | no operation; the     | [S31]: a shared child reborrow of the exclusive loan,    |
+|                            |   ordinary child      | [OWN-6]'s own machinery with a view as the parent, so a  |
+|                            |   reborrow [OWN-6]    | fill-and-publish helper is writable [VIEW-6]             |
 | release a store-backed     | the compiler-derived  | D3: the scope holding the capability gets the release on |
 |   value                    | release; dispose p;   | every leaving edge; `dispose` [S12] is the early one,    |
 |                            |   to release early    | and neither writes a capability                          |
@@ -3298,6 +3376,8 @@ marked here too.
 | write places               | set (p, q) = rhs;     | one commit rule, n-ary (D2)                              |
 | a refusal                   | Option<T>             | the kernel consumes no affine input, so it declares no   |
 |                            |                       | failure nominal                                          |
+| a covered store's refusal  | a variant [S33]       | reserve_file -> own ReserveOutcome; a class of an error  |
+|                            |                       | payload is not readable by a [CALL-4] route [RES-6]      |
 | name a covered runtime      | handles, submissions, | spec-fixed, so a domain key and a saturating clause are  |
 |   store [RES-9]            | completions, tasks,   | functions of program text and the profile publishes a    |
 |                            | lanes, queue          | capacity FOR a name rather than naming the store         |
@@ -3307,16 +3387,17 @@ marked here too.
 ```
 
 `FixedRing`, `PoolVector`, `HeapVector`, `ArenaVector`, `AppendView`, `absorb`, `update`,
-`seq_frame`, `seq_exchange`, `seq_rebase`, `swap`, `Span`, `MutSpan`, `HeapBox`,
-`ArenaBox`, `PoolSlot`, `heap_take`, `arena_take`, `pool_take` as a kernel row,
+`seq_frame`, `seq_exchange`, `seq_rebase`, `seq_reslice`, `swap`, `Span`, `MutSpan`,
+`HeapBox`, `ArenaBox`, `PoolSlot`, `heap_take`, `arena_take`, `pool_take` as a kernel row,
 `on_propagate`, `Full<T>`, `TooSmall`, `OutOfMemory`, `PoolExhausted`, `NeedCapacity` and
 `NoRecord` are **not** in the kernel vocabulary. The first four are library names for
 kernel types (3.L.1); `update` and every swap spelling are [LIV-2]; `seq_frame`,
-`seq_exchange` and `seq_rebase` are the fifth, sixth and seventh drafts' removals; `Span`
-and `MutSpan` are the sixth draft's names; `on_propagate` is the owner's rejection this
-round; the three box and slot names are runs of capacity one or library nominals; the
-`*_take` names belong to the library's own functions; and the last six are library
-nominals a writer declares over their own type.
+`seq_exchange` and `seq_rebase` are the fifth, sixth and seventh drafts' removals and
+`seq_reslice` is the eighth draft's, because forming a shared view over a writable one is
+[OWN-6]'s child reborrow [VIEW-6]; `Span` and `MutSpan` are the sixth draft's names;
+`on_propagate` is the owner's rejection this round; the three box and slot names are runs
+of capacity one or library nominals; the `*_take` names belong to the library's own
+functions; and the last six are library nominals a writer declares over their own type.
 
 #### 3.K.11 Amendment register
 
@@ -3407,7 +3488,9 @@ row that also records a surviving depended sentence marks it **bold** (condition
 |                 |           | [PROV-6] depend on it**                                          |                             |
 | [OWN-6]         | 613-627   | a child reborrow may name a caller-supplied region under the     | [PROV-7]                    |
 |                 |           | result-type condition, for every reborrow. **614 survives and    |                             |
-|                 |           | [PROV-2] and [VIEW-2] depend on it**                             |                             |
+|                 |           | [PROV-2] and [VIEW-2] depend on it; the shared child reborrow    |                             |
+|                 |           | survives and [VIEW-6] depends on it, with a view as the parent   |                             |
+|                 |           | [S31]**                                                          |                             |
 | [OWN-7]         | 629-633   | 629's overlap test extends to logical ranges. **630's subscript  | [PROV-3]                    |
 |                 |           | conservatism survives and [PROV-3] use 2 depends on it** (4a)    |                             |
 | [OWN-10]        | 640-644   | 643's arena content clause becomes one over Vector content.      | [PROV-1]                    |
@@ -3500,15 +3583,16 @@ row that also records a surviving depended sentence marks it **bold** (condition
 | [SYS-1]         | 2136-2162 | a fourth admitted declaration source                             | [BLK-0]                     |
 | [SYS-2]         | 2164-2307 | views at the range-bearing operations; a derived "acquires from" | [VIEW-7], [RUN-1], [RES-6], |
 |                 |           | column over its target-contract column; 2261's reserve_file      | [RES-7], [RES-9]            |
-|                 |           | gains a recoverable outcome; 2283-2285's proposition set gains   |                             |
+|                 |           | gains own ReserveOutcome and its three published relations       |                             |
+|                 |           | [S33]; 2283-2285's proposition set gains                         |                             |
 |                 |           | covered-store measures. **2270 is kept and [RUN-1] reads it**    |                             |
 | [SYS-3]         | 2309-2311 | the kernel domain is admitted to every unit                      | [BLK-0]                     |
 | [SYS-5]         | 2397-2432 | release-completeness (2397-2400) is KEPT; the release action     | [RES-9], [RES-7]            |
 |                 |           | gains the handles subject; its target-contract column is a       |                             |
 |                 |           | second source of [RES-7]'s derived column                        |                             |
-| [SYS-7]         | 2473-2486 | the class set is UNCHANGED, which is why no nominal is added —   | [RES-6]                     |
-|                 |           | and why the handle table's exhaustion fact is not publishable    |                             |
-|                 |           | in this design [S33]                                             |                             |
+| [SYS-7]         | 2473-2486 | the class set is UNCHANGED, which is why the Failed arm carries  | [RES-6]                     |
+|                 |           | it and no route is conditioned on a class; the handle table's    |                             |
+|                 |           | exhaustion is the Exhausted VARIANT instead [S33]                |                             |
 | [SYS-8]         | 2488-2527 | the seven range-bearing operations take mut_slice and slice,     | [VIEW-7]                    |
 |                 |           | each obligation over its own range-bearing parameter             |                             |
 | [SYS-9,11,12,14]| 2529-2644 | their prose naming buffer<u8> is restated over views             | [VIEW-7]                    |
@@ -3640,28 +3724,16 @@ the checked release that a caller proves away.
 ### 3.S Surface decisions
 
 **This section is a decision record.** On 2026-09-03 the owner decided every
-language-surface addition this design rests on, and the rules of 3.K use those spellings
-as **decided**. Three entries are **PROPOSED**, and they are the only things in this file
-a reader should not read as settled.
+language-surface addition this design rests on, and on 2026-09-04 the last three entries.
+The rules of 3.K use those spellings as **decided**, and **nothing in this file is
+proposed**.
 
-**The PROPOSED list, at a glance.**
+**The PROPOSED list, at a glance: none.** It held `seq_reslice` [S31], a linearity bound
+on a generic parameter [S32] and `ReserveOutcome` [S33] until 2026-09-04, and each is
+recorded below with the disposition the owner gave it.
 
-```text
-| id  | spelling                                        | what it buys                                    |
-|-----|-------------------------------------------------|-------------------------------------------------|
-| S31 | seq_reslice['r,T](window: &mut_slice<'r,T>)     | a helper that fills a destination can publish    |
-|     |   -> own slice<'r, T>                           | it; without it every fill-and-publish function   |
-|     |                                                 | must be the run's owner [VIEW-6]                 |
-| S32 | a linearity bound on a generic parameter,       | one verdict per declaration on the TYPE and      |
-|     |   `fn f<T: affine>` and `fn f['s: affine]`      | REGION axes; re-admits the consuming helper and  |
-|     |                                                 | the generic container function [PROV-6], and the |
-|     |                                                 | bounded `&uniq` parameter [BLK-4]                |
-| S33 | reserve_file -> own ReserveOutcome, whose       | the handle table's exhaustion is a VARIANT, so   |
-|     |   Exhausted() is a variant                      | [CALL-4]'s existing route publishes it and L8's  |
-|     |                                                 | second half is readable for that store [RES-6]   |
-```
-
-**The decided list.** Four entries changed status this round and are marked.
+**The decided list.** Seven entries changed status this round and are marked, the last
+three of them on 2026-09-04.
 
 ```text
 | id  | spelling                                    | kind                    | status    |
@@ -3697,7 +3769,7 @@ a reader should not read as settled.
 | S24 | ensures when b is V(f: r): ... over any     | contract routes         | ADOPTED   |
 |     |   variant and any result ordinal            |                         |           |
 | S25 | reserve_file -> own Result<FilePermit, ..>  | system-row change       | ADOPTED,  |
-|     |                                             |                         | see S33   |
+|     |                                             |                         | then S33  |
 | S26 | saturating(d) over a store DESIGNATOR       | contract clause         | ADOPTED,  |
 |     |                                             |                         | AMENDED   |
 | S27 | slice<'r, T> is copy; mut_slice is affine   | ownership class         | ADOPTED   |
@@ -3705,9 +3777,10 @@ a reader should not read as settled.
 | S29 | seq_rebase                                  | operation row           | WITHDRAWN |
 | S30 | the seven [SYS-8] range-bearing operations  | system-row change       | ADOPTED   |
 |     |   take mut_slice and slice                  |                         |           |
-| S31 | seq_reslice                                 | operation row           | PROPOSED  |
-| S32 | a linearity bound on a generic parameter    | generics surface        | PROPOSED  |
-| S33 | reserve_file -> own ReserveOutcome          | system-row change       | PROPOSED  |
+| S31 | seq_reslice                                 | operation row           | REJECTED  |
+|     |   (the reborrow is [OWN-6]'s, [VIEW-6])     |                         |           |
+| S32 | a linearity bound on a generic parameter    | generics surface        | ADOPTED   |
+| S33 | reserve_file -> own ReserveOutcome          | system-row change       | ADOPTED   |
 ```
 
 **The decided entries, one ground each.** **S1-S2**: `array<T, n>` requires `n` live
@@ -3768,8 +3841,10 @@ per loop at eleven corpus call sites. **What round 7 found, recorded here rather
 a report:** with `Result<FilePermit, IoError>` the store's *exhaustion* is a **class** of
 the error payload, not a variant, and no route in [CALL-4] is conditioned on a class — so
 the `Err` edge publishes only `len(factory) = <call datum>` and no marked program can
-derive `room(factory)` after a refusal. **S33** repairs that; until it is decided
-[RES-6] states the gap.
+derive `room(factory)` after a refusal. **S33 repairs that and is adopted**, so what
+[SYS-2] 2261 declares is the outcome nominal and not the `Result`; S25 stands as the
+decision that made the operation fallible at all, and [RES-6] states the relation each arm
+publishes.
 
 **S26, `saturating(d)`. ADOPTED, and AMENDED this round.** [RES-10]'s reusable-capacity
 route must compose across a call, and the fact it needs — *this function performs no
@@ -3825,32 +3900,35 @@ destination `own` and hand it back — correct under R1 and it deletes the loop 
 caller writes into one destination, because an `own` destination is consumed by the first
 call; (c) take the run itself — reintroduces the `&uniq` container parameter [BLK-4]
 refuses. *Cost:* seven signature rows, [SYS-2]'s normative counts, and the prose of four
-[SYS] rules. *Decided:* adopted. **[S31] is proposed beside it**, because round 7 found
-the adopted form incomplete in one place.
+[SYS] rules. *Decided:* adopted. Round 7 found the adopted form incomplete in one place,
+and **[S31] closes it without a row**.
 
-**S31, `seq_reslice`. PROPOSED.** One added [VIEW] row,
-`seq_reslice['r, T](window: &mut_slice<'r, T>) -> own slice<'r, T>`, whose result carries
-the parent's origin set and range and whose loan is a **shared child** of the exclusive
-one under [OWN-6] 613-627's existing reborrow machinery. *Needed because* a helper handed
-`&uniq mut_slice<u8>` can fill its destination and **cannot publish it**: `write_once`
-wants a `&slice`, A.2's `seq_slice` forms a view from a **run** borrow and not from a
-view, and forming a second loan on the run itself is [OWN-5]'s ordinary conflict (probe
-`s6`). So under S30 alone every fill-and-publish function must be the run's owner, which
-combined with [VIEW-6]'s "no helper library over views" is a second restriction the
-adopted form does not state. *Why no wf program has it:* it forms a loan, which is
-exactly why `seq_slice` is kernel. *Alternatives:* (a) do not add it and state the
-restriction in [VIEW-6], which this draft does until the owner decides — costs `wfgrep`'s
-`publish_all` call site moving back inside `search_file` and `walk`; (b) give the
-destination `own` and hand it back — deletes the loop of reads; (c) let a helper form a
-fresh `slice` from the run it does not have — not available, [FN-1]'s ceiling forbids it.
-*Cost if adopted:* one row, one line in A.2, no new notion — the child loan is [OWN-6]'s.
-*Recommendation:* adopt with S30, because it is the only reason S30's destination mode is
-a borrow.
+**S31, `seq_reslice`. NOT ADOPTED as an operation, and the capability is admitted without
+one (owner-decided 2026-09-04).** The proposal was one added [VIEW] row,
+`seq_reslice['r, T](window: &mut_slice<'r, T>) -> own slice<'r, T>`. *The gap it was for*
+is real: a helper handed `&uniq mut_slice<u8>` can fill its destination and, under S30
+alone, could not publish it, because `write_once` wants a `&slice`, A.2's `seq_slice`
+forms a view from a **run** borrow and not from a view, and forming a second loan on the
+run itself is [OWN-5]'s ordinary conflict (probe `s6`). *The owner's ruling:* forming a
+shared `slice<'r, T>` from a `mut_slice<'r, T>` is the **ordinary shared child reborrow of
+a unique loan** that [OWN-6] 613-627 already admits for places, and a probe on the v0.42
+build accepts `peek(x: &deref(x))` inside a region block where `x: &uniq u64`. So this
+design states it as **that rule applied to views** and not as a kernel row: a `slice`
+formed from a `mut_slice` carries the parent's origin set and range, its loan is a shared
+child of the exclusive one under [OWN-6], and the parent cannot be written while the child
+lives. *Why a row would have been wrong:* two spellings for one semantics, which 3.K.10
+exists to prevent, and [VIEW-6]'s ceiling already contains the child, whose origin is the
+parameter's own formal-view origin. *What it settles:* [VIEW-6] records **one**
+restriction and not two, the fill-and-publish helper is writable, `wfgrep`'s `publish_all`
+call site stays where it is instead of moving back inside `search_file` and `walk`, and
+A.2 keeps twelve rows. *What it does not settle:* Q19's alternation cost, because a shared
+child still forbids a write of the parent while it lives.
 
-**S32, a linearity bound on a generic parameter. PROPOSED.** `fn f<T: affine>(...)`,
-`fn f<T: linear>(...)` and `fn f['s: affine](...)`, checked at the instantiation and read
-at the declaration. *Needed because* a value's release disposition depends on its type
-and region arguments, and the language has no position at which a writer can say which
+**S32, a linearity bound on a generic parameter. ADOPTED (owner-decided 2026-09-04).**
+`fn f<T: affine>(...)`, `fn f<T: linear>(...)` and `fn f['s: affine](...)`, read at the
+declaration and checked at the instantiation. *Needed because* a value's release
+disposition depends on its type and region arguments, and the language has no position at
+which a writer can say which
 disposition a generic body was written for — so this design fails closed three times and
 each refusal costs a program a writer needs. **On the region axis**, [PROV-6]'s
 declaration obligation refuses a **consuming** helper over an unconstrained region —
@@ -3861,20 +3939,24 @@ is refused because the type reaches no capability leaf, and at `T = Vector<u8>` 
 without one is refused because the value reaches a scope exit — and the two bodies need
 **different signatures**, since one needs `heap: &uniq Heap` and the other cannot use it.
 3.L.2's `clear`/`truncate` row describes exactly that function. **And [BLK-4]'s fourth
-clause** refuses a `&uniq Holder<T>` outright for the same reason. *Alternatives:* (a) do
-not add it, as this draft does — costs the three refusals above, each with a stated
-diagnostic, and the library writes two functions with two signatures wherever it can;
-(b) per-instantiation checking — makes one declaration have two verdicts, which is the
-defect rounds 6 and 7 both found; (c) a whole-design retreat to a runtime disposition
-field — a value a program can forget to read, which is what the modifier exists to
-replace. *Cost if adopted:* one grammar production on `gparam` and `region_params`, one
-instantiation check, and one sentence in [PROV-6] and [BLK-4] each reading the bound.
-*Recommendation:* the owner should weigh it with D1 rather than after it; it is the
-smallest addition that gives linearity a position in the generics surface, and Q8's third
-half is the same question.
+clause** refused a `&uniq Holder<T>` outright for the same reason. *Alternatives:* (a) do
+not add it — costs the three refusals above, each with a stated diagnostic, and the
+library writes two functions with two signatures wherever it can; (b) per-instantiation
+checking — makes one declaration have two verdicts, which is the defect rounds 6 and 7
+both found; (c) a whole-design retreat to a runtime disposition field — a value a program
+can forget to read, which is what the modifier exists to replace. **The grammar note:**
+`gparam` gains an optional `: affine` or `: linear` bound and a member of `region_params`
+gains the same, both written and never inferred, which keeps [FN-2] 1124's
+always-written discipline; the bound is a linearity class and not a user trait, so no
+trait surface arrives with it. *Cost:* that one production, one instantiation check, and
+one sentence in [PROV-6] and [BLK-4] each reading the bound. *Decided:* adopted, and the
+verdict stays one per declaration, which is what refuses (b). **What it does not settle:**
+Q8's other two halves, so 3.L still writes `clear` and `truncate` as **two bounded
+generics** rather than one function, and `filled` and both `try` forms still meet the
+copy/affine wall.
 
-**S33, `reserve_file -> own ReserveOutcome`. PROPOSED.** A three-way system outcome in
-place of S25's `Result`:
+**S33, `reserve_file -> own ReserveOutcome`. ADOPTED (owner-decided 2026-09-04)**, in
+place of S25's `Result`. A three-way system outcome:
 
 ```text
 reserve_file(factory: &uniq FileFactory) -> outcome: own ReserveOutcome
@@ -3889,15 +3971,17 @@ route in [CALL-4] is conditioned on a class, publishing `room(factory) == Z`
 unconditionally over `Err` is false for a `PermissionDenied` at a table that is not full,
 and there is no `when Err(error: e) is ResourceExhausted:` form anywhere. *Why no wf
 program has it:* it changes a [SYS-2] declaration record. *Alternatives:* (a) do not
-change it, as this draft does — the store's exhaustion fact is unpublishable and [RES-6]
-says so; (b) add a class-conditioned route form — a new route family for one relation,
-and it makes a portable class set into proof vocabulary, which [SYS-7] 2473-2486 exists
-to prevent; (c) a total `reserve_file` over a proved capacity — S25's own rejected
-alternative. *Cost if adopted:* one system nominal, one row change, [SYS-2]'s counts, and
-eleven corpus call sites gaining a third arm. *Recommendation:* adopt; it is the same
-partition this design draws everywhere else — a failure the environment can produce is a
-typed value, and a failure of a store we account for is a variant with a published
-post-state.
+change it — the store's exhaustion fact stays unpublishable and [RES-6] can only say so;
+(b) add a class-conditioned route form — a new route family for one relation, and it makes
+a portable class set into proof vocabulary, which [SYS-7] 2473-2486 exists to prevent;
+(c) a total `reserve_file` over a proved capacity — S25's own rejected alternative.
+*Cost:* one system nominal, one row change, [SYS-2]'s counts, and eleven corpus call sites
+gaining a third arm. *Decided:* adopted; it is the same partition this design draws
+everywhere else — a failure the environment can produce is a typed value, and a failure of
+a store we account for is a variant with a published post-state. **What it settles:**
+[RES-6] publishes `room(factory) = 0` on the `Exhausted` arm through [CALL-4]'s existing
+per-variant route, L8's second half is readable for that store, and Q20 keeps only the
+general question of writing the partition once as a rule about covered stores.
 
 ### 3.L The library, written in wf
 
@@ -3967,8 +4051,8 @@ a worked program may not call a function this file does not declare.
 |   element with the last       | seq_place                           | requires is at + 2 <= len           |
 | take_at                       | the transposition, then seq_take,   | the requires plus a dominating      |
 |                               | with a branch for the last position | branch; NON-MEASURED T only         |
-| clear, truncate               | a counted drain, two invariants     | one function per element class      |
-|                               |                                     | (Q8, [S32])                          |
+| clear, truncate               | a counted drain, two invariants     | two bounded generics, T: affine and |
+|                               |                                     | T: linear [S32]; Q8's copy wall     |
 | growth policy, HeapVector     | seq_heap, drain from the front,     | seven invariants; the window is what|
 |                               | append at the back, construct       | makes order preservation free; 3.L.5|
 | block pool with a lease       | linear struct Lease['s] plus a      | a branch on len and on room, which  |
@@ -4086,8 +4170,10 @@ fn filled<T, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure c
 
 Same route, written for a **copy** `T` only: the bare `value` use is [OWN-1] 564's
 copy-on-use, and at an affine instantiation the same body needs `move` and would consume
-it on the first iteration. That is Q8, [S32] is the relief, and this is the function
-[VIEW-7] needs for an addressable I/O destination.
+it on the first iteration. That is Q8, and [S32], now adopted, is the relief on the
+linearity axis only: each body declares the class it was written for, while the
+copy/affine half stays Q8's. This is the function [VIEW-7] needs for an addressable I/O
+destination.
 
 **`collect`, the one program every draft has carried.**
 
@@ -4284,8 +4370,9 @@ fn try_take<T, const n: u64>(vector: own FixedVector<T, n>)
 ```
 
 Both rest on [ENT-3.S6]'s generalization over the four measures [BLK-0], and both are
-written per element class where the body moves a `T` (probes `x14`, `x15`; [S32] is the
-relief). **Their `len` and `room` bounds are two-sided**, which is round 7's addition:
+written per element class where the body moves a `T` (probes `x14`, `x15`; [S32] is
+adopted and relieves the linearity axis, and Q8 keeps the copy/affine half). **Their
+`len` and `room` bounds are two-sided**, which is round 7's addition:
 the seventh draft published one side of each, which satisfies no caller and, under
 [CALL-7] as stated, no longer satisfies the rule either.
 
@@ -4460,8 +4547,10 @@ became two, sixteen added nominals became five, and three writing statements bec
 Two items were **not** resolved by writing them, and both are honest residue. A writer's
 generic cannot serve a copy and an affine element type from one body, nor an affine and a
 capability-released one, so `filled`, both `try` forms and `clear` are written per element
-class — Q8 and [S32]. And a value obtained by `replace` carries no measures, so `take_at`
-is declarable only at a non-measured `T`.
+class — Q8, narrowed by [S32]: with the bound adopted, `clear`'s two bodies are **two
+bounded generics**, `T: affine` and `T: linear`, rather than one copy per concrete element
+type, and what remains is the copy/affine half. And a value obtained by `replace` carries
+no measures, so `take_at` is declarable only at a non-measured `T`.
 
 #### 3.L.7 When to write `linear`, and what it buys
 
@@ -5155,9 +5244,10 @@ and why probes `x14` and `x15` disagree. **A `struct` or `enum` all of whose fie
 are copy should be copy** — and the half that matters more is the second: **a generic
 body's `move` of a type parameter should be admitted at a copy instantiation, where it
 is a no-op.** Without that half the first does not remove the wall, because the
-*template* is checked as if `T` were affine. **The third axis is now [S32]**, a
-linearity bound on a generic parameter, which is a proposal rather than a question and
-which the owner should weigh with the other two halves.
+*template* is checked as if `T` were affine. **The third axis was [S32]**, a linearity
+bound on a generic parameter, and it is decided: adopted 2026-09-04, so what is left of
+Q8 is the two halves above, and the design's per-element-class functions are now two
+bounded generics wherever the split is a linearity split (3.L.6).
 
 **Q9. Is `E` part of program identity?** **An emitted machine-readable table beside
 the object, carrying the module's content digest and explicitly not part of [PROG-2]
@@ -5186,8 +5276,9 @@ block keeps its braces and loses its name.
 
 **Q12 is answered by the owner.** [S25] is adopted: `reserve_file` becomes fallible,
 on the principle that a failure the environment can produce is a typed value. **[S33]
-is the part of that decision this draft found incomplete** and is a proposal, not a
-question.
+completed it on 2026-09-04**: the outcome is a three-variant nominal, so the store's own
+refusal is a variant rather than a class of an error payload, and nothing of Q12 stays
+open.
 
 **Q13. A run whose element type is linear *by declaration* has no route out**, and
 §2.1's release row marks the notion open at exactly this shape. It is not a nominal, so
@@ -5271,18 +5362,20 @@ reading it re-forms the writable view at each alternation, which for `wfgrep`'s
 `search_file` is once per matched line. [S27] removed the same cost for the **shared**
 view and nothing removes it here, because two exclusive loans on one range are what
 [OWN-5] 606 refuses and that refusal is the single-writer argument. **The question is
-whether a `seq_split_at` (Q3) or [S31]'s `seq_reslice` covers enough of the shape**;
-this design does not answer it, and it is the friction a writer of an I/O loop meets
-first.
+whether a `seq_split_at` (Q3) covers enough of the shape**; this design does not answer
+it, and it is the friction a writer of an I/O loop meets first. [S31] does not remove it:
+the shared child reborrow that [VIEW-6] admits lets a helper publish what it filled, and
+it still forbids a write of the parent for exactly as long as the child lives.
 
-**Q20 is new. Should a covered store's exhaustion be a variant?** [S33] proposes it
-for `reserve_file`, and the general form of the question is larger: **every covered
-store whose refusal a route must read needs its refusal to be a variant of the
+**Q20 is new, and half of it is answered.** [S33] is **adopted** for `reserve_file`
+(2026-09-04), so the handle table's exhaustion is a variant and [RES-6] publishes
+`room(factory) = 0` on that arm. The general form of the question stays open: **every
+covered store whose refusal a route must read needs its refusal to be a variant of the
 operation's own outcome, not a class of an error payload.** The arena has that shape
-already, because a refused `seq_arena` returns `None` and publishes over it. The handle
-table does not, and [RES-6] states the consequence honestly. If the owner adopts [S33],
-the same partition should be written once as a rule about covered stores rather than
-once per operation, and that rule is not drafted here.
+already, because a refused `seq_arena` returns `None` and publishes over it, and the
+handle table now has it. What remains is that the partition should be written **once as a
+rule about covered stores** rather than once per operation, and that rule is not drafted
+here.
 
 ---
 
@@ -5491,7 +5584,7 @@ hidden**: `bridge.c:670`'s first-use mapping inside the submit path, the floor's
 6. **Write 3.L against 3.K by hand, one function at a time, and find the tenth kernel
    addition.** Rounds 5, 6 and 7 each found the yield high.
 7. **Attack [BLK-4]'s type-parameter clause** with a `&uniq` parameter a real library
-   needs, to price [S32] against it.
+   needs, now that [S32]'s bound is adopted and the clause reads it.
 8. **Rewrite `wfgrep` and `byte_string` by hand** against [VIEW-7], D3, R1 and 3.K.0's
    two amendments, and count what remains.
 
@@ -5617,7 +5710,8 @@ reports are superseded.
 |                                                                | store class is read from the declaration    |
 | 8 GAP [BLK-4]'s closure stops at a generic type parameter      | **[BLK-4]**'s fourth clause refuses a       |
 |                                                                | referent reaching an unbounded type         |
-|                                                                | parameter; [S32] is the relief              |
+|                                                                | parameter; [S32]'s bound, ADOPTED, is what  |
+|                                                                | the clause now reads                        |
 | 9 DEFECT [LIV-2]'s commit paragraph contradicts condition 1    | **[LIV-2]** states the read-out: each       |
 |                                                                | target's previous value is read out before  |
 |                                                                | the evaluation, then the target is dead     |
@@ -5664,10 +5758,10 @@ reports are superseded.
 | F7-5 BREAKS the extent item's identity across monomorphization | **[PROV-5]**: named by (concrete instance,  |
 |                                                                | region_stmt NodePath); [RES-2] counts over  |
 |                                                                | the expanded program                        |
-| F7-6 BREAKS the handle table's refusal is keyed on an IoError  | **[RES-6]** states the gap honestly — the   |
-|   CLASS and no route publishes one                             | Err edge publishes len alone — and [S33]    |
-|                                                                | proposes the outcome whose Exhausted is a   |
-|                                                                | VARIANT                                     |
+| F7-6 BREAKS the handle table's refusal is keyed on an IoError  | **[S33]** is ADOPTED: the refusal is the    |
+|   CLASS and no route publishes one                             | Exhausted VARIANT, and **[RES-6]** publishes|
+|                                                                | room(factory) = 0 on that arm through       |
+|                                                                | [CALL-4]'s existing route                   |
 | F7-8 GAP a reserving occurrence inside a loop whose region     | **[PROV-5]**: the occurrence must be a      |
 |   block is outside it has no stated meaning                    | statement of its block and of no loop in it |
 | F7-9 GAP no rule extracts E's figure from the map              | **[RES-10]** states the extraction: the max |
@@ -5762,7 +5856,7 @@ reports are superseded.
 |   acyclicity test looks at another graph                       | once by both                                |
 | F5-19, F5-25, F5-26 BREAKS dispose is writable only in main   | **[PROV-1]**'s brand resolution (F1-6)      |
 | F5-23, F5-2, F5-3 GAP the declaration obligation refuses      | **[PROV-6]** (F1-7) for the region axis;    |
-|   every consuming helper; no value at a region parameter       | **[S32]** PROPOSED for both axes            |
+|   every consuming helper; no value at a region parameter       | **[S32]** ADOPTED for both axes             |
 | F5-4 GAP `linear` on a tag-only enum                          | **[PROV-6]** refuses the modifier on a      |
 |                                                                | non-affine nominal (probe q11)              |
 | F5-5 GAP the fourth ownership clause makes Tag<Vector<u8>>    | **[PROV-6]**: the clause is DELETED; a type |
@@ -5891,7 +5985,10 @@ a `dispose` of a `slice<'r, Vector<u8>>` rejected at the loan-bearing operand co
 a `dispose` of a type one of whose release-graph nodes is modifier-linear rejected; a
 `dispose` with no live provider binding rejected as `DisposeHasNoProvider` and accepted
 once the parameter is added, with the resolved binding appearing in the effect row;
-**probe `q11`'s tag-only enum rejected when marked `linear`**; and **probe `x6`'s
+**probe `q11`'s tag-only enum rejected when marked `linear`**;
+**`fn checksum['s: affine](v: own Vector<'s, u8>) -> sum: own u64` accepted where the
+unbounded declaration is refused, and a heap-branded instantiation of it rejected at the
+call**, which is [S32]'s region axis under test; and **probe `x6`'s
 self-referential heap type rejected at its declaration** in a program with no marker,
 naming the cycle, **while its arena-backed sibling still compiles** — the release graph
 under test.
@@ -5919,10 +6016,11 @@ region parameter also compiling; `struct Chunk['s]` accepted where probes `r2_6`
 `m05` are parse errors today, with two instances at different regions rejected as
 distinct types; **a `&uniq Vector<u8>` parameter rejected at [BLK-4], a `&uniq Env` whose
 `Env` holds a `FixedVector` rejected the same way, and probe `gen3`'s `&uniq Holder<T>`
-rejected at the type-parameter clause**; and two reserving occurrences naming one region
-rejected at the second. This batch supersedes B3's conformance case, whose program no
-longer typechecks; that disposition is conformance evidence and is recorded in
-`governance/APPROVALS.md`.
+rejected at the type-parameter clause**, with the same declaration accepted under a [S32]
+bound that excludes a container nominal and a loan-bearing argument; and two reserving
+occurrences naming one region rejected at the second. This batch supersedes B3's
+conformance case, whose program no longer typechecks; that disposition is conformance
+evidence and is recorded in `governance/APPROVALS.md`.
 
 **B8. Views, loans, ranges.** Rules: [VIEW-1], [VIEW-2], [VIEW-4], [VIEW-6], [PROV-3].
 [PROV-3] lands here because views are its only user. Tests: an element write through a
@@ -5933,8 +6031,13 @@ binding rejected by [VIEW-4]**, which probe `setslice` shows is new capability, 
 dead accepted, and the same append while the view is still used rejected**, which is the
 loan's new end condition; two `mut_slice`s on one run rejected at the second formation
 and two `slice`s accepted; a write to `k` while a view formed at `table[k]` is live
-rejected citing the view's loan; and a two-result signature with two same-region view
-results rejected at [VIEW-6].
+rejected citing the view's loan; **a `slice` formed as a shared child of a live
+`mut_slice` accepted, an element write through the parent while that child lives
+rejected, and the same write accepted after the child's last use**, which is [S31]'s
+ruling and [PROV-3]'s end condition; a fill-and-publish helper that fills its
+`&uniq mut_slice<u8>` destination, forms the child and returns it accepted at [VIEW-6]'s
+ceiling; and a two-result signature with two same-region view results rejected at
+[VIEW-6].
 
 **B9. Stores, the heap as a value, and reservation.** Rules: [PROV-2], [PROV-4],
 [PROV-5], [PROV-7], [RES-6]. Tests: probe `p5_ambient`'s program **rejected**; a `main`
@@ -5954,7 +6057,9 @@ no `allocates` entry anywhere on its call graph — the first program that demon
 goal A's container half end to end; **a marked `main` that opens one file in a loop,
 reads it into a `filled` destination over a `mut_slice`, and publishes a demand of one
 on the named store `handles`**; an open that fails on every attempt whose handle records
-all come back; **a `ReadFile` close counted as a may-suspend acquisition**; and
+all come back; **a `match` over `reserve_file`'s three arms deriving `room(handles) = 0`
+on `Exhausted` and deriving nothing about `room` on `Failed`**, which is [S33] and
+[RES-6] under test; **a `ReadFile` close counted as a may-suspend acquisition**; and
 `write_once`'s range obligation stated over `source` and not over a destination it does
 not have.
 
@@ -6167,7 +6272,10 @@ increment — and its `vector` operand is `own`, so every occurrence of `len(vec
 its relation is the length it was handed [MSR-3]. **The four per-slot rows are two-sided
 because L12 is**, and the front pair is what makes a queue a run rather than a run of
 `Option`. **There is no fifth boundary row**: returning a wrapped window to its origin is
-3.L.8's drain, which L18 keeps out of the kernel and Q18 puts back to the owner.
+3.L.8's drain, which L18 keeps out of the kernel and Q18 puts back to the owner. **And
+there is no third view row**: forming a shared `slice` from a `mut_slice` is [OWN-6]'s
+child reborrow [VIEW-6], so `seq_reslice` is not adopted [S31] and the count stays at
+twelve.
 **Nothing here is total at a capacity boundary**, because an overwriting form would need
 L9's published displacement. **Nothing here removes from the middle, clears, truncates,
 grows, exchanges, swaps, rebases, or constructs a filled or vacant run** — each is 3.L,
