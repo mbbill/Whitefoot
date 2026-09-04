@@ -1384,7 +1384,7 @@ A `len(P)` operand whose place P is rooted at a `&uniq` parameter is inadmissibl
 No proof-required exact operation, computed arithmetic result, subscript, occurrence-local evaluated-value datum, Boolean connective, nested result projection, or body local becomes a relation term.
 The comparison normalizes to one finite L0 RelationTemplate; equality's two bounds remain one relation occurrence.
 Parameters denote function-entry images.
-The template retains parameter ordinals and projections, route declarations, named-const identity, literals, substitutions, comparison row, operand order, and normalized relation, while excluding result/route/definition spellings, definition sharing, and callee identity.
+The template retains parameter ordinals and projections, result ordinals, route declarations, named-const identity, literals, substitutions, comparison row, operand order, and normalized relation, while excluding result/route/definition spellings, definition sharing, and callee identity.
 Its occurrence is `(concrete function instance, ensures_clause NodePath)`.
 
 An unrouted clause selects every explicit return.

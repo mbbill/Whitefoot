@@ -2773,4 +2773,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   with the adapter reporting Pass=523, Xfail=1, Skip=1. The one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation, and status.
-ACTIVE-SPEC: v0.45 835f54af9d0e0c72fe5be86181832c6845a660e981a6c2360417c960710e9b5d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 8fa6fe3ea5e07e0925c2777108656b258c24bd092aaa932e97179e3f798d04be 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
