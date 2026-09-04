@@ -390,8 +390,8 @@ mod tests {
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
         assert_eq!(report.productions, 84);
-        assert_eq!(report.decisions, 120);
-        assert_eq!(report.terminals, 106);
+        assert_eq!(report.decisions, 128);
+        assert_eq!(report.terminals, 107);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 
@@ -420,8 +420,8 @@ mod tests {
     fn the_baseline_argument_is_the_one_compared() {
         let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
         let changed = active.replacen(
-            "return_stmt := \"return\" expr \";\"",
-            "return_stmt := \"return\" atom \";\"",
+            "return_stmt := \"return\" expr (\",\" expr)* \";\"",
+            "return_stmt := \"return\" atom (\",\" atom)* \";\"",
             1,
         );
         assert_ne!(changed, active);
@@ -437,8 +437,8 @@ mod tests {
     fn changed_source_grammar_fails_closed() {
         let active = std::str::from_utf8(ACTIVE_KERNEL_SPEC_BYTES).expect("active spec is UTF-8");
         let changed = active.replacen(
-            "return_stmt := \"return\" expr \";\"",
-            "return_stmt := \"return\" atom \";\"",
+            "return_stmt := \"return\" expr (\",\" expr)* \";\"",
+            "return_stmt := \"return\" atom (\",\" atom)* \";\"",
             1,
         );
         assert!(matches!(

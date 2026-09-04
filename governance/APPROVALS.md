@@ -2746,4 +2746,31 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
 - SPECIFICATION: v0.45 at the digest on the chain line below supersedes v0.44
   at `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
   whose outgoing bytes are preserved byte-for-byte as `spec/kernel-spec-v0.44.md`.
+- CONTENT: v0.45 lands multi-return. Numbered rules +0/-0 (136 remain) and
+  grammar productions +0/-0 (84 remain); five productions change — `fn_decl`
+  takes an ordered result list, `result_route` an optional ordinal binder,
+  `let_stmt` a parenthesized binder list over a `call`, `set_stmt` a
+  parenthesized target list over a `call`, and `return_stmt` one expression per
+  declared result — and one fixed lowercase grammar atom is added, `is` (55
+  remain). [FORM-2], [TYPE-5], [SET-1], [FN-1], [FN-9], [CALL-4], [CALL-6] and
+  [ENT-3] are amended in place; no rule id is added or retired and [ENT-3]
+  gains no source label. [FN-1] states the result ordinal and reads every result
+  judgment per ordinal; [TYPE-5] derives binder i and target i from ordinal i;
+  [SET-1] commits a target list in written order over pairwise distinct roots;
+  [CALL-4] takes the ordinal-named route `when b is V(f: r):`, its
+  omitted-binder condition, its ambiguity refusal at the declaration, and the
+  two [ENT-3.S12] destinations only a multi-result contract exercises.
+- CONFORMANCE BOUNDARY: this merge ADDS five conformance cases and their five
+  manifest rows and modifies, deletes, or renames none; it changes no adapter,
+  runner, or collection wiring. The added case ids are
+  `s16-pos-result-list-reaches-both-let-binders`,
+  `s16-pos-result-list-reaches-both-set-targets`,
+  `call4-pos-route-names-a-result-ordinal`,
+  `call4-pos-omitted-route-binder-with-one-enum-ordinal` (each expecting run,
+  exit 0) and `call4-neg-ambiguous-route-over-two-enum-ordinals` (expecting
+  reject, CALL-4). Before this merge the corpus holds 520 cases with the native
+  adapter reporting Pass=518, Xfail=1, Skip=1; after it the corpus holds 525
+  with the adapter reporting Pass=523, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation, and status.
 ACTIVE-SPEC: v0.45 835f54af9d0e0c72fe5be86181832c6845a660e981a6c2360417c960710e9b5d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

@@ -7,8 +7,8 @@ The active language authority is the specification at `spec/kernel-spec.md`;
 its version and digest are the chain tail in `governance/APPROVALS.md`. On top
 of the v0.40 proof surface this plan delivered, v0.41 added the comparison
 symbols and the call-site `::` delimiter, v0.42 the canonical region spelling,
-v0.43 the loop-body region block and the associative join, and v0.44 the fact
-machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]). Each superseded version is
+v0.43 the loop-body region block and the associative join, v0.44 the fact
+machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]), and v0.45 multi-return. Each superseded version is
 archived at `spec/kernel-spec-vN.md` with its merge-time record in
 `governance/APPROVALS.md`. Nothing merges to `main` until the owner approves
 the exact revision and canonical `make check` passes on that revision. This
@@ -44,6 +44,17 @@ and restricted to its routed arm, and refuses at the declaration a contract
 whose published relations contradict each other. The batch that carried it is
 B1 of the container and resource design under
 `research/investigations/containers-and-resources/`.
+
+v0.45 adds no rule and retires none (136 remain), and adds one grammar atom,
+`is`. A `fn_decl` may write an ordered result list, and a caller names its
+ordinals again with a destructuring `let` binder list or a `set` target list;
+a `return` writes one expression per declared result. [FN-1] numbers the
+ordinals and reads every result judgment per ordinal, [TYPE-5] derives binder i
+and target i from ordinal i, and [SET-1] commits a target list in written order.
+[CALL-4] widens the contract vocabulary to the ordinals, takes the ordinal-named
+route and its ambiguity refusal, and adds the two [ENT-3.S12] destinations only
+a multi-result contract exercises. The batch that carried it is B1b of the same
+design.
 
 ## Outcome
 
