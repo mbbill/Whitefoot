@@ -171,7 +171,20 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // borrow mode, type, effect row, or count. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.41 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.42";
+// v0.43 loop-body-region and join-repair review (2026-09-03): the first
+// amendment makes every loop body a region block, which changes which regions
+// a writer spells and rejects one redundant block form; the regions themselves,
+// their extents, and every liveness, outlives, exclusivity, storage-duration,
+// provenance, effect, and confinement judgment over them are unchanged, and
+// regions still erase before lowering. A loop body's own region introduces no
+// arena allocation list, because no `arena_new` can name it, so no release row
+// or storage representation moves. The second amendment normalizes [ENT-6]'s
+// value-image join, a front-end proof rule over erased images that only adds
+// images an accepted program may use; every emitted partial operation still
+// passes its static domain obligation before emission. No system operation,
+// resource representation, release row, result shape, entry form, or host ABI
+// mapping changes, so the v0.42 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.43";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

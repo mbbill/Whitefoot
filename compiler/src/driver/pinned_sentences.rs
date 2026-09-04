@@ -1158,7 +1158,31 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         rule: "FORM-8",
         sentences: &[
-            "drop the region name: this borrow takes the region of the `region` block that most closely encloses it",
+            "drop the region name: this borrow takes the region of the region block that most closely encloses it, and a loop body is one",
+        ],
+    },
+    // [FORM-8, OWN-11] a loop body is itself a region block, so a block that
+    // is the body's only statement spells that one region twice.
+    Probe {
+        name: "region-block-is-the-whole-loop-body.wf",
+        source: br#"command fn main() -> status: own ExitStatus pure {
+  let a = 40_i32;
+  for @scan (step in 0_u64..2_u64) {
+    region {
+      let p = &a;
+      let observed = deref(p);
+      if observed == 40_i32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "FORM-8",
+        sentences: &[
+            "the loop body is its own region; remove the region block, keep its statements where they stand, and drop every region name it carried",
         ],
     },
     Probe {

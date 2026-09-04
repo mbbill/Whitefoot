@@ -369,11 +369,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
-    /// The region an elided `borrow_expr` denotes: the innermost `region_stmt`
+    /// The region an elided `borrow_expr` denotes: the innermost region block
     /// lexically enclosing it [FORM-8].
     ///
-    /// `None` means no `region_stmt` encloses the borrow, where [FORM-8]
-    /// requires the region to be written.
+    /// A region block is a `region_stmt` or a loop body, because every
+    /// `loop_stmt` and `for_stmt` body is itself one [OWN-11]. `None` means no
+    /// region block encloses the borrow, where [FORM-8] requires the region to
+    /// be written.
     pub(super) fn enclosing_region(
         &self,
         node: NodeId,
@@ -381,13 +383,43 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut current = node;
         while let Some(parent) = self.tree.parent(current)? {
             match self.tree.production(parent)? {
-                Production::RegionStmt => return Ok(Some(self.region_declared_at(parent)?)),
+                Production::RegionStmt | Production::LoopStmt => {
+                    return Ok(Some(self.region_declared_at(parent)?));
+                }
+                // A counted loop's endpoint atoms are written in the enclosing
+                // scope, not the body, so only a statement of the body reaches
+                // the body's own region.
+                Production::ForStmt if self.tree.production(current)? == Production::Stmt => {
+                    return Ok(Some(self.region_declared_at(parent)?));
+                }
                 Production::FnDecl => return Ok(None),
                 _ => {}
             }
             current = parent;
         }
         Ok(None)
+    }
+
+    /// Whether one region declaration is the region a loop body introduces.
+    ///
+    /// [OWN-11] mints it at the owning `loop_stmt` or `for_stmt` node, so the
+    /// origin production tells the two local-region kinds apart.
+    pub(super) fn loop_body_region_owner(
+        &self,
+        region: DeclarationId,
+    ) -> Result<Option<NodeId>, CheckStop> {
+        let declaration = self.region_declaration(region)?;
+        if declaration.role() != DeclarationRole::LocalRegion {
+            return Ok(None);
+        }
+        let Some(node) = self.tree.node_with_path(declaration.origin().node()) else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        Ok(matches!(
+            self.tree.production(node)?,
+            Production::LoopStmt | Production::ForStmt
+        )
+        .then_some(node))
     }
 
     /// The region one `borrow_expr` takes.
@@ -417,7 +449,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 node,
                 SemanticIssueKind::RegionSpelling {
                     mechanical_fix: "drop the region name: this borrow takes the region of the \
-`region` block that most closely encloses it",
+region block that most closely encloses it, and a loop body is one",
                 },
             );
         }
@@ -621,6 +653,61 @@ absent when it writes none",
             if let Some(terminal) = self
                 .tree
                 .direct_token_with(node, TerminalPredicate::RegionIdentifier)?
+                && std::str::from_utf8(self.tree.token_bytes(terminal)?)
+                    .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
+                    == spelling
+            {
+                return Ok(true);
+            }
+            stack.extend_from_slice(self.tree.children(node)?);
+        }
+        Ok(false)
+    }
+
+    /// Whether one `region_stmt` is the whole body of the loop enclosing it.
+    ///
+    /// [OWN-11] gives every loop body one region over exactly that body, so a
+    /// block that is the body's only statement has exactly that block and is a
+    /// second spelling of that one region [FORM-8]. A block the body writes
+    /// any other statement beside has a strictly smaller block, which
+    /// [OWN-6]'s statement-scope judgment tells apart from the body's own.
+    pub(super) fn region_block_is_the_loop_body(&self, node: NodeId) -> Result<bool, CheckStop> {
+        let Some(statement) = self.tree.parent(node)? else {
+            return Ok(false);
+        };
+        if self.tree.production(statement)? != Production::Stmt {
+            return Ok(false);
+        }
+        let Some(owner) = self.tree.parent(statement)? else {
+            return Ok(false);
+        };
+        if !matches!(
+            self.tree.production(owner)?,
+            Production::LoopStmt | Production::ForStmt
+        ) {
+            return Ok(false);
+        }
+        Ok(self.tree.children_with(owner, Production::Stmt)?.as_slice() == [statement])
+    }
+
+    /// Whether one region name is written at a `targ` region argument below
+    /// this node.
+    ///
+    /// [FORM-8] a retained-argument table operation and an undetermined callee
+    /// region parameter are the only in-body positions that must carry a
+    /// written REGIONID, and no implicit loop-body region has a name to carry
+    /// there.
+    pub(super) fn region_is_type_argument_below(
+        &self,
+        root: NodeId,
+        spelling: &str,
+    ) -> Result<bool, CheckStop> {
+        let mut stack = self.tree.children(root)?.to_vec();
+        while let Some(node) = stack.pop() {
+            if self.tree.production(node)? == Production::Targ
+                && let Some(terminal) = self
+                    .tree
+                    .direct_token_with(node, TerminalPredicate::RegionIdentifier)?
                 && std::str::from_utf8(self.tree.token_bytes(terminal)?)
                     .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding)?
                     == spelling
@@ -1356,7 +1443,13 @@ and name it on the returned reborrow"
         let Some(region_node) = self.tree.node_with_path(region.origin().node()) else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        if self.tree.production(region_node)? != Production::RegionStmt {
+        // [OWN-3] a `region_stmt` body and a loop body are both blocks a local
+        // region is introduced over, so both answer whether that block extends
+        // beyond the enclosing statement [OWN-6, OWN-11].
+        if !matches!(
+            self.tree.production(region_node)?,
+            Production::RegionStmt | Production::LoopStmt | Production::ForStmt
+        ) {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         let region_statements = self.tree.children_with(region_node, Production::Stmt)?;
@@ -1390,7 +1483,14 @@ and name it on the returned reborrow"
         if borrow_loops.len() != loop_depth {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
-        Ok(self.enclosing_loops(region_node)? == borrow_loops)
+        let mut region_loops = self.enclosing_loops(region_node)?;
+        // [OWN-11] a loop body's own region is introduced inside that body, so
+        // the loop owning it counts as one of the loops enclosing the region
+        // even though the node minting it is the loop node itself.
+        if self.loop_body_region_owner(region)?.is_some() {
+            region_loops.push(region_node);
+        }
+        Ok(region_loops == borrow_loops)
     }
 
     fn enclosing_loops(&self, node: NodeId) -> Result<Vec<NodeId>, CheckStop> {

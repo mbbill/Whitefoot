@@ -17,6 +17,25 @@ revision and canonical `make check` passes on that revision. This document
 records technical direction and sequencing; it grants no permission and adds
 no workflow gate.
 
+The stable path now carries a **v0.43 CANDIDATE** over those bytes, declaring
+`CANDIDATE v0.43 supersedes v0.42 6b935d2e…`. A candidate is work-branch
+content, not an installed identity: canonical `make check` stops it at
+`spec-archive-integrity` until an activation archives the outgoing v0.42 bytes
+and records a new chain line, so the authority named above is unchanged.
+v0.43 carries two independent amendments. The first makes every `loop_stmt` and
+`for_stmt` body a region block [OWN-3, OWN-11]: the body introduces one unnamed
+region over exactly that body, a borrow written directly in the body takes it
+and is written bare, and a `region_stmt` that is the body's only statement is a
+second spelling of that one region and a hard error citing [FORM-8]. A block the
+body writes another statement beside is strictly narrower, is what [OWN-6]'s
+statement-scope judgment needs, and stays legal. The second repairs [ENT-6]'s
+control-flow join, which was not associative: a delta atom an earlier join
+minted counted as an ordinary nonconstant term at the next one, so a three-way
+demux was accepted written as a flat `match` and refused written as nested
+`if`/`else`. Each input image is now normalized by folding earlier delta atoms
+back into the constant interval they stand for, so acceptance no longer depends
+on the shape of the join.
+
 ## Outcome
 
 Whitefoot is a proof-carrying systems language for AI-written, human-approved

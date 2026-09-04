@@ -1406,17 +1406,15 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let seed = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move seed, seen: 0_u64);
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &held.name, start: 0_u64, end: 0_u64) {
-          Ok(value: handle) => {
-            region {
-              let done = bump(holder: &uniq held);
-            }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &held.name, start: 0_u64, end: 0_u64) {
+        Ok(value: handle) => {
+          region {
+            let done = bump(holder: &uniq held);
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: problem) => {
         }
       }
     }
@@ -1831,27 +1829,25 @@ const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own D
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            region 'h {
-              region {
-                match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                  ReadBytes(next: produced) => {
-                    set total = total +wrap produced;
-                  }
-                  ReadEnd() => {
-                  }
-                  ReadFailed(error: problem) => {
-                  }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          region 'h {
+            region {
+              match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                ReadBytes(next: produced) => {
+                  set total = total +wrap produced;
+                }
+                ReadEnd() => {
+                }
+                ReadFailed(error: problem) => {
                 }
               }
             }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: problem) => {
         }
       }
     }

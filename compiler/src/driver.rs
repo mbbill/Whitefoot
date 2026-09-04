@@ -664,27 +664,25 @@ mod tests {
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            region 'h {
-              region {
-                match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                  ReadBytes(next: produced) => {
-                    set total = total +wrap produced;
-                  }
-                  ReadEnd() => {
-                  }
-                  ReadFailed(error: problem) => {
-                  }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          region 'h {
+            region {
+              match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                ReadBytes(next: produced) => {
+                  set total = total +wrap produced;
+                }
+                ReadEnd() => {
+                }
+                ReadFailed(error: problem) => {
                 }
               }
             }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: problem) => {
         }
       }
     }
@@ -1475,10 +1473,8 @@ command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region {
-      let one = accum(slot: &uniq total, x: 0.5_f64);
-      set count = count +wrap one;
-    }
+    let one = accum(slot: &uniq total, x: 0.5_f64);
+    set count = count +wrap one;
   }
   return exit_status(code: 0_u8);
 }
@@ -1734,17 +1730,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let right = buffer_new(8_u64, 2_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            let sum = left[0_u64] +wrap right[0_u64];
-            let wide = cvt::<u8, u64>(sum);
-            set total = total +wrap wide;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          let sum = left[0_u64] +wrap right[0_u64];
+          let wide = cvt::<u8, u64>(sum);
+          set total = total +wrap wide;
+        }
+        Err(error: problem) => {
         }
       }
     }
@@ -1794,27 +1788,25 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            region 'h {
-              region {
-                match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                  ReadBytes(next: produced) => {
-                    set total = total +wrap produced;
-                  }
-                  ReadEnd() => {
-                  }
-                  ReadFailed(error: problem) => {
-                  }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          region 'h {
+            region {
+              match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                ReadBytes(next: produced) => {
+                  set total = total +wrap produced;
+                }
+                ReadEnd() => {
+                }
+                ReadFailed(error: problem) => {
                 }
               }
             }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: problem) => {
         }
       }
     }
@@ -1937,14 +1929,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   for @outer (step in 0_u64..2_u64) {
     let shared = buffer_new(16_u64, 97_u8);
     for @scan (index in 0_u64..4_u64) {
-      region 'f {
-        let permit = reserve_file(factory: &uniq files);
-        region {
-          match open_file(permit: move permit, root: &'f cwd, name: &shared, start: 0_u64, end: 4_u64) {
-            Ok(value: handle) => {
-            }
-            Err(error: problem) => {
-            }
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &cwd, name: &shared, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+          }
+          Err(error: problem) => {
           }
         }
       }
@@ -2837,9 +2827,7 @@ command fn main() -> status: own ExitStatus pure {
             "{EMIT}
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
   for @scan (index in 0_u64..4_u64) {{
-    region {{
-      let wrote = emit(out: &uniq out, value: 65_u8);
-    }}
+    let wrote = emit(out: &uniq out, value: 65_u8);
   }}
   return exit_status(code: 0_u8);
 }}

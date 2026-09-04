@@ -1108,10 +1108,8 @@ command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region {
-      let one = accum(slot: &uniq total, x: 0.5_f64);
-      set count = count +wrap one;
-    }
+    let one = accum(slot: &uniq total, x: 0.5_f64);
+    set count = count +wrap one;
   }
   return exit_status(code: 0_u8);
 }
@@ -1172,10 +1170,8 @@ fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
-    region {
-      let seen = probe(factory: &uniq files, root: &cwd);
-      set total = total +wrap seen;
-    }
+    let seen = probe(factory: &uniq files, root: &cwd);
+    set total = total +wrap seen;
   }
   return exit_status(code: 0_u8);
 }
@@ -1757,10 +1753,8 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region {
-      let v = peek_uniq(cell: &uniq cell);
-      set acc = acc +wrap v;
-    }
+    let v = peek_uniq(cell: &uniq cell);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
@@ -1783,10 +1777,8 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region {
-      let v = peek(cell: &cell);
-      set acc = acc +wrap v;
-    }
+    let v = peek(cell: &cell);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
@@ -1805,11 +1797,9 @@ fn a_body_statement_forming_a_borrow_is_refused() {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region {
-      let g = &uniq cell;
-      let v = deref(g);
-      set acc = acc +wrap v;
-    }
+    let g = &uniq cell;
+    let v = deref(g);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
@@ -1855,11 +1845,9 @@ fn a_body_shared_borrow_of_outer_storage_is_knowingly_denied() {
   let shared = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region {
-      let h = &shared;
-      let v = deref(h);
-      set acc = acc +wrap v;
-    }
+    let h = &shared;
+    let v = deref(h);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }

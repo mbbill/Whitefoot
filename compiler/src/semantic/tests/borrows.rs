@@ -722,9 +722,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(1_u64, 0_u8);
-  region {
+  region 'r {
     loop @once {
-      observe(out: &out);
+      observe(out: &'r out);
       break @once;
     }
   }

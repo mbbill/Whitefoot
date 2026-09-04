@@ -136,19 +136,17 @@ const A03_CARRIED_BYTE: &[u8] = br#"command fn main(command.cwd as cwd: own Dire
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set total = total +wrap 1_u64;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          set total = total +wrap 1_u64;
+        }
+        Err(error: problem) => {
         }
       }
-      set name[0_u64] = 98_u8;
     }
+    set name[0_u64] = 98_u8;
   }
   return exit_status(code: 0_u8);
 }
@@ -299,15 +297,13 @@ const A08_READONLY_NAME: &[u8] = br#"command fn main(command.cwd as cwd: own Dir
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set total = total +wrap 1_u64;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          set total = total +wrap 1_u64;
+        }
+        Err(error: problem) => {
         }
       }
     }
@@ -383,15 +379,13 @@ const A12_NESTED_INNER_IO: &[u8] = br#"command fn main(command.cwd as cwd: own D
   for @outer (step in 0_u64..2_u64) {
     let shared = buffer_new(16_u64, 97_u8);
     for @scan (index in 0_u64..4_u64) {
-      region 'f {
-        let permit = reserve_file(factory: &uniq files);
-        region {
-          match open_file(permit: move permit, root: &'f cwd, name: &shared, start: 0_u64, end: 4_u64) {
-            Ok(value: handle) => {
-              set total = total +wrap 1_u64;
-            }
-            Err(error: problem) => {
-            }
+      let permit = reserve_file(factory: &uniq files);
+      region {
+        match open_file(permit: move permit, root: &cwd, name: &shared, start: 0_u64, end: 4_u64) {
+          Ok(value: handle) => {
+            set total = total +wrap 1_u64;
+          }
+          Err(error: problem) => {
           }
         }
       }
@@ -548,20 +542,18 @@ const A15_BODY_BOUND_BORROW: &[u8] = br#"command fn main(command.cwd as cwd: own
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        let borrowed = &name;
-        match open_file(permit: move permit, root: &'f cwd, name: borrowed, start: 0_u64, end: 0_u64) {
-          Ok(value: handle) => {
-            set total = total +wrap 1_u64;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      let borrowed = &name;
+      match open_file(permit: move permit, root: &cwd, name: borrowed, start: 0_u64, end: 0_u64) {
+        Ok(value: handle) => {
+          set total = total +wrap 1_u64;
+        }
+        Err(error: problem) => {
         }
       }
-      set name[0_u64] = 98_u8;
     }
+    set name[0_u64] = 98_u8;
   }
   return exit_status(code: 0_u8);
 }
@@ -963,16 +955,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let seed = buffer_new(16_u64, 97_u8);
   let held = Holder(name: move seed, seen: 0_u64);
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &held.name, start: 0_u64, end: 0_u64) {
-          Ok(value: handle) => {
-            let fresh = buffer_new(16_u64, 98_u8);
-            let previous = replace held = Holder(name: move fresh, seen: 1_u64);
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &held.name, start: 0_u64, end: 0_u64) {
+        Ok(value: handle) => {
+          let fresh = buffer_new(16_u64, 98_u8);
+          let previous = replace held = Holder(name: move fresh, seen: 1_u64);
+        }
+        Err(error: problem) => {
         }
       }
     }

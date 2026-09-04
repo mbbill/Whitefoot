@@ -36,7 +36,7 @@ impl fmt::Display for SpecHash {
 }
 
 /// Version label of the active kernel specification.
-pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.42";
+pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.43";
 
 /// Repository-relative stable path of the active kernel specification.
 pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec.md";
@@ -56,8 +56,8 @@ pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
 /// them at runtime and the `whitefoot-spec` gate rejects any disagreement, so
 /// installing a specification cannot leave this naming the previous one.
 pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
-    0x6b, 0x93, 0x5d, 0x2e, 0xa7, 0x72, 0x98, 0x76, 0xfc, 0x96, 0x53, 0x3b, 0x55, 0x59, 0xf6, 0xf5,
-    0x85, 0x98, 0xe3, 0x35, 0xb4, 0xb5, 0xcf, 0xfa, 0xd8, 0x6c, 0xc4, 0x78, 0x2c, 0x0e, 0xed, 0x26,
+    0x17, 0x08, 0xdd, 0x2b, 0x64, 0xb9, 0x3c, 0x88, 0xd1, 0xdf, 0xc2, 0x3a, 0xcd, 0x34, 0x0c, 0x85,
+    0x3b, 0x03, 0xca, 0x24, 0x0b, 0x9b, 0x86, 0xac, 0x43, 0xfb, 0xc9, 0x1e, 0x1c, 0x0b, 0x20, 0x81,
 ]);
 
 /// SHA-256 of the embedded active specification, computed from its bytes.
@@ -91,7 +91,7 @@ mod tests {
     fn computed_identity_is_the_independently_measured_digest() {
         assert_eq!(
             computed_active_spec_hash().to_string(),
-            "6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26"
+            "1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081"
         );
     }
 

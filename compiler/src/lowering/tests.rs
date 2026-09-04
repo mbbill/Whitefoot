@@ -1025,15 +1025,13 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          set opened = opened +wrap 1_u64;
+        }
+        Err(error: problem) => {
         }
       }
     }
@@ -1075,29 +1073,25 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @first (index in 0_u64..3_u64) {
-    region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          set opened = opened +wrap 1_u64;
+        }
+        Err(error: problem) => {
         }
       }
     }
   }
   for @second (index in 0_u64..3_u64) {
-    region 'g {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'g cwd, name: &name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
-          }
-          Err(error: problem) => {
-          }
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+        Ok(value: handle) => {
+          set opened = opened +wrap 1_u64;
+        }
+        Err(error: problem) => {
         }
       }
     }

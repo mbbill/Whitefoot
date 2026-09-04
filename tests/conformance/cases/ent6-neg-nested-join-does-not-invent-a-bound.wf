@@ -1,0 +1,31 @@
+fn drift(count: own u64, base: own u64) -> done: own u64 pure contract {
+  requires count <= 1000_u64;
+  requires base <= 1000_u64;
+} {
+  doc "One nested arm adds two, so no per-iteration bound of one is preserved.";
+  let total = base;
+  for @split (
+    at in 0_u64..count,
+    invariant total_hi: total <= base + at
+  ) {
+    let which = at % 3_u64;
+    let first = which == 0_u64;
+    if first {
+      set total = total + 1_u64;
+    } else {
+      let second = which == 1_u64;
+      if second {
+        set total = total + 2_u64;
+      } else {
+        set total = total + 1_u64;
+      }
+    }
+  }
+  return count;
+}
+
+command fn main() -> return_value: own ExitStatus pure {
+  doc "ENT-6: folding an earlier join's delta widens nothing, so a body that really does not preserve the invariant is still rejected.";
+  let done = drift(count: 3_u64, base: 0_u64);
+  return exit_status(code: 0_u8);
+}

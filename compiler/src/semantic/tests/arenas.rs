@@ -272,12 +272,14 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Own10,
         |kind| matches!(kind, SemanticIssueKind::InvalidBorrowLifetime { .. }),
     );
+    // [OWN-11] a loop body hosts its own borrows, so reaching the arena's own
+    // region from inside the body means naming it.
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   region 'r {
     let a = arena_new::<'r, i32>(4_i32);
     loop @once {
-      let h = &uniq deref(a);
+      let h = &uniq 'r deref(a);
       break @once;
     }
   }
