@@ -17,7 +17,7 @@
 //! declared disequality separates to be equal.
 
 use super::super::postcondition::{
-    NormalizedRelation, PostconditionPlaceRoot, RelationDatum, RelationTemplate,
+    NormalizedRelation, PostconditionPlaceRoot, RelationDatum, RelationTemplate, RelationTerm,
 };
 use crate::semantic::model::{CheckedMeasure, CheckedValue, IntegerType};
 
@@ -63,6 +63,16 @@ impl DeclaredSystem {
         }
         self.keys.push(key);
         self.keys.len()
+    }
+
+    /// One relation term: its datum's abstract term, displaced by the
+    /// constant the clause side writes [FN-9].
+    fn relation_term(&mut self, term: &RelationTerm) -> Option<Operand> {
+        let operand = self.operand(&term.datum)?;
+        Some(Operand {
+            term: operand.term,
+            offset: operand.offset.checked_add(term.displacement)?,
+        })
     }
 
     fn operand(&mut self, datum: &RelationDatum) -> Option<Operand> {
@@ -117,8 +127,8 @@ impl DeclaredSystem {
     }
 
     fn add(&mut self, template: &RelationTemplate) -> Option<()> {
-        let left = self.operand(&template.operands[0])?;
-        let right = self.operand(&template.operands[1])?;
+        let left = self.relation_term(&template.operands[0])?;
+        let right = self.relation_term(&template.operands[1])?;
         match template.normalized {
             NormalizedRelation::Equal => {
                 self.bound(left, right, 0);

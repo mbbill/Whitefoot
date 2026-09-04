@@ -138,6 +138,7 @@ impl Analyzer<'_, '_> {
                 &Relation::Equal {
                     left: datum,
                     right: term,
+                    difference: 0,
                 },
                 &mut self.derivations,
                 event,

@@ -1242,7 +1242,14 @@ impl Analyzer<'_, '_> {
             .relation
             .operands
             .iter()
-            .map(|datum| self.postcondition_affine_datum(datum, result, state))
+            .map(|operand| {
+                let form = self.postcondition_affine_datum(&operand.datum, result, state)?;
+                form.add(
+                    &AffineForm::constant(operand.displacement),
+                    &mut AffineCheckState::new(),
+                )
+                .ok()
+            })
             .collect::<Option<Vec<_>>>()?;
         let NormalizedRelation::UpperBound {
             left,
@@ -1459,29 +1466,55 @@ impl Analyzer<'_, '_> {
             .relation
             .operands
             .iter()
-            .map(|operand| self.postcondition_relation_term(operand, results, returns))
+            .map(|operand| {
+                Some((
+                    self.postcondition_relation_term(&operand.datum, results, returns)?,
+                    operand.displacement,
+                ))
+            })
             .collect::<Option<Vec<_>>>()?;
         let [first, second] = operands.as_slice() else {
             return None;
         };
+        // [FN-9] each side's displacement folds into the one constant a
+        // difference bound carries: `l + a <cmp> r + b` is
+        // `l - r <cmp> b - a`.
+        let gap = second.1.checked_sub(first.1)?;
         match postcondition.relation.normalized {
             NormalizedRelation::Equal => Some(Relation::Equal {
-                left: *first,
-                right: *second,
+                left: first.0,
+                right: second.0,
+                difference: gap,
             }),
-            NormalizedRelation::NotEqual => Some(Relation::Distinct {
-                left: (*first).min(*second),
-                right: (*first).max(*second),
+            NormalizedRelation::NotEqual => Some(if first.0 <= second.0 {
+                Relation::Distinct {
+                    left: first.0,
+                    right: second.0,
+                    difference: gap,
+                }
+            } else {
+                Relation::Distinct {
+                    left: second.0,
+                    right: first.0,
+                    difference: gap.checked_neg()?,
+                }
             }),
             NormalizedRelation::UpperBound {
                 left,
                 right,
                 strict,
-            } => Some(Relation::Bound {
-                left: *operands.get(left as usize)?,
-                right: *operands.get(right as usize)?,
-                bound: if strict { -1 } else { 0 },
-            }),
+            } => {
+                let lower = *operands.get(left as usize)?;
+                let upper = *operands.get(right as usize)?;
+                Some(Relation::Bound {
+                    left: lower.0,
+                    right: upper.0,
+                    bound: upper
+                        .1
+                        .checked_sub(lower.1)?
+                        .checked_sub(i128::from(strict))?,
+                })
+            }
         }
     }
 
@@ -2122,7 +2155,8 @@ impl Analyzer<'_, '_> {
             CheckedType,
         )> = Vec::new();
         for available in self.available_postconditions(function) {
-            for datum in &available.relation.operands {
+            for operand in &available.relation.operands {
+                let datum = &operand.datum;
                 match datum {
                     RelationDatum::Parameter {
                         ordinal,
@@ -2185,6 +2219,7 @@ impl Analyzer<'_, '_> {
                 &Relation::Equal {
                     left: datum,
                     right: term,
+                    difference: 0,
                 },
                 &mut self.derivations,
                 event,
@@ -2244,7 +2279,8 @@ impl Analyzer<'_, '_> {
         let parameter_modes = self.context.callee(function)?.parameter_modes.clone();
         let mut substitutions = Vec::new();
         let mut operands = Vec::with_capacity(template.operands.len());
-        for (operand, datum) in template.operands.iter().enumerate() {
+        for (operand, term_operand) in template.operands.iter().enumerate() {
+            let datum = &term_operand.datum;
             let (term, formal) = match datum {
                 // [CALL-4] the destination supplies one term per declared
                 // result ordinal; an ordinal with none makes only this
@@ -2330,29 +2366,51 @@ impl Analyzer<'_, '_> {
                     datum,
                 });
             }
-            operands.push(term);
+            operands.push((term, term_operand.displacement));
         }
         let [first, second] = operands.as_slice() else {
             return None;
         };
+        // [FN-9] each side's displacement folds into the one constant a
+        // difference bound carries.
+        let gap = second.1.checked_sub(first.1)?;
         let relation = match template.normalized {
             NormalizedRelation::Equal => Relation::Equal {
-                left: *first,
-                right: *second,
+                left: first.0,
+                right: second.0,
+                difference: gap,
             },
-            NormalizedRelation::NotEqual => Relation::Distinct {
-                left: (*first).min(*second),
-                right: (*first).max(*second),
-            },
+            NormalizedRelation::NotEqual => {
+                if first.0 <= second.0 {
+                    Relation::Distinct {
+                        left: first.0,
+                        right: second.0,
+                        difference: gap,
+                    }
+                } else {
+                    Relation::Distinct {
+                        left: second.0,
+                        right: first.0,
+                        difference: gap.checked_neg()?,
+                    }
+                }
+            }
             NormalizedRelation::UpperBound {
                 left,
                 right,
                 strict,
-            } => Relation::Bound {
-                left: *operands.get(left as usize)?,
-                right: *operands.get(right as usize)?,
-                bound: if strict { -1 } else { 0 },
-            },
+            } => {
+                let lower = *operands.get(left as usize)?;
+                let upper = *operands.get(right as usize)?;
+                Relation::Bound {
+                    left: lower.0,
+                    right: upper.0,
+                    bound: upper
+                        .1
+                        .checked_sub(lower.1)?
+                        .checked_sub(i128::from(strict))?,
+                }
+            }
         };
         Some(InstantiatedPostcondition {
             relation,
@@ -2933,16 +2991,34 @@ impl Analyzer<'_, '_> {
                 right: replace(*right),
                 bound: *bound,
             },
-            Relation::Equal { left, right } => Relation::Equal {
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => Relation::Equal {
                 left: replace(*left),
                 right: replace(*right),
+                difference: *difference,
             },
-            Relation::Distinct { left, right } => {
-                let left = replace(*left);
-                let right = replace(*right);
-                Relation::Distinct {
-                    left: left.min(right),
-                    right: left.max(right),
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => {
+                let (left, right) = (replace(*left), replace(*right));
+                // Ordering the pair reverses the difference with it.
+                if left <= right {
+                    Relation::Distinct {
+                        left,
+                        right,
+                        difference: *difference,
+                    }
+                } else {
+                    Relation::Distinct {
+                        left: right,
+                        right: left,
+                        difference: -difference,
+                    }
                 }
             }
         }
@@ -3324,7 +3400,7 @@ impl Analyzer<'_, '_> {
         for postcondition in &self.function.postconditions {
             let mut indices = Vec::new();
             for operand in &postcondition.relation.operands {
-                let datum = match operand {
+                let datum = match &operand.datum {
                     RelationDatum::Parameter {
                         ordinal,
                         projections,
@@ -4003,7 +4079,7 @@ impl Analyzer<'_, '_> {
         };
         let left = self.read_operand(left_expression)?;
         let right = self.read_operand(right_expression)?;
-        sources::comparison_relation(*operation, left, right)
+        sources::comparison_relation(*operation, left, right, 0)
     }
 
     /// [ENT-3] comparison origin of a match scrutinee: shape (a) directly, or
@@ -5070,9 +5146,82 @@ impl Analyzer<'_, '_> {
         let [left, right] = arguments.as_slice() else {
             return None;
         };
-        let left = self.goal_operand(left)?;
-        let right = self.goal_operand(right)?;
-        sources::comparison_relation(*operation, left, right)
+        // [MSR-5] each side is an affine expression, so each projects to one
+        // term displaced by a constant and the two displacements fold into
+        // the one constant a difference bound carries.
+        let (left, left_constant) = self.goal_side(left)?;
+        let (right, right_constant) = self.goal_side(right)?;
+        sources::comparison_relation(
+            *operation,
+            left,
+            right,
+            right_constant.checked_sub(left_constant)?,
+        )
+    }
+
+    /// One clause side as a term displaced by a constant [MSR-5].
+    ///
+    /// A side with no term at all is one constant and keeps the constant term
+    /// [ENT-2] folds it onto; a side carrying two terms, or a term with any
+    /// coefficient other than one, is outside the difference-bound fragment
+    /// and projects to nothing, which only under-derives [ENT-1].
+    fn goal_side(&mut self, expression: &GoalExpression) -> Option<(TermId, i128)> {
+        let (term, constant) = self.goal_affine_side(expression)?;
+        match term {
+            Some(term) => Some((term, constant)),
+            None => Some((self.terms.intern(TermKind::Constant(constant)), 0)),
+        }
+    }
+
+    fn goal_affine_side(&mut self, expression: &GoalExpression) -> Option<(Option<TermId>, i128)> {
+        if let GoalExpression::Operation {
+            row:
+                GoalOperation::Integer {
+                    operation:
+                        operation @ (CheckedIntegerOperation::AddExact
+                        | CheckedIntegerOperation::SubtractExact
+                        | CheckedIntegerOperation::MultiplyExact),
+                    ..
+                },
+            arguments,
+            ..
+        } = expression
+        {
+            let [left, right] = arguments.as_slice() else {
+                return None;
+            };
+            let (left_term, left_value) = self.goal_affine_side(left)?;
+            let (right_term, right_value) = self.goal_affine_side(right)?;
+            return match operation {
+                CheckedIntegerOperation::AddExact => {
+                    if left_term.is_some() && right_term.is_some() {
+                        return None;
+                    }
+                    Some((
+                        left_term.or(right_term),
+                        left_value.checked_add(right_value)?,
+                    ))
+                }
+                CheckedIntegerOperation::SubtractExact => {
+                    if right_term.is_some() {
+                        return None;
+                    }
+                    Some((left_term, left_value.checked_sub(right_value)?))
+                }
+                _ => {
+                    if left_term.is_some() || right_term.is_some() {
+                        return None;
+                    }
+                    Some((None, left_value.checked_mul(right_value)?))
+                }
+            };
+        }
+        if let GoalExpression::Datum(GoalDatum::Literal(CheckedValue::Integer { ty, bits })) =
+            expression
+        {
+            return Some((None, integer_value(*ty, *bits)));
+        }
+        Some((Some(self.goal_operand(expression)?), 0))
     }
 
     fn goal_operand(&mut self, expression: &GoalExpression) -> Option<TermId> {
@@ -8787,18 +8936,33 @@ impl Analyzer<'_, '_> {
                 right: replace(*right),
                 bound: *bound,
             },
-            Relation::Equal { left, right } => Relation::Equal {
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => Relation::Equal {
                 left: replace(*left),
                 right: replace(*right),
+                difference: *difference,
             },
-            Relation::Distinct { left, right } => {
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => {
                 let (left, right) = (replace(*left), replace(*right));
+                // Ordering the pair reverses the difference with it.
                 if left <= right {
-                    Relation::Distinct { left, right }
+                    Relation::Distinct {
+                        left,
+                        right,
+                        difference: *difference,
+                    }
                 } else {
                     Relation::Distinct {
                         left: right,
                         right: left,
+                        difference: -difference,
                     }
                 }
             }
@@ -9036,6 +9200,7 @@ impl Analyzer<'_, '_> {
             let relation = Relation::Distinct {
                 left: pair.0,
                 right: pair.1,
+                difference: 0,
             };
             let proof = self
                 .derivations
@@ -12473,16 +12638,40 @@ impl Analyzer<'_, '_> {
                 self.render_term(*left),
                 self.render_term(*right)
             ),
-            Relation::Equal { left, right } => {
-                format!("{} = {}", self.render_term(*left), self.render_term(*right))
-            }
-            Relation::Distinct { left, right } => {
-                format!(
-                    "{} != {}",
-                    self.render_term(*left),
-                    self.render_term(*right)
-                )
-            }
+            // An undisplaced relation reads as the writer wrote it; a
+            // displaced one names its difference, exactly as a bound does.
+            Relation::Equal {
+                left,
+                right,
+                difference: 0,
+            } => format!("{} = {}", self.render_term(*left), self.render_term(*right)),
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => format!(
+                "{} - {} = {difference}",
+                self.render_term(*left),
+                self.render_term(*right)
+            ),
+            Relation::Distinct {
+                left,
+                right,
+                difference: 0,
+            } => format!(
+                "{} != {}",
+                self.render_term(*left),
+                self.render_term(*right)
+            ),
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => format!(
+                "{} - {} != {difference}",
+                self.render_term(*left),
+                self.render_term(*right)
+            ),
         }
     }
 
@@ -12739,6 +12928,7 @@ fn request_relation(request: &BoundsRequest) -> Option<Relation> {
         Relation::Distinct {
             left,
             right: request.right,
+            difference: 0,
         }
     } else {
         Relation::Bound {

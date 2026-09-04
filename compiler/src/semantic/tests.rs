@@ -70,19 +70,27 @@ const LEX_LIMITS: LexLimits = LexLimits {
     max_lexemes: 262_144,
 };
 
+// These are the harness's own resource ceilings, well below the driver's
+// [`crate::driver`], and they bound how large a semantic-test source may be
+// rather than what the language admits. [GRAM-4]'s `affine_factor` now reaches
+// its IDENT through an `atom` and a `place` [MSR-5], which is three derivation
+// elements per affine atom where it was one, and the certificate-capacity
+// fixture writes four thousand `use` steps over two atoms each. The parse and
+// finalize ceilings rise so that fixture still reaches the checker; no
+// judgment and no language rule changes with them.
 const PARSE_LIMITS: ParseLimits = ParseLimits {
-    max_work: 8_000_000,
-    max_tasks: 131_072,
+    max_work: 32_000_000,
+    max_tasks: 524_288,
     max_frames: 8_192,
-    max_elements: 262_144,
+    max_elements: 524_288,
 };
 
 const FINALIZE_LIMITS: FinalizeLimits = FinalizeLimits {
-    max_work: 8_000_000,
-    max_roots: 131_072,
-    max_shape_tasks: 131_072,
-    max_nodes: 131_072,
-    max_child_edges: 131_072,
+    max_work: 32_000_000,
+    max_roots: 262_144,
+    max_shape_tasks: 262_144,
+    max_nodes: 262_144,
+    max_child_edges: 262_144,
     max_terminals: 131_072,
     max_sources: 4,
 };

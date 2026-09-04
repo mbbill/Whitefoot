@@ -10,14 +10,16 @@ use crate::{
 
 use super::super::goal::{GoalOperation, GoalProjection};
 use super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedExpression, CheckedMode, CheckedNominalKind,
-    CheckedParameter, CheckedStatement, CheckedType, CheckedValue, FunctionId,
+    BindingId, CheckedArrayRoot, CheckedExpression, CheckedIntegerOperation, CheckedMode,
+    CheckedNominalKind, CheckedParameter, CheckedStatement, CheckedType, CheckedValue, FunctionId,
+    IntegerType,
 };
 use super::super::postcondition::{
     CheckedPostcondition, CheckedPostconditionSelector, NormalizedRelation,
     PostconditionConstantOrigin, PostconditionFieldIdentity, PostconditionPlace,
     PostconditionPlaceRoot, PostconditionReturnDatum, PostconditionReturnPlace,
-    PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate, SelectedPostconditionReturn,
+    PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate, RelationTerm,
+    SelectedPostconditionReturn,
 };
 use super::generics::GenericArgument;
 use super::publication;
@@ -600,7 +602,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         relation: &RelationTemplate,
     ) -> Result<(), CheckStop> {
         for operand in &relation.operands {
-            let RelationDatum::Measure(_, place) = operand else {
+            let RelationDatum::Measure(_, place) = &operand.datum else {
                 continue;
             };
             // [CALL-4] a measure over a result place names no parameter, so
@@ -709,10 +711,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let [left, right] = arguments.as_slice() else {
             return self.invalid_postcondition_relation(final_expression);
         };
-        let Some(left) = self.postcondition_relation_datum(left) else {
+        let Some(left) = self.postcondition_relation_term(left, operand_type) else {
             return self.invalid_postcondition_relation(final_expression);
         };
-        let Some(right) = self.postcondition_relation_datum(right) else {
+        let Some(right) = self.postcondition_relation_term(right, operand_type) else {
             return self.invalid_postcondition_relation(final_expression);
         };
         if left.ty() != operand_type || right.ty() != operand_type {
@@ -757,6 +759,105 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             operands: [left, right],
             normalized,
         })
+    }
+
+    /// One relation term [FN-9]: the datum one clause side names, displaced
+    /// by the constant the rest of that side reduces to.
+    ///
+    /// A side carrying two datums, or a datum with any coefficient other than
+    /// one, is outside the difference-bound fragment [ENT-4] and yields
+    /// `None`, which is the ordinary FN-9 rejection at the clause.
+    fn postcondition_relation_term(
+        &self,
+        expanded: &ExpandedClauseExpression,
+        operand_type: CheckedType,
+    ) -> Option<RelationTerm> {
+        let (datum, displacement) = self.postcondition_relation_operand(expanded)?;
+        match datum {
+            Some(datum) => Some(RelationTerm {
+                datum,
+                displacement,
+            }),
+            // A side with no datum reduced to one constant; it is a literal
+            // operand exactly as a written one is, and the fragment holds it
+            // in the operand's own type.
+            None => Some(RelationTerm::undisplaced(RelationDatum::Literal {
+                value: CheckedValue::Integer {
+                    ty: match operand_type {
+                        CheckedType::Integer(ty) => ty,
+                        _ => return None,
+                    },
+                    bits: representable_bits(operand_type, displacement)?,
+                },
+                origin: PostconditionConstantOrigin::Literal,
+            })),
+        }
+    }
+
+    /// One clause side's affine expression, as at most one datum with
+    /// coefficient one plus a constant [MSR-5].
+    fn postcondition_relation_operand(
+        &self,
+        expanded: &ExpandedClauseExpression,
+    ) -> Option<(Option<RelationDatum>, i128)> {
+        if let ExpandedClauseExpression::Operation {
+            row:
+                GoalOperation::Integer {
+                    operation:
+                        operation @ (CheckedIntegerOperation::AddExact
+                        | CheckedIntegerOperation::SubtractExact
+                        | CheckedIntegerOperation::MultiplyExact),
+                    ..
+                },
+            arguments,
+            ..
+        } = expanded
+        {
+            let [left, right] = arguments.as_slice() else {
+                return None;
+            };
+            let (left_datum, left_value) = self.postcondition_relation_operand(left)?;
+            let (right_datum, right_value) = self.postcondition_relation_operand(right)?;
+            return match operation {
+                CheckedIntegerOperation::AddExact => {
+                    if left_datum.is_some() && right_datum.is_some() {
+                        return None;
+                    }
+                    Some((
+                        left_datum.or(right_datum),
+                        left_value.checked_add(right_value)?,
+                    ))
+                }
+                // Subtracting a datum gives it coefficient minus one, which
+                // no difference-bound term carries.
+                CheckedIntegerOperation::SubtractExact => {
+                    if right_datum.is_some() {
+                        return None;
+                    }
+                    Some((left_datum, left_value.checked_sub(right_value)?))
+                }
+                // A multiplication of two constants is one constant; any
+                // other coefficient leaves the fragment.
+                _ => {
+                    if left_datum.is_some() || right_datum.is_some() {
+                        return None;
+                    }
+                    Some((None, left_value.checked_mul(right_value)?))
+                }
+            };
+        }
+        let datum = self.postcondition_relation_datum(expanded)?;
+        // A written integer literal is a constant of the side rather than
+        // its datum; a const generic and a generic numeric identity keep
+        // their own datum identity, symbolic or not.
+        if let RelationDatum::Literal {
+            value: CheckedValue::Integer { ty, bits },
+            origin: PostconditionConstantOrigin::Literal,
+        } = &datum
+        {
+            return Some((None, integer_value(*ty, *bits)));
+        }
+        Some((Some(datum), 0))
     }
 
     fn postcondition_relation_datum(
@@ -951,7 +1052,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let named = relation
             .operands
             .iter()
-            .filter_map(|datum| match datum {
+            .filter_map(|operand| match &operand.datum {
                 RelationDatum::Result { ordinal, .. } => Some(*ordinal),
                 _ => None,
             })
@@ -1887,4 +1988,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         self.issue_node(SemanticRule::Fn9, node, kind)
     }
+}
+
+/// The mathematical value of one checked integer constant, whose `bits` hold
+/// the type-width two's-complement pattern.
+const fn integer_value(ty: IntegerType, bits: u64) -> i128 {
+    let value = bits as i128;
+    if ty.signed() {
+        let width = ty.width() as u32;
+        let sign_bit = 1_u64 << (width - 1);
+        if bits & sign_bit != 0 {
+            return value - (1_i128 << width);
+        }
+    }
+    value
+}
+
+/// The type-width bit pattern of one mathematical value, or `None` when the
+/// value does not fit that type. A clause side reduces over the mathematical
+/// integers [MSR-5], so a constant side outside its own operand type is not
+/// a relation datum and the clause is refused rather than wrapped.
+const fn representable_bits(ty: CheckedType, value: i128) -> Option<u64> {
+    let CheckedType::Integer(ty) = ty else {
+        return None;
+    };
+    let width = ty.width() as u32;
+    let (low, high) = if ty.signed() {
+        (-(1_i128 << (width - 1)), (1_i128 << (width - 1)) - 1)
+    } else {
+        (0, (1_i128 << width) - 1)
+    };
+    if value < low || value > high {
+        return None;
+    }
+    #[allow(clippy::cast_sign_loss, clippy::cast_possible_truncation)]
+    Some((value & ((1_i128 << width) - 1)) as u64)
 }

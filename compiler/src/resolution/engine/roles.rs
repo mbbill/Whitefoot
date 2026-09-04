@@ -327,21 +327,11 @@ fn classify_node(
                 )?;
             }
         }
+        // [GRAM-4, MSR-5] `affine_factor` carries an `atom`, so an affine
+        // relation's own IDENT is one `pbase` below it and takes its role in
+        // the `pbase` arm; nothing is named directly here.
         Production::AffineFactor if !names.is_empty() => {
-            let role = if ancestor_with_production(topology, owner, Production::ProofUse).is_some()
-            {
-                LexicalUseRole::ProofValue
-            } else {
-                LexicalUseRole::InvariantValue
-            };
-            add_all(
-                classified,
-                owner,
-                &names,
-                RawRoleKind::LexicalUse(role),
-                roles,
-                complete_counts,
-            )?;
+            return Err(ResolutionCompilerFailure::InvalidRoleShape);
         }
         // [PROV-6, GRAM-4] a destructuring consume writes the nominal it takes
         // apart where every other `let` writes its binders; the TYPEID is a use
@@ -762,7 +752,7 @@ fn classify_node(
                     classified,
                     owner,
                     &names,
-                    RawRoleKind::LexicalUse(LexicalUseRole::PlaceBase),
+                    RawRoleKind::LexicalUse(affine_atom_role(topology, owner)),
                     roles,
                     complete_counts,
                 )?;
@@ -863,6 +853,49 @@ fn classify_node(
         }
     }
     Ok(())
+}
+
+/// The role one `pbase` IDENT takes [GRAM-4, GRAM-5].
+///
+/// A `pbase` directly below an `affine_factor` — through the factor's `atom`
+/// and that atom's `place` — is one affine relation's own value atom and
+/// resolves in [INV-1]'s or [PRF-1]'s narrower universe. Every other `pbase`
+/// is an ordinary place base, including the operand of a measure former
+/// written as an `affine_factor` `call`, whose IDENT is a place and not an
+/// affine atom.
+fn affine_atom_role(topology: &FinalizedTopology, pbase: NodeId) -> LexicalUseRole {
+    let direct = topology
+        .node(pbase)
+        .and_then(|record| record.parent)
+        .filter(|parent| {
+            topology
+                .node(*parent)
+                .is_some_and(|record| record.production == Production::Place)
+        })
+        .and_then(|place| topology.node(place).and_then(|record| record.parent))
+        .filter(|parent| {
+            topology
+                .node(*parent)
+                .is_some_and(|record| record.production == Production::Atom)
+        })
+        .and_then(|atom| topology.node(atom).and_then(|record| record.parent))
+        .is_some_and(|parent| {
+            topology
+                .node(parent)
+                .is_some_and(|record| record.production == Production::AffineFactor)
+        });
+    if !direct {
+        return LexicalUseRole::PlaceBase;
+    }
+    if ancestor_with_production(topology, pbase, Production::ProofUse).is_some() {
+        return LexicalUseRole::ProofValue;
+    }
+    if ancestor_with_production(topology, pbase, Production::HeaderInvariant).is_some()
+        || ancestor_with_production(topology, pbase, Production::InvariantStmt).is_some()
+    {
+        return LexicalUseRole::InvariantValue;
+    }
+    LexicalUseRole::PlaceBase
 }
 
 fn ancestor_with_production(

@@ -672,8 +672,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_written_operand(function, child, bindings, loop_depth, place_context)
     }
 
-    /// [GRAM-5] one `clause_expr`, whose operands may be a `call` and which
-    /// therefore admits a measure term on either side of its operator
+    /// [GRAM-5] one `clause_expr`: one `affine_expr`, or two around one
+    /// `clause_op`. Each side is [GRAM-4]'s own affine expression, whose
+    /// factors may be a `call` and which therefore admits a measure term
+    /// displaced by an affine expression on either side of the operator
     /// [MSR-5].
     fn check_clause_expression(
         &self,
@@ -684,24 +686,183 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         place_context: PlaceUseContext,
     ) -> Result<TypedExpression, CheckStop> {
         match self.tree.children(node)? {
-            [operand] => {
-                let operand = *operand;
-                self.check_written_operand(function, operand, bindings, loop_depth, place_context)
+            [side] => {
+                let side = *side;
+                self.check_clause_affine(function, side, None, bindings, loop_depth, place_context)
             }
             [left, operator, right] => {
                 let (left, operator, right) = (*left, *operator, *right);
-                let operation = self.infix_operation(operator)?;
-                self.check_integer_operation_row(
-                    node,
-                    operation,
-                    &[left, right],
-                    function,
-                    bindings,
-                    loop_depth,
-                )
+                let operation = self.infix_operation(self.clause_operator_node(operator)?)?;
+                let left = (
+                    left,
+                    self.check_clause_affine(
+                        function,
+                        left,
+                        None,
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                let right = (
+                    right,
+                    self.check_clause_affine(
+                        function,
+                        right,
+                        None,
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                self.check_integer_operation_operands(node, operation, vec![left, right])
             }
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
+    }
+
+    /// The operator token's owning node inside one `clause_op` [GRAM-5]: the
+    /// `compare_op` node it selected, or the `clause_op` itself when the
+    /// operator is one of the five infix `defined` domain queries.
+    pub(super) fn clause_operator_node(&self, operator: NodeId) -> Result<NodeId, CheckStop> {
+        Ok(self
+            .tree
+            .first_child_with(operator, Production::CompareOp)?
+            .unwrap_or(operator))
+    }
+
+    /// One `affine_expr`, `affine_term`, or `affine_factor` of a contract
+    /// clause [MSR-5].
+    ///
+    /// `terms` bounds an `affine_expr`'s left-associative fold to its first
+    /// `terms` `affine_term` children, so `a + b - c` is `(a + b) - c` with
+    /// no rewriting of the source tree. Its `+`, `-`, and `*` denote the
+    /// mathematical integer expression [INV-1] fixes; the [OP-1] rows named
+    /// here are the exact ones, which carry no domain obligation of their own
+    /// because a clause is never evaluated.
+    fn check_clause_affine(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        terms: Option<usize>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        place_context: PlaceUseContext,
+    ) -> Result<TypedExpression, CheckStop> {
+        match self.tree.production(node)? {
+            Production::AffineExpr => {
+                let children = self.tree.children(node)?.to_vec();
+                let count = terms.unwrap_or_else(|| children.len().div_ceil(2));
+                let last = count
+                    .checked_mul(2)
+                    .and_then(|doubled| doubled.checked_sub(2))
+                    .and_then(|index| children.get(index).copied())
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                if count == 1 {
+                    return self.check_clause_affine(
+                        function,
+                        last,
+                        None,
+                        bindings,
+                        loop_depth,
+                        place_context,
+                    );
+                }
+                let operator = children
+                    .get(
+                        count
+                            .checked_mul(2)
+                            .and_then(|doubled| doubled.checked_sub(3))
+                            .ok_or(SemanticCompilerFailure::CounterOverflow)?,
+                    )
+                    .copied()
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                let operation = self.affine_add_operation(operator)?;
+                let left = (
+                    node,
+                    self.check_clause_affine(
+                        function,
+                        node,
+                        Some(count - 1),
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                let right = (
+                    last,
+                    self.check_clause_affine(
+                        function,
+                        last,
+                        None,
+                        bindings,
+                        loop_depth,
+                        PlaceUseContext::Ordinary,
+                    )?,
+                );
+                self.check_integer_operation_operands(node, operation, vec![left, right])
+            }
+            Production::AffineTerm => {
+                let factors = self.tree.children_with(node, Production::AffineFactor)?;
+                match factors.as_slice() {
+                    [factor] => self.check_clause_affine(
+                        function,
+                        *factor,
+                        None,
+                        bindings,
+                        loop_depth,
+                        place_context,
+                    ),
+                    [left_node, right_node] => {
+                        let left = (
+                            *left_node,
+                            self.check_clause_affine(
+                                function,
+                                *left_node,
+                                None,
+                                bindings,
+                                loop_depth,
+                                PlaceUseContext::Ordinary,
+                            )?,
+                        );
+                        let right = (
+                            *right_node,
+                            self.check_clause_affine(
+                                function,
+                                *right_node,
+                                None,
+                                bindings,
+                                loop_depth,
+                                PlaceUseContext::Ordinary,
+                            )?,
+                        );
+                        self.check_integer_operation_operands(
+                            node,
+                            CheckedIntegerOperation::MultiplyExact,
+                            vec![left, right],
+                        )
+                    }
+                    _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                }
+            }
+            Production::AffineFactor => {
+                let child = self.tree.only_child(node)?;
+                self.check_clause_affine(function, child, None, bindings, loop_depth, place_context)
+            }
+            _ => self.check_written_operand(function, node, bindings, loop_depth, place_context),
+        }
+    }
+
+    /// The [OP-1] row one `affine_add_op` names [GRAM-4].
+    fn affine_add_operation(&self, operator: NodeId) -> Result<CheckedIntegerOperation, CheckStop> {
+        let [terminal] = self.tree.direct_token_indices(operator)? else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        Ok(match self.tree.token_bytes(*terminal)? {
+            b"+" => CheckedIntegerOperation::AddExact,
+            b"-" => CheckedIntegerOperation::SubtractExact,
+            _ => return Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        })
     }
 
     /// One written operand of an `expr` or a `clause_expr` [GRAM-5]: the

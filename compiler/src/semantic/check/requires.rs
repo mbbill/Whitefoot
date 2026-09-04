@@ -295,6 +295,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
     ) -> Result<ExpandedClauseExpression, CheckStop> {
+        // [GRAM-5, MSR-5] a clause and its affine sides have their own
+        // shapes, and each is walked against the checked expression the
+        // typer built for exactly that node.
+        match self.tree.production(source)? {
+            Production::ClauseExpr => {
+                return self.build_clause_root(source, checked, bindings, expanded_bindings);
+            }
+            Production::AffineExpr | Production::AffineTerm | Production::AffineFactor => {
+                return self.build_clause_affine(
+                    source,
+                    None,
+                    checked,
+                    bindings,
+                    expanded_bindings,
+                );
+            }
+            _ => {}
+        }
         let atoms = self.clause_operand_atoms(source)?;
         let operation = match checked {
             CheckedExpression::IntegerOperation {
@@ -545,6 +563,180 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.build_clause_operand(atoms[0], Some(checked), bindings, expanded_bindings)
     }
 
+    /// [GRAM-5] one `clause_expr` root: one `affine_expr`, or two around one
+    /// `clause_op` whose row the typer has already selected.
+    fn build_clause_root(
+        &self,
+        source: NodeId,
+        checked: &CheckedExpression,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<ExpandedClauseExpression, CheckStop> {
+        match self.tree.children(source)? {
+            [side] => {
+                let side = *side;
+                self.build_clause_affine(side, None, checked, bindings, expanded_bindings)
+            }
+            [left, _operator, right] => {
+                let (left, right) = (*left, *right);
+                let CheckedExpression::IntegerOperation {
+                    operation,
+                    operand_type,
+                    arguments,
+                    result,
+                    ..
+                } = checked
+                else {
+                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                };
+                let [checked_left, checked_right] = arguments.as_slice() else {
+                    return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+                };
+                Ok(ExpandedClauseExpression::Operation {
+                    row: GoalOperation::Integer {
+                        operation: *operation,
+                        operand_type: *operand_type,
+                    },
+                    type_arguments: Vec::new(),
+                    const_arguments: Vec::new(),
+                    result: *result,
+                    arguments: vec![
+                        self.build_clause_affine(
+                            left,
+                            None,
+                            checked_left,
+                            bindings,
+                            expanded_bindings,
+                        )?,
+                        self.build_clause_affine(
+                            right,
+                            None,
+                            checked_right,
+                            bindings,
+                            expanded_bindings,
+                        )?,
+                    ],
+                })
+            }
+            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        }
+    }
+
+    /// One `affine_expr`, `affine_term`, or `affine_factor` of a clause side,
+    /// walked against the checked expression the typer built for that exact
+    /// node [MSR-5].
+    ///
+    /// `terms` bounds an `affine_expr`'s left-associative fold to its first
+    /// `terms` `affine_term` children, which is the same bound the typing
+    /// walk uses, so the two walks stay in step over `a + b - c`.
+    fn build_clause_affine(
+        &self,
+        source: NodeId,
+        terms: Option<usize>,
+        checked: &CheckedExpression,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<ExpandedClauseExpression, CheckStop> {
+        match self.tree.production(source)? {
+            Production::AffineExpr => {
+                let children = self.tree.children(source)?.to_vec();
+                let count = terms.unwrap_or_else(|| children.len().div_ceil(2));
+                let last = count
+                    .checked_mul(2)
+                    .and_then(|doubled| doubled.checked_sub(2))
+                    .and_then(|index| children.get(index).copied())
+                    .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+                if count == 1 {
+                    return self.build_clause_affine(
+                        last,
+                        None,
+                        checked,
+                        bindings,
+                        expanded_bindings,
+                    );
+                }
+                self.build_clause_affine_operation(
+                    source,
+                    Some(count - 1),
+                    last,
+                    checked,
+                    bindings,
+                    expanded_bindings,
+                )
+            }
+            Production::AffineTerm => {
+                let factors = self.tree.children_with(source, Production::AffineFactor)?;
+                match factors.as_slice() {
+                    [factor] => self.build_clause_affine(
+                        *factor,
+                        None,
+                        checked,
+                        bindings,
+                        expanded_bindings,
+                    ),
+                    [left, right] => self.build_clause_affine_operation(
+                        *left,
+                        None,
+                        *right,
+                        checked,
+                        bindings,
+                        expanded_bindings,
+                    ),
+                    _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                }
+            }
+            Production::AffineFactor => {
+                let child = self.tree.only_child(source)?;
+                self.build_clause_affine(child, None, checked, bindings, expanded_bindings)
+            }
+            _ => self.build_clause_operand(source, Some(checked), bindings, expanded_bindings),
+        }
+    }
+
+    /// One binary node of a clause side's affine fold [MSR-5].
+    fn build_clause_affine_operation(
+        &self,
+        left: NodeId,
+        left_terms: Option<usize>,
+        right: NodeId,
+        checked: &CheckedExpression,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<ExpandedClauseExpression, CheckStop> {
+        let CheckedExpression::IntegerOperation {
+            operation,
+            operand_type,
+            arguments,
+            result,
+            ..
+        } = checked
+        else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        let [checked_left, checked_right] = arguments.as_slice() else {
+            return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+        };
+        Ok(ExpandedClauseExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: *operation,
+                operand_type: *operand_type,
+            },
+            type_arguments: Vec::new(),
+            const_arguments: Vec::new(),
+            result: *result,
+            arguments: vec![
+                self.build_clause_affine(
+                    left,
+                    left_terms,
+                    checked_left,
+                    bindings,
+                    expanded_bindings,
+                )?,
+                self.build_clause_affine(right, None, checked_right, bindings, expanded_bindings)?,
+            ],
+        })
+    }
+
     /// One written clause operand. An `atom` is a leaf datum; every other
     /// written form — today exactly a `call`, which is how [MSR-5] admits a
     /// measure term as an operand — is expanded by the ordinary clause walk
@@ -567,18 +759,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         expression: NodeId,
     ) -> Result<Vec<NodeId>, CheckStop> {
-        // [GRAM-5] a `clause_expr` carries its operands directly, and each
-        // one is an `atom`, a `call`, or a `construct`. A single-operand
-        // clause reads through to that operand, so a bare `len_of(P)` clause
-        // operand and a `len_of(P)` operand of a comparison are one path.
+        // A `clause_expr` and its affine sides are walked by their own
+        // functions [MSR-5]; what reaches here is one written operand or one
+        // `contract_define` `expr`.
         match self.tree.production(expression)? {
-            Production::ClauseExpr => {
-                return match self.tree.children(expression)? {
-                    [only] => self.clause_operand_atoms(*only),
-                    [left, _operator, right] => Ok(vec![*left, *right]),
-                    _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
-                };
-            }
             Production::Atom => return Ok(vec![expression]),
             Production::Call => {
                 let Some(list) = self
@@ -869,22 +1053,72 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    /// [FN-8, MSR-5] one `clause_expr`: one `affine_expr`, or two around one
+    /// `clause_op`.
+    ///
+    /// The operator is one of the Bool-valued rows and is judged like every
+    /// other selected row; the `+`, `-`, and `*` inside a side are the
+    /// mathematical integer expression [MSR-5] fixes and select no row, so
+    /// the exactness test does not reach them. Every factor of every side is
+    /// validated, which is what makes the admission a property of the clause
+    /// rather than of its leftmost operand.
     pub(super) fn validate_clause_condition(
         &self,
         clause: ClauseKind<'_>,
         entry: NodeId,
         expression: NodeId,
     ) -> Result<(), CheckStop> {
-        if self.validate_clause_computation(clause, entry, expression)? {
-            return Ok(());
+        match self.tree.children(expression)? {
+            [side] => {
+                let side = *side;
+                self.validate_clause_affine(clause, entry, side)
+            }
+            [left, operator, right] => {
+                let (left, operator, right) = (*left, *operator, *right);
+                if self
+                    .infix_operation(self.clause_operator_node(operator)?)?
+                    .is_exact()
+                {
+                    return self.invalid_clause(clause, entry);
+                }
+                self.validate_clause_affine(clause, entry, left)?;
+                self.validate_clause_affine(clause, entry, right)
+            }
+            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
-        // [FN-8] admits one further shape here that a contract definition does
-        // not: a predicate may be either a Bool clause atom or one admitted
-        // operation returning Bool.
-        let Some(atom) = self.tree.first_child_with(expression, Production::Atom)? else {
-            return self.invalid_clause(clause, entry);
-        };
-        self.validate_clause_atom(clause, entry, atom)
+    }
+
+    /// One `affine_expr`, `affine_term`, or `affine_factor` of a clause, down
+    /// to the written operands [FN-8] judges.
+    fn validate_clause_affine(
+        &self,
+        clause: ClauseKind<'_>,
+        entry: NodeId,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        match self.tree.production(node)? {
+            Production::AffineExpr => {
+                for term in self.tree.children_with(node, Production::AffineTerm)? {
+                    self.validate_clause_affine(clause, entry, term)?;
+                }
+                Ok(())
+            }
+            Production::AffineTerm => {
+                for factor in self.tree.children_with(node, Production::AffineFactor)? {
+                    self.validate_clause_affine(clause, entry, factor)?;
+                }
+                Ok(())
+            }
+            Production::AffineFactor => {
+                let child = self.tree.only_child(node)?;
+                self.validate_clause_affine(clause, entry, child)
+            }
+            Production::Atom => self.validate_clause_atom(clause, entry, node),
+            Production::Call => self.validate_clause_operation(clause, entry, node),
+            // A `construct` derives under the production and is no datum and
+            // no operation-table form, so [FN-8] refuses it here.
+            _ => self.invalid_clause(clause, entry),
+        }
     }
 
     /// Validates a clause computation, reporting whether the expression was

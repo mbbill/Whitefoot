@@ -122,6 +122,7 @@ const ENUM_ORDER: &[&str] = &[
     "proof_use",
     "compare_op",
     "clause_expr",
+    "clause_op",
     "dispose_stmt",
     "region_param",
     "linearity_bound",

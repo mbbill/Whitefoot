@@ -389,9 +389,64 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         allowed_values: &HashSet<DeclarationId>,
         owner: AffineProofOwner,
     ) -> Result<(CheckedAffineExpression, Option<(i128, IntegerType)>), CheckStop> {
+        // [GRAM-4, MSR-5] the factor production is shared with a contract
+        // clause and carries an `atom`, a `call`, a `construct`, or a
+        // parenthesized expression. [INV-1] admits an `atom` only as one
+        // bare IDENT place or one integer literal; every other atom shape,
+        // and a `construct`, is a rule rejection at this factor and not a
+        // parse rejection.
+        if let Some(atom) = self.tree.first_child_with(node, Production::Atom)? {
+            return self.check_affine_atom(node, atom, bindings, allowed_values, owner);
+        }
+        if self
+            .tree
+            .first_child_with(node, Production::Construct)?
+            .is_some()
+        {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor is a construction",
+                "use only integer literals, live own integer locals, and measure formers",
+            );
+        }
+
+        // [INV-1, MSR-1] one measure former as an affine factor. The relation
+        // evaluates nothing and reads no storage, so the factor reaches the
+        // resolved place and the measure row and stops there: no loan access,
+        // no effect, and no goal.
+        if let Some(call) = self.tree.first_child_with(node, Production::Call)? {
+            let expression = self.check_affine_measure(call, bindings, allowed_values, owner)?;
+            return Ok((
+                CheckedAffineExpression {
+                    node_path: self.tree.path(node)?.clone(),
+                    kind: CheckedAffineExpressionKind::Measure(Box::new(expression)),
+                },
+                None,
+            ));
+        }
+
+        let nested = self
+            .tree
+            .first_child_with(node, Production::AffineExpr)?
+            .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        let expression = self.check_affine_expression(nested, bindings, allowed_values, owner)?;
+        Ok((expression, None))
+    }
+
+    /// [INV-1] the one `atom` an affine factor admits: a bare IDENT place or
+    /// an integer literal.
+    fn check_affine_atom(
+        &self,
+        node: NodeId,
+        atom: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        allowed_values: &HashSet<DeclarationId>,
+        owner: AffineProofOwner,
+    ) -> Result<(CheckedAffineExpression, Option<(i128, IntegerType)>), CheckStop> {
         if let Some(literal) = self
             .tree
-            .direct_token_with(node, crate::syntax::terminal::TerminalPredicate::Literal)?
+            .direct_token_with(atom, crate::syntax::terminal::TerminalPredicate::Literal)?
         {
             let bytes = self.tree.token_bytes(literal)?;
             if matches!(bytes, b"0_T" | b"1_T") {
@@ -420,83 +475,100 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ));
         }
 
-        if !self.tree.direct_identifiers(node)?.is_empty() {
-            let usage = self.use_at(node, owner.value_role())?;
-            let ResolvedTarget::Source {
-                declaration,
-                class: DeclarationClass::Value,
-            } = usage.target()
-            else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
-            if !allowed_values.contains(&declaration) {
-                return self.invalid_affine_proof(
-                    owner,
-                    node,
-                    "an affine relation reads a value outside its admitted entry state",
-                    "use a live integer that exists before this proof point",
-                );
-            }
-            let local = bindings
-                .get(&declaration)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            if !local.live {
-                return self.invalid_affine_proof(
-                    owner,
-                    node,
-                    "an affine relation reads a moved local value",
-                    "use a live own integer local",
-                );
-            }
-            let CheckedType::Integer(ty) = local.ty else {
-                return self.invalid_affine_proof(
-                    owner,
-                    node,
-                    "an affine local does not have a closed integer type",
-                    "use only live own integer locals",
-                );
-            };
-            if local.mode != CheckedMode::Own {
-                return self.invalid_affine_proof(
-                    owner,
-                    node,
-                    "an affine local is a borrow holder rather than an own integer value",
-                    "bind the integer value and reference that own binding",
-                );
-            }
-            return Ok((
-                CheckedAffineExpression {
-                    node_path: self.tree.path(node)?.clone(),
-                    kind: CheckedAffineExpressionKind::Local {
-                        binding: local.binding,
-                        ty,
-                    },
-                },
-                None,
-            ));
+        let Some(place) = self.tree.first_child_with(atom, Production::Place)? else {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor is a borrow rather than a value",
+                "use only integer literals, live own integer locals, and measure formers",
+            );
+        };
+        if self.has_fixed(atom, crate::syntax::terminal::FixedTerminal::Move)? {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor consumes the value it reads",
+                "read the live own integer local without `move`",
+            );
         }
-
-        // [INV-1, MSR-1] one measure former as an affine factor. The relation
-        // evaluates nothing and reads no storage, so the factor reaches the
-        // resolved place and the measure row and stops there: no loan access,
-        // no effect, and no goal.
-        if let Some(call) = self.tree.first_child_with(node, Production::Call)? {
-            let expression = self.check_affine_measure(call, bindings, allowed_values, owner)?;
-            return Ok((
-                CheckedAffineExpression {
-                    node_path: self.tree.path(node)?.clone(),
-                    kind: CheckedAffineExpressionKind::Measure(Box::new(expression)),
-                },
-                None,
-            ));
-        }
-
-        let nested = self
+        if !self
             .tree
-            .first_child_with(node, Production::AffineExpr)?
+            .children_with(place, Production::Psuffix)?
+            .is_empty()
+        {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor selects a field or an element of a place",
+                "bind the integer value with a `let` and use that binding",
+            );
+        }
+        let pbase = self
+            .tree
+            .first_child_with(place, Production::Pbase)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let expression = self.check_affine_expression(nested, bindings, allowed_values, owner)?;
-        Ok((expression, None))
+        if self.has_fixed(pbase, crate::syntax::terminal::FixedTerminal::Deref)? {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor dereferences a holder",
+                "bind the integer value with a `let` and use that binding",
+            );
+        }
+
+        let usage = self.use_at(pbase, owner.value_role())?;
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = usage.target()
+        else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        if !allowed_values.contains(&declaration) {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine relation reads a value outside its admitted entry state",
+                "use a live integer that exists before this proof point",
+            );
+        }
+        let local = bindings
+            .get(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if !local.live {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine relation reads a moved local value",
+                "use a live own integer local",
+            );
+        }
+        let CheckedType::Integer(ty) = local.ty else {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine local does not have a closed integer type",
+                "use only live own integer locals",
+            );
+        };
+        if local.mode != CheckedMode::Own {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine local is a borrow holder rather than an own integer value",
+                "bind the integer value and reference that own binding",
+            );
+        }
+        Ok((
+            CheckedAffineExpression {
+                node_path: self.tree.path(node)?.clone(),
+                kind: CheckedAffineExpressionKind::Local {
+                    binding: local.binding,
+                    ty,
+                },
+            },
+            None,
+        ))
     }
 
     /// [INV-1] the one `call` an affine factor admits: a measure former over

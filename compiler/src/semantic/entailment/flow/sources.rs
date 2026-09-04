@@ -126,6 +126,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: lower_capture,
                 right: lower_source,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -134,6 +135,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: upper_capture,
                 right: upper_source,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -142,6 +144,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: binder,
                 right: lower_capture,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -174,7 +177,11 @@ impl Analyzer<'_, '_> {
                 bound: 0,
             };
             CountedEqualityDerivation {
-                relation: Relation::Equal { left, right },
+                relation: Relation::Equal {
+                    left,
+                    right,
+                    difference: 0,
+                },
                 forward: CountedAtomicDerivation {
                     relation: forward,
                     proof_point: CountedProofPoint::PreheaderSnapshot,
@@ -467,6 +474,7 @@ impl Analyzer<'_, '_> {
             &Relation::Equal {
                 left: destination,
                 right: source,
+                difference: 0,
             },
             &mut self.derivations,
             event,
@@ -569,6 +577,7 @@ impl Analyzer<'_, '_> {
                     &Relation::Equal {
                         left: length_term,
                         right: allocated,
+                        difference: 0,
                     },
                     &mut self.derivations,
                     event,
@@ -629,6 +638,7 @@ impl Analyzer<'_, '_> {
                     &Relation::Equal {
                         left: slice_length,
                         right: source_length,
+                        difference: 0,
                     },
                     &mut self.derivations,
                     event,
@@ -643,6 +653,7 @@ impl Analyzer<'_, '_> {
                             &Relation::Equal {
                                 left: bound,
                                 right: source_length,
+                                difference: 0,
                             },
                             &mut self.derivations,
                             event,
@@ -1004,7 +1015,11 @@ impl Analyzer<'_, '_> {
         } else {
             (ZERO, result)
         };
-        let relation = Relation::Distinct { left, right };
+        let relation = Relation::Distinct {
+            left,
+            right,
+            difference: 0,
+        };
         let parent =
             state.establish_distinct_with_proof(result, ZERO, &mut self.derivations, event);
         self.retain_s7_derivation(S7Derivation {
@@ -1383,33 +1398,47 @@ fn establish_shifted(
 
 /// The normalized relation of one comparison operation over two read
 /// operands, shared by the comparison-origin shape and S4's substitution.
+///
+/// `gap` is the displacement the two sides carry, `right`'s constant minus
+/// `left`'s: a clause side is an affine expression [MSR-5], and
+/// `at + 2_u64 <= len_of(run)` is the ordinary difference bound
+/// `at - len_of(run) <= -2`.
 pub(super) fn comparison_relation(
     operation: CheckedIntegerOperation,
     left: TermId,
     right: TermId,
+    gap: i128,
 ) -> Option<Relation> {
     Some(match operation {
-        CheckedIntegerOperation::Equal => Relation::Equal { left, right },
-        CheckedIntegerOperation::NotEqual => Relation::Distinct { left, right },
+        CheckedIntegerOperation::Equal => Relation::Equal {
+            left,
+            right,
+            difference: gap,
+        },
+        CheckedIntegerOperation::NotEqual => Relation::Distinct {
+            left,
+            right,
+            difference: gap,
+        },
         CheckedIntegerOperation::Less => Relation::Bound {
             left,
             right,
-            bound: -1,
+            bound: gap.checked_sub(1)?,
         },
         CheckedIntegerOperation::LessEqual => Relation::Bound {
             left,
             right,
-            bound: 0,
+            bound: gap,
         },
         CheckedIntegerOperation::Greater => Relation::Bound {
             left: right,
             right: left,
-            bound: -1,
+            bound: gap.checked_neg()?.checked_sub(1)?,
         },
         CheckedIntegerOperation::GreaterEqual => Relation::Bound {
             left: right,
             right: left,
-            bound: 0,
+            bound: gap.checked_neg()?,
         },
         _ => return None,
     })

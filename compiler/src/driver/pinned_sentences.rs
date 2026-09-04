@@ -124,11 +124,19 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     // [GRAM-2] and [GRAM-9]: the two repairs a grammar position fixes.
     // -------------------------------------------------------------------
+    // The section-order repair is pinned by a requirement written after a
+    // postcondition rather than by a definition written after a requirement.
+    // Both are the same [GRAM-2] mistake and the sentence names both, but the
+    // frontier a `define` leaves after the [MSR-5] clause production is one
+    // whose expectation list carries IDENT, and [FORM-3]'s reserved-word row
+    // owns it before [GRAM-2]'s production repair is reached. That selection
+    // is recorded for the owner in the batch report; the sentence itself
+    // stays pinned here.
     Probe {
-        name: "define-written-after-requires.wf",
+        name: "requires-written-after-ensures.wf",
         source: br#"fn count(end: own u64) -> lines: own u64 pure contract {
+  ensures lines <= 8_u64;
   requires end <= 8_u64;
-  define spare = 8_u64;
 } {
   return 0_u64;
 }

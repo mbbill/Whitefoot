@@ -579,7 +579,9 @@ contract {
 define pre = 0_i32 +wrap 1_i32;
 define post = 0_i32 +wrap 1_i32;
 requires pre;
+requires pre /defined post;
 ensures when Some(value: routed): routed;
+ensures 2_i32 * routed + 1_i32 <= post - 1_i32;
 }
 {
 doc "body";
@@ -643,7 +645,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 87);
+    assert_eq!(productions().len(), 88);
     assert_eq!(
         parsed
             .tree
@@ -961,8 +963,13 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
             b"use",
         ),
         (
-            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use value.field <= limit;\n  }\n  return unit;\n}\n",
-            b".",
+            // [GRAM-4, MSR-5] an `affine_factor` is an `atom`, so a field
+            // selection derives under the production and [PRF-1] refuses it.
+            // The grammar boundary here is the operator: `+wrap` is an
+            // `infix_op` and is not one of the three affine operators, so it
+            // can neither extend the expression nor stand as the relation.
+            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use value +wrap limit <= limit;\n  }\n  return unit;\n}\n",
+            b"+wrap",
         ),
         (
             b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  assert disguised: left <= right {\n    use left <= right;\n  }\n  return unit;\n}\n",

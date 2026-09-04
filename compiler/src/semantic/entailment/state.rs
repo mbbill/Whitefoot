@@ -27,10 +27,28 @@ pub(crate) enum Relation {
         right: TermId,
         bound: i128,
     },
-    /// `left = right`, the bound pair in both directions.
-    Equal { left: TermId, right: TermId },
-    /// `left != right`, one disequality.
-    Distinct { left: TermId, right: TermId },
+    /// `left - right = difference`, the bound pair in both directions.
+    ///
+    /// The displacement is the one a clause side writes [FN-9] and a kernel
+    /// row declares [BLK-0]: `len_of(rest) + 1_u64 == len_of(vector)` is
+    /// `len_of(rest) - len_of(vector) = -1`, which [ENT-4] holds as the two
+    /// ordinary bounds `<= -1` and `>= -1` rather than as a new fact class.
+    Equal {
+        left: TermId,
+        right: TermId,
+        difference: i128,
+    },
+    /// `left - right != difference`, one disequality.
+    ///
+    /// [ENT-4] stores a disequality as an unordered pair, which represents a
+    /// zero displacement exactly. A displaced disequality is therefore
+    /// provable from a strict bound but establishes no stored fact, which
+    /// only under-derives [ENT-1].
+    Distinct {
+        left: TermId,
+        right: TermId,
+        difference: i128,
+    },
 }
 
 /// Dense identity of one finite typed expression in a concrete function's
@@ -1858,13 +1876,23 @@ impl Relation {
                 right: *left,
                 bound: -bound - 1,
             },
-            Self::Equal { left, right } => Self::Distinct {
+            Self::Equal {
+                left,
+                right,
+                difference,
+            } => Self::Distinct {
                 left: *left,
                 right: *right,
+                difference: *difference,
             },
-            Self::Distinct { left, right } => Self::Equal {
+            Self::Distinct {
+                left,
+                right,
+                difference,
+            } => Self::Equal {
                 left: *left,
                 right: *right,
+                difference: *difference,
             },
         }
     }
@@ -1873,8 +1901,8 @@ impl Relation {
     pub(crate) fn terms(&self) -> [TermId; 2] {
         match self {
             Self::Bound { left, right, .. }
-            | Self::Equal { left, right }
-            | Self::Distinct { left, right } => [*left, *right],
+            | Self::Equal { left, right, .. }
+            | Self::Distinct { left, right, .. } => [*left, *right],
         }
     }
 }
@@ -2047,27 +2075,39 @@ impl FactState {
             Relation::Bound { left, right, bound } => {
                 self.establish_bound_with_proof(*left, *right, *bound, ledger, event);
             }
-            Relation::Equal { left, right } => {
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
                 let forward = ledger.intern(DerivationNode::SourceBound {
                     relation: relation.clone(),
                     left: *left,
                     right: *right,
-                    bound: 0,
+                    bound: *difference,
                     event,
                 });
-                self.add_bound(*left, *right, 0, forward, ledger);
+                self.add_bound(*left, *right, *difference, forward, ledger);
                 let reverse = ledger.intern(DerivationNode::SourceBound {
                     relation: relation.clone(),
                     left: *right,
                     right: *left,
-                    bound: 0,
+                    bound: -*difference,
                     event,
                 });
-                self.add_bound(*right, *left, 0, reverse, ledger);
+                self.add_bound(*right, *left, -*difference, reverse, ledger);
             }
-            Relation::Distinct { left, right } => {
+            // [ENT-4] stores a disequality as an unordered pair, which is
+            // exactly a zero displacement; a displaced one establishes
+            // nothing and only under-derives.
+            Relation::Distinct {
+                left,
+                right,
+                difference: 0,
+            } => {
                 self.establish_distinct_with_proof(*left, *right, ledger, event);
             }
+            Relation::Distinct { .. } => {}
         }
     }
 
@@ -2088,14 +2128,23 @@ impl FactState {
             Relation::Bound { left, right, bound } => {
                 self.add_bound(*left, *right, *bound, proof, ledger);
             }
-            Relation::Equal { left, right } => {
-                self.add_bound(*left, *right, 0, proof, ledger);
-                self.add_bound(*right, *left, 0, proof, ledger);
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
+                self.add_bound(*left, *right, *difference, proof, ledger);
+                self.add_bound(*right, *left, -*difference, proof, ledger);
             }
-            Relation::Distinct { left, right } => {
+            Relation::Distinct {
+                left,
+                right,
+                difference: 0,
+            } => {
                 let pair = ordered(*left, *right);
                 self.add_distinct_candidate(pair, proof, ledger);
             }
+            Relation::Distinct { .. } => {}
         }
     }
 
@@ -2124,7 +2173,11 @@ impl FactState {
         distinct.sort_unstable();
         relations.extend(distinct.into_iter().map(|(left, right)| {
             (
-                Relation::Distinct { left, right },
+                Relation::Distinct {
+                    left,
+                    right,
+                    difference: 0,
+                },
                 self.distinct_proofs[&(left, right)],
             )
         }));
@@ -2469,14 +2522,22 @@ impl ClosedState {
             .collect::<Vec<_>>();
         relations.sort_by_key(|(relation, _)| match relation {
             Relation::Bound { left, right, bound } => (0, left.0, right.0, *bound),
-            Relation::Distinct { left, right } => (1, left.0, right.0, 0),
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => (1, left.0, right.0, *difference),
             Relation::Equal { .. } => unreachable!("closed delivery inventory is normalized"),
         });
         let mut distinct = self.distinct.iter().copied().collect::<Vec<_>>();
         distinct.sort_unstable();
         relations.extend(distinct.into_iter().map(|(left, right)| {
             (
-                Relation::Distinct { left, right },
+                Relation::Distinct {
+                    left,
+                    right,
+                    difference: 0,
+                },
                 self.distinct_proofs[&(left, right)],
             )
         }));
@@ -2492,13 +2553,26 @@ impl ClosedState {
         }
         match relation {
             Relation::Bound { left, right, bound } => self.derives_bound(*left, *right, *bound),
-            Relation::Equal { left, right } => {
-                self.derives_bound(*left, *right, 0) && self.derives_bound(*right, *left, 0)
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
+                self.derives_bound(*left, *right, *difference)
+                    && self.derives_bound(*right, *left, -*difference)
             }
-            Relation::Distinct { left, right } => {
-                self.distinct.contains(&ordered(*left, *right))
-                    || self.derives_bound(*left, *right, -1)
-                    || self.derives_bound(*right, *left, -1)
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => {
+                (*difference == 0 && self.distinct.contains(&ordered(*left, *right)))
+                    || self.derives_bound(*left, *right, difference.saturating_sub(1))
+                    || self.derives_bound(
+                        *right,
+                        *left,
+                        difference.saturating_neg().saturating_sub(1),
+                    )
             }
         }
     }
@@ -2655,9 +2729,13 @@ impl ClosedState {
             Relation::Bound { left, right, bound } => {
                 self.bound_proof(*left, *right, *bound, ledger)
             }
-            Relation::Equal { left, right } => {
-                let forward = self.bound_proof(*left, *right, 0, ledger)?;
-                let reverse = self.bound_proof(*right, *left, 0, ledger)?;
+            Relation::Equal {
+                left,
+                right,
+                difference,
+            } => {
+                let forward = self.bound_proof(*left, *right, *difference, ledger)?;
+                let reverse = self.bound_proof(*right, *left, -*difference, ledger)?;
                 Some(ledger.intern(DerivationNode::Equality {
                     left: *left,
                     right: *right,
@@ -2665,11 +2743,20 @@ impl ClosedState {
                     reverse,
                 }))
             }
-            Relation::Distinct { left, right } => {
+            Relation::Distinct {
+                left,
+                right,
+                difference,
+            } => {
                 let pair = ordered(*left, *right);
-                let mut best = self.distinct_proofs.get(&pair).copied();
-                for (from, to) in [(*left, *right), (*right, *left)] {
-                    if let Some(parent) = self.bound_proof(from, to, -1, ledger) {
+                let mut best = (*difference == 0)
+                    .then(|| self.distinct_proofs.get(&pair).copied())
+                    .flatten();
+                for (from, to, gap) in [
+                    (*left, *right, difference.saturating_sub(1)),
+                    (*right, *left, difference.saturating_neg().saturating_sub(1)),
+                ] {
+                    if let Some(parent) = self.bound_proof(from, to, gap, ledger) {
                         let candidate = ledger.intern(DerivationNode::DisequalityFromStrictBound {
                             left: pair.0,
                             right: pair.1,
@@ -4313,6 +4400,7 @@ mod tests {
             Relation::Distinct {
                 left: x,
                 right: middle,
+                difference: 0,
             },
             Relation::Bound {
                 left: middle,

@@ -10,16 +10,16 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 
 /// The committed inventory's own shape. That this data belongs to the active
 /// specification is checked by regenerating it from the active grammar, in
-/// `committed_tables_are_derived_from_the_active_grammar`. The 6,194 select
-/// rows are the complete two-position derivation of the current 87
+/// `committed_tables_are_derived_from_the_active_grammar`. The 6,233 select
+/// rows are the complete two-position derivation of the current 88
 /// productions, not a separately chosen test allowance: [TYPE-2] gives
 /// `struct_decl` and `enum_decl` an optional `region_params`, which is two
 /// more decisions and fourteen more rows and no new production.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 87);
-    assert_eq!(DECISIONS.len(), 137);
-    assert_eq!(SELECT_ROWS.len(), 6_296);
+    assert_eq!(productions().len(), 88);
+    assert_eq!(DECISIONS.len(), 135);
+    assert_eq!(SELECT_ROWS.len(), 6_233);
     assert_eq!(diagnostic_terminal_order().len(), 110);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
@@ -44,8 +44,11 @@ fn complete_inventory_is_pinned() {
     // after it one place further.
     assert_eq!(productions()[69], Production::CompareOp);
     assert_eq!(productions()[78], Production::ClauseExpr);
-    assert_eq!(productions()[85], Production::Effect);
-    assert_eq!(productions()[86], Production::EffectPath);
+    // [MSR-5] `clause_op` is defined immediately after `clause_expr`, whose
+    // tail it is, so the eight productions after it move one place down.
+    assert_eq!(productions()[79], Production::ClauseOp);
+    assert_eq!(productions()[86], Production::Effect);
+    assert_eq!(productions()[87], Production::EffectPath);
     assert_eq!(Production::ForStmt.index(), 68);
     assert_eq!(Production::ForBinding.index(), 69);
     assert_eq!(Production::HeaderInvariant.index(), 70);
@@ -61,11 +64,12 @@ fn complete_inventory_is_pinned() {
     assert_eq!(Production::AffineAddOp.index(), 80);
     assert_eq!(Production::ProofUse.index(), 81);
     assert_eq!(Production::ClauseExpr.index(), 83);
-    // [PROV-6] the three added productions take the enum's last three slots,
-    // so no earlier compiler-local index moves.
-    assert_eq!(Production::DisposeStmt.index(), 84);
-    assert_eq!(Production::RegionParam.index(), 85);
-    assert_eq!(Production::LinearityBound.index(), 86);
+    // [MSR-5] `clause_op` takes the slot after the `clause_expr` it belongs
+    // to, so the three [PROV-6] productions after it move one place down.
+    assert_eq!(Production::ClauseOp.index(), 84);
+    assert_eq!(Production::DisposeStmt.index(), 85);
+    assert_eq!(Production::RegionParam.index(), 86);
+    assert_eq!(Production::LinearityBound.index(), 87);
     // [LIV-2] the `set` target list's value list is its own repetition, and
     // [TYPE-2]'s optional `region_params` on `struct_decl` and `enum_decl` is
     // two more, so every decision after them moves three places down the
@@ -159,7 +163,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 137);
+    assert_eq!(decisions, 135);
 }
 
 #[test]
@@ -227,7 +231,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 137);
+    assert_eq!(DECISIONS.len(), 135);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -272,6 +276,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 6_296);
+    assert_eq!(total_rows, 6_233);
     assert!(saw_atom_only);
 }

@@ -194,6 +194,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if atoms.len() != operand_count {
             return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
         }
+        let mut operands = Vec::with_capacity(operand_count);
+        for atom in atoms.iter().copied() {
+            // An `infix_tail` operand is always an `atom`; a `clause_expr`
+            // operand may also be a `call`, which is how a measure term
+            // reaches a contract clause [MSR-5].
+            let checked = self.check_written_operand(
+                function,
+                atom,
+                bindings,
+                loop_depth,
+                super::super::expressions::PlaceUseContext::Ordinary,
+            )?;
+            operands.push((atom, checked));
+        }
+        self.check_integer_operation_operands(node, operation, operands)
+    }
+
+    /// The same [OP-1] row judgment over operands the caller has already
+    /// checked. A `clause_expr` side is an `affine_expr` whose operands are
+    /// not all `atom` nodes [MSR-5], so the row's typing is stated once here
+    /// and reached from both the written-atom and the affine paths.
+    pub(in crate::semantic::check) fn check_integer_operation_operands(
+        &self,
+        node: NodeId,
+        operation: CheckedIntegerOperation,
+        operands: Vec<(NodeId, TypedExpression)>,
+    ) -> Result<TypedExpression, CheckStop> {
+        let operand_count = operation.operand_count();
+        if operands.len() != operand_count {
+            return self.issue_node(SemanticRule::Op1, node, SemanticIssueKind::InvalidOperation);
+        }
         let mut arguments = Vec::with_capacity(operand_count);
         let mut argument_metadata = Vec::with_capacity(operand_count);
         let mut effects = EffectSet::NONE;
@@ -204,17 +235,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // itself, so "both operands must have one identical exact type"
         // falls out and cites TYPE-5 at the second operand atom.
         let mut operand_type = None;
-        for (index, atom) in atoms.iter().copied().enumerate() {
-            // An `infix_tail` operand is always an `atom`; a `clause_expr`
-            // operand may also be a `call`, which is how a measure term
-            // reaches a contract clause [MSR-5].
-            let argument = self.check_written_operand(
-                function,
-                atom,
-                bindings,
-                loop_depth,
-                super::super::expressions::PlaceUseContext::Ordinary,
-            )?;
+        for (index, (atom, argument)) in operands.into_iter().enumerate() {
             if argument.mode != CheckedMode::Own {
                 return self.issue_node(
                     SemanticRule::Type5,

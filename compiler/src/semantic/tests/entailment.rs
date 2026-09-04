@@ -274,11 +274,13 @@ fn retained_bound(
         DerivationConclusion::Relation(Relation::Equal {
             left: held_left,
             right: held_right,
-        }) if (*held_left == left && *held_right == right)
-            || (*held_left == right && *held_right == left) =>
-        {
-            0
-        }
+            difference,
+        }) if *held_left == left && *held_right == right => *difference,
+        DerivationConclusion::Relation(Relation::Equal {
+            left: held_left,
+            right: held_right,
+            difference,
+        }) if *held_left == right && *held_right == left => -difference,
         conclusion => panic!(
             "retained derivation {id:?} does not prove {left:?} - {right:?} <= k: {conclusion:?}"
         ),
@@ -608,6 +610,7 @@ fn validate_counted_derivation_set(
     let Relation::Equal {
         left: lower_capture,
         right: lower_endpoint,
+        difference: 0,
     } = counted.lower_capture_eq_endpoint.relation
     else {
         panic!("the first counted semantic root must be the lower capture equality");
@@ -615,6 +618,7 @@ fn validate_counted_derivation_set(
     let Relation::Equal {
         left: upper_capture,
         right: upper_endpoint,
+        difference: 0,
     } = counted.upper_capture_eq_endpoint.relation
     else {
         panic!("the second counted semantic root must be the upper capture equality");
@@ -622,6 +626,7 @@ fn validate_counted_derivation_set(
     let Relation::Equal {
         left: binder,
         right: binder_lower_capture,
+        difference: 0,
     } = counted.binder_eq_lower_capture.relation
     else {
         panic!("the third counted semantic root must be binder initialization");
@@ -824,15 +829,19 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         (left, right, bound),
                         (source_left, source_right, source_bound)
                     ),
+                    // An equality's two bounds are its own difference in
+                    // each direction [ENT-4].
                     Relation::Equal {
                         left: source_left,
                         right: source_right,
+                        difference,
                     } => {
-                        assert_eq!(*bound, 0);
-                        assert!(
-                            (*left == *source_left && *right == *source_right)
-                                || (*left == *source_right && *right == *source_left)
-                        );
+                        if *left == *source_left && *right == *source_right {
+                            assert_eq!(*bound, *difference);
+                        } else {
+                            assert!(*left == *source_right && *right == *source_left);
+                            assert_eq!(*bound, -difference);
+                        }
                     }
                     Relation::Distinct { .. } => panic!("a distinct source is not a bound"),
                 }
@@ -850,6 +859,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 DerivationConclusion::Relation(Relation::Distinct {
                     left: *left,
                     right: *right,
+                    difference: 0,
                 })
             }
             DerivationNode::SourceGoal { goal, sign, event } => {
@@ -954,6 +964,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 let DerivationConclusion::Relation(Relation::Distinct {
                     left: distinct_left,
                     right: distinct_right,
+                    difference: 0,
                 }) = retained_conclusion(&conclusions, *distinct)
                 else {
                     panic!("strengthening's second parent must be a disequality");
@@ -989,11 +1000,17 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 forward,
                 reverse,
             } => {
-                assert_eq!(retained_bound(&conclusions, *forward, *left, *right), 0);
-                assert_eq!(retained_bound(&conclusions, *reverse, *right, *left), 0);
+                // [ENT-4] an equality is its two bounds, and a displaced one
+                // carries its difference in each direction.
+                let difference = retained_bound(&conclusions, *forward, *left, *right);
+                assert_eq!(
+                    retained_bound(&conclusions, *reverse, *right, *left),
+                    -difference
+                );
                 DerivationConclusion::Relation(Relation::Equal {
                     left: *left,
                     right: *right,
+                    difference,
                 })
             }
             DerivationNode::DisequalityFromStrictBound {
@@ -1018,6 +1035,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 DerivationConclusion::Relation(Relation::Distinct {
                     left: *left,
                     right: *right,
+                    difference: 0,
                 })
             }
             DerivationNode::GoalProjection {
@@ -1037,8 +1055,9 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                         Relation::Distinct {
                             left: parent_left,
                             right: parent_right,
+                            ..
                         },
-                        Relation::Distinct { left, right },
+                        Relation::Distinct { left, right, .. },
                     ) => assert!(
                         (parent_left == left && parent_right == right)
                             || (parent_left == right && parent_right == left),
@@ -1061,10 +1080,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 };
                 match (relation, &expected) {
                     (
-                        Relation::Distinct { left, right },
+                        Relation::Distinct { left, right, .. },
                         Relation::Distinct {
                             left: expected_left,
                             right: expected_right,
+                            ..
                         },
                     ) => assert!(
                         (left == expected_left && right == expected_right)
@@ -1248,6 +1268,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             == &DerivationConclusion::Relation(Relation::Distinct {
                                 left: *left,
                                 right: *right,
+                                difference: 0,
                             })
                     },
                     true,
@@ -1255,6 +1276,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 DerivationConclusion::Relation(Relation::Distinct {
                     left: *left,
                     right: *right,
+                    difference: 0,
                 })
             }
             DerivationNode::JoinGoal {
@@ -1317,10 +1339,12 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 let equality_parent = DerivationConclusion::Relation(Relation::Equal {
                     left: *left,
                     right: *right,
+                    difference: 0,
                 }) == *parent_conclusion
                     || DerivationConclusion::Relation(Relation::Equal {
                         left: *right,
                         right: *left,
+                        difference: 0,
                     }) == *parent_conclusion;
                 assert!(
                     *parent_conclusion == conclusion || (equality_parent && *bound == 0),
@@ -1338,6 +1362,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                 let conclusion = DerivationConclusion::Relation(Relation::Distinct {
                     left: *left,
                     right: *right,
+                    difference: 0,
                 });
                 assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
                 conclusion
@@ -1571,10 +1596,11 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                                     assert!(edge_bound <= bound);
                                 }
                                 (
-                                    Relation::Distinct { left, right },
+                                    Relation::Distinct { left, right, .. },
                                     Relation::Distinct {
                                         left: edge_left,
                                         right: edge_right,
+                                        ..
                                     },
                                 ) => assert_eq!((left, right), (edge_left, edge_right)),
                                 _ => panic!("delivery join preserves the L0 relation class"),
@@ -1707,6 +1733,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                             Relation::Distinct {
                                 left,
                                 right: requested.right,
+                                difference: 0,
                             }
                         } else {
                             Relation::Bound {
@@ -1884,7 +1911,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     }
                     (
                         S7DerivationKind::ShiftOneNonzero { count_atom, one },
-                        Relation::Distinct { left, right },
+                        Relation::Distinct { left, right, .. },
                     ) => {
                         assert!(!count_atom.components().is_empty());
                         if let ShiftOneIdentity::TypedLiteral { source } = one {
