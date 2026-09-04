@@ -10,6 +10,7 @@ mod programs {
     mod numerics;
     mod parallel;
     mod raw_deflate;
+    mod runs;
     mod signal;
     mod support;
     mod text;
