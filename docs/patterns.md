@@ -8,7 +8,9 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.43 guidance, including the loop-body region
+This document carries active v0.43 guidance, and the writer forms of the
+v0.44 candidate on this branch are marked where they appear (P16, P21).
+It carries the loop-body region
 block and the associative [ENT-6] join v0.43 activates, the one canonical
 region spelling introduced by [FORM-8] in v0.42, the comparison symbols and
 call-site `::` delimiter introduced by v0.41, the source-proof forms introduced
@@ -617,6 +619,15 @@ let room = len(line);
 let fits = end <= room;
 ```
 
+Under the v0.44 candidate the same fact is stated directly in the contract
+that consumes it, with no binding and no `contract_define` at all: a
+`requires` and an `ensures` operand may be a measure of a place [MSR-5], so a
+callee writes `requires end <= len(destination);` where it used to write
+`define room = len(destination); requires end <= room;`. The define spelling
+of one measure is what v0.44 removes; the hoisted binding above remains the
+right form for a *body* fact a loop reads many times, because a body is not a
+contract.
+
 The first line sits above the loop and above every `put_text` that writes
 through `&uniq line`. The second sits inside the loop after all of them,
 and it still discharges `emit_all`'s `requires length <= capacity`, because
@@ -930,6 +941,54 @@ blocks were already narrower than their bodies.
 
 Replaces: the habit of opening a `region` block as the first line of every loop
 body.
+
+## P21. Hand the measure back by value, and never through a `&uniq`
+
+Status: the v0.44 candidate on this branch. Two of its rules decide one
+writer choice together.
+
+Problem: a helper receives a run, does something with it, and the caller
+afterwards needs to know a measure of what it got back. The reflex is to lend
+the run — `fn fill(destination: &uniq buffer<u8>, ...)` — and publish the
+measure from the callee: `ensures written <= len(deref(destination));`. That
+clause is a claim about a caller's object at a point the callee cannot name,
+because the callee may have replaced the very thing the measure describes, and
+[MSR-3] refuses it at the clause.
+
+Pattern: take the value by value and relate the *result*; state the fact the
+caller must supply as a `requires` instead of an `ensures`.
+
+```whitefoot
+fn size_of(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
+  ensures measured == len(taken);
+} { ... }
+
+let run = buffer_new(8_u64, 0_u8);
+let measured = size_of(taken: move run);
+```
+
+The relation reads at the caller as it is written, and it survives the `move`
+in the very same statement, because an `own` operand of a published relation
+denotes that call's **call datum** [MSR-3] — the value at transfer, a term
+with no place in it, which no consume and no later write can kill. That is the
+whole reason the value-in form is not merely tolerated but preferred: a
+borrowed run's measure cannot be published at all, and a consumed run's can.
+
+The second half is a discipline on the contract as a set. Everything a
+contract publishes is closed together at the caller [ENT-4], so two clauses
+that cannot both hold do not make one caller goal wrong — they make every
+caller goal discharge. [CALL-6] refuses such a contract at its declaration, so
+write the clauses that hold and check that they hold together; a clause added
+"to be safe" that contradicts an earlier one is not conservative, it is the
+end of every proof downstream of the call.
+
+Current value: measured on this branch. The `ensures` over a consumed
+operand's measure is a real fact at the caller, where before v0.44 the
+consume in the same statement deleted it and the caller was left proving the
+measure again from its own allocation.
+
+Replaces: publishing a caller's post-state through a `&uniq` parameter, and
+re-measuring a run the caller just handed away.
 
 ## Known gaps (findings, not yet patterns)
 

@@ -639,7 +639,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 83);
+    assert_eq!(productions().len(), 84);
     assert_eq!(
         parsed
             .tree

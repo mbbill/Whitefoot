@@ -165,7 +165,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "forbidden-atom-in-a-contract-block.wf",
         source: br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires end <= len(deref(data));
+  requires buffer_fits::<u8>(len(deref(data)));
 } {
   return 0_u64;
 }
@@ -177,6 +177,46 @@ command fn main() -> status: own ExitStatus pure {
         rule: "GRAM-9",
         sentences: &[
             "a `call` or `construct` in an atom position does not derive [GRAM-9]: a `contract_block` has no `let`, so bind the inner call with a preceding `define` in this same block and write that binder in the atom position — `define inner = f(x: 0_u64); requires g(y: inner);`",
+        ],
+    },
+    // -------------------------------------------------------------------
+    // [MSR-3] and [CALL-6]: the two judgments the fact machinery adds.
+    // -------------------------------------------------------------------
+    Probe {
+        name: "uniq-state-measure-in-an-ensures.wf",
+        source: br#"fn record(destination: &uniq buffer<u8>, value: own u8) -> written: own u64 reads(destination), writes(destination) contract {
+  ensures written <= len(deref(destination));
+} {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "MSR-3",
+        sentences: &[
+            "InadmissibleStateParameterMeasure",
+            "take the value by value and relate the result, or state the fact as a requires",
+        ],
+    },
+    Probe {
+        name: "contradictory-published-relations.wf",
+        source: br#"fn measure(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
+  ensures measured <= len(taken);
+  ensures len(taken) < measured;
+} {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "CALL-6",
+        sentences: &[
+            "ContradictoryPublishedRelations",
+            "state one consistent relation set: a contract whose clauses cannot hold together publishes every fact at every caller",
         ],
     },
     // -------------------------------------------------------------------

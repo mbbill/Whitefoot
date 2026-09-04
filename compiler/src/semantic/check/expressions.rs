@@ -22,7 +22,7 @@ use super::{
 };
 
 #[derive(Clone, Copy)]
-enum PlaceUseContext {
+pub(in crate::semantic::check) enum PlaceUseContext {
     Ordinary,
     Consuming,
 }
@@ -614,23 +614,82 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
         place_context: PlaceUseContext,
     ) -> Result<TypedExpression, CheckStop> {
+        // [GRAM-5] `clause_expr` is the contract-clause shape: one operand,
+        // or two operands around one operator token. Its operands are the
+        // same three written forms an `expr` selects between, so the two
+        // shapes share every judgment below and differ only in where the
+        // operator and the second operand hang.
+        if self.tree.production(node)? == Production::ClauseExpr {
+            return self.check_clause_expression(
+                function,
+                node,
+                bindings,
+                loop_depth,
+                place_context,
+            );
+        }
         // [GRAM-5] `expr := atom infix_tail? | call | construct`, so the only
         // shape with more than one child is the infix one.
         if let Some(tail) = self.tree.first_child_with(node, Production::InfixTail)? {
             return self.check_infix(function, node, tail, bindings, loop_depth);
         }
         let child = self.tree.only_child(node)?;
-        match self.tree.production(child)? {
+        self.check_written_operand(function, child, bindings, loop_depth, place_context)
+    }
+
+    /// [GRAM-5] one `clause_expr`, whose operands may be a `call` and which
+    /// therefore admits a measure term on either side of its operator
+    /// [MSR-5].
+    fn check_clause_expression(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        place_context: PlaceUseContext,
+    ) -> Result<TypedExpression, CheckStop> {
+        match self.tree.children(node)? {
+            [operand] => {
+                let operand = *operand;
+                self.check_written_operand(function, operand, bindings, loop_depth, place_context)
+            }
+            [left, operator, right] => {
+                let (left, operator, right) = (*left, *operator, *right);
+                let operation = self.infix_operation(operator)?;
+                self.check_integer_operation_row(
+                    node,
+                    operation,
+                    &[left, right],
+                    function,
+                    bindings,
+                    loop_depth,
+                )
+            }
+            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        }
+    }
+
+    /// One written operand of an `expr` or a `clause_expr` [GRAM-5]: the
+    /// `atom`, `call`, or `construct` the grammar selected.
+    pub(in crate::semantic::check) fn check_written_operand(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        place_context: PlaceUseContext,
+    ) -> Result<TypedExpression, CheckStop> {
+        match self.tree.production(node)? {
             Production::Atom => self.check_atom_in_context(
                 function,
-                child,
+                node,
                 bindings,
                 loop_depth,
                 place_context,
                 ReborrowPosition::Forbidden,
             ),
-            Production::Call => self.check_call(function, child, bindings, loop_depth),
-            Production::Construct => self.check_construct(function, child, bindings, loop_depth),
+            Production::Call => self.check_call(function, node, bindings, loop_depth),
+            Production::Construct => self.check_construct(function, node, bindings, loop_depth),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
     }

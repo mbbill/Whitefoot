@@ -199,7 +199,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // falls out and cites TYPE-5 at the second operand atom.
         let mut operand_type = None;
         for (index, atom) in atoms.iter().copied().enumerate() {
-            let argument = self.check_atom(function, atom, bindings, loop_depth)?;
+            // An `infix_tail` operand is always an `atom`; a `clause_expr`
+            // operand may also be a `call`, which is how a measure term
+            // reaches a contract clause [MSR-5].
+            let argument = self.check_written_operand(
+                function,
+                atom,
+                bindings,
+                loop_depth,
+                super::super::expressions::PlaceUseContext::Ordinary,
+            )?;
             if argument.mode != CheckedMode::Own {
                 return self.issue_node(
                     SemanticRule::Type5,

@@ -121,6 +121,7 @@ const ENUM_ORDER: &[&str] = &[
     "affine_add_op",
     "proof_use",
     "compare_op",
+    "clause_expr",
 ];
 
 /// v0.33 deliberately replaces the old pseudo-statement contract grammar.

@@ -184,7 +184,22 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // passes its static domain obligation before emission. No system operation,
 // resource representation, release row, result shape, entry form, or host ABI
 // mapping changes, so the v0.42 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.43";
+// v0.44 fact-machinery review (2026-09-04): all four amendments are front-end
+// proof and contract surface. [MSR-5] widens which operands a contract clause
+// may be written over, and [FN-9] already erases every clause before lowering,
+// so no emitted operation, no result shape, and no ABI field moves. [MSR-3]'s
+// call datum is a compiler-owned proof term with no storage, no address, and
+// no runtime read; it exists inside one function's fact state and never
+// reaches the checked program's value graph. [CALL-4] states the vocabulary
+// over the one result a declaration already has and adds no result shape.
+// [CALL-6] fixes where a declared relation is instantiated and established and
+// refuses an inconsistent set at its declaration; both are acceptance
+// judgments over erased proof syntax, and refusing an inconsistent contract
+// only removes programs. Every emitted partial operation still passes its
+// static domain obligation before emission. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.43 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.44";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

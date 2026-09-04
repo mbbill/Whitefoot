@@ -2642,3 +2642,69 @@ ACTIVE-SPEC: v0.42 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0ee
   conformance case, manifest row, adapter, runner, or collection wiring; the
   boundary recorded with the candidate on 2026-09-03 is unchanged.
 ACTIVE-SPEC: v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26
+
+## 2026-09-04 — merge-time approval content: kernel specification v0.44 CANDIDATE (the fact machinery: contract vocabulary, operand denotation, and publication; numbered rules +4, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: install the Whitefoot kernel specification v0.44 CANDIDATE at
+  `spec/kernel-spec.md`, whose status line declares
+  `CANDIDATE v0.44 supersedes v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`
+  and whose complete bytes hash to SHA-256
+  `1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`.
+  A candidate is not an activated identity: this record adds no `ACTIVE-SPEC:`
+  line, archives no bytes, and leaves the activation chain tail at v0.43. The
+  bytes above are the exact content approved; activation, if the owner takes
+  it, is its own later record that flips the status line and archives the
+  outgoing v0.43 bytes.
+- CONTENT: four numbered rules are added and none is retired, so 136 remain.
+  [MSR-5] gives a `requires_clause` and an `ensures_clause` a `clause_expr`
+  whose operands are an `atom`, a `call`, or a `construct`, which is what
+  admits a measure of a place as a clause operand on either side of the
+  comparison; the measure formers are table data with one row in this version,
+  `len(P)`, admitted exactly where [ENT-2] clause (b) admits a length term.
+  [MSR-3] states one denotation per operand position keyed on the parameter's
+  mode, adds the compiler-owned **call datum** an `own` operand denotes when a
+  relation is read at a caller, and makes a `&uniq` parameter's measure
+  inadmissible in a source-declared `ensures`. [CALL-4] states the contract
+  vocabulary over the one result a `fn_decl` declares and records the deferred
+  widenings. [CALL-6] states publication once — substitution, instantiation
+  point, establishment point, destination, and support — adds [ENT-3]'s source
+  S13, and refuses at the declaration a contract whose published relations are
+  contradictory at their establishment point. Grammar productions +1
+  (`clause_expr`); `requires_clause` and `ensures_clause` change to take it;
+  no token, no fixed atom, and no system record changes. [GRAM-6], [FN-8],
+  [FN-9], [ENT-2], [ENT-3], and [ENT-5] are amended in place.
+- CONFORMANCE BOUNDARY: relative to this batch's base, the v0.43 activation
+  merge `69771591` on `main`, `tests/conformance` content changes as follows.
+  Under `tests/conformance/cases/`, 6 files are added, none is modified, and
+  none is deleted; git reports no rename. `manifest.jsonl` is modified: the
+  six added ids enter it and no existing line changes. Added:
+  - `tests/conformance/cases/msr5-pos-two-measure-clause.wf`
+  - `tests/conformance/cases/msr3-pos-own-operand-call-datum.wf`
+  - `tests/conformance/cases/msr3-neg-uniq-state-measure-in-ensures.wf`
+  - `tests/conformance/cases/call6-neg-contradictory-published-relations.wf`
+  - `tests/conformance/cases/call6-pos-routed-relation-over-a-call-datum.wf`
+  - `tests/conformance/cases/call4-neg-measured-result-not-admitted.wf`
+
+  No existing case changes its expectation kind, cited rule, or runnable
+  status, and no case flips a verdict. Coverage remains complete over the
+  numbered rules the corpus is required to cover.
+- CORPUS MIGRATION, outside the conformance boundary: [MSR-3] refuses a
+  measure of a `&uniq` state parameter in an `ensures`, and two programs under
+  `tests/programs/` wrote exactly that clause. `wfgrep.wf` and
+  `raw_deflate_boundary.wf` each declared
+  `fn append_slice(destination: &uniq buffer<u8>, ...)` with
+  `define capacity = len(deref(destination)); ensures result <= capacity;`,
+  which publishes a bound on a caller's object through the one parameter mode
+  from which the callee could have replaced it. Both take the capacity as an
+  `own u64` operand instead and state the connection as
+  `requires capacity == len(deref(destination));`, which is the restructuring
+  the diagnostic names; each body keeps binding the destination's own length
+  for its writes, so it proves its own subscript with no help from the
+  contract. Every caller passes the length it already had in scope. Neither
+  program's behaviour, published diagnostics, or exit codes change, and the
+  integration tests that execute both still pass. `docs/patterns.md` carries
+  the writer form as P21 and corrects P16's define-per-measure spelling.

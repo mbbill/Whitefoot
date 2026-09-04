@@ -164,6 +164,11 @@ pub enum SemanticRule {
     Sys8,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
+    /// One denotation per operand position, keyed on the parameter's mode.
+    Msr3,
+    /// Publication: where a declared relation is instantiated, where it is
+    /// established, and that a published relation set is consistent.
+    Call6,
     /// Proof-only loop invariant formation.
     Inv1,
     /// Finite source-written affine proof formation and checking.
@@ -223,6 +228,8 @@ impl SemanticRule {
             Self::Sys2 => "SYS-2",
             Self::Sys8 => "SYS-8",
             Self::Ent2 => "ENT-2",
+            Self::Msr3 => "MSR-3",
+            Self::Call6 => "CALL-6",
             Self::Inv1 => "INV-1",
             Self::Prf1 => "PRF-1",
         }
@@ -293,7 +300,9 @@ impl SemanticRule {
             Self::Err3 => Self::Sys2,
             Self::Sys2 => Self::Sys8,
             Self::Sys8 => Self::Ent2,
-            Self::Ent2 => Self::Inv1,
+            Self::Ent2 => Self::Msr3,
+            Self::Msr3 => Self::Call6,
+            Self::Call6 => Self::Inv1,
             Self::Inv1 => Self::Prf1,
             Self::Prf1 => return None,
         })
@@ -358,8 +367,10 @@ impl SemanticRule {
             Self::Sys2 => 45,
             Self::Sys8 => 46,
             Self::Ent2 => 47,
-            Self::Inv1 => 48,
-            Self::Prf1 => 49,
+            Self::Msr3 => 48,
+            Self::Call6 => 49,
+            Self::Inv1 => 50,
+            Self::Prf1 => 51,
         }
     }
 }
@@ -766,6 +777,24 @@ pub enum SemanticIssueKind {
     InvalidPostconditionClause,
     /// The alpha-expanded final condition is not one output-bearing L0 relation.
     InvalidPostconditionRelation,
+    /// [MSR-3] an `ensures` names a measure of a `&uniq` state parameter,
+    /// which denotes no state a source-declared callee can name.
+    InadmissibleStateParameterMeasure {
+        /// The written `&uniq` parameter whose measure the clause names.
+        parameter: String,
+        /// The restructuring this clause needs.
+        mechanical_fix: &'static str,
+    },
+    /// [CALL-6] the relations one contract publishes are contradictory at
+    /// their establishment point, so every goal a caller submits would
+    /// discharge from that contradiction alone.
+    ContradictoryPublishedRelations {
+        /// The two clause relations whose conjunction is unsatisfiable, as
+        /// rendered from the declared templates.
+        relations: Vec<String>,
+        /// The restructuring this contract needs.
+        mechanical_fix: &'static str,
+    },
     /// A selected Result exit is not a direct canonical `Ok(value: atom)` or `Err(error: atom)`.
     InvalidPostconditionReturn,
     /// One concrete postcondition has no selected normal exit.
