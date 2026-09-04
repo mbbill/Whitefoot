@@ -190,7 +190,7 @@ fn an_external_index_needs_a_real_control_flow_fact() {
   region {
     let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
-    let spare = len(bytes);
+    let spare = len_of(bytes);
     if index < spare {
       let value = bytes[index];
       return exit_status(code: value);
@@ -206,7 +206,7 @@ fn an_external_index_needs_a_real_control_flow_fact() {
 #[test]
 fn an_external_call_actual_needs_a_real_control_flow_fact() {
     let function = r#"fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(bytes) contract {
-  define spare = len(bytes);
+  define spare = len_of(bytes);
   requires index < spare;
 } {
   return bytes[index];
@@ -221,7 +221,7 @@ fn an_external_call_actual_needs_a_real_control_flow_fact() {
     });
 
     let guarded = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let spare = len(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }

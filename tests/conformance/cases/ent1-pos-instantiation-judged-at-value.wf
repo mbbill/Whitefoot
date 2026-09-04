@@ -1,6 +1,6 @@
 fn element<const n: u64>(values: own array<u8, n>) -> result: own u8 pure {
   doc "Every generic source body first receives the source-schema ordinary judgment [ENT-1]. Executed control supplies the symbolic length bound required by the subscript, and the n = 4 concrete instance is then rechecked independently.";
-  let spare = len(values);
+  let spare = len_of(values);
   let inside = 2_u64 < spare;
   if inside {
     return values[2_u64];

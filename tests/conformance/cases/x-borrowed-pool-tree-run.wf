@@ -21,7 +21,7 @@ fn build(pool: &uniq Pool, depth: own u32) -> function_result: own Result<u64, P
       break @leaves;
     } else {
       let slot = deref(pool).count;
-      let left_room = len(deref(pool).left);
+      let left_room = len_of(deref(pool).left);
       let left_ok = slot < left_room;
       if left_ok {
       } else {
@@ -29,7 +29,7 @@ fn build(pool: &uniq Pool, depth: own u32) -> function_result: own Result<u64, P
         return Err<u64, PoolError>(error: error);
       }
       set deref(pool).left[slot] = 0_u64;
-      let right_room = len(deref(pool).right);
+      let right_room = len_of(deref(pool).right);
       let right_ok = slot < right_room;
       if right_ok {
       } else {
@@ -77,7 +77,7 @@ fn build(pool: &uniq Pool, depth: own u32) -> function_result: own Result<u64, P
           }
           let right_child = left_child + 1_u64;
           let slot = deref(pool).count;
-          let left_room = len(deref(pool).left);
+          let left_room = len_of(deref(pool).left);
           let left_ok = slot < left_room;
           if left_ok {
           } else {
@@ -85,7 +85,7 @@ fn build(pool: &uniq Pool, depth: own u32) -> function_result: own Result<u64, P
             return Err<u64, PoolError>(error: error);
           }
           set deref(pool).left[slot] = left_child;
-          let right_room = len(deref(pool).right);
+          let right_room = len_of(deref(pool).right);
           let right_ok = slot < right_room;
           if right_ok {
           } else {
@@ -105,7 +105,7 @@ fn build(pool: &uniq Pool, depth: own u32) -> function_result: own Result<u64, P
 }
 
 fn checksum(pool: &Pool, root: own u64) -> function_result: own Result<u64, PoolError> reads(pool.left, pool.right) {
-  let left_room = len(deref(pool).left);
+  let left_room = len_of(deref(pool).left);
   let left_ok = root < left_room;
   if left_ok {
   } else {
@@ -117,7 +117,7 @@ fn checksum(pool: &Pool, root: own u64) -> function_result: own Result<u64, Pool
   if leaf {
     return Ok<u64, PoolError>(value: 1_u64);
   }
-  let right_room = len(deref(pool).right);
+  let right_room = len_of(deref(pool).right);
   let right_ok = root < right_room;
   if right_ok {
   } else {

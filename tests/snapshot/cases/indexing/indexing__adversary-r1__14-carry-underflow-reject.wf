@@ -1,6 +1,6 @@
 fn scan_with_carry(buf: own buffer<u8>, start_carry: own u64) -> total: own u64 reads(buf) {
   doc "expect REJECT (OP-2): carry can exceed cursor on the first iteration (cursor=0, carry=1), so cursor - carry underflows u64 before any bound on carry < cursor is established";
-  let spare = len(buf);
+  let spare = len_of(buf);
   let cursor = 0_u64;
   let carry = start_carry;
   let total = 0_u64;

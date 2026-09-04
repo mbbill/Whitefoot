@@ -1,10 +1,10 @@
 fn decode(out: &uniq buffer<u8>, src: own buffer<u8>) -> result: own u64 reads(src), writes(out) contract {
-  define output_length = len(deref(out));
-  define source_length = len(src);
+  define output_length = len_of(deref(out));
+  define source_length = len_of(src);
   define sufficient = output_length >= source_length;
   requires sufficient;
 } {
-  let source_length = len(src);
+  let source_length = len_of(src);
   let consumed_until = 0_u64;
   let output_index = 0_u64;
   for (

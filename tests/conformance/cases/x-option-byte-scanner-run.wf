@@ -1,5 +1,5 @@
 fn find_byte(input: &buffer<u8>, needle: own u8) -> function_result: own Option<u64> reads(input) {
-  let length = len(deref(input));
+  let length = len_of(deref(input));
   for (offset in 0_u64..length) {
     let byte = deref(input)[offset];
     let found = byte == needle;

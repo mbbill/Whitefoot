@@ -76,7 +76,7 @@ fn buffer_representation_alignment_must_fit_the_selected_allocator_alignment() {
 #[test]
 fn weigh_invariant_proves_domains_then_erases_before_llvm() {
     let source = br#"fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
-  define capacity = len(deref(weights));
+  define capacity = len_of(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
   ensures total <= 255000_u32;
@@ -144,7 +144,7 @@ fn replacement() -> result: own u16 pure {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let values = make(n: 4_u64);
-  let length = len(values);
+  let length = len_of(values);
   let stored = 0_u16;
   let code = 0_u8;
   if 2_u64 < length {
@@ -208,14 +208,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn buffer_length_qualifies_same_element_reallocation_without_a_target_guard() {
     let source = br#"fn refill(source: own buffer<u8>) -> result: own buffer<u8> reads(source), allocates(heap) {
-  let length = len(source);
+  let length = len_of(source);
   return buffer_new(length, 0_u8);
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let initial = buffer_new(4_u64, 7_u8);
   let copied = refill(source: move initial);
-  let length = len(copied);
+  let length = len_of(copied);
   if length != 4_u64 {
     return exit_status(code: 1_u8);
   }
@@ -274,14 +274,14 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 "#;
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-4"));
-    assert!(failure.detail().contains("2_u64 < len(values)"));
+    assert!(failure.detail().contains("2_u64 < len_of(values)"));
 }
 
 #[test]
 fn empty_buffer_has_zero_length_and_a_normal_free() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let values = buffer_new(0_u64, 7_u8);
-  let length = len(values);
+  let length = len_of(values);
   if length != 0_u64 {
     return exit_status(code: 1_u8);
   }
@@ -378,7 +378,7 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
 }
 
 fn update(pool: &uniq Pool) -> result: own unit reads(pool.left), writes(pool.left, pool.count) {
-  let spare = len(deref(pool).left);
+  let spare = len_of(deref(pool).left);
   let ok = 1_u64 < spare;
   if ok {
     set deref(pool).left[1_u64] = 13_u64;
@@ -388,7 +388,7 @@ fn update(pool: &uniq Pool) -> result: own unit reads(pool.left), writes(pool.le
 }
 
 fn observe(pool: &Pool) -> result: own u64 reads(pool.left, pool.count) {
-  let spare = len(deref(pool).left);
+  let spare = len_of(deref(pool).left);
   let ok = 1_u64 < spare;
   let count = deref(pool).count;
   if ok {
@@ -506,7 +506,7 @@ fn replacement() -> result: own u16 pure {
 }
 
 fn update(columns: own Columns) -> result: own Columns reads(columns.left), writes(columns.left) {
-  let spare = len(columns.left);
+  let spare = len_of(columns.left);
   let ok = 1_u64 < spare;
   if ok {
     set columns.left[1_u64] = replacement();
@@ -519,7 +519,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let right = buffer_new(2_u64, 0_u16);
   let columns = Columns(left: move left, right: move right);
   let updated = update(columns: move columns);
-  let updated_room = len(updated.left);
+  let updated_room = len_of(updated.left);
   let updated_ok = 1_u64 < updated_room;
   if updated_ok {
     let value = updated.left[1_u64];

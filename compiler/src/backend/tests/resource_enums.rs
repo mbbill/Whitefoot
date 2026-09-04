@@ -22,7 +22,7 @@ fn consume(owner: own Owner) -> result: own u8 pure {
       return 0_u8;
     }
     Full(value: pair) => {
-      let spare = len(pair.left);
+      let spare = len_of(pair.left);
       let ok = 0_u64 < spare;
       let byte = if ok {
         give pair.left[0_u64];
@@ -130,7 +130,7 @@ fn consume(value: own Option<buffer<u8>>) -> result: own u8 reads(value) {
       return 0_u8;
     }
     Some(value: bytes) => {
-      let spare = len(bytes);
+      let spare = len_of(bytes);
       let ok = 0_u64 < spare;
       let byte = if ok {
         give bytes[0_u64];

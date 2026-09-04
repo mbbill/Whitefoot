@@ -1,5 +1,5 @@
 fn get(b: own buffer<i32>, i: own u64) -> return_value: own i32 reads(b) {
-  doc "An unproven parameter offset is a compile-time rejection under discharge-or-reject [OP-4]: the diagnostic prints the ENT-6 residual `i < len(b)` and points to a dominating branch, requirement, invariant, or checked source proof as the repair.";
+  doc "An unproven parameter offset is a compile-time rejection under discharge-or-reject [OP-4]: the diagnostic prints the ENT-6 residual `i < len_of(b)` and points to a dominating branch, requirement, invariant, or checked source proof as the repair.";
   return b[i];
 }
 

@@ -1,5 +1,5 @@
 fn indexed_byte(b: own buffer<u8>, flag: own Bool) -> result: own u8 reads(b) contract {
-  define spare = len(b);
+  define spare = len_of(b);
   requires spare == 5_u64;
 } {
   doc "REJECT: the else arm can bump idx to 7 while spare is fixed at 5, and no bound check follows the join, so the trailing subscript's OP-4 is undischarged for idx = 7.";

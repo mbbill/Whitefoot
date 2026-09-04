@@ -14,11 +14,13 @@ This document carries guidance for the active specification at
 hands back the value it was given beside what it computed, `-> (rest: own
 Vector<u8>, written: own u64)`, instead of a two-field struct per operation, and
 its caller writes `let (rest, written) = collect(...);` — and the four measure
-terms and their readers `len`, `cap`, `room` and `head`, also introduced by
-v0.45 (P16): a measured value carries the standing facts `len <= cap`,
-`head <= cap` and `len + room = cap` with no writer statement, a write to a
-sibling field kills no measure, and the three new reader spellings are reserved
-against every writer declaration — the contract-clause
+terms and their readers `len_of`, `cap_of`, `room_of` and `head_of`, also
+introduced by v0.45 (P16): a measured value carries the standing facts
+`len_of(P) <= cap_of(P)`, `head_of(P) <= cap_of(P)` and
+`len_of(P) + room_of(P) = cap_of(P)` with no writer statement, a write to a
+sibling field kills no measure, and it is those four `_of` spellings, not the
+four bare words a writer wants for a binding, that are reserved against every
+writer declaration — the contract-clause
 measure operands and the
 call datum introduced by v0.44 (P16, P21), the loop-body
 region block and the associative [ENT-6] join introduced by v0.43, the one canonical
@@ -217,7 +219,7 @@ body. Here AUTO subtracts the one published affine premise `per_byte`; DIRECT
 then proves the residual from the `u8` type interval of `wide`. An explicit use
 block would be redundant and invalid. The bound is stated relative to the
 counter, so it carries no overflow conclusion of its own until the counter is
-itself bounded: with `count` an unbounded `len(deref(weights))` the byte-for-byte
+itself bounded: with `count` an unbounded `len_of(deref(weights))` the byte-for-byte
 identical loop is undischarged at [INV-1], and one `requires n <= 65536_u64`
 over that length in the function's own contract compiles it. Put a
 cross-function fact in the callee's verified `ensures`; the caller receives it
@@ -615,7 +617,7 @@ Problem: a program fills a buffer through `&uniq` callees and then hands a
 prefix of it to a call whose `requires` bounds that prefix by the buffer's
 length. The habit — and the reading of [ENT-5] an unguided writer forms in
 twenty minutes — is that the callee's write killed the length fact, so `let
-room = len(line);` has to be re-bound after every call that wrote through the
+room = len_of(line);` has to be re-bound after every call that wrote through the
 borrow. The write did not kill it. Under v0.45 the support of a measure term
 over `P` is `P`'s **descriptor storage** [MSR-2] — the measure words the value
 carries — together with every holder a prefix of `P` reads through and the
@@ -629,7 +631,7 @@ storage of the written element and none of `P`'s own, so it kills no measure of
 binding*, and the compiler used to read it that way. That is a strictly larger
 support than [MSR-2] states, and it cost a real fact: a write to a **sibling
 field** of the same struct killed the measure of a field beside it, so
-`set frame.flags = 1_u64;` killed `len(frame.tail)`. Descriptor storage is the
+`set frame.flags = 1_u64;` killed `len_of(frame.tail)`. Descriptor storage is the
 place itself, so a sibling-field write now kills neither, and the length fact
 survives a write to anything but the run's own descriptor. The compiler still
 classifies a projected callee write through a `&uniq buffer<T>` actual from the
@@ -641,31 +643,32 @@ Pattern: bind the length once, above the loop and above every write, and
 discharge every later requirement from that one binding.
 
 ```whitefoot
-let spare = len(line);
+let spare = len_of(line);
 let fits = end <= spare;
 ```
 
-**Correction, v0.45.** The binding above was spelled `room` until v0.45. `cap`,
-`room` and `head` are [OP-1] reader spellings now [MSR-1], so all three joined
-`ReservedLowerNames` and no writer declaration may use them: `let room = ...;`
-is a [FORM-3] `ReservedName` rejection. The measure a writer wanted `room` for
-is the reader `room(P)`, and a binding that holds a length wants a name of its
-own. The 2026-08-28 blind-writer probe cited below is a dated artifact and
-still writes the old spelling.
+**Correction, v0.45.** The binding above was spelled `room` for part of v0.45's
+drafting, when the readers were spelled `len`, `cap`, `room` and `head` and all
+four were in `ReservedLowerNames`. The readers are spelled `len_of`, `cap_of`,
+`room_of` and `head_of` [S36, MSR-1], and the four bare words are ordinary
+identifiers again: a reader is a call-shaped measure *of* its operand rather
+than a method of a sequence, and `len`, `cap`, `room` and `head` are words a
+writer wants for bindings of their own. `let room = ...;` is therefore a legal
+declaration once more; what a writer may not declare is `room_of`.
 
 Under v0.45 a measure other than the length is available in the same
-positions: `cap(P)`, `room(P)` and `head(P)` are [OP-1] readers and [ENT-2]
-terms exactly where `len(P)` is [MSR-1], and every measured value carries the
-standing facts `len(P) <= cap(P)`, `head(P) <= cap(P)` and
-`len(P) + room(P) = cap(P)` with no writer statement. A `requires` written
-over `cap` therefore discharges a subscript stated over `len` with nothing in
-between.
+positions: `cap_of(P)`, `room_of(P)` and `head_of(P)` are [OP-1] readers and [ENT-2]
+terms exactly where `len_of(P)` is [MSR-1], and every measured value carries the
+standing facts `len_of(P) <= cap_of(P)`, `head_of(P) <= cap_of(P)` and
+`len_of(P) + room_of(P) = cap_of(P)` with no writer statement. A `requires` written
+over `cap_of` therefore discharges a subscript stated over `len_of` with nothing
+in between.
 
 Under v0.44 the same fact is stated directly in the contract
 that consumes it, with no binding and no `contract_define` at all: a
 `requires` and an `ensures` operand may be a measure of a place [MSR-5], so a
-callee writes `requires end <= len(destination);` where it used to write
-`define room = len(destination); requires end <= room;`. The define spelling
+callee writes `requires end <= len_of(destination);` where it used to write
+`define room = len_of(destination); requires end <= room;`. The define spelling
 of one measure is what v0.44 removes; the hoisted binding above remains the
 right form for a *body* fact a loop reads many times, because a body is not a
 contract.
@@ -673,7 +676,7 @@ contract.
 The first line sits above the loop and above every `put_text` that writes
 through `&uniq line`. The second sits inside the loop after all of them,
 and it still discharges `emit_all`'s `requires length <= capacity`, because
-nothing between the two killed `len(line)`.
+nothing between the two killed `len_of(line)`.
 
 Evidence that it compiles as written:
 `research/experiments/blind-writer/2026-08-28/probes/probe_e_hoisted_length.wf`
@@ -797,7 +800,7 @@ outside the loop being taken in index order.
 
 ```whitefoot
 let page = buffer_new(8_u64, 0_u8);
-let spare = len(page);
+let spare = len_of(page);
 for @scan (index in 0_u64..8_u64) {
   /* reserve, open, and read into the iteration's own data buffer */
   let writable = index < spare;
@@ -1004,7 +1007,7 @@ Status: active in v0.44. Two of its rules decide one writer choice together.
 Problem: a helper receives a run, does something with it, and the caller
 afterwards needs to know a measure of what it got back. The reflex is to lend
 the run — `fn fill(destination: &uniq buffer<u8>, ...)` — and publish the
-measure from the callee: `ensures written <= len(deref(destination));`. That
+measure from the callee: `ensures written <= len_of(deref(destination));`. That
 clause is a claim about a caller's object at a point the callee cannot name,
 because the callee may have replaced the very thing the measure describes, and
 [MSR-3] refuses it at the clause.
@@ -1014,7 +1017,7 @@ caller must supply as a `requires` instead of an `ensures`.
 
 ```whitefoot
 fn size_of(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured == len(taken);
+  ensures measured == len_of(taken);
 } { ... }
 
 let run = buffer_new(8_u64, 0_u8);

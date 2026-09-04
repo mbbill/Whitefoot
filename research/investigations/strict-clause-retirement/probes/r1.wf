@@ -9,12 +9,12 @@ fn clamped(value: own u64, limit: own u64) -> own u64 pure requires {
 }
 
 deny_claims fn strict_read(values: own array<u8, 4>, index: own u64) -> own u8 pure requires {
-  let room = len(values);
+  let room = len_of(values);
   let inside = ilt(index, room);
   check inside else trap "strict read";
 } {
   doc "A demanded strict component whose bounds obligation is discharged only by the callee's S12 summary. No claim anywhere in the closure.";
-  let room = len(values);
+  let room = len_of(values);
   let safe = clamped(value: index, limit: room);
   return values[safe];
 }

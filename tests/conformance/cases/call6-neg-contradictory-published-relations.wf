@@ -1,6 +1,6 @@
 fn measure(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured <= len(taken);
-  ensures len(taken) < measured;
+  ensures measured <= len_of(taken);
+  ensures len_of(taken) < measured;
 } {
   doc "The two published relations cannot hold together, so every caller goal would discharge from the contradiction alone.";
   return 0_u64;

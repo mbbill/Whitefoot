@@ -861,10 +861,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 /// measure.
 const fn measure_former(spelling: &str) -> Option<CheckedMeasure> {
     match spelling.as_bytes() {
-        b"len" => Some(CheckedMeasure::Length),
-        b"cap" => Some(CheckedMeasure::Capacity),
-        b"room" => Some(CheckedMeasure::Room),
-        b"head" => Some(CheckedMeasure::Head),
+        b"len_of" => Some(CheckedMeasure::Length),
+        b"cap_of" => Some(CheckedMeasure::Capacity),
+        b"room_of" => Some(CheckedMeasure::Room),
+        b"head_of" => Some(CheckedMeasure::Head),
         _ => None,
     }
 }

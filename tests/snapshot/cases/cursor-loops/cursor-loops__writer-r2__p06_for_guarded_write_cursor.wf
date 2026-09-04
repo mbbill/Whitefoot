@@ -1,6 +1,6 @@
 fn count_nonzero(values: own buffer<u64>) -> kept: own u64 reads(values) {
   doc "ACCEPT: a counted for cursor walks the source while a second write cursor advances only when the source is nonzero.";
-  let length = len(values);
+  let length = len_of(values);
   let write_at = 0_u64;
   for (
     i in 0_u64..length,

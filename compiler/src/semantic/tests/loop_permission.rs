@@ -340,7 +340,7 @@ fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
 #[test]
 fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
     let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len(deref(src));
+  let spare = len_of(deref(src));
   invariant scaled_limit_fits: 4_u64 * limit <= 4_u64 * spare {
     use 4 * (limit <= spare);
   }
@@ -372,13 +372,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     });
 }
 
-/// A dominating branch establishes the same `limit <= len(src)` fact. The
+/// A dominating branch establishes the same `limit <= len_of(src)` fact. The
 /// loop remains eligible because permission reads the checked body footprint,
 /// not the proof route for its subscript.
 #[test]
 fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
     let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len(deref(src));
+  let spare = len_of(deref(src));
   let total = 0_u64;
   let fits = limit <= spare;
   if fits {
@@ -849,7 +849,7 @@ fn a_whole_collection_read_still_denies_a_same_map_update() {
     let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u8);
   for @update (i in 0_u64..64_u64) {
-    let spare = len(out);
+    let spare = len_of(out);
     let old = out[i];
     set out[i] = old +wrap 1_u8;
   }
@@ -869,7 +869,7 @@ fn a_whole_collection_read_still_denies_a_same_map_update() {
 #[test]
 fn a_unique_borrowed_output_accepts_a_proved_element_map() {
     let source = br#"fn fill(out: &uniq buffer<u8>, count: own u64) -> result: own unit writes(out) contract {
-  define spare = len(deref(out));
+  define spare = len_of(deref(out));
   requires count <= spare;
 } {
   for @fill (i in 0_u64..count) {
@@ -978,7 +978,7 @@ fn an_exact_map_with_a_reduction_uses_reduction_actualization() {
 #[test]
 fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
     let source = br#"fn fill(output: own buffer<u64>, limit: own u64) -> result: own buffer<u64> reads(output), writes(output) {
-  let spare = len(output);
+  let spare = len_of(output);
   invariant limit_fits: limit <= spare {
     use limit <= spare;
   }
@@ -1340,7 +1340,7 @@ fn a_give_delivering_inside_the_body_is_permitted() {
 fn a_give_in_the_body_is_denied_by_condition_four() {
     let source =
         b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1377,7 +1377,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     // about the edge and not about the shape.
     let contained =
         b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1469,7 +1469,7 @@ fn an_automatic_remainder_bound_in_the_body_preserves_reduction_permission() {
 fn a_branch_proved_subscript_in_the_body_is_permitted() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 8>(0_u8);
-  let size = len(values);
+  let size = len_of(values);
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let bounded = imin(i, 7_u64);
@@ -1524,7 +1524,7 @@ fn an_unproved_accumulator_subscript_is_rejected_before_permission() {
 fn a_guard_reading_the_accumulator_is_still_a_read() {
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 128>(0_u8);
-  let size = len(values);
+  let size = len_of(values);
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let inside = total < size;
@@ -1584,7 +1584,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_proof_complete_call_closure_is_permitted() {
     let source = br#"fn narrow(v: own u64) -> result: own u64 pure {
   let values = array_new::<u64, 8>(1_u64);
-  let size = len(values);
+  let size = len_of(values);
   if v < size {
     return values[v];
   }
@@ -1626,7 +1626,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
     let structural = b"fn tally(src: &buffer<u64>) -> result: own u64 reads(src) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   let total = 0_u64;
   for @sum (i in 0_u64..count) {
     let v = deref(src)[i];
@@ -1645,11 +1645,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 ";
     let invariant_source =
         br#"fn tally(src: &buffer<u64>, bounded_limit: own u64, limit: own u64) -> result: own u64 reads(src) contract {
-  define capacity = len(deref(src));
+  define capacity = len_of(deref(src));
   requires bounded_limit <= limit;
   requires limit <= capacity;
 } {
-  let spare = len(deref(src));
+  let spare = len_of(deref(src));
   invariant limit_fits: bounded_limit <= spare;
   let total = 0_u64;
   for @sum (i in 0_u64..bounded_limit) {
@@ -1668,7 +1668,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 "#;
     let dominating = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len(deref(src));
+  let spare = len_of(deref(src));
   let total = 0_u64;
   if limit <= spare {
     for @sum (i in 0_u64..limit) {
@@ -1688,7 +1688,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 ";
     let branched = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
-  let spare = len(deref(src));
+  let spare = len_of(deref(src));
   let total = 0_u64;
   for @sum (i in 0_u64..limit) {
     let inside = i < spare;
@@ -1824,7 +1824,7 @@ fn a_body_borrow_of_iteration_own_storage_stays_permitted() {
     let local = buffer_new(4_u64, 7_u8);
     region {
       let h = &local;
-      let v = len(deref(h));
+      let v = len_of(deref(h));
       set acc = acc +wrap v;
     }
   }

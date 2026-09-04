@@ -22,7 +22,7 @@ const ORACLE: &[u8] = br#"fn opaque_length(n: own u64) -> result: own u64 pure c
 }
 
 fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len(deref(source));
+  define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
@@ -83,7 +83,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   let found = buffer_new(64_u64, 0_u8);
   let count = 0_u64;
   let mark = 88_u8;
-  let stop = len(data);
+  let stop = len_of(data);
   let cursor = 0_u64;
   loop @first_walk {
     let done = cursor >= stop;
@@ -133,7 +133,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     return exit_status(code: 6_u8);
   }
   let blank = buffer_new(40_u64, 97_u8);
-  let blank_stop = len(blank);
+  let blank_stop = len_of(blank);
   let blank_cursor = 0_u64;
   loop @second_walk {
     let blank_done = blank_cursor >= blank_stop;
@@ -207,7 +207,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   } else {
     return exit_status(code: 6_u8);
   }
-  let phase_room = len(found);
+  let phase_room = len_of(found);
   let phase_fits = count <= phase_room;
   if phase_fits {
     region {
@@ -222,7 +222,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   if selector == 102_u8 {
     let empty_length = opaque_length(n: 0_u64);
     let empty = buffer_new(empty_length, 0_u8);
-    let empty_room = len(empty);
+    let empty_room = len_of(empty);
     let empty_bound = 5_u64;
     let empty_cursor = 0_u64;
     loop @empty_walk {
@@ -247,7 +247,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     set field[21_u64] = 88_u8;
     set field[36_u64] = 89_u8;
     let scratch = buffer_new(1_u64, 0_u8);
-    let field_room = len(field);
+    let field_room = len_of(field);
     let wall = 64_u64;
     let probe = 0_u64;
     loop @bounded_walk {

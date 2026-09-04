@@ -1,6 +1,6 @@
 fn sum_all(left: own buffer<u8>, right: own buffer<u8>) -> total: own u64 reads(left, right) {
   doc "expect ACCEPT: two independent cursor loops, one per buffer, each cursor bounded by its own buffer's length via its own loop invariant";
-  let left_len = len(left);
+  let left_len = len_of(left);
   let i = 0_u64;
   let total = 0_u64;
   loop (
@@ -16,7 +16,7 @@ fn sum_all(left: own buffer<u8>, right: own buffer<u8>) -> total: own u64 reads(
       break;
     }
   }
-  let right_len = len(right);
+  let right_len = len_of(right);
   let j = 0_u64;
   loop (
     invariant j_bounded: j <= right_len

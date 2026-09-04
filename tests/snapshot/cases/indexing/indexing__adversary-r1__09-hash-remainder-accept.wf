@@ -1,9 +1,9 @@
 fn bucket_of(table: own buffer<u8>, key: own u64) -> value: own u8 reads(table) contract {
-  define table_size = len(table);
+  define table_size = len_of(table);
   requires table_size > 0_u64;
 } {
   doc "expect ACCEPT: table index = key % table_size is always < table_size for any u64 key when table_size > 0";
-  let table_size = len(table);
+  let table_size = len_of(table);
   let slot = key % table_size;
   invariant slot_in_range: slot < table_size;
   let value = table[slot];

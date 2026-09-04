@@ -1,6 +1,6 @@
 fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
   doc "Consumes the run it is handed and reports its length.";
-  let n = len(cell);
+  let n = len_of(cell);
   return n;
 }
 

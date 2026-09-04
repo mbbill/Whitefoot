@@ -520,7 +520,7 @@ fn goal_field_projection_retains_the_selected_array_type() {
 }
 
 fn measured(envelope: own Envelope) -> result: own Envelope pure contract {
-  define size = len(envelope.values);
+  define size = len_of(envelope.values);
   requires size == size;
 } {
   return move envelope;
@@ -571,21 +571,21 @@ command fn main() -> status: own ExitStatus pure {
 fn concrete_equal_const_arguments_produce_equal_goal_templates() {
     let source =
         br#"fn left<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure contract {
-  define size = len(value);
+  define size = len_of(value);
   requires size == size;
 } {
   return move value;
 }
 
 fn right<const count: u64>(input: own array<u8, count>) -> result: own array<u8, count> pure contract {
-  define extent = len(input);
+  define extent = len_of(input);
   requires extent == extent;
 } {
   return move input;
 }
 
 fn different<const width: u64>(items: own array<u8, width>) -> result: own array<u8, width> pure contract {
-  define amount = len(items);
+  define amount = len_of(items);
   requires amount == amount;
 } {
   return move items;
@@ -598,9 +598,9 @@ command fn main() -> status: own ExitStatus pure {
   let right_output = right::<2>(input: move right_input);
   let different_input = array_new::<u8, 3>(1_u8);
   let different_output = different::<3>(items: move different_input);
-  let left_size = len(left_output);
-  let right_size = len(right_output);
-  let different_size = len(different_output);
+  let left_size = len_of(left_output);
+  let right_size = len_of(right_output);
+  let different_size = len_of(different_output);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -712,7 +712,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_derived_const_in_generic_requirement_has_checked_program_owned_structure() {
     let source = br#"fn need<const n: u64>(value: own array<u8, n + 1>) -> result: own array<u8, n + 1> pure contract {
-  define size = len(value);
+  define size = len_of(value);
   requires size == size;
 } {
   return move value;
@@ -1204,7 +1204,7 @@ fn call_goal_substitutes_type_const_and_slice_region_arguments() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
 fn inspect(values: own slice<u8>) -> result: own unit pure contract {
-  define size = len(values);
+  define size = len_of(values);
   requires size == size;
 } {
   return unit;
@@ -1212,7 +1212,7 @@ fn inspect(values: own slice<u8>) -> result: own unit pure contract {
 
 fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> result: own T pure contract {
   define positive = value > 0_T;
-  define size = len(values);
+  define size = len_of(values);
   define exact = size == size;
   define complete = band(positive, exact);
   requires complete;

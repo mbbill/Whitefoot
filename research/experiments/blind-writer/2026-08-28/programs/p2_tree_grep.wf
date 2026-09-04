@@ -2,7 +2,7 @@ const line_break: array<u8, 1> =[10_u8];
 
 fn byte_at['s](source: &'s buffer<u8>, index: own u64) -> result: own u8 reads(source) {
   doc "Reads one byte, delivering zero for a position the buffer does not hold.";
-  let capacity = len(deref(source));
+  let capacity = len_of(deref(source));
   let inside = ilt(index, capacity);
   if inside {
     return deref(source)[index];
@@ -12,7 +12,7 @@ fn byte_at['s](source: &'s buffer<u8>, index: own u64) -> result: own u8 reads(s
 
 fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) -> result: own u64 reads(destination), writes(destination) {
   doc "Stores one byte when the destination holds that position and reports the next position.";
-  let capacity = len(deref(destination));
+  let capacity = len_of(deref(destination));
   let fits = ilt(at, capacity);
   if fits {
     set deref(destination)[at] = value;
@@ -24,7 +24,7 @@ fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) ->
 fn put_text['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, text: own slice<'s, u8>) -> result: own u64 reads(destination, text), writes(destination) {
   doc "Copies every byte of one read-only text view into the destination.";
   let cursor = at;
-  let count = len(text);
+  let count = len_of(text);
   for @copy step in 0_u64..count {
     let byte = text[step];
     region 'one {
@@ -47,7 +47,7 @@ fn put_range['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, source: &'s 
 }
 
 fn emit_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ile(length, capacity);
 } {
   doc "Writes one prefix of the source buffer, reattempting until the host accepts every byte.";
@@ -85,7 +85,7 @@ fn report_path['o, 'p](output: &uniq 'o Output, path: &'p buffer<u8>, path_lengt
       set end = put_text<'break_put, 'break_view>(destination: &uniq 'break_put line, at: end, text: move view);
     }
   }
-  let room = len(line);
+  let room = len_of(line);
   let fits = ile(end, room);
   if fits {
     region 'publish {
@@ -154,7 +154,7 @@ fn scan_file['f, 'c, 'n](handle: &'f ReadFile, chunk: &uniq 'c buffer<u8>, patte
   let offset = 0_u64;
   let found = 0_u8;
   loop @chunks {
-    let capacity = len(deref(chunk));
+    let capacity = len_of(deref(chunk));
     let usable = ile(65536_u64, capacity);
     if usable {
     } else {
@@ -240,7 +240,7 @@ fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, directory: &'d Direct
 
 fn open_child_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = ile(start, end);
-  define capacity = len(deref(name));
+  define capacity = len_of(deref(name));
   define within = ile(end, capacity);
   requires ordered;
   requires within;
@@ -252,7 +252,7 @@ fn open_child_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d Director
 
 fn open_regular_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = ile(start, end);
-  define capacity = len(deref(name));
+  define capacity = len_of(deref(name));
   define within = ile(end, capacity);
   requires ordered;
   requires within;
@@ -275,7 +275,7 @@ fn walk['f, 'c, 'p, 'o, 'b, 'n](factory: &uniq 'f FileFactory, dir: &'c Director
     match open_source_from<'source, 'c>(factory: &uniq 'source deref(factory), directory: dir) {
       Ok(value: list) => {
         loop @batches {
-          let room = len(entries);
+          let room = len_of(entries);
           let usable = ile(65536_u64, room);
           if usable {
           } else {
@@ -336,7 +336,7 @@ fn walk['f, 'c, 'p, 'o, 'b, 'n](factory: &uniq 'f FileFactory, dir: &'c Director
               }
             }
             let ordered = ile(name_at, name_end);
-            let limit = len(entries);
+            let limit = len_of(entries);
             let bounded = ile(name_end, limit);
             let is_directory = ieq(kind, 2_u8);
             let is_regular = ieq(kind, 1_u8);
@@ -417,7 +417,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   region 'pattern_arg {
     match arg_get<'pattern_arg>(args: &'pattern_arg args, position: 1_u64) {
       Ok(value: text) => {
-        let room = len(pattern);
+        let room = len_of(pattern);
         region 'pattern_copy {
           match host_copy_bytes<'pattern_copy, 'pattern_copy>(value: &'pattern_copy text, destination: &uniq 'pattern_copy pattern, start: 0_u64, end: room) {
             Ok(value: next) => {

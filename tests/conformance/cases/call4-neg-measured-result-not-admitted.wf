@@ -1,5 +1,5 @@
 fn hold(taken: own buffer<u8>) -> kept: own buffer<u8> pure contract {
-  ensures len(kept) >= 1_u64;
+  ensures len_of(kept) >= 1_u64;
 } {
   doc "A measure of a result is an admitted operand, and this one is unprovable: the parameter arrives with no known length, so the relation it publishes has no premise.";
   return move taken;

@@ -1,10 +1,10 @@
 fn probe(table: own buffer<u8>, idx: own u64, limit: own u64) -> found: own u8 reads(table) contract {
-  define spare = len(table);
+  define spare = len_of(table);
   requires idx < limit;
   requires limit <= spare;
 } {
   doc "expect REJECT fact killed by write: idx is overwritten to 255 after in_range is proved for the old idx; if a later implicit reuse of in_range still discharges table[idx], idx=255 against a 4-byte table is an out-of-bounds read at runtime.";
-  let spare = len(table);
+  let spare = len_of(table);
   invariant in_range: idx < spare;
   set idx = 255_u64;
   let byte = table[idx];

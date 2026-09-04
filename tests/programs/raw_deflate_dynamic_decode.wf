@@ -1,5 +1,5 @@
 fn store_dynamic_length(literal_lengths: &uniq buffer<u8>, distance_lengths: &uniq buffer<u8>, literal_count: own u64, position: own u64, value: own u8) -> result: own Result<unit, InflateError> reads(distance_lengths), writes(literal_lengths, distance_lengths) contract {
-  define literal_room = len(deref(literal_lengths));
+  define literal_room = len_of(deref(literal_lengths));
   define enough_literals = literal_count <= literal_room;
   requires enough_literals;
 } {
@@ -8,7 +8,7 @@ fn store_dynamic_length(literal_lengths: &uniq buffer<u8>, distance_lengths: &un
     set deref(literal_lengths)[position] = value;
   } else {
     let distance_index = position -wrap literal_count;
-    let distance_room = len(deref(distance_lengths));
+    let distance_room = len_of(deref(distance_lengths));
     let distance_ok = distance_index < distance_room;
     if distance_ok {
     } else {
@@ -41,7 +41,7 @@ fn ordered_code_symbol(index: own u64) -> result: own Result<u64, InflateError> 
 
 fn read_dynamic_code_lengths(state: &uniq InflateState, input: &buffer<u8>, code_lengths: &uniq buffer<u8>, code_count: own u64) -> result: own Result<unit, InflateError> reads(state.input_offset, state.hold, state.bits, input, code_lengths), writes(state.input_offset, state.hold, state.bits, code_lengths) contract {
   define code_count_fits = code_count <= 19_u64;
-  define code_room = len(deref(code_lengths));
+  define code_room = len_of(deref(code_lengths));
   define order_fits = 19_u64 <= code_room;
   requires code_count_fits;
   requires order_fits;
@@ -74,7 +74,7 @@ fn read_dynamic_code_lengths(state: &uniq InflateState, input: &buffer<u8>, code
       }
       match cvt::<u64, u8>(length_bits) {
         Ok(value: length) => {
-          let code_room = len(deref(code_lengths));
+          let code_room = len_of(deref(code_lengths));
           let ordered_ok = ordered_symbol < code_room;
           if ordered_ok {
             set deref(code_lengths)[ordered_symbol] = length;
@@ -284,7 +284,7 @@ fn decode_dynamic(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buff
       }
     }
   }
-  let end_room = len(literal_lengths);
+  let end_room = len_of(literal_lengths);
   let end_ok = 256_u64 < end_room;
   let end_length = literal_lengths[256_u64];
   let missing_end = end_length == 0_u8;

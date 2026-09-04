@@ -1,11 +1,11 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
 const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
-  define out_length = len(deref(out));
-  define source_length = len(source);
+  define out_length = len_of(deref(out));
+  define source_length = len_of(source);
   requires source_length <= out_length;
 } {
-  let length = len(source);
+  let length = len_of(source);
   for (offset in 0_u64..length) {
     let value = source[offset];
     set deref(out)[offset] = value;

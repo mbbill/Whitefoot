@@ -633,13 +633,13 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invalid_exit() {
     let source = br#"fn append(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  requires capacity == len(deref(destination));
+  requires capacity == len_of(deref(destination));
   requires filled <= capacity;
   ensures result <= capacity;
 } {
-  let spare = len(deref(destination));
+  let spare = len_of(deref(destination));
   let admitted = filled <= spare;
-  let length = len(text);
+  let length = len_of(text);
   if admitted {
     for @append (at in filled..spare) {
       let taken = at -wrap filled;
@@ -675,11 +675,11 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn length_entry_images_ignore_element_writes_but_not_root_replacement() {
     let element = br#"fn kept(values: own array<u8, 2>) -> result: own u64 pure contract {
-  define size = len(values);
+  define size = len_of(values);
   ensures result == size;
 } {
   set values[0_u64] = 1_u8;
-  return len(values);
+  return len_of(values);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -704,10 +704,10 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn replaced(values: own array<u8, 2>) -> result: own u64 pure contract {
-  define size = len(values);
+  define size = len_of(values);
   ensures result == size;
 } {
-  let size = len(values);
+  let size = len_of(values);
   let ignored = consume(values: move values);
   return size;
 }
@@ -1514,7 +1514,7 @@ fn relation_length_rejects_a_named_constant_root() {
     let source = br#"const values: array<i32, 1> =[0_i32];
 
 fn length() -> result: own u64 pure contract {
-  define size = len(values);
+  define size = len_of(values);
   ensures result == size;
 } {
   return 1_u64;
@@ -1580,10 +1580,10 @@ fn from_shared(owner: &Pair) -> result: own i32 reads(owner.value) contract {
 }
 
 fn field_length(values: own Values) -> result: own u64 pure contract {
-  define size = len(values.items);
+  define size = len_of(values.items);
   ensures result == size;
 } {
-  return len(values.items);
+  return len_of(values.items);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -1624,7 +1624,7 @@ fn a_concrete_const_substitution_is_retained_with_a_selected_length() {
         br#"fn count<const n: u64>(values: own array<u8, n>) -> result: own u64 pure contract {
   ensures result == result;
 } {
-  return len(values);
+  return len_of(values);
 }
 
 command fn main() -> status: own ExitStatus pure {

@@ -1,9 +1,9 @@
 fn last_chunk_status(buf: own buffer<u8>, status: own buffer<u8>) -> value: own u8 reads(buf, status) contract {
-  define status_len = len(status);
+  define status_len = len_of(status);
   requires status_len > 0_u64;
 } {
   doc "expect REJECT (OP-2 underflow): no requires that data_len >= 3, so chunk_count can be 0 and chunk_count - 1_u64 underflows u64 when buf has fewer than 3 elements";
-  let data_len = len(buf);
+  let data_len = len_of(buf);
   let chunk_count = data_len / 3_u64;
   let last_chunk = chunk_count - 1_u64;
   let value = status[last_chunk];

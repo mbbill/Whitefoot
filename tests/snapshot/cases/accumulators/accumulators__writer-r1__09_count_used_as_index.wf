@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       set count = count + 1_u64;
     }
   }
-  let spare = len(marks);
+  let spare = len_of(marks);
   let in_bounds = count < spare;
   if in_bounds {
     set marks[count] = 9_u8;

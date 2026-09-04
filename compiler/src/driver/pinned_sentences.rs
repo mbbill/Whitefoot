@@ -165,7 +165,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "forbidden-atom-in-a-contract-block.wf",
         source: br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires buffer_fits::<u8>(len(deref(data)));
+  requires buffer_fits::<u8>(len_of(deref(data)));
 } {
   return 0_u64;
 }
@@ -185,7 +185,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "uniq-state-measure-in-an-ensures.wf",
         source: br#"fn record(destination: &uniq buffer<u8>, value: own u8) -> written: own u64 reads(destination), writes(destination) contract {
-  ensures written <= len(deref(destination));
+  ensures written <= len_of(deref(destination));
 } {
   return 0_u64;
 }
@@ -203,8 +203,8 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "contradictory-published-relations.wf",
         source: br#"fn measure(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured <= len(taken);
-  ensures len(taken) < measured;
+  ensures measured <= len_of(taken);
+  ensures len_of(taken) < measured;
 } {
   return 0_u64;
 }
@@ -299,7 +299,7 @@ command fn main() -> status: own ExitStatus pure {
         source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let header = buffer_new(4_u64, 65_u8);
   let payload = buffer_new(9_u64, 66_u8);
-  let wide = len(payload);
+  let wide = len_of(payload);
   region {
     let sent = write_once(output: &uniq out, source: &header, start: 0_u64, end: wide);
   }
@@ -307,20 +307,20 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "SYS-8",
-        sentences: &[r#"residual: "wide <= len(header)""#],
+        sentences: &[r#"residual: "wide <= len_of(header)""#],
     },
     Probe {
         name: "bounds-residual.wf",
         source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let table = buffer_new(4_u64, 0_u8);
   let other = buffer_new(9_u64, 0_u8);
-  let pick = len(other);
+  let pick = len_of(other);
   let one = table[pick];
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "OP-4",
-        sentences: &[r#"residual: "pick < len(table)""#],
+        sentences: &[r#"residual: "pick < len_of(table)""#],
     },
     // -------------------------------------------------------------------
     // [SYS-2] and [FN-2]: written type and region arguments.
@@ -609,7 +609,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "writes-through-a-shared-borrow.wf",
         source: br#"fn touch(data: &buffer<u8>) -> out: own u64 writes(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -674,7 +674,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "declared-row-is-narrower-than-the-body.wf",
         source: br#"fn touch(data: &buffer<u8>) -> out: own u64 pure {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -717,7 +717,7 @@ command fn main() -> status: own ExitStatus pure {
         name: "indexed-operand-is-a-move.wf",
         source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let store = buffer_new(4_u64, 0_u8);
-  let n = len(move store);
+  let n = len_of(move store);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -729,7 +729,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "indexed-operand-is-not-a-place.wf",
         source: br#"command fn main() -> status: own ExitStatus pure {
-  let n = len(1_u64);
+  let n = len_of(1_u64);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -742,7 +742,7 @@ command fn main() -> status: own ExitStatus pure {
         name: "indexed-place-is-a-scalar.wf",
         source: br#"command fn main() -> status: own ExitStatus pure {
   let value = 1_u64;
-  let n = len(value);
+  let n = len_of(value);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -802,7 +802,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "borrow-of-local-storage-under-a-parameter-region.wf",
         source: br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> allocates(heap) {
@@ -880,7 +880,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "borrow-kind-does-not-match-the-destination.wf",
         source: br#"fn measure(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
@@ -1116,7 +1116,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     Probe {
         name: "goal-over-a-dereferenced-holder.wf",
         source: br#"fn need(names: &buffer<u8>, pos: own u64) -> out: own u64 pure contract {
-  define spare = len(deref(names));
+  define spare = len_of(deref(names));
   requires pos <= spare;
 } {
   return pos;
@@ -1132,7 +1132,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "FN-8",
-        sentences: &[r#"instantiated_goal: "9_u64 <= len(deref(names))""#],
+        sentences: &[r#"instantiated_goal: "9_u64 <= len_of(deref(names))""#],
     },
     // [FORM-8] one canonical region spelling: each position a region can
     // occupy, written exactly where the surrounding text does not fix it.
@@ -1289,7 +1289,7 @@ command fn main() -> status: own ExitStatus pure {
     Probe {
         name: "branches-disagree-about-a-binding.wf",
         source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
-  let n = len(cell);
+  let n = len_of(cell);
   return n;
 }
 
@@ -1316,7 +1316,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     Probe {
         name: "one-iteration-leaves-an-outer-binding-dead.wf",
         source: br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
-  let n = len(cell);
+  let n = len_of(cell);
   return n;
 }
 

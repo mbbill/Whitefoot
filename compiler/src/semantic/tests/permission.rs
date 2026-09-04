@@ -351,7 +351,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
     let source = br#"fn width(data: &buffer<u64>) -> result: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
@@ -556,7 +556,7 @@ command fn main() -> status: own ExitStatus pure {
 fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
     let source =
         br#"fn fill(dst: &uniq buffer<u64>, mark: own u64) -> result: own u64 reads(dst), writes(dst) {
-  let spare = len(deref(dst));
+  let spare = len_of(deref(dst));
   let k = 0_u64;
   loop @go {
     let done = k >= spare;
@@ -820,7 +820,7 @@ fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own 
 }
 
 fn scaled(values: own array<u8, 8>, index: own u64) -> result: own u8 pure {
-  let size = len(values);
+  let size = len_of(values);
   if index < size {
     return values[index];
   }

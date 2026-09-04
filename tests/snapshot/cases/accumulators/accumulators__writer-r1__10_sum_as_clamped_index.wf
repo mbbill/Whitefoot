@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let wide = cvt::<u8, u64>(byte);
     set sum = sum + wide;
   }
-  let spare = len(table);
+  let spare = len_of(table);
   let lookup_ok = sum < spare;
   if lookup_ok {
     let value = table[sum];

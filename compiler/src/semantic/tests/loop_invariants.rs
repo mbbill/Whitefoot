@@ -801,7 +801,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn source_invariant_discharges_the_weigh_addition_domain() {
     let source = br#"fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
-  define capacity = len(deref(weights));
+  define capacity = len_of(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
   ensures total <= 255000_u32;
@@ -819,7 +819,7 @@ fn source_invariant_discharges_the_weigh_addition_domain() {
 }
 
 fn add_one(weights: &buffer<u8>, count: own u64) -> result: own u32 reads(weights) contract {
-  define capacity = len(deref(weights));
+  define capacity = len_of(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
 } {
@@ -1432,7 +1432,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn active_invariant_proves_a_dynamic_buffer_index_obligation() {
     let source = br#"fn read_prefix(values: &buffer<u8>, count: own u64) -> result: own unit reads(values) contract {
-  define capacity = len(deref(values));
+  define capacity = len_of(deref(values));
   requires count <= capacity;
 } {
   let index = 0_u64;
@@ -1581,7 +1581,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn exhaustion_facts_prove_both_system_range_components() {
     let source = br#"fn publish_prefix(output: &uniq Output, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires limit <= capacity;
 } {
   let start = 0_u64;

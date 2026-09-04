@@ -912,7 +912,7 @@ fn borrowing_one_owned_struct_field_projects_only_that_field_effect() {
 }
 
 fn length(value: &buffer<u8>) -> result: own u64 reads(value) {
-  return len(deref(value));
+  return len_of(deref(value));
 }
 
 fn read_second(pair: own Pair) -> result: own unit reads(pair.second) {

@@ -27,7 +27,7 @@ fn digit_byte(value: own u64) -> result: own u8 pure {
 
 fn byte_at['s](source: &'s buffer<u8>, index: own u64) -> result: own u8 reads(source) {
   doc "Reads one byte, delivering zero for a position the buffer does not hold.";
-  let capacity = len(deref(source));
+  let capacity = len_of(deref(source));
   let inside = ilt(index, capacity);
   if inside {
     return deref(source)[index];
@@ -37,7 +37,7 @@ fn byte_at['s](source: &'s buffer<u8>, index: own u64) -> result: own u8 reads(s
 
 fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) -> result: own u64 reads(destination), writes(destination) {
   doc "Stores one byte when the destination holds that position and reports the next position.";
-  let capacity = len(deref(destination));
+  let capacity = len_of(deref(destination));
   let fits = ilt(at, capacity);
   if fits {
     set deref(destination)[at] = value;
@@ -49,7 +49,7 @@ fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) ->
 fn put_text['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, text: own slice<'s, u8>) -> result: own u64 reads(destination, text), writes(destination) {
   doc "Copies every byte of one read-only text view into the destination.";
   let cursor = at;
-  let count = len(text);
+  let count = len_of(text);
   for @copy step in 0_u64..count {
     let byte = text[step];
     region 'one {
@@ -79,7 +79,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
   loop @split {
     let digit = rest % 10_u64;
     let byte = digit_byte(value: digit);
-    let capacity = len(scratch);
+    let capacity = len_of(scratch);
     let room = ilt(count, capacity);
     if room {
       set scratch[count] = byte;
@@ -98,7 +98,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
       break @unwind;
     }
     set count = count -wrap 1_u64;
-    let capacity = len(scratch);
+    let capacity = len_of(scratch);
     let inside = ilt(count, capacity);
     if inside {
       let byte = scratch[count];
@@ -111,7 +111,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
 }
 
 fn emit_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ile(length, capacity);
 } {
   doc "Writes one prefix of the source buffer, reattempting until the host accepts every byte.";
@@ -167,7 +167,7 @@ fn report_counts['o, 'p](output: &uniq 'o Output, path: &'p buffer<u8>, path_len
       set end = put_text<'break_put, 'break_view>(destination: &uniq 'break_put line, at: end, text: move view);
     }
   }
-  let room = len(line);
+  let room = len_of(line);
   let fits = ile(end, room);
   if fits {
     region 'publish {
@@ -192,7 +192,7 @@ fn count_file['f, 'c](handle: &'f ReadFile, chunk: &uniq 'c buffer<u8>) -> resul
   let status = 0_u8;
   let offset = 0_u64;
   loop @chunks {
-    let capacity = len(deref(chunk));
+    let capacity = len_of(deref(chunk));
     let usable = ile(65536_u64, capacity);
     if usable {
     } else {
@@ -220,7 +220,7 @@ fn count_file['f, 'c](handle: &'f ReadFile, chunk: &uniq 'c buffer<u8>) -> resul
     } else {
       break @chunks;
     }
-    let room = len(deref(chunk));
+    let room = len_of(deref(chunk));
     let fits = ile(received, room);
     if fits {
       for @scan at in 0_u64..received {
@@ -248,7 +248,7 @@ fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, directory: &'d Direct
 
 fn open_child_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = ile(start, end);
-  define capacity = len(deref(name));
+  define capacity = len_of(deref(name));
   define within = ile(end, capacity);
   requires ordered;
   requires within;
@@ -260,7 +260,7 @@ fn open_child_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d Director
 
 fn open_regular_from['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = ile(start, end);
-  define capacity = len(deref(name));
+  define capacity = len_of(deref(name));
   define within = ile(end, capacity);
   requires ordered;
   requires within;
@@ -302,7 +302,7 @@ fn walk['f, 'c, 'p, 'o, 'b](factory: &uniq 'f FileFactory, dir: &'c DirectoryRea
     match open_source_from<'source, 'c>(factory: &uniq 'source deref(factory), directory: dir) {
       Ok(value: list) => {
         loop @batches {
-          let room = len(entries);
+          let room = len_of(entries);
           let usable = ile(65536_u64, room);
           if usable {
           } else {
@@ -364,7 +364,7 @@ fn walk['f, 'c, 'p, 'o, 'b](factory: &uniq 'f FileFactory, dir: &'c DirectoryRea
               }
             }
             let ordered = ile(name_at, name_end);
-            let limit = len(entries);
+            let limit = len_of(entries);
             let bounded = ile(name_end, limit);
             let is_directory = ieq(kind, 2_u8);
             let is_regular = ieq(kind, 1_u8);
@@ -478,7 +478,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
       set end = put_text<'break_put, 'break_view>(destination: &uniq 'break_put summary, at: end, text: move view);
     }
   }
-  let room = len(summary);
+  let room = len_of(summary);
   let fits = ile(end, room);
   if fits {
     region 'publish {

@@ -1,7 +1,7 @@
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "[MSR-2] a write at an element position of P overlaps the descriptor storage of the written element and none of P's own, so it kills every measure of that element and no measure of P. An element write of a scalar therefore kills nothing at all, because a scalar has no measures: the set of killed measures is empty rather than excepted. This is the carve-out's removal under test in the half this version's measure table has - no measured type here has a measured element type - and the later subscript still discharges from the length fact taken before the write.";
   let run = buffer_new(8_u64, 0_u8);
-  let size = len(run);
+  let size = len_of(run);
   if 5_u64 < size {
     set run[2_u64] = 7_u8;
     let read = run[5_u64];

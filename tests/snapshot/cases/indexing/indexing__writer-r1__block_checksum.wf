@@ -2,7 +2,7 @@ fn block_checksum(data: own buffer<u8>, block_size: own u64) -> total: own u32 r
   requires block_size > 0_u64;
 } {
   doc "ACCEPT: sums a buffer in fixed-size blocks with a short final block; the checked stride is tested against the real length before every step, so a full block and the trailing remainder both stay in range without a written certificate.";
-  let capacity = len(data);
+  let capacity = len_of(data);
   let pos = 0_u64;
   let sum = 0_u32;
   loop @blocks (

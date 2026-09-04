@@ -1,6 +1,6 @@
 fn shift_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) -> moved: own u64 reads(input), writes(input) {
   doc "expect REJECT: moved starts at scan+1 instead of 0, so moved can exceed source_index and the write deref(input)[moved] runs past available; scan=6,available=16 makes moved reach 17 on a 16-slot buffer";
-  let spare = len(deref(input));
+  let spare = len_of(deref(input));
   let available_fits = available <= spare;
   let scan_fits = scan <= available;
   let moved = scan +wrap 1_u64;

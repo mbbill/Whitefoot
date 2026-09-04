@@ -1,6 +1,6 @@
 fn copy_window(src: &buffer<u8>, dst: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(src), writes(dst) contract {
-  define spare = len(deref(src));
-  define out_room = len(deref(dst));
+  define spare = len_of(deref(src));
+  define out_room = len_of(deref(dst));
   requires start < end;
   requires end <= spare;
   requires end <= out_room;

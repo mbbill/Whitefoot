@@ -12,8 +12,8 @@ pub(super) const BORROWED_COLUMNS: &[u8] = br#"struct Columns {
 }
 
 fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit reads(left, right), writes(left, right) {
-  let left_room = len(deref(left));
-  let right_room = len(deref(right));
+  let left_room = len_of(deref(left));
+  let right_room = len_of(deref(right));
   let index_value = 0_u64;
   loop @fill {
     let done = index_value == length;
@@ -36,8 +36,8 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
 }
 
 fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) {
-  let left_room = len(deref(left));
-  let right_room = len(deref(right));
+  let left_room = len_of(deref(left));
+  let right_room = len_of(deref(right));
   let index_value = 0_u64;
   let total = 0_u64;
   loop @fold {
@@ -159,7 +159,7 @@ fn borrowed_column_effect_rows_are_exact() {
 #[test]
 fn borrowed_buffer_length_exhibits_a_read_of_its_storage_origin() {
     let source = br#"fn length(values: &buffer<u8>) -> result: own u64 reads(values) {
-  return len(deref(values));
+  return len_of(deref(values));
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -243,7 +243,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn call_effects_preserve_the_incoming_storage_origin() {
     let source = br#"fn write(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) {
-  let spare = len(deref(out));
+  let spare = len_of(deref(out));
   let ok = 0_u64 < spare;
   if ok {
     set deref(out)[0_u64] = 1_u8;
@@ -327,7 +327,7 @@ fn count(pool: &Pool) -> result: own u64 reads(pool.count) {
 }
 
 fn first(pool: &Pool) -> result: own u64 reads(pool.left) {
-  let spare = len(deref(pool).left);
+  let spare = len_of(deref(pool).left);
   let ok = 0_u64 < spare;
   if ok {
     return deref(pool).left[0_u64];
@@ -337,7 +337,7 @@ fn first(pool: &Pool) -> result: own u64 reads(pool.left) {
 }
 
 fn update(pool: &uniq Pool) -> result: own unit reads(pool.right), writes(pool.right, pool.count) {
-  let spare = len(deref(pool).right);
+  let spare = len_of(deref(pool).right);
   let ok = 0_u64 < spare;
   if ok {
     set deref(pool).right[0_u64] = 9_u64;
@@ -554,7 +554,7 @@ fn child_reborrow_shape_and_sibling_exclusivity_follow_own6() {
 }
 
 fn write_byte(out: &uniq buffer<u8>) -> function_result: own unit reads(out), writes(out) {
-  let spare = len(deref(out));
+  let spare = len_of(deref(out));
   let first_ok = 0_u64 < spare;
   if first_ok {
     set deref(out)[0_u64] = 7_u8;
@@ -566,7 +566,7 @@ fn proxy_byte(out: &uniq buffer<u8>) -> function_result: own unit reads(out), wr
   region {
     write_byte(out: &uniq deref(out));
   }
-  let spare = len(deref(out));
+  let spare = len_of(deref(out));
   let second_ok = 1_u64 < spare;
   if second_ok {
     set deref(out)[1_u64] = 9_u8;
@@ -748,7 +748,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
     // [SYS-2]. An opaque resource has no source-visible content, so its
     // borrow is the value itself.
     let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, count: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires count <= capacity;
 } {
   region {

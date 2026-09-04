@@ -1,6 +1,6 @@
 fn get(b: own buffer<u8>, i: own u64, pick: own Bool) -> result: own u8 reads(b) {
   doc "The join keeps the weakest (largest-constant) bound held by all joined states [ENT-5]. One arm establishes `i - spare <= -1` and the other only `i - spare <= 0`, so the continuation carries the non-strict bound and the subscript after the match is undischarged [OP-4].";
-  let spare = len(b);
+  let spare = len_of(b);
   if pick {
     let inside = i < spare;
     if inside {

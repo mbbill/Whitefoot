@@ -1,5 +1,5 @@
 fn store_at(out: &uniq buffer<u8>, offset: own u64, value: own u8) -> result: own unit writes(out) contract {
-  define spare = len(deref(out));
+  define spare = len_of(deref(out));
   requires offset < spare;
 } {
   set deref(out)[offset] = value;
@@ -7,7 +7,7 @@ fn store_at(out: &uniq buffer<u8>, offset: own u64, value: own u8) -> result: ow
 }
 
 fn fill_all(out: &uniq buffer<u8>, value: own u8) -> result: own unit reads(out), writes(out) {
-  let spare = len(deref(out));
+  let spare = len_of(deref(out));
   for (i in 0_u64..spare) {
     store_at(out: &uniq deref(out), offset: i, value: value);
   }

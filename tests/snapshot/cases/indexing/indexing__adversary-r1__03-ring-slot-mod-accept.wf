@@ -1,9 +1,9 @@
 fn ring_slot(buf: own buffer<u8>, front: own u64, used: own u64) -> value: own u8 reads(buf) contract {
-  define capacity = len(buf);
+  define capacity = len_of(buf);
   requires capacity > 0_u64;
 } {
   doc "expect ACCEPT: ring-buffer slot = (front + used) % capacity is always < capacity by the definition of % for a positive divisor";
-  let capacity = len(buf);
+  let capacity = len_of(buf);
   let raw = front +wrap used;
   let slot = raw % capacity;
   let value = buf[slot];

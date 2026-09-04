@@ -1,6 +1,6 @@
 fn text_length(text: own buffer<u8>) -> length: own u64 reads(text) {
   doc "ACCEPT: an ordinary loop walks a byte buffer and breaks, unlabelled, on the first zero terminator it finds.";
-  let capacity = len(text);
+  let capacity = len_of(text);
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= capacity

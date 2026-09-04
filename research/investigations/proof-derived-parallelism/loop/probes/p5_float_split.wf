@@ -61,7 +61,7 @@ fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> resu
     }
     let shifted = irotl(rest, 4_u32);
     let digit = hex_digit(v: shifted);
-    let room = len(deref(destination));
+    let room = len_of(deref(destination));
     let writable = ilt(cursor, room);
     if writable {
       set deref(destination)[cursor] = digit;

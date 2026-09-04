@@ -28,7 +28,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
             region 'read {
               match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
                 ReadBytes(next: reached) => {
-                  let room = len(data);
+                  let room = len_of(data);
                   let fits = ile(reached, room);
                   if fits {
                     for @fold at in 0_u64..reached {

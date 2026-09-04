@@ -1,5 +1,5 @@
 fn pixel_at(grid: &buffer<u8>, width: own u64, height: own u64, row: own u64, col: own u64) -> value: own u8 reads(grid) {
-  let area = len(deref(grid));
+  let area = len_of(deref(grid));
   if width *defined height {
   } else {
     return 0_u8;

@@ -16,7 +16,7 @@ fn middle(value: own u64, limit: own u64) -> own u64 traps ensures result {
 
 deny_claims fn strict_read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   doc "The bounds obligation is discharged in the complete view only through a summary whose proof lives two components down.";
-  let room = len(values);
+  let room = len_of(values);
   let safe = middle(value: index, limit: room);
   return values[safe];
 }

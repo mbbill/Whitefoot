@@ -79,7 +79,7 @@ fn copy_distance(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffe
       break @copy_match;
     } else {
       let source_index = deref(state).output_offset -wrap distance;
-      let history_room = len(deref(out));
+      let history_room = len_of(deref(out));
       let source_in_history = source_index < history_room;
       if source_in_history {
       } else {
@@ -103,7 +103,7 @@ fn copy_distance(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffe
 }
 
 fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> reads(lengths), allocates(heap) contract {
-  define lengths_room = len(lengths);
+  define lengths_room = len_of(lengths);
   define symbol_limit = symbol_count <= 286_u64;
   requires buffer_fits::<u64>(symbol_count);
   requires symbol_count <= lengths_room;
@@ -189,7 +189,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
     let present = symbol_length > 0_u32;
     if present {
       let count_index = cvt::<u32, u64>(symbol_length);
-      let order_offsets_room = len(offsets);
+      let order_offsets_room = len_of(offsets);
       let order_slot_ok = count_index < order_offsets_room;
       if order_slot_ok {
       } else {
@@ -197,7 +197,7 @@ fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits:
         return Err<HuffmanTable, InflateError>(error: error);
       }
       let destination = offsets[count_index];
-      let order_symbols_room = len(symbols);
+      let order_symbols_room = len_of(symbols);
       let destination_ok = destination < order_symbols_room;
       if destination_ok {
       } else {
@@ -237,7 +237,7 @@ fn decode_table_symbol(state: &uniq InflateState, input: &buffer<u8>, table: &Hu
     }
     set code = ior(code, bit);
     let count_index = cvt::<u32, u64>(bit_length);
-    let table_counts_room = len(deref(table).counts);
+    let table_counts_room = len_of(deref(table).counts);
     let table_count_ok = count_index < table_counts_room;
     if table_count_ok {
     } else {
@@ -252,7 +252,7 @@ fn decode_table_symbol(state: &uniq InflateState, input: &buffer<u8>, table: &Hu
     if found {
       let offset = code -wrap first;
       let ordered = symbol_index +wrap offset;
-      let table_symbols_room = len(deref(table).symbols);
+      let table_symbols_room = len_of(deref(table).symbols);
       let ordered_ok = ordered < table_symbols_room;
       if ordered_ok {
       } else {

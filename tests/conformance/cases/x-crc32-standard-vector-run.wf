@@ -1,6 +1,6 @@
 fn crc32(bytes: own buffer<u8>) -> function_result: own u32 reads(bytes) {
   let crc = 4294967295_u32;
-  let length = len(bytes);
+  let length = len_of(bytes);
   for (offset in 0_u64..length) {
     let byte = bytes[offset];
     let word = cvt::<u8, u32>(byte);

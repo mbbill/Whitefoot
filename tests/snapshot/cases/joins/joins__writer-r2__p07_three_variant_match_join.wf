@@ -6,7 +6,7 @@ enum Mode {
 
 fn fetch(b: own buffer<u8>, i: own u64, mode: own Mode) -> result: own u8 reads(b) {
   doc "expected REJECT [OP-4]: a `let idx = match mode {...}` is a value_match, and PostconditionDeliveryJoin only forms a delivery root for bounded value_if; a value_match publishes no joined relation for its delivered value even though every arm locally proves its own bound, so the tail subscript on idx is undischarged.";
-  let spare = len(b);
+  let spare = len_of(b);
   let idx = match mode {
     Zero() => {
       let inside = i < spare;

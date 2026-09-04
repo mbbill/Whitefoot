@@ -1,6 +1,6 @@
 fn fetch(b: own buffer<u8>, i: own u64, outer: own Bool, inner: own Bool) -> result: own u8 reads(b) {
   doc "expected REJECT [OP-4]: the outer true arm nests an if/else whose two leaves prove `<` and `<=` respectively, so the inner join already keeps only the weaker i <= spare; joining that with the outer false arm's tight i < spare still keeps the weakest `<=`, leaving the trailing subscript's strict obligation undischarged.";
-  let spare = len(b);
+  let spare = len_of(b);
   if outer {
     if inner {
       let tight = i < spare;

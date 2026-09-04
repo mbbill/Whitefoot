@@ -1,5 +1,5 @@
 fn read_halves(run: own buffer<u8>) -> total: own u64 reads(run) contract {
-  requires 8_u64 <= len(run);
+  requires 8_u64 <= len_of(run);
 } {
   doc "Two disjoint logical ranges over one run.";
   let seen = 0_u64;

@@ -1,6 +1,6 @@
 fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
   doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
-  let room = len(deref(name));
+  let room = len_of(deref(name));
   let sized = room >= 10_u64;
   if sized {
   } else {
@@ -40,7 +40,7 @@ fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(nam
 
 fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
-  let room = len(deref(destination));
+  let room = len_of(deref(destination));
   let remaining = value;
   let position = at +wrap 20_u64;
   loop @digits {
@@ -70,7 +70,7 @@ fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> res
 
 fn fold_bytes(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
-  let room = len(deref(source));
+  let room = len_of(deref(source));
   let sum = seed;
   let at = 0_u64;
   loop @fold {
@@ -141,7 +141,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     }
     set index = index +wrap 1_u64;
   }
-  let room = len(line);
+  let room = len_of(line);
   let cursor = 0_u64;
   region {
     set cursor = render_u64(destination: &uniq line, at: cursor, value: sum);

@@ -1,8 +1,8 @@
 fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, spare: own u64) reads(taken) contract {
-  ensures when Ok(value: reported): reported == len(taken);
+  ensures when Ok(value: reported): reported == len_of(taken);
 } {
   doc "Exactly one ordinal has the route's enum type, so the ordinal binder is omitted.";
-  let measured = len(taken);
+  let measured = len_of(taken);
   return Ok<u64, Overflow>(value: measured), measured;
 }
 

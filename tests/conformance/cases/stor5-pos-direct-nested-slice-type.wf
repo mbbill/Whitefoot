@@ -1,5 +1,5 @@
 fn nested_length(values: own slice<slice<u8>>) -> function_result: own u64 pure {
-  return len(values);
+  return len_of(values);
 }
 
 command fn main() -> status: own ExitStatus pure {

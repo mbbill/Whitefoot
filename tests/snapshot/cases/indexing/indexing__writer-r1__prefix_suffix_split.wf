@@ -1,5 +1,5 @@
 fn head_sum(data: own buffer<u8>, split: own u64) -> total: own u32 reads(data) contract {
-  define capacity = len(data);
+  define capacity = len_of(data);
   requires split <= capacity;
 } {
   doc "ACCEPT: sums the [0, split) prefix window; the split parameter is proved no larger than the buffer before the walk.";
@@ -13,11 +13,11 @@ fn head_sum(data: own buffer<u8>, split: own u64) -> total: own u32 reads(data) 
 }
 
 fn tail_sum(data: own buffer<u8>, split: own u64) -> total: own u32 reads(data) contract {
-  define capacity = len(data);
+  define capacity = len_of(data);
   requires split <= capacity;
 } {
   doc "ACCEPT: sums the [split, capacity) suffix window that head_sum leaves out, using the same split..capacity endpoint proof shape.";
-  let capacity = len(data);
+  let capacity = len_of(data);
   let sum = 0_u32;
   for (i in split..capacity) {
     let byte = data[i];

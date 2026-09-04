@@ -14,7 +14,7 @@ const table: array<u8, count> =[10_u8, 20_u8, 30_u8, 40_u8];
 
 command fn main() -> status: own ExitStatus pure {
   let values = array_new::<i32, count>(7_i32);
-  let length = len(values);
+  let length = len_of(values);
   let local = values[2_u64];
   let stored = table[2_u64];
   return exit_status(code: 0_u8);
@@ -247,7 +247,7 @@ command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
   let inner = Inner(values: move values);
   let outer = Outer(inner: move inner);
-  let length = len(outer.inner.values);
+  let length = len_of(outer.inner.values);
   set outer.inner.values[1_u64] = 9_u8;
   let stored = outer.inner.values[1_u64];
   return exit_status(code: 0_u8);

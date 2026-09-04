@@ -10,7 +10,7 @@ fn vec_new() -> result: own ByteVec allocates(heap) {
 
 fn vec_push(v: &uniq ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads(v.buf, v.fill), writes(v.buf, v.fill), allocates(heap) {
   let count = deref(v).fill;
-  let limit = len(deref(v).buf);
+  let limit = len_of(deref(v).buf);
   let full = count >= limit;
   if full {
     let growth_fits = limit <= 1000_u64;
@@ -48,7 +48,7 @@ fn vec_push(v: &uniq ByteVec, x: own u8) -> result: own Result<unit, Overflow> r
 }
 
 fn bytes_append(dst: &uniq ByteVec, src: &buffer<u8>) -> result: own Result<unit, Overflow> reads(dst.buf, dst.fill, src), writes(dst.buf, dst.fill), allocates(heap) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   for @append (i in 0_u64..count) {
     let byte = deref(src)[i];
     region {
@@ -78,7 +78,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   } else {
     return exit_status(code: 1_u8);
   }
-  let cap_now = len(v.buf);
+  let cap_now = len_of(v.buf);
   if cap_now == 24_u64 {
   } else {
     return exit_status(code: 1_u8);
@@ -117,7 +117,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   } else {
     return exit_status(code: 1_u8);
   }
-  let scap = len(s.buf);
+  let scap = len_of(s.buf);
   if 5_u64 < scap {
     let last = s.buf[5_u64];
     if last == 33_u8 {

@@ -1,11 +1,11 @@
 fn sum_chunks(buf: own buffer<u8>, chunk_size: own u64) -> total: own u64 reads(buf) contract {
-  define spare = len(buf);
+  define spare = len_of(buf);
   requires chunk_size > 0_u64;
   requires chunk_size <= 2147483648_u64;
   requires spare <= 2147483648_u64;
 } {
-  doc "expect ACCEPT: chunk reader walks buf in fixed-size chunks; the loop only reads a chunk after proving cursor + chunk_size <= len(buf)";
-  let spare = len(buf);
+  doc "expect ACCEPT: chunk reader walks buf in fixed-size chunks; the loop only reads a chunk after proving cursor + chunk_size <= len_of(buf)";
+  let spare = len_of(buf);
   let cursor = 0_u64;
   let total = 0_u64;
   loop (

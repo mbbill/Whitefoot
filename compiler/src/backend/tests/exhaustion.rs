@@ -860,8 +860,8 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 alloc
   let vacant = buffer_vacant::<u32>(4_u64);
   let boxed = box_new(7_u64);
   let held = deref(boxed);
-  let filled_len = len(filled);
-  let vacant_len = len(vacant);
+  let filled_len = len_of(filled);
+  let vacant_len = len_of(vacant);
   let total = held +wrap filled_len;
   set total = total +wrap vacant_len;
   region 'a {

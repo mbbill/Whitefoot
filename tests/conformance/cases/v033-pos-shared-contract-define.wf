@@ -1,5 +1,5 @@
 fn bounded_index(values: own array<u8, 8>, index: own u64) -> output: own u64 pure contract {
-  define capacity = len(values);
+  define capacity = len_of(values);
   requires index < capacity;
   ensures output < capacity;
 } {

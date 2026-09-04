@@ -39,7 +39,7 @@ fn bs_byte(s: &ByteString, index: own u64) -> result: own Option<u8> reads(s.buf
   let stored = deref(s).fill;
   let within = index < stored;
   if within {
-    let capacity = len(deref(s).buf);
+    let capacity = len_of(deref(s).buf);
     let addressable = index < capacity;
     if addressable {
       let value = deref(s).buf[index];
@@ -52,7 +52,7 @@ fn bs_byte(s: &ByteString, index: own u64) -> result: own Option<u8> reads(s.buf
 fn bs_push(s: &uniq ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
-  let capacity = len(deref(s).buf);
+  let capacity = len_of(deref(s).buf);
   let headroom = capacity <= 9223372036854775799_u64;
   if headroom {
   } else {
@@ -79,7 +79,7 @@ fn bs_push(s: &uniq ByteString, value: own u8) -> result: own unit reads(s.buf, 
 
 fn bs_append_slice(s: &uniq ByteString, text: own slice<u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends every byte of one static message, growing the destination as needed.";
-  let count = len(text);
+  let count = len_of(text);
   for @append (at in 0_u64..count) {
     let byte = text[at];
     region {
@@ -172,9 +172,9 @@ fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit read
   let rest = value;
   loop @extract {
     let digit = rest % 10_u64;
-    let glyphs = len(digit_glyphs);
+    let glyphs = len_of(digit_glyphs);
     let known = digit < glyphs;
-    let capacity = len(scratch);
+    let capacity = len_of(scratch);
     let spare = written < capacity;
     if known {
       if spare {
@@ -200,7 +200,7 @@ fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit read
       break @emit;
     }
     set index = index -wrap 1_u64;
-    let capacity = len(scratch);
+    let capacity = len_of(scratch);
     let inside = index < capacity;
     if inside {
       let glyph = scratch[index];
@@ -213,7 +213,7 @@ fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit read
 }
 
 fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len(deref(source));
+  define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
@@ -386,7 +386,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   } else {
     return exit_status(code: 1_u8);
   }
-  let report_capacity = len(report.buf);
+  let report_capacity = len_of(report.buf);
   let report_within_capacity = published <= report_capacity;
   if report_within_capacity {
     region {

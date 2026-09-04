@@ -401,7 +401,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     if fixed_match_done {
       break @check_fixed_match;
     } else {
-      let fixed_match_room = len(fixed_match_output);
+      let fixed_match_room = len_of(fixed_match_output);
       let fixed_match_ok = fixed_match_index < fixed_match_room;
       if fixed_match_ok {
       } else {
@@ -450,7 +450,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     if fixed_phrase_done {
       break @check_fixed_phrase;
     } else {
-      let fixed_phrase_room = len(fixed_phrase_output);
+      let fixed_phrase_room = len_of(fixed_phrase_output);
       let fixed_phrase_out_ok = fixed_phrase_index < fixed_phrase_room;
       if fixed_phrase_out_ok {
       } else {
@@ -490,7 +490,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     if dynamic_output_done {
       break @check_dynamic_output;
     } else {
-      let dynamic_room = len(dynamic_output);
+      let dynamic_room = len_of(dynamic_output);
       let dynamic_out_ok = dynamic_output_index < dynamic_room;
       if dynamic_out_ok {
       } else {
@@ -562,7 +562,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
           break @check_dynamic_match_chunk;
         } else {
           let output_index = dynamic_match_base +wrap dynamic_match_index;
-          let dynamic_match_room = len(dynamic_match_output);
+          let dynamic_match_room = len_of(dynamic_match_output);
           let dynamic_match_out_ok = output_index < dynamic_match_room;
           if dynamic_match_out_ok {
           } else {
@@ -626,7 +626,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     if mixed_block_prefix_done {
       break @check_mixed_block_prefix;
     } else {
-      let mixed_room = len(mixed_block_output);
+      let mixed_room = len_of(mixed_block_output);
       let mixed_out_ok = mixed_block_index < mixed_room;
       if mixed_out_ok {
       } else {

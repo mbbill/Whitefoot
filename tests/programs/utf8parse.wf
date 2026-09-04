@@ -1,11 +1,11 @@
 fn parse(out: &uniq buffer<u32>, src: own buffer<u8>) -> result: own u64 reads(out, src), writes(out) contract {
-  define source_length = len(src);
-  define output_length = len(deref(out));
+  define source_length = len_of(src);
+  define output_length = len_of(deref(out));
   define enough_output = output_length >= source_length;
   requires enough_output;
 } {
-  let source_length = len(src);
-  let output_length = len(deref(out));
+  let source_length = len_of(src);
+  let output_length = len_of(deref(out));
   let count = 0_u64;
   let state = 0_u8;
   let value = 0_u32;

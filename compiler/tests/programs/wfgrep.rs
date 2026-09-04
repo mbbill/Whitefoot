@@ -233,7 +233,7 @@ fn wfgrep_agrees_with_grep_on_the_empty_and_the_total_hit_set() {
 /// That refusal is arithmetic on the *display* path, so the level it lands at
 /// depends on the root name's length, which is why quoting a level without the
 /// root is not reproducible: for this fixture's four-byte root `tree`,
-/// `4 + 2n + len("/bottom.txt") <= 1000` gives n <= 492, and 493 is the first
+/// `4 + 2n + len_of("/bottom.txt") <= 1000` gives n <= 492, and 493 is the first
 /// level that fails — measured, and measured again at 493 completing with a
 /// three-byte root. Neither program bound is the stack: on this test target,
 /// the stack ledger prices one `wf_walk` activation at 1744 bytes and the

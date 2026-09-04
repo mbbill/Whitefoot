@@ -1746,7 +1746,7 @@ fn remap_node(node: &mut DerivationNode, remap: &[Option<DerivationId>]) {
 }
 
 /// One place read by a complete goal. `length` records ENT-5's fixed-length
-/// boundary: an element write does not invalidate a `len(P)` observation.
+/// boundary: an element write does not invalidate a `len_of(P)` observation.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct GoalSupport {
     pub(crate) root: BindingId,
@@ -2888,7 +2888,7 @@ pub(crate) fn close(
 
 /// Emits every [ENT-2] implicit bound carried by one term: the reflexive
 /// bound, the fragment-type range, the constant fold through Z, and the
-/// `len(P) = N` equality of an `array<T, N>` place.
+/// `len_of(P) = N` equality of an `array<T, N>` place.
 ///
 /// Implicit facts are a function of the term table and the place's type
 /// alone. They hold at every program point, so this is the single rule table
@@ -2931,7 +2931,7 @@ fn for_each_implicit_bound(
                 }
                 None => {}
             }
-            // `len(P) <= cap(P)` and `head(P) <= cap(P)`, emitted from the
+            // `len_of(P) <= cap_of(P)` and `head_of(P) <= cap_of(P)`, emitted from the
             // capacity term so each ordering is emitted exactly once.
             if *measure == CheckedMeasure::Capacity {
                 for bounded in [CheckedMeasure::Length, CheckedMeasure::Head] {

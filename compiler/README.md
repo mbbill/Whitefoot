@@ -148,7 +148,7 @@ value operations. Recoverable language and system failures use typed
 After source checking, selected-target qualification proves concrete object
 layout, element stride, allocation byte ceilings, frame materialization, and
 address-index representability before emission. A source proof of
-`i < len(buffer)` does not by itself prove that the selected target can
+`i < len_of(buffer)` does not by itself prove that the selected target can
 represent `base + stride*i`; the target stage checks that separate obligation.
 An unrepresentable target is a target compilation failure and emits no partial
 operation.
@@ -252,9 +252,9 @@ compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
 The largest such gap today is the store-backed half of the container
 specification. The frame-resident run executes: `seq_fixed` forms one,
-[BLK-3]'s four boundary operations move its boundaries, `len`, `cap`, `room`
-and `head` read its measures, a subscript reads the window at
-`(head + i) mod cap`, each row's requirement is discharged at the call under
+[BLK-3]'s four boundary operations move its boundaries, `len_of`, `cap_of`,
+`room_of` and `head_of` read its measures, a subscript reads the window at
+`(head_of + i) mod cap_of`, each row's requirement is discharged at the call under
 [MSR-4] and each row's declared relations are published at the caller under
 [CALL-6]. What is not implemented is the store: `arena_frame`,
 `seq_arena`, `seq_arena_proved` and `seq_heap` are resolved, checked and

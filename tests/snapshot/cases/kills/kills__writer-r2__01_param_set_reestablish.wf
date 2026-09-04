@@ -1,5 +1,5 @@
 fn clamp_and_read(b: own buffer<u8>, idx: own u64, stride: own u64) -> result: own u8 reads(b) {
-  let spare = len(b);
+  let spare = len_of(b);
   let in_range = idx < spare;
   if in_range {
   } else {

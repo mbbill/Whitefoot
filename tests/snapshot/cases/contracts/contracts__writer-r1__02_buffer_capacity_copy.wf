@@ -1,9 +1,9 @@
 fn fill_prefix(out: &uniq buffer<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
-  define spare = len(deref(out));
-  define amount = len(source);
+  define spare = len_of(deref(out));
+  define amount = len_of(source);
   requires amount <= spare;
 } {
-  let amount = len(source);
+  let amount = len_of(source);
   for (offset in 0_u64..amount) {
     let value = source[offset];
     set deref(out)[offset] = value;
@@ -12,7 +12,7 @@ fn fill_prefix(out: &uniq buffer<u8>, source: own buffer<u8>) -> written: own u6
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "ACCEPT: requires uses a len(deref(out)) definition to bound the write loop.";
+  doc "ACCEPT: requires uses a len_of(deref(out)) definition to bound the write loop.";
   let source = buffer_new(3_u64, 9_u8);
   let target = buffer_new(5_u64, 0_u8);
   region {

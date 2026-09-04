@@ -28,7 +28,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(2_u64, 9_u8);
   let old = replace holder.payload = move second;
-  let size = len(old);
+  let size = len_of(old);
   return exit_status(code: 0_u8);
 }
 "#,
@@ -48,7 +48,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
             panic!("a field replace target is a Place");
         };
         assert_eq!(place.fields, vec![0]);
-        // The fresh binding is a real binding: the later `len(old)` read
+        // The fresh binding is a real binding: the later `len_of(old)` read
         // resolves against it, which the accepted outcome already proves.
         assert!(binding.0 > 0);
     });
@@ -106,7 +106,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
-  let size = len(holder.payload);
+  let size = len_of(holder.payload);
   let allocated_length = size == 4_u64;
   if allocated_length {
     let second = buffer_new(2_u64, 9_u8);
@@ -133,7 +133,7 @@ fn the_same_subscript_discharges_without_the_replace() {
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
-  let size = len(holder.payload);
+  let size = len_of(holder.payload);
   let allocated_length = size == 4_u64;
   if allocated_length {
     set holder.payload[3_u64] = 5_u8;
@@ -279,7 +279,7 @@ fn element_position_replace_through_a_unique_holder_accepts() {
 
 fn push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf) {
   let count = deref(v).fill;
-  let limit = len(deref(v).buf);
+  let limit = len_of(deref(v).buf);
   let has_room = count < limit;
   if has_room {
     let filled = Some<u32>(value: x);

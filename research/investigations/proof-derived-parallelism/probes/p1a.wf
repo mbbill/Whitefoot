@@ -55,7 +55,7 @@ fn measure_words(words: &buffer<f64>, font: own f64) -> result: own f64 reads(wo
   doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation is discharged and the whole function is claim-free.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
-  let room = len(deref(words));
+  let room = len_of(deref(words));
   let k = 0_u64;
   loop @scan {
     let done = ige(k, room);
@@ -78,7 +78,7 @@ fn measure_band(words: &buffer<f64>, count: own u64, font: own f64) -> result: o
   doc "The same walk over a caller-supplied prefix. The bound comes from the caller, so the index obligation needs a claim, which is exactly what makes every call closure through this function permitted but not actualizable.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
-  let room = len(deref(words));
+  let room = len_of(deref(words));
   let k = 0_u64;
   loop @scan {
     let done = ige(k, count);
@@ -179,7 +179,7 @@ fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> resu
     }
     let shifted = irotl(rest, 4_u32);
     let digit = hex_digit(v: shifted);
-    let room = len(deref(destination));
+    let room = len_of(deref(destination));
     let writable = ilt(cursor, room);
     if writable {
       set deref(destination)[cursor] = digit;
@@ -194,7 +194,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes.";
   let tree = build(depth: 6_u64, w: 512.0_f64);
   let words = buffer_new(8192_u64, 0.25_f64);
-  let room = len(words);
+  let room = len_of(words);
   let width = 6.5_f64;
   let w = 0_u64;
   loop @fill {

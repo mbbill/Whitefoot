@@ -13,7 +13,7 @@ fn optvec_new(capacity: own u64) -> result: own OptVec allocates(heap) contract 
 
 fn optvec_push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), writes(v.buf, v.fill) {
   let count = deref(v).fill;
-  let limit = len(deref(v).buf);
+  let limit = len_of(deref(v).buf);
   let has_room = count < limit;
   if has_room {
   } else {
@@ -41,7 +41,7 @@ fn optvec_pop(v: &uniq OptVec) -> result: own u32 reads(v.buf, v.fill), writes(v
     return 0_u32;
   }
   let last = count - 1_u64;
-  let limit = len(deref(v).buf);
+  let limit = len_of(deref(v).buf);
   let in_range = last < limit;
   if in_range {
   } else {

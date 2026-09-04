@@ -264,10 +264,10 @@ const UNMODELLED_ROW_SPELLINGS: [&str; 15] = [
     "ene",
     "cvt",
     "reinterpret",
-    "len",
-    "cap",
-    "room",
-    "head",
+    "len_of",
+    "cap_of",
+    "room_of",
+    "head_of",
     "slice_of",
     "box_new",
     "arena_new",
@@ -548,7 +548,7 @@ fn measure_rows() -> Vec<MeasureRow> {
             .split('|')
             .map(str::trim)
             .collect::<Vec<_>>(),
-        vec!["measured type", "len", "cap", "room", "head"],
+        vec!["measured type", "len_of", "cap_of", "room_of", "head_of"],
         "the first row of a wf-measures fence is its column schema"
     );
     lines
@@ -620,7 +620,7 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
                     measure.spelling()
                 ),
                 MeasureCell::ExactExtent => assert!(
-                    matches!(written, "N" | "allocated slots" | "viewed elements" | "len"),
+                    matches!(written, "N" | "allocated slots" | "viewed elements" | "len_of"),
                     "{name}'s {} cell is the measured value's own extent, written {written}",
                     measure.spelling()
                 ),
@@ -632,7 +632,7 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
                 MeasureCell::ExactRuntime => assert!(
                     matches!(
                         written,
-                        "initialized slots" | "slots taken" | "cursor bytes" | "cap - len"
+                        "initialized slots" | "slots taken" | "cursor bytes" | "cap_of - len_of"
                     ),
                     "{name}'s {} cell is a runtime quantity of the descriptor, written {written}",
                     measure.spelling()

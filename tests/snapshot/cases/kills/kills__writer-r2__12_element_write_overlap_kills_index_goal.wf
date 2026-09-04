@@ -2,7 +2,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   doc "expected: ACCEPT -- a write to buf[at] kills the earlier read fact about that same index [ENT-5]; the program rereads it instead of reusing the stale value.";
   let buf = buffer_new(3_u64, 1_u8);
   let at = 1_u64;
-  let spare = len(buf);
+  let spare = len_of(buf);
   let ok = at < spare;
   if ok {
   } else {

@@ -1,6 +1,6 @@
 fn fold_pair['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> total: own u64 reads(left, right) contract {
-  define left_length = len(deref(left));
-  define right_length = len(deref(right));
+  define left_length = len_of(deref(left));
+  define right_length = len_of(deref(right));
   requires length <= left_length;
   requires length <= right_length;
 } {
@@ -18,7 +18,7 @@ fn fold_pair['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64)
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "EXPECT ACCEPT: requires uses two independent defines (left_length, right_length) each from len(deref(.)); length 3 satisfies both against buffers of len 4 and 5.";
+  doc "EXPECT ACCEPT: requires uses two independent defines (left_length, right_length) each from len_of(deref(.)); length 3 satisfies both against buffers of len 4 and 5.";
   let left = buffer_new(4_u64, 2_u64);
   let right = buffer_new(5_u64, 3_u64);
   region {

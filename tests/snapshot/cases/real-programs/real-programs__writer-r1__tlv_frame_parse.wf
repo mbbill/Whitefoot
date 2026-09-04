@@ -11,7 +11,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set frame[7_u64] = 2_u8;
   set frame[8_u64] = 3_u8;
   set frame[9_u64] = 0_u8;
-  let frame_length = len(frame);
+  let frame_length = len_of(frame);
   let cursor = 0_u64;
   let entries = 0_u64;
   let value_total = 0_u64;

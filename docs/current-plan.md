@@ -30,7 +30,7 @@ back into the constant interval they stand for, so acceptance no longer depends
 on the shape of the join.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
-or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`
+or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`
 is a written clause where it was a parse rejection, and the define-per-measure
 spelling is gone. [MSR-3] gives every contract operand one denotation keyed on
 its parameter's mode: an `own` operand read at a caller denotes the call datum,
@@ -56,19 +56,19 @@ route and its ambiguity refusal, and adds the two [ENT-3.S12] destinations only
 a multi-result contract exercises. The batch that carried it is B1b of the same
 design.
 
-The same version adds that design's proof surface. [MSR-1] makes `len(P)`,
-`cap(P)`, `room(P)` and `head(P)` [ENT-2] terms over an admitted measure place
+The same version adds that design's proof surface. [MSR-1] makes `len_of(P)`,
+`cap_of(P)`, `room_of(P)` and `head_of(P)` [ENT-2] terms over an admitted measure place
 and [OP-1] readers over the same places, with a measure table the rule requires
-to exist and a logical coordinate system whose origin is `head`. [MSR-2] states
+to exist and a logical coordinate system whose origin is `head_of`. [MSR-2] states
 the support of a measure term as descriptor storage, so a write to a sibling
 field kills no measure and a write at an element position kills the measures of
 the written element and none of the run's own, and fixes the standing facts
 every measured value carries. [MSR-4] states once the complete ordered
 derivation of a numeric goal and retires [ENT-6]'s per-family route grants.
 [MSR-6] admits an in-scope const generic as a value, an endpoint and a clause
-operand. Adding the three readers also adds three members to
-`ReservedLowerNames`, so no writer declaration may be spelled `cap`, `room` or
-`head` any more. The batch that carried it is B2 of the same design.
+operand. Adding the four readers also adds four members to
+`ReservedLowerNames`, and S36 spells them `len_of`, `cap_of`, `room_of` and
+`head_of`, so the four bare words stay a writer's to declare. The batch that carried it is B2 of the same design.
 
 The same version adds that design's liveness and commit rules. [LIV-1] makes a
 binding's live-or-dead status a property of a program point: every predecessor
@@ -107,8 +107,8 @@ The same version adds that design's container half: [PROV-1] puts a store's
 identity in a region and that region in the type of every value the store
 backs, [BLK-0] makes the container and store operations one compiler-owned
 generic declaration domain admitted to every unit, [BLK-1] states the two runs
-and the one window whose initialized storage is the `len` slots beginning at
-`head` modulo `cap`, and [BLK-2] and [BLK-3] are the inventory's four formation
+and the one window whose initialized storage is the `len_of` slots beginning at
+`head_of` modulo `cap_of`, and [BLK-2] and [BLK-3] are the inventory's four formation
 rows, one frame reservation, and four boundary operations. `Vector`,
 `FixedVector`, `Heap` and `Arena` are four compiler-owned nominals and a
 `struct` or `enum` may declare region parameters. The batch that carried it is
@@ -215,7 +215,7 @@ multiline and has no trailing comma:
 ```wf
 fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32
     reads(weights) contract {
-  define spare = len(deref(weights));
+  define spare = len_of(deref(weights));
   requires count <= spare;
   requires count <= 1000_u64;
   ensures total <= 255000_u32;
@@ -234,7 +234,7 @@ fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32
 ```
 
 At each body entry the counted guard gives `i < count`, and the first
-requirement gives `count <= len(weights)`, so the subscript is in range. The
+requirement gives `count <= len_of(weights)`, so the subscript is in range. The
 header relation, the exact value image for `sum + wide`, and `wide <= 255`
 prove the exact addition and the next header relation. At normal exhaustion the
 checker substitutes `i := count`; the resulting `sum <= 255*count` plus

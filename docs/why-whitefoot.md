@@ -201,7 +201,7 @@ fn encode['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> written: own u64
 }
 ```
 
-One line of contract says the output can hold `4 * ceil(len(src)/3)` bytes, spelled as an overflow-safe comparison. The body is the obvious indexed loop: three reads, four table lookups, four writes per iteration.
+One line of contract says the output can hold `4 * ceil(len_of(src)/3)` bytes, spelled as an overflow-safe comparison. The body is the obvious indexed loop: three reads, four table lookups, four writes per iteration.
 
 Before the proof tier (committed `b64.s`, the checked build), every read and write in the loop carries its compare-and-branch. This is what "everything is checked" costs:
 

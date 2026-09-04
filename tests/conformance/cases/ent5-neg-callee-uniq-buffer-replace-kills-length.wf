@@ -5,7 +5,7 @@ fn shrink(handle: &uniq buffer<u8>) -> discarded: own buffer<u8> reads(handle), 
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  doc "The callee replaces the whole referent of its &uniq buffer parameter. [EFF-2] projects writes(handle) onto the actual place line, which is the support member of len(line), and [ENT-5] clause (a) makes a whole-place replace of a buffer kill that buffer's length facts. The allocation fact len(line) = 10 must therefore not survive the call, and the later subscript of offset 9 into what is now a two-byte allocation must be rejected at [OP-4] with the residual 9_u64 < len(line).";
+  doc "The callee replaces the whole referent of its &uniq buffer parameter. [EFF-2] projects writes(handle) onto the actual place line, which is the support member of len_of(line), and [ENT-5] clause (a) makes a whole-place replace of a buffer kill that buffer's length facts. The allocation fact len_of(line) = 10 must therefore not survive the call, and the later subscript of offset 9 into what is now a two-byte allocation must be rejected at [OP-4] with the residual 9_u64 < len_of(line).";
   let line = buffer_new(10_u64, 0_u8);
   region {
     let dropped = shrink(handle: &uniq line);

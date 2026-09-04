@@ -2,7 +2,7 @@ const data: array<u64, 6> =[3_u64, 7_u64, 0_u64, 9_u64, 2_u64, 5_u64];
 
 fn find_sentinel(values: own slice<u64>) -> found: own u64 reads(values) {
   doc "ACCEPT: counted for cursor scans a slice and breaks on the first sentinel value it meets.";
-  let length = len(values);
+  let length = len_of(values);
   let found = length;
   for (i in 0_u64..length) {
     let value = values[i];

@@ -4,7 +4,7 @@ struct Cursor {
 }
 
 fn cursor_read_at(table: own buffer<u8>, cursor: own Cursor) -> value: own u8 reads(table, cursor.idx), writes(cursor.idx) contract {
-  define spare = len(table);
+  define spare = len_of(table);
   requires cursor.idx < cursor.limit;
   requires cursor.limit <= spare;
 } {

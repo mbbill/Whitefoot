@@ -1,5 +1,5 @@
 fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own u32 reads(data) contract {
-  define spare = len(deref(data));
+  define spare = len_of(deref(data));
   requires start <= spare;
   requires width <= spare;
 } {
@@ -8,7 +8,7 @@ fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own 
     return 0_u32;
   }
   let end = start + width;
-  let spare = len(deref(data));
+  let spare = len_of(deref(data));
   if end <= spare {
   } else {
     return 0_u32;

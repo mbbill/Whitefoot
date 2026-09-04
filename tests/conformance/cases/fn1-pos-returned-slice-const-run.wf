@@ -8,7 +8,7 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
 command fn main() -> status: own ExitStatus pure {
   region 'view {
     let view = fixed_view::<'view>();
-    let view_room = len(view);
+    let view_room = len_of(view);
     let view_ok = 1_u64 < view_room;
     if view_ok {
     } else {

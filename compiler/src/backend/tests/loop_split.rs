@@ -91,7 +91,7 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let spare = len(deref(destination));
+    let spare = len_of(deref(destination));
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -308,7 +308,7 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let spare = len(deref(destination));
+    let spare = len_of(deref(destination));
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -399,7 +399,7 @@ fn mapped() -> result: own buffer<u8> allocates(heap) {
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let report = mapped();
-  let size = len(report);
+  let size = len_of(report);
   region 'o {
     region {
       match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: size) {
@@ -448,7 +448,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
     source
         .replacen(
             "fn mapped() -> result: own buffer<u8> allocates(heap) {\n  let out = buffer_new(400000_u64, 0_u8);\n",
-            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define spare = len(deref(out));\n  requires 400000_u64 <= spare;\n} {\n",
+            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define spare = len_of(deref(out));\n  requires 400000_u64 <= spare;\n} {\n",
             1,
         )
         .replacen(
@@ -1256,7 +1256,7 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let spare = len(deref(destination));
+    let spare = len_of(deref(destination));
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);

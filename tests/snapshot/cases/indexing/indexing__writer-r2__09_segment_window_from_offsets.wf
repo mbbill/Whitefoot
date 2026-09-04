@@ -1,5 +1,5 @@
 fn segment_sum(offsets: &buffer<u64>, data: &buffer<u32>, segment: own u64) -> total: own u32 reads(offsets, data) {
-  let segment_count_plus_one = len(deref(offsets));
+  let segment_count_plus_one = len_of(deref(offsets));
   if segment_count_plus_one > 0_u64 {
   } else {
     return 0_u32;
@@ -16,7 +16,7 @@ fn segment_sum(offsets: &buffer<u64>, data: &buffer<u32>, segment: own u64) -> t
     return 0_u32;
   }
   let end = deref(offsets)[next_segment];
-  let spare = len(deref(data));
+  let spare = len_of(deref(data));
   if start <= end {
   } else {
     return 0_u32;

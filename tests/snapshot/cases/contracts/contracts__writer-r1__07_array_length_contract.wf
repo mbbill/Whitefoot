@@ -1,9 +1,9 @@
 fn last_index(values: own array<u8, 12>) -> index: own u64 pure contract {
-  define capacity = len(values);
+  define capacity = len_of(values);
   requires capacity > 0_u64;
   ensures index < capacity;
 } {
-  let capacity = len(values);
+  let capacity = len_of(values);
   let index = capacity - 1_u64;
   return index;
 }

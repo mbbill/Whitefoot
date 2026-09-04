@@ -1,5 +1,5 @@
 fn pick(b: own buffer<u8>, idx: own u64, stray: own u64) -> result: own u8 reads(b) {
-  let limit = len(b);
+  let limit = len_of(b);
   let ok = idx < limit;
   if ok {
   } else {

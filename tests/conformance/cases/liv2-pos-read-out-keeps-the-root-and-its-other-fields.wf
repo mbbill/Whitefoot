@@ -5,7 +5,7 @@ struct Frame {
 
 fn grow(old: own buffer<u8>) -> bigger: own buffer<u8> reads(old), allocates(heap) {
   doc "Consumes the run it is handed and hands back another.";
-  let seen = len(old);
+  let seen = len_of(old);
   let fresh = buffer_new(8_u64, 0_u8);
   return move fresh;
 }

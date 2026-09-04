@@ -8,7 +8,7 @@ fn clamped(value: own u64, limit: own u64) -> own u64 traps ensures result {
 
 deny_claims fn strict_read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   doc "A demanded strict component whose bounds obligation is discharged only by a claim-backed S12 summary imported from a callee.";
-  let room = len(values);
+  let room = len_of(values);
   let safe = clamped(value: index, limit: room);
   return values[safe];
 }

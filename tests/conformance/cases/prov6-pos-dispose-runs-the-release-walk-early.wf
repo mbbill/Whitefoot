@@ -1,7 +1,7 @@
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "PROV-6: `dispose p;` runs at the point it is written exactly the release walk the scope exit would have run for `p`. The run is reclaimed before the entry's own exit edge, which is the difference between a peak of one run and a peak of two.";
   let run = buffer_new(4_u64, 0_u8);
-  let size = len(run);
+  let size = len_of(run);
   dispose run;
   let second = buffer_new(4_u64, 0_u8);
   dispose second;

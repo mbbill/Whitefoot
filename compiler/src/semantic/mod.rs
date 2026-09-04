@@ -790,7 +790,7 @@ pub enum SemanticIssueKind {
     /// A subscript's bounds obligation is not derivable from the closed fact
     /// state at its node [OP-4, ENT-6].
     UndischargedBoundsObligation {
-        /// The exact ENT-6 residual rendering: offset atom, ` < len(`, base
+        /// The exact ENT-6 residual rendering: offset atom, ` < len_of(`, base
         /// place, `)`.
         residual: String,
         /// The mechanical fix ENT-6 names.

@@ -55,7 +55,7 @@ fn measure_words(words: &buffer<f64>, font: own f64) -> result: own f64 reads(wo
   doc "Measures every word of the shared metric table at one font size. The walk is bounded by the table's own length, so its index obligation is discharged directly.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
-  let spare = len(deref(words));
+  let spare = len_of(deref(words));
   let k = 0_u64;
   loop @scan {
     let done = k >= spare;
@@ -78,7 +78,7 @@ fn measure_band(words: &buffer<f64>, count: own u64, font: own f64) -> result: o
   doc "The same walk over a caller-supplied prefix, clamped to the table it reads.";
   let widest = 0.0_f64;
   let total = 0.0_f64;
-  let spare = len(deref(words));
+  let spare = len_of(deref(words));
   let bounded_count = spare;
   let count_fits = count <= spare;
   if count_fits {
@@ -174,7 +174,7 @@ fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> resu
     }
     let shifted = irotl(rest, 4_u32);
     let digit = hex_digit(v: shifted);
-    let spare = len(deref(destination));
+    let spare = len_of(deref(destination));
     let writable = cursor < spare;
     if writable {
       set deref(destination)[cursor] = digit;
@@ -194,7 +194,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
   }
   let tree = build(depth: 6_u64, w: 512.0_f64);
   let words = buffer_new(8192_u64, 0.25_f64);
-  let spare = len(words);
+  let spare = len_of(words);
   let width = 6.5_f64;
   let w = 0_u64;
   loop @fill {

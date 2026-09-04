@@ -447,7 +447,7 @@ impl StagedDenial {
             // granted, so the admitted form is to name the storage rather than
             // a binding standing in front of it.
             Self::Unresolved { .. } => {
-                "name the storage the call reaches directly rather than through a binding whose extent this judgment does not resolve: `len(&'v table)` resolves where the same length taken through a `slice_of` binding does not"
+                "name the storage the call reaches directly rather than through a binding whose extent this judgment does not resolve: `len_of(&'v table)` resolves where the same length taken through a `slice_of` binding does not"
             }
         }
     }

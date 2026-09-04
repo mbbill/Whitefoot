@@ -8,8 +8,8 @@ fn shape_dyn(n: own u64, x: own f64) -> result: own u64 allocates(heap), traps {
   doc "Two adjacent independent per-node allocations: the shape a style-resolve phase actually has.";
   let ba = mkbuf_dyn(n: n, v: x);
   let bb = mkbuf_dyn(n: n, v: x);
-  let la = len(ba);
-  let lb = len(bb);
+  let la = len_of(ba);
+  let lb = len_of(bb);
   return la +wrap lb;
 }
 

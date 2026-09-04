@@ -1,9 +1,9 @@
 fn split(taken: own buffer<u8>) -> (kept: own u64, spare: own u64) reads(taken) contract {
-  ensures kept == len(taken);
-  ensures spare == len(taken);
+  ensures kept == len_of(taken);
+  ensures spare == len_of(taken);
 } {
   doc "Two results, each related to the measure of the run this call consumed.";
-  let measured = len(taken);
+  let measured = len_of(taken);
   return measured, measured;
 }
 

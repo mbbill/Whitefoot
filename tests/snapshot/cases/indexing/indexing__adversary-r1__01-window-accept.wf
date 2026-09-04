@@ -1,9 +1,9 @@
 fn window_last(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
-  define spare = len(buf);
+  define spare = len_of(buf);
   requires start < end;
   requires end <= spare;
 } {
-  doc "expect ACCEPT: start < end <= len(buf), so end - 1 (the window's last position) is a valid buffer index";
+  doc "expect ACCEPT: start < end <= len_of(buf), so end - 1 (the window's last position) is a valid buffer index";
   let last_index = end - 1_u64;
   let value = buf[last_index];
   return value;

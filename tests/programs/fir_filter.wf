@@ -13,7 +13,7 @@ command fn main() -> status: own ExitStatus pure {
   let samples = array_new::<f64, 8>(0.0_f64);
   let delay = DelayLine(samples: move samples, cursor: 0_u64);
   let filter = FirFilter(taps: move taps, delay: move delay);
-  let tap_count = len(filter.taps);
+  let tap_count = len_of(filter.taps);
   let output_sum = 0.0_f64;
   for (frame in 0_u64..64_u64) {
     let first_frame = frame == 0_u64;

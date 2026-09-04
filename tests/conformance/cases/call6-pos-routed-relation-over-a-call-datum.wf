@@ -1,8 +1,8 @@
 fn first_or_length(taken: own buffer<u8>) -> outcome: own Result<u64, Overflow> reads(taken) contract {
-  ensures when Ok(value: reported): reported == len(taken);
+  ensures when Ok(value: reported): reported == len_of(taken);
 } {
   doc "A routed relation names a consumed own operand's measure.";
-  let reported = len(taken);
+  let reported = len_of(taken);
   return Ok<u64, Overflow>(value: reported);
 }
 

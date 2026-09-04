@@ -74,7 +74,7 @@ fn read(values: own array<u16, 4>, offset: own u64) -> result: own u16 pure {
 
 command fn main() -> status: own ExitStatus pure {
   let values = make();
-  let length = len(values);
+  let length = len_of(values);
   if length != 4_u64 {
     return exit_status(code: 1_u8);
   }
@@ -114,7 +114,7 @@ fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
 "#;
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-4"));
-    assert!(failure.detail().contains("2_u64 < len(values)"));
+    assert!(failure.detail().contains("2_u64 < len_of(values)"));
 }
 
 #[test]
@@ -183,7 +183,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-4"));
-    assert!(failure.detail().contains("2_u64 < len(values)"));
+    assert!(failure.detail().contains("2_u64 < len_of(values)"));
 }
 
 #[test]

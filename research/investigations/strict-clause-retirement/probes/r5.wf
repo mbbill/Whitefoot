@@ -8,7 +8,7 @@ fn bounded<T: Int>(value: own T, limit: own T) -> own T traps ensures result {
 
 deny_claims fn strict_read(values: own array<u8, 4>, index: own u64) -> own u8 traps {
   doc "One concrete instance of the claim-bearing generic sits in this demanded closure.";
-  let room = len(values);
+  let room = len_of(values);
   let safe = bounded<u64>(value: index, limit: room);
   return values[safe];
 }

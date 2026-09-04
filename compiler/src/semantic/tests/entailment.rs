@@ -900,7 +900,7 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     ImplicitBoundKind::StandingMeasure => {
                         assert_array_length_bound(summary, *left, *right, *bound);
                     }
-                    // [MSR-2] `len(P) <= limit(P)` and `front(P) <= limit(P)`,
+                    // [MSR-2] `len_of(P) <= limit(P)` and `front(P) <= limit(P)`,
                     // emitted from the capacity term of one place.
                     ImplicitBoundKind::MeasureOrdering => {
                         assert_eq!(*bound, 0);
@@ -2377,7 +2377,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(outcomes.len(), 2);
     assert!(outcomes[0].discharged, "True arm carries i < 4 = len");
     assert!(!outcomes[1].discharged, "False arm carries only i >= 4");
-    assert_eq!(outcomes[1].residual.as_deref(), Some("i < len(values)"));
+    assert_eq!(outcomes[1].residual.as_deref(), Some("i < len_of(values)"));
 }
 
 #[test]
@@ -2509,7 +2509,7 @@ command fn main() -> status: own ExitStatus pure {
         "2 < 4 by the implicit length equality"
     );
     assert!(!outcomes[1].discharged, "9 < 4 is not derivable");
-    assert_eq!(outcomes[1].residual.as_deref(), Some("9_u64 < len(table)"));
+    assert_eq!(outcomes[1].residual.as_deref(), Some("9_u64 < len_of(table)"));
     assert!(outcomes[1].derivation.is_none());
     let root = obligation_root(&summary, 0);
     assert_root_contains(
@@ -2630,7 +2630,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "i <= p.count and p.count < 4 compose to i < len(values)"
+        "i <= p.count and p.count < 4 compose to i < len_of(values)"
     );
 }
 
@@ -2657,7 +2657,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "i <= 4 with i != 4 strengthens to i <= 3 < len(values)"
+        "i <= 4 with i != 4 strengthens to i <= 3 < len_of(values)"
     );
 }
 
@@ -4729,7 +4729,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![false],
-        "i < captured upper does not imply upper <= len(values)"
+        "i < captured upper does not imply upper <= len_of(values)"
     );
 }
 
@@ -5184,7 +5184,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_counted_roots_are_deterministic_across_twenty_analyses() {
     let source = br#"fn ranges<const n: u64>(values: own array<u8, n>) -> result: own unit pure {
-  let upper = len(values);
+  let upper = len_of(values);
   for @first (i in 0_u64..upper) {
   }
   for @second (j in 1_u64..upper) {
@@ -5360,7 +5360,7 @@ command fn main() -> status: own ExitStatus pure {
     let outcomes = obligations(source, "read");
     assert_eq!(outcomes.len(), 1);
     assert!(!outcomes[0].discharged);
-    assert_eq!(outcomes[0].residual.as_deref(), Some("i < len(h.data)"));
+    assert_eq!(outcomes[0].residual.as_deref(), Some("i < len_of(h.data)"));
 }
 
 #[test]
@@ -5391,7 +5391,7 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_eq!(
         outcomes[1].residual.as_deref(),
-        Some("order[j] < len(lens)")
+        Some("order[j] < len_of(lens)")
     );
 }
 
@@ -5413,7 +5413,7 @@ command fn main() -> status: own ExitStatus pure {
     };
     assert_eq!(inner.family, ObligationFamily::Bounds);
     assert!(!inner.discharged);
-    assert_eq!(inner.residual.as_deref(), Some("j < len(order)"));
+    assert_eq!(inner.residual.as_deref(), Some("j < len_of(order)"));
 }
 
 #[test]
@@ -5476,7 +5476,7 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_eq!(
         buffer[1].residual.as_deref(),
-        Some("b[0_u64] < len(values)")
+        Some("b[0_u64] < len_of(values)")
     );
 
     let slice = obligations(source, "from_slice");
@@ -5485,7 +5485,7 @@ command fn main() -> status: own ExitStatus pure {
         1,
         "the failed inner slice index prevents the outer site from being reached"
     );
-    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len(order)"));
+    assert_eq!(slice[0].residual.as_deref(), Some("0_u64 < len_of(order)"));
 }
 
 #[test]
@@ -5626,7 +5626,7 @@ command fn main() -> status: own ExitStatus pure {
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true, true],
-        "len(b) = 4 makes 3 < len(b) derivable [ENT-3] S6"
+        "len_of(b) = 4 makes 3 < len_of(b) derivable [ENT-3] S6"
     );
     let sized_bounds = sized
         .obligations
@@ -5645,20 +5645,20 @@ command fn main() -> status: own ExitStatus pure {
         .expect("the runtime subscript carries one bounds obligation");
     assert!(
         !runtime_bounds.discharged,
-        "len(b) = n bounds nothing without a fact about n"
+        "len_of(b) = n bounds nothing without a fact about n"
     );
-    assert_eq!(runtime_bounds.residual.as_deref(), Some("3_u64 < len(b)"));
+    assert_eq!(runtime_bounds.residual.as_deref(), Some("3_u64 < len_of(b)"));
 }
 
 #[test]
 fn an_allocation_length_binding_carries_the_length_into_a_branch() {
-    // `let m = len::<T>(P)` establishes m = len(P), so a branch over m is a
+    // `let m = len::<T>(P)` establishes m = len_of(P), so a branch over m is a
     // branch over the length itself [ENT-3] S6.
     let source = br#"fn read(n: own u64, i: own u64) -> result: own u8 allocates(heap) contract {
   requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
-  let m = len(b);
+  let m = len_of(b);
   if i < m {
     return b[i];
   } else {
@@ -5691,7 +5691,7 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         discharge_flags(source, "read"),
         vec![true],
-        "len(window) = len(values) = 4 [ENT-3] S6"
+        "len_of(window) = len_of(values) = 4 [ENT-3] S6"
     );
 }
 
@@ -5699,7 +5699,7 @@ command fn main() -> status: own ExitStatus pure {
 fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
     // [ENT-5]: a buffer's length is fixed at allocation, so an element write
     // never kills its length fact. Writing n kills facts that still mention n,
-    // but first projects the already true 3 < len(b) consequence whose two
+    // but first projects the already true 3 < len_of(b) consequence whose two
     // endpoints survive the write.
     let source = br#"fn kept(n: own u64) -> result: own u8 allocates(heap) contract {
   requires buffer_fits::<u8>(n);
@@ -5735,7 +5735,7 @@ command fn main() -> status: own ExitStatus pure {
         kept.obligations
             .last()
             .is_some_and(|outcome| outcome.discharged),
-        "an element write leaves len(b) = n alive"
+        "an element write leaves len_of(b) = n alive"
     );
     let kept_root = obligation_root(&kept, kept.obligations.len() - 1);
     assert_root_has_event_kind(&kept, kept_root, FlowEventKind::S6);
@@ -5747,7 +5747,7 @@ command fn main() -> status: own ExitStatus pure {
             .obligations
             .last()
             .is_some_and(|outcome| outcome.discharged),
-        "writing n preserves the already established 3 < len(b) consequence"
+        "writing n preserves the already established 3 < len_of(b) consequence"
     );
     assert_root_contains(
         &killed,
@@ -5776,15 +5776,15 @@ command fn main() -> status: own ExitStatus pure {
             }
             _ => false,
         },
-        "the exact 3 - n <= -1 plus n - len(b) <= 0 projection",
+        "the exact 3 - n <= -1 plus n - len_of(b) <= 0 projection",
     );
 }
 
 #[test]
 fn consuming_the_buffer_projects_its_copied_length_before_the_root_dies() {
-    // The support of len(b) is b's root binding, so the length term dies with
+    // The support of len_of(b) is b's root binding, so the length term dies with
     // the move. Its already copied mathematical value m does not: projecting
-    // m = len(b) = 4 before the kill soundly preserves m < 8.
+    // m = len_of(b) = 4 before the kill soundly preserves m < 8.
     let source = br#"const wide: u64 = 8_u64;
 
 fn eat(b: own buffer<u8>) -> result: own unit pure {
@@ -5793,7 +5793,7 @@ fn eat(b: own buffer<u8>) -> result: own unit pure {
 
 fn kept(other: own array<u8, wide>) -> result: own u8 allocates(heap) {
   let b = buffer_new(4_u64, 0_u8);
-  let m = len(b);
+  let m = len_of(b);
   let sample = other[m];
   eat(b: move b);
   return sample;
@@ -5801,7 +5801,7 @@ fn kept(other: own array<u8, wide>) -> result: own u8 allocates(heap) {
 
 fn killed(other: own array<u8, wide>) -> result: own u8 allocates(heap) {
   let b = buffer_new(4_u64, 0_u8);
-  let m = len(b);
+  let m = len_of(b);
   eat(b: move b);
   let sample = other[m];
   return sample;
@@ -5820,7 +5820,7 @@ command fn main() -> status: own ExitStatus pure {
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true],
-        "m = len(b) = 4 < 8 while b is live"
+        "m = len_of(b) = 4 < 8 while b is live"
     );
     let kept_bounds = kept
         .obligations
@@ -5883,7 +5883,7 @@ command fn main() -> status: own ExitStatus pure {
         "target-position discharge is identical"
     );
     assert!(!outcomes[1].discharged);
-    assert_eq!(outcomes[1].residual.as_deref(), Some("i < len(values)"));
+    assert_eq!(outcomes[1].residual.as_deref(), Some("i < len_of(values)"));
 }
 
 // ---------------------------------------------------------------------
@@ -6020,7 +6020,7 @@ command fn main() -> status: own ExitStatus pure {
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true, true],
-        "j = k = 2 and widened = narrow = 3, both below len(values)"
+        "j = k = 2 and widened = narrow = 3, both below len_of(values)"
     );
     for ordinal in 0..2 {
         assert_root_has_event_kind(
@@ -6036,7 +6036,7 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
     // The RHS value is read before the write. After the target's stale facts
     // are killed, S5 publishes `start = back`; no runtime check is needed.
     let source = br#"fn tail_byte(data: &buffer<u8>) -> result: own u8 reads(data) {
-  let n = len(deref(data));
+  let n = len_of(deref(data));
   let have_room = n >= 8_u64;
   let start = 0_u64;
   let out = 0_u8;
@@ -7104,13 +7104,13 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert!(
         low.obligations[1].discharged,
-        "every declared element is at most 3 < len(values)"
+        "every declared element is at most 3 < len_of(values)"
     );
     assert_root_has_event_kind(&low, obligation_root(&low, 1), FlowEventKind::S9);
     let high = obligations(source, "high");
     assert!(
         !high[1].discharged,
-        "a declared element of 4 reaches len(values)"
+        "a declared element of 4 reaches len_of(values)"
     );
 }
 
@@ -7152,7 +7152,7 @@ fn a_requires_chain_substitutes_repeatedly_and_reads_a_length_call() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure contract {
-  define n = len(values);
+  define n = len_of(values);
   define ok = i < n;
   requires ok;
 } {
@@ -7174,11 +7174,11 @@ command fn main() -> status: own ExitStatus pure {
 fn every_occurrence_of_a_requires_local_substitutes() {
     // Both operands name the same clause local. Expanding only one would
     // leave a non-term operand and establish nothing; expanding both derives
-    // len(values) < len(values), a contradictory entry state [ENT-4].
+    // len_of(values) < len_of(values), a contradictory entry state [ENT-4].
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>) -> result: own i32 pure contract {
-  define n = len(values);
+  define n = len_of(values);
   define ok = n < n;
   requires ok;
 } {
@@ -7297,7 +7297,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
 #[test]
 fn ordinary_source_relations_discharge_both_system_ranges() {
     let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires start <= end;
   requires end <= capacity;
 } {
@@ -7357,7 +7357,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn indexed_system_guards_discharge_both_structurally_identical_ranges() {
     let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, endpoints: own array<u64, 2>) -> result: own unit reads(output, source), writes(output) {
-  let capacity = len(deref(source));
+  let capacity = len_of(deref(source));
   if endpoints[0_u64] <= endpoints[1_u64] {
     if endpoints[1_u64] <= capacity {
       region {
@@ -7460,7 +7460,7 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
     let source = br#"const count: u64 = 4_u64;
 
 fn under(output: &uniq Output, source: &buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
-  let source_length = len(deref(source));
+  let source_length = len_of(deref(source));
   let enough = 3_u64 <= source_length;
   if enough {
     region {
@@ -7477,7 +7477,7 @@ fn under(output: &uniq Output, source: &buffer<u8>, table: own array<u8, count>)
 }
 
 fn exact(output: &uniq Output, source: &buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
-  let source_length = len(deref(source));
+  let source_length = len_of(deref(source));
   let enough = 4_u64 <= source_length;
   if enough {
     region {
@@ -7511,7 +7511,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             .map(|outcome| outcome.discharged)
             .collect::<Vec<_>>(),
         vec![true, true, true],
-        "the range goals and next <= 3 < len(table) all discharge"
+        "the range goals and next <= 3 < len_of(table) all discharge"
     );
     let indexed = under
         .obligations
@@ -7522,7 +7522,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     assert_eq!(
         discharge_flags(source, "exact"),
         vec![true, true, false],
-        "next <= 4 admits next = len(table)"
+        "next <= 4 admits next = len_of(table)"
     );
 }
 
@@ -7576,7 +7576,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 #[test]
 fn a_host_copy_utf8_success_endpoint_is_bounded_by_end() {
     // The UTF-8 copy producer carries the same S10 success-endpoint bound as
-    // the byte-preserving copy producer: copied <= 3 < len(table).
+    // the byte-preserving copy producer: copied <= 3 < len_of(table).
     let source = br#"const count: u64 = 4_u64;
 
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
@@ -7622,7 +7622,7 @@ fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
     let source = br#"const count: u64 = 4_u64;
 
 fn deferred(output: own Output, source: &buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires 3_u64 <= capacity;
 } {
   region {
@@ -7639,7 +7639,7 @@ fn deferred(output: own Output, source: &buffer<u8>, table: own array<u8, count>
 }
 
 fn killed(output: own Output, source: &buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires limit <= capacity;
 } {
   region {
@@ -7840,7 +7840,7 @@ command fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Op4,
         SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "i < len(values)".to_owned(),
+            residual: "i < len_of(values)".to_owned(),
             mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
         },
     );
@@ -7864,7 +7864,7 @@ command fn main() -> status: own ExitStatus pure {
     assert!(!bounds.discharged);
     assert!(
         bounds.refuted,
-        "the implicit len(values) = 2 relation proves the negation of 2 < len(values)"
+        "the implicit len_of(values) = 2 relation proves the negation of 2 < len_of(values)"
     );
 }
 
@@ -9770,7 +9770,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
     let source = br#"fn sized(values: own array<u8, 2>) -> result: own unit pure contract {
-  define size = len(values);
+  define size = len_of(values);
   define exact = size == 2_u64;
   define complete = band(exact, exact);
   requires complete;
@@ -9779,7 +9779,7 @@ fn an_element_write_keeps_a_whole_goal_supported_only_by_length() {
 }
 
 fn caller(values: own array<u8, 2>) -> result: own unit pure {
-  let size = len(values);
+  let size = len_of(values);
   let exact = size == 2_u64;
   let complete = band(exact, exact);
   if complete {
@@ -9817,11 +9817,11 @@ fn array_fill_participates_only_in_body_origin_expansion() {
 
 fn probe() -> result: own unit pure {
   let values = array_new::<u8, 4>(0_u8);
-  let first_size = len(values);
+  let first_size = len_of(values);
   let first_exact = first_size == 4_u64;
   let first = band(first_exact, first_exact);
   if first {
-    let second_size = len(values);
+    let second_size = len_of(values);
     let second_exact = second_size == 4_u64;
     let second = band(second_exact, second_exact);
     if second {
@@ -10016,7 +10016,7 @@ fn write_left(pair: &uniq Pair, value: own u64) -> result: own unit writes(pair.
 }
 
 fn preserve_right(pair: own Pair, values: own array<u8, 4>) -> result: own u8 reads(pair.right), writes(pair.left) contract {
-  define spare = len(values);
+  define spare = len_of(values);
   requires pair.right < spare;
 } {
   region {
@@ -10037,7 +10037,7 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// [ENT-2] The implicit `len(P) = N` of an `array<T, N>` place holds at every
+/// [ENT-2] The implicit `len_of(P) = N` of an `array<T, N>` place holds at every
 /// program point. The element read feeding a branch condition puts a join on
 /// the path, and the join records the state as its own closure; the write to
 /// the array's root binding then projects away every relation with a killed
@@ -10062,7 +10062,7 @@ fn an_array_length_equality_survives_a_root_replace_after_a_join() {
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
-            "len(arr) = 4 holds after the root replace: {outcome:?}"
+            "len_of(arr) = 4 holds after the root replace: {outcome:?}"
         );
     });
 }
@@ -10122,7 +10122,7 @@ fn an_array_length_verdict_is_invariant_under_an_unrelated_binding() {
 #[test]
 fn a_write_still_kills_an_established_bound_on_its_target() {
     let source = br#"fn get(b: own buffer<u8>, start: own u64) -> result: own u8 reads(b) {
-  let spare = len(b);
+  let spare = len_of(b);
   let offset = 0_u64;
   let inside = offset < spare;
   if inside {
@@ -10141,7 +10141,7 @@ command fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Op4,
         SemanticIssueKind::UndischargedBoundsObligation {
-            residual: "offset < len(b)".to_owned(),
+            residual: "offset < len_of(b)".to_owned(),
             mechanical_fix: "when the relation must hold, establish the residual with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise restructure the access",
         },
     );

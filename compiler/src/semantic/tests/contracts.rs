@@ -475,8 +475,8 @@ fn positional_region_alpha_equality_covers_modes_and_normalized_effect_sets() {
 }
 
 fn add_lengths(first: &buffer<u8>, second: &buffer<u8>) -> result: own u64 reads(second, first) {
-  let first_length = len(deref(first));
-  let second_length = len(deref(second));
+  let first_length = len_of(deref(first));
+  let second_length = len_of(deref(second));
   return first_length +wrap second_length;
 }
 
@@ -503,7 +503,7 @@ fn positional_region_alpha_equality_includes_slice_type_regions() {
 }
 
 fn read_first(bytes: own slice<u8>) -> result: own u8 reads(bytes) {
-  let spare = len(bytes);
+  let spare = len_of(bytes);
   let ok = 0_u64 < spare;
   if ok {
     return bytes[0_u64];
@@ -535,7 +535,7 @@ fn positional_region_ordinal_swap_is_not_alpha_equal() {
 }
 
 fn second_length(first: &buffer<u8>, second: &buffer<u8>) -> result: own u64 reads(second) {
-  return len(deref(second));
+  return len_of(deref(second));
 }
 
 conform buffer<u8>: FirstLength {

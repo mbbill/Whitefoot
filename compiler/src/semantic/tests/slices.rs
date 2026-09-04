@@ -10,7 +10,7 @@ fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
 fn first(values: own slice<u8>) -> result: own u8 reads(values) {
-  let length = len(values);
+  let length = len_of(values);
   let nonempty = 0_u64 < length;
   if nonempty {
     return values[0_u64];
@@ -92,7 +92,7 @@ fn moved_owner_borrows_and_slices_keep_the_incoming_formal_effect_path() {
   let moved = move value;
   region {
     let holder = &uniq moved;
-    let spare = len(deref(holder));
+    let spare = len_of(deref(holder));
     let nonempty = 0_u64 < spare;
     if nonempty {
       let byte = deref(holder)[0_u64];
@@ -108,7 +108,7 @@ fn slice_after_move(value: own buffer<u8>) -> result: own u8 reads(value) {
   let moved = move value;
   region {
     let view = slice_of(&moved);
-    let spare = len(view);
+    let spare = len_of(view);
     let nonempty = 0_u64 < spare;
     if nonempty {
       return view[0_u64];
@@ -512,7 +512,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
   region {
     region {
       let view = slice_of(&data);
-      let length = len(view);
+      let length = len_of(view);
     }
   }
   return exit_status(code: 0_u8);
@@ -581,7 +581,7 @@ command fn main() -> status: own ExitStatus pure {
   region {
     let pass_source = slice_of(&left);
     let passed = pass(value: move pass_source);
-    let passed_room = len(passed);
+    let passed_room = len_of(passed);
     let passed_ok = 0_u64 < passed_room;
     if passed_ok {
     } else {
@@ -592,7 +592,7 @@ command fn main() -> status: own ExitStatus pure {
     let right_source = slice_of(&right);
     let take_left = False();
     let selected = choose(take_left: take_left, left: move left_source, right: move right_source);
-    let selected_room = len(selected);
+    let selected_room = len_of(selected);
     let selected_ok = 0_u64 < selected_room;
     if selected_ok {
     } else {
@@ -667,7 +667,7 @@ fn returned_slice_origins_drive_effects_and_alias_conflicts() {
 
 fn first(value: own slice<u8>) -> result: own u8 reads(value) {
   let returned = pass(value: move value);
-  let spare = len(returned);
+  let spare = len_of(returned);
   let ok = 0_u64 < spare;
   if ok {
     return returned[0_u64];
@@ -773,7 +773,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let borrowed_input = br#"fn first(value: &slice<u8>) -> result: own u8 reads(value) {
-  let spare = len(deref(value));
+  let spare = len_of(deref(value));
   let ok = 0_u64 < spare;
   if ok {
     return deref(value)[0_u64];

@@ -164,7 +164,7 @@ impl EntailmentContext<'_> {
 /// The [ENT-6] obligation family one outcome belongs to.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ObligationFamily {
-    /// A subscript bounds obligation `i < len(P)` [OP-4].
+    /// A subscript bounds obligation `i < len_of(P)` [OP-4].
     Bounds,
     /// One canonical `.defined` goal for a proof-required exact integer
     /// operation [OP-2, ENT-6].
@@ -222,7 +222,7 @@ pub(crate) struct ObligationOutcome {
     /// The state at the node was contradictory, discharging everything.
     pub(crate) contradictory: bool,
     /// The exact residual rendering for an undischarged obligation: the
-    /// offset atom's canonical source bytes, ` < len(`, the base place's
+    /// offset atom's canonical source bytes, ` < len_of(`, the base place's
     /// canonical source bytes, `)`.
     pub(crate) residual: Option<String>,
     /// Exact ENT-4 derivation for an accepted obligation. Failed judgments

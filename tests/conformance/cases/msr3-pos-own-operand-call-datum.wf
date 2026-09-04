@@ -1,8 +1,8 @@
 fn size_of(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
-  ensures measured == len(taken);
+  ensures measured == len_of(taken);
 } {
   doc "Consumes the run and hands its length back.";
-  return len(taken);
+  return len_of(taken);
 }
 
 fn needs_eight(bound: own u64) -> ok: own unit pure contract {

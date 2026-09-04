@@ -1,5 +1,5 @@
 fn bsearch(table: own buffer<u32>, spare: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
-  define length = len(table);
+  define length = len_of(table);
   requires spare == length;
   requires lo <= hi;
   requires hi <= spare;
@@ -39,7 +39,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set table[5_u64] = 12_u32;
   set table[6_u64] = 14_u32;
   set table[7_u64] = 16_u32;
-  let spare = len(table);
+  let spare = len_of(table);
   let found = bsearch(table: move table, spare: spare, target: 10_u32, lo: 0_u64, hi: spare);
   match found {
     Some(value: index) => {

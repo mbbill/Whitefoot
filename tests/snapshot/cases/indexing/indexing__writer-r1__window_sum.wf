@@ -1,5 +1,5 @@
 fn window_sum(data: own buffer<u8>, start: own u64, end: own u64) -> total: own u32 reads(data) contract {
-  define capacity = len(data);
+  define capacity = len_of(data);
   requires start <= end;
   requires end <= capacity;
 } {

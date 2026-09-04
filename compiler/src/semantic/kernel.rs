@@ -537,7 +537,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
         SEQ_ARENA_PAYLOAD[1],
         SEQ_ARENA_PAYLOAD[2],
         SEQ_ARENA_PAYLOAD[3],
-        // `len(arena) == len(arena at the call) + advance<T>(count)`.
+        // `len_of(arena) == len_of(arena at the call) + advance<T>(count)`.
         KernelRelation::routed(
             KernelRoute::Some,
             KernelTerm::new(KernelOperand::Measure(
@@ -780,7 +780,7 @@ const TAKE_RESULTS: [KernelResult; 2] = [
     },
 ];
 
-/// `requires room(vector) > 0_u64;`
+/// `requires room_of(vector) > 0_u64;`
 const ROOM_AVAILABLE: KernelRelation = KernelRelation::plain(
     KernelTerm::new(KernelOperand::Measure(
         CheckedMeasure::Room,
@@ -790,7 +790,7 @@ const ROOM_AVAILABLE: KernelRelation = KernelRelation::plain(
     KernelTerm::constant(0),
 );
 
-/// `requires len(vector) > 0_u64;`
+/// `requires len_of(vector) > 0_u64;`
 const LENGTH_AVAILABLE: KernelRelation = KernelRelation::plain(
     KernelTerm::new(KernelOperand::Measure(
         CheckedMeasure::Length,
@@ -879,7 +879,7 @@ const fn removal_relations() -> [KernelRelation; 3] {
     ]
 }
 
-/// `ensures head(result) == head(vector);` — the back rows leave the window
+/// `ensures head_of(result) == head_of(vector);` — the back rows leave the window
 /// origin where it was.
 const fn head_retained(result: u32) -> KernelRelation {
     KernelRelation::plain(

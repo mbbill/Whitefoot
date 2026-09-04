@@ -1,6 +1,6 @@
 fn read_shared(short: own buffer<u8>, long: own buffer<u8>) -> value: own u8 reads(long) contract {
-  requires len(short) <= len(long);
-  requires 3_u64 < len(short);
+  requires len_of(short) <= len_of(long);
+  requires 3_u64 < len_of(short);
 } {
   doc "A two-measure clause chains to the subscript bound with no contract definition.";
   return long[3_u64];

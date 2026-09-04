@@ -1,5 +1,5 @@
 fn window_one_past(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
-  define spare = len(buf);
+  define spare = len_of(buf);
   requires start < end;
   requires end <= spare;
 } {

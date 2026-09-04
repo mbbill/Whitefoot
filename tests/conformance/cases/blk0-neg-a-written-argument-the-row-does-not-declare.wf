@@ -1,5 +1,5 @@
 fn append(vector: own FixedVector<u8, 4>, value: own u8) -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
-  requires room(vector) > 0_u64;
+  requires room_of(vector) > 0_u64;
 } {
   doc "The vector operand supplies T, so BLK-0's per-argument criterion requires no written argument here.";
   return seq_place::<u8>(vector: move vector, value: value);

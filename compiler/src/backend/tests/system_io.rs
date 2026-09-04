@@ -742,7 +742,7 @@ fn an_out_of_range_transfer_is_a_static_sys8_rejection() {
     assert_eq!(failure.rule_id(), Some("SYS-8"));
     // The residual names the caller's own buffer, not the operation's
     // declared parameter.
-    assert!(failure.detail().contains("9_u64 <= len(bytes)"));
+    assert!(failure.detail().contains("9_u64 <= len_of(bytes)"));
 }
 
 /// Publishes three reservations through one Output root.
@@ -1126,7 +1126,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                           }
                         }
                       }
-                      let page_length = len(page);
+                      let page_length = len_of(page);
                       let chunk_fits = chunk <= page_length;
                       if chunk_fits {
                       } else {
@@ -1150,7 +1150,7 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                     } else {
                       return exit_status(code: failed);
                     }
-                    let echo_length = len(echo);
+                    let echo_length = len_of(echo);
                     let name_fits = name_length <= echo_length;
                     if name_fits {
                     } else {

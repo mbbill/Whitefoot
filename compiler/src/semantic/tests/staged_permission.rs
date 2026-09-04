@@ -790,7 +790,7 @@ fn a_body_bound_borrow_of_enclosing_storage_refuses_as_a_form() {
     let name = buffer_new(16_u64, 97_u8);
     region {
       let holder = &uniq shared;
-      let spare = len(deref(holder));
+      let spare = len_of(deref(holder));
       let fits = 0_u64 < spare;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
@@ -838,7 +838,7 @@ fn a_body_bound_borrow_of_iteration_own_storage_is_admitted() {
     let scratch = buffer_new(8_u64, 0_u8);
     region {
       let holder = &uniq scratch;
-      let spare = len(deref(holder));
+      let spare = len_of(deref(holder));
       let fits = 0_u64 < spare;
       if fits {
         set deref(holder)[0_u64] = 1_u8;
@@ -882,7 +882,7 @@ fn an_unresolved_footprint_element_denies_as_unresolved_rather_than_as_a_form() 
     let name = buffer_new(16_u64, 97_u8);
     region {
       let view = slice_of(&table);
-      let seen = len(view);
+      let seen = len_of(view);
       set total = total +wrap seen;
     }
     region 'f {
@@ -925,7 +925,7 @@ fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let seen = len(table);
+    let seen = len_of(table);
     set total = total +wrap seen;
     region 'f {
       let permit = reserve_file(factory: &uniq files);
@@ -956,7 +956,7 @@ fn the_same_length_read_taken_without_a_slice_resolves_and_is_admitted() {
 #[test]
 fn an_expression_statement_refuses_as_a_form_and_names_the_let_binding() {
     let source = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
-  let spare = len(deref(slot));
+  let spare = len_of(deref(slot));
   let wide = 0_u64 < spare;
   if wide {
     set deref(slot)[0_u64] = 7_u8;
@@ -1128,7 +1128,7 @@ fn a_statement_interposed_after_the_submission_is_judged_like_any_other() {
 #[test]
 fn two_shared_borrows_of_one_enclosing_buffer_deny_nothing() {
     let source = br#"fn total(source: &buffer<u8>) -> result: own u64 reads(source) {
-  return len(deref(source));
+  return len_of(deref(source));
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
@@ -1606,7 +1606,7 @@ fn the_staged_verdict_is_the_same_under_every_route_to_the_same_fact() {
   let seen = 0_u64;
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
-    let spare = len(name);
+    let spare = len_of(name);
     let fits = index < spare;
     if fits {
       set name[index] = 98_u8;
@@ -1857,7 +1857,7 @@ const HOISTED_DESTINATION: &[u8] = br#"command fn main(command.cwd as cwd: own D
 "#;
 
 const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
-  let spare = len(deref(slot));
+  let spare = len_of(deref(slot));
   let sized = 0_u64 < spare;
   if sized {
     let parity = index % 2_u64;
@@ -1870,7 +1870,7 @@ const BOTH_SIDES_OF_THE_CUT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index:
 }
 
 fn first_byte(source: &buffer<u8>) -> result: own u64 reads(source) {
-  let spare = len(deref(source));
+  let spare = len_of(deref(source));
   let sized = 0_u64 < spare;
   if sized {
   } else {

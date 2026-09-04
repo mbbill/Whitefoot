@@ -112,7 +112,7 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
     if done {
       break @octets;
     }
-    let spare = len(deref(destination));
+    let spare = len_of(deref(destination));
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);
@@ -1027,7 +1027,7 @@ fn spell(destination: &uniq buffer<u8>, value: own u64) -> result: own u64 reads
     if done {
       break @octets;
     }
-    let spare = len(deref(destination));
+    let spare = len_of(deref(destination));
     let writable = cursor < spare;
     if writable {
       let byte = low_byte(v: rest);

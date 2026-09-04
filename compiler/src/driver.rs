@@ -1170,7 +1170,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
         // and lowering erases it before the permission table is consumed.
         let proved = format!(
             "{TREE_PRELUDE}fn scaled(values: own array<u64, 8>, index: own u64) -> result: own u64 pure {{
-  let size = len(values);
+  let size = len_of(values);
   let bounded = iand(index, 7_u64);
   invariant index_in_range: bounded <= 7_u64;
   return values[bounded];
@@ -1529,7 +1529,7 @@ command fn main() -> status: own ExitStatus pure {
     fn a_counted_loop_a_give_can_leave_is_denied_by_condition_four() {
         let source =
             b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -1569,7 +1569,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         // about the exit edge and not about the shape.
         let contained =
             b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
-  let count = len(deref(src));
+  let count = len_of(deref(src));
   let acc = 0_u64;
   let always = True();
   let answer = if always {
@@ -2571,7 +2571,7 @@ command fn main() -> status: own ExitStatus pure {
         let contract = rejection(
             "contract.wf",
             br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires buffer_fits::<u8>(len(deref(data)));
+  requires buffer_fits::<u8>(len_of(deref(data)));
 } {
   return 0_u64;
 }
@@ -2601,7 +2601,7 @@ command fn main() -> status: own ExitStatus pure {
             &[SourceInput::new(
                 "repaired.wf",
                 br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 pure contract {
-  define spare = len(deref(data));
+  define spare = len_of(deref(data));
   requires end <= spare;
 } {
   return 0_u64;
@@ -2746,7 +2746,7 @@ command fn main() -> status: own ExitStatus pure {
         let detail = rejection(
             "lifetime.wf",
             br#"fn sum(data: &buffer<u8>) -> out: own u64 reads(data) {
-  return len(deref(data));
+  return len_of(deref(data));
 }
 
 fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> allocates(heap) {

@@ -11,7 +11,7 @@ const WRITER_SCHEDULER_PROBE: &str = include_str!("../completion/writer_schedule
 
 const STACKLESS_WRAPPER: &[u8] = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
@@ -20,7 +20,7 @@ const STACKLESS_WRAPPER: &[u8] = br#"fn publish(output: &uniq Output, source: &b
 
 fn relay(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
@@ -38,7 +38,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 const STACKLESS_EMPTY_WRAPPER: &[u8] = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
@@ -306,7 +306,7 @@ fn a_stack_backed_slice_crossing_the_suspend_point_keeps_the_synchronous_abi() {
     let llvm = compile(
         br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
@@ -314,7 +314,7 @@ fn a_stack_backed_slice_crossing_the_suspend_point_keeps_the_synchronous_abi() {
 }
 
 fn observe(values: own slice<u8>) -> result: own unit reads(values) contract {
-  define capacity = len(values);
+  define capacity = len_of(values);
   requires 0_u64 < capacity;
 } {
   let value = values[0_u64];

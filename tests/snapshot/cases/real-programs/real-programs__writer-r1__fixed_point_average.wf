@@ -9,7 +9,7 @@ command fn main() -> status: own ExitStatus pure {
   set samples[5_u64] = 1_u8;
   set samples[6_u64] = 1_u8;
   set samples[7_u64] = 1_u8;
-  let sample_count = len(samples);
+  let sample_count = len_of(samples);
   let sum = 0_u32;
   for (
     i in 0_u64..sample_count,

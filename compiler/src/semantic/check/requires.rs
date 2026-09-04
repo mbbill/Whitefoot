@@ -569,8 +569,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<Vec<NodeId>, CheckStop> {
         // [GRAM-5] a `clause_expr` carries its operands directly, and each
         // one is an `atom`, a `call`, or a `construct`. A single-operand
-        // clause reads through to that operand, so a bare `len(P)` clause
-        // operand and a `len(P)` operand of a comparison are one path.
+        // clause reads through to that operand, so a bare `len_of(P)` clause
+        // operand and a `len_of(P)` operand of a comparison are one path.
         match self.tree.production(expression)? {
             Production::ClauseExpr => {
                 return match self.tree.children(expression)? {

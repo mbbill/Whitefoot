@@ -1018,7 +1018,7 @@ fn emit_host_utf8_len(
 
 /// Starts one statically discharged half-open range operation. `sub nuw` is
 /// justified by SYS-8's exact `start <= end` call-site obligation; the other
-/// obligation proves `end <= len(buffer)`, so this wrapper has no check or
+/// obligation proves `end <= len_of(buffer)`, so this wrapper has no check or
 /// runtime-failure fallback.
 fn range_entry(prologue: &str) -> String {
     format!(

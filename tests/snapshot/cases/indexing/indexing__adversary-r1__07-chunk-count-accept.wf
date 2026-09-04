@@ -1,12 +1,12 @@
 fn last_chunk_status(buf: own buffer<u8>, status: own buffer<u8>) -> value: own u8 reads(buf, status) contract {
-  define data_len = len(buf);
-  define status_len = len(status);
+  define data_len = len_of(buf);
+  define status_len = len_of(status);
   requires data_len >= 3_u64;
   requires status_len >= data_len;
 } {
   doc "expect ACCEPT: chunk_count = data_len / 3 is at least 1 because data_len >= 3; a dominating branch on chunk_count == 0 (never taken here) lets the checker discharge the later chunk_count - 1 subtraction and the status[chunk_count - 1] subscript directly, without needing a nonlinear division-image certificate";
-  let data_len = len(buf);
-  let status_len = len(status);
+  let data_len = len_of(buf);
+  let status_len = len_of(status);
   let chunk_count = data_len / 3_u64;
   let is_zero = chunk_count == 0_u64;
   if is_zero {

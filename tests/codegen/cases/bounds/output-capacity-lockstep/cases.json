@@ -233,7 +233,7 @@
      "output": "out",
      "input_stride": 3,
      "output_stride": 4,
-     "condition": "len(source) <= 3 * floor(len(output) / 4)"
+     "condition": "len_of(source) <= 3 * floor(len_of(output) / 4)"
     }
    }
   },
@@ -273,7 +273,7 @@
      "output": "out",
      "input_stride": 3,
      "output_stride": 4,
-     "condition": "len(source) <= 3 * floor(len(output) / 4)"
+     "condition": "len_of(source) <= 3 * floor(len_of(output) / 4)"
     }
    }
   },
@@ -300,7 +300,7 @@
      "output": "out",
      "input_stride": 3,
      "output_stride": 4,
-     "condition": "len(source) <= 3 * floor(len(output) / 4)"
+     "condition": "len_of(source) <= 3 * floor(len_of(output) / 4)"
     }
    }
   },
@@ -328,7 +328,7 @@
      "output": "out",
      "input_stride": 3,
      "output_stride": 4,
-     "condition": "len(source) <= 3 * floor(len(output) / 4)"
+     "condition": "len_of(source) <= 3 * floor(len_of(output) / 4)"
     }
    }
   },
@@ -662,7 +662,7 @@
      "output": "out",
      "input_stride": 3,
      "output_stride": 4,
-     "condition": "len(source) <= 3 * floor(len(output) / 4)"
+     "condition": "len_of(source) <= 3 * floor(len_of(output) / 4)"
     }
    }
   },
@@ -795,7 +795,7 @@
      "output": "out",
      "input_stride": 3,
      "output_stride": 4,
-     "condition": "len(source) <= 3 * floor(len(output) / 4)"
+     "condition": "len_of(source) <= 3 * floor(len_of(output) / 4)"
     }
    }
   },

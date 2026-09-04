@@ -1,7 +1,7 @@
 fn two_in_a_row(vector: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
-  requires room(vector) > 1_u64;
+  requires room_of(vector) > 1_u64;
 } {
-  doc "The first placement publishes room(result) + 1 == room(vector), which is the only premise the second placement's own requirement needs.";
+  doc "The first placement publishes room_of(result) + 1 == room_of(vector), which is the only premise the second placement's own requirement needs.";
   let one = seq_place(vector: move vector, value: 1_u8);
   return seq_place(vector: move one, value: 2_u8);
 }

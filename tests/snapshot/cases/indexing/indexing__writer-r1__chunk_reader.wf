@@ -9,7 +9,7 @@ fn reader_new(buf: own buffer<u8>) -> result: own ChunkReader pure {
 
 fn reader_next_chunk(r: &uniq ChunkReader, chunk_size: own u64) -> result: own Option<u64> reads(r.buf, r.pos), writes(r.pos) {
   doc "ACCEPT: advances a chunk reader by a fixed stride, carrying the tail short chunk as a smaller final read instead of an out-of-range one.";
-  let capacity = len(deref(r).buf);
+  let capacity = len_of(deref(r).buf);
   let pos = deref(r).pos;
   let exhausted = pos >= capacity;
   if exhausted {

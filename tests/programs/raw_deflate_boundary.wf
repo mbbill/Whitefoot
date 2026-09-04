@@ -15,14 +15,14 @@ const reason_output_full: array<u8, 63> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 
 const reason_write_failed: array<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 112_u8, 117_u8, 98_u8, 108_u8, 105_u8, 115_u8, 104_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 10_u8];
 
 fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  requires capacity == len(deref(destination));
+  requires capacity == len_of(deref(destination));
   requires filled <= capacity;
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds.";
-  let spare = len(deref(destination));
+  let spare = len_of(deref(destination));
   let admitted = filled <= spare;
-  let length = len(text);
+  let length = len_of(text);
   if admitted {
     for @append (at in filled..spare) {
       let taken = at -wrap filled;
@@ -41,8 +41,8 @@ fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u6
 
 fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) {
   doc "Copies one half-open source range into the destination at one offset.";
-  let source_room = len(deref(source));
-  let destination_room = len(deref(destination));
+  let source_room = len_of(deref(source));
+  let destination_room = len_of(deref(destination));
   let target = at;
   let cursor = from;
   loop @copy {
@@ -96,7 +96,7 @@ fn inflate_status(error: own InflateError) -> result: own u8 pure {
 }
 
 fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len(deref(source));
+  define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
@@ -124,7 +124,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
 fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -> result: own unit reads(err, report), writes(err, report) {
   doc "Publishes the static diagnostic that names one boundary outcome, selected by the status the outcome carries.";
   let length = 0_u64;
-  let report_capacity = len(deref(report));
+  let report_capacity = len_of(deref(report));
   if reason == 1_u8 {
     region {
       let view = slice_of(&usage_text);
@@ -322,7 +322,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     return exit_status(code: status);
   }
-  let decoded_room = len(decoded);
+  let decoded_room = len_of(decoded);
   let decoded_fits = decoded_length <= decoded_room;
   if decoded_fits {
   } else {

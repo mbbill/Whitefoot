@@ -1,7 +1,7 @@
 fn sum_all(data: &buffer<u8>, chunk_size: own u64) -> total: own u32 reads(data) contract {
   requires chunk_size > 0_u64;
 } {
-  let length = len(deref(data));
+  let length = len_of(deref(data));
   let sum = 0_u32;
   let cursor = 0_u64;
   loop (

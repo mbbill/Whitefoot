@@ -4,8 +4,8 @@ struct Columns {
 }
 
 fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit writes(left, right) contract {
-  define left_length = len(deref(left));
-  define right_length = len(deref(right));
+  define left_length = len_of(deref(left));
+  define right_length = len_of(deref(right));
   requires length <= left_length;
   requires length <= right_length;
 } {
@@ -18,8 +18,8 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
 }
 
 fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) contract {
-  define left_length = len(deref(left));
-  define right_length = len(deref(right));
+  define left_length = len_of(deref(left));
+  define right_length = len_of(deref(right));
   requires length <= left_length;
   requires length <= right_length;
 } {
@@ -38,12 +38,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(length, 0_u64);
   let right = buffer_new(length, 0_u64);
   let columns = Columns(left: move left, right: move right);
-  let fill_left_length = len(columns.left);
+  let fill_left_length = len_of(columns.left);
   if length <= fill_left_length {
   } else {
     return exit_status(code: 202_u8);
   }
-  let fill_right_length = len(columns.right);
+  let fill_right_length = len_of(columns.right);
   if length <= fill_right_length {
   } else {
     return exit_status(code: 203_u8);
@@ -53,12 +53,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     let right_out = &uniq columns.right;
     fill(left: move left_out, right: move right_out, length: length);
   }
-  let fold_left_length = len(columns.left);
+  let fold_left_length = len_of(columns.left);
   if length <= fold_left_length {
   } else {
     return exit_status(code: 204_u8);
   }
-  let fold_right_length = len(columns.right);
+  let fold_right_length = len_of(columns.right);
   if length <= fold_right_length {
   } else {
     return exit_status(code: 205_u8);

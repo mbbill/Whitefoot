@@ -7,7 +7,7 @@ fn grid_get(cells: own buffer<u8>, width: own u64, height: own u64, row: own u64
     Ok(value: row_base) => {
       match row_base +checked col {
         Ok(value: at) => {
-          let capacity = len(cells);
+          let capacity = len_of(cells);
           let fits = at < capacity;
           if fits {
           } else {

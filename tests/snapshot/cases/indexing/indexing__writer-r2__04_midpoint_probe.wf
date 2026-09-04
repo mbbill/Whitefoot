@@ -1,5 +1,5 @@
 fn probe_midpoint(table: &buffer<u32>, lo: own u64, hi: own u64) -> found: own u32 reads(table) contract {
-  define spare = len(deref(table));
+  define spare = len_of(deref(table));
   requires lo < hi;
   requires hi <= spare;
 } {

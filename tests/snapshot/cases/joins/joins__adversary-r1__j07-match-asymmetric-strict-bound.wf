@@ -4,8 +4,8 @@ enum Pick {
 }
 
 fn get(b: own buffer<u8>, i: own u64, choice: own Pick) -> result: own u8 reads(b) {
-  doc "expect REJECT: Narrow() proves i < spare (strict) but Wide() only proves i <= spare (non-strict); the match join must keep the weakest common bound, so b[i] stays undischarged for i = spare = len(b) taking the Wide() arm.";
-  let spare = len(b);
+  doc "expect REJECT: Narrow() proves i < spare (strict) but Wide() only proves i <= spare (non-strict); the match join must keep the weakest common bound, so b[i] stays undischarged for i = spare = len_of(b) taking the Wide() arm.";
+  let spare = len_of(b);
   match choice {
     Narrow() => {
       let inside = i < spare;

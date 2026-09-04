@@ -1,6 +1,6 @@
 fn double_step_sum(source: own buffer<u64>) -> total: own u64 reads(source) {
   doc "ACCEPT: inside a counted for, a second read cursor advances at twice the loop's pace, guarded by its own length before each use.";
-  let length = len(source);
+  let length = len_of(source);
   let fast = 0_u64;
   let total = 0_u64;
   for (i in 0_u64..length) {

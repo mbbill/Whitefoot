@@ -1201,7 +1201,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "command fn main() -> status: own ExitStatus allocates(heap) {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "command fn main() -> status: own ExitStatus allocates(heap) {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len_of(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }

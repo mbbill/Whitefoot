@@ -5,7 +5,7 @@ enum Kind {
 
 fn fetch(b: own buffer<u8>, i: own u64, kind: own Kind, safe: own Bool) -> result: own u8 reads(b) {
   doc "expected ACCEPT: the Margin arm nests an if/else that proves i < spare from two different derivations, so an if_stmt nested inside a match arm must deliver through the last-statement recursion before the outer match/if join reaches the shared subscript.";
-  let spare = len(b);
+  let spare = len_of(b);
   match kind {
     Exact() => {
       let inside = i < spare;

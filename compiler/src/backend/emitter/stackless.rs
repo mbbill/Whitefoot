@@ -870,7 +870,7 @@ mod root_frame_layout_tests {
 
     const ROOT_FRAME_SOURCE: &[u8] = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ordered;
   requires end <= capacity;
 } {

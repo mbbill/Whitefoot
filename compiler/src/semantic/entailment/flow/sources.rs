@@ -529,9 +529,9 @@ impl Analyzer<'_, '_> {
         self.establish_copy_equality(node_path, destination, commit, state, event);
     }
 
-    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len(b) = n;
-    /// `len::<T>(P)` for a tracked P establishes m = len(P); and
-    /// `slice_of…(&'r P)` for a tracked P establishes len(s) = len(P).
+    /// [ENT-3] S6: `buffer_new::<T>(n, v)` establishes len_of(b) = n;
+    /// `len::<T>(P)` for a tracked P establishes m = len_of(P); and
+    /// `slice_of…(&'r P)` for a tracked P establishes len_of(s) = len_of(P).
     ///
     /// An `array<T, N>` allocation needs no clause here: its length equality
     /// is the [ENT-2] implicit fact carried by every length term over an

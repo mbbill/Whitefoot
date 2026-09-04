@@ -181,7 +181,7 @@ pub(crate) enum PostconditionReturnDatum {
     Measure(CheckedMeasure, PostconditionReturnPlace),
 }
 
-/// Complete checked place identity for a selected result term or `len(P)`.
+/// Complete checked place identity for a selected result term or `len_of(P)`.
 /// Field and dereference projections remain ordered and the root retains its
 /// binding/constant class, so the proof pass never re-walks source syntax.
 #[allow(dead_code)]

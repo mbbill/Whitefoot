@@ -507,7 +507,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
     let source = br#"fn probe(table: &buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
-  define spare = len(deref(table));
+  define spare = len_of(deref(table));
   requires lo < hi;
   requires hi <= spare;
 } {
@@ -986,7 +986,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_buffer_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
     let source = br#"fn increment(values: &buffer<u8>) -> result: own u8 reads(values) {
-  let spare = len(deref(values));
+  let spare = len_of(deref(values));
   if 0_u64 < spare {
     if deref(values)[0_u64] +defined 1_u8 {
       let result = deref(values)[0_u64] + 1_u8;
@@ -1034,7 +1034,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
     let source = br#"fn increment(values: own slice<u8>) -> result: own u8 reads(values) {
-  let spare = len(values);
+  let spare = len_of(values);
   if 0_u64 < spare {
     if values[0_u64] +defined 1_u8 {
       let result = values[0_u64] + 1_u8;

@@ -1,5 +1,5 @@
 fn probe(table: own buffer<u8>, idx: own u64) -> found: own u8 reads(table) contract {
-  define spare = len(table);
+  define spare = len_of(table);
   requires idx <= spare;
 } {
   doc "expect REJECT: requires idx <= spare admits idx == spare, out of bounds for table[idx]; idx=4,spare=4 would read table[4] on a length-4 buffer";

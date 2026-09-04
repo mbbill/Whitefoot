@@ -1,7 +1,7 @@
 fn merge_total(left: own buffer<u64>, right: own buffer<u64>) -> total: own u64 reads(left, right) {
   doc "ACCEPT: two independent read cursors advance in three ordinary loops, each guarded by its own buffer length.";
-  let left_len = len(left);
-  let right_len = len(right);
+  let left_len = len_of(left);
+  let right_len = len_of(right);
   let i = 0_u64;
   let j = 0_u64;
   let total = 0_u64;

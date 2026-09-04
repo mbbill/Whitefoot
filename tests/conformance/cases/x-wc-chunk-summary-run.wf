@@ -7,7 +7,7 @@ struct Summary {
 }
 
 fn summarize(out: &uniq Summary, input: own buffer<u8>) -> function_result: own unit reads(input), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
-  let length = len(input);
+  let length = len_of(input);
   let index_value = 0_u64;
   let lines = 0_u64;
   let words = 0_u64;

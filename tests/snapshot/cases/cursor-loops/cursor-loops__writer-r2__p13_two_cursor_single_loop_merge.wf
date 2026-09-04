@@ -1,7 +1,7 @@
 fn merge_total(left: own buffer<u64>, right: own buffer<u64>) -> total: own u64 reads(left, right) {
   doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for two independently guarded cursors, but an arm that advances one cursor joins an arm that leaves it, so the guard fact dies at the join and the backedge target i <= left_len is unprovable [ENT-6].";
-  let left_len = len(left);
-  let right_len = len(right);
+  let left_len = len_of(left);
+  let right_len = len_of(right);
   let i = 0_u64;
   let j = 0_u64;
   let total = 0_u64;

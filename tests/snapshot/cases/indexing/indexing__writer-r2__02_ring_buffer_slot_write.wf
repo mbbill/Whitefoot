@@ -5,12 +5,12 @@ struct Ring {
 }
 
 fn push_slot(r: &uniq Ring, value: own u8) -> result: own unit reads(r.slots, r.front, r.used), writes(r.slots) contract {
-  define capacity = len(deref(r).slots);
+  define capacity = len_of(deref(r).slots);
   requires capacity > 0_u64;
   requires deref(r).front < capacity;
   requires deref(r).used < capacity;
 } {
-  let capacity = len(deref(r).slots);
+  let capacity = len_of(deref(r).slots);
   let front = deref(r).front;
   let used = deref(r).used;
   if front +defined used {
@@ -27,7 +27,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   doc "ACCEPT: the ring-buffer slot front+used, wrapped by %capacity, always lands inside the fixed-size backing buffer under [OP-4] and [OP-2]'s remainder domain.";
   let backing = buffer_new(4_u64, 0_u8);
   let ring = Ring(slots: move backing, front: 1_u64, used: 2_u64);
-  let capacity = len(ring.slots);
+  let capacity = len_of(ring.slots);
   let head_ok = ring.front < capacity;
   let used_ok = ring.used < capacity;
   if capacity > 0_u64 {
@@ -45,7 +45,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   } else {
     return exit_status(code: 1_u8);
   }
-  let final_room = len(ring.slots);
+  let final_room = len_of(ring.slots);
   if 3_u64 < final_room {
     let written = ring.slots[3_u64];
     if written == 9_u8 {

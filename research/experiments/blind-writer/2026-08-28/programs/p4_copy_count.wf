@@ -22,7 +22,7 @@ fn digit_byte(value: own u64) -> result: own u8 pure {
 
 fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) -> result: own u64 reads(destination), writes(destination) {
   doc "Stores one byte when the destination holds that position and reports the next position.";
-  let capacity = len(deref(destination));
+  let capacity = len_of(deref(destination));
   let fits = ilt(at, capacity);
   if fits {
     set deref(destination)[at] = value;
@@ -34,7 +34,7 @@ fn put_byte['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u8) ->
 fn put_text['d, 's](destination: &uniq 'd buffer<u8>, at: own u64, text: own slice<'s, u8>) -> result: own u64 reads(destination, text), writes(destination) {
   doc "Copies every byte of one read-only text view into the destination.";
   let cursor = at;
-  let count = len(text);
+  let count = len_of(text);
   for @copy step in 0_u64..count {
     let byte = text[step];
     region 'one {
@@ -52,7 +52,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
   loop @split {
     let digit = rest % 10_u64;
     let byte = digit_byte(value: digit);
-    let capacity = len(scratch);
+    let capacity = len_of(scratch);
     let room = ilt(count, capacity);
     if room {
       set scratch[count] = byte;
@@ -71,7 +71,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
       break @unwind;
     }
     set count = count -wrap 1_u64;
-    let capacity = len(scratch);
+    let capacity = len_of(scratch);
     let inside = ilt(count, capacity);
     if inside {
       let byte = scratch[count];
@@ -84,7 +84,7 @@ fn put_decimal['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64
 }
 
 fn emit_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ile(length, capacity);
 } {
   doc "Writes one prefix of the source buffer, reattempting until the host accepts every byte.";
@@ -115,7 +115,7 @@ fn pump['f, 'o, 'c](handle: &'f ReadFile, output: &uniq 'o Output, chunk: &uniq 
   let status = 0_u8;
   let offset = 0_u64;
   loop @pump {
-    let capacity = len(deref(chunk));
+    let capacity = len_of(deref(chunk));
     let usable = ile(65536_u64, capacity);
     if usable {
     } else {
@@ -143,7 +143,7 @@ fn pump['f, 'o, 'c](handle: &'f ReadFile, output: &uniq 'o Output, chunk: &uniq 
     } else {
       break @pump;
     }
-    let room = len(deref(chunk));
+    let room = len_of(deref(chunk));
     let fits = ile(received, room);
     if fits {
       for @scan at in 0_u64..received {
@@ -239,7 +239,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       set end = put_text<'break_put, 'break_view>(destination: &uniq 'break_put report, at: end, text: move view);
     }
   }
-  let room = len(report);
+  let room = len_of(report);
   let fits = ile(end, room);
   if fits {
     region 'log {

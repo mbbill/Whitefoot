@@ -1,5 +1,5 @@
 fn bucket_of(values: own buffer<u8>, n: own u64) -> found: own u8 reads(values) contract {
-  define spare = len(values);
+  define spare = len_of(values);
   requires spare == 10_u64;
   requires n < 101_u64;
 } {

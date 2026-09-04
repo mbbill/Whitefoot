@@ -1,6 +1,6 @@
 fn probe(b: own buffer<u8>) -> result: own unit pure {
   doc "PROOF-1 positive: the same guard licenses a direct element write.";
-  let m = len(b);
+  let m = len_of(b);
   let i = 0_u64;
   loop @fill {
     if i >= m {

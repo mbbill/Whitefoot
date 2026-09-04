@@ -70,7 +70,7 @@ target list. The batch that carried it is B1b of the container and resource
 design under `research/investigations/containers-and-resources/`.
 
 The same version adds that design's proof surface, which is where its four
-added rules are. [MSR-1] makes `len(P)`, `cap(P)`, `room(P)` and `head(P)`
+added rules are. [MSR-1] makes `len_of(P)`, `cap_of(P)`, `room_of(P)` and `head_of(P)`
 [ENT-2] terms over an admitted measure place -- field selections, `deref`
 wrappings and subscripts alike -- and [OP-1] readers over the same places,
 states that a measure table exists and gives every measured type a row with one
@@ -82,9 +82,9 @@ position kills the measures of the written element and none of the run's own;
 [ENT-5]'s element-position carve-out is removed. [MSR-4] states once the
 complete ordered derivation of a numeric goal in six steps and retires
 [ENT-6]'s per-family route grants. [MSR-6] admits an in-scope const generic as
-a value, a counted endpoint and a clause operand. The three readers are dotless
-operation spellings, so `ReservedLowerNames` gains all three and a writer
-declaration may no longer be spelled `cap`, `room` or `head`. The batch that
+a value, a counted endpoint and a clause operand. The four readers are dotless
+operation spellings, so `ReservedLowerNames` gains `len_of`, `cap_of`, `room_of`
+and `head_of`, and the four bare words stay a writer's to declare. The batch that
 carried it is B2 of the same design.
 
 The same version adds that design's liveness and commit rules. [LIV-1] makes a
@@ -130,9 +130,9 @@ compiler-owned generic declaration domain, admitted to every unit as the system
 domain is, each operation one complete signature record whose written arguments
 are decided per argument, whose value arguments are named, and every one of
 whose rows is complete over every measure it writes on every exit. [BLK-1]
-states the two runs and the one window -- exactly the `len` slots beginning at
-`head` modulo `cap`, the rest raw -- the subscript in logical coordinates whose
-obligation is against `len`, and the affine element domain the window makes
+states the two runs and the one window -- exactly the `len_of` slots beginning at
+`head_of` modulo `cap_of`, the rest raw -- the subscript in logical coordinates
+whose obligation is against `len_of`, and the affine element domain the window makes
 sound. [BLK-2] and [BLK-3] are the inventory: four formation rows, one frame
 reservation, and the four boundary operations, each taking its run by value and
 handing it back. `Vector`, `FixedVector`, `Heap` and `Arena` are four
@@ -148,7 +148,7 @@ and the general store's provider value -- together with the confinement rule
 and the retirement of the old container types, is what remains.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
-or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`
+or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`
 is a written clause where it was a parse rejection, and the define-per-measure
 spelling is gone. [MSR-3] gives every contract operand one denotation keyed on
 its parameter's mode: an `own` operand read at a caller denotes the call datum,
@@ -937,6 +937,36 @@ and every slower-but-accepted divergence becomes a measured finding.
   registered in `spec/derivation/derivation-ledger.md`.
 - **Facts:** [sweep and rulings](../research/investigations/spelling-relief/SWEEP.md) ·
   [activation record](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
+
+### outline:FLOOR-6 — Namespaces for the compiler-owned name domains
+
+`[speculative]`
+
+- **Motivation:** the language has one flat lowercase name domain, so every
+  dotless operation spelling is a reserved word for the whole unit
+  [OP-1, FORM-3]. v0.45's measure readers made that concrete: adding `len`,
+  `cap`, `room` and `head` took four ordinary words away from every writer at
+  once, and the owner's S36 ruling of 2026-09-04 bought them back by renaming
+  the readers `len_of`, `cap_of`, `room_of` and `head_of`. That rename is a
+  workaround, not a rule: the next four operations will collide with four more
+  words a writer wants, and each escape has to be spelled into the operation
+  name itself. A namespace mechanism — a qualified spelling for the prelude,
+  the system domain and the kernel declaration domain, with resolution that
+  does not consume the unqualified word — retires the workaround and lets an
+  operation be named for what it is.
+- **Current:** nothing exists. The three compiler-owned declaration domains
+  [PRE-1, SYS-1, BLK-0] are already distinct inventories in the compiler and
+  are already separated from source declarations at resolution, so the axis a
+  namespace would name is present; only the surface is flat.
+- **Missing / next:** the decision this needs is not a syntax choice but a
+  ruling on what a qualified name costs a reader — whether `Bool` and `Some`
+  become qualified too, whether an unqualified use stays legal when nothing
+  shadows it (which reintroduces context dependence [META-2]), and what a
+  writer's own declaration may shadow. No project needs it yet; the item
+  exists so the next reserved-word collision is read against a direction
+  rather than solved by another suffix.
+- **Facts:** [S36 and its ground](../research/investigations/containers-and-resources/DESIGN.md) ·
+  [OP-1's `ReservedLowerNames`](../spec/kernel-spec.md).
 
 ## Storage, ownership, and representation
 

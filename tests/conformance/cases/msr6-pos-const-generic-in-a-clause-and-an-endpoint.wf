@@ -1,5 +1,5 @@
 fn walk_bound<const n: u64>(source: own buffer<u8>) -> last: own u8 reads(source) contract {
-  requires n < len(source);
+  requires n < len_of(source);
 } {
   doc "A const generic as a clause operand and as a counted range endpoint.";
   for (at in 0_u64..n) {

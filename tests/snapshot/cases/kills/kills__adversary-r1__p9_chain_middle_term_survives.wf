@@ -3,7 +3,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(10_u64, 4_u8);
   let a = 2_u64;
   let b = 5_u64;
-  let c = len(buf);
+  let c = len_of(buf);
   let a_lt_b = a < b;
   if a_lt_b {
   } else {

@@ -6,7 +6,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   doc "expect: REJECT (ENT-5) - obj.cursor is bound-checked, then set obj.cursor=99 (kill), reused for subscript unproven; cursor=99,limit=4 -> OOB";
   let buf = buffer_new(4_u64, 3_u8);
   let obj = Cursor(pos: 0_u64);
-  let limit = len(buf);
+  let limit = len_of(buf);
   let ok = obj.pos < limit;
   if ok {
   } else {

@@ -6,7 +6,7 @@ fn bucket_offset(buckets: own buffer<u8>, n: own u64) -> value: own Option<u8> r
     Ok(value: bucket_start) => {
       match bucket_start +checked offset {
         Ok(value: at) => {
-          let capacity = len(buckets);
+          let capacity = len_of(buckets);
           let fits = at < capacity;
           if fits {
           } else {

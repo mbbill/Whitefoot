@@ -1657,7 +1657,7 @@ impl Analyzer<'_, '_> {
     /// Every measure of one place is formed together, because [MSR-2]'s
     /// standing facts relate them to each other: the value the table fixes
     /// for a cell, the equality of a table cell to another measure, and the
-    /// orderings `len(P) <= cap(P)` and `head(P) <= cap(P)`. A site that
+    /// orderings `len_of(P) <= cap_of(P)` and `head_of(P) <= cap_of(P)`. A site that
     /// names only one measure still needs the others to exist for those
     /// facts to have terms to relate, and all four have empty support beyond
     /// P's own, so forming them together costs nothing a program can observe.
@@ -6724,8 +6724,8 @@ impl Analyzer<'_, '_> {
         self.measure_term(measure, path, measured, array_length)
     }
 
-    /// [ENT-6]: the bounds obligation `i < len(P)`, normalized
-    /// `i - len(P) <= -1`, discharged exactly when the closed fact state at
+    /// [ENT-6]: the bounds obligation `i < len_of(P)`, normalized
+    /// `i - len_of(P) <= -1`, discharged exactly when the closed fact state at
     /// the node derives it.
     fn judge_obligation(
         &mut self,
@@ -6736,8 +6736,8 @@ impl Analyzer<'_, '_> {
         node_path: crate::NodePath,
         states: &ProofFlowState,
     ) {
-        // [OP-4] the obligation is against `len(p)` in logical coordinates
-        // [MSR-1], never against `cap(p)`.
+        // [OP-4] the obligation is against `len_of(p)` in logical coordinates
+        // [MSR-1], never against `cap_of(p)`.
         let length_term =
             self.place_measure_term(CheckedMeasure::Length, base.clone(), measured, array_length);
         let offset_term = self.read_operand(offset);
@@ -6755,7 +6755,7 @@ impl Analyzer<'_, '_> {
         let fixed_array_affine =
             self.affine_fixed_array_index_target(offset, array_length, &states.affine);
         let rendered_residual = format!(
-            "{} < len({})",
+            "{} < len_of({})",
             self.render_expression(offset),
             self.render_place(&base)
         );
@@ -7177,7 +7177,7 @@ impl Analyzer<'_, '_> {
         );
 
         // The second conjunct bounds the end against the caller's own buffer,
-        // so the residual names the caller's place — `wide <= len(header)` —
+        // so the residual names the caller's place — `wide <= len_of(header)` —
         // the way [OP-4]'s bounds residual does. Printing the operation's
         // declared parameter name instead leaves a writer with two buffers in
         // scope unable to tell which one the bound is about. The declared name
@@ -7242,7 +7242,7 @@ impl Analyzer<'_, '_> {
             comparison(end_goal, length_goal),
             end_term,
             length_term,
-            format!("{} <= len({buffer_spelling})", self.render_expression(end)),
+            format!("{} <= len_of({buffer_spelling})", self.render_expression(end)),
             states,
         );
     }
@@ -12648,7 +12648,7 @@ fn render_goal_row(row: &GoalOperation, arguments: &[String]) -> String {
         GoalOperation::ArrayFill { .. } => render_operation_spelling("array_new", arguments),
         GoalOperation::ArrayMeasure { .. }
         | GoalOperation::BufferMeasure { .. }
-        | GoalOperation::SliceMeasure { .. } => render_operation_spelling("len", arguments),
+        | GoalOperation::SliceMeasure { .. } => render_operation_spelling("len_of", arguments),
         // [MSR-1]: one quantity, one name, term and reader alike, so the
         // residual names the measure the row reads rather than one of them.
         GoalOperation::ContainerMeasure { measure, .. } => {

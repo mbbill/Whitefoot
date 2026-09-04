@@ -6,7 +6,7 @@ fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
 
 fn sum(values: own slice<u8>) -> result: own u64 reads(values) {
   let total = 0_u64;
-  let length = len(values);
+  let length = len_of(values);
   for (offset in 0_u64..length) {
     let byte = values[offset];
     let word = cvt::<u8, u64>(byte);
@@ -74,7 +74,7 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
 "#;
     let failure = compile_rejection(source);
     assert_eq!(failure.rule_id(), Some("OP-4"));
-    assert!(failure.detail().contains("2_u64 < len(window)"));
+    assert!(failure.detail().contains("2_u64 < len_of(window)"));
 }
 
 #[test]
@@ -98,7 +98,7 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
 }
 
 fn borrowed_first(value: &slice<u8>) -> result: own u8 reads(value) contract {
-  define spare = len(deref(value));
+  define spare = len_of(deref(value));
   requires 0_u64 < spare;
 } {
   return deref(value)[0_u64];
@@ -117,7 +117,7 @@ command fn main() -> status: own ExitStatus pure {
     }
     let initial = slice_of(&left);
     let passed = pass(value: move initial);
-    let passed_room = len(passed);
+    let passed_room = len_of(passed);
     if 0_u64 < passed_room {
       let pass_value = passed[0_u64];
       if pass_value != 11_u8 {
@@ -130,7 +130,7 @@ command fn main() -> status: own ExitStatus pure {
     let right_view = slice_of(&right);
     let take_left = False();
     let selected = choose(take_left: take_left, left: move left_view, right: move right_view);
-    let selected_room = len(selected);
+    let selected_room = len_of(selected);
     if 0_u64 < selected_room {
       let selected_value = selected[0_u64];
       if selected_value != 29_u8 {
@@ -140,7 +140,7 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 3_u8);
     }
     let constant = fixed_view::<'view>();
-    let constant_room = len(constant);
+    let constant_room = len_of(constant);
     if 1_u64 < constant_room {
       let constant_value = constant[1_u64];
       if constant_value != 13_u8 {

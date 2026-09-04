@@ -3,7 +3,7 @@ fn maximum<T: Int>(left: own T, right: own T) -> result: own T pure {
 }
 
 fn preserve<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
-  let size = len(value);
+  let size = len_of(value);
   return move value;
 }
 
@@ -36,7 +36,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let typed_byte = typed_bytes[1_u64];
   let typed_word = typed_words[2_u64];
   let storage = filled_buffer::<u16>(length: 2_u64, value: 19_u16);
-  let storage_room = len(storage);
+  let storage_room = len_of(storage);
   let storage_ok = 1_u64 < storage_room;
   if storage_ok {
   } else {

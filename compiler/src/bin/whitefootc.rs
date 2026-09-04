@@ -766,7 +766,7 @@ fn paired(value: own u8) -> result: own u8 pure {
 
 fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires ordered;
   requires end <= capacity;
 } {

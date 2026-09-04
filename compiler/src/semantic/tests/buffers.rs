@@ -481,7 +481,7 @@ fn primitive_buffers_retain_allocation_checks_accesses_and_cleanup() {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let values = make();
-  let length = len(values);
+  let length = len_of(values);
   let ok = 2_u64 < length;
   if ok {
   } else {
@@ -593,7 +593,7 @@ fn buffer_effect_rows_are_checked_both_ways() {
 fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant::<box<u64>>(3_u64);
-  let count = len(slots);
+  let count = len_of(slots);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -760,13 +760,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let left = buffer_new(4_u64, 0_u64);
   let right = buffer_new(4_u64, 0_u64);
   let columns = Columns(left: move left, right: move right);
-  let left_room = len(columns.left);
+  let left_room = len_of(columns.left);
   let ok = 2_u64 < left_room;
   if ok {
     set columns.left[2_u64] = 7_u64;
     let value = columns.left[2_u64];
   }
-  let length = len(columns.right);
+  let length = len_of(columns.right);
   return exit_status(code: 0_u8);
 }
 "#;
@@ -918,7 +918,7 @@ command fn main() -> status: own ExitStatus pure {
 /// [ENT-5]'s element-storage exception holds across a callee boundary: one
 /// `len` bound above every write still discharges a later requirement.
 ///
-/// The rule says "for each length term `len(P)`, the root binding of `P` but
+/// The rule says "for each length term `len_of(P)`, the root binding of `P` but
 /// not `P`'s element storage", so an element write never kills a length fact.
 /// A writer reading the rule's kill clause concluded the opposite and re-bound
 /// `len` after every call that wrote through a `&uniq` parameter: 34 of the 41
@@ -934,7 +934,7 @@ fn a_hoisted_length_fact_survives_a_callee_element_write() {
     with_semantics(
         br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
-  let spare = len(deref(destination));
+  let spare = len_of(deref(destination));
   let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
@@ -944,7 +944,7 @@ fn a_hoisted_length_fact_survives_a_callee_element_write() {
 }
 
 fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";
@@ -959,7 +959,7 @@ fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) c
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "Emits a prefix without a live length fact.";
   let line = buffer_new(64_u64, 0_u8);
-  let spare = len(line);
+  let spare = len_of(line);
   let end = 0_u64;
   region {
     set end = fill(destination: &uniq line, at: end);
@@ -982,7 +982,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     with_semantics(
         br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
-  let spare = len(deref(destination));
+  let spare = len_of(deref(destination));
   let inside = at < spare;
   if inside {
     set deref(destination)[at] = 65_u8;
@@ -992,7 +992,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 }
 
 fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
-  define capacity = len(deref(source));
+  define capacity = len_of(deref(source));
   requires length <= capacity;
 } {
   doc "Consumes a prefix whose length the caller has proved.";

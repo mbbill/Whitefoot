@@ -312,7 +312,7 @@ command fn main() -> status: own ExitStatus pure {
 fn const_parameters_forward_symbolically_and_instantiate_at_reachable_sizes() {
     let source =
         br#"fn preserve<const n: u64>(value: own array<u8, n>) -> result: own array<u8, n> pure {
-  let size = len(value);
+  let size = len_of(value);
   return move value;
 }
 
@@ -684,7 +684,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let byte = bytes[1_u64];
   let word = words[2_u64];
   let storage = filled_buffer::<u16>(length: 2_u64, value: 9_u16);
-  let storage_room = len(storage);
+  let storage_room = len_of(storage);
   let storage_ok = 1_u64 < storage_room;
   if storage_ok {
   } else {
@@ -694,7 +694,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let samples = filled_float_array::<f32, 2>(value: 1.5_f32);
   let sample = samples[1_u64];
   let weights = filled_float_buffer::<f64>(length: 2_u64, value: 2.5_f64);
-  let weights_room = len(weights);
+  let weights_room = len_of(weights);
   let weights_ok = 1_u64 < weights_room;
   if weights_ok {
   } else {

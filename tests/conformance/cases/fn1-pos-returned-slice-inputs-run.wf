@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus pure {
   region {
     let pass_source = slice_of(&left);
     let passed = pass_slice(value: move pass_source);
-    let passed_room = len(passed);
+    let passed_room = len_of(passed);
     let passed_ok = 0_u64 < passed_room;
     if passed_ok {
     } else {
@@ -31,7 +31,7 @@ command fn main() -> status: own ExitStatus pure {
     let right_source = slice_of(&right);
     let take_left = False();
     let selected = choose_slice(take_left: take_left, left: move left_source, right: move right_source);
-    let selected_room = len(selected);
+    let selected_room = len_of(selected);
     let selected_ok = 0_u64 < selected_room;
     if selected_ok {
     } else {

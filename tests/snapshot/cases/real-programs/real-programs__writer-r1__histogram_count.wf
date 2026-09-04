@@ -9,9 +9,9 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set input[5_u64] = 1_u8;
   set input[6_u64] = 192_u8;
   set input[7_u64] = 65_u8;
-  let input_length = len(input);
+  let input_length = len_of(input);
   let buckets = buffer_new(4_u64, 0_u64);
-  let bucket_room = len(buckets);
+  let bucket_room = len_of(buckets);
   for (i in 0_u64..input_length) {
     let byte = input[i];
     let top_bits = ishr.wrap(byte, 6_u32);

@@ -12,7 +12,7 @@ fn store_u32_be(out: &uniq buffer<u8>, offset: own u64, value: own u32) -> resul
   let second_offset = offset +wrap 1_u64;
   let third_offset = offset +wrap 2_u64;
   let fourth_offset = offset +wrap 3_u64;
-  let store_room = len(deref(out));
+  let store_room = len_of(deref(out));
   if offset < store_room {
   } else {
     let error = NarrowError();
@@ -44,7 +44,7 @@ fn load_u32_be(input: &buffer<u8>, offset: own u64) -> result: own u32 reads(inp
   let second_offset = offset +wrap 1_u64;
   let third_offset = offset +wrap 2_u64;
   let fourth_offset = offset +wrap 3_u64;
-  let load_room = len(deref(input));
+  let load_room = len_of(deref(input));
   if offset < load_room {
   } else {
     return 0_u32;

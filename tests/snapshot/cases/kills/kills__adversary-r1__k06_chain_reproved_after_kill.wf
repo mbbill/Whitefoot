@@ -1,11 +1,11 @@
 fn chained_index_reproved(table: own buffer<u8>, a: own u64, b: own u64, c: own u64) -> value: own u8 reads(table) contract {
-  define spare = len(table);
+  define spare = len_of(table);
   requires a <= b;
   requires b <= c;
   requires c < spare;
 } {
-  doc "expect ACCEPT: set b = 900_u64 kills the old chain, but a fresh invariant reproves a < len(table) directly from a's own requires, so the index is sound regardless of b.";
-  let room2 = len(table);
+  doc "expect ACCEPT: set b = 900_u64 kills the old chain, but a fresh invariant reproves a < len_of(table) directly from a's own requires, so the index is sound regardless of b.";
+  let room2 = len_of(table);
   invariant a_bound: a < room2;
   set b = 900_u64;
   return table[a];

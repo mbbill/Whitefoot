@@ -1,8 +1,8 @@
 fn pair() -> result: own FixedVector<u8, 4> pure contract {
-  ensures len(result) >= 2_u64;
-  ensures len(result) <= 2_u64;
-  ensures room(result) >= 2_u64;
-  ensures head(result) <= 0_u64;
+  ensures len_of(result) >= 2_u64;
+  ensures len_of(result) <= 2_u64;
+  ensures room_of(result) >= 2_u64;
+  ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of two values and publishes what its window then holds.";
   let empty = seq_fixed::<u8, 4>();
@@ -12,7 +12,7 @@ fn pair() -> result: own FixedVector<u8, 4> pure contract {
 }
 
 fn append(vector: own FixedVector<u8, 4>, value: own u8) -> result: own FixedVector<u8, 4> reads(vector), writes(vector) contract {
-  requires room(vector) > 0_u64;
+  requires room_of(vector) > 0_u64;
 } {
   doc "Places one value at the back boundary of a run.";
   return seq_place(vector: move vector, value: value);
@@ -68,7 +68,7 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 7_u8);
   }
-  let left = len(rest4);
+  let left = len_of(rest4);
   if left == 0_u64 {
   } else {
     return exit_status(code: 8_u8);

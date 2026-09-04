@@ -12,7 +12,7 @@ fn divide_safely(n: own i32, d: own i32) -> own i32 traps requires {
 fn caller(values: own array<i32, 4>, d: own i32) -> own i32 traps {
   doc "The dividend is a subscripted place, which [ENT-3] gives no goal origin at all, so the claim establishes nothing usable and [FN-8] substitutes an ephemeral actual-value datum for the argument.";
   let index = 0_u64;
-  let room = len(values);
+  let room = len_of(values);
   claim inside: ilt(index, room) because "the index is inside the array";
   let dividend_ok = ine(values[index], -2147483648_i32);
   let divisor_ok = ine(d, -1_i32);

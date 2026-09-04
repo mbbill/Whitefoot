@@ -1,10 +1,10 @@
 fn probe(table: own buffer<u8>, a: own u64) -> found: own u8 reads(table) contract {
-  define spare = len(table);
+  define spare = len_of(table);
   requires a <= spare;
 } {
   doc "expect REJECT: idx=a-wrap 1 is falsely certified idx < spare from a <= spare; at a=0, idx wraps to u64::MAX, far outside table";
   let idx = a -wrap 1_u64;
-  let bound_room = len(table);
+  let bound_room = len_of(table);
   invariant bound: idx < bound_room {
     use a <= bound_room;
   }

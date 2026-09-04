@@ -1,5 +1,5 @@
 fn record(destination: &uniq buffer<u8>, value: own u8) -> written: own u64 reads(destination), writes(destination) contract {
-  ensures written <= len(deref(destination));
+  ensures written <= len_of(deref(destination));
 } {
   doc "An ensures names a measure of a &uniq state parameter, which denotes no state this body can name.";
   return 0_u64;

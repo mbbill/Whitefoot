@@ -464,10 +464,10 @@ impl CheckedMeasure {
     /// The [OP-1] spelling of this measure, which is also its [MSR-5] former.
     pub(crate) const fn spelling(self) -> &'static str {
         match self {
-            Self::Length => "len",
-            Self::Capacity => "cap",
-            Self::Room => "room",
-            Self::Head => "head",
+            Self::Length => "len_of",
+            Self::Capacity => "cap_of",
+            Self::Room => "room_of",
+            Self::Head => "head_of",
         }
     }
 

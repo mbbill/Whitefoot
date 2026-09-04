@@ -3072,4 +3072,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   expectation and status, the two skips that disappeared are the two rows named
   above, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0: no
   verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 3e0b071836ca0c98ba4017f4b03408fe3f829c477cee834100805018cd3b4c1a 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 d746c67beebedfffae0a763ae0f983aa4ce3a9bd4e078390bb3b0bd407e7d227 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

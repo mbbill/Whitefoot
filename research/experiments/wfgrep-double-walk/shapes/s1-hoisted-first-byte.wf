@@ -113,13 +113,13 @@ fn io_class(error: own IoError) -> result: own u8 pure {
 }
 
 fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  define capacity = len(deref(destination));
+  define capacity = len_of(deref(destination));
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds.";
-  let capacity = len(deref(destination));
+  let capacity = len_of(deref(destination));
   let admitted = filled <= capacity;
-  let length = len(text);
+  let length = len_of(text);
   if admitted {
     for @append (at in filled..capacity) {
       let taken = at -wrap filled;
@@ -137,12 +137,12 @@ fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<
 }
 
 fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) contract {
-  define destination_room = len(deref(destination));
+  define destination_room = len_of(deref(destination));
   ensures result <= destination_room;
 } {
   doc "Copies one half-open source range into the destination at one offset.";
-  let source_room = len(deref(source));
-  let destination_room = len(deref(destination));
+  let source_room = len_of(deref(source));
+  let destination_room = len_of(deref(destination));
   let admitted = at <= destination_room;
   if admitted {
   } else {
@@ -185,8 +185,8 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
 
 fn line_matches(source: &buffer<u8>, start: own u64, stop: own u64, pattern: &buffer<u8>, length: own u64) -> result: own Bool reads(source, pattern) {
   doc "Reports whether the literal pattern bytes occur in one line's byte range.";
-  let source_room = len(deref(source));
-  let pattern_room = len(deref(pattern));
+  let source_room = len_of(deref(source));
+  let pattern_room = len_of(deref(pattern));
   let ordered = start <= stop;
   if ordered {
   } else {
@@ -269,7 +269,7 @@ fn line_matches(source: &buffer<u8>, start: own u64, stop: own u64, pattern: &bu
 }
 
 fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len(deref(source));
+  define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
@@ -295,7 +295,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
 }
 
 fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, status: own u8, position: own u64) -> result: own unit reads(args, err, report), writes(err, report) contract {
-  define report_room = len(deref(report));
+  define report_room = len_of(deref(report));
   requires 256_u64 <= report_room;
 } {
   doc "Assembles one `wfgrep: NAME: reason` diagnostic in the reusable report buffer and publishes it to standard error.";

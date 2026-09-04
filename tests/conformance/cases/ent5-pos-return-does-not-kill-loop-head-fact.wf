@@ -1,6 +1,6 @@
 fn get(b: own buffer<u8>, stop: own Bool, done: own Bool) -> result: own u8 reads(b) {
   doc "An ordinary branch establishes the zero offset's bound before the loop. A return edge inside the loop cannot reach a later iteration front, so its scope-exit kills do not remove that real pre-loop fact [ENT-5, OP-4].";
-  let spare = len(b);
+  let spare = len_of(b);
   let offset = 0_u64;
   let inside = offset < spare;
   if inside {

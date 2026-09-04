@@ -1,5 +1,5 @@
 fn chained_index(table: own buffer<u8>, a: own u64, b: own u64, c: own u64) -> value: own u8 reads(table) contract {
-  define spare = len(table);
+  define spare = len_of(table);
   requires a <= b;
   requires b <= c;
   requires c <= spare;

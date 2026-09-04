@@ -1,5 +1,5 @@
 fn binary_search(table: &buffer<u32>, target: own u32) -> found: own Bool reads(table) {
-  let spare = len(deref(table));
+  let spare = len_of(deref(table));
   let lo = 0_u64;
   let hi = spare;
   loop (

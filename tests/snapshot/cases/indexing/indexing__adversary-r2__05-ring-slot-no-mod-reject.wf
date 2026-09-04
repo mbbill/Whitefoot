@@ -1,5 +1,5 @@
 fn ring_slot(buf: own buffer<u8>, front: own u64, used: own u64) -> found: own u8 reads(buf) contract {
-  define limit = len(buf);
+  define limit = len_of(buf);
   requires limit > 0_u64;
   requires front < limit;
   requires used < limit;

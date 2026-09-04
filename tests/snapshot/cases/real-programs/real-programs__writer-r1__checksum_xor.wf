@@ -6,7 +6,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set message[2_u64] = 240_u8;
   set message[3_u64] = 170_u8;
   set message[4_u64] = 85_u8;
-  let message_length = len(message);
+  let message_length = len_of(message);
   let checksum = 0_u8;
   for (i in 0_u64..message_length) {
     let byte = message[i];

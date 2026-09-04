@@ -129,14 +129,14 @@ fn io_class(error: own IoError) -> result: own u8 pure {
 }
 
 fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  requires capacity == len(deref(destination));
+  requires capacity == len_of(deref(destination));
   requires filled <= capacity;
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds. The destination's capacity is a written operand rather than a measure of a &uniq state parameter, so the published bound is a fact about a value this caller supplied [MSR-3].";
-  let spare = len(deref(destination));
+  let spare = len_of(deref(destination));
   let admitted = filled <= spare;
-  let length = len(text);
+  let length = len_of(text);
   if admitted {
     for @append (at in filled..spare) {
       let taken = at -wrap filled;
@@ -155,8 +155,8 @@ fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u6
 
 fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, from: own u64, to: own u64) -> result: own u64 reads(destination, source), writes(destination) {
   doc "Copies one half-open source range into the destination at one offset.";
-  let source_room = len(deref(source));
-  let destination_room = len(deref(destination));
+  let source_room = len_of(deref(source));
+  let destination_room = len_of(deref(destination));
   let target = at;
   let cursor = from;
   loop @copy {
@@ -183,7 +183,7 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
 }
 
 fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
-  define source_length = len(deref(source));
+  define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
   doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
@@ -210,7 +210,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
 
 fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
   doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
-  let spare = len(deref(store));
+  let spare = len_of(deref(store));
   let inside = index < spare;
   if inside {
     let value = deref(store)[index];
@@ -279,8 +279,8 @@ fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> re
     set probe = probe / 10_u64;
     set digits = digits +wrap 1_u64;
   }
-  let spare = len(deref(destination));
-  let glyphs = len(digit_glyphs);
+  let spare = len_of(deref(destination));
+  let glyphs = len_of(digit_glyphs);
   let end = at +wrap digits;
   let cursor = end;
   let rest = value;
@@ -307,7 +307,7 @@ fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> re
 fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads(err, report, path), writes(err, report) {
   doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
   let length = 0_u64;
-  let report_capacity = len(deref(report));
+  let report_capacity = len_of(deref(report));
   region {
     let view = slice_of(&error_prefix);
     region {
@@ -315,7 +315,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     }
   }
   let prior_length = length;
-  let path_room = len(deref(path));
+  let path_room = len_of(deref(path));
   let copied_count = 0_u64;
   loop @name {
     let done = copied_count >= path_length;
@@ -416,7 +416,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
 }
 
 fn append_trailing_newline(input: &uniq buffer<u8>, carry: own u64) -> result: own TrailingChunk reads(input), writes(input) {
-  let input_room = len(deref(input));
+  let input_room = len_of(deref(input));
   let carry_ok = carry < input_room;
   if carry_ok {
   } else {
@@ -430,7 +430,7 @@ fn append_trailing_newline(input: &uniq buffer<u8>, carry: own u64) -> result: o
 }
 
 fn scan_line(input: &buffer<u8>, available: own u64, scan: own u64, pattern: &buffer<u8>, pattern_length: own u64, first_pattern_byte: own u8, empty_pattern: own Bool) -> result: own LineScan reads(input, pattern) {
-  let input_room = len(deref(input));
+  let input_room = len_of(deref(input));
   let available_fits = available <= input_room;
   if available_fits {
   } else {
@@ -445,7 +445,7 @@ fn scan_line(input: &buffer<u8>, available: own u64, scan: own u64, pattern: &bu
     let rejected = LineScan(terminator: available, hit: missed, status: 6_u8);
     return move rejected;
   }
-  let pattern_room = len(deref(pattern));
+  let pattern_room = len_of(deref(pattern));
   let terminator = available;
   let hit = empty_pattern;
   for @walk_line (probe in scan..available) {
@@ -505,7 +505,7 @@ fn scan_line(input: &buffer<u8>, available: own u64, scan: own u64, pattern: &bu
 }
 
 fn shift_input_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) -> result: own ShiftedTail reads(input), writes(input) {
-  let input_room = len(deref(input));
+  let input_room = len_of(deref(input));
   let available_fits = available <= input_room;
   if available_fits {
   } else {
@@ -535,8 +535,8 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
   doc "Reads one open file and publishes `PATH:LINE:TEXT` for every line that holds the literal pattern bytes.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(8192_u64, 0_u8);
-  let batch_room = len(batch);
-  let pattern_room = len(deref(pattern));
+  let batch_room = len_of(batch);
+  let pattern_room = len_of(deref(pattern));
   let first_pattern_byte = 0_u8;
   let has_pattern = pattern_room > 0_u64;
   if has_pattern {
@@ -728,7 +728,7 @@ fn open_source_from_factory(factory: &uniq FileFactory, directory: &DirectoryRea
 
 fn open_file_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = start <= end;
-  define capacity = len(deref(name));
+  define capacity = len_of(deref(name));
   define within = end <= capacity;
   requires ordered;
   requires within;
@@ -739,7 +739,7 @@ fn open_file_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name
 
 fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = start <= end;
-  define capacity = len(deref(name));
+  define capacity = len_of(deref(name));
   define within = end <= capacity;
   requires ordered;
   requires within;
@@ -757,11 +757,11 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, pr
   let order = buffer_new(64_u64, 0_u64);
   let child = buffer_new(1024_u64, 0_u8);
   let report = buffer_new(1280_u64, 0_u8);
-  let entries_room = len(entries);
-  let names_room = len(names);
-  let order_room = len(order);
-  let child_room = len(child);
-  let prefix_room = len(deref(prefix));
+  let entries_room = len_of(entries);
+  let names_room = len_of(names);
+  let order_room = len_of(order);
+  let child_room = len_of(child);
+  let prefix_room = len_of(deref(prefix));
   let stored = 0_u64;
   region {
     match open_source_from_factory(factory: &uniq deref(factory), directory: &deref(dir)) {
@@ -1185,7 +1185,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let root_name = buffer_new(256_u64, 0_u8);
   let root_path = buffer_new(1024_u64, 0_u8);
   let report = buffer_new(1280_u64, 0_u8);
-  let report_room = len(report);
+  let report_room = len_of(report);
   let arguments = 0_u64;
   region {
     set arguments = args_count(args: &args);
@@ -1267,7 +1267,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     return exit_status(code: 2_u8);
   }
-  let root_name_room = len(root_name);
+  let root_name_room = len_of(root_name);
   let root_length_fits = root_length <= root_name_room;
   if root_length_fits {
   } else {
@@ -1286,7 +1286,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     return exit_status(code: 2_u8);
   }
-  let root_room = len(root_path);
+  let root_room = len_of(root_path);
   let copied = 0_u64;
   loop @root_copy_out {
     let done = copied >= root_length;

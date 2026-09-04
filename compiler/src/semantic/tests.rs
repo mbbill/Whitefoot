@@ -369,7 +369,7 @@ fn assert_unsupported(source: &[u8], feature: UnsupportedSemanticFeature) {
 #[test]
 fn a_branch_fact_discharges_the_protected_array_read() {
     let source = br#"fn read(values: own array<i32, 8>, i: own u64) -> result: own i32 pure {
-  let length = len(values);
+  let length = len_of(values);
   if i < length {
     return values[i];
   } else {
@@ -541,7 +541,7 @@ fn function_control_and_main_contract_are_checked_before_lowering() {
 fn loops_enforce_own11_for_outer_affine_moves() {
     assert_rule(
         br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
-  let n = len(cell);
+  let n = len_of(cell);
   return n;
 }
 
@@ -563,7 +563,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     );
     with_semantics(
         br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
-  let n = len(cell);
+  let n = len_of(cell);
   return n;
 }
 

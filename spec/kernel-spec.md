@@ -3,15 +3,15 @@
 Status: ACTIVE v0.45
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +12/-0 (148 remain), being [MSR-1], [MSR-2], [MSR-4], [MSR-6], [LIV-1], [LIV-2], [PROV-6], [PROV-1], [BLK-0], [BLK-1], [BLK-2] and [BLK-3]; grammar productions +3/-0 (87 remain), being `dispose_stmt`, `region_param` and `linearity_bound`; changed productions 10, being `fn_decl`, which takes an ordered result list, `result_route`, which takes an optional ordinal binder, `let_stmt`, which takes a parenthesized binder list over a `call` and a destructuring consume over a nominal, `set_stmt`, whose parenthesized target list takes one `call` or a value list of one expression per target, `return_stmt`, which takes one expression per declared result, `stmt`, which gains `dispose_stmt`, `struct_decl` and `enum_decl`, each of which takes an optional `linear` modifier and an optional `region_params`, `gparam`, whose optional bound takes a linearity class beside a marker TYPEID, and `region_params`, whose members are `region_param`; unique fixed lowercase grammar atoms +4/-0 (58 remain), being `is`, `linear`, `affine` and `dispose`, which [FORM-3] therefore excludes from IDENT, so no source declaration, contract member, or callee may be spelled `linear`, `affine`, or `dispose` any more; compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +12/-0, being the readers `cap`, `room` and `head`, which are dotless and IDENT-shaped and therefore also add three members to `ReservedLowerNames` [OP-1], so no source declaration may use those three spellings any more, and the nine kernel-domain operations `seq_fixed`, `seq_arena`, `seq_arena_proved`, `seq_heap`, `arena_frame`, `seq_place`, `seq_place_front`, `seq_take` and `seq_take_front`, which are declaration records rather than [OP-1] table rows and therefore add nothing to `ReservedLowerNames`, a source declaration spelling one of them being the ordinary [DIAG-1] collision a system-operation spelling already is; compiler-owned nominal type spellings +4/-0, being `Vector`, `FixedVector`, `Heap` and `Arena`, which are [TYPE-2] types and not entries of any operation or system domain; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains), whose closed standard-input table keeps its five rows; contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); kernel declaration records +44/-0 (44 remain), being nine operations, twenty-three type, const and region parameters, and twelve value parameters in [BLK-0]'s preorder; exception clauses +0/-1, being [ENT-5]'s element-position carve-out, removed rather than narrowed. [ENT-3] gains no source label and retires none. [FORM-2], [TYPE-2], [TYPE-3], [TYPE-5], [SET-1], [FN-1], [FN-2], [FN-7], [FN-9], [CALL-4], [CALL-6], [ENT-3], [ENT-3.S13], [OP-1], [OP-4], [OP-7], [OP-9], [TYPE-6], [ENT-2], [ENT-5], [ENT-6], [INV-1], [MSR-1], [MSR-2], [MSR-3], [MSR-5], [OWN-1], [OWN-11], [LIV-1], [CONST-1], [DIAG-1], [PROG-1], [PROV-6], [STOR-1], [STOR-3], [STOR-5], [SYS-3] and [EFF-2] are amended; twelve rule ids are added and none is retired. Eight clauses are DEFERRED with stated deltas: [CALL-4]'s remaining v0.44 admissions — a measure over a result place formed with field-selection `psuffix`es, `deref` wrappings or subscripts, and a route over any variant of any returned enum — each numbered rules +0 and grammar productions +0, the first two of that rule's three admissions, a result of measured type and a measure over a bare result place, having landed with the kernel rows that first produce a measured result; [FN-7]'s `command.heap` standard-input row, whose delta is entry standard-input rows +1 and which cannot be written until [EFF-1]'s `heap` allocation atom retires; the refusal of a type whose release graph has a cycle and a [LIV-2] target that resolves to no binding, each numbered rules +0 and grammar productions +0; the `arena_extent` reservation row together with the per-activation refusal its soundness needs, numbered rules +0, grammar productions +0, records +1; the confinement position closure and the `&uniq` parameter refusal over a container, a loan-bearing type, or an unbounded type parameter, numbered rules +1 and grammar productions +0; and the retirement of `array<T, N>` with its `array_new` row in favour of the `FixedVector<T, n>` const form, numbered rules +0, grammar productions -1, writer operation spellings -1.
+META-5 delta declaration: numbered rules +12/-0 (148 remain), being [MSR-1], [MSR-2], [MSR-4], [MSR-6], [LIV-1], [LIV-2], [PROV-6], [PROV-1], [BLK-0], [BLK-1], [BLK-2] and [BLK-3]; grammar productions +3/-0 (87 remain), being `dispose_stmt`, `region_param` and `linearity_bound`; changed productions 10, being `fn_decl`, which takes an ordered result list, `result_route`, which takes an optional ordinal binder, `let_stmt`, which takes a parenthesized binder list over a `call` and a destructuring consume over a nominal, `set_stmt`, whose parenthesized target list takes one `call` or a value list of one expression per target, `return_stmt`, which takes one expression per declared result, `stmt`, which gains `dispose_stmt`, `struct_decl` and `enum_decl`, each of which takes an optional `linear` modifier and an optional `region_params`, `gparam`, whose optional bound takes a linearity class beside a marker TYPEID, and `region_params`, whose members are `region_param`; unique fixed lowercase grammar atoms +4/-0 (58 remain), being `is`, `linear`, `affine` and `dispose`, which [FORM-3] therefore excludes from IDENT, so no source declaration, contract member, or callee may be spelled `linear`, `affine`, or `dispose` any more; compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +12/-0, being the readers `cap_of`, `room_of` and `head_of`, which are dotless and IDENT-shaped and therefore also add three members to `ReservedLowerNames` [OP-1], so no source declaration may use those three spellings any more, and the nine kernel-domain operations `seq_fixed`, `seq_arena`, `seq_arena_proved`, `seq_heap`, `arena_frame`, `seq_place`, `seq_place_front`, `seq_take` and `seq_take_front`, which are declaration records rather than [OP-1] table rows and therefore add nothing to `ReservedLowerNames`, a source declaration spelling one of them being the ordinary [DIAG-1] collision a system-operation spelling already is; compiler-owned nominal type spellings +4/-0, being `Vector`, `FixedVector`, `Heap` and `Arena`, which are [TYPE-2] types and not entries of any operation or system domain; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains), whose closed standard-input table keeps its five rows; contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); kernel declaration records +44/-0 (44 remain), being nine operations, twenty-three type, const and region parameters, and twelve value parameters in [BLK-0]'s preorder; exception clauses +0/-1, being [ENT-5]'s element-position carve-out, removed rather than narrowed. [ENT-3] gains no source label and retires none. [FORM-2], [TYPE-2], [TYPE-3], [TYPE-5], [SET-1], [FN-1], [FN-2], [FN-7], [FN-9], [CALL-4], [CALL-6], [ENT-3], [ENT-3.S13], [OP-1], [OP-4], [OP-7], [OP-9], [TYPE-6], [ENT-2], [ENT-5], [ENT-6], [INV-1], [MSR-1], [MSR-2], [MSR-3], [MSR-5], [OWN-1], [OWN-11], [LIV-1], [CONST-1], [DIAG-1], [PROG-1], [PROV-6], [STOR-1], [STOR-3], [STOR-5], [SYS-3] and [EFF-2] are amended; twelve rule ids are added and none is retired. Eight clauses are DEFERRED with stated deltas: [CALL-4]'s remaining v0.44 admissions — a measure over a result place formed with field-selection `psuffix`es, `deref` wrappings or subscripts, and a route over any variant of any returned enum — each numbered rules +0 and grammar productions +0, the first two of that rule's three admissions, a result of measured type and a measure over a bare result place, having landed with the kernel rows that first produce a measured result; [FN-7]'s `command.heap` standard-input row, whose delta is entry standard-input rows +1 and which cannot be written until [EFF-1]'s `heap` allocation atom retires; the refusal of a type whose release graph has a cycle and a [LIV-2] target that resolves to no binding, each numbered rules +0 and grammar productions +0; the `arena_extent` reservation row together with the per-activation refusal its soundness needs, numbered rules +0, grammar productions +0, records +1; the confinement position closure and the `&uniq` parameter refusal over a container, a loan-bearing type, or an unbounded type parameter, numbered rules +1 and grammar productions +0; and the retirement of `array<T, N>` with its `array_new` row in favour of the `FixedVector<T, n>` const form, numbered rules +0, grammar productions -1, writer operation spellings -1.
 This version lands multi-return, the proof surface, the commit rule, the linearity half and the container half of the containers design: the ordered result list and the two writer forms that name its ordinals again at a caller, then the four measure terms, descriptor-precise support, one numeric goal disposition, the const generic as a value, then join-checked liveness with the one `set` commit that reinitializes a place, and finally linearity read against the scope with the release graph, the `linear` modifier, the early release and the destructuring consume.
 The first amendment is the grammar, which gives a `fn_decl` a parenthesized list of two or more `result_binding`s, a `let_stmt` a parenthesized binder list whose right-hand side is a `call`, a `set_stmt` a parenthesized target list over the same or over a written value list [LIV-2], and a `return_stmt` one expression per declared result. [FORM-2] states the one space each of the three lists keeps before its `(`, overriding the generic right attachment of `(` exactly as the `for` header does, and makes a destructuring `let` line-bearing.
 The second amendment, [FN-1], states what a result list is: each `result_binding` is one result ordinal, numbered from zero in written order, every result judgment reads per ordinal, and a caller names the ordinals again only through the binder list or the target list, because no expression position produces a result list. [TYPE-5] derives binder i and target i from result ordinal i, and [SET-1] commits a target list in written order under the ordinary commit judgment, over the targets [LIV-2]'s second condition admits.
 That rule also lands the first two of its own v0.44 admissions, which the kernel rows make reachable: a declared result may be of measured type, and a measure over that bare result place is a clause operand instantiated at the ordinal's own destination.
 The third, [CALL-4], widens the contract vocabulary to the ordinals: every ordinal is a datum of every clause, a route may name the ordinal it applies to with `when b is V(f: r):`, the ordinal binder may be omitted exactly when one ordinal has that enum type, and a route two ordinals could carry is refused at the declaration, where the ordinal set is fixed. [FN-9] admits an unrouted clause over every ordinal it names, keeps the routed ordinal's whole-result binder unavailable while every other ordinal's binder remains a datum, and reads each result datum at a selected return from its own ordinal's returned expression.
 That same rule also adds the two [ENT-3.S12] destinations only a multi-result contract exercises — each binder of a destructuring `let` and each target of a `set` target list — established as [CALL-6] states, after the same statement's commits and kills.
-The fourth amendment is [MSR-1], which makes `len(P)`, `cap(P)`, `room(P)` and `head(P)` [ENT-2] terms over an admitted measure place — field selections, `deref` wrappings and subscripts alike — states that a measure table exists and gives every measured type a row with one of *exact*, *bounded* or *absent* per cell, and fixes the logical coordinate system in which every measure term and every [OP-4] obligation is stated. [OP-1] gains the three readers, which name the same quantities the terms do; they are dotless operation spellings, so `ReservedLowerNames` gains all three and a writer declaration may no longer be spelled `cap`, `room` or `head`.
-The fifth, [MSR-2], states the support of a measure term as descriptor storage rather than a root binding, so a write to a sibling field kills no measure and a write at an element position kills the measures of the written element and none of the run's own; [ENT-5]'s element-position carve-out is removed, because it was true only of a table this rule now reads directly. It also fixes the standing facts every measured value carries and appends `len + room = cap` to [ENT-6]'s automatic affine premises as two inequalities with empty support.
+The fourth amendment is [MSR-1], which makes `len_of(P)`, `cap_of(P)`, `room_of(P)` and `head_of(P)` [ENT-2] terms over an admitted measure place — field selections, `deref` wrappings and subscripts alike — states that a measure table exists and gives every measured type a row with one of *exact*, *bounded* or *absent* per cell, and fixes the logical coordinate system in which every measure term and every [OP-4] obligation is stated. [OP-1] gains the three readers, which name the same quantities the terms do; they are dotless operation spellings, so `ReservedLowerNames` gains all three and a writer declaration may no longer be spelled `cap_of`, `room_of` or `head_of`.
+The fifth, [MSR-2], states the support of a measure term as descriptor storage rather than a root binding, so a write to a sibling field kills no measure and a write at an element position kills the measures of the written element and none of the run's own; [ENT-5]'s element-position carve-out is removed, because it was true only of a table this rule now reads directly. It also fixes the standing facts every measured value carries and appends `len_of + room_of = cap_of` to [ENT-6]'s automatic affine premises as two inequalities with empty support.
 The sixth, [MSR-4], states once the complete ordered derivation of a numeric goal in six steps and retires the per-family route grants of [ENT-6]: [OP-4], [SYS-8], [OP-2], [OP-9], [FN-8], [FN-9] and [INV-1] each keep their normalization and submit. [ENT-6] carries one compiler-owned immutable affine atom per live measure term so that derivation can range over measures.
 The seventh, [MSR-6], admits an in-scope const generic as a `pbase` [TYPE-6], and with it as a `for_stmt` endpoint and a clause operand.
 The eighth, [LIV-1], makes a binding's live-or-dead status a property of a program point: every predecessor of every join and every loop head agrees on it, a disagreement is a hard error naming the binding and the two predecessors, and because the status agrees, every scope-exit release is unconditional. [OWN-11]'s prohibition on moving an outer binding into a loop body becomes that rule's per-iteration reading of the same agreement at its own loop head, so a body that moves a binding and reinitializes it before the backedge is admitted and a body that leaves it dead is not.
@@ -22,14 +22,14 @@ The walk and the provider write are gained by [STOR-3], and by [EFF-2] with it; 
 The ambient heap of `box<T>` and `buffer<T>` is still not a value, so every scope holds that capability and nothing is linear by it; the general store the entry now receives is one, so a run branded to it is linear in every scope that does not hold a `Heap` binding.
 The eleventh amendment is [PROV-1], which makes a store's identity a region, puts that region in the type of every value the store backs, admits at most one reserving occurrence per region, and resolves every elided store brand by one rule with two clauses — the enclosing nominal's sole region parameter at a stored position, and the entry heap's store region at a parameter or result position, a bump extent's region being one [FORM-8] writes everywhere. [FN-7] records the one further standard-input row by which a general store would enter a program, DEFERRED with the allocation atom that blocks its spelling; [STOR-5] states that a provider is region-bearing and a store-branded run is not, which is what admits a run into a field and an enum payload, and [FN-2] narrows its region-bearing-argument rejection to loan-bearing and provider arguments; [GRAM-2] gives `struct_decl` and `enum_decl` an optional `region_params`.
 The twelfth, [BLK-0], states that the container and store operations are one compiler-owned generic declaration domain, admitted to every unit as the system domain is, each operation one complete signature record with its own requirement and relation lists, whose written arguments are decided per argument, whose value arguments are named, and every one of whose rows is complete over every measure it writes on every exit. [ENT-3.S13]'s population is extended to those rows, so a row's declared relation establishes at a caller beside the source-call datums.
-The thirteenth, [BLK-1], states the two runs and the one window: exactly the `len` slots beginning at `head` modulo `cap`, the rest raw, no per-slot tag, a subscript in logical coordinates whose obligation is against `len`, and an element type that may be copy, affine, or linear. [MSR-1]'s table gains three rows and its first *bounded* cell, a run's `head`; [OP-4]'s indexable bases gain the two runs; [OP-9] gains their layout ceilings; [STOR-1] and [STOR-3] gain their storage classes and their release actions.
+The thirteenth, [BLK-1], states the two runs and the one window: exactly the `len_of` slots beginning at `head_of` modulo `cap_of`, the rest raw, no per-slot tag, a subscript in logical coordinates whose obligation is against `len_of`, and an element type that may be copy, affine, or linear. [MSR-1]'s table gains three rows and its first *bounded* cell, a run's `head_of`; [OP-4]'s indexable bases gain the two runs; [OP-9] gains their layout ceilings; [STOR-1] and [STOR-3] gain their storage classes and their release actions.
 The fourteenth and fifteenth, [BLK-2] and [BLK-3], are the inventory: four formation rows, one frame reservation, and the four boundary operations that are the only things that move a boundary, each taking its run by value and handing it back, so every measure of `vector` in a published relation denotes that call's own call datum.
 
 Selection ground: evidence-selected. The result list is selected by the containers-and-resources design session's R1, which makes every transforming operation return the value it was handed plus what it computed, and by that design's record that the two-field struct per operation the surviving spelling costs is admitted on cost rather than on expressibility; the ordinal binder is selected by that design's sixth falsifier round, where a function with two same-typed enum results left a variant route ambiguous in three ways and one of them unsound. The two added destinations are selected by the same design's observation that without them a multi-result contract publishes nothing, because the closed destination list of [ENT-3.S12] names neither. The four measure terms, descriptor-precise support and the one goal disposition are selected by that same design's [MSR] family and by its measured falsifier evidence: probe `r2_4` showed a length fact killed by a write to a sibling field, which descriptor storage repairs, and its seventh falsifier round reached memory three times through a contradictory published state, which is why the disposition states contradiction first and once. The const generic as a value is selected by probe `q10`, where a capacity-parametric function could not name its own bound. Linearity read against the scope is selected by that design's owner decision D3 of 2026-09-03, measured rather than argued: a scope-blind criterion costs one written statement per (value, edge), which its seventh falsifier round counted at forty in one entry function and sixty-eight in one decoder, and the repair a writer takes is to invert every hosted function into a single exit; read against the scope those are the ordinary derived release, and the free is more visible than forty scattered statements because it appears in an effect row where probe `r2_5` shows this compiler emits it under none.
 The release graph is selected by that round's finding that the seventh draft's cycle refusal was stated over a sub-graph reached *through leaves*, which reaches nothing, while its walk quantified a different graph, so an arena-recursive structure inside a heap-backed one was accepted with a runtime-depth walk.
 The `linear` modifier's admission condition is selected by probe `q11`, a tag-only enum used twice bare, and [S32]'s bound by the three fail-closed refusals that design records, each of which costs a program a writer needs.
 Join-checked liveness and the one commit rule are selected by the same design's owner decision D2 of 2026-09-03, which fixed the commit as the single writer form for transforming a place in situ and refused an exchange operation, and by its seventh falsifier round, which found the sixth draft's commit paragraph admitting no instance at all; probe `q9` is the `set` at a live affine local that [STOR-1] refuses today and this version admits, and probe `f3` is the branch pair a checker capability limit answered with a stop instead of a rejection. Prior selection ground for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
-The brand, the runs and the kernel declaration domain are selected by the same design's [PROV] and [BLK] families and by its seventh falsifier round, which found the prefix reading of a run making a queue a library ring over `Option<T>` measured at 2072 bytes against a hand-written 280, and which found a `writes`-keyed reading of a row's own operand making every published length relation read as a fixed point of itself. The window is the owner's decision of 2026-09-03 and its five stated costs — one descriptor word, one measure term, one standing fact, one view premise, and an O(len) drain — are recorded rather than argued. The entry heap input is selected by that design's [S22], because a store must enter as a value and [FN-7]'s table is closed, and the brand-resolution rule is what makes `main` declaring no region parameter consistent with a helper that holds entry-heap storage.
+The brand, the runs and the kernel declaration domain are selected by the same design's [PROV] and [BLK] families and by its seventh falsifier round, which found the prefix reading of a run making a queue a library ring over `Option<T>` measured at 2072 bytes against a hand-written 280, and which found a `writes`-keyed reading of a row's own operand making every published length relation read as a fixed point of itself. The window is the owner's decision of 2026-09-03 and its five stated costs — one descriptor word, one measure term, one standing fact, one view premise, and an O(length) drain — are recorded rather than argued. The entry heap input is selected by that design's [S22], because a store must enter as a value and [FN-7]'s table is closed, and the brand-resolution rule is what makes `main` declaring no region parameter consistent with a helper that holds entry-heap storage.
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
 R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
@@ -648,7 +648,7 @@ cvalue := literal | IDENT | "[" cvalue ("," cvalue)* "]" | TYPEID targs? "(" (ID
 The `cvalue` totally defines the value (T1): a primitive-typed const takes a FORM-5 numeric or unit literal or an IDENT naming an earlier const of that exact type; an `array<T, N>`-typed const takes `[cvalue, ..., cvalue]` with exactly N entries, each of type T, and a struct-typed const takes the construction form `TYPEID(field: cvalue, ...)` naming its exact struct and writing every declared field in declared order [GRAM-8], each field value a cvalue of the declared field type.
 The const-dependency graph is acyclic and declaration-before-use [TYPE-6]; evaluation is substitution and layout only.
 A const item is never `move`d, `set`, or `&uniq`-borrowed.
-It is read via subscript/`len` (copy-out for copy elements) or shared-borrowed `&'r p` in any region [OWN-10], so a const table may be `slice_of`-viewed and passed to a consumer.
+It is read via subscript/`len_of` (copy-out for copy elements) or shared-borrowed `&'r p` in any region [OWN-10], so a const table may be `slice_of`-viewed and passed to a consumer.
 A struct-typed const is additionally read via its field suffixes exactly as subscript reads: a copy-scalar selection copies out, and a composite selection keeps the whole-composite read rules.
 A struct-typed const is laid out as one read-only static aggregate in the nominal's ordinary representation.
 Enum-typed consts and written generic construction arguments in const position are DEFERRED with recorded delta: a payload-enum const has no non-consuming read path (a `match` scrutinee is an own place [OWN-13]), and a tag-only-enum const additionally needs a constant-value family no current program demands.
@@ -874,10 +874,9 @@ A type's release action is non-empty by the least fixed point of three clauses: 
 The graph has an edge from a node to a sub-node exactly when that sub-node's release action is non-empty.
 One walk performs both the compiler-derived release and `dispose`, and it visits exactly the nodes of that graph in [STOR-3]'s order — every field of a struct in declaration order, an enum's active variant's payload selected by the discriminant, every element of a run in ascending index order — releasing at each capability-released leaf to the store its own type names and spending that store's resolved provider, and running each other non-empty leaf's ordinary release action.
 A field, payload, or element whose release action is empty is never visited, and a container's elements are visited before its backing is released, so a release of a full container needs no emptiness premise.
-A type whose release graph has a cycle makes that walk's depth a runtime quantity rather than a compile-time constant.
-Refusing such a type at its `struct_decl` or `enum_decl` in every program, naming the cycle, with the restructuring `hold the cells in a run and link by index`, is DEFERRED with recorded delta [META-5]; its delta is numbered rules +0 and grammar productions +0.
-It is deferred rather than landed because it retires an accepted heap-backed recursive program in this repository's own corpus, and which programs a language rule retires is not a checker capability question.
-Until it lands, every judgment of this rule that reads the graph reads each node once, which terminates on a cyclic graph and is exactly the node set this version's release actions need.
+A type whose release graph has a cycle makes that walk's depth a runtime quantity rather than a compile-time constant, and is admitted: the derived release of such a type is one release action per node type, entering itself where the graph closes, and the walk's depth is the value's own.
+A cycle in a release graph can arise only where a heap is allowed — an arena-resident recursive node's release action is empty, so the walk never enters it, and a `resource_closed` entry [PROG-1] reaches no general store at all — so a runtime-quantity release depth is a property of exactly the programs whose resource behaviour is already a runtime quantity.
+Every judgment of this rule that reads the graph reads each node once, which terminates on a cyclic graph and is exactly the node set this version's release actions need.
 
 `dispose p;` [GRAM-4] is the early release: it runs at the point it is written the same walk the scope exit would run, and it names no capability.
 It is admitted only when `p`'s release graph contains at least one capability-released leaf, when this scope holds the capability of every such leaf, and when no node of that graph — `p`'s own type included — is linear by the modifier.
@@ -932,6 +931,8 @@ A kernel-domain operation is not a contract member, is not the right IDENT of an
 
 Every row is complete over every measure it writes, on every exit.
 A row whose effect row carries `writes(P)` for a measured place `P` publishes, for each measure of `P` [MSR-1], its exact new value where that measure's cell is exact and a two-sided bound where that cell is bounded, including the measures it did not change, and on every declared exit including a refusal.
+Completeness is read with [MSR-2]'s standing identity: `room_of` is the complement `len_of(P) + room_of(P) = cap_of(P)` already determines with empty support, so a row that publishes `len_of` and `cap_of` of a place has published its `room_of` and needs no third clause for it.
+A row may publish `room_of` explicitly anyway, and the boundary rows [BLK-3] do; the formation rows [BLK-2] do not, and both classes are complete under the same sentence.
 A row's declared relations are published exactly as a source [FN-9] relation set is: instantiated at the call and established on its continuation by [CALL-6], with each operand substituted at the denotation [MSR-3]'s table gives its parameter's mode, and with each routed relation restricted to its own arm [CALL-4].
 A kernel-domain record's requirement and relation lists are normative record notation and are not a source `contract_block`, so [FN-9]'s admission conditions — which datum shapes a clause operand may take, and which variant a route may name — quantify over a source-declared block and reach no record of this domain: a row's relation may name a measure of its own result, may be routed to any variant of the enum that result is, and may name a measure of a `&uniq` state parameter, denoting that parameter's post-state there.
 Rule [MSR-3]'s inadmissibility of that last operand in an `ensures` is the same quantification: a source-declared body is a body, and a record has none.
@@ -945,7 +946,7 @@ A row's operands are [ENT-2] terms, constants, and exactly the compiler-owned fo
 Every acquiring row carries that obligation and `seq_fixed` carries none, because its count is a type constant [STOR-6] governs.
 
 The readers are not in this domain.
-`len`, `cap`, `room`, and `head` are four [OP-1] table operations over a bare non-consuming place operand, returning `own u64`, and `pure`; a caller reading a measure of a borrowed place exhibits `reads` of it by [EFF-2]'s ordinary attribution, and a `let` binding one of them establishes the ordinary [ENT-3.S6] equality over that measure term.
+`len_of`, `cap_of`, `room_of`, and `head_of` are four [OP-1] table operations over a bare non-consuming place operand, returning `own u64`, and `pure`; a caller reading a measure of a borrowed place exhibits `reads` of it by [EFF-2]'s ordinary attribution, and a `let` binding one of them establishes the ordinary [ENT-3.S6] equality over that measure term.
 
 The judgment of this rule is row resolution by spelling, operand types, and written arguments; the per-row requirement discharge under [MSR-4], the allocation-fit obligation included; the [GRAM-11] named-argument check; the per-argument written-argument check above; and the completeness check over each row's published relation set, which is a property of this specification's data established once for this document.
 A diagnostic arising in this domain cites BLK-0 and names the operation in its payload, exactly as an [OP-1] diagnostic cites OP-1 and names its family.
@@ -954,10 +955,10 @@ Each inventory entry has one zero-based `container_declaration_ordinal` assigned
 [BLK-1] Two runs, one shape, one window, and what a slot may hold.
 `FixedVector<T, n>` and `Vector<'s, T>` are the two runs of slots and there is no third.
 `FixedVector<T, n>`'s capacity is the type constant `n` [CONST-1] and its storage is inline in its owner or its owner's stack frame; `Vector<'s, T>`'s capacity is a measure fixed at its formation [MSR-1] and its storage is one run taken from the store `'s` names [PROV-1].
-Each is a run of `cap` slots whose initialized storage is a window: exactly the `len` slots beginning at `head` modulo `cap`, every other slot raw.
-A run carries no per-slot tag, no occupancy bitmap, and no runtime discriminant; the window is its complete typestate and `len`, `cap`, `room`, and `head` are its complete measure row [MSR-1].
-A subscript `v[i]` selects the element at logical offset `i` and carries [OP-4]'s obligation `i < len(v)`, stated against `len` and never against `cap` or `head`; the storage it selects is slot `(head(v) + i) mod cap(v)`, which is the coordinate system [MSR-1] fixes and where that rule's injectivity sentence applies.
-An implementation that has proved `head(v)` identically zero may emit the plain `base + i * stride` form; acceptance never depends on whether it has.
+Each is a run of `cap_of` slots whose initialized storage is a window: exactly the `len_of` slots beginning at `head_of` modulo `cap_of`, every other slot raw.
+A run carries no per-slot tag, no occupancy bitmap, and no runtime discriminant; the window is its complete typestate and `len_of`, `cap_of`, `room_of`, and `head_of` are its complete measure row [MSR-1].
+A subscript `v[i]` selects the element at logical offset `i` and carries [OP-4]'s obligation `i < len_of(v)`, stated against `len_of` and never against `cap_of` or `head_of`; the storage it selects is slot `(head_of(v) + i) mod cap_of(v)`, which is the coordinate system [MSR-1] fixes and where that rule's injectivity sentence applies.
+An implementation that has proved `head_of(v)` identically zero may emit the plain `base + i * stride` form; acceptance never depends on whether it has.
 A `Vector<'s, T>` of capacity one is a single stored value, so the kernel needs no separate store-resident single-value nominal.
 An element type `T` may be copy, affine, or linear [OWN-1, PROV-6]: the window is what makes an affine element sound, because an element enters and leaves a slot only through an operation that moves a boundary [BLK-3] or through [SET-2] element replacement, and neither leaves an initialized slot empty nor reads a raw one.
 A run whose element type is linear in a scope owns its elements, so a value of that run type is linear in that scope too and [PROV-6]'s release walk visits exactly its window.
@@ -970,54 +971,54 @@ Four formation rows and one reservation row, in this preorder, each one complete
 
 ```
 fn seq_fixed<T, const n: u64>() -> result: own FixedVector<T, n> pure
-  ensures len(result) == 0_u64;
-  ensures cap(result) == n;
-  ensures room(result) == n;
-  ensures head(result) == 0_u64;
+  ensures len_of(result) == 0_u64;
+  ensures cap_of(result) == n;
+  ensures room_of(result) == n;
+  ensures head_of(result) == 0_u64;
 
 fn seq_arena<T, const bytes: u64, const align: u64>['s](arena: &uniq Arena<'s, bytes, align>, count: own u64)
     -> made: own Option<Vector<'s, T>> reads(arena), writes(arena), allocates(arena 's)
   requires align >= align_ceiling(T);
   requires fits::<T>(count);
-  ensures when made is Some(value: r): len(r) == 0_u64;
-  ensures when made is Some(value: r): cap(r) == count;
-  ensures when made is Some(value: r): room(r) == count;
-  ensures when made is Some(value: r): head(r) == 0_u64;
-  ensures when made is Some(value: r): len(arena) == len(arena at the call) + advance<T>(count);
-  ensures when made is None(): len(arena) == len(arena at the call);
-  ensures when made is None(): room(arena) < advance<T>(count);
-  ensures cap(arena) == cap(arena at the call);
+  ensures when made is Some(value: r): len_of(r) == 0_u64;
+  ensures when made is Some(value: r): cap_of(r) == count;
+  ensures when made is Some(value: r): room_of(r) == count;
+  ensures when made is Some(value: r): head_of(r) == 0_u64;
+  ensures when made is Some(value: r): len_of(arena) == len_of(arena at the call) + advance<T>(count);
+  ensures when made is None(): len_of(arena) == len_of(arena at the call);
+  ensures when made is None(): room_of(arena) < advance<T>(count);
+  ensures cap_of(arena) == cap_of(arena at the call);
 
 fn seq_arena_proved<T, const bytes: u64, const align: u64>['s](arena: &uniq Arena<'s, bytes, align>, count: own u64)
     -> result: own Vector<'s, T> reads(arena), writes(arena), allocates(arena 's)
   requires align >= align_ceiling(T);
   requires fits::<T>(count);
-  requires room(arena) >= advance<T>(count);
-  ensures len(result) == 0_u64;
-  ensures cap(result) == count;
-  ensures room(result) == count;
-  ensures head(result) == 0_u64;
-  ensures len(arena) == len(arena at the call) + advance<T>(count);
-  ensures cap(arena) == cap(arena at the call);
+  requires room_of(arena) >= advance<T>(count);
+  ensures len_of(result) == 0_u64;
+  ensures cap_of(result) == count;
+  ensures room_of(result) == count;
+  ensures head_of(result) == 0_u64;
+  ensures len_of(arena) == len_of(arena at the call) + advance<T>(count);
+  ensures cap_of(arena) == cap_of(arena at the call);
 
 fn seq_heap<T>['s](heap: &uniq Heap<'s>, count: own u64)
     -> made: own Option<Vector<'s, T>> reads(heap), writes(heap), allocates(heap)
   requires fits::<T>(count);
-  ensures when made is Some(value: r): len(r) == 0_u64;
-  ensures when made is Some(value: r): cap(r) == count;
-  ensures when made is Some(value: r): room(r) == count;
-  ensures when made is Some(value: r): head(r) == 0_u64;
+  ensures when made is Some(value: r): len_of(r) == 0_u64;
+  ensures when made is Some(value: r): cap_of(r) == count;
+  ensures when made is Some(value: r): room_of(r) == count;
+  ensures when made is Some(value: r): head_of(r) == 0_u64;
 
 fn arena_frame<const bytes: u64, const align: u64>['s]() -> result: own Arena<'s, bytes, align> pure
-  ensures len(result) == 0_u64;
-  ensures cap(result) == bytes;
-  ensures room(result) == bytes;
+  ensures len_of(result) == 0_u64;
+  ensures cap_of(result) == bytes;
+  ensures room_of(result) == bytes;
 ```
 
 `seq_fixed` needs no store and is `pure`; each of the three acquiring rows takes its store's provider as a `&uniq` parameter and publishes that store's post-state measures.
-Each arena row additionally requires `align >= align_ceiling(T)` as a compile-time comparison of two constants, which is what makes the bump cursor a multiple of `align` at every program point, the padding at a take zero, and `len(arena)` exact [MSR-1].
+Each arena row additionally requires `align >= align_ceiling(T)` as a compile-time comparison of two constants, which is what makes the bump cursor a multiple of `align` at every program point, the padding at a take zero, and `len_of(arena)` exact [MSR-1].
 Every failure of a kernel acquisition is an `Option` and this domain declares no failure nominal, because no kernel acquisition takes an affine input: a count is copy and a provider is borrowed, so a refusal has nothing to hand back.
-The general store has no proved form, because no honest compile-time domain predicate exists for it; the arena has one, whose `room` requirement [MSR-4] discharges and whose failure is therefore a static rejection with no runtime fallback.
+The general store has no proved form, because no honest compile-time domain predicate exists for it; the arena has one, whose `room_of` requirement [MSR-4] discharges and whose failure is therefore a static rejection with no runtime fallback.
 `Heap<'s>` has no formation row at all: the one general store enters a program as the entry's `heap` standard input and by no other route, and that row is [FN-7]'s own DEFERRED entry.
 
 `arena_frame::<bytes, align, 's>()` reserves one bump extent per activation of the region block naming `'s`, laid out in that activation's own frame.
@@ -1026,7 +1027,7 @@ Either violation is a hard error citing BLK-2 at the occurrence's store `targ`, 
 Rule [PROV-1] admits at most one reserving occurrence per region.
 On every edge leaving `'s`'s block the extent's release action resets it to its initial state — the bump cursor to zero, and nothing else — and that action is one row of [STOR-3]'s table.
 DEFERRED: a second reservation row `arena_extent`, which produces its own resource-envelope item instead of a frame contribution, together with the refusal of an occurrence more than one activation of whose region block can be live at one program point; its delta is numbered rules +0, grammar productions +0, and records +1.
-It is deferred because the refusal quantifies over call-graph components and execution contexts that this version's resource judgment does not state, and a reservation whose per-activation identity is unchecked would publish `len(result) == 0_u64` falsely.
+It is deferred because the refusal quantifies over call-graph components and execution contexts that this version's resource judgment does not state, and a reservation whose per-activation identity is unchecked would publish `len_of(result) == 0_u64` falsely.
 
 [BLK-3] Four operations move a boundary, and nothing else does.
 `V` is a compiler-owned run type parameter of this domain whose admitted arguments are exactly `FixedVector<T, n>` and `Vector<'s, T>` and whose element type is that run's own; it is supplied by the `vector` operand and never written, and no source declaration can write such a parameter.
@@ -1034,37 +1035,37 @@ Four rows, in this preorder, continuing [BLK-2]'s inventory:
 
 ```
 fn seq_place(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
-  requires room(vector) > 0_u64;
-  ensures len(result) == len(vector) + 1_u64;
-  ensures room(result) + 1_u64 == room(vector);
-  ensures cap(result) == cap(vector);
-  ensures head(result) == head(vector);
+  requires room_of(vector) > 0_u64;
+  ensures len_of(result) == len_of(vector) + 1_u64;
+  ensures room_of(result) + 1_u64 == room_of(vector);
+  ensures cap_of(result) == cap_of(vector);
+  ensures head_of(result) == head_of(vector);
 
 fn seq_place_front(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
-  requires room(vector) > 0_u64;
-  ensures len(result) == len(vector) + 1_u64;
-  ensures room(result) + 1_u64 == room(vector);
-  ensures cap(result) == cap(vector);
-  ensures head(result) >= 0_u64;
-  ensures head(result) <= cap(result);
+  requires room_of(vector) > 0_u64;
+  ensures len_of(result) == len_of(vector) + 1_u64;
+  ensures room_of(result) + 1_u64 == room_of(vector);
+  ensures cap_of(result) == cap_of(vector);
+  ensures head_of(result) >= 0_u64;
+  ensures head_of(result) <= cap_of(result);
 
 fn seq_take(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
-  requires len(vector) > 0_u64;
-  ensures len(rest) + 1_u64 == len(vector);
-  ensures room(rest) == room(vector) + 1_u64;
-  ensures cap(rest) == cap(vector);
-  ensures head(rest) == head(vector);
+  requires len_of(vector) > 0_u64;
+  ensures len_of(rest) + 1_u64 == len_of(vector);
+  ensures room_of(rest) == room_of(vector) + 1_u64;
+  ensures cap_of(rest) == cap_of(vector);
+  ensures head_of(rest) == head_of(vector);
 
 fn seq_take_front(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
-  requires len(vector) > 0_u64;
-  ensures len(rest) + 1_u64 == len(vector);
-  ensures room(rest) == room(vector) + 1_u64;
-  ensures cap(rest) == cap(vector);
-  ensures head(rest) >= 0_u64;
-  ensures head(rest) <= cap(rest);
+  requires len_of(vector) > 0_u64;
+  ensures len_of(rest) + 1_u64 == len_of(vector);
+  ensures room_of(rest) == room_of(vector) + 1_u64;
+  ensures cap_of(rest) == cap_of(vector);
+  ensures head_of(rest) >= 0_u64;
+  ensures head_of(rest) <= cap_of(rest);
 ```
 
-`seq_place` and `seq_take` move the back boundary and leave `head` where it was; `seq_place_front` and `seq_take_front` move the front boundary, and `head` is the one measure whose cell is bounded [MSR-1], so those two rows publish it two-sidedly and no row re-establishes it exactly.
+`seq_place` and `seq_take` move the back boundary and leave `head_of` where it was; `seq_place_front` and `seq_take_front` move the front boundary, and `head_of` is the one measure whose cell is bounded [MSR-1], so those two rows publish it two-sidedly and no row re-establishes it exactly.
 Each row takes the run by value and returns it, so every occurrence of a measure of `vector` in its published relations denotes that call's call datum [MSR-3] and no relation of this domain reads as a fixed point of itself.
 Element access is the ordinary surface over the initialized window and needs no row: `v[i]` reads, `set v[i] = e;` writes a copy element [LIV-2], and `let old = replace v[i] = e;` exchanges an affine one [SET-2].
 There is no swap, exchange, rebase, growth, clear, truncate, removal from the middle, filled construction, or vacant construction anywhere in this domain: a swap of two whole non-overlapping places is `set (p, q) = move q, move p;` [LIV-2], a swap of two elements of one run is `seq_take`, one element `replace`, and `seq_place`, and each remaining item is an ordinary source function over these rows.
@@ -1160,7 +1161,7 @@ This stop is a target-layout failure under [DIAG-1], not a source-language rejec
 For a runtime-sized allocation, the concrete descriptor and element layout are checked statically as above.
 For every type materialized by `buffer_new` or `buffer_vacant`, target qualification additionally verifies the actual size, alignment, and element stride against [OP-9]'s language ceilings before lowering the operation.
 The accepted [OP-9] judgment retains a numeric upper bound for the source length at that allocation site; target qualification multiplies that bound by the actual target stride using checked mathematical arithmetic and requires the result to fit both the allocator-parameter and address-index domains before lowering the operation.
-At this target stage, the exact SSA result of `len(buffer)` additionally carries the selected target's runtime-allocation byte maximum divided by that buffer's actual element stride, because every materialized buffer already satisfies the successful-allocation representation invariant.
+At this target stage, the exact SSA result of `len_of(buffer)` additionally carries the selected target's runtime-allocation byte maximum divided by that buffer's actual element stride, because every materialized buffer already satisfies the successful-allocation representation invariant.
 Qualification may intersect this target bound with the retained source bound only for that exact SSA result; it does not publish a Whitefoot comparison fact or transfer the bound through a block parameter, storage load, conversion, user call, or another value merely because its source spelling or type is similar.
 The source allocation proof and this target qualification jointly establish that every reachable runtime byte count has one exact value-preserving target representation; neither alone authorizes emission, and the allocator receives exactly that value.
 Every emitted target address computation must likewise be proved valid for every runtime value that reaches it: the compiler establishes before emission that each runtime index and each mathematically scaled byte offset actually used by the computation has an exact value-preserving representation in the applicable target address-index domain, and that scaling and offset addition do not wrap.
@@ -1201,7 +1202,7 @@ The table below is the normative inventory (columns: op, type domain, signature,
 | `bnot` | Bool | `(Bool) -> own Bool` | pure |
 | `cvt` | value-preserving pairs [OP-6] | `(Src) -> own Dst` | pure |
 | `cvt` | all other distinct numeric pairs [OP-6] | `(Src) -> own Result<Dst, NarrowError>` | pure |
-| `len` `cap` `room` `head` | `slice<'r, T>`, `array<T, N>`, `buffer<T>`, `FixedVector<T, n>`, `Vector<'s, T>`, `Arena<'s, bytes, align>` | `-> own u64` | pure |
+| `len_of` `cap_of` `room_of` `head_of` | `slice<'r, T>`, `array<T, N>`, `buffer<T>`, `FixedVector<T, n>`, `Vector<'s, T>`, `Arena<'s, bytes, align>` | `-> own u64` | pure |
 | `slice_of` | `array<T, N>`, `buffer<T>` | `&'r place -> own slice<'r, T>` (a borrow of the whole array/buffer place) | pure |
 | `box_new` | any T | `(own T) -> own box<T>` | allocates(heap) |
 | `arena_new` | any T | `(own T) -> own arena<'r, T>` | allocates(arena 'r) |
@@ -1247,7 +1248,7 @@ An IDENT callee whose spelling belongs to `DotlessOperationNames` resolves to th
 Absence from the selected operation-family, function, or system-operation inventory is a hard error citing OP-1.
 Later typed operation checking uses the operand domains and, for the retained-argument operations [TYPE-5], the written arguments, to select the applicable row within the resolved family.
 Operand types never select between an operation family, a system operation, and a function.
-A bare `place` operand that a table-operation row reads without consuming — the operand of each measure former `len`, `cap`, `room`, and `head` [MSR-1], the place viewed by `slice_of` through its explicit borrow, and the base place of a subscript — is a non-consuming read: it neither moves nor partially consumes an affine root [OWN-1], exactly the reading [FN-8] already states for a place used as a non-consuming operand of an admitted table operation.
+A bare `place` operand that a table-operation row reads without consuming — the operand of each measure former `len_of`, `cap_of`, `room_of`, and `head_of` [MSR-1], the place viewed by `slice_of` through its explicit borrow, and the base place of a subscript — is a non-consuming read: it neither moves nor partially consumes an affine root [OWN-1], exactly the reading [FN-8] already states for a place used as a non-consuming operand of an admitted table operation.
 
 No source declaration or FN-9 result-datum candidate in this closed list may use a member of `ReservedLowerNames`: the IDENT of `fn_decl`; the IDENT of `const_decl`; every `param` and `result_binding` IDENT; every `let_stmt` IDENT, including ordinary, propagate, value-match, and value-if lets; every `contract_define` IDENT; the second IDENT of any `fieldbind`, including a `result_route` payload binder; every `field` and `vfield` IDENT; and the IDENT-shaped interior of `region_params` and `region_stmt`.
 Such a reserved spelling is rejected citing exactly FORM-3 before freshness ownership is considered.
@@ -1320,8 +1321,8 @@ Float ops that are EXACT or exact-selection are dotless: `fneg` `fabs` `fcopysig
 Approximation/fast-math modes remain an OPEN numeric-semantics question; a relaxed float op would be introduced as a distinct OPNAME (FORM-1-additive).
 
 [OP-4] A subscript `p[i]` selects one element place of an indexable base: the base place `p`'s final selected type must be `array<T, N>`, `slice<'r, T>`, `buffer<T>`, `FixedVector<T, n>`, or `Vector<'s, T>` [BLK-1], and the subscripted place's selected type is exactly that element type T — derived from the base place's already-fixed type [TYPE-5] — written where the binding carries an annotation, derived at a body `let` — by the same declared-type selection that types a field suffix, never from expected type or cross-statement inference; a subscript whose base's final selected type is not one of the five indexable types is a hard error citing OP-4 at that subscript's `psuffix` node.
-The subscript carries the bounds obligation `i < len(p)` [ENT-6], and `i` is a logical offset [MSR-1]: it names the slot at physical offset `(head(p) + i) mod cap(p)`, so the obligation is against `len(p)` for every indexable base and never against `cap(p)`.
-The injectivity sentence of [MSR-1] is what carries that logical conclusion to a storage conclusion, and its premise `len(p) <= cap(p)` is one of [MSR-2]'s standing facts, so no subscript occurrence submits a separate obligation for it.
+The subscript carries the bounds obligation `i < len_of(p)` [ENT-6], and `i` is a logical offset [MSR-1]: it names the slot at physical offset `(head_of(p) + i) mod cap_of(p)`, so the obligation is against `len_of(p)` for every indexable base and never against `cap_of(p)`.
+The injectivity sentence of [MSR-1] is what carries that logical conclusion to a storage conclusion, and its premise `len_of(p) <= cap_of(p)` is one of [MSR-2]'s standing facts, so no subscript occurrence submits a separate obligation for it.
 The obligation is submitted to the one numeric goal disposition [MSR-4]; that rule fixes the complete ordered derivation and this rule grants no route of its own.
 A discharged subscript reads or writes with no runtime bounds check in every build mode, and its checked-program disposition records the discharging derivation [DIAG-2].
 A subscript whose current ProofContext does not discharge the obligation is a compile-time rejection citing OP-4 at that subscript's `psuffix` node, carrying the residual obligation rendered exactly per [ENT-6], and publishes no checked program.
@@ -1347,7 +1348,7 @@ A pair is TOTAL — signature `(Src) -> own Dst`, no Result — where every Src 
 Every other distinct numeric pair returns `(Src) -> own Result<Dst, NarrowError>`.
 
 [OP-7] Operation-name convention (regularity, W1-predictable).
-An arithmetic, logic, bit, or compare op carries a domain prefix — `i` (integer), `f` (float), `b` (Bool logic), or `e` (tag-only enum comparison, including `Bool`) — whether or not a cross-domain twin exists; the structural ops (`cvt`, `reinterpret`, `len`, `cap`, `room`, `head`, `slice_of`, `box_new`, `arena_new`) carry no prefix.
+An arithmetic, logic, bit, or compare op carries a domain prefix — `i` (integer), `f` (float), `b` (Bool logic), or `e` (tag-only enum comparison, including `Bool`) — whether or not a cross-domain twin exists; the structural ops (`cvt`, `reinterpret`, `len_of`, `cap_of`, `room_of`, `head_of`, `slice_of`, `box_new`, `arena_new`) carry no prefix.
 The integer arithmetic and integer comparison symbols of [GRAM-5] are the one prefix-free operation class: each is an integer-only table row, so `+` and `<` never denote a float or enum operation, and `fadd.strict`, `feq`, and `eeq` keep their prefixed names.
 `Bool` participates in the `b` family for boolean logic and the `e` family for tag-only equality; the operation name, not operand inference, selects the family.
 A respelled operation's token is its one constant spelling under the same one-spelling-per-operation discipline.
@@ -1736,7 +1737,7 @@ Omitting Err routes means Err exits are unselected, not unreachable.
 
 After recursively alpha-expanding every shared `contract_define`, the clause expression must have exact type `own Bool` and its root must be exactly one `compare_op` — `==`, `!=`, `<`, `<=`, `>`, or `>=` [GRAM-5].
 Both operands must be one of the clause's symbolic result datums, a parameter datum with field and `deref` projections, a named const, a typed integer literal, a measure of an admitted formal place P [MSR-5], or a measure of a declared result ordinal of measured type [CALL-4]; at least one operand contains a result datum, a measure over one included, and the two may name two different result ordinals.
-A `len(P)` operand whose place P is rooted at a `&uniq` parameter is inadmissible in an `ensures_clause` and is a hard error citing MSR-3 at that clause.
+A `len_of(P)` operand whose place P is rooted at a `&uniq` parameter is inadmissible in an `ensures_clause` and is a hard error citing MSR-3 at that clause.
 No proof-required exact operation, computed arithmetic result, subscript, occurrence-local evaluated-value datum, Boolean connective, nested result projection, or body local becomes a relation term.
 The comparison normalizes to one finite L0 RelationTemplate; equality's two bounds remain one relation occurrence.
 Parameters denote function-entry images.
@@ -1793,11 +1794,11 @@ Postconditions add no runtime operation, hidden check, assume, optimizer license
 
 [MSR-5] A contract clause is the relation an invariant already is, over a wider operand set.
 A `requires_clause` and an `ensures_clause` take a `clause_expr` [GRAM-2, GRAM-5], whose operands are each an `atom`, a `call`, or a `construct`.
-The operand set is the whole of this rule: [GRAM-5]'s `atom` has no `call` alternative, so before this version a measure of a place derived nowhere in a clause and `len(source) <= len(out)` was a GRAM-5 parse rejection at the comparison, while the same fact written through one `contract_define` per operand was admitted — one semantics with two spellings, one of which cost a definition per measure.
+The operand set is the whole of this rule: [GRAM-5]'s `atom` has no `call` alternative, so before this version a measure of a place derived nowhere in a clause and `len_of(source) <= len_of(out)` was a GRAM-5 parse rejection at the comparison, while the same fact written through one `contract_define` per operand was admitted — one semantics with two spellings, one of which cost a definition per measure.
 A clause is judged by exactly the [OP-5] condition [FN-8] and [FN-9] already apply: the root has exact value mode and type `own Bool`, and every operand is a non-consuming datum or an operation-table form pure and total over its selected operand domain.
 This rule adds no route, no fact source, and no proof authority; it adds spellings the existing admissions already accept.
 
-The measure formers are table data over the measured types, with four rows in this version — `len(P)`, `cap(P)`, `room(P)`, and `head(P)` [MSR-1], each of fragment type u64 and each admitted for exactly the places [ENT-2] clause (b) admits a measure term for.
+The measure formers are table data over the measured types, with four rows in this version — `len_of(P)`, `cap_of(P)`, `room_of(P)`, and `head_of(P)` [MSR-1], each of fragment type u64 and each admitted for exactly the places [ENT-2] clause (b) admits a measure term for.
 A measure former is written as an ordinary `call` whose one `atom_list` operand is that place; a written type argument, a `fieldinit_list`, or a second operand is the ordinary [OP-1] rejection.
 A clause operand is also an in-scope const generic [MSR-6], which is a constant term and not a measure former.
 A clause operand that is neither an [ENT-2] term nor a constant stays an ordinary pure total operand contributing no L0 projection; clause position makes nothing a term.
@@ -2952,7 +2953,7 @@ No class carries a message, a buffer, or any heap-backed payload.
 [SYS-8] `read_at`, `write_once`, `directory_next`, `host_copy_bytes`, `host_copy_utf8`, `open_directory`, and `open_file` are the complete range-bearing system-operation set.
 Each accesses one caller-owned initialized `buffer<u8>` through a call-scoped borrow and names a half-open range `[start, end)` in that buffer; every resource and buffer owner remains with the caller on every outcome.
 
-Every call to a member of this family carries exactly two independent [ENT-6] obligations in this order: `start <= end`, then `end <= len(deref(buffer))`, where `buffer` is that operation's declared buffer parameter.
+Every call to a member of this family carries exactly two independent [ENT-6] obligations in this order: `start <= end`, then `end <= len_of(deref(buffer))`, where `buffer` is that operation's declared buffer parameter.
 Both obligations are queried in the caller's pre-transfer state and must be derived independently; neither is a premise for the other.
 A refuted or unproved obligation rejects the call under [ERR-4].
 There is no operation-internal range check, runtime fallback, or range trap.
@@ -3142,7 +3143,7 @@ Adding a fact source, relation family, closure rule, proof rule, protected opera
 No caller fact is copied into a callee: an ordinary call judges its instantiated [FN-8] goal in the caller's entering state, the callee body begins with its own proved requirement as [ENT-3] source S4, and only a separately FN-9-verified earlier-SCC summary may establish its instantiated normal-result relation back in the caller.
 A fragment type is one member of the closed integer set [OP-2]; relations are over mathematical values, so relations between terms of different fragment types are well-formed and are created only by the sources and flow transports [ENT-3, ENT-5] admit.
 
-A term is exactly one of: (a) a tracked place — a `place` [GRAM-5] whose root `pbase` IDENT resolves to any `let_stmt` binding, a `for_stmt` binder, a `param`, any match binder regardless of its [OWN-13]-derived mode, or a named const [CONST-2], formed with any number of field-selection `psuffix`es and `deref` wrappings and no subscript suffix, whose final selected type is one fragment type; (b) a measure term `len(P)`, `cap(P)`, `room(P)`, or `head(P)` [MSR-1], of fragment type u64, where P is an admitted measure place — a `place` [GRAM-5] whose root resolves as in (a) and which is formed with any number of field-selection `psuffix`es, `deref` wrappings, and subscripts, and whose final selected type is a measured type [MSR-1] having that measure; (c) a constant — the mathematical value of an integer literal or of an integer-typed named const, or symbolically an in-scope integer-typed const-generic parameter; (d) one of the two compiler-owned u64 capture terms belonging to an admitted `for_stmt`, identified exactly by `(that for_stmt's NodePath, lower)` or `(that for_stmt's NodePath, upper)`; (e) the one compiler-owned symbolic result datum of an admitted FN-9 clause while its RelationTemplate is formed, identified by that `ensures_clause`, its route or unrouted class, and fragment type; (f) the one compiler-owned commit value of an admitted [SET-1] `set` whose right-hand side has one fragment type, identified exactly by `(that statement's NodePath, that fragment type)`; (g) the distinguished zero term Z, used only to carry constant bounds, S7's exact mathematical-zero disequality, and [ENT-6]'s normalized integer-domain components; or (h) one compiler-owned call datum [MSR-3, ENT-3.S13], identified exactly by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or its length)`.
+A term is exactly one of: (a) a tracked place — a `place` [GRAM-5] whose root `pbase` IDENT resolves to any `let_stmt` binding, a `for_stmt` binder, a `param`, any match binder regardless of its [OWN-13]-derived mode, or a named const [CONST-2], formed with any number of field-selection `psuffix`es and `deref` wrappings and no subscript suffix, whose final selected type is one fragment type; (b) a measure term `len_of(P)`, `cap_of(P)`, `room_of(P)`, or `head_of(P)` [MSR-1], of fragment type u64, where P is an admitted measure place — a `place` [GRAM-5] whose root resolves as in (a) and which is formed with any number of field-selection `psuffix`es, `deref` wrappings, and subscripts, and whose final selected type is a measured type [MSR-1] having that measure; (c) a constant — the mathematical value of an integer literal or of an integer-typed named const, or symbolically an in-scope integer-typed const-generic parameter; (d) one of the two compiler-owned u64 capture terms belonging to an admitted `for_stmt`, identified exactly by `(that for_stmt's NodePath, lower)` or `(that for_stmt's NodePath, upper)`; (e) the one compiler-owned symbolic result datum of an admitted FN-9 clause while its RelationTemplate is formed, identified by that `ensures_clause`, its route or unrouted class, and fragment type; (f) the one compiler-owned commit value of an admitted [SET-1] `set` whose right-hand side has one fragment type, identified exactly by `(that statement's NodePath, that fragment type)`; (g) the distinguished zero term Z, used only to carry constant bounds, S7's exact mathematical-zero disequality, and [ENT-6]'s normalized integer-domain components; or (h) one compiler-owned call datum [MSR-3, ENT-3.S13], identified exactly by `(that call's NodePath, the formal ordinal, that operand's ordered projections, whether it denotes the operand's value or its length)`.
 The FN-9 result datum occurs only in its template: every selected-return or caller query substitutes it with one ordinary term or constant before flow, so it never enters a body state, survives a return, or creates runtime storage.
 Two places are the same term exactly when their roots resolve to the same declaration event [TYPE-6, DIAG-1] and their canonical source spellings [FORM-2] are byte-identical; a fresh binding legally reusing an expired spelling is a distinct term, and distinct spellings are distinct terms even when they resolve to overlapping storage.
 Term identity thus under-approximates aliasing, while kills [ENT-5] use [OWN-7]'s resolved-place overlap relation and over-approximate it.
@@ -3191,12 +3192,12 @@ An atomic fact is one difference bound `t1 - t2 <= c` (t1, t2 terms, c a mathema
 Difference-bound identity preserves the ordered term pair; disequality identity is the unordered endpoint pair, although the first source-normalization encounter preserves its written orientation for rendering and component order.
 Source relations normalize exactly: `a <= b` is `a - b <= 0`; `a < b` is `a - b <= -1`; `a = b` is the bound pair `a - b <= 0` and `b - a <= 0`; `a >= b` and `a > b` swap operands; `a != b` is one disequality.
 A constant operand folds through Z: `a <= 7` is `a - Z <= 7`.
-Implicit facts hold at every program point: every term t carries the reflexive bound `t - t <= 0`; every term t of fragment type T carries `t - Z <= max(T)` and `Z - t <= -min(T)`; every measure term carries [MSR-2]'s standing facts; and every `len` or `cap` term over a place of type `array<T, N>` carries the equality to N (both bounds), with concrete N a constant and const-generic N a symbolic constant term.
+Implicit facts hold at every program point: every term t carries the reflexive bound `t - t <= 0`; every term t of fragment type T carries `t - Z <= max(T)` and `Z - t <= -min(T)`; every measure term carries [MSR-2]'s standing facts; and every `len_of` or `cap_of` term over a place of type `array<T, N>` carries the equality to N (both bounds), with concrete N a constant and const-generic N a symbolic constant term.
 
 [MSR-1] Four measure terms, over one place, for every measured value.
-`len(P)`, `cap(P)`, `room(P)`, and `head(P)` are terms of the [ENT-2] term language, of fragment type u64, where P is an admitted measure place [ENT-2] clause (b).
+`len_of(P)`, `cap_of(P)`, `room_of(P)`, and `head_of(P)` are terms of the [ENT-2] term language, of fragment type u64, where P is an admitted measure place [ENT-2] clause (b).
 An admitted measure place is a `place` [GRAM-5] formed with any number of field-selection `psuffix`es, `deref` wrappings, and subscripts, whose final selected type is a measured type.
-The subscript admission is what makes `len(table[i])` a term, so a run of runs has provable operations; it is also why [MSR-2]'s granularity is stated over storage rather than over the word *element*.
+The subscript admission is what makes `len_of(table[i])` a term, so a run of runs has provable operations; it is also why [MSR-2]'s granularity is stated over storage rather than over the word *element*.
 The same four spellings are the [OP-1] reader rows that read those quantities at run time: one quantity, one name, term and reader alike.
 
 Which measures a type has, and whether each is *exact* or *bounded*, is table data.
@@ -3206,29 +3207,29 @@ A measured type is exactly a type the table gives a row to; every other type has
 The table in this version is:
 
 ```wf-measures
-| measured type            | len                     | cap             | room             | head                    |
-|--------------------------|-------------------------|-----------------|------------------|-------------------------|
-| array<T, N>              | N, exact                | N, exact        | 0, exact         | 0, exact                |
-| buffer<T>                | allocated slots, exact  | len, exact      | 0, exact         | 0, exact                |
-| slice<'r, T>             | viewed elements, exact  | len, exact      | 0, exact         | 0, exact                |
-| FixedVector<T, n>        | initialized slots, exact| n, exact        | cap - len, exact | window origin, bounded  |
-| Vector<'s, T>            | initialized slots, exact| slots taken, exact | cap - len, exact | window origin, bounded |
-| Arena<'s, bytes, align>  | cursor bytes, exact     | bytes, exact    | cap - len, exact | absent                  |
+| measured type            | len_of                   | cap_of             | room_of                | head_of                 |
+|--------------------------|--------------------------|--------------------|------------------------|-------------------------|
+| array<T, N>              | N, exact                 | N, exact           | 0, exact               | 0, exact                |
+| buffer<T>                | allocated slots, exact   | len_of, exact      | 0, exact               | 0, exact                |
+| slice<'r, T>             | viewed elements, exact   | len_of, exact      | 0, exact               | 0, exact                |
+| FixedVector<T, n>        | initialized slots, exact | n, exact           | cap_of - len_of, exact | window origin, bounded  |
+| Vector<'s, T>            | initialized slots, exact | slots taken, exact | cap_of - len_of, exact | window origin, bounded  |
+| Arena<'s, bytes, align>  | cursor bytes, exact      | bytes, exact       | cap_of - len_of, exact | absent                  |
 ```
 
-Exactly one cell class is *bounded* anywhere — a run's `head` — and it is the one cell the two run rows share: the two front-moving operations [BLK-3] publish it two-sidedly and no operation re-establishes it exactly, so no derivation may treat a run's window origin as a known constant after a front operation.
-An `Arena`'s `len` is exact because every take from it requires `align >= align_ceiling(T)` [BLK-2], so its cursor is a multiple of `align` at every program point and the padding at a take is zero.
+Exactly one cell class is *bounded* anywhere — a run's `head_of` — and it is the one cell the two run rows share: the two front-moving operations [BLK-3] publish it two-sidedly and no operation re-establishes it exactly, so no derivation may treat a run's window origin as a known constant after a front operation.
+An `Arena`'s `len_of` is exact because every take from it requires `align >= align_ceiling(T)` [BLK-2], so its cursor is a multiple of `align` at every program point and the padding at a take is zero.
 `Heap<'s>` has no row at all: a general store has no measure that means anything, and that is the absence of table data rather than an exception clause; a measure former over a `Heap` place is therefore the ordinary [TYPE-5] operand rejection this rule already states.
 The table is data a later version extends with a row per measured type it adds; extending it adds no rule and amends none.
 
-A measure is a logical quantity, and `head` is the origin of the logical coordinate system.
-A measured value's initialized set is the `len` slots beginning at `head` taken modulo `cap`, and a **logical offset** `i` names the slot at physical offset `(head + i) mod cap`.
+A measure is a logical quantity, and `head_of` is the origin of the logical coordinate system.
+A measured value's initialized set is the `len_of` slots beginning at `head_of` taken modulo `cap_of`, and a **logical offset** `i` names the slot at physical offset `(head_of + i) mod cap_of`.
 Every measure term, [OP-4] obligation, and [SYS-8] range is stated in logical coordinates, and one sentence carries a logical conclusion to a storage conclusion:
 
-> `i |-> (head + i) mod cap` is injective on `[Z, len)` because `len <= cap`, so two disjoint logical ranges of one measured value describe disjoint storage.
+> `i |-> (head_of + i) mod cap_of` is injective on `[Z, len_of)` because `len_of <= cap_of`, so two disjoint logical ranges of one measured value describe disjoint storage.
 
-That sentence is a definition proved from `len(P) <= cap(P)`, which [MSR-2] publishes as a standing fact; it is never a separate obligation an occurrence submits.
-Where a row of the table gives `head` the exact value zero, the map is the identity and the sentence's conclusion is immediate; where a run's `head` is bounded and may be nonzero, the sentence is what carries two disjoint logical ranges of a wrapped window to two disjoint storage ranges, and it is the whole reason a logical obligation is a storage guarantee.
+That sentence is a definition proved from `len_of(P) <= cap_of(P)`, which [MSR-2] publishes as a standing fact; it is never a separate obligation an occurrence submits.
+Where a row of the table gives `head_of` the exact value zero, the map is the identity and the sentence's conclusion is immediate; where a run's `head_of` is bounded and may be nonzero, the sentence is what carries two disjoint logical ranges of a wrapped window to two disjoint storage ranges, and it is the whole reason a logical obligation is a storage guarantee.
 
 [MSR-2] Support is descriptor storage, a kill is an ordinary [ENT-5] event, and a standing fact has empty support.
 A measured value's storage is two disjoint parts: its **descriptor storage**, the measure words its value carries, and its **element storage**.
@@ -3250,13 +3251,13 @@ The element-position carve-out of [ENT-5] is removed rather than narrowed: it wa
 At every point at which P is live these hold implicitly, as [ENT-2] implicit facts that no event kills:
 
 ```text
-Z <= len(P)     Z <= room(P)     Z <= head(P)     len(P) <= cap(P)     head(P) <= cap(P)
+Z <= len_of(P)     Z <= room_of(P)     Z <= head_of(P)     len_of(P) <= cap_of(P)     head_of(P) <= cap_of(P)
 ```
 
-The identity `len(P) + room(P) = cap(P)` is appended, as two inequalities, to [ENT-6]'s automatic affine-premise sequence, with the empty support every standing fact has.
+The identity `len_of(P) + room_of(P) = cap_of(P)` is appended, as two inequalities, to [ENT-6]'s automatic affine-premise sequence, with the empty support every standing fact has.
 The identity is a convenience for the writer and is never a route by which an operation's own post-state is derived, and a contract clause both of whose sides follow from these standing facts alone discharges no obligation.
-A measure whose value the table fixes as a compile-time constant or a runtime-profile symbol is a standing fact with empty support: for `array<T, N>`, `buffer<T>`, and `slice<'r, T>` both `room(P) = Z` and `head(P) = Z`, for `array<T, N>` both `len(P) = N` and `cap(P) = N`, for `buffer<T>` and `slice<'r, T>` `cap(P) = len(P)`, and for `FixedVector<T, n>` `cap(P) = n`.
-A row whose cell is *bounded* fixes no such constant: a run's `head` is a standing fact only through `Z <= head(P)` and `head(P) <= cap(P)` above, and a run's `len` and `room` are ordinary killable terms.
+A measure whose value the table fixes as a compile-time constant or a runtime-profile symbol is a standing fact with empty support: for `array<T, N>`, `buffer<T>`, and `slice<'r, T>` both `room_of(P) = Z` and `head_of(P) = Z`, for `array<T, N>` both `len_of(P) = N` and `cap_of(P) = N`, for `buffer<T>` and `slice<'r, T>` `cap_of(P) = len_of(P)`, and for `FixedVector<T, n>` `cap_of(P) = n`.
+A row whose cell is *bounded* fixes no such constant: a run's `head_of` is a standing fact only through `Z <= head_of(P)` and `head_of(P) <= cap_of(P)` above, and a run's `len_of` and `room_of` are ordinary killable terms.
 A standing fact holds at every program point of P's scope and no event kills it, exactly as an [ENT-2] implicit fact does.
 
 [MSR-3] One denotation per operand position, keyed on the parameter's mode.
@@ -3335,7 +3336,7 @@ L0 negation is exact over mathematical integers: the negation of `a - b <= c` is
 [ENT-3.S4]
 - S4 (requires facts).
 At a concrete function-body entry, its complete instantiated [FN-8] goal G is established as `+G`.
-When and only when G's complete root is one comparison admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len(P)` length term, that exact relation R is also established.
+When and only when G's complete root is one comparison admitted by comparison-origin shape (a), whose operands after template and call substitution are each an admitted term, constant, or `len_of(P)` length term, that exact relation R is also established.
 Beyond that projection, only the members of G's signed decomposition set and their projections are established; no other child of any goal is established.
 S4 is the admitted-body axiom justified by every ordinary caller's static discharge; no callee-entry prologue or boundary check executes.
 [ENT-3.S5]
@@ -3348,9 +3349,9 @@ Evaluating v before that kill is what lets [ENT-5]'s pre-kill closure carry the 
 An array- or buffer-index target and a non-fragment target receive no commit value, and a right-hand side whose form matches no image row forms none either: with no commit value to name, S5 establishes no post-write equality and adds nothing to the state [ENT-5]'s kill leaves, and no S5 commit image beyond that exists in this version.
 [ENT-3.S6]
 - S6 (length facts).
-`let b = buffer_new(n, v);` and `let b = buffer_vacant::<T>(n);` each establish len(b) = n on the normal continuation [OP-9], n read as term or constant.
-`let m = len(P);` for a tracked P establishes m = len(P).
-`let s = slice_of…(&P);` for a tracked P establishes len(s) = len(P).
+`let b = buffer_new(n, v);` and `let b = buffer_vacant::<T>(n);` each establish len_of(b) = n on the normal continuation [OP-9], n read as term or constant.
+`let m = len_of(P);` for a tracked P establishes m = len_of(P).
+`let s = slice_of…(&P);` for a tracked P establishes len_of(s) = len_of(P).
 [ENT-3.S7]
 - S7 (constant-offset arithmetic).
 For `let s = p +wrap k;` with p a term of type T and k a constant in either operand position, when the closed state at that point derives `min(T) <= p + k` and `p + k <= max(T)` (as bounds on p through Z), s = p + k is established; `p -wrap k` with constant k establishes s = p - k under the dual range condition.
@@ -3610,7 +3611,7 @@ They are an ephemeral goal-query index over already-closed L0, not copies publis
 For a normalized affine inequality A, `DIRECT(A)` is exactly the following nonrecursive check, in this order: a contradictory current combined state under [ENT-4]; the strongest canonical L0 image having exactly A's canonical coefficient vector and an upper bound no greater than A's; or fixed interval substitution of every remaining atom, using its lower endpoint for a negative coefficient and upper endpoint for a positive coefficient, where each endpoint is the strongest closed L0/type bound for that atom.
 `DIRECT` never selects or subtracts a published affine premise.
 Every invariant conclusion and specification-fixed automatic image is appended when established to one automatic affine-premise sequence; its source category is diagnostic evidence and never partitions proof authority.
-The capacity identity of [MSR-2] is one such specification-fixed automatic image: for every live measure place P the two inequalities `len(P) + room(P) - cap(P) <= 0` and `cap(P) - len(P) - room(P) <= 0` are appended over that place's three measure atoms, in that order, with the empty support every standing fact has, and they are appended when P's measure terms become live rather than by any operation's post-state.
+The capacity identity of [MSR-2] is one such specification-fixed automatic image: for every live measure place P the two inequalities `len_of(P) + room_of(P) - cap_of(P) <= 0` and `cap_of(P) - len_of(P) - room_of(P) <= 0` are appended over that place's three measure atoms, in that order, with the empty support every standing fact has, and they are appended when P's measure terms become live rather than by any operation's post-state.
 At a join, an inequality survives exactly when the canonically identical inequality is present on every non-contradictory input under [ENT-5]'s all-predecessor rule; contradictory inputs are neutral, and if every input is contradictory the affine sequence is empty because L0 already proves every target.
 The surviving sequence is ordered by the first occurrence of each canonical inequality in the first non-contradictory structural predecessor under the edge orders fixed above.
 For each surviving inequality and each non-contradictory predecessor, the retained representative is that predecessor's occurrence with the fewest active-loop dependencies, ties retaining insertion order; the joined dependency set is the sorted union of those representatives' dependency sets.
@@ -3663,11 +3664,11 @@ Widening `AUTO` would change the derivation's complexity class and destroy the p
 Step 1 is the disposition's own hazard and is stated first because it is real: in this language an inconsistent published relation is not a wrong fact, it is every fact, which is why [CALL-6] carries a consistency check at the declaration that publishes one.
 
 The numeric relation domain attaches exactly four normalized families in this version.
-For every source subscript `P[i]` — read, write, and [SET-1] target position alike — SubscriptBounds is `i < len(P)`, normalized `i - len(P) <= -1`, at that subscript's `psuffix` node.
+For every source subscript `P[i]` — read, write, and [SET-1] target position alike — SubscriptBounds is `i < len_of(P)`, normalized `i - len_of(P) <= -1`, at that subscript's `psuffix` node.
 There is one obligation per subscript in a chain.
 The offset has exact type `own u64` [OP-4], so the relation is over the two u64 mathematical values, and it is a logical offset [MSR-1].
 A subscript has no separate opaque signed-goal identity for its own bounds obligation; after that obligation succeeds, its selected structural index row may occur as a value child of another exact Goal as [ENT-2] fixes.
-For an `array<T, N>` whose selected N is a concrete value in this instance, the normalization also offers `i <= N - 1` composed with the implicit L0 equality `N = len(P)`, which is a second proposition for the same obligation and not a second route.
+For an `array<T, N>` whose selected N is a concrete value in this instance, the normalization also offers `i <= N - 1` composed with the implicit L0 equality `N = len_of(P)`, which is a second proposition for the same obligation and not a second route.
 The normalized target is then submitted to [MSR-4]'s disposition.
 A refuted or unproved occurrence is an OP-4 rejection and publishes no checked program.
 
@@ -3707,7 +3708,7 @@ Its length child uses the same stable-or-occurrence-local identity rule as Integ
 Its normalization is `n <= floor((2^64 - 1) / stride_ceiling(S))` for the selected stored type S, and that proposition, with the Goal itself supplying step 2's exact signed identity, is submitted to [MSR-4]'s disposition; a derived false comparison refutes.
 A refuted or unproved occurrence is an OP-9 rejection and creates no allocation or runtime operation.
 
-SystemRange attaches two independent Goals in declared order to each [SYS-8] range-bearing call: ordinal zero is `start <= end`; ordinal one is `end <= len(buffer)`.
+SystemRange attaches two independent Goals in declared order to each [SYS-8] range-bearing call: ordinal zero is `start <= end`; ordinal one is `end <= len_of(buffer)`.
 Each value child uses the same stable-or-occurrence-local identity rule; the one evaluated end identity is constructed once and shared by both Goals, and every SystemRange ordinal therefore has a canonical Goal even when no L0 normalization exists.
 Each carries its exact signed comparison Goal and its direct affine normalization when formable, and each is submitted to [MSR-4]'s disposition independently; a result from one ordinal supplies no premise to the other.
 The first refuted or unproved Goal is a SYS-8 rejection and creates no host call, runtime condition, effect, or trap.
@@ -3721,7 +3722,7 @@ For a subscripted offset that is not itself an [ENT-2] term, first bind the inne
 Writing a proposition without one of these derivations establishes nothing.
 
 Each concrete obligation identity is `(concrete function instance, exact source NodePath, family ordinal)`.
-SubscriptBounds, IntegerDomain, and AllocationFit use ordinal zero; SystemRange uses zero for `start <= end` and one for `end <= len(buffer)`.
+SubscriptBounds, IntegerDomain, and AllocationFit use ordinal zero; SystemRange uses zero for `start <= end` and one for `end <= len_of(buffer)`.
 A requirement occurrence is `(concrete function instance, requires_clause NodePath)` [DIAG-2].
 These identities do not participate in Goal equality [FN-8].
 The checked program retains the accepted Goal, its deterministic derivation root, and its erased disposition for diagnostics and proof consumers.

@@ -1,9 +1,9 @@
 fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, spare: own u64) reads(taken) contract {
-  ensures when outcome is Ok(value: reported): reported == len(taken);
-  ensures spare == len(taken);
+  ensures when outcome is Ok(value: reported): reported == len_of(taken);
+  ensures spare == len_of(taken);
 } {
   doc "One route names the enum ordinal it applies to; the unrouted clause names the other.";
-  let measured = len(taken);
+  let measured = len_of(taken);
   return Ok<u64, Overflow>(value: measured), measured;
 }
 

@@ -278,7 +278,7 @@ command fn main() -> status: own ExitStatus pure {
 fn buffer_new_selects_its_element_from_the_fill_value() {
     let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(4_u64, 7_u8);
-  let count = len(data);
+  let count = len_of(data);
   return exit_status(code: 0_u8);
 }
 "#;

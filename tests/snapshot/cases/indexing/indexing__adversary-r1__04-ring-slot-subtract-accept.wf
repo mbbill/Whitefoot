@@ -1,11 +1,11 @@
 fn ring_slot_sub(buf: own buffer<u8>, front: own u64, used: own u64) -> value: own u8 reads(buf) contract {
-  define capacity = len(buf);
+  define capacity = len_of(buf);
   requires front < capacity;
   requires used < capacity;
   requires capacity <= 4294967296_u64;
 } {
   doc "expect ACCEPT: manual wraparound (front + used, then subtract capacity once if too big) proves slot < capacity given front < capacity, used < capacity, and a capacity ceiling that keeps front + used from overflowing u64";
-  let capacity = len(buf);
+  let capacity = len_of(buf);
   let raw = front + used;
   let too_big = raw >= capacity;
   let value = if too_big {

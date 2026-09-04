@@ -27,7 +27,7 @@ fn guard_value(v: own u64) -> result: own Result<u64, Trouble> pure {
 
 fn emit(output: &uniq Output, source: &buffer<u8>) -> result: own u64 reads(output, source), writes(output) {
   doc "A user function that advances one Output through an ordinary exclusive borrow; eligibility follows ordinary ownership and the adjacent call's footprint rather than a global outside-call gate.";
-  let room = len(deref(source));
+  let room = len_of(deref(source));
   let fits = ige(room, 1_u64);
   if fits {
     match write_once(output: move output, source: source, start: 0_u64, end: 1_u64) {

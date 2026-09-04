@@ -41,7 +41,7 @@ pub(crate) enum TermKind {
     /// The same [ENT-2] tracked-place class when field selections precede a
     /// deref or more than one deref occurs in the canonical spelling.
     ProjectedPlace(ProjectedPlaceTerm, IntegerType),
-    /// One measure term `len(P)`, `cap(P)`, `room(P)` or `head(P)` [MSR-1],
+    /// One measure term `len_of(P)`, `cap_of(P)`, `room_of(P)` or `head_of(P)` [MSR-1],
     /// of fragment type u64. Its support is P's descriptor storage [MSR-2].
     Measure(CheckedMeasure, PlaceTerm),
     /// A measure term whose place has interleaved field/deref projections.
