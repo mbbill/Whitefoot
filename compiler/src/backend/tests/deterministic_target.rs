@@ -548,20 +548,26 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 /// inspection and provisional cleanup are therefore on the same emitted path
 /// under test.
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
-    let arms = class_arms(12, named, default);
+    let arms = class_arms(16, named, default);
     format!(
         r#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {{
   let name = buffer_new(1_u64, 65_u8);
   region 'c {{
     region 'n {{
-      let permit = reserve_file::<'c>(factory: &uniq 'c files);
-      match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
-        Ok(value: file) => {{
-          return exit_status(code: 24_u8);
+      match reserve_file::<'c>(factory: &uniq 'c files) {{
+        Ok(value: permit) => {{
+          match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {{
+            Ok(value: file) => {{
+              return exit_status(code: 24_u8);
+            }}
+            Err(error: problem) => {{
+              match move problem {{
+{arms}              }}
+            }}
+          }}
         }}
-        Err(error: problem) => {{
-          match move problem {{
-{arms}          }}
+        Err(error: spent) => {{
+          return exit_status(code: 8_u8);
         }}
       }}
     }}

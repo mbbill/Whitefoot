@@ -76,14 +76,20 @@ const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args:
             let first_bytes = buffer_new(1_u64, 65_u8);
             let last_bytes = buffer_new(1_u64, 67_u8);
             region 'state {
-              let permit = reserve_file::<'state>(factory: &uniq 'state files);
-              region 'out {
-                region 'first_bytes {
-                  region 'last_bytes {
-                    let first = write_once::<'out, 'first_bytes>(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
-                    let middle = open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path);
-                    let last = write_once::<'out, 'last_bytes>(output: &uniq 'out out, source: &'last_bytes last_bytes, start: 0_u64, end: 1_u64);
+              match reserve_file::<'state>(factory: &uniq 'state files) {
+                Ok(value: permit) => {
+                  region 'out {
+                    region 'first_bytes {
+                      region 'last_bytes {
+                        let first = write_once::<'out, 'first_bytes>(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
+                        let middle = open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path);
+                        let last = write_once::<'out, 'last_bytes>(output: &uniq 'out out, source: &'last_bytes last_bytes, start: 0_u64, end: 1_u64);
+                      }
+                    }
                   }
+                }
+                Err(error: spent) => {
+                  return exit_status(code: 8_u8);
                 }
               }
             }
@@ -113,9 +119,15 @@ const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args
               region 'p {
                 region 'err {
                   region 'marker {
-                    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                    let opened = open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path);
-                    let announced = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+                    match reserve_file::<'c>(factory: &uniq 'c files) {
+                      Ok(value: permit) => {
+                        let opened = open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path);
+                        let announced = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+                      }
+                      Err(error: spent) => {
+                        return exit_status(code: 8_u8);
+                      }
+                    }
                   }
                 }
               }
@@ -142,13 +154,19 @@ const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: 
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'state {
-              let permit = reserve_file::<'state>(factory: &uniq 'state files);
-              match open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path) {
-                Ok(value: file) => {
-                  return exit_status(code: 1_u8);
+              match reserve_file::<'state>(factory: &uniq 'state files) {
+                Ok(value: permit) => {
+                  match open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path) {
+                    Ok(value: file) => {
+                      return exit_status(code: 1_u8);
+                    }
+                    Err(error: problem) => {
+                      return exit_status(code: 0_u8);
+                    }
+                  }
                 }
-                Err(error: problem) => {
-                  return exit_status(code: 0_u8);
+                Err(error: spent) => {
+                  return exit_status(code: 8_u8);
                 }
               }
             }
@@ -174,19 +192,25 @@ const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as ar
           Ok(value: path) => {
             let marker = buffer_new(1_u64, 77_u8);
             region 'state {
-              let permit = reserve_file::<'state>(factory: &uniq 'state files);
-              region 'marker {
-                region 'err {
-                  let opened = open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path);
-                  let announced = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
-                  match move opened {
-                    Ok(value: file) => {
-                      return exit_status(code: 1_u8);
-                    }
-                    Err(error: problem) => {
-                      return exit_status(code: 0_u8);
+              match reserve_file::<'state>(factory: &uniq 'state files) {
+                Ok(value: permit) => {
+                  region 'marker {
+                    region 'err {
+                      let opened = open_read::<'state, 'state>(permit: move permit, root: &'state cwd, path: &'state path);
+                      let announced = write_once::<'err, 'marker>(output: &uniq 'err err, source: &'marker marker, start: 0_u64, end: 1_u64);
+                      match move opened {
+                        Ok(value: file) => {
+                          return exit_status(code: 1_u8);
+                        }
+                        Err(error: problem) => {
+                          return exit_status(code: 0_u8);
+                        }
+                      }
                     }
                   }
+                }
+                Err(error: spent) => {
+                  return exit_status(code: 8_u8);
                 }
               }
             }
@@ -208,11 +232,23 @@ const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cw
   let first_name = buffer_new(1_u64, 46_u8);
   let second_name = buffer_new(1_u64, 46_u8);
   region 'c {
-    let first_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    let second_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    region 'n {
-      let first = open_directory::<'c, 'n>(permit: move first_permit, root: &'c cwd, name: &'n first_name, start: 0_u64, end: 1_u64);
-      let second = open_directory::<'c, 'n>(permit: move second_permit, root: &'c cwd, name: &'n second_name, start: 0_u64, end: 1_u64);
+    match reserve_file::<'c>(factory: &uniq 'c files) {
+      Ok(value: first_permit) => {
+        match reserve_file::<'c>(factory: &uniq 'c files) {
+          Ok(value: second_permit) => {
+            region 'n {
+              let first = open_directory::<'c, 'n>(permit: move first_permit, root: &'c cwd, name: &'n first_name, start: 0_u64, end: 1_u64);
+              let second = open_directory::<'c, 'n>(permit: move second_permit, root: &'c cwd, name: &'n second_name, start: 0_u64, end: 1_u64);
+            }
+          }
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
     }
   }
   return exit_status(code: 0_u8);
@@ -221,10 +257,22 @@ const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cw
 
 const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'listing {
-    let first_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    let second_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    let first = open_directory_source::<'listing>(permit: move first_permit, directory: &'listing cwd);
-    let second = open_directory_source::<'listing>(permit: move second_permit, directory: &'listing cwd);
+    match reserve_file::<'listing>(factory: &uniq 'listing files) {
+      Ok(value: first_permit) => {
+        match reserve_file::<'listing>(factory: &uniq 'listing files) {
+          Ok(value: second_permit) => {
+            let first = open_directory_source::<'listing>(permit: move first_permit, directory: &'listing cwd);
+            let second = open_directory_source::<'listing>(permit: move second_permit, directory: &'listing cwd);
+          }
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -234,11 +282,23 @@ const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as
   let first_name = buffer_new(1_u64, 120_u8);
   let second_name = buffer_new(1_u64, 120_u8);
   region 'c {
-    let first_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    let second_permit = reserve_file::<'c>(factory: &uniq 'c files);
-    region 'n {
-      let first = open_file::<'c, 'n>(permit: move first_permit, root: &'c cwd, name: &'n first_name, start: 0_u64, end: 1_u64);
-      let second = open_file::<'c, 'n>(permit: move second_permit, root: &'c cwd, name: &'n second_name, start: 0_u64, end: 1_u64);
+    match reserve_file::<'c>(factory: &uniq 'c files) {
+      Ok(value: first_permit) => {
+        match reserve_file::<'c>(factory: &uniq 'c files) {
+          Ok(value: second_permit) => {
+            region 'n {
+              let first = open_file::<'c, 'n>(permit: move first_permit, root: &'c cwd, name: &'n first_name, start: 0_u64, end: 1_u64);
+              let second = open_file::<'c, 'n>(permit: move second_permit, root: &'c cwd, name: &'n second_name, start: 0_u64, end: 1_u64);
+            }
+          }
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
     }
   }
   return exit_status(code: 0_u8);
@@ -249,25 +309,37 @@ const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cw
   let first_bytes = buffer_new(4096_u64, 0_u8);
   let second_bytes = buffer_new(4096_u64, 0_u8);
   region 'listing {
-    let first_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    let second_permit = reserve_file::<'listing>(factory: &uniq 'listing files);
-    match open_directory_source::<'listing>(permit: move first_permit, directory: &'listing cwd) {
-      Ok(value: first_list) => {
-        match open_directory_source::<'listing>(permit: move second_permit, directory: &'listing cwd) {
-          Ok(value: second_list) => {
-            region 'step {
-              let first = directory_next::<'step, 'step>(source: &uniq 'step first_list, destination: &uniq 'step first_bytes, start: 0_u64, end: 4096_u64);
-              let second = directory_next::<'step, 'step>(source: &uniq 'step second_list, destination: &uniq 'step second_bytes, start: 0_u64, end: 4096_u64);
+    match reserve_file::<'listing>(factory: &uniq 'listing files) {
+      Ok(value: first_permit) => {
+        match reserve_file::<'listing>(factory: &uniq 'listing files) {
+          Ok(value: second_permit) => {
+            match open_directory_source::<'listing>(permit: move first_permit, directory: &'listing cwd) {
+              Ok(value: first_list) => {
+                match open_directory_source::<'listing>(permit: move second_permit, directory: &'listing cwd) {
+                  Ok(value: second_list) => {
+                    region 'step {
+                      let first = directory_next::<'step, 'step>(source: &uniq 'step first_list, destination: &uniq 'step first_bytes, start: 0_u64, end: 4096_u64);
+                      let second = directory_next::<'step, 'step>(source: &uniq 'step second_list, destination: &uniq 'step second_bytes, start: 0_u64, end: 4096_u64);
+                    }
+                    return exit_status(code: 0_u8);
+                  }
+                  Err(error: problem) => {
+                    return exit_status(code: 201_u8);
+                  }
+                }
+              }
+              Err(error: problem) => {
+                return exit_status(code: 202_u8);
+              }
             }
-            return exit_status(code: 0_u8);
           }
-          Err(error: problem) => {
-            return exit_status(code: 201_u8);
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
           }
         }
       }
-      Err(error: problem) => {
-        return exit_status(code: 202_u8);
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -360,14 +432,20 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..12_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -387,13 +465,19 @@ const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own 
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..1_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -412,14 +496,20 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
   for @scan (index in 0_u64..5_u64) {
     let end = index + 1_u64;
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n names, start: index, end: end) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n names, start: index, end: end) {
+              Ok(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -437,21 +527,21 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
 
 fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
     let mut source = String::from(
-        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region 'a {\n    match arg_get::<'a>(args: &'a args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region 'p {\n                let permit = reserve_file::<'c>(factory: &uniq 'c files);\n                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {\n                  Ok(value: file) => {\n",
+        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region 'a {\n    match arg_get::<'a>(args: &'a args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region 'p {\n                match reserve_file::<'c>(factory: &uniq 'c files) {\n                  Ok(value: permit) => {\n                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {\n                      Ok(value: file) => {\n",
     );
     for index in 0..count {
         source.push_str(&format!(
-            "                    let bytes{index} = buffer_new(1_u64, 0_u8);\n"
+            "                        let bytes{index} = buffer_new(1_u64, 0_u8);\n"
         ));
     }
-    source.push_str("                    region 'f {\n                      region 'd {\n");
+    source.push_str("                        region 'f {\n                          region 'd {\n");
     for index in 0..count {
         source.push_str(&format!(
-            "                        let read{index} = read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes{index}, file_offset: 0_u64, start: 0_u64, end: 1_u64);\n"
+            "                            let read{index} = read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes{index}, file_offset: 0_u64, start: 0_u64, end: 1_u64);\n"
         ));
     }
     source.push_str(
-        "                      }\n                    }\n                    return exit_status(code: 0_u8);\n                  }\n                  Err(error: problem) => {\n                    return exit_status(code: 201_u8);\n                  }\n                }\n              }\n            }\n          }\n          Err(error: problem) => {\n            return exit_status(code: 202_u8);\n          }\n        }\n      }\n      Err(error: problem) => {\n        return exit_status(code: 203_u8);\n      }\n    }\n  }\n}\n",
+        "                          }\n                        }\n                        return exit_status(code: 0_u8);\n                      }\n                      Err(error: problem) => {\n                        return exit_status(code: 201_u8);\n                      }\n                    }\n                  }\n                  Err(error: spent) => {\n                    return exit_status(code: 8_u8);\n                  }\n                }\n              }\n            }\n          }\n          Err(error: problem) => {\n            return exit_status(code: 202_u8);\n          }\n        }\n      }\n      Err(error: problem) => {\n        return exit_status(code: 203_u8);\n      }\n    }\n  }\n}\n",
     );
     source.into_bytes()
 }

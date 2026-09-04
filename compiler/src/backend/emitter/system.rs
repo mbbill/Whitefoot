@@ -65,6 +65,9 @@ const OPEN_LIST: u8 = 12;
 const LIST_ONCE: u8 = 13;
 const OPEN_FILE: u8 = 14;
 const RESERVE_FILE: u8 = 15;
+const CLOSE_READ: u8 = 16;
+const CLOSE_DIRECTORY: u8 = 17;
+const CLOSE_DIRECTORY_SOURCE: u8 = 18;
 
 /// The finite system operations the first typed file adapter can actualize.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -350,7 +353,26 @@ pub(super) fn emit_system_interface(
                     target_layout,
                 )?);
             }
-            RESERVE_FILE => definitions.push_str(&emit_reserve_file(implementation)),
+            RESERVE_FILE => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_reserve_file(program, implementation, &shape)?);
+            }
+            CLOSE_READ => definitions.push_str(&emit_close(
+                implementation,
+                SystemResourceType::ReadFile,
+                target,
+            )),
+            CLOSE_DIRECTORY => definitions.push_str(&emit_close(
+                implementation,
+                SystemResourceType::DirectoryRead,
+                target,
+            )),
+            CLOSE_DIRECTORY_SOURCE => definitions.push_str(&emit_close(
+                implementation,
+                SystemResourceType::DirectorySource,
+                target,
+            )),
             _ => return Err(BackendFailure::InvalidIr),
         }
         for declaration in operation_declarations(ordinal, target)? {
@@ -541,6 +563,15 @@ fn operation_declarations(
             return Ok(vec![
                 "declare i64 @wf__completion_directory_next_direct(i32, ptr, i64, ptr)".to_owned(),
                 "declare void @abort() noreturn".to_owned(),
+            ]);
+        }
+        // The factory's credit count lives in the floor, linked into every
+        // program [SYS-10].
+        RESERVE_FILE => &["declare i32 @wf__file_reserve()"],
+        CLOSE_READ | CLOSE_DIRECTORY | CLOSE_DIRECTORY_SOURCE => {
+            return Ok(vec![
+                format!("declare i32 @{}(i32)", target.close_symbol()),
+                "declare void @wf__file_credit_return()".to_owned(),
             ]);
         }
         _ => &[],
@@ -2886,17 +2917,78 @@ fn emit_exit_status(implementation: ApprovedImplementation) -> String {
     )
 }
 
-/// The reservation value exists only in Whitefoot's ownership proof. The
-/// implementation performs no target action and returns one harmless opaque
-/// bit; target open wrappers erase the consumed permit before native calls.
-fn emit_reserve_file(implementation: ApprovedImplementation) -> String {
+/// The permit is one credit of the factory's capacity [SYS-10]. The runtime
+/// keeps the count; this wrapper spends one credit without a host call and
+/// answers `Ok(permit)`, or `Err(ResourceExhausted)` when the factory is
+/// spent. The permit's own representation stays the erased bit: target open
+/// wrappers consume it in the checked program and pass nothing native.
+fn emit_reserve_file(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
     let permit = representation(SystemResourceType::FilePermit);
-    format!(
-        "define private {permit} @{}() alwaysinline {{\n\
+    if shape.ok_llvm != permit {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let classes = io_error_classes(program, shape.err_type)?;
+    let exhausted = classes
+        .iter()
+        .find(|class| class.spelling == "ResourceExhausted")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        ..
+    } = shape;
+    // A spent factory is a refusal, not a host error: no native code, and the
+    // origin that says so [SYS-7].
+    let (error_body, error_value) =
+        io_error_value(err_llvm, exhausted, "spent", "0", &ORIGIN_NONE.to_string());
+    Ok(format!(
+        "define private {llvm} @{symbol}() alwaysinline {{\n\
          entry:\n  \
+         %granted.native = call i32 @wf__file_reserve()\n  \
+         %granted = icmp eq i32 %granted.native, 1\n  \
+         br i1 %granted, label %grant, label %refuse\n\
+         grant:\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {permit} true, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         refuse:\n\
+         {error_body}  \
+         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err = insertvalue {llvm} %err.tag, {err_llvm} {error_value}, {err_index}\n  \
+         ret {llvm} %err\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    ))
+}
+
+/// An explicit close [SYS-10]: the same one native close attempt derived
+/// release performs, its diagnostic discarded the same way, then the credit
+/// the open spent goes back to the factory and the fresh permit is the
+/// erased bit.
+fn emit_close(
+    implementation: ApprovedImplementation,
+    resource: SystemResourceType,
+    target: SystemTarget,
+) -> String {
+    let permit = representation(SystemResourceType::FilePermit);
+    let owner = representation(resource);
+    format!(
+        "define private {permit} @{symbol}({owner} %owner) alwaysinline {{\n\
+         entry:\n  \
+         %closed = call i32 @{close}({owner} %owner)\n  \
+         call void @wf__file_credit_return()\n  \
          ret {permit} true\n\
          }}\n\n",
-        implementation.symbol()
+        symbol = implementation.symbol(),
+        close = target.close_symbol(),
     )
 }
 

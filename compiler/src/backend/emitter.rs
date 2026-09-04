@@ -1343,6 +1343,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             {
                 let predecessor =
                     IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+                // The same rule `emit_terminator` applies: on a target without
+                // native completion a gate's pending-exit edge is emitted as
+                // `unreachable`, so it is no predecessor of the drain.
+                if !self.qualification.target().supports_posix_file_completion()
+                    && self
+                        .pipeline
+                        .is_some_and(|pipeline| pipeline.pending_exit_edge(predecessor))
+                {
+                    continue;
+                }
                 incoming
                     .get_mut(target.index())
                     .ok_or(BackendFailure::InvalidIr)?
@@ -1738,6 +1748,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // one exception: `emit_completion_dependencies` leaves it outstanding
         // until `block_drains` names this exact generated drain.
         self.emit_all_completion_joins()?;
+        // A target without native completion admits one issue before every
+        // drain, so a prologue gate never leaves with an operation in flight:
+        // the edge that would drain first is unreachable there, and saying so
+        // keeps the drain's one submission the only definition it reads.
+        if !self.qualification.target().supports_posix_file_completion()
+            && self
+                .pipeline
+                .is_some_and(|pipeline| pipeline.pending_exit_edge(block))
+        {
+            return writeln!(self.output, "  unreachable")
+                .map_err(|_| BackendFailure::TextEmission);
+        }
         match terminator {
             IrTerminator::Unreachable => {
                 writeln!(self.output, "  unreachable").map_err(|_| BackendFailure::TextEmission)

@@ -10,14 +10,20 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
     set index = index +wrap 1_u64;
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 1_u8);
         }
       }
     }

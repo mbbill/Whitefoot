@@ -225,46 +225,52 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'open_call {
-              let permit = reserve_file::<'open_call>(factory: &uniq 'open_call files);
-              match open_read::<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
-                Ok(value: file) => {
-                  let ended = 0_u8;
-                  loop @chunks {
-                    let within_scratch = filled <= 4097_u64;
-                    if within_scratch {
-                    } else {
-                      set ended = 2_u8;
-                      break @chunks;
-                    }
-                    let room = 4097_u64 -wrap filled;
-                    let full = room == 0_u64;
-                    if full {
-                      break @chunks;
-                    }
-                    region 'read_call {
-                      match read_at::<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call scratch, file_offset: file_offset, start: filled, end: 4097_u64) {
-                        ReadBytes(next: endpoint) => {
-                          let received = endpoint -wrap filled;
-                          set file_offset = file_offset +wrap received;
-                          set filled = endpoint;
-                        }
-                        ReadEnd() => {
-                          set ended = 1_u8;
-                        }
-                        ReadFailed(error: problem) => {
+              match reserve_file::<'open_call>(factory: &uniq 'open_call files) {
+                Ok(value: permit) => {
+                  match open_read::<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
+                    Ok(value: file) => {
+                      let ended = 0_u8;
+                      loop @chunks {
+                        let within_scratch = filled <= 4097_u64;
+                        if within_scratch {
+                        } else {
                           set ended = 2_u8;
+                          break @chunks;
+                        }
+                        let room = 4097_u64 -wrap filled;
+                        let full = room == 0_u64;
+                        if full {
+                          break @chunks;
+                        }
+                        region 'read_call {
+                          match read_at::<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call scratch, file_offset: file_offset, start: filled, end: 4097_u64) {
+                            ReadBytes(next: endpoint) => {
+                              let received = endpoint -wrap filled;
+                              set file_offset = file_offset +wrap received;
+                              set filled = endpoint;
+                            }
+                            ReadEnd() => {
+                              set ended = 1_u8;
+                            }
+                            ReadFailed(error: problem) => {
+                              set ended = 2_u8;
+                            }
+                          }
+                        }
+                        if ended != 0_u8 {
+                          break @chunks;
                         }
                       }
+                      if ended == 2_u8 {
+                        set status = 2_u8;
+                      }
                     }
-                    if ended != 0_u8 {
-                      break @chunks;
+                    Err(error: problem) => {
+                      set status = 2_u8;
                     }
-                  }
-                  if ended == 2_u8 {
-                    set status = 2_u8;
                   }
                 }
-                Err(error: problem) => {
+                Err(error: spent) => {
                   set status = 2_u8;
                 }
               }

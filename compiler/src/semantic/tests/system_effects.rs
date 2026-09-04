@@ -111,8 +111,14 @@ fn file_reservation_and_open_project_only_their_explicit_inputs() {
     assert_complete(
         br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'state {
-    let permit = reserve_file::<'state>(factory: &uniq 'state files);
-    let opened = open_directory_source::<'state>(permit: move permit, directory: &'state cwd);
+    match reserve_file::<'state>(factory: &uniq 'state files) {
+      Ok(value: permit) => {
+        let opened = open_directory_source::<'state>(permit: move permit, directory: &'state cwd);
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -125,7 +131,13 @@ fn file_reservation_projects_the_factory_without_an_open() {
     assert_complete(
         br#"command fn main(command.files as files: own FileFactory) -> status: own ExitStatus reads(files), writes(files) {
   region 'state {
-    let permit = reserve_file::<'state>(factory: &uniq 'state files);
+    match reserve_file::<'state>(factory: &uniq 'state files) {
+      Ok(value: permit) => {
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -787,10 +799,16 @@ fn a_loop_break_join_retains_the_two_origins_an_update_can_select() {
   loop @once {
     if refresh {
       region 'reservation {
-        let permit = reserve_file::<'reservation>(factory: &uniq 'reservation factory);
-        region 'lookup {
-          let replacement = open_read::<'lookup, 'p>(permit: move permit, root: &'lookup root, path: path);
-          let discarded = replace selected = move replacement;
+        match reserve_file::<'reservation>(factory: &uniq 'reservation factory) {
+          Ok(value: permit) => {
+            region 'lookup {
+              let replacement = open_read::<'lookup, 'p>(permit: move permit, root: &'lookup root, path: path);
+              let discarded = replace selected = move replacement;
+            }
+          }
+          Err(error: spent) => {
+            return Err<ReadFile, IoError>(error: move spent);
+          }
         }
       }
     }

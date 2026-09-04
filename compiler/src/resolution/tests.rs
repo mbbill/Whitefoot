@@ -601,7 +601,7 @@ fn every_unit_receives_the_system_domain_before_entry_validation() {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("entry-invalid syntax must still resolve system names: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 203);
+        assert_eq!(resolved.system_declarations().len(), 209);
         for (role, spelling, ordinal) in [
             (LexicalUseRole::Type, "Args", 0),
             (LexicalUseRole::Type, "ExitStatus", 6),
@@ -663,7 +663,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus pure {
         let ResolutionOutcome::Complete(resolved) = outcome else {
             panic!("an admitted requires block must reach system inventory: {outcome:?}");
         };
-        assert_eq!(resolved.system_declarations().len(), 203);
+        assert_eq!(resolved.system_declarations().len(), 209);
     });
 }
 

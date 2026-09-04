@@ -1023,7 +1023,10 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   produces nothing the checker sees, so a pipeline overlaps it with a later
   `open`, the host answers `EMFILE` for a schedule the sequential program never
   produces, and the runtime hides it with the descriptor retirement ledger
-  (`compiler/src/backend/completion/contract.h:409-417`). Completion remains the sole language-level
+  (`compiler/src/backend/completion/contract.h:409-417`). The branch
+  `io/t4-resource-relations` carries the v0.42 candidate that closes it
+  (`Status: CANDIDATE v0.42 supersedes v0.41` in `spec/kernel-spec.md`; the
+  plan is `docs/current-plan.md`). Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
   io_uring work, Windows IOCP runtime, selective stackless slice, and component
   measurements were retained while the rejected group machinery was removed.

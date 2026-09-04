@@ -27,30 +27,35 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
       break @scan;
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
-      match open_file<'f, 'f>(permit: move permit, root: &'f cwd, name: &'f name, start: 0_u64, end: 2_u64) {
-        Ok(value: handle) => {
-          region 'read {
-            match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
-              ReadBytes(next: reached) => {
-                let room = len(data);
-                let fits = ile(reached, room);
-                if fits {
-                  for @fold at in 0_u64..reached {
-                    let byte = data[at];
-                    let widened = cvt<u8, u64>(byte);
-                    set digest = digest +wrap widened;
+      match reserve_file<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          match open_file<'f, 'f>(permit: move permit, root: &'f cwd, name: &'f name, start: 0_u64, end: 2_u64) {
+            Ok(value: handle) => {
+              region 'read {
+                match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
+                  ReadBytes(next: reached) => {
+                    let room = len(data);
+                    let fits = ile(reached, room);
+                    if fits {
+                      for @fold at in 0_u64..reached {
+                        let byte = data[at];
+                        let widened = cvt<u8, u64>(byte);
+                        set digest = digest +wrap widened;
+                      }
+                    }
+                  }
+                  ReadEnd() => {
+                  }
+                  ReadFailed(error: problem) => {
                   }
                 }
               }
-              ReadEnd() => {
-              }
-              ReadFailed(error: problem) => {
-              }
+            }
+            Err(error: problem) => {
             }
           }
         }
-        Err(error: problem) => {
+        Err(error: spent) => {
         }
       }
     }

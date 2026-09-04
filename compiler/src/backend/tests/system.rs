@@ -758,11 +758,17 @@ fn a_target_without_directory_relative_resolution_rejects_component_opening() {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
-      let permit = reserve_file::<'c>(factory: &uniq 'c files);
-      match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
-        Ok(value: file) => {
+      match reserve_file::<'c>(factory: &uniq 'c files) {
+        Ok(value: permit) => {
+          match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+            Ok(value: file) => {
+            }
+            Err(error: problem) => {
+            }
+          }
         }
-        Err(error: problem) => {
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -868,11 +874,17 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-      Ok(value: list) => {
+    match reserve_file::<'c>(factory: &uniq 'c files) {
+      Ok(value: permit) => {
+        match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+          Ok(value: list) => {
+          }
+          Err(error: problem) => {
+          }
+        }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -913,11 +925,17 @@ fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
 fn a_facility_without_an_approved_record_is_a_missing_mapping() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-      Ok(value: list) => {
+    match reserve_file::<'c>(factory: &uniq 'c files) {
+      Ok(value: permit) => {
+        match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+          Ok(value: list) => {
+          }
+          Err(error: problem) => {
+          }
+        }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1207,11 +1225,17 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region 'n {
-      let permit = reserve_file::<'c>(factory: &uniq 'c files);
-      match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
-        Ok(value: file) => {
+      match reserve_file::<'c>(factory: &uniq 'c files) {
+        Ok(value: permit) => {
+          match open_file::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 1_u64) {
+            Ok(value: file) => {
+            }
+            Err(error: problem) => {
+            }
+          }
         }
-        Err(error: problem) => {
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -1230,8 +1254,12 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             let llvm = emit_llvm_for_target(program, target)
                 .expect("open_file must qualify and emit")
                 .into_string();
-            assert!(llvm.contains("define private i1 @wf.sys.reserve_file.v1() alwaysinline"));
-            assert!(llvm.contains("call i1 @wf.sys.reserve_file.v1()"));
+            // The permit is one credit of the factory's capacity [SYS-10]: the
+            // wrapper answers the `Result` shape from the floor's count and
+            // performs no host call.
+            assert!(llvm.contains("@wf.sys.reserve_file.v1() alwaysinline"));
+            assert!(llvm.contains("call i32 @wf__file_reserve()"));
+            assert!(llvm.contains("@wf.sys.reserve_file.v1()"));
             assert!(
                 !llvm.contains("@wf.sys.open_file.v1(i1"),
                 "the proof-only permit must not enter the qualified open ABI"
@@ -1261,16 +1289,22 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-      Ok(value: list) => {
-        region 'l {
-          region 'd {
-            let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+    match reserve_file::<'c>(factory: &uniq 'c files) {
+      Ok(value: permit) => {
+        match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+          Ok(value: list) => {
+            region 'l {
+              region 'd {
+                let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+              }
+            }
+          }
+          Err(error: problem) => {
           }
         }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1325,16 +1359,22 @@ fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
     let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-      Ok(value: list) => {
-        region 'l {
-          region 'd {
-            let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+    match reserve_file::<'c>(factory: &uniq 'c files) {
+      Ok(value: permit) => {
+        match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+          Ok(value: list) => {
+            region 'l {
+              region 'd {
+                let outcome = directory_next::<'l, 'd>(source: &uniq 'l list, destination: &uniq 'd destination, start: 0_u64, end: 64_u64);
+              }
+            }
+          }
+          Err(error: problem) => {
           }
         }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }

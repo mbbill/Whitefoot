@@ -1224,6 +1224,9 @@ pub struct IrCompletionPipeline {
     /// the generated CFG consumes that answer. The depth-one form asks only
     /// for scheduling evidence and therefore leaves this absent.
     window_value: Option<IrValueId>,
+    /// The blocks a prologue gate leaves through when the batch still has
+    /// operations in flight; each jumps into the drain before the exit runs.
+    pending_exit_edges: Vec<IrBlockId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1255,7 +1258,18 @@ impl IrCompletionPipeline {
             slots: 1,
             slot_index: Vec::new(),
             window_value: None,
+            pending_exit_edges: Vec::new(),
         }
+    }
+
+    /// Whether this block is the edge a prologue gate takes when it leaves
+    /// with operations of the batch still in flight: it jumps into the drain
+    /// without passing the submission. A target without native completion
+    /// admits one issue before every drain, so nothing is ever in flight at a
+    /// gate there and the edge is unreachable rather than a second entry into
+    /// the drain.
+    pub(crate) fn pending_exit_edge(&self, block: IrBlockId) -> bool {
+        self.pending_exit_edges.contains(&block)
     }
 
     /// Records and activates the already-materialized depth-one feeder/drain
@@ -1296,11 +1310,13 @@ impl IrCompletionPipeline {
         feeder: IrBlockId,
         drain: IrBlockId,
         result: IrValueId,
+        pending_exit_edges: Vec<IrBlockId>,
     ) {
         self.carrying = carrying;
         self.slots = slots;
         self.slot_index = slot_index;
         self.window_value = Some(window_value);
+        self.pending_exit_edges = pending_exit_edges;
         self.driver = IrCompletionDriver::BoundedBatch(IrCompletionBatchDriver {
             feeder,
             drain,

@@ -677,7 +677,7 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 /// obligations and host failures are typed outcomes. State entries are the
 /// exact stored declaration row and are rendered as formal-parameter paths by
 /// [`operation_state_effects`].
-pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
+pub const SYSTEM_OPERATIONS: [SystemOperation; 19] = [
     SystemOperation {
         spelling: "args_count",
         regions: &["'a"],
@@ -1013,11 +1013,59 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
             SystemParameterMode::UniqueBorrow(0),
             SystemTypeRef::Nominal(FILE_FACTORY),
         )],
-        result: SystemTypeRef::Nominal(FILE_PERMIT),
+        result: ok_nominal(FILE_PERMIT, IO_ERROR),
         state_reads: &[0],
         state_writes: &[0],
         integer_result_bound: None,
         target_action: TargetAction::INLINE,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    // The three explicit closes [SYS-10]: each consumes its owner, performs
+    // the one native close attempt derived release would perform, and returns
+    // the credit the open spent as one fresh permit on every outcome.
+    SystemOperation {
+        spelling: "close_read",
+        regions: &[],
+        parameters: &[parameter(
+            "file",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(READ_FILE),
+        )],
+        result: SystemTypeRef::Nominal(FILE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "close_directory",
+        regions: &[],
+        parameters: &[parameter(
+            "directory",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(DIRECTORY_READ),
+        )],
+        result: SystemTypeRef::Nominal(FILE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "close_directory_source",
+        regions: &[],
+        parameters: &[parameter(
+            "source",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(DIRECTORY_SOURCE),
+        )],
+        result: SystemTypeRef::Nominal(FILE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
 ];
@@ -1331,7 +1379,7 @@ pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> 
 /// The active specification's complete inventory is one hundred ninety-four
 /// records; the retained prefix states are smaller exact table prefixes.
 pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclarationRecord> {
-    let mut records = Vec::with_capacity(203);
+    let mut records = Vec::with_capacity(209);
     let push = |spelling: &'static str, class: Option<DeclarationClass>, records: &mut Vec<_>| {
         let Ok(ordinal) = u8::try_from(records.len()) else {
             unreachable!("the closed SYS-2 inventory fits one byte of ordinals");
@@ -1806,7 +1854,7 @@ mod tests {
         assert_eq!(nominals.len(), 18);
         assert_eq!(nominals.iter().filter(|nominal| nominal.opaque).count(), 10);
         assert_eq!(constructors.len(), 40);
-        assert_eq!(operations.len(), 16);
+        assert_eq!(operations.len(), 19);
         assert_eq!(
             operations
                 .iter()
@@ -1819,10 +1867,10 @@ mod tests {
                 .iter()
                 .map(|operation| operation.parameters.len())
                 .sum::<usize>(),
-            44
+            47
         );
         let records = system_declarations(Inventory::FilePermits);
-        assert_eq!(records.len(), 203);
+        assert_eq!(records.len(), 209);
         let reserve = SystemDeclarationId::new(200);
         let Some(SystemEntity::Operation(operation)) =
             system_entity(reserve, Inventory::FilePermits)
@@ -1831,7 +1879,7 @@ mod tests {
         };
         assert_eq!(operation.spelling, "reserve_file");
         assert_eq!(operation.target_action, super::TargetAction::INLINE);
-        assert!(system_entity(SystemDeclarationId::new(203), Inventory::FilePermits).is_none());
+        assert!(system_entity(SystemDeclarationId::new(209), Inventory::FilePermits).is_none());
     }
 
     #[test]

@@ -104,33 +104,38 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
       let rendered = name_at<'name>(name: &uniq 'name name, index: index);
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 10_u64) {
-          Ok(value: handle) => {
-            region 'h {
-              region 'd {
-                match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
-                  ReadBytes(next: produced) => {
-                    let digest = 0_u64;
-                    region 'fold {
-                      set digest = fold_bytes<'fold>(source: &'fold data, produced: produced, seed: 0_u64);
+      match reserve_file<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 10_u64) {
+              Ok(value: handle) => {
+                region 'h {
+                  region 'd {
+                    match read_at<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
+                      ReadBytes(next: produced) => {
+                        let digest = 0_u64;
+                        region 'fold {
+                          set digest = fold_bytes<'fold>(source: &'fold data, produced: produced, seed: 0_u64);
+                        }
+                        let weight = index +wrap 1_u64;
+                        set digest = digest *wrap weight;
+                        set sum = sum +wrap digest;
+                        set bytes = bytes +wrap produced;
+                      }
+                      ReadEnd() => {
+                      }
+                      ReadFailed(error: problem) => {
+                      }
                     }
-                    let weight = index +wrap 1_u64;
-                    set digest = digest *wrap weight;
-                    set sum = sum +wrap digest;
-                    set bytes = bytes +wrap produced;
-                  }
-                  ReadEnd() => {
-                  }
-                  ReadFailed(error: problem) => {
                   }
                 }
               }
+              Err(error: problem) => {
+              }
             }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
         }
       }
     }

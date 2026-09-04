@@ -7639,25 +7639,31 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(64_u64, 0_u8);
-                    region 'f {
-                      region 'd {
-                        match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
-                          ReadBytes(next: n) => {
-                            let sample = table[n];
-                          }
-                          ReadEnd() => {
-                          }
-                          ReadFailed(error: problem) => {
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        let bytes = buffer_new(64_u64, 0_u8);
+                        region 'f {
+                          region 'd {
+                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
+                              ReadBytes(next: n) => {
+                                let sample = table[n];
+                              }
+                              ReadEnd() => {
+                              }
+                              ReadFailed(error: problem) => {
+                              }
+                            }
                           }
                         }
                       }
+                      Err(error: unopened) => {
+                      }
                     }
                   }
-                  Err(error: unopened) => {
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }

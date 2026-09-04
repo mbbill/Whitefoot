@@ -16,6 +16,9 @@ fn system_catalog_actions_have_one_shot_ownership_completion() {
                 | "open_directory_source"
                 | "directory_next"
                 | "open_file"
+                | "close_read"
+                | "close_directory"
+                | "close_directory_source"
         );
         assert_eq!(
             operation.target_action.may_suspend(),

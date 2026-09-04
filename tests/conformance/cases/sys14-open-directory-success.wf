@@ -6,98 +6,104 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   set name[2_u64] = 98_u8;
   region 'c {
     region 'n {
-      let permit = reserve_file::<'c>(factory: &uniq 'c files);
-      match open_directory::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 3_u64) {
-        Ok(value: opened) => {
-          return exit_status(code: 0_u8);
-        }
-        Err(error: problem) => {
-          match problem {
-            NotFound(code: c, origin: o) => {
-              return exit_status(code: 9_u8);
+      match reserve_file::<'c>(factory: &uniq 'c files) {
+        Ok(value: permit) => {
+          match open_directory::<'c, 'n>(permit: move permit, root: &'c cwd, name: &'n name, start: 0_u64, end: 3_u64) {
+            Ok(value: opened) => {
+              return exit_status(code: 0_u8);
             }
-            PermissionDenied(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            AlreadyExists(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            NotDirectory(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            IsDirectory(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            DirectoryNotEmpty(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            ReadOnly(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            ResourceBusy(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            InvalidInput(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            InvalidPath(code: c, origin: o) => {
-              return exit_status(code: 8_u8);
-            }
-            Unsupported(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            TimedOut(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            BrokenPipe(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            WriteZero(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            UnexpectedEnd(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            ConnectionRefused(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            ConnectionReset(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            ConnectionAborted(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            NotConnected(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            AddressInUse(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            AddressUnavailable(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            ResourceExhausted(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            FileTooLarge(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            NoSpace(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            QuotaExceeded(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            CrossDevice(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            DeviceFailure(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
-            }
-            Other(code: c, origin: o) => {
-              return exit_status(code: 11_u8);
+            Err(error: problem) => {
+              match problem {
+                NotFound(code: c, origin: o) => {
+                  return exit_status(code: 9_u8);
+                }
+                PermissionDenied(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                AlreadyExists(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                NotDirectory(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                IsDirectory(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                DirectoryNotEmpty(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                ReadOnly(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                ResourceBusy(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                InvalidInput(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                InvalidPath(code: c, origin: o) => {
+                  return exit_status(code: 8_u8);
+                }
+                Unsupported(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                TimedOut(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                BrokenPipe(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                WriteZero(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                UnexpectedEnd(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                ConnectionRefused(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                ConnectionReset(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                ConnectionAborted(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                NotConnected(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                AddressInUse(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                AddressUnavailable(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                ResourceExhausted(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                FileTooLarge(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                NoSpace(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                QuotaExceeded(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                CrossDevice(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                DeviceFailure(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+                Other(code: c, origin: o) => {
+                  return exit_status(code: 11_u8);
+                }
+              }
             }
           }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 12_u8);
         }
       }
     }

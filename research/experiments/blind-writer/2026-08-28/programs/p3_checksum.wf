@@ -220,20 +220,26 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           match relative_path(value: move text) {
             Ok(value: path) => {
               region 'permit {
-                let permit = reserve_file<'permit>(factory: &uniq 'permit files);
-                region 'open {
-                  match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
-                    Ok(value: handle) => {
-                      region 'scan {
-                        let summary = checksum_file<'scan, 'scan>(handle: &'scan handle, chunk: &uniq 'scan data, seed: digest);
-                        set digest = summary.digest;
-                        set total = summary.bytes;
-                        set outcome = summary.status;
+                match reserve_file<'permit>(factory: &uniq 'permit files) {
+                  Ok(value: permit) => {
+                    region 'open {
+                      match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
+                        Ok(value: handle) => {
+                          region 'scan {
+                            let summary = checksum_file<'scan, 'scan>(handle: &'scan handle, chunk: &uniq 'scan data, seed: digest);
+                            set digest = summary.digest;
+                            set total = summary.bytes;
+                            set outcome = summary.status;
+                          }
+                        }
+                        Err(error: problem) => {
+                          set outcome = 3_u8;
+                        }
                       }
                     }
-                    Err(error: problem) => {
-                      set outcome = 3_u8;
-                    }
+                  }
+                  Err(error: spent) => {
+                    set outcome = 9_u8;
                   }
                 }
               }

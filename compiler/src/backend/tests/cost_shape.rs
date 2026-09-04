@@ -932,6 +932,10 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "wf__completion_file_close_direct"
             | "wf__completion_file_pread_direct" | "wf__completion_file_write_direct"
             | "wf__completion_directory_next_direct"
+            // The factory's credit count, kept by the floor [SYS-10]: one
+            // atomic word, no host facility, no handle table. `reserve_file`
+            // spends a credit through it and an explicit close returns one.
+            | "wf__file_reserve" | "wf__file_credit_return"
             // The selected family's native error-slot access on a failed host
             // operation: `__error` on Darwin, `__errno_location` on Linux.
             // Both names are listed because this census runs on both.

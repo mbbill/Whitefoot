@@ -391,189 +391,195 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           match relative_path(value: move text) {
             Ok(value: path) => {
               region 'open_call {
-                let permit = reserve_file<'open_call>(factory: &uniq 'open_call files);
-                match open_read<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
-                  Ok(value: file) => {
-                    let carry = 0_u64;
-                    let file_offset = 0_u64;
-                    loop @chunks {
-                      let carry_fits = ilt(carry, 4096_u64);
-                      if carry_fits {
-                      } else {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let room = 4096_u64 -wrap carry;
-                      let overlong = ieq(room, 0_u64);
-                      if overlong {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let available = 0_u64;
-                      let ended = 0_u8;
-                      region 'read_call {
-                        match read_at<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call input, file_offset: file_offset, start: carry, end: 4096_u64) {
-                          ReadBytes(next: taken) => {
-                            set available = taken;
-                            let delivered = taken -wrap carry;
-                            set file_offset = file_offset +wrap delivered;
-                          }
-                          ReadEnd() => {
-                            set ended = 1_u8;
-                          }
-                          ReadFailed(error: problem) => {
-                            set status = io_class(error: move problem);
-                            set ended = 2_u8;
-                          }
-                        }
-                      }
-                      if ieq(ended, 2_u8) {
-                        break @chunks;
-                      }
-                      if ieq(ended, 1_u8) {
-                        let trailing = igt(carry, 0_u64);
-                        if trailing {
-                          set input[carry] = 10_u8;
-                          set available = carry +wrap 1_u64;
-                        }
-                      }
-                      let available_fits = ile(available, 4096_u64);
-                      if available_fits {
-                      } else {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let scan = 0_u64;
-                      loop @lines {
-                        let terminator = available;
-                        let hit = empty_pattern;
-                        let probe = scan;
-                        loop @walk {
-                          let done = ige(probe, available);
-                          if done {
-                            break @walk;
-                          }
-                          let byte = input[probe];
-                          let newline = ieq(byte, 10_u8);
-                          if newline {
-                            set terminator = probe;
-                            break @walk;
-                          }
-                          if hit {
+                match reserve_file<'open_call>(factory: &uniq 'open_call files) {
+                  Ok(value: permit) => {
+                    match open_read<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
+                      Ok(value: file) => {
+                        let carry = 0_u64;
+                        let file_offset = 0_u64;
+                        loop @chunks {
+                          let carry_fits = ilt(carry, 4096_u64);
+                          if carry_fits {
                           } else {
-                            let lead = ieq(byte, first_pattern_byte);
-                            if lead {
-                              let same = True();
-                              let ahead = 1_u64;
-                              loop @verify {
-                                let proven = ige(ahead, pattern_length);
-                                if proven {
-                                  break @verify;
-                                }
-                                let spot = probe +wrap ahead;
-                                let inside = ilt(spot, available);
-                                if inside {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let ahead_fits = ilt(ahead, 4096_u64);
-                                if ahead_fits {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let candidate = input[spot];
-                                let stopper = ieq(candidate, 10_u8);
-                                if stopper {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let expected = pattern[ahead];
-                                let equal = ieq(candidate, expected);
-                                if equal {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                set ahead = ahead +wrap 1_u64;
+                            set status = 6_u8;
+                            break @chunks;
+                          }
+                          let room = 4096_u64 -wrap carry;
+                          let overlong = ieq(room, 0_u64);
+                          if overlong {
+                            set status = 6_u8;
+                            break @chunks;
+                          }
+                          let available = 0_u64;
+                          let ended = 0_u8;
+                          region 'read_call {
+                            match read_at<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call input, file_offset: file_offset, start: carry, end: 4096_u64) {
+                              ReadBytes(next: taken) => {
+                                set available = taken;
+                                let delivered = taken -wrap carry;
+                                set file_offset = file_offset +wrap delivered;
                               }
-                              if same {
-                                set hit = True();
+                              ReadEnd() => {
+                                set ended = 1_u8;
+                              }
+                              ReadFailed(error: problem) => {
+                                set status = io_class(error: move problem);
+                                set ended = 2_u8;
                               }
                             }
                           }
-                          set probe = probe +wrap 1_u64;
-                        }
-                        let complete = ilt(terminator, available);
-                        if complete {
-                        } else {
-                          break @lines;
-                        }
-                        if hit {
-                          set matched = 1_u8;
-                          let stop = terminator +wrap 1_u64;
-                          let span = stop -wrap scan;
-                          let need = filled +wrap span;
-                          let overfull = igt(need, 4096_u64);
-                          if overfull {
-                            let filled_fits = ile(filled, 4096_u64);
-                            if filled_fits {
-                              region 'batch_write {
-                                match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write out, source: &'batch_write batch, length: filled) {
-                                  Ok(value: published) => {
+                          if ieq(ended, 2_u8) {
+                            break @chunks;
+                          }
+                          if ieq(ended, 1_u8) {
+                            let trailing = igt(carry, 0_u64);
+                            if trailing {
+                              set input[carry] = 10_u8;
+                              set available = carry +wrap 1_u64;
+                            }
+                          }
+                          let available_fits = ile(available, 4096_u64);
+                          if available_fits {
+                          } else {
+                            set status = 6_u8;
+                            break @chunks;
+                          }
+                          let scan = 0_u64;
+                          loop @lines {
+                            let terminator = available;
+                            let hit = empty_pattern;
+                            let probe = scan;
+                            loop @walk {
+                              let done = ige(probe, available);
+                              if done {
+                                break @walk;
+                              }
+                              let byte = input[probe];
+                              let newline = ieq(byte, 10_u8);
+                              if newline {
+                                set terminator = probe;
+                                break @walk;
+                              }
+                              if hit {
+                              } else {
+                                let lead = ieq(byte, first_pattern_byte);
+                                if lead {
+                                  let same = True();
+                                  let ahead = 1_u64;
+                                  loop @verify {
+                                    let proven = ige(ahead, pattern_length);
+                                    if proven {
+                                      break @verify;
+                                    }
+                                    let spot = probe +wrap ahead;
+                                    let inside = ilt(spot, available);
+                                    if inside {
+                                    } else {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    let ahead_fits = ilt(ahead, 4096_u64);
+                                    if ahead_fits {
+                                    } else {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    let candidate = input[spot];
+                                    let stopper = ieq(candidate, 10_u8);
+                                    if stopper {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    let expected = pattern[ahead];
+                                    let equal = ieq(candidate, expected);
+                                    if equal {
+                                    } else {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    set ahead = ahead +wrap 1_u64;
                                   }
-                                  Err(error: problem) => {
-                                    set write_failed = 1_u8;
-                                    set write_class = io_class(error: move problem);
+                                  if same {
+                                    set hit = True();
                                   }
                                 }
                               }
+                              set probe = probe +wrap 1_u64;
+                            }
+                            let complete = ilt(terminator, available);
+                            if complete {
                             } else {
-                              set write_failed = 1_u8;
+                              break @lines;
                             }
-                            set filled = 0_u64;
-                          }
-                          if ieq(write_failed, 0_u8) {
-                            region 'emit_line {
-                              set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
+                            if hit {
+                              set matched = 1_u8;
+                              let stop = terminator +wrap 1_u64;
+                              let span = stop -wrap scan;
+                              let need = filled +wrap span;
+                              let overfull = igt(need, 4096_u64);
+                              if overfull {
+                                let filled_fits = ile(filled, 4096_u64);
+                                if filled_fits {
+                                  region 'batch_write {
+                                    match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write out, source: &'batch_write batch, length: filled) {
+                                      Ok(value: published) => {
+                                      }
+                                      Err(error: problem) => {
+                                        set write_failed = 1_u8;
+                                        set write_class = io_class(error: move problem);
+                                      }
+                                    }
+                                  }
+                                } else {
+                                  set write_failed = 1_u8;
+                                }
+                                set filled = 0_u64;
+                              }
+                              if ieq(write_failed, 0_u8) {
+                                region 'emit_line {
+                                  set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
+                                }
+                              } else {
+                                break @files;
+                              }
                             }
-                          } else {
-                            break @files;
+                            set scan = terminator +wrap 1_u64;
                           }
+                          if ieq(ended, 1_u8) {
+                            break @chunks;
+                          }
+                          let tail = available -wrap scan;
+                          let moved = 0_u64;
+                          loop @shift {
+                            let done = ige(moved, tail);
+                            if done {
+                              break @shift;
+                            }
+                            let source_index = scan +wrap moved;
+                            let source_fits = ilt(source_index, 4096_u64);
+                            let target_fits = ilt(moved, 4096_u64);
+                            if source_fits {
+                            } else {
+                              break @shift;
+                            }
+                            if target_fits {
+                            } else {
+                              break @shift;
+                            }
+                            let byte = input[source_index];
+                            set input[moved] = byte;
+                            set moved = moved +wrap 1_u64;
+                          }
+                          set carry = tail;
                         }
-                        set scan = terminator +wrap 1_u64;
                       }
-                      if ieq(ended, 1_u8) {
-                        break @chunks;
+                      Err(error: problem) => {
+                        set status = io_class(error: move problem);
                       }
-                      let tail = available -wrap scan;
-                      let moved = 0_u64;
-                      loop @shift {
-                        let done = ige(moved, tail);
-                        if done {
-                          break @shift;
-                        }
-                        let source_index = scan +wrap moved;
-                        let source_fits = ilt(source_index, 4096_u64);
-                        let target_fits = ilt(moved, 4096_u64);
-                        if source_fits {
-                        } else {
-                          break @shift;
-                        }
-                        if target_fits {
-                        } else {
-                          break @shift;
-                        }
-                        let byte = input[source_index];
-                        set input[moved] = byte;
-                        set moved = moved +wrap 1_u64;
-                      }
-                      set carry = tail;
                     }
                   }
-                  Err(error: problem) => {
-                    set status = io_class(error: move problem);
+                  Err(error: spent) => {
+                    set status = io_class(error: move spent);
                   }
                 }
               }

@@ -32,6 +32,32 @@ extern int wf__main_body(int argc, void *argv);
 
 size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
 
+/* The `FileFactory`'s one native fact [SYS-10]: the credits this program may
+ * still spend on opens. Windows grants a process on the order of sixteen
+ * million handles, so a fixed capacity far below that is a true lower bound
+ * on what the target provides; an open holding a permit is never refused a
+ * handle by this process's own consumption. Atomic because explicit closes
+ * return credits on whichever thread resumed the closing frame. */
+#define WF_FILE_CAPACITY 4096L
+
+static volatile LONG wf__file_credits = (LONG)WF_FILE_CAPACITY;
+
+int wf__file_reserve(void) {
+    LONG credits = wf__file_credits;
+    while (credits > 0) {
+        LONG seen = InterlockedCompareExchange(&wf__file_credits, credits - 1, credits);
+        if (seen == credits) {
+            return 1;
+        }
+        credits = seen;
+    }
+    return 0;
+}
+
+void wf__file_credit_return(void) {
+    (void)InterlockedIncrement(&wf__file_credits);
+}
+
 static volatile int wf__floor_latch;
 
 _Static_assert(sizeof(int) == sizeof(LONG), "floor latch width");

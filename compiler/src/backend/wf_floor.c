@@ -29,11 +29,13 @@
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 /* The entry body the emitted module defines. `wf__floor_run` is the only
@@ -64,6 +66,76 @@ extern int wf__main_body(int argc, char **argv);
  * it is what makes "the same number" a fact about the program instead of a
  * comment in two files. */
 size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
+
+/* ------------------------------------------------- the descriptor factory */
+
+/* The `FileFactory`'s one native fact: how many descriptors this program may
+ * still open [SYS-10].
+ *
+ * The capacity is fixed the first time it is asked for: the process's soft
+ * descriptor limit, less a reserve for the descriptors the runtime and the
+ * entry hold themselves (the standard streams, the working directory, a
+ * completion ring and its event descriptor, helper pipes). The reserve is a
+ * constant rather than a scan of the descriptor table, because a scan costs
+ * one system call per possible descriptor and the limit may be a million; the
+ * constant only has to be at least what the runtime actually holds, which is
+ * a handful. Being below the true limit is the whole promise: an open that
+ * holds a permit is never refused a descriptor by this process's own
+ * consumption. `reserve_file` spends one credit without a host call, and an
+ * explicit close returns one after its native close attempt.
+ *
+ * The count is atomic because closes run on whichever thread resumed the
+ * closing frame, while `reserve_file` runs under the factory's unique loan.
+ * Nothing here allocates, blocks, or waits. */
+#define WF_FILE_RUNTIME_RESERVE 64L
+#define WF_FILE_CAPACITY_CEILING (1L << 20)
+
+static _Atomic long wf__file_credits;
+static pthread_once_t wf__file_capacity_once = PTHREAD_ONCE_INIT;
+
+static void wf__file_capacity_init(void) {
+    struct rlimit limit;
+    long capacity = 0;
+    if (getrlimit(RLIMIT_NOFILE, &limit) == 0) {
+        if (limit.rlim_cur == RLIM_INFINITY
+            || limit.rlim_cur > (rlim_t)WF_FILE_CAPACITY_CEILING) {
+            capacity = WF_FILE_CAPACITY_CEILING;
+        } else {
+            capacity = (long)limit.rlim_cur;
+        }
+    }
+    capacity -= WF_FILE_RUNTIME_RESERVE;
+    if (capacity < 0) {
+        capacity = 0;
+    }
+    atomic_store_explicit(&wf__file_credits, capacity, memory_order_release);
+}
+
+/* Takes one credit. Returns 1 when the factory had one, 0 when it is spent. */
+int wf__file_reserve(void) {
+    long credits;
+    (void)pthread_once(&wf__file_capacity_once, wf__file_capacity_init);
+    credits = atomic_load_explicit(&wf__file_credits, memory_order_acquire);
+    while (credits > 0) {
+        if (atomic_compare_exchange_weak_explicit(
+                &wf__file_credits,
+                &credits,
+                credits - 1,
+                memory_order_acq_rel,
+                memory_order_acquire
+            )) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Returns one credit: an explicit close's native close attempt has run, or an
+ * unspent permit was released. */
+void wf__file_credit_return(void) {
+    (void)pthread_once(&wf__file_capacity_once, wf__file_capacity_init);
+    (void)atomic_fetch_add_explicit(&wf__file_credits, 1, memory_order_acq_rel);
+}
 
 /* ------------------------------------------------------- per-thread state */
 

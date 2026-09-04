@@ -129,36 +129,42 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(64_u64, 0_u8);
-                    region 'f {
-                      region 'd {
-                        match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                          ReadBytes(next: n) => {
-                            let narrowed = cvt::<u64, u8>(n);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        let bytes = buffer_new(64_u64, 0_u8);
+                        region 'f {
+                          region 'd {
+                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                              ReadBytes(next: n) => {
+                                let narrowed = cvt::<u64, u8>(n);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
                               }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
+                              ReadEnd() => {
+                                return exit_status(code: 201_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 202_u8);
                               }
                             }
                           }
-                          ReadEnd() => {
-                            return exit_status(code: 201_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 202_u8);
-                          }
                         }
+                      }
+                      Err(error: problem) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -253,7 +259,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
     // the same two-field inline target detail [SYS-7]. `NotFound` reports its
     // native code and the target's own facility discriminator.
     let arms = class_arms(
-        22,
+        26,
         &[
             (
                 "NotFound",
@@ -274,14 +280,20 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
           Ok(value: path) => {{
             region 'c {{
               region 'p {{
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {{
-                  Ok(value: file) => {{
-                    return exit_status(code: 0_u8);
+                match reserve_file::<'c>(factory: &uniq 'c files) {{
+                  Ok(value: permit) => {{
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {{
+                      Ok(value: file) => {{
+                        return exit_status(code: 0_u8);
+                      }}
+                      Err(error: problem) => {{
+                        match move problem {{
+{arms}                        }}
+                      }}
+                    }}
                   }}
-                  Err(error: problem) => {{
-                    match move problem {{
-{arms}                    }}
+                  Err(error: spent) => {{
+                    return exit_status(code: 8_u8);
                   }}
                 }}
               }}
@@ -370,49 +382,55 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(3_u64, 0_u8);
-                    let total = 0_u64;
-                    let chunks = 0_u64;
-                    let failed = False();
-                    loop @drain {
-                      region 'f {
-                        region 'd {
-                          match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 3_u64) {
-                            ReadBytes(next: n) => {
-                              set total = total +wrap n;
-                              set chunks = chunks +wrap 1_u64;
-                            }
-                            ReadEnd() => {
-                              break @drain;
-                            }
-                            ReadFailed(error: problem) => {
-                              set failed = True();
-                              break @drain;
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        let bytes = buffer_new(3_u64, 0_u8);
+                        let total = 0_u64;
+                        let chunks = 0_u64;
+                        let failed = False();
+                        loop @drain {
+                          region 'f {
+                            region 'd {
+                              match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 3_u64) {
+                                ReadBytes(next: n) => {
+                                  set total = total +wrap n;
+                                  set chunks = chunks +wrap 1_u64;
+                                }
+                                ReadEnd() => {
+                                  break @drain;
+                                }
+                                ReadFailed(error: problem) => {
+                                  set failed = True();
+                                  break @drain;
+                                }
+                              }
                             }
                           }
                         }
+                        if failed {
+                          return exit_status(code: 202_u8);
+                        }
+                        let scaled = total *wrap 10_u64;
+                        let mixed = scaled +wrap chunks;
+                        let narrowed = cvt::<u64, u8>(mixed);
+                        match narrowed {
+                          Ok(value: code) => {
+                            return exit_status(code: code);
+                          }
+                          Err(error: overflowed) => {
+                            return exit_status(code: 200_u8);
+                          }
+                        }
                       }
-                    }
-                    if failed {
-                      return exit_status(code: 202_u8);
-                    }
-                    let scaled = total *wrap 10_u64;
-                    let mixed = scaled +wrap chunks;
-                    let narrowed = cvt::<u64, u8>(mixed);
-                    match narrowed {
-                      Ok(value: code) => {
-                        return exit_status(code: code);
-                      }
-                      Err(error: overflowed) => {
-                        return exit_status(code: 200_u8);
+                      Err(error: problem) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -470,56 +488,62 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(8_u64, 0_u8);
-                    let vacant = 0_u64;
-                    region 'f {
-                      region 'd {
-                        match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
-                          ReadBytes(next: n) => {
-                            set vacant = n;
-                          }
-                          ReadEnd() => {
-                            return exit_status(code: 210_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 211_u8);
-                          }
-                        }
-                      }
-                    }
-                    if vacant == 0_u64 {
-                    } else {
-                      return exit_status(code: 212_u8);
-                    }
-                    region 'g {
-                      region 'e {
-                        match read_at::<'g, 'e>(file: &'g file, destination: &uniq 'e bytes, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                          ReadBytes(next: n) => {
-                            let narrowed = cvt::<u64, u8>(n);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        let bytes = buffer_new(8_u64, 0_u8);
+                        let vacant = 0_u64;
+                        region 'f {
+                          region 'd {
+                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
+                              ReadBytes(next: n) => {
+                                set vacant = n;
                               }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
+                              ReadEnd() => {
+                                return exit_status(code: 210_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 211_u8);
                               }
                             }
                           }
-                          ReadEnd() => {
-                            return exit_status(code: 213_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 214_u8);
+                        }
+                        if vacant == 0_u64 {
+                        } else {
+                          return exit_status(code: 212_u8);
+                        }
+                        region 'g {
+                          region 'e {
+                            match read_at::<'g, 'e>(file: &'g file, destination: &uniq 'e bytes, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                              ReadBytes(next: n) => {
+                                let narrowed = cvt::<u64, u8>(n);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
+                              }
+                              ReadEnd() => {
+                                return exit_status(code: 213_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 214_u8);
+                              }
+                            }
                           }
                         }
                       }
+                      Err(error: problem) => {
+                        return exit_status(code: 203_u8);
+                      }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -572,58 +596,64 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(8_u64, 7_u8);
-                    region 'f {
-                      region 'd {
-                        match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 2_u64, end: 5_u64) {
-                          ReadBytes(next: n) => {
-                            if n == 5_u64 {
-                            } else {
-                              return exit_status(code: 250_u8);
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        let bytes = buffer_new(8_u64, 7_u8);
+                        region 'f {
+                          region 'd {
+                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 2_u64, end: 5_u64) {
+                              ReadBytes(next: n) => {
+                                if n == 5_u64 {
+                                } else {
+                                  return exit_status(code: 250_u8);
+                                }
+                              }
+                              ReadEnd() => {
+                                return exit_status(code: 251_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 252_u8);
+                              }
                             }
                           }
-                          ReadEnd() => {
-                            return exit_status(code: 251_u8);
+                        }
+                        let digest = 0_u64;
+                        let cursor = 0_u64;
+                        loop @fold {
+                          if cursor == 8_u64 {
+                            break @fold;
                           }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 252_u8);
+                          let fold_ok = cursor < 8_u64;
+                          if fold_ok {
+                            let byte = bytes[cursor];
+                            let widened = cvt::<u8, u64>(byte);
+                            let scaled = digest *wrap 31_u64;
+                            set digest = scaled +wrap widened;
+                            set cursor = cursor +wrap 1_u64;
+                          } else {
+                            return exit_status(code: 253_u8);
+                          }
+                        }
+                        let masked = iand(digest, 255_u64);
+                        let narrowed = cvt::<u64, u8>(masked);
+                        match narrowed {
+                          Ok(value: code) => {
+                            return exit_status(code: code);
+                          }
+                          Err(error: overflowed) => {
+                            return exit_status(code: 200_u8);
                           }
                         }
                       }
-                    }
-                    let digest = 0_u64;
-                    let cursor = 0_u64;
-                    loop @fold {
-                      if cursor == 8_u64 {
-                        break @fold;
-                      }
-                      let fold_ok = cursor < 8_u64;
-                      if fold_ok {
-                        let byte = bytes[cursor];
-                        let widened = cvt::<u8, u64>(byte);
-                        let scaled = digest *wrap 31_u64;
-                        set digest = scaled +wrap widened;
-                        set cursor = cursor +wrap 1_u64;
-                      } else {
-                        return exit_status(code: 253_u8);
-                      }
-                    }
-                    let masked = iand(digest, 255_u64);
-                    let narrowed = cvt::<u64, u8>(masked);
-                    match narrowed {
-                      Ok(value: code) => {
-                        return exit_status(code: code);
-                      }
-                      Err(error: overflowed) => {
-                        return exit_status(code: 200_u8);
+                      Err(error: problem) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -861,52 +891,58 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(4096_u64, 0_u8);
-                    let total = 0_u64;
-                    loop @drain {
-                      region 'f {
-                        region 'd {
-                          match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
-                            ReadBytes(next: n) => {
-                              set total = total +wrap n;
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        let bytes = buffer_new(4096_u64, 0_u8);
+                        let total = 0_u64;
+                        loop @drain {
+                          region 'f {
+                            region 'd {
+                              match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
+                                ReadBytes(next: n) => {
+                                  set total = total +wrap n;
+                                }
+                                ReadEnd() => {
+                                  break @drain;
+                                }
+                                ReadFailed(error: problem) => {
+                                  return exit_status(code: 202_u8);
+                                }
+                              }
                             }
-                            ReadEnd() => {
-                              break @drain;
-                            }
-                            ReadFailed(error: problem) => {
-                              return exit_status(code: 202_u8);
+                          }
+                        }
+                        region 'o {
+                          region 's {
+                            match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+                              Ok(value: written) => {
+                                let masked = iand(total, 255_u64);
+                                let narrowed = cvt::<u64, u8>(masked);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
+                              }
+                              Err(error: problem) => {
+                                return exit_status(code: 212_u8);
+                              }
                             }
                           }
                         }
                       }
-                    }
-                    region 'o {
-                      region 's {
-                        match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
-                          Ok(value: written) => {
-                            let masked = iand(total, 255_u64);
-                            let narrowed = cvt::<u64, u8>(masked);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
-                              }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
-                              }
-                            }
-                          }
-                          Err(error: problem) => {
-                            return exit_status(code: 212_u8);
-                          }
-                        }
+                      Err(error: problem) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -1108,86 +1144,92 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
           Ok(value: path) => {
             region 'c {
               region 'p {
-                let permit = reserve_file::<'c>(factory: &uniq 'c files);
-                match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
-                  Ok(value: file) => {
-                    let page = buffer_new(16_u64, 0_u8);
-                    let total = 0_u64;
-                    let file_offset = 0_u64;
-                    let failed = 0_u8;
-                    loop @copy {
-                      let chunk = 0_u64;
-                      region 'f {
-                        region 'g {
-                          match read_at::<'f, 'g>(file: &'f file, destination: &uniq 'g page, file_offset: file_offset, start: 0_u64, end: 16_u64) {
-                            ReadBytes(next: n) => {
-                              set chunk = n;
-                              set file_offset = file_offset +wrap n;
-                            }
-                            ReadEnd() => {
-                              break @copy;
-                            }
-                            ReadFailed(error: problem) => {
-                              set failed = 8_u8;
-                              break @copy;
-                            }
-                          }
-                        }
-                      }
-                      let page_length = len(page);
-                      let chunk_fits = chunk <= page_length;
-                      if chunk_fits {
-                      } else {
-                        return exit_status(code: 12_u8);
-                      }
-                      region 'o {
-                        region 's {
-                          match write_once::<'o, 's>(output: &uniq 'o out, source: &'s page, start: 0_u64, end: chunk) {
-                            Ok(value: written) => {
-                              set total = total +wrap written;
-                            }
-                            Err(error: problem) => {
-                              set failed = 9_u8;
-                              break @copy;
-                            }
-                          }
-                        }
-                      }
-                    }
-                    if failed == 0_u8 {
-                    } else {
-                      return exit_status(code: failed);
-                    }
-                    let echo_length = len(echo);
-                    let name_fits = name_length <= echo_length;
-                    if name_fits {
-                    } else {
-                      return exit_status(code: 13_u8);
-                    }
-                    region 'x {
-                      region 'y {
-                        match write_once::<'x, 'y>(output: &uniq 'x err, source: &'y echo, start: 0_u64, end: name_length) {
-                          Ok(value: written) => {
-                            let masked = iand(total, 255_u64);
-                            let narrowed = cvt::<u64, u8>(masked);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
-                              }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        let page = buffer_new(16_u64, 0_u8);
+                        let total = 0_u64;
+                        let file_offset = 0_u64;
+                        let failed = 0_u8;
+                        loop @copy {
+                          let chunk = 0_u64;
+                          region 'f {
+                            region 'g {
+                              match read_at::<'f, 'g>(file: &'f file, destination: &uniq 'g page, file_offset: file_offset, start: 0_u64, end: 16_u64) {
+                                ReadBytes(next: n) => {
+                                  set chunk = n;
+                                  set file_offset = file_offset +wrap n;
+                                }
+                                ReadEnd() => {
+                                  break @copy;
+                                }
+                                ReadFailed(error: problem) => {
+                                  set failed = 8_u8;
+                                  break @copy;
+                                }
                               }
                             }
                           }
-                          Err(error: problem) => {
-                            return exit_status(code: 10_u8);
+                          let page_length = len(page);
+                          let chunk_fits = chunk <= page_length;
+                          if chunk_fits {
+                          } else {
+                            return exit_status(code: 12_u8);
+                          }
+                          region 'o {
+                            region 's {
+                              match write_once::<'o, 's>(output: &uniq 'o out, source: &'s page, start: 0_u64, end: chunk) {
+                                Ok(value: written) => {
+                                  set total = total +wrap written;
+                                }
+                                Err(error: problem) => {
+                                  set failed = 9_u8;
+                                  break @copy;
+                                }
+                              }
+                            }
                           }
                         }
+                        if failed == 0_u8 {
+                        } else {
+                          return exit_status(code: failed);
+                        }
+                        let echo_length = len(echo);
+                        let name_fits = name_length <= echo_length;
+                        if name_fits {
+                        } else {
+                          return exit_status(code: 13_u8);
+                        }
+                        region 'x {
+                          region 'y {
+                            match write_once::<'x, 'y>(output: &uniq 'x err, source: &'y echo, start: 0_u64, end: name_length) {
+                              Ok(value: written) => {
+                                let masked = iand(total, 255_u64);
+                                let narrowed = cvt::<u64, u8>(masked);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
+                              }
+                              Err(error: problem) => {
+                                return exit_status(code: 10_u8);
+                              }
+                            }
+                          }
+                        }
+                      }
+                      Err(error: problem) => {
+                        return exit_status(code: 6_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 6_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }

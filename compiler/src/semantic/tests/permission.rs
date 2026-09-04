@@ -164,9 +164,21 @@ fn independent_permits_allow_opens_through_one_shared_directory() {
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region 'state {
-    let first_permit = reserve_file::<'state>(factory: &uniq 'state files);
-    let second_permit = reserve_file::<'state>(factory: &uniq 'state files);
-    open_two::<'state>(first_permit: move first_permit, second_permit: move second_permit, directory: &'state cwd);
+    match reserve_file::<'state>(factory: &uniq 'state files) {
+      Ok(value: first_permit) => {
+        match reserve_file::<'state>(factory: &uniq 'state files) {
+          Ok(value: second_permit) => {
+            open_two::<'state>(first_permit: move first_permit, second_permit: move second_permit, directory: &'state cwd);
+          }
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }

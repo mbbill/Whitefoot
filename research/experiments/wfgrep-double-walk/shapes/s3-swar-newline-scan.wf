@@ -469,208 +469,214 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           match relative_path(value: move text) {
             Ok(value: path) => {
               region 'open_call {
-                let permit = reserve_file<'open_call>(factory: &uniq 'open_call files);
-                match open_read<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
-                  Ok(value: file) => {
-                    let carry = 0_u64;
-                    let file_offset = 0_u64;
-                    loop @chunks {
-                      let carry_fits = ilt(carry, 4096_u64);
-                      if carry_fits {
-                      } else {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let room = 4096_u64 -wrap carry;
-                      let overlong = ieq(room, 0_u64);
-                      if overlong {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let available = 0_u64;
-                      let ended = 0_u8;
-                      region 'read_call {
-                        match read_at<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call input, file_offset: file_offset, start: carry, end: 4096_u64) {
-                          ReadBytes(next: taken) => {
-                            set available = taken;
-                            let delivered = taken -wrap carry;
-                            set file_offset = file_offset +wrap delivered;
-                          }
-                          ReadEnd() => {
-                            set ended = 1_u8;
-                          }
-                          ReadFailed(error: problem) => {
-                            set status = io_class(error: move problem);
-                            set ended = 2_u8;
-                          }
-                        }
-                      }
-                      if ieq(ended, 2_u8) {
-                        break @chunks;
-                      }
-                      if ieq(ended, 1_u8) {
-                        let trailing = igt(carry, 0_u64);
-                        if trailing {
-                          set input[carry] = 10_u8;
-                          set available = carry +wrap 1_u64;
-                        }
-                      }
-                      let available_fits = ile(available, 4096_u64);
-                      if available_fits {
-                      } else {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let scan = 0_u64;
-                      loop @lines {
-                        let terminator = available;
-                        let probe = scan;
-                        loop @findword {
-                          let probe_word_fits = ile(probe, 4088_u64);
-                          if probe_word_fits {
+                match reserve_file<'open_call>(factory: &uniq 'open_call files) {
+                  Ok(value: permit) => {
+                    match open_read<'open_call, 'open_call>(permit: move permit, root: &'open_call cwd, path: &'open_call path) {
+                      Ok(value: file) => {
+                        let carry = 0_u64;
+                        let file_offset = 0_u64;
+                        loop @chunks {
+                          let carry_fits = ilt(carry, 4096_u64);
+                          if carry_fits {
                           } else {
-                            break @findword;
+                            set status = 6_u8;
+                            break @chunks;
                           }
-                          let next = probe + 8_u64;
-                          let roomy = ile(next, available);
-                          if roomy {
-                          } else {
-                            break @findword;
+                          let room = 4096_u64 -wrap carry;
+                          let overlong = ieq(room, 0_u64);
+                          if overlong {
+                            set status = 6_u8;
+                            break @chunks;
                           }
-                          let byte0 = input[probe];
-                          let at1 = probe + 1_u64;
-                          let byte1 = input[at1];
-                          let at2 = probe + 2_u64;
-                          let byte2 = input[at2];
-                          let at3 = probe + 3_u64;
-                          let byte3 = input[at3];
-                          let at4 = probe + 4_u64;
-                          let byte4 = input[at4];
-                          let at5 = probe + 5_u64;
-                          let byte5 = input[at5];
-                          let at6 = probe + 6_u64;
-                          let byte6 = input[at6];
-                          let at7 = probe + 7_u64;
-                          let byte7 = input[at7];
-                          let wide0 = cvt<u8, u64>(byte0);
-                          let wide1 = cvt<u8, u64>(byte1);
-                          let wide2 = cvt<u8, u64>(byte2);
-                          let wide3 = cvt<u8, u64>(byte3);
-                          let wide4 = cvt<u8, u64>(byte4);
-                          let wide5 = cvt<u8, u64>(byte5);
-                          let wide6 = cvt<u8, u64>(byte6);
-                          let wide7 = cvt<u8, u64>(byte7);
-                          let lane1 = ishl.wrap(wide1, 8_u32);
-                          let lane2 = ishl.wrap(wide2, 16_u32);
-                          let lane3 = ishl.wrap(wide3, 24_u32);
-                          let lane4 = ishl.wrap(wide4, 32_u32);
-                          let lane5 = ishl.wrap(wide5, 40_u32);
-                          let lane6 = ishl.wrap(wide6, 48_u32);
-                          let lane7 = ishl.wrap(wide7, 56_u32);
-                          let pair01 = ior(wide0, lane1);
-                          let pair23 = ior(lane2, lane3);
-                          let pair45 = ior(lane4, lane5);
-                          let pair67 = ior(lane6, lane7);
-                          let quad03 = ior(pair01, pair23);
-                          let quad47 = ior(pair45, pair67);
-                          let word = ior(quad03, quad47);
-                          let marked = ixor(word, 723401728380766730_u64);
-                          let borrowed = marked -wrap 72340172838076673_u64;
-                          let inverted = inot(marked);
-                          let carried = iand(borrowed, inverted);
-                          let hits = iand(carried, 9259542123273814144_u64);
-                          let found = ine(hits, 0_u64);
-                          if found {
-                            break @findword;
-                          }
-                          set probe = next;
-                        }
-                        loop @find {
-                          let done = ige(probe, available);
-                          if done {
-                            break @find;
-                          }
-                          let byte = input[probe];
-                          let newline = ieq(byte, 10_u8);
-                          if newline {
-                            set terminator = probe;
-                            break @find;
-                          }
-                          set probe = probe +wrap 1_u64;
-                        }
-                        let complete = ilt(terminator, available);
-                        if complete {
-                        } else {
-                          break @lines;
-                        }
-                        let hit = False();
-                        region 'match_call {
-                          set hit = line_matches<'match_call, 'match_call>(source: &'match_call input, start: scan, stop: terminator, pattern: &'match_call pattern, length: pattern_length);
-                        }
-                        if hit {
-                          set matched = 1_u8;
-                          let stop = terminator +wrap 1_u64;
-                          let span = stop -wrap scan;
-                          let need = filled +wrap span;
-                          let overfull = igt(need, 4096_u64);
-                          if overfull {
-                            let filled_fits = ile(filled, 4096_u64);
-                            if filled_fits {
-                              region 'batch_write {
-                                match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write out, source: &'batch_write batch, length: filled) {
-                                  Ok(value: published) => {
-                                  }
-                                  Err(error: problem) => {
-                                    set write_failed = 1_u8;
-                                    set write_class = io_class(error: move problem);
-                                  }
-                                }
+                          let available = 0_u64;
+                          let ended = 0_u8;
+                          region 'read_call {
+                            match read_at<'read_call, 'read_call>(file: &'read_call file, destination: &uniq 'read_call input, file_offset: file_offset, start: carry, end: 4096_u64) {
+                              ReadBytes(next: taken) => {
+                                set available = taken;
+                                let delivered = taken -wrap carry;
+                                set file_offset = file_offset +wrap delivered;
                               }
-                            } else {
-                              set write_failed = 1_u8;
+                              ReadEnd() => {
+                                set ended = 1_u8;
+                              }
+                              ReadFailed(error: problem) => {
+                                set status = io_class(error: move problem);
+                                set ended = 2_u8;
+                              }
                             }
-                            set filled = 0_u64;
                           }
-                          if ieq(write_failed, 0_u8) {
-                            region 'emit_line {
-                              set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
+                          if ieq(ended, 2_u8) {
+                            break @chunks;
+                          }
+                          if ieq(ended, 1_u8) {
+                            let trailing = igt(carry, 0_u64);
+                            if trailing {
+                              set input[carry] = 10_u8;
+                              set available = carry +wrap 1_u64;
                             }
+                          }
+                          let available_fits = ile(available, 4096_u64);
+                          if available_fits {
                           } else {
-                            break @files;
+                            set status = 6_u8;
+                            break @chunks;
                           }
+                          let scan = 0_u64;
+                          loop @lines {
+                            let terminator = available;
+                            let probe = scan;
+                            loop @findword {
+                              let probe_word_fits = ile(probe, 4088_u64);
+                              if probe_word_fits {
+                              } else {
+                                break @findword;
+                              }
+                              let next = probe + 8_u64;
+                              let roomy = ile(next, available);
+                              if roomy {
+                              } else {
+                                break @findword;
+                              }
+                              let byte0 = input[probe];
+                              let at1 = probe + 1_u64;
+                              let byte1 = input[at1];
+                              let at2 = probe + 2_u64;
+                              let byte2 = input[at2];
+                              let at3 = probe + 3_u64;
+                              let byte3 = input[at3];
+                              let at4 = probe + 4_u64;
+                              let byte4 = input[at4];
+                              let at5 = probe + 5_u64;
+                              let byte5 = input[at5];
+                              let at6 = probe + 6_u64;
+                              let byte6 = input[at6];
+                              let at7 = probe + 7_u64;
+                              let byte7 = input[at7];
+                              let wide0 = cvt<u8, u64>(byte0);
+                              let wide1 = cvt<u8, u64>(byte1);
+                              let wide2 = cvt<u8, u64>(byte2);
+                              let wide3 = cvt<u8, u64>(byte3);
+                              let wide4 = cvt<u8, u64>(byte4);
+                              let wide5 = cvt<u8, u64>(byte5);
+                              let wide6 = cvt<u8, u64>(byte6);
+                              let wide7 = cvt<u8, u64>(byte7);
+                              let lane1 = ishl.wrap(wide1, 8_u32);
+                              let lane2 = ishl.wrap(wide2, 16_u32);
+                              let lane3 = ishl.wrap(wide3, 24_u32);
+                              let lane4 = ishl.wrap(wide4, 32_u32);
+                              let lane5 = ishl.wrap(wide5, 40_u32);
+                              let lane6 = ishl.wrap(wide6, 48_u32);
+                              let lane7 = ishl.wrap(wide7, 56_u32);
+                              let pair01 = ior(wide0, lane1);
+                              let pair23 = ior(lane2, lane3);
+                              let pair45 = ior(lane4, lane5);
+                              let pair67 = ior(lane6, lane7);
+                              let quad03 = ior(pair01, pair23);
+                              let quad47 = ior(pair45, pair67);
+                              let word = ior(quad03, quad47);
+                              let marked = ixor(word, 723401728380766730_u64);
+                              let borrowed = marked -wrap 72340172838076673_u64;
+                              let inverted = inot(marked);
+                              let carried = iand(borrowed, inverted);
+                              let hits = iand(carried, 9259542123273814144_u64);
+                              let found = ine(hits, 0_u64);
+                              if found {
+                                break @findword;
+                              }
+                              set probe = next;
+                            }
+                            loop @find {
+                              let done = ige(probe, available);
+                              if done {
+                                break @find;
+                              }
+                              let byte = input[probe];
+                              let newline = ieq(byte, 10_u8);
+                              if newline {
+                                set terminator = probe;
+                                break @find;
+                              }
+                              set probe = probe +wrap 1_u64;
+                            }
+                            let complete = ilt(terminator, available);
+                            if complete {
+                            } else {
+                              break @lines;
+                            }
+                            let hit = False();
+                            region 'match_call {
+                              set hit = line_matches<'match_call, 'match_call>(source: &'match_call input, start: scan, stop: terminator, pattern: &'match_call pattern, length: pattern_length);
+                            }
+                            if hit {
+                              set matched = 1_u8;
+                              let stop = terminator +wrap 1_u64;
+                              let span = stop -wrap scan;
+                              let need = filled +wrap span;
+                              let overfull = igt(need, 4096_u64);
+                              if overfull {
+                                let filled_fits = ile(filled, 4096_u64);
+                                if filled_fits {
+                                  region 'batch_write {
+                                    match publish_all<'batch_write, 'batch_write>(output: &uniq 'batch_write out, source: &'batch_write batch, length: filled) {
+                                      Ok(value: published) => {
+                                      }
+                                      Err(error: problem) => {
+                                        set write_failed = 1_u8;
+                                        set write_class = io_class(error: move problem);
+                                      }
+                                    }
+                                  }
+                                } else {
+                                  set write_failed = 1_u8;
+                                }
+                                set filled = 0_u64;
+                              }
+                              if ieq(write_failed, 0_u8) {
+                                region 'emit_line {
+                                  set filled = copy_range<'emit_line, 'emit_line>(destination: &uniq 'emit_line batch, at: filled, source: &'emit_line input, from: scan, to: stop);
+                                }
+                              } else {
+                                break @files;
+                              }
+                            }
+                            set scan = terminator +wrap 1_u64;
+                          }
+                          if ieq(ended, 1_u8) {
+                            break @chunks;
+                          }
+                          let tail = available -wrap scan;
+                          let moved = 0_u64;
+                          loop @shift {
+                            let done = ige(moved, tail);
+                            if done {
+                              break @shift;
+                            }
+                            let source_index = scan +wrap moved;
+                            let source_fits = ilt(source_index, 4096_u64);
+                            let target_fits = ilt(moved, 4096_u64);
+                            if source_fits {
+                            } else {
+                              break @shift;
+                            }
+                            if target_fits {
+                            } else {
+                              break @shift;
+                            }
+                            let byte = input[source_index];
+                            set input[moved] = byte;
+                            set moved = moved +wrap 1_u64;
+                          }
+                          set carry = tail;
                         }
-                        set scan = terminator +wrap 1_u64;
                       }
-                      if ieq(ended, 1_u8) {
-                        break @chunks;
+                      Err(error: problem) => {
+                        set status = io_class(error: move problem);
                       }
-                      let tail = available -wrap scan;
-                      let moved = 0_u64;
-                      loop @shift {
-                        let done = ige(moved, tail);
-                        if done {
-                          break @shift;
-                        }
-                        let source_index = scan +wrap moved;
-                        let source_fits = ilt(source_index, 4096_u64);
-                        let target_fits = ilt(moved, 4096_u64);
-                        if source_fits {
-                        } else {
-                          break @shift;
-                        }
-                        if target_fits {
-                        } else {
-                          break @shift;
-                        }
-                        let byte = input[source_index];
-                        set input[moved] = byte;
-                        set moved = moved +wrap 1_u64;
-                      }
-                      set carry = tail;
                     }
                   }
-                  Err(error: problem) => {
-                    set status = io_class(error: move problem);
+                  Err(error: spent) => {
+                    set status = io_class(error: move spent);
                   }
                 }
               }

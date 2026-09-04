@@ -1,11 +1,17 @@
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "`DirectorySource` is release-complete [SYS-5, SYS-14]: the value bound in the Ok arm leaves scope at the arm's end and compiler-derived release is the complete language obligation, so the program needs no terminal operation and declares none. This specification declares no separate explicit-close operation at all.";
   region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
-      Ok(value: list) => {
+    match reserve_file::<'c>(factory: &uniq 'c files) {
+      Ok(value: permit) => {
+        match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+          Ok(value: list) => {
+          }
+          Err(error: problem) => {
+          }
+        }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 1_u8);
       }
     }
   }

@@ -68,93 +68,105 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                   match relative_path(value: move right_text) {
                     Ok(value: right_path) => {
                       region 'open {
-                        let left_permit = reserve_file::<'open>(factory: &uniq 'open files);
-                        let right_permit = reserve_file::<'open>(factory: &uniq 'open files);
-                        let left_opened = open_read::<'open, 'open>(permit: move left_permit, root: &'open cwd, path: &'open left_path);
-                        let right_opened = open_read::<'open, 'open>(permit: move right_permit, root: &'open cwd, path: &'open right_path);
-                        match move left_opened {
-                          Ok(value: left_file) => {
-                            match move right_opened {
-                              Ok(value: right_file) => {
-                                let checksum = 0_u64;
-                                let iteration = 0_u64;
-                                loop @work {
-                                  let done = iteration == 1024_u64;
-                                  if done {
-                                    break @work;
-                                  }
-                                  let left_seed = iteration +wrap 11400714819323198485_u64;
-                                  let right_seed = iteration +wrap 13787848793156543929_u64;
-                                  let block = iand(iteration, 4095_u64);
-                                  let offset = block *wrap 4096_u64;
-                                  region 'handles {
-                                    region 'data {
-                                      let left_read = read_at::<'handles, 'data>(file: &'handles left_file, destination: &uniq 'data left_data, file_offset: offset, start: 0_u64, end: 4096_u64);
-                                      let compute = compute_pair(left_seed: left_seed, right_seed: right_seed);
-                                      let right_read = read_at::<'handles, 'data>(file: &'handles right_file, destination: &uniq 'data right_data, file_offset: offset, start: 0_u64, end: 4096_u64);
-                                      match move left_read {
-                                        ReadBytes(next: left_next) => {
-                                          if left_next == 4096_u64 {
-                                          } else {
-                                            return exit_status(code: 11_u8);
+                        match reserve_file::<'open>(factory: &uniq 'open files) {
+                          Ok(value: left_permit) => {
+                            match reserve_file::<'open>(factory: &uniq 'open files) {
+                              Ok(value: right_permit) => {
+                                let left_opened = open_read::<'open, 'open>(permit: move left_permit, root: &'open cwd, path: &'open left_path);
+                                let right_opened = open_read::<'open, 'open>(permit: move right_permit, root: &'open cwd, path: &'open right_path);
+                                match move left_opened {
+                                  Ok(value: left_file) => {
+                                    match move right_opened {
+                                      Ok(value: right_file) => {
+                                        let checksum = 0_u64;
+                                        let iteration = 0_u64;
+                                        loop @work {
+                                          let done = iteration == 1024_u64;
+                                          if done {
+                                            break @work;
+                                          }
+                                          let left_seed = iteration +wrap 11400714819323198485_u64;
+                                          let right_seed = iteration +wrap 13787848793156543929_u64;
+                                          let block = iand(iteration, 4095_u64);
+                                          let offset = block *wrap 4096_u64;
+                                          region 'handles {
+                                            region 'data {
+                                              let left_read = read_at::<'handles, 'data>(file: &'handles left_file, destination: &uniq 'data left_data, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                              let compute = compute_pair(left_seed: left_seed, right_seed: right_seed);
+                                              let right_read = read_at::<'handles, 'data>(file: &'handles right_file, destination: &uniq 'data right_data, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                              match move left_read {
+                                                ReadBytes(next: left_next) => {
+                                                  if left_next == 4096_u64 {
+                                                  } else {
+                                                    return exit_status(code: 11_u8);
+                                                  }
+                                                }
+                                                ReadEnd() => {
+                                                  return exit_status(code: 12_u8);
+                                                }
+                                                ReadFailed(error: left_problem) => {
+                                                  return exit_status(code: 13_u8);
+                                                }
+                                              }
+                                              match move right_read {
+                                                ReadBytes(next: right_next) => {
+                                                  if right_next == 4096_u64 {
+                                                  } else {
+                                                    return exit_status(code: 14_u8);
+                                                  }
+                                                }
+                                                ReadEnd() => {
+                                                  return exit_status(code: 15_u8);
+                                                }
+                                                ReadFailed(error: right_problem) => {
+                                                  return exit_status(code: 16_u8);
+                                                }
+                                              }
+                                              let left_byte = cvt::<u8, u64>(left_data[0_u64]);
+                                              let right_byte = cvt::<u8, u64>(right_data[0_u64]);
+                                              set checksum = ixor(checksum, compute);
+                                              set checksum = checksum *wrap 31_u64;
+                                              set checksum = checksum +wrap left_byte;
+                                              set checksum = checksum *wrap 31_u64;
+                                              set checksum = checksum +wrap right_byte;
+                                            }
+                                          }
+                                          set iteration = iteration +wrap 1_u64;
+                                        }
+                                        region 'report {
+                                          let rendered = render_u64::<'report>(destination: &uniq 'report report, value: checksum);
+                                        }
+                                        region 'output {
+                                          match write_once::<'output, 'output>(output: &uniq 'output out, source: &'output report, start: 0_u64, end: 21_u64) {
+                                            Ok(value: published) => {
+                                              if published == 21_u64 {
+                                                return exit_status(code: 0_u8);
+                                              }
+                                              return exit_status(code: 17_u8);
+                                            }
+                                            Err(error: output_problem) => {
+                                              return exit_status(code: 18_u8);
+                                            }
                                           }
                                         }
-                                        ReadEnd() => {
-                                          return exit_status(code: 12_u8);
-                                        }
-                                        ReadFailed(error: left_problem) => {
-                                          return exit_status(code: 13_u8);
-                                        }
                                       }
-                                      match move right_read {
-                                        ReadBytes(next: right_next) => {
-                                          if right_next == 4096_u64 {
-                                          } else {
-                                            return exit_status(code: 14_u8);
-                                          }
-                                        }
-                                        ReadEnd() => {
-                                          return exit_status(code: 15_u8);
-                                        }
-                                        ReadFailed(error: right_problem) => {
-                                          return exit_status(code: 16_u8);
-                                        }
+                                      Err(error: right_problem) => {
+                                        return exit_status(code: 6_u8);
                                       }
-                                      let left_byte = cvt::<u8, u64>(left_data[0_u64]);
-                                      let right_byte = cvt::<u8, u64>(right_data[0_u64]);
-                                      set checksum = ixor(checksum, compute);
-                                      set checksum = checksum *wrap 31_u64;
-                                      set checksum = checksum +wrap left_byte;
-                                      set checksum = checksum *wrap 31_u64;
-                                      set checksum = checksum +wrap right_byte;
                                     }
                                   }
-                                  set iteration = iteration +wrap 1_u64;
-                                }
-                                region 'report {
-                                  let rendered = render_u64::<'report>(destination: &uniq 'report report, value: checksum);
-                                }
-                                region 'output {
-                                  match write_once::<'output, 'output>(output: &uniq 'output out, source: &'output report, start: 0_u64, end: 21_u64) {
-                                    Ok(value: published) => {
-                                      if published == 21_u64 {
-                                        return exit_status(code: 0_u8);
-                                      }
-                                      return exit_status(code: 17_u8);
-                                    }
-                                    Err(error: output_problem) => {
-                                      return exit_status(code: 18_u8);
-                                    }
+                                  Err(error: left_problem) => {
+                                    return exit_status(code: 5_u8);
                                   }
                                 }
                               }
-                              Err(error: right_problem) => {
-                                return exit_status(code: 6_u8);
+                              Err(error: spent) => {
+                                return exit_status(code: 20_u8);
                               }
                             }
                           }
-                          Err(error: left_problem) => {
-                            return exit_status(code: 5_u8);
+                          Err(error: spent) => {
+                            return exit_status(code: 19_u8);
                           }
                         }
                       }

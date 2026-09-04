@@ -441,13 +441,17 @@ for @scan (index in 0_u64..8192_u64) {
     let rendered = name_at::<'name>(name: &uniq 'name name, index: index);
   }
   region 'f {
-    let permit = reserve_file::<'f>(factory: &uniq 'f files);
-    region 'n {
-      match open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
-                              name: &'n name, start: 0_u64, end: 10_u64) {
-        Ok(value: handle) => { /* read, fold, accumulate */ }
-        Err(error: problem) => { }
+    match reserve_file::<'f>(factory: &uniq 'f files) {
+      Ok(value: permit) => {
+        region 'n {
+          match open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
+                                  name: &'n name, start: 0_u64, end: 10_u64) {
+            Ok(value: handle) => { /* read, fold, accumulate */ }
+            Err(error: problem) => { }
+          }
+        }
       }
+      Err(error: spent) => { break; }   // the factory is out of credits: leave before any submission
     }
   }
 }
@@ -473,7 +477,14 @@ copy rather than a fact to rediscover:
 - **Reserve the file factory in the prologue, inline.** `reserve_file` takes
   and returns a short unique `&uniq FileFactory` loan inline [SYS-10], and
   prologues run in index order without overlapping, so one enclosing factory
-  serves every iteration with no replication and no [OWN-5] relaxation. Write
+  serves every iteration with no replication and no [OWN-5] relaxation. Its
+  `Err(ResourceExhausted)` edge is the program's own source-order outcome (the
+  factory's capacity is real: one credit per descriptor the target provides),
+  so match on it and take the exit there, before the open: that is an early
+  exit before the first submission, which the first rule admits. A program
+  that reuses its capacity closes explicitly (`close_read`,
+  `close_directory`, `close_directory_source` return the permit); derived
+  release closes but returns nothing. Write
   the reserve and the open in the loop body itself. Factoring the pair into a
   helper — `fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, …)` —
   costs the loop its pipeline, because the callee's own retained loan is what

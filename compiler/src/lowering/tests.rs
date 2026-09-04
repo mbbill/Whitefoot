@@ -937,14 +937,20 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set total = total +wrap 1_u64;
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                set total = total +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -1026,14 +1032,20 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -1076,28 +1088,40 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
   let name = buffer_new(4_u64, 97_u8);
   for @first (index in 0_u64..3_u64) {
     region 'f {
-      let permit = reserve_file::<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
   }
   for @second (index in 0_u64..3_u64) {
     region 'g {
-      let permit = reserve_file::<'g>(factory: &uniq 'g files);
-      region 'm {
-        match open_file::<'g, 'm>(permit: move permit, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
+      match reserve_file::<'g>(factory: &uniq 'g files) {
+        Ok(value: permit) => {
+          region 'm {
+            match open_file::<'g, 'm>(permit: move permit, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -1260,5 +1284,53 @@ fn a_needle_declared_inside_the_loop_declines_the_wide_probe() {
     let middle = "    let inner_mark = 88_u8;\n    let lead = byte == inner_mark;\n    if lead {\n      set seen = seen +wrap 2_u64;\n    }\n";
     with_ir(&byte_walk_source(middle, "1_u64"), |program| {
         assert_eq!(probe_needle_counts(program), Vec::<usize>::new());
+    });
+}
+
+/// A gate whose exiting arm breaks rather than returns takes the same bounded
+/// batch driver: the exit runs after the batch in flight has drained, on the
+/// carried bindings, and leaves through the driver's exit block.
+#[test]
+fn a_prologue_gate_leaving_by_break_keeps_the_two_slot_driver() {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  let opened = 0_u64;
+  let name = buffer_new(4_u64, 97_u8);
+  for @scan (index in 0_u64..4_u64) {
+    region 'f {
+      match reserve_file::<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+              Ok(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              Err(error: problem) => {
+              }
+            }
+          }
+        }
+        Err(error: spent) => {
+          break;
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir_mode(source, OverlapLowering::Completion, |program| {
+        let main = function(program, "main");
+        let pipeline = main
+            .completion_pipeline()
+            .expect("the gated staged loop must reach IR");
+        assert!(
+            pipeline.planned_batch_driver().is_some(),
+            "a break in the gate's exiting arm keeps the bounded batch driver"
+        );
+        assert_eq!(pipeline.slots(), 2);
+        let llvm = crate::backend::emit_llvm(program)
+            .expect("a gated two-slot driver must emit valid LLVM text")
+            .into_string();
+        assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
     });
 }

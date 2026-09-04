@@ -160,7 +160,13 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // erase before lowering as before. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.40 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.41";
+// v0.42 backed-permit review (2026-09-04): `reserve_file` answers
+// `Result<FilePermit, IoError>` from the floor's credit count and three
+// explicit closes (`close_read`, `close_directory`, `close_directory_source`,
+// ordinals 16 to 18) return the credit after the same native close attempt
+// derived release performs. No target row, representation, or release
+// implementation changes, so the v0.41 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.42";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.
@@ -1444,6 +1450,9 @@ fn operation_row(
         13 => "wf.sys.directory_next.v1",
         14 => "wf.sys.open_file.v1",
         15 => "wf.sys.reserve_file.v1",
+        16 => "wf.sys.close_read.v1",
+        17 => "wf.sys.close_directory.v1",
+        18 => "wf.sys.close_directory_source.v1",
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
     };

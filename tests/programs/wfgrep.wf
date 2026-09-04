@@ -723,8 +723,14 @@ fn search_file['f, 'a, 'n, 'o](file: &'f ReadFile, pattern: &'a buffer<u8>, patt
 }
 
 fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
-  let permit = reserve_file::<'f>(factory: move factory);
-  return open_directory_source::<'d>(permit: move permit, directory: directory);
+  match reserve_file::<'f>(factory: move factory) {
+    Ok(value: permit) => {
+      return open_directory_source::<'d>(permit: move permit, directory: directory);
+    }
+    Err(error: spent) => {
+      return Err<DirectorySource, IoError>(error: move spent);
+    }
+  }
 }
 
 fn open_file_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
@@ -734,8 +740,14 @@ fn open_file_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d D
   requires ordered;
   requires within;
 } {
-  let permit = reserve_file::<'f>(factory: move factory);
-  return open_file::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+  match reserve_file::<'f>(factory: move factory) {
+    Ok(value: permit) => {
+      return open_file::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+    }
+    Err(error: spent) => {
+      return Err<ReadFile, IoError>(error: move spent);
+    }
+  }
 }
 
 fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
@@ -745,8 +757,14 @@ fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: 
   requires ordered;
   requires within;
 } {
-  let permit = reserve_file::<'f>(factory: move factory);
-  return open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+  match reserve_file::<'f>(factory: move factory) {
+    Ok(value: permit) => {
+      return open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end);
+    }
+    Err(error: spent) => {
+      return Err<DirectoryRead, IoError>(error: move spent);
+    }
+  }
 }
 
 fn walk['f, 'c, 'p, 'a, 'o, 'e](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, pattern: &'a buffer<u8>, pattern_length: own u64, out: &uniq 'o Output, err: &uniq 'e Output) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err), allocates(heap) {
@@ -1311,24 +1329,30 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let failed = 0_u8;
   let root_status = 0_u8;
   region 'root_open {
-    let root_permit = reserve_file::<'root_open>(factory: &uniq 'root_open files);
-    match open_directory::<'root_open, 'root_open>(permit: move root_permit, root: &'root_open cwd, name: &'root_open root_name, start: 0_u64, end: root_length) {
-      Ok(value: root) => {
-        let outcome = 0_u8;
-        region 'root_walk {
-          set outcome = walk::<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk>(factory: &uniq 'root_walk files, dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err);
-        }
-        let found = iand(outcome, 1_u8);
-        let broke = iand(outcome, 2_u8);
-        if found == 1_u8 {
-          set matched = 1_u8;
-        }
-        if broke == 2_u8 {
-          set failed = 1_u8;
+    match reserve_file::<'root_open>(factory: &uniq 'root_open files) {
+      Ok(value: root_permit) => {
+        match open_directory::<'root_open, 'root_open>(permit: move root_permit, root: &'root_open cwd, name: &'root_open root_name, start: 0_u64, end: root_length) {
+          Ok(value: root) => {
+            let outcome = 0_u8;
+            region 'root_walk {
+              set outcome = walk::<'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk, 'root_walk>(factory: &uniq 'root_walk files, dir: &'root_walk root, prefix: &'root_walk root_path, prefix_length: copied, pattern: &'root_walk pattern, pattern_length: pattern_length, out: &uniq 'root_walk out, err: &uniq 'root_walk err);
+            }
+            let found = iand(outcome, 1_u8);
+            let broke = iand(outcome, 2_u8);
+            if found == 1_u8 {
+              set matched = 1_u8;
+            }
+            if broke == 2_u8 {
+              set failed = 1_u8;
+            }
+          }
+          Err(error: problem) => {
+            set root_status = io_class(error: move problem);
+          }
         }
       }
-      Err(error: problem) => {
-        set root_status = io_class(error: move problem);
+      Err(error: spent) => {
+        set root_status = io_class(error: move spent);
       }
     }
   }
@@ -1341,21 +1365,26 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           match relative_path(value: move text) {
             Ok(value: path) => {
               region 'open_call {
-                let fallback_permit = reserve_file::<'open_call>(factory: &uniq 'open_call files);
-                match open_read::<'open_call, 'open_call>(permit: move fallback_permit, root: &'open_call cwd, path: &'open_call path) {
-                  Ok(value: file) => {
-                    set single = 1_u8;
-                    let outcome = 0_u8;
-                    region 'search_call {
-                      set outcome = search_file::<'search_call, 'search_call, 'search_call, 'search_call>(file: &'search_call file, pattern: &'search_call pattern, pattern_length: pattern_length, path: &'search_call root_path, path_length: copied, out: &uniq 'search_call out);
-                    }
-                    set root_status = iand(outcome, 15_u8);
-                    let found = iand(outcome, 16_u8);
-                    if found == 16_u8 {
-                      set matched = 1_u8;
+                match reserve_file::<'open_call>(factory: &uniq 'open_call files) {
+                  Ok(value: fallback_permit) => {
+                    match open_read::<'open_call, 'open_call>(permit: move fallback_permit, root: &'open_call cwd, path: &'open_call path) {
+                      Ok(value: file) => {
+                        set single = 1_u8;
+                        let outcome = 0_u8;
+                        region 'search_call {
+                          set outcome = search_file::<'search_call, 'search_call, 'search_call, 'search_call>(file: &'search_call file, pattern: &'search_call pattern, pattern_length: pattern_length, path: &'search_call root_path, path_length: copied, out: &uniq 'search_call out);
+                        }
+                        set root_status = iand(outcome, 15_u8);
+                        let found = iand(outcome, 16_u8);
+                        if found == 16_u8 {
+                          set matched = 1_u8;
+                        }
+                      }
+                      Err(error: refused) => {
+                      }
                     }
                   }
-                  Err(error: refused) => {
+                  Err(error: spent) => {
                   }
                 }
               }
