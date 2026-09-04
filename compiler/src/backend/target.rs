@@ -210,7 +210,6 @@ pub(super) enum TargetStorageType {
         element: Box<TargetStorageType>,
         length: u64,
     },
-    Struct(Vec<TargetStorageType>),
 }
 
 impl TargetStorageType {
@@ -237,9 +236,6 @@ impl TargetStorageType {
         Self::array(Self::integer(8), length)
     }
 
-    pub(super) fn structure(fields: impl IntoIterator<Item = Self>) -> Self {
-        Self::Struct(fields.into_iter().collect())
-    }
 }
 
 /// One logical slot in a generated frame.
@@ -385,39 +381,6 @@ pub(super) fn plan_target_frame(
             size: complete,
             align: frame_alignment,
         },
-    })
-}
-
-/// Validates one compiler-owned heap record against the selected allocator
-/// and address domain. Dynamic arrays of this record separately guard their
-/// element count against `runtime_allocation_max`; this function establishes
-/// the fixed element stride and alignment that guard relies on.
-pub(super) fn validate_runtime_storage(
-    target: TargetLayout,
-    qualification: &Qualification,
-    program: &IrProgram<'_, '_, '_>,
-    ty: &TargetStorageType,
-) -> Result<TargetAggregateLayout, TargetLayoutFailure> {
-    let mut layouts = LayoutComputer {
-        target,
-        qualification,
-        program,
-        nominal: HashMap::new(),
-        visiting: HashSet::new(),
-    };
-    let layout = layouts
-        .storage_layout(ty)
-        .map_err(|failure| as_object(failure, TargetObject::RuntimeSizedAllocation))?;
-    if layout.size > target.runtime_allocation_max()
-        || layout.align > target.runtime_allocation_alignment()
-    {
-        return Err(TargetLayoutFailure::Unrepresentable(
-            TargetObject::RuntimeSizedAllocation,
-        ));
-    }
-    Ok(TargetAggregateLayout {
-        size: layout.size,
-        align: layout.align,
     })
 }
 
@@ -917,13 +880,6 @@ impl LayoutComputer<'_, '_, '_, '_> {
                     size: checked_mul(stride, *length, self.target, TargetObject::StackFrame)?,
                     align: element.align,
                 })
-            }
-            TargetStorageType::Struct(fields) => {
-                let mut layouts = Vec::with_capacity(fields.len());
-                for field in fields {
-                    layouts.push(self.storage_layout(field)?);
-                }
-                self.aggregate_layout(layouts, TargetObject::StackFrame)
             }
         }
     }

@@ -2096,14 +2096,6 @@ fn llvm_storage_type(
             "[{length} x {}]",
             llvm_storage_type(program, element)?
         )),
-        TargetStorageType::Struct(fields) => Ok(format!(
-            "{{ {} }}",
-            fields
-                .iter()
-                .map(|field| llvm_storage_type(program, field))
-                .collect::<Result<Vec<_>, _>>()?
-                .join(", ")
-        )),
     }
 }
 

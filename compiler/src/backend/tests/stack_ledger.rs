@@ -268,13 +268,20 @@ fn the_reported_ceiling_is_the_measured_one() {
 
 /// The recursion the compiler generates is in the ledger like any other.
 ///
-/// The invisible-recursion class this batch removed was invisible in exactly
-/// this sense: it had no name in the source, so no writer could look for it.
-/// Its rows are the ledger's answer to that, and they are also how anyone
-/// checks the removal held — a `wf.drop` cycle row reappearing means the
-/// destruction path is descending the stack again.
+/// A compiler-derived release descends the stack exactly where the type's own
+/// release graph closes on itself [PROV-6], and that recursion has no name in
+/// the source, so no writer could look for it. The ledger is what makes it
+/// visible: a `wf.drop` cycle row is the derived release of a recursive
+/// nominal, reported beside the recursions the writer wrote.
+///
+/// The assertion below was the opposite until 2026-09-04, when the owner
+/// deleted [PROV-6]'s release-graph cycle refusal and ruled that the walk may
+/// recurse. The explicit worklist that kept the depth off the stack is gone
+/// with the refusal it was written for — it allocated, and an allocation on
+/// the release path is a runtime trap the writer never wrote — so the cycle
+/// row is now the correct report rather than the defect.
 #[test]
-fn the_compilers_own_drop_glue_has_rows_and_no_cycle() {
+fn the_compilers_own_drop_glue_has_rows_and_reports_its_cycle() {
     let directory = test_directory();
     let lines = ledger_for(RECURSIVE_VALUE, &directory);
     assert!(
@@ -285,11 +292,11 @@ fn the_compilers_own_drop_glue_has_rows_and_no_cycle() {
          {lines:#?}"
     );
     assert!(
-        !lines
+        lines
             .iter()
             .any(|line| line.starts_with("STACK cycle") && line.contains("wf.drop.")),
-        "the compiler-generated drop glue is descending the stack again: \
-         {lines:#?}"
+        "the derived release of a recursive nominal enters itself, and the \
+         ledger is where a writer sees that: {lines:#?}"
     );
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }

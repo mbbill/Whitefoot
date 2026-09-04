@@ -1253,59 +1253,80 @@ fn drop_glue_calls(module: &str) -> Vec<(String, Vec<String>)> {
         }
         if inside
             && let Some((_, callee)) = line.split_once("call void @wf.drop.")
-            && let Some((current, calls)) = glue.last_mut()
+            && let Some((_, calls)) = glue.last_mut()
         {
-            let callee = format!("wf.drop.{}", callee.split('(').next().unwrap_or_default());
-            assert_ne!(
-                &callee, current,
-                "a compiler-derived drop calls itself, so its depth is the \
-                 value's and no writer can see it: {current}"
-            );
-            calls.push(callee);
+            calls.push(format!(
+                "wf.drop.{}",
+                callee.split('(').next().unwrap_or_default()
+            ));
         }
     }
     glue
 }
 
-/// No compiler-derived drop can reach itself.
+/// The derived release of a type whose release graph has a cycle is one
+/// release action per node type, entering itself where the graph closes
+/// [PROV-6].
 ///
-/// This is the whole property, and it is structural rather than a depth a case
-/// happened to survive: a cycle among these definitions is unbounded recursion
-/// on the destruction path, reached after the program has already spent its
-/// stack, in code the writer never wrote and cannot instrument. Before this
-/// traversal existed, `wf.drop.t0` called `wf.drop.t0` and the corpus had three
-/// programs that dragged it.
+/// This assertion was its own opposite until 2026-09-04. The compiler ran such
+/// a walk on an explicit heap worklist, and the property under test was that no
+/// compiler-derived drop reached itself, because the recursion has no name in
+/// the source. The owner deleted [PROV-6]'s release-graph cycle refusal that
+/// day and ruled that the walk may recurse: a cycle can arise only where a heap
+/// is allowed, and a heap-allowed program's resource behaviour is a runtime
+/// quantity already, while the worklist bought its bounded depth with a
+/// `realloc` on the release path — an allocation, and on refusal an abort, that
+/// the writer never wrote. The recursion is not invisible: it is a `STACK
+/// cycle` row of the stack ledger, beside the recursions the writer did write.
 ///
 /// The check is over the emitted module rather than over a list of names, so a
-/// new nominal shape whose glue closes a cycle fails it without anyone
+/// new nominal shape whose glue closes a cycle is read here without anyone
 /// remembering to extend a table.
 #[test]
-fn no_compiler_derived_drop_reaches_itself() {
-    // Both owning indirections a cleanup cycle can close through, because the
-    // traversal has a separate arm for each and a cycle in either one is the
-    // same defect.
-    assert_no_drop_glue_cycle(&compile(&boxed_spine_source(4)));
-    assert_no_drop_glue_cycle(&compile(&buffer_chain_source(4)));
+fn a_cyclic_release_graph_lowers_to_one_release_action_that_enters_itself() {
+    // Both owning indirections a cleanup cycle can close through.
+    assert_recursive_drop_glue(&compile(&boxed_spine_source(4)));
+    assert_recursive_drop_glue(&compile(&buffer_chain_source(4)));
 }
 
-fn assert_no_drop_glue_cycle(module: &str) {
+fn assert_recursive_drop_glue(module: &str) {
     let glue = drop_glue_calls(module);
     assert!(
-        glue.iter()
+        !glue
+            .iter()
             .any(|(name, _)| name.starts_with("wf.drop.step.")),
-        "a program with a recursive nominal must lower its drop to a \
-         traversal: {module}"
+        "the release walk is the type's own release actions and no traversal \
+         driver: {module}"
     );
+    assert!(
+        !module.contains("@wf.drop.push") && !module.contains("@wf.drop.run"),
+        "a release walk allocates nothing: {module}"
+    );
+    let mut inside = false;
+    for line in module.lines() {
+        if line.starts_with("define private void @wf.drop.") {
+            inside = true;
+        } else if line == "}" {
+            inside = false;
+        } else if inside {
+            assert!(
+                !line.contains("@wf_resource_abort") && !line.contains("@realloc"),
+                "a release action allocates nothing and reaches no abort: \
+                 {line}"
+            );
+        }
+    }
     let index: std::collections::HashMap<&str, usize> = glue
         .iter()
         .enumerate()
         .map(|(position, (name, _))| (name.as_str(), position))
         .collect();
-    // Depth-first over the call graph, refusing a back edge. A drop glue that
-    // recursed at all would already have failed inside `drop_glue_calls`; this
-    // is what catches a cycle through two or more definitions.
+    // The release graph closes, so exactly one of these definitions reaches
+    // itself through the module's own call graph. Depth-first, looking for the
+    // back edge rather than refusing it.
     let mut colour = vec![0_u8; glue.len()];
     let mut path: Vec<(usize, usize)> = Vec::new();
+    let mut closed = false;
     for root in 0..glue.len() {
         if colour[root] != 0 {
             continue;
@@ -1323,27 +1344,30 @@ fn assert_no_drop_glue_cycle(module: &str) {
             let Some(target) = index.get(callee.as_str()).copied() else {
                 continue;
             };
-            assert_ne!(
-                colour[target], 1,
-                "the compiler-derived drops {} and {callee} reach each other, \
-                 which is unbounded recursion on the destruction path",
-                glue[node].0
-            );
+            if colour[target] == 1 {
+                closed = true;
+                continue;
+            }
             if colour[target] == 0 {
                 colour[target] = 1;
                 path.push((target, 0));
             }
         }
     }
+    assert!(
+        closed,
+        "a recursive nominal's release graph closes, so its release actions \
+         must reach one another: {module}"
+    );
 }
 
-/// A program whose drops cannot reach themselves emits no traversal at all.
+/// A program whose release graph is a chain has no recursive release.
 ///
-/// The traversal is not a new default; it is what the emitter does at exactly
-/// the edges whose depth the *value* chooses. Every other drop keeps the
-/// straight-line expansion it has always had, whose depth the type bounds. A
-/// case that only checked the recursive side would pass against an emitter that
-/// put every program on a worklist and charged them all for it.
+/// Recursion is not a new default; it is what the derived release does at
+/// exactly the edges the type's own release graph closes on. Every other
+/// release keeps the straight-line expansion it has always had, whose depth
+/// the type bounds. A case that only checked the recursive side would pass
+/// against an emitter that made every release enter itself.
 #[test]
 fn an_ownership_chain_keeps_its_straight_line_drop() {
     let module = compile(SHALLOW_OWNERSHIP);
@@ -1351,54 +1375,33 @@ fn an_ownership_chain_keeps_its_straight_line_drop() {
         module.contains("@wf.drop."),
         "this program owns heap storage and must derive drops: {module}"
     );
-    assert!(
-        !module.contains("@wf.drop.push"),
-        "a drop whose depth the type bounds must not pay for a worklist: \
-         {module}"
-    );
+    for (name, calls) in drop_glue_calls(&module) {
+        assert!(
+            !calls.contains(&name),
+            "a release whose depth the type bounds must not enter itself: \
+             {module}"
+        );
+    }
 }
 
-/// Every address formed by the recursive-drop worklist is dominated by a
-/// finite selected-target capacity check. The three `nuw` operations are
-/// justified by that check: doubling stays below the maximum entry count,
-/// byte scaling stays below the allocator/address ceiling, and incrementing a
-/// non-full count stays within the allocated capacity.
-#[test]
-fn recursive_drop_worklist_growth_proves_each_address_domain() {
-    let module = compile(&boxed_spine_source(1));
-    let push = definition_body(&module, "define private void @wf.drop.push");
-    assert!(
-        push.contains("%count.in.range = icmp ule i64 %count, %capacity")
-            && push.contains("%maximum.entries = udiv i64 ")
-            && push.contains("%growth.fits = select i1 %fresh")
-            && push.contains("br i1 %growth.fits, label %grow, label %exhausted"),
-        "worklist growth must establish count and selected-target capacity before addressing: \
-         {push}"
-    );
-    assert!(
-        push.contains("%doubled = shl nuw i64 %capacity, 1")
-            && push.contains("%bytes = mul nuw i64 %wanted, %entry.bytes")
-            && push.contains("%after = add nuw i64 %count, 1"),
-        "only arithmetic dominated by the finite range checks may carry no-wrap facts: {push}"
-    );
-    assert!(
-        !push.contains("%doubled = shl i64")
-            && !push.contains("%bytes = mul i64")
-            && !push.contains("%after = add i64"),
-        "the worklist must not retain unchecked growth arithmetic: {push}"
-    );
-}
-
-/// The traversal reclaims a deep value correctly, end to end.
+/// The recursive release reclaims a deep value correctly, end to end.
 ///
-/// The depth here is not the claim — the case above is what says the traversal
-/// cannot run out of stack at any depth — this one says the traversal is right:
-/// it frees the whole structure, in one pass, and the program ends normally
-/// with an empty record channel.
+/// The depth is not the claim: since 2026-09-04 the release of a cyclic
+/// release graph descends the stack, so how deep a value it can reclaim is the
+/// ordinary stack-availability question [SCOPE-3] defers for every program
+/// that is not `resource_closed` — and a heap-allowed program is exactly the
+/// only kind that can have a cyclic release graph. What this case says is that
+/// the walk is *right*: it frees the whole structure, in one pass, and the
+/// program ends normally with an empty record channel.
+///
+/// The depth was a million while the walk ran on an explicit heap worklist,
+/// where it was also the claim that no depth exhausted the stack. That claim
+/// went with the worklist, and the depth here is one the recursion reaches on
+/// an ordinary thread stack.
 #[test]
 fn a_deep_boxed_spine_is_reclaimed_without_a_record() {
     let directory = test_directory();
-    let executable = build_executable(&compile(&boxed_spine_source(1_000_000)), &directory);
+    let executable = build_executable(&compile(&boxed_spine_source(10_000)), &directory);
     let output = Command::new(&executable)
         .output()
         .expect("run the deep spine");
@@ -1554,40 +1557,39 @@ fn definition_body<'a>(module: &'a str, signature: &str) -> &'a str {
     &body[..end]
 }
 
-/// [STOR-3] fixes a buffer drop as each element's drop in ascending index
-/// order followed by that same one heap free, and the traversal has to produce
-/// that order out of a last-in first-out worklist.
+/// [STOR-3] fixes a buffer's release as each element's release in ascending
+/// index order followed by that one heap free, and the release of a buffer
+/// inside a cycle is the same action as the release of any other buffer.
 ///
-/// It does it by pushing in the reverse: the block's own entry first, then the
-/// elements from the last index down. Walking the indices upward instead, or
-/// pushing the block last, both emit a traversal that looks right and reclaims
-/// in the wrong order — and pushing the block last would additionally have the
-/// elements read out of storage the traversal had already released. Nothing
-/// downstream can see the difference, because [STOR-3] gives memory
-/// reclamation the empty effect row, so the order is pinned where it is
-/// chosen.
+/// The order is pinned where it is chosen because nothing downstream can see
+/// it: [STOR-3] gives memory reclamation the empty effect row. Walking the
+/// indices downward, or freeing the block first, both emit a release that
+/// looks right and reclaims in the wrong order — and freeing first would read
+/// every element out of storage the release had already given back.
+///
+/// The case read a worklist step here until 2026-09-04. The order it pins is
+/// the same one; what changed is that the elements are released by an ordinary
+/// ascending loop rather than pushed in reverse onto a last-in first-out list.
 #[test]
 fn a_buffer_in_a_cleanup_cycle_is_walked_in_the_order_the_rule_fixes() {
     let module = compile(&buffer_chain_source(4));
-    // The one definition that takes a buffer descriptor and the worklist: the
-    // per-node drop of the buffer inside the cycle.
-    let buffer_step = definition_body(&module, "({ ptr, i64 } %value, ptr %work)");
-    let block = buffer_step
-        .find(", ptr %pointer)")
-        .expect("the buffer step pushes the block's own entry");
-    let element = buffer_step
-        .find(", ptr %slot)")
-        .expect("the buffer step pushes one entry per element");
+    // The buffer's own release action: the element loop, then the block free.
+    let buffer_drop = definition_body(&module, "define private void @wf.drop.buffer.t");
     assert!(
-        block < element,
-        "the block's entry must be pushed before any element's, so the \
-         last-in first-out traversal takes it last: {buffer_step}"
+        buffer_drop.contains("%index = phi i64 [ 0, %entry ], [ %next, %body ]")
+            && buffer_drop.contains("%next = add i64 %index, 1"),
+        "the elements must be released from index zero upward: {buffer_drop}"
     );
+    let element = buffer_drop
+        .find("%element = load")
+        .expect("the buffer release reads each live element");
+    let block = buffer_drop
+        .find("call void @free(ptr %pointer)")
+        .expect("the buffer release frees its own block");
     assert!(
-        buffer_step.contains("%index = phi i64 [ %length, %entry ], [ %next, %body ]")
-            && buffer_step.contains("%next = sub i64 %index, 1"),
-        "the element entries must be pushed from the last index down, so the \
-         traversal takes index 0 first: {buffer_step}"
+        element < block,
+        "every element must be released before the block that holds it: \
+         {buffer_drop}"
     );
 }
 
