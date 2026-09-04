@@ -39,10 +39,13 @@ proposed**.
 >
 > **D4 (owner-decided 2026-09-03). Every loop body is implicitly a region block.** A
 > borrow of an outer binding inside a `loop_stmt` or `for_stmt` body is written **bare** —
-> `&n`, `&uniq n` — and lives in that body's implicit per-iteration region; writing an
-> explicit `region { ... }` as the loop body's only enclosing block is a `[FORM]`
-> rejection, because one semantics has one spelling. `[OWN-11]`'s per-iteration guarantee
-> is unchanged, because the implicit block ends every iteration.
+> `&n`, `&uniq n` — and lives in that body's implicit per-iteration region; a
+> `region_stmt` that is the loop body's only statement, named or not, is a `[FORM-8]`
+> rejection unless a type argument inside it must write its name, because one semantics
+> has one spelling; a block beside other statements keeps its own `[OWN-6]` statement
+> scope and stays legal. `[OWN-11]`'s per-iteration guarantee is unchanged, because the
+> implicit block ends every iteration. This is the v0.43 candidate's first amendment
+> (branch `batch/0120`), drafted and tested but not yet merged.
 
 **D3 is the largest change in this draft and it removes rather than adds.** Round 7's
 writer lens counted what R2 costs when linearity is scope-blind: `[LIV-1]` is a
@@ -682,10 +685,13 @@ spelling.
 implicit per-iteration block has no binder, so a loop body that must **name** its region —
 because a reserving occurrence writes that name into `arena_frame::<bytes, align, 'a>()`
 [PROV-5], and 3.K.7's per-iteration scratch idiom is exactly that shape — writes
-`region 'a { ... }` and is outside the rejection: a named block carries a semantics the
-implicit one does not have, and [FORM-1]'s one-spelling rule is about one *semantics*. An
-**unnamed** `region { }` as a loop body's only enclosing block has exactly the implicit
-block's semantics and is therefore the second spelling the rejection removes.
+`region 'a { ... }` whose name a reserving type argument inside it must write, and is
+outside the rejection for that reason: the implicit region has no name to put there, so
+that block is the only spelling of its region. Every other `region_stmt` that is a loop
+body's only statement, named or not, has exactly the implicit block's extent and is the
+second spelling the rejection removes; a block beside other statements is narrower than
+the body, carries [OWN-6]'s statement scope, and stays legal. This is the criterion the
+v0.43 candidate (`batch/0120`) implements, decided by reading the loop body alone.
 
 **Why this design needs the first amendment at all.** [FORM-1] 35 admits exactly one
 spelling per semantic construct. Putting a store's identity in the type means a region in
@@ -5335,16 +5341,22 @@ tag-only enum is copy, so the modifier would mark a value the language duplicate
 **`q12` against `q13`** is [MSR-3]'s rebind placement. **`q14`** is [MSR-2]'s
 element-write sentence across a loop.
 
-**`q15` against `q16` is a negative result and is recorded as one.** Round 7's writer
-lens reported six identical header invariants over a three-way demux accepted as a flat
-`match` and rejected at [INV-1] on the backedge as nested `if/else` — an acceptance
-depending on the shape of a control join, which L16 says the language does not have. I
-could not reproduce it: my three-counter program is rejected identically in both shapes,
-same invariant, same obligation, same required relation. **That is a compiler question,
-not a design question**, and it is routed to `batch/0119` as an investigation of
-[ENT-6]'s binary join; what both reports agree on is that the diagnostic names the
-invariant when the cause is the join, a diagnostic hole either way. Nothing in 3.K rests
-on the answer; `docs/patterns.md` P19 is where it lands if confirmed.
+**The join-shape asymmetry is reproduced, root-caused, and repaired outside this
+design.** Round 7's writer lens reported six identical header invariants over a three-way
+demux accepted as a flat `match` and rejected at [INV-1] on the backedge as nested
+`if/else`. The orchestrator re-ran the two programs on the v0.42 gate (`c6` accepted,
+`c7` rejected with `bb <= lb` at the backedge), and a separate investigation on `main`
+found the cause in [ENT-6]'s control-flow join as v0.42 states it: a delta atom minted by
+an earlier join counts as an ordinary nonconstant term at the next join, so the nested
+shape's outer join compares `{h}` against `{h, d1}`, gives the binding a fresh atom, and
+severs the header premise; the flat `match` joins once and keeps it. Controls pin it: the
+same nesting with both inner arms incrementing (no delta) is accepted, and the
+`invariant_stmt` escape in the arms does not help. The repair is a specification
+amendment, not a design item: the v0.43 candidate (`batch/0120`) folds every earlier
+join's delta atom into its interval before comparing images and takes the hull, so nested
+joins reach exactly the flat join's image. This draft's own `q15`/`q16` pair failed on
+`a_hi` for a different reason and is not evidence either way. Nothing in 3.K rests on the
+answer; L16's one-goal-disposition claim is what the amendment restores.
 
 Inherited verdicts this draft rests on. `d1` is D1 accepted. `e2`/`e3` — a callee whose
 `ensures` names a borrowed run's measure across a `replace`, rejected then accepted with
@@ -5738,9 +5750,9 @@ reports are superseded.
 |                                                                | every leaving edge. All 108 go              |
 | F4-2 BLOCKING S28 is aimed at the wrong edge class            | **[S28] REJECTED**; D3 removes the problem  |
 |                                                                | and Q10 keeps the multi-result question     |
-| F4-3 BLOCKING acceptance depends on the shape of a control    | **a compiler investigation, batch/0119**;   |
-|   join                                                         | q15 and q16 could not reproduce the         |
-|                                                                | asymmetry and nothing in 3.K rests on it    |
+| F4-3 BLOCKING acceptance depends on the shape of a control    | reproduced (c6/c7) and root-caused in      |
+|   join                                                         | [ENT-6]'s join; repaired by the v0.43       |
+|                                                                | candidate's associative join (batch/0120)   |
 | F4-4..F4-10 FRICTION [CALL-7]'s cost; the exclusive loan;     | [CALL-7]'s three exclusions and Q14; Q19;   |
 |   [MSR-3]'s quantifier; D2's read-out; no conditional grow;   | 3.L's nine clauses; [MSR-3]'s closure       |
 |   the copy/affine wall                                         | sentence; [LIV-2]'s read-out; Q15; [S32]    |
@@ -5806,8 +5818,9 @@ Every batch below assumes it.
 **B0b. The loop body is an implicit region block.** D4. A small, mechanical amendment
 to `[OWN-11]`, `[FORM-8]` and `[GRAM-4]`: a `borrow_expr` inside a `loop_stmt` or
 `for_stmt` body denotes that body's implicit per-iteration region and is written bare,
-and an explicit `region { }` as the loop body's only enclosing block is a `[FORM]`
-rejection. **It has not landed.** Tests: probe `q2`'s program accepted; probe `q3`'s
+and a `region_stmt` that is the loop body's only statement is a `[FORM-8]` rejection
+unless a type argument inside it must write its name. **Drafted and tested as the v0.43
+candidate's first amendment on `batch/0120`, not yet merged.** Tests: probe `q2`'s program accepted; probe `q3`'s
 program rejected at `[FORM]` with the mechanical fix `drop the block`; a loop-body
 borrow whose loan is still live at the backedge refused by [OWN-11]'s unchanged
 per-iteration judgment; and every loop-body borrow in `tests/programs` migrated. §4 and
