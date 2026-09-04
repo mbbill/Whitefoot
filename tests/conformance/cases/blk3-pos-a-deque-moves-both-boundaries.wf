@@ -1,0 +1,33 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-3: seq_place_front moves the front boundary backwards and seq_take moves the back one, so all four boundary operations are exercised over one run.";
+  let empty = seq_fixed::<u8, 4>();
+  let one = seq_place_front(vector: move empty, value: 1_u8);
+  let two = seq_place_front(vector: move one, value: 2_u8);
+  let three = seq_place_front(vector: move two, value: 3_u8);
+  let front = three[0_u64];
+  if front == 3_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let (rest0, last) = seq_take(vector: move three);
+  if last == 1_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let (rest1, next) = seq_take(vector: move rest0);
+  if next == 2_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let (rest2, only) = seq_take_front(vector: move rest1);
+  if only == 3_u8 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  let left = len(rest2);
+  if left == 0_u64 {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}

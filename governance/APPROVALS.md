@@ -3038,11 +3038,12 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `seq_arena_proved` and `seq_heap` resolve, check and judge, and a call to one
   stops as an explicit unsupported capability, so no `Vector<'s, T>` and no
   `Arena<'s, bytes, align>` value exists at run time.
-- CONFORMANCE BOUNDARY (B7a2): this batch ADDS five conformance cases and their
-  five manifest rows, MODIFIES one existing case's source and one existing
+- CONFORMANCE BOUNDARY (B7a2): this batch ADDS six conformance cases and their
+  six manifest rows, MODIFIES one existing case's source and one existing
   case's status, deletes and renames none, and changes no adapter, runner, or
   collection wiring. The added ids are
-  `blk3-pos-a-queue-preserves-its-order` and
+  `blk3-pos-a-queue-preserves-its-order`,
+  `blk3-pos-a-deque-moves-both-boundaries` and
   `blk1-pos-a-wrapped-window-subscripts-against-len` (each run, exit 0),
   `blk0-neg-a-row-requirement-is-not-discharged` and
   `blk0-neg-a-written-argument-the-row-does-not-declare` (each reject, BLK-0),
@@ -3065,8 +3066,8 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   refused, now because its parameter arrives with no known length and the
   relation it declares has no premise at the selected return. Before this batch
   the corpus holds 569 cases with the native adapter reporting Pass=565,
-  Xfail=1, Skip=3; after it the corpus holds 574 with the adapter reporting
-  Pass=572, Xfail=1, Skip=1. The one xfail
+  Xfail=1, Skip=3; after it the corpus holds 575 with the adapter reporting
+  Pass=573, Xfail=1, Skip=1. The one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) is unchanged in id,
   expectation and status, the two skips that disappeared are the two rows named
   above, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0: no
