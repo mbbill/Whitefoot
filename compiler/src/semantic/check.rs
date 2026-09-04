@@ -9,6 +9,7 @@ mod floats;
 mod generics;
 mod nominal_instances;
 mod nominals;
+mod publication;
 mod requires;
 mod result_state_origin;
 mod support;
@@ -1563,6 +1564,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 &mut counters,
             )?);
         }
+        self.check_published_relation_consistency(
+            signature,
+            &postcondition_selectors,
+            &postcondition_relations,
+        )?;
 
         bindings = parameter_bindings;
         let statements = self.tree.children_with(signature.node, Production::Stmt)?;

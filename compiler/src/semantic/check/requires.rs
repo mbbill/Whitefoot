@@ -229,7 +229,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for clause in self.tree.children_with(block, Production::RequiresClause)? {
             let expression = self
                 .tree
-                .first_child_with(clause, Production::Expr)?
+                .first_child_with(clause, Production::ClauseExpr)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.validate_clause_condition(ClauseKind::Requires, clause, expression)?;
             let condition = self
@@ -415,7 +415,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .into_iter()
                 .zip(checked_arguments)
                 .map(|(atom, argument)| {
-                    self.build_clause_atom(atom, Some(argument), bindings, expanded_bindings)
+                    self.build_clause_operand(atom, Some(argument), bindings, expanded_bindings)
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             return Ok(ExpandedClauseExpression::Operation {
@@ -476,13 +476,59 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if atoms.len() != 1 {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
-        self.build_clause_atom(atoms[0], Some(checked), bindings, expanded_bindings)
+        self.build_clause_operand(atoms[0], Some(checked), bindings, expanded_bindings)
+    }
+
+    /// One written clause operand. An `atom` is a leaf datum; every other
+    /// written form — today exactly a `call`, which is how [MSR-5] admits a
+    /// measure term as an operand — is expanded by the ordinary clause walk
+    /// against the row the typer already selected for it.
+    fn build_clause_operand(
+        &self,
+        node: NodeId,
+        checked: Option<&CheckedExpression>,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        expanded_bindings: &HashMap<BindingId, ExpandedClauseExpression>,
+    ) -> Result<ExpandedClauseExpression, CheckStop> {
+        if self.tree.production(node)? == Production::Atom {
+            return self.build_clause_atom(node, checked, bindings, expanded_bindings);
+        }
+        let checked = checked.ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+        self.build_clause_expression(node, checked, bindings, expanded_bindings)
     }
 
     pub(super) fn clause_operand_atoms(
         &self,
         expression: NodeId,
     ) -> Result<Vec<NodeId>, CheckStop> {
+        // [GRAM-5] a `clause_expr` carries its operands directly, and each
+        // one is an `atom`, a `call`, or a `construct`. A single-operand
+        // clause reads through to that operand, so a bare `len(P)` clause
+        // operand and a `len(P)` operand of a comparison are one path.
+        match self.tree.production(expression)? {
+            Production::ClauseExpr => {
+                return match self.tree.children(expression)? {
+                    [only] => self.clause_operand_atoms(*only),
+                    [left, _operator, right] => Ok(vec![*left, *right]),
+                    _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+                };
+            }
+            Production::Atom => return Ok(vec![expression]),
+            Production::Call => {
+                let Some(list) = self
+                    .tree
+                    .first_child_with(expression, Production::AtomList)?
+                else {
+                    return Ok(Vec::new());
+                };
+                return self
+                    .tree
+                    .children_with(list, Production::Atom)
+                    .map_err(Into::into);
+            }
+            Production::Construct => return Ok(Vec::new()),
+            _ => {}
+        }
         if let Some(tail) = self
             .tree
             .first_child_with(expression, Production::InfixTail)?

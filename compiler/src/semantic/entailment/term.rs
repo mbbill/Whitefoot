@@ -64,6 +64,28 @@ pub(crate) enum TermKind {
         commit_path: Vec<u32>,
         ty: IntegerType,
     },
+    /// One immutable compiler-owned call datum [ENT-3.S13, MSR-3]: the value
+    /// one `own` operand of a declared relation had at that call's
+    /// pre-transfer point, or one measure of it. The call's finalized
+    /// NodePath, the formal ordinal, the operand's ordered projections, and
+    /// whether the datum denotes the operand's value or its length are its
+    /// complete function-local identity. No place occurs in it, so no
+    /// [ENT-5] event kills it and a relation stated over it survives the
+    /// consume the same statement performs.
+    CallDatum {
+        call_path: Vec<u32>,
+        formal: u32,
+        projections: Vec<CallDatumProjection>,
+        measure: bool,
+        ty: IntegerType,
+    },
+}
+
+/// Ordered projection identity inside one call datum's operand place.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CallDatumProjection {
+    Deref,
+    Field(u32),
 }
 
 /// Dense identity of one interned term.

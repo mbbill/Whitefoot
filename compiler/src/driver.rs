@@ -2571,7 +2571,7 @@ command fn main() -> status: own ExitStatus pure {
         let contract = rejection(
             "contract.wf",
             br#"fn count(data: &buffer<u8>, start: own u64, end: own u64) -> lines: own u64 reads(data) contract {
-  requires end <= len(deref(data));
+  requires buffer_fits::<u8>(len(deref(data)));
 } {
   return 0_u64;
 }

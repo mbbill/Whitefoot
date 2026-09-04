@@ -632,17 +632,16 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invalid_exit() {
-    let source = br#"fn append(destination: &uniq buffer<u8>, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  define capacity = len(deref(destination));
-  define admitted = filled <= capacity;
-  requires admitted;
+    let source = br#"fn append(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+  requires capacity == len(deref(destination));
+  requires filled <= capacity;
   ensures result <= capacity;
 } {
-  let capacity = len(deref(destination));
-  let admitted = filled <= capacity;
+  let room = len(deref(destination));
+  let admitted = filled <= room;
   let length = len(text);
   if admitted {
-    for @append (at in filled..capacity) {
+    for @append (at in filled..room) {
       let taken = at -wrap filled;
       let done = taken >= length;
       if done {
@@ -651,7 +650,7 @@ fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invali
       let byte = text[taken];
       set deref(destination)[at] = byte;
     }
-    return capacity;
+    return room;
   } else {
     return filled;
   }
@@ -928,8 +927,20 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [MSR-3] an `own` operand of a published relation denotes that call's call
+/// datum — the operand's value at the pre-transfer point — so the relation
+/// means what it reads as even when the same statement consumes the holder
+/// the actual was reached through.
+///
+/// Until v0.44 this program was rejected: the relation's operand was the
+/// place `deref(owner)`, `owner: move owner` consumed its holder in the same
+/// statement, and `M(c,q)` failed. That refusal was conservative and not
+/// sound-critical — the value `observe` received is 1 whatever later happens
+/// to the box — and the datum is exactly the term that says so. The test is
+/// kept as the positive it became, so the change is pinned rather than
+/// silently absorbed.
 #[test]
-fn a_box_deref_actual_cannot_survive_a_cross_formal_owner_move() {
+fn a_box_deref_actual_survives_a_cross_formal_owner_move_as_a_call_datum() {
     let source =
         br#"fn observe(value: own i32, owner: own box<i32>) -> result: own i32 pure contract {
   ensures result == value;
@@ -949,6 +960,10 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    // `caller`'s own `ensures result == 1_i32` stays unproved for an
+    // unrelated reason — `box_new` establishes no value equality on its
+    // referent — so the program is still rejected. What changed is the route
+    // below: the callee's relation now reaches the caller at all.
     assert_fn9_unproved(source);
     with_semantics_dark(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
@@ -966,7 +981,8 @@ command fn main() -> status: own ExitStatus pure {
                 .derivations
                 .nodes
                 .iter()
-                .all(|node| { !matches!(node, DerivationNode::PostconditionDirectResult { .. }) })
+                .any(|node| { matches!(node, DerivationNode::PostconditionDirectResult { .. }) }),
+            "the call datum publishes the relation the consumed holder used to delete"
         );
     });
 }

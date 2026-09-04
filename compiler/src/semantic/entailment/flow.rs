@@ -51,8 +51,8 @@ use super::state::{
     materialize_closure_before_kill,
 };
 use super::term::{
-    CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm,
-    TermId, TermKind, TermTable, ZERO, integer_value, type_range,
+    CallDatumProjection, CountedCaptureSide, LengthBound, PlaceProjection, PlaceRoot, PlaceTerm,
+    ProjectedPlaceTerm, TermId, TermKind, TermTable, ZERO, integer_value, type_range,
 };
 use super::{
     BoundsRequest, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedDerivationSet,
@@ -1746,7 +1746,9 @@ impl Analyzer<'_, '_> {
                 holders.extend(projected_holders);
             }
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => {}
-            TermKind::CountedCapture { .. } | TermKind::CommitValue { .. } => {}
+            TermKind::CountedCapture { .. }
+            | TermKind::CommitValue { .. }
+            | TermKind::CallDatum { .. } => {}
         }
         holders
     }
@@ -1756,6 +1758,12 @@ impl Analyzer<'_, '_> {
         substitution: &PostconditionCallSubstitution,
         event: &KillEvent,
     ) -> bool {
+        // [MSR-3] a call datum contains no place and denotes the operand's
+        // value at the pre-transfer point, so no event at or after the call
+        // can invalidate a relation stated over it.
+        if substitution.datum {
+            return false;
+        }
         let holder_consumed = match event {
             KillEvent::Consume { binding, .. }
             | KillEvent::EntryImageHolderConsume { binding, .. } => {
@@ -1933,15 +1941,165 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// [MSR-3] the identity of one call datum: the call, the formal ordinal,
+    /// the operand's ordered projections, and whether the datum denotes the
+    /// operand's value or its length.
+    fn call_datum_kind(
+        call: &crate::NodePath,
+        formal: u32,
+        projections: &[GoalProjection],
+        measure: bool,
+        ty: super::super::model::IntegerType,
+    ) -> TermKind {
+        TermKind::CallDatum {
+            call_path: call.components().to_vec(),
+            formal,
+            projections: projections
+                .iter()
+                .map(|projection| match projection {
+                    GoalProjection::Deref => CallDatumProjection::Deref,
+                    GoalProjection::Field(field) => CallDatumProjection::Field(*field),
+                })
+                .collect(),
+            measure,
+            ty,
+        }
+    }
+
+    /// [ENT-3.S13, MSR-3] mints, at one call's pre-transfer point, the call
+    /// datum of every `own` operand any declared relation of the resolved
+    /// callee names, and establishes it equal to that operand's pre-transfer
+    /// term.
+    ///
+    /// The equality is stated here, before the call's own consumes and
+    /// kills, so [ENT-5]'s pre-kill closure carries the datum's consequences
+    /// across them. The datum itself contains no place, so nothing kills it:
+    /// that is exactly why a relation naming a consumed `own` operand's
+    /// measure means what it reads as at the caller, and why the consume the
+    /// same statement performs cannot delete it.
+    fn establish_call_datums(
+        &mut self,
+        function: super::super::model::FunctionId,
+        call: &crate::NodePath,
+        goal_arguments: &[GoalExpression],
+        state: &mut FactState,
+    ) {
+        let Some(callee) = self.context.callee(function) else {
+            return;
+        };
+        let parameter_modes = callee.parameter_modes.clone();
+        let mut operands: Vec<(u32, Vec<GoalProjection>, bool, CheckedType)> = Vec::new();
+        for available in self.available_postconditions(function) {
+            for datum in &available.relation.operands {
+                match datum {
+                    RelationDatum::Parameter {
+                        ordinal,
+                        projections,
+                        ty,
+                    } => operands.push((*ordinal, projections.clone(), false, *ty)),
+                    RelationDatum::Length(place) => {
+                        let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
+                        operands.push((ordinal, place.projections.clone(), true, place.ty));
+                    }
+                    RelationDatum::Result { .. }
+                    | RelationDatum::NamedConst { .. }
+                    | RelationDatum::Literal { .. } => {}
+                }
+            }
+        }
+        let event = self.proof_event(FlowEventKind::S13, Some(call));
+        for (ordinal, projections, measure, ty) in operands {
+            if parameter_modes.get(ordinal as usize) != Some(&CheckedMode::Own) {
+                continue;
+            }
+            let Some(datum_type) = (if measure {
+                Some(super::super::model::IntegerType::U64)
+            } else {
+                fragment_type(ty)
+            }) else {
+                continue;
+            };
+            let kind = Self::call_datum_kind(call, ordinal, &projections, measure, datum_type);
+            if self.terms.interned(&kind).is_some() {
+                continue;
+            }
+            let Some(actual) = goal_arguments.get(ordinal as usize) else {
+                continue;
+            };
+            let Some(term) =
+                self.call_parameter_term(actual, &projections, ty, measure, CheckedMode::Own)
+            else {
+                continue;
+            };
+            // A datum denotes the operand's value at this point. When the
+            // pre-transfer term is already immutable and has empty support,
+            // it denotes exactly that and nothing can retarget it, so the
+            // datum is that term: minting a second one would add an
+            // indirection to every derivation and hide the writer's own
+            // constant behind it in a diagnostic.
+            if self.immortal_term(term) {
+                continue;
+            }
+            let datum = self.terms.intern(kind);
+            state.establish(
+                &Relation::Equal {
+                    left: datum,
+                    right: term,
+                },
+                &mut self.derivations,
+                event,
+            );
+        }
+    }
+
+    /// Whether one term is already immutable with empty support, so that no
+    /// [ENT-5] event can change what it denotes [ENT-2, MSR-3].
+    fn immortal_term(&self, term: TermId) -> bool {
+        matches!(
+            self.terms.kind(term),
+            TermKind::Zero
+                | TermKind::Constant(_)
+                | TermKind::ConstParameter(_)
+                | TermKind::CountedCapture { .. }
+                | TermKind::CommitValue { .. }
+                | TermKind::CallDatum { .. }
+        )
+    }
+
+    /// The already-minted call datum of one `own` operand, when this call
+    /// established one [MSR-3].
+    fn interned_call_datum(
+        &self,
+        call: &crate::NodePath,
+        formal: u32,
+        projections: &[GoalProjection],
+        measure: bool,
+        ty: CheckedType,
+    ) -> Option<TermId> {
+        let datum_type = if measure {
+            super::super::model::IntegerType::U64
+        } else {
+            fragment_type(ty)?
+        };
+        self.terms.interned(&Self::call_datum_kind(
+            call,
+            formal,
+            projections,
+            measure,
+            datum_type,
+        ))
+    }
+
     fn instantiate_call_postcondition_relation(
         &mut self,
         function: super::super::model::FunctionId,
+        call_path: &crate::NodePath,
         template: &RelationTemplate,
         checked_arguments: &[CheckedExpression],
         arguments: &[GoalExpression],
         result: TermId,
     ) -> Option<InstantiatedPostcondition> {
-        let parameter_modes = &self.context.callee(function)?.parameter_modes;
+        let parameter_modes = self.context.callee(function)?.parameter_modes.clone();
         let mut substitutions = Vec::new();
         let mut operands = Vec::with_capacity(template.operands.len());
         for (operand, datum) in template.operands.iter().enumerate() {
@@ -1951,16 +2109,21 @@ impl Analyzer<'_, '_> {
                     ordinal,
                     projections,
                     ty,
-                } => (
-                    self.call_parameter_term(
-                        arguments.get(*ordinal as usize)?,
-                        projections,
-                        *ty,
-                        false,
-                        *parameter_modes.get(*ordinal as usize)?,
-                    )?,
-                    Some(*ordinal),
-                ),
+                } => match self.interned_call_datum(call_path, *ordinal, projections, false, *ty) {
+                    // [MSR-3] an `own` operand denotes this call's call
+                    // datum, which has empty support.
+                    Some(datum) => (datum, Some((*ordinal, true))),
+                    None => (
+                        self.call_parameter_term(
+                            arguments.get(*ordinal as usize)?,
+                            projections,
+                            *ty,
+                            false,
+                            *parameter_modes.get(*ordinal as usize)?,
+                        )?,
+                        Some((*ordinal, false)),
+                    ),
+                },
                 RelationDatum::NamedConst {
                     declaration,
                     projections,
@@ -1974,19 +2137,28 @@ impl Analyzer<'_, '_> {
                 }
                 RelationDatum::Length(place) => {
                     let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
-                    (
-                        self.call_parameter_term(
-                            arguments.get(ordinal as usize)?,
-                            &place.projections,
-                            place.ty,
-                            true,
-                            *parameter_modes.get(ordinal as usize)?,
-                        )?,
-                        Some(ordinal),
-                    )
+                    match self.interned_call_datum(
+                        call_path,
+                        ordinal,
+                        &place.projections,
+                        true,
+                        place.ty,
+                    ) {
+                        Some(datum) => (datum, Some((ordinal, true))),
+                        None => (
+                            self.call_parameter_term(
+                                arguments.get(ordinal as usize)?,
+                                &place.projections,
+                                place.ty,
+                                true,
+                                *parameter_modes.get(ordinal as usize)?,
+                            )?,
+                            Some((ordinal, false)),
+                        ),
+                    }
                 }
             };
-            if let Some(formal) = formal {
+            if let Some((formal, datum)) = formal {
                 substitutions.push(PostconditionCallSubstitution {
                     operand: u32::try_from(operand)
                         .expect("postcondition operands exceed the u32 identity space"),
@@ -1996,6 +2168,7 @@ impl Analyzer<'_, '_> {
                         checked_arguments.get(formal as usize)?,
                         arguments.get(formal as usize)?,
                     ),
+                    datum,
                 });
             }
             operands.push(term);
@@ -2129,6 +2302,7 @@ impl Analyzer<'_, '_> {
             }
             let Some(instantiated) = self.instantiate_call_postcondition_relation(
                 *function,
+                call,
                 &available.relation,
                 arguments,
                 goal_arguments,
@@ -2298,6 +2472,7 @@ impl Analyzer<'_, '_> {
                 }
                 let instantiated = self.instantiate_call_postcondition_relation(
                     *function,
+                    &prepared.call,
                     &available.relation,
                     arguments,
                     goal_arguments,
@@ -2437,6 +2612,7 @@ impl Analyzer<'_, '_> {
             }
             let Some(instantiated) = self.instantiate_call_postcondition_relation(
                 *function,
+                call,
                 &available.relation,
                 arguments,
                 goal_arguments,
@@ -2946,7 +3122,9 @@ impl Analyzer<'_, '_> {
             // capture dies with its construct-scope exit, handled separately
             // from source-place write/consume events; a commit value names one
             // evaluated value that no later event can change.
-            TermKind::CountedCapture { .. } | TermKind::CommitValue { .. } => false,
+            TermKind::CountedCapture { .. }
+            | TermKind::CommitValue { .. }
+            | TermKind::CallDatum { .. } => false,
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
@@ -3013,7 +3191,9 @@ impl Analyzer<'_, '_> {
     fn scope_kills_term(&self, term: TermId, exited: &HashSet<BindingId>) -> bool {
         match self.terms.kind(term) {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
-            TermKind::CountedCapture { .. } | TermKind::CommitValue { .. } => false,
+            TermKind::CountedCapture { .. }
+            | TermKind::CommitValue { .. }
+            | TermKind::CallDatum { .. } => false,
             TermKind::Place(place, _) | TermKind::Length(place) => match place.root {
                 PlaceRoot::Binding(binding) => exited.contains(&binding),
                 PlaceRoot::Constant(_) => false,
@@ -4951,6 +5131,14 @@ impl Analyzer<'_, '_> {
                         kills: Vec::new(),
                     })
                 })();
+                // [ENT-3.S13, MSR-3] the call datums are minted here, at the
+                // pre-transfer point [ENT-5] fixes, and not at the later
+                // establishment: instantiating at the call is what lets a
+                // relation over an `own` operand outlive the consume the same
+                // statement performs.
+                if prepared_call.is_some() {
+                    self.establish_call_datums(*function, call, goal_arguments, &mut states.facts);
+                }
                 ExpressionJudgment {
                     prepared_call,
                     reached,
@@ -6615,7 +6803,8 @@ impl Analyzer<'_, '_> {
             | TermKind::Length(_)
             | TermKind::ProjectedLength(_)
             | TermKind::CountedCapture { .. }
-            | TermKind::CommitValue { .. } => None,
+            | TermKind::CommitValue { .. }
+            | TermKind::CallDatum { .. } => None,
         }
     }
 
@@ -11232,6 +11421,13 @@ impl Analyzer<'_, '_> {
                 CountedCaptureSide::Upper => "<counted upper capture>".to_owned(),
             },
             TermKind::CommitValue { .. } => "<assigned value>".to_owned(),
+            TermKind::CallDatum { measure, .. } => {
+                if *measure {
+                    "<argument length at the call>".to_owned()
+                } else {
+                    "<argument value at the call>".to_owned()
+                }
+            }
         }
     }
 

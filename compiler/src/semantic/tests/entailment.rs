@@ -400,6 +400,7 @@ fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut
             | FlowEventKind::S9
             | FlowEventKind::S10
             | FlowEventKind::S11
+            | FlowEventKind::S13
     ));
 }
 
@@ -464,7 +465,7 @@ fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
         TermKind::Length(_) | TermKind::ProjectedLength(_) | TermKind::CountedCapture { .. } => {
             Some(type_range(IntegerType::U64))
         }
-        TermKind::CommitValue { ty, .. } => Some(type_range(*ty)),
+        TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
         TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
     }
 }
@@ -1283,7 +1284,23 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     right: *right,
                     bound: *bound,
                 });
-                assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
+                // An equality is its two non-strict bounds [ENT-2], so a
+                // materialization of either direction may name the equality
+                // node itself as its parent. Both readings are the one
+                // retained conclusion; nothing else is admitted here.
+                let parent_conclusion = retained_conclusion(&conclusions, *parent);
+                let equality_parent = DerivationConclusion::Relation(Relation::Equal {
+                    left: *left,
+                    right: *right,
+                }) == *parent_conclusion
+                    || DerivationConclusion::Relation(Relation::Equal {
+                        left: *right,
+                        right: *left,
+                    }) == *parent_conclusion;
+                assert!(
+                    *parent_conclusion == conclusion || (equality_parent && *bound == 0),
+                    "materialized bound {conclusion:?} has parent {parent_conclusion:?}"
+                );
                 conclusion
             }
             DerivationNode::MaterializedDistinct {
@@ -8098,13 +8115,27 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                     MaskActual::Literal(mask) => {
                         retained_term(summary, term) == &TermKind::Constant(i128::from(mask))
                     }
-                    MaskActual::Binding(binding) => matches!(
-                        retained_term(summary, term),
-                        TermKind::Place(place, IntegerType::U64)
-                            if place.root == PlaceRoot::Binding(binding)
-                                && !place.deref
-                                && place.fields.is_empty()
-                    ),
+                    // [MSR-3] an `own` operand read at a caller denotes that
+                    // call's call datum, which the same call established
+                    // equal to the actual's pre-transfer term. A binding
+                    // actual is mutable, so the relation names the datum and
+                    // the actual's own place term is retained beside it; a
+                    // literal actual is already immutable with empty support
+                    // and the datum is that constant itself.
+                    MaskActual::Binding(binding) => {
+                        matches!(
+                            retained_term(summary, term),
+                            TermKind::CallDatum { measure: false, .. }
+                        ) && summary.inventory.terms.iter().any(|kind| {
+                            matches!(
+                                kind,
+                                TermKind::Place(place, IntegerType::U64)
+                                    if place.root == PlaceRoot::Binding(binding)
+                                        && !place.deref
+                                        && place.fields.is_empty()
+                            )
+                        })
+                    }
                 }),
                 "read_bits row {ordinal} relation must retain its exact mask actual"
             );
@@ -8310,13 +8341,23 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     // carries one more term through its pre-kill closure, exactly as the
     // equivalent `let` of the same right-hand side already did.  The shape is
     // unchanged.
+    //
+    // They rose again at v0.44, to 36,760 and 71,153, when [ENT-3.S13] gave
+    // each `own` operand of a published relation its call datum: one equality
+    // per such operand at the call, and one more term through that call's
+    // pre-kill closure. The rise is linear in calls to functions that publish
+    // a relation over an `own` operand, and an operand whose pre-transfer term
+    // is already immutable mints nothing [MSR-3], which is why a literal
+    // actual costs nothing at all. The ceilings keep the same proportional
+    // margin they had, and a return to the former million-node shape still
+    // fails here on every machine.
     assert!(
-        proof_nodes <= 30_000,
-        "wfgrep retained {proof_nodes} proof nodes; expected at most 30,000"
+        proof_nodes <= 40_000,
+        "wfgrep retained {proof_nodes} proof nodes; expected at most 40,000"
     );
     assert!(
-        proof_edges <= 58_000,
-        "wfgrep retained {proof_edges} proof edges; expected at most 58,000"
+        proof_edges <= 75_000,
+        "wfgrep retained {proof_edges} proof edges; expected at most 75,000"
     );
     let shift = program
         .functions

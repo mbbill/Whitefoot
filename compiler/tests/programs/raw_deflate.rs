@@ -226,7 +226,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   region {{
     let text = slice_of(&empty_text);
     region {{
-      let result = append_slice(destination: &uniq empty_destination, filled: 4_u64, text: move text);
+      let result = append_slice(destination: &uniq empty_destination, capacity: 3_u64, filled: 4_u64, text: move text);
       if result == 4_u64 {{
       }} else {{
         return exit_status(code: 1_u8);
@@ -250,7 +250,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   region {{
     let text = slice_of(&nonempty_text);
     region {{
-      let result = append_slice(destination: &uniq nonempty_destination, filled: 4_u64, text: move text);
+      let result = append_slice(destination: &uniq nonempty_destination, capacity: 3_u64, filled: 4_u64, text: move text);
       if result == 4_u64 {{
       }} else {{
         return exit_status(code: 5_u8);

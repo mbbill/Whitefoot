@@ -14,18 +14,17 @@ const reason_output_full: array<u8, 63> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 
 
 const reason_write_failed: array<u8, 56> =[114_u8, 97_u8, 119_u8, 95_u8, 100_u8, 101_u8, 102_u8, 108_u8, 97_u8, 116_u8, 101_u8, 95_u8, 98_u8, 111_u8, 117_u8, 110_u8, 100_u8, 97_u8, 114_u8, 121_u8, 58_u8, 32_u8, 99_u8, 97_u8, 110_u8, 110_u8, 111_u8, 116_u8, 32_u8, 112_u8, 117_u8, 98_u8, 108_u8, 105_u8, 115_u8, 104_u8, 32_u8, 116_u8, 104_u8, 101_u8, 32_u8, 100_u8, 101_u8, 99_u8, 111_u8, 100_u8, 101_u8, 100_u8, 32_u8, 111_u8, 117_u8, 116_u8, 112_u8, 117_u8, 116_u8, 10_u8];
 
-fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  define capacity = len(deref(destination));
-  define admitted = filled <= capacity;
-  requires admitted;
+fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+  requires capacity == len(deref(destination));
+  requires filled <= capacity;
   ensures result <= capacity;
 } {
   doc "Appends as much of one static message as the destination still holds.";
-  let capacity = len(deref(destination));
-  let admitted = filled <= capacity;
+  let room = len(deref(destination));
+  let admitted = filled <= room;
   let length = len(text);
   if admitted {
-    for @append (at in filled..capacity) {
+    for @append (at in filled..room) {
       let taken = at -wrap filled;
       let done = taken >= length;
       if done {
@@ -34,7 +33,7 @@ fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<
       let byte = text[taken];
       set deref(destination)[at] = byte;
     }
-    return capacity;
+    return room;
   } else {
     return filled;
   }
@@ -125,11 +124,12 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
 fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -> result: own unit reads(err, report), writes(err, report) {
   doc "Publishes the static diagnostic that names one boundary outcome, selected by the status the outcome carries.";
   let length = 0_u64;
+  let report_capacity = len(deref(report));
   if reason == 1_u8 {
     region {
       let view = slice_of(&usage_text);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }
@@ -137,7 +137,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
     region {
       let view = slice_of(&reason_unreadable);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }
@@ -145,7 +145,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
     region {
       let view = slice_of(&reason_empty);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }
@@ -153,7 +153,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
     region {
       let view = slice_of(&reason_too_large);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }
@@ -161,7 +161,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
     region {
       let view = slice_of(&reason_truncated);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }
@@ -169,7 +169,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
     region {
       let view = slice_of(&reason_malformed);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }
@@ -177,7 +177,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
     region {
       let view = slice_of(&reason_output_full);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }
@@ -185,7 +185,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
     region {
       let view = slice_of(&reason_write_failed);
       region {
-        set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+        set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
       }
     }
   }

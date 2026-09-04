@@ -128,18 +128,17 @@ fn io_class(error: own IoError) -> result: own u8 pure {
   }
 }
 
-fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
-  define capacity = len(deref(destination));
-  define admitted = filled <= capacity;
-  requires admitted;
+fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+  requires capacity == len(deref(destination));
+  requires filled <= capacity;
   ensures result <= capacity;
 } {
-  doc "Appends as much of one static message as the destination still holds.";
-  let capacity = len(deref(destination));
-  let admitted = filled <= capacity;
+  doc "Appends as much of one static message as the destination still holds. The destination's capacity is a written operand rather than a measure of a &uniq state parameter, so the published bound is a fact about a value this caller supplied [MSR-3].";
+  let room = len(deref(destination));
+  let admitted = filled <= room;
   let length = len(text);
   if admitted {
-    for @append (at in filled..capacity) {
+    for @append (at in filled..room) {
       let taken = at -wrap filled;
       let done = taken >= length;
       if done {
@@ -148,7 +147,7 @@ fn append_slice(destination: &uniq buffer<u8>, filled: own u64, text: own slice<
       let byte = text[taken];
       set deref(destination)[at] = byte;
     }
-    return capacity;
+    return room;
   } else {
     return filled;
   }
@@ -308,14 +307,14 @@ fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> re
 fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads(err, report, path), writes(err, report) {
   doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
   let length = 0_u64;
+  let report_capacity = len(deref(report));
   region {
     let view = slice_of(&error_prefix);
     region {
-      set length = append_slice(destination: &uniq deref(report), filled: length, text: move view);
+      set length = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: length, text: move view);
     }
   }
   let prior_length = length;
-  let report_capacity = len(deref(report));
   let path_room = len(deref(path));
   let copied_count = 0_u64;
   loop @name {
@@ -348,7 +347,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
   region {
     let view = slice_of(&error_separator);
     region {
-      set tail = append_slice(destination: &uniq deref(report), filled: tail, text: move view);
+      set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: move view);
     }
   }
   let named = 0_u8;
@@ -357,7 +356,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_missing);
       region {
-        set tail = append_slice(destination: &uniq deref(report), filled: tail, text: move view);
+        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: move view);
       }
     }
   }
@@ -366,7 +365,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_denied);
       region {
-        set tail = append_slice(destination: &uniq deref(report), filled: tail, text: move view);
+        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: move view);
       }
     }
   }
@@ -375,7 +374,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_directory);
       region {
-        set tail = append_slice(destination: &uniq deref(report), filled: tail, text: move view);
+        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: move view);
       }
     }
   }
@@ -384,7 +383,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_invalid_path);
       region {
-        set tail = append_slice(destination: &uniq deref(report), filled: tail, text: move view);
+        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: move view);
       }
     }
   }
@@ -393,7 +392,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_long_line);
       region {
-        set tail = append_slice(destination: &uniq deref(report), filled: tail, text: move view);
+        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: move view);
       }
     }
   }
@@ -401,7 +400,7 @@ fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>
     region {
       let view = slice_of(&reason_unreadable);
       region {
-        set tail = append_slice(destination: &uniq deref(report), filled: tail, text: move view);
+        set tail = append_slice(destination: &uniq deref(report), capacity: report_capacity, filled: tail, text: move view);
       }
     }
   }
@@ -1186,6 +1185,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let root_name = buffer_new(256_u64, 0_u8);
   let root_path = buffer_new(1024_u64, 0_u8);
   let report = buffer_new(1280_u64, 0_u8);
+  let report_room = len(report);
   let arguments = 0_u64;
   region {
     set arguments = args_count(args: &args);
@@ -1242,19 +1242,19 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     if startup == 1_u8 {
       region {
         let view = slice_of(&usage_text);
-        set length = append_slice(destination: &uniq report, filled: length, text: move view);
+        set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: move view);
       }
     }
     if startup == 2_u8 {
       region {
         let view = slice_of(&reason_pattern_too_long);
-        set length = append_slice(destination: &uniq report, filled: length, text: move view);
+        set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: move view);
       }
     }
     if startup == 3_u8 {
       region {
         let view = slice_of(&reason_root_too_long);
-        set length = append_slice(destination: &uniq report, filled: length, text: move view);
+        set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: move view);
       }
     }
     region {
@@ -1274,7 +1274,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     let length = 0_u64;
     region {
       let view = slice_of(&reason_root_too_long);
-      set length = append_slice(destination: &uniq report, filled: length, text: move view);
+      set length = append_slice(destination: &uniq report, capacity: report_room, filled: length, text: move view);
     }
     region {
       match publish_all(output: &uniq err, source: &report, length: length) {

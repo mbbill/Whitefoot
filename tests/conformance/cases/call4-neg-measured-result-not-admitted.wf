@@ -1,0 +1,13 @@
+fn hold(taken: own buffer<u8>) -> kept: own buffer<u8> reads(taken) contract {
+  ensures len(kept) >= 1_u64;
+} {
+  doc "A measure of a result is not an admitted operand: a result datum is a fragment integer and the measure table gives one no row.";
+  return move taken;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "CALL-4: a measured result and a measure over a result place are deferred; the clause is refused by the ordinary FN-9 admission rather than by the grammar.";
+  let run = buffer_new(4_u64, 0_u8);
+  let kept = hold(taken: move run);
+  return exit_status(code: 0_u8);
+}

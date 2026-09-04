@@ -20,6 +20,7 @@ use super::super::postcondition::{
     PostconditionReturnPlaceRoot, RelationDatum, RelationTemplate, SelectedPostconditionReturn,
 };
 use super::generics::GenericArgument;
+use super::publication;
 use super::requires::{ClauseKind, ExpandedClauseDatum, ExpandedClauseExpression};
 use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
 
@@ -496,7 +497,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let expression = self
                 .tree
-                .first_child_with(clause, Production::Expr)?
+                .first_child_with(clause, Production::ClauseExpr)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.validate_clause_condition(ClauseKind::Postcondition(record), clause, expression)?;
             let condition = self.check_expression(function, expression, bindings, 0)?;
@@ -514,8 +515,111 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bindings,
                 &expanded_bindings,
             )?;
-            self.postcondition_relation(expression, expanded)
+            let relation = self.postcondition_relation(expression, expanded)?;
+            self.reject_state_parameter_measure(function, expression, &relation)?;
+            Ok(relation)
         })
+    }
+
+    /// [MSR-3] one denotation per position, keyed on the parameter's mode.
+    ///
+    /// A `&uniq` parameter is the one position from which a callee could
+    /// leave a caller holding a measure of a value the callee replaced, so a
+    /// source-declared `ensures` may not name one: the relation would be a
+    /// claim about a caller's object at a point the callee cannot name. The
+    /// same operand in a `requires` denotes the call datum and stays
+    /// admissible, which is why this judgment is stated over the `ensures`
+    /// clause alone.
+    fn reject_state_parameter_measure(
+        &self,
+        function: &FunctionSignature,
+        expression: NodeId,
+        relation: &RelationTemplate,
+    ) -> Result<(), CheckStop> {
+        for operand in &relation.operands {
+            let RelationDatum::Length(place) = operand else {
+                continue;
+            };
+            let PostconditionPlaceRoot::Parameter { ordinal } = place.root;
+            let Some(parameter) = function.parameters.get(ordinal as usize) else {
+                continue;
+            };
+            if matches!(parameter.mode, CheckedMode::Unique(_)) {
+                return self.issue_node(
+                    SemanticRule::Msr3,
+                    expression,
+                    SemanticIssueKind::InadmissibleStateParameterMeasure {
+                        parameter: parameter.name.clone(),
+                        mechanical_fix: "take the value by value and relate the result, or state the fact as a requires",
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// [CALL-6] a declaration whose published relations instantiate to a
+    /// contradiction is refused at the declaration.
+    ///
+    /// The set is partitioned by route first, because a routed clause is
+    /// established only on its own arm [CALL-6] and two clauses on two arms
+    /// are never in one caller state together. Every unrouted clause is in
+    /// every route's set, since an unrouted clause selects every explicit
+    /// return.
+    pub(super) fn check_published_relation_consistency(
+        &self,
+        function: &FunctionSignature,
+        selectors: &[CheckedPostconditionSelector],
+        relations: &[RelationTemplate],
+    ) -> Result<(), CheckStop> {
+        let mut routes: Vec<Option<PreludeDeclarationId>> = vec![None];
+        for selector in selectors {
+            if let Some(variant) = selector.variant
+                && !routes.contains(&Some(variant))
+            {
+                routes.push(Some(variant));
+            }
+        }
+        for route in routes {
+            let published = selectors
+                .iter()
+                .zip(relations)
+                .filter(|(selector, _)| selector.variant.is_none() || selector.variant == route)
+                .map(|(_, relation)| relation)
+                .collect::<Vec<_>>();
+            if published.len() < 2 || !publication::relations_are_contradictory(&published) {
+                continue;
+            }
+            let rendered = selectors
+                .iter()
+                .zip(relations)
+                .filter(|(selector, _)| selector.variant.is_none() || selector.variant == route)
+                .map(|(selector, _)| self.postcondition_clause_text(selector))
+                .collect::<Result<Vec<_>, _>>()?;
+            return self.issue_node(
+                SemanticRule::Call6,
+                function.node,
+                SemanticIssueKind::ContradictoryPublishedRelations {
+                    relations: rendered,
+                    mechanical_fix: "state one consistent relation set: a contract whose clauses cannot hold together publishes every fact at every caller",
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// The written text of one `ensures_clause`, for the [CALL-6]
+    /// diagnostic. The clause is quoted as the writer wrote it, because the
+    /// judgment is over the written set and the fix is to rewrite it.
+    fn postcondition_clause_text(
+        &self,
+        selector: &CheckedPostconditionSelector,
+    ) -> Result<String, CheckStop> {
+        let clause = self
+            .tree
+            .node_with_path(&selector.block)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        Ok(self.tree.source_spelling(clause)?.trim().to_owned())
     }
 
     fn postcondition_relation(
