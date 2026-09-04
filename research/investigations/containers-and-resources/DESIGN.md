@@ -2405,6 +2405,27 @@ L11, L16. *History:* r6 F1-9, F4-12; r5 F4-2, F3-3; B1 (three routes deferred).
 > rejection, which is the state the widening leaves it in. **[S16]'s ordered result list
 > did not land either** and goes to §7's B1b with the destinations that read it.
 
+> **Correction, decided 2026-09-04, from B1b's implementation.** [S16]'s ordered result
+> list, the destructuring `let` binder list, the `set` target list, the multi-expression
+> `return`, the result ordinal, the ordinal-named route `when b is V(f: r):`, its
+> omitted-binder condition and its ambiguity refusal **landed in v0.45**, and so did two
+> of this rule's three added destinations: **each binder of a destructuring `let`** and
+> **each target of a `set` target list**. The third, **the arm binder of an own-place
+> `match`**, did **not**, beyond the direct-scrutinee route [FN-9] already had, and it is
+> not reachable by a multi-result call in any case: a call that hands back two or more
+> ordinals is no `match` scrutinee, so reaching an arm binder needs the relation to
+> survive the destructuring binder that names the ordinal first. That is a pending
+> summary token across a naming event — [MSR-3]'s deferred rebind and binder placement —
+> rather than a destination of its own, and it goes with B7's measured result. The
+> specification records it as this rule's DEFERRED clause.
+>
+> Two implementation limits are compiler capability and not language: a **borrow-mode or
+> `slice` ordinal** of a result list is refused as an unimplemented capability, because
+> [FN-1]'s return-origin ceiling and borrow-result provenance are not derived per ordinal
+> yet; and a **subscript target in a `set` target list** is refused for the same reason,
+> because one statement's several indexed commits need [SET-1]'s offset-evaluation order
+> stated over a list. Neither is written into the language.
+
 **[CALL-6] Publication: how a declared relation becomes a fact, where it is computed,
 and where it is established.** This is the rule round 6 found missing and round 7 found
 computing at one point and establishing at another. Every `Publishes:` line in 3.K names
@@ -5490,6 +5511,42 @@ evidence that the refusal is affordable rather than merely correct.
 result, its measure over a result place and its route over any variant of any returned
 enum go to B7; [S16]'s ordered result list and the destinations that read it go to
 §7's B1b; and [MSR-5]'s affine widening stays [MSR-4]'s in B2.
+
+### 6.0b B1b landed (v0.45)
+
+**[S16] and the result ordinal are no longer paper.** The ordered result list, the
+destructuring `let` binder list, the `set` target list, and the multi-expression `return`
+are written into [GRAM-2] and [GRAM-4]; [FN-1] states the result ordinal and reads every
+result judgment per ordinal; [TYPE-5] derives binder i and target i from ordinal i;
+[SET-1] commits a target list in written order; [CALL-4] takes the ordinal-named route,
+its omitted-binder condition and its ambiguity refusal, and adds two of the three
+destinations. No rule id was added: `is` is the one added grammar atom. Five conformance
+cases carry it:
+
+```text
+| case                                              | expected verdict |
+|---------------------------------------------------|------------------|
+| s16-pos-result-list-reaches-both-let-binders      | run, exit 0      |
+| s16-pos-result-list-reaches-both-set-targets      | run, exit 0      |
+| call4-pos-route-names-a-result-ordinal            | run, exit 0      |
+| call4-pos-omitted-route-binder-with-one-enum-ordinal | run, exit 0   |
+| call4-neg-ambiguous-route-over-two-enum-ordinals  | reject, CALL-4   |
+```
+
+**A declaration that writes a list hands its ordinals back as one owned aggregate**, and
+the two binder forms are its projections; that is a result shape and the qualification
+review says so. It is the whole implementation cost of R1's transforming-operation shape:
+no new representation, no new transport, and every ordinal an ordinary owned value under
+the ordinary transfer, drop and release rules.
+
+**What did not land is recorded at [CALL-4] and re-batched below**: the third destination,
+the arm binder of an own-place `match` whose scrutinee is not the call itself, needs a
+relation to survive a naming event between the call and its destination, which is
+[MSR-3]'s deferred binder placement rather than a destination of its own. It goes with
+B7's measured result. A **borrow-mode or `slice` ordinal** of a result list is an explicit
+compiler-capability refusal rather than a language restriction: [FN-1] states that each
+ordinal receives the ceiling and provenance judgments independently, and deriving them per
+ordinal is the work that has not been done.
 
 ### 6.1 What the compiler did in this session
 

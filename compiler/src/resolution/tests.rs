@@ -276,10 +276,9 @@ fn plain_postcondition_selector_is_private_and_definitions_share_one_contract_sc
             .first()
             .expect("one private postcondition record");
         assert_eq!(postcondition.class, PostconditionSelectorClass::Plain);
-        let candidate = postcondition
-            .plain_candidate
-            .as_ref()
-            .expect("plain selector candidate");
+        let [candidate] = postcondition.result_binders.as_slice() else {
+            panic!("one result ordinal binder is required");
+        };
         assert_eq!(candidate.spelling, "result");
         assert_eq!(candidate.origin.role_ordinal(), 0);
         assert!(candidate.paired_field.is_none());
@@ -327,7 +326,11 @@ fn variant_postcondition_selector_preserves_prelude_identity_without_match_roles
                 panic!("one private postcondition record is required");
             };
             assert_eq!(postcondition.class, PostconditionSelectorClass::Variant);
-            assert!(postcondition.plain_candidate.is_none());
+            // [CALL-4] the declaration writes one result, so exactly one
+            // ordinal binder is a candidate; a routed clause names it
+            // through its route rather than as a plain selector.
+            assert_eq!(postcondition.result_binders.len(), 1);
+            assert!(postcondition.route_ordinal.is_none());
             assert!(matches!(
                 postcondition.variant_target,
                 Some(ResolvedTarget::Prelude(id)) if id.ordinal() == 11
@@ -446,10 +449,9 @@ fn postcondition_lookup_waits_for_selector_admission_and_live_conflicts_are_reta
         let [postcondition] = resolved.postconditions() else {
             panic!("one private postcondition record is required");
         };
-        let candidate = postcondition
-            .plain_candidate
-            .as_ref()
-            .expect("plain selector candidate");
+        let [candidate] = postcondition.result_binders.as_slice() else {
+            panic!("one result ordinal binder is required");
+        };
         assert_eq!(candidate.live_conflicts.len(), 1);
         assert!(candidate.later_local_collision.is_none());
         // The comparison is an operator token since v0.41 and produces no

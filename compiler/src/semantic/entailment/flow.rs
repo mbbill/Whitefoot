@@ -2379,9 +2379,7 @@ impl Analyzer<'_, '_> {
         let mut anchor = None;
         for destination in destinations {
             let term = destination.as_ref().and_then(|(binding, fields, ty)| {
-                if fragment_type(*ty).is_none() {
-                    return None;
-                }
+                fragment_type(*ty)?;
                 let term = self.postcondition_place_term(PlaceRoot::Binding(*binding), fields, *ty);
                 if term.is_some() && anchor.is_none() {
                     anchor = Some(*binding);

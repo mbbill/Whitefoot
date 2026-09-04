@@ -1,0 +1,21 @@
+fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, spare: own u64) reads(taken) contract {
+  ensures when Ok(value: reported): reported == len(taken);
+} {
+  doc "Exactly one ordinal has the route's enum type, so the ordinal binder is omitted.";
+  let measured = len(taken);
+  return Ok<u64, Overflow>(value: measured), measured;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "CALL-4: the ordinal binder may be omitted exactly when one declared ordinal has the route's enum type.";
+  let run = buffer_new(8_u64, 0_u8);
+  let (outcome, spare) = probe(taken: move run);
+  match outcome {
+    Ok(value: reported) => {
+      return exit_status(code: 0_u8);
+    }
+    Err(error: failure) => {
+      return exit_status(code: 1_u8);
+    }
+  }
+}

@@ -52,6 +52,22 @@ interval it stands for, so nested joins reach the flat join's image and
 acceptance stops depending on the shape of the control join. The repair only
 adds images: no program v0.42 accepted is refused.
 
+v0.45 adds no rule and retires none (136 remain), and adds one grammar atom,
+`is`. A `fn_decl` may write an ordered result list, `-> (kept: own u64, spare:
+own u64)`, and a caller names its ordinals again with a destructuring `let`
+binder list or a `set` target list; a `return` writes one expression per
+declared result. [FN-1] numbers the ordinals and reads every result judgment per
+ordinal, [TYPE-5] derives binder i and target i from ordinal i, and [SET-1]
+commits a target list in written order over pairwise distinct roots. [CALL-4]
+widens the contract vocabulary to the ordinals: every ordinal is a datum of
+every clause, a route may name the ordinal it applies to with `when b is
+V(f: r):`, the binder may be omitted exactly when one ordinal has that enum
+type, and a route two ordinals could carry is refused at the declaration. The
+same rule adds the two [ENT-3.S12] destinations only a multi-result contract
+exercises, each binder of a destructuring `let` and each target of a `set`
+target list. The batch that carried it is B1b of the container and resource
+design under `research/investigations/containers-and-resources/`.
+
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len(rest) >= len(out);`
 is a written clause where it was a parse rejection, and the define-per-measure

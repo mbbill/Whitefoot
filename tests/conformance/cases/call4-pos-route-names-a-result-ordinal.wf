@@ -1,0 +1,30 @@
+fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, spare: own u64) reads(taken) contract {
+  ensures when outcome is Ok(value: reported): reported == len(taken);
+  ensures spare == len(taken);
+} {
+  doc "One route names the enum ordinal it applies to; the unrouted clause names the other.";
+  let measured = len(taken);
+  return Ok<u64, Overflow>(value: measured), measured;
+}
+
+fn needs_eight(bound: own u64) -> ok: own unit pure contract {
+  requires 8_u64 <= bound;
+} {
+  doc "Needs a caller proof about its argument.";
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "CALL-4: a route names a result ordinal, an unrouted clause over another ordinal reaches its binder, and both arms of the match on the routed ordinal are written.";
+  let run = buffer_new(8_u64, 0_u8);
+  let (outcome, spare) = probe(taken: move run);
+  let confirmed = needs_eight(bound: spare);
+  match outcome {
+    Ok(value: reported) => {
+      return exit_status(code: 0_u8);
+    }
+    Err(error: failure) => {
+      return exit_status(code: 1_u8);
+    }
+  }
+}

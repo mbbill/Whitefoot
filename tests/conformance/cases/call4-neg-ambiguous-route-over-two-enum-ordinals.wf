@@ -1,0 +1,12 @@
+fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, other: own Result<u64, Overflow>) reads(taken) contract {
+  ensures when Ok(value: reported): reported == len(taken);
+} {
+  doc "Two ordinals have the route's enum type, so an omitted ordinal binder leaves the route ambiguous.";
+  let measured = len(taken);
+  return Ok<u64, Overflow>(value: measured), Ok<u64, Overflow>(value: measured);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "CALL-4: a route two declared result ordinals could carry is refused at the declaration, where the ordinal set is fixed.";
+  return exit_status(code: 0_u8);
+}

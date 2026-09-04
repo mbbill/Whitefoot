@@ -130,7 +130,9 @@ fn collect_direct_calls<'checked>(
     for statement in statements {
         match statement {
             CheckedStatement::Let { value, .. }
+            | CheckedStatement::DestructuringLet { value, .. }
             | CheckedStatement::Set { value, .. }
+            | CheckedStatement::SetList { value, .. }
             | CheckedStatement::Replace { value, .. }
             | CheckedStatement::Return { value, .. }
             | CheckedStatement::Give { value, .. }

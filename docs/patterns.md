@@ -9,7 +9,12 @@ Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
 This document carries guidance for the active specification at
-`spec/kernel-spec.md`, including the contract-clause measure operands and the
+`spec/kernel-spec.md`, including the ordered result list and its destructuring
+`let` and `set` binder forms introduced by v0.45 — a transforming operation now
+hands back the value it was given beside what it computed, `-> (rest: own
+Vector<u8>, written: own u64)`, instead of a two-field struct per operation, and
+its caller writes `let (rest, written) = collect(...);` — the contract-clause
+measure operands and the
 call datum introduced by v0.44 (P16, P21), the loop-body
 region block and the associative [ENT-6] join introduced by v0.43, the one canonical
 region spelling introduced by [FORM-8] in v0.42, the comparison symbols and
