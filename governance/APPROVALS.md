@@ -2934,4 +2934,78 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   xfail (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 0de67b12995e7ad315a6b35ce7b5455a8960cbeb94aea3184a7631a817b61cda 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B7a, the brand, the runs and the kernel declaration domain): v0.45
+  lands the containers design's `[PROV-1]`, `[BLK-0]`, `[BLK-1]`, `[BLK-2]` and
+  `[BLK-3]`. Numbered rules +5/-0 (148 remain); grammar productions +0/-0 (87
+  remain), with `struct_decl` and `enum_decl` each gaining an optional
+  `region_params` [S20]; unique fixed lowercase grammar atoms +0/-0 (58 remain);
+  compiler-owned nominal type spellings +4/-0, being `Vector`, `FixedVector`,
+  `Heap` and `Arena` [S1-S4], each contributing one nominal-type entry and one
+  constructor entry of the same spelling; writer operation spellings +9/-0, being
+  the kernel-domain operations `seq_fixed`, `seq_arena`, `seq_arena_proved`,
+  `seq_heap`, `arena_frame`, `seq_place`, `seq_place_front`, `seq_take` and
+  `seq_take_front` [S7-S9], which are declaration records rather than [OP-1]
+  table rows and therefore add nothing to `ReservedLowerNames`; kernel
+  declaration records +44/-0, being nine operations, twenty-three type, const
+  and region parameters, and twelve value parameters. [TYPE-2], [TYPE-3], [TYPE-5], [TYPE-6], [CONST-1],
+  [OWN-1], [FN-2], [FN-7], [OP-1], [OP-4], [OP-9], [MSR-1], [MSR-2], [MSR-3],
+  [ENT-3.S13], [STOR-1], [STOR-3], [STOR-5], [PROV-6], [PROG-1], [SYS-3] and
+  [DIAG-1] are amended in place. [PROV-1] makes a store's identity a region,
+  puts that region in the type of every value the store backs, admits at most
+  one reserving occurrence per region, and resolves every elided store brand by
+  one rule with two clauses. [BLK-0] states that the container and store
+  operations are one compiler-owned generic declaration domain admitted to every
+  unit on [SYS-3]'s terms, each operation one complete signature record whose
+  written arguments are decided per argument, whose value arguments are named,
+  and every one of whose rows is complete over every measure it writes on every
+  exit; [ENT-3.S13]'s population is extended to those rows. [BLK-1] states the
+  two runs and the one window, the logical subscript whose obligation is against
+  `len`, and the affine element domain the window makes sound; [MSR-1]'s table
+  gains three rows and its first *bounded* cell, a run's `head`. [BLK-2] and
+  [BLK-3] are the inventory: four formation rows, one frame reservation, and the
+  four boundary operations, each taking its run by value and handing it back.
+  Eight clauses are DEFERRED with stated deltas, five of them added by this
+  batch: [FN-7]'s `command.heap` standard-input row, whose label tail is the
+  spelling [EFF-1] fixes as the allocation atom of `allocates(heap)` and which
+  [FORM-3] therefore excludes from IDENT, so it lands with that atom's
+  retirement; [BLK-2]'s `arena_extent` row together with the per-activation
+  refusal its soundness needs; [STOR-5]'s confinement judgment over an admitted
+  store-branded position and the `&uniq` parameter refusal that goes with it,
+  costing one further numbered rule; and [CALL-4]'s three v0.44 admissions — a
+  result of measured type, a measure over a result place, and a route over any
+  variant of any returned enum — which stay deferred because a measured result
+  has no destination to be instantiated over until a kernel row hands a run
+  back. The retirement of `array<T, N>` with its `array_new` row in favour of
+  the `FixedVector<T, n>` const form [S34] is recorded as DEFERRED for the same
+  reason: the corpus's ninety-nine `array_new` occurrences have no replacement
+  until a formation row and a source `filled` helper both compile, and retiring
+  the spelling before then would leave the specification and the compiler
+  disagreeing about a hundred accepted programs.
+- CONFORMANCE BOUNDARY (B7a): this batch ADDS eleven conformance cases and their
+  eleven manifest rows, and modifies, deletes and renames none; it changes no
+  adapter, runner, or collection wiring, and no existing case's source,
+  expectation, rule citation or status. The added ids are
+  `prov1-pos-a-store-branded-run-in-a-field`,
+  `prov1-pos-a-nominal-declares-a-store-region` and
+  `blk1-pos-both-runs-are-nameable-types` (each expecting accept),
+  `prov1-neg-a-provider-in-a-stored-position` (reject, STOR-5),
+  `prov1-neg-an-extent-elides-its-store-region` (reject, FORM-8),
+  `prov1-neg-a-source-nominal-collides-with-a-container` and
+  `blk0-neg-a-source-function-collides-with-a-kernel-row` (each reject, TYPE-6),
+  `blk1-neg-a-construct-names-a-run` and
+  `blk1-neg-a-construct-names-a-provider` (each reject, BLK-1), and
+  `blk2-pos-a-formation-row-builds-an-empty-run` and
+  `blk3-pos-a-boundary-row-moves-the-back-boundary` (each expecting accept,
+  status `pending`). The two pending rows carry the reason the corpus schema
+  requires: a call to a kernel-domain row is an explicit unsupported capability
+  in this toolchain, because the window lowering [BLK-1] fixes and the relation
+  publication [CALL-6] carries for those rows are not implemented; the
+  expectation each records is the verdict the specification requires and is not
+  weakened by that status. Before this batch the corpus holds 558 cases with the
+  native adapter reporting Pass=556, Xfail=1, Skip=1; after it the corpus holds
+  569 with the adapter reporting Pass=565, Xfail=1, Skip=3. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) is unchanged in id,
+  expectation and status, the two added skips are the two pending rows named
+  above, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0: no
+  verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 5b4478aea5bec0bd0ab9630b74ba16ac1bd2e4eeb6a3443ab113a89e29249571 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
