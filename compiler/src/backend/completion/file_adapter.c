@@ -32,12 +32,7 @@ extern ssize_t WF_COMPLETION_PREAD(int, void *, size_t, off_t);
 
 /* The one host call an adapter open makes, named so a build may observe it.
  * The observing build is expected to perform the same host call; nothing else
- * about the open changes, and the default build calls `openat` directly.
- *
- * Retire-and-retry is decided by what this call answers, and the interesting
- * schedules are the ones where a second engine is mid-operation at exactly the
- * moment it answers `EMFILE`.  Naming the call is what lets a test stand at
- * that moment instead of guessing at it with a delay. */
+ * about the open changes, and the default build calls `openat` directly. */
 #if !defined(WF_FILE_OPENAT)
 #define WF_FILE_OPENAT openat
 #else
@@ -537,8 +532,7 @@ static int wf_file_adapter_initialized(const wf_file_adapter *adapter) {
  */
 static void wf_file_finish_execution(
     wf_file_adapter *adapter,
-    int helper,
-    const wf_file_result *result
+    int helper
 ) {
     atomic_fetch_add_explicit(
         helper != 0 ? &adapter->stat_helper_executions
@@ -546,26 +540,8 @@ static void wf_file_finish_execution(
         1,
         memory_order_relaxed
     );
-    wf_completion_operation_retired(wf_file_returned_a_descriptor(result));
-    /* A held open is released by whichever thread next asks the ledger, and
-     * on a target with a kernel ring that thread is a scheduler parked on the
-     * completion endpoint.  The publication above already woke it, but it may
-     * have asked and found nothing in the instant before the line above, so
-     * the retirement gets a wake of its own.  Only where something is
-     * actually waiting: on the ordinary path this is one atomic load. */
-    if (wf_completion_retirement_waiters() != 0) {
-        wf_completion_notify_capacity(adapter->runtime);
-    }
 }
 
-/* True exactly for the results of an open the host refused because it had no
- * descriptor to give: the process limit and the system limit.  Both are
- * [SYS-7] `ResourceExhausted`, and both are recoverable by giving a
- * descriptor back. */
-static int wf_file_open_lacked_a_descriptor(const wf_file_result *result) {
-    return result->kind == WF_FILE_OPEN_AT && result->value < 0
-        && (result->error_code == EMFILE || result->error_code == ENFILE);
-}
 
 wf_file_result wf_file_execute_timed(
     wf_file_adapter *adapter,
@@ -615,147 +591,10 @@ int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter) {
 static void wf_file_run_work(
     wf_file_adapter *adapter,
     const wf_file_work *work,
-    int helper,
-    int may_run_owed_work
-);
-
-/* The queue as the retirement ledger asks for it, while the ledger holds its
- * own lock.  It takes no lock, which is the whole requirement the ledger puts
- * on this callback. */
-static size_t wf_file_adapter_owed_work(void *context) {
-    return wf_file_adapter_queued((const wf_file_adapter *)context);
-}
-
-/* Gives back what this runtime is still holding, then re-attempts one open the
- * host refused for want of a descriptor.
- *
- * This is one half of the rule stated in contract.h, on the route a bounded
- * helper pool carries.  What this thread can give back has two parts and they
- * are the same fact seen twice.  The first is work this adapter has accepted
- * and nobody has started: running it is work the sequential execution performs
- * anyway, it publishes each outcome unchanged, and a close among them returns
- * a descriptor.  The second is every operation in flight anywhere else — on
- * another helper, on the kernel ring, inside a blocking direct call — which
- * this thread cannot run but can wait for.  An adapter that only drained its
- * own queue would publish a refusal while its own descriptors were still in
- * hand, which is exactly what a four-helper configuration does to three
- * simultaneous opens: each is taken by a different thread and each looks at an
- * empty queue.
- *
- * The waiter is registered before any owed work runs, so a second open refused
- * while this thread is running that work counts this one out of "in flight
- * elsewhere" instead of waiting for it.  Owed work runs with
- * `may_run_owed_work` cleared: it may wait for a retirement like any other
- * refused open, but it may not run the queue in its turn, because the caller
- * suspended inside it still holds that duty — which is why it passes the queue
- * as its own.
- *
- * Either way the queue is the waiter's `owed`, and the ledger reads it at the
- * moment it decides rather than being handed a reading taken before it: a
- * thread that will run that queue must not sleep while an item is in it, and a
- * thread whose caller is suspended inside it must not wait for one.
- *
- * Exactly one re-attempt, counted exactly where it is made, and made at the
- * moment the answer can no longer improve: a descriptor has come back, or
- * nothing is left in this runtime that could bring one.  The second reason is
- * an attempt too, because a descriptor can come back from outside this runtime
- * — a thread of the program's own closing one while this runtime carries the
- * read that thread is answering — and no ledger can see that.  If the attempt
- * also fails, that is the outcome source-order execution produces and the
- * program is entitled to see it. */
-static wf_file_result wf_file_retire_and_retry(
-    wf_file_adapter *adapter,
-    const wf_file_work *work,
-    int helper,
-    uint64_t seen,
-    int may_run_owed_work
+    int helper
 ) {
-    wf_retirement_waiter waiter;
-    wf_file_result result;
-    wf_completion_retirement_wait_begin(
-        &waiter,
-        seen,
-        wf_file_adapter_owed_work,
-        adapter,
-        may_run_owed_work
-    );
-    for (;;) {
-        if (may_run_owed_work != 0) {
-            wf_file_work owed;
-            /* Run the queue before every decision and after every wake, not
-             * once: this thread is one of this adapter's engines, and work
-             * queued while it waits is work only an engine can retire.  This
-             * waiter stands aside for each item it runs and no longer, so an
-             * open among them that is refused in its turn can answer instead of
-             * waiting behind the thread that is running it.
-             *
-             * It stands aside; it does not leave.  Leaving and registering
-             * again puts this open at the back of the order every time it runs
-             * the work it owes, which hands a returned descriptor — and with it
-             * the program's one `Ok` — to an open that asked later: on a
-             * scripted two-waiter shape, to the later one in 200 runs of
-             * 200. */
-            while (wf_file_take_work(adapter, &owed, 1)) {
-                wf_completion_retirement_defer_begin(&waiter);
-                wf_file_run_work(adapter, &owed, helper, 0);
-                wf_completion_retirement_defer_end(&waiter);
-            }
-        }
-        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
-            break;
-        }
-        wf_completion_retirement_sleep(&waiter);
-    }
-    wf_completion_retirement_wait_end(&waiter);
-    /* Either a descriptor came back, or nothing is left in this runtime that
-     * could bring one and this is the last moment a second attempt could see
-     * more than the first — including a descriptor a thread of the program's
-     * own gave back while this one waited.  One attempt, here, either way. */
-    atomic_fetch_add_explicit(
-        &adapter->stat_exhaustion_retries,
-        1,
-        memory_order_relaxed
-    );
-    result = wf_file_execute_timed(adapter, &work->request);
-    /* And if it took a descriptor, the ledger is told so, exactly as a first
-     * attempt is.  `awarded` is what keeps the accounting straight: an attempt
-     * made on an award moved the mark when the ledger granted it, and an
-     * attempt made because nothing was left to wait for moved nothing, so only
-     * the second is charged here. */
-    if (wf_file_open_took_a_descriptor(&result)) {
-        wf_completion_retirement_open_took_a_descriptor(waiter.awarded);
-    }
-    return result;
-}
-
-static void wf_file_run_work(
-    wf_file_adapter *adapter,
-    const wf_file_work *work,
-    int helper,
-    int may_run_owed_work
-) {
-    /* Read before the host attempt, because that is the moment the answer is
-     * about: a descriptor returned while this one is inside `openat` is one
-     * the attempt could not use, and a refusal decided by the state afterwards
-     * would miss it. */
-    uint64_t seen = wf_completion_descriptor_returns();
     wf_file_result result = wf_file_execute_timed(adapter, &work->request);
     wf_completion_publication publication;
-    if (wf_file_open_lacked_a_descriptor(&result)) {
-        result = wf_file_retire_and_retry(
-            adapter,
-            work,
-            helper,
-            seen,
-            may_run_owed_work
-        );
-    } else if (wf_file_open_took_a_descriptor(&result)) {
-        /* An open the host satisfied on its first attempt, which is the one
-         * that never becomes a waiter.  If a return of this runtime's was
-         * unspent, this is the open that took it, and the ledger charges it so
-         * that no refused open is promised the same descriptor. */
-        wf_completion_retirement_open_took_a_descriptor(0);
-    }
     publication = (wf_completion_publication) {
         .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
         .terminal_kind = result.error_code == 0
@@ -770,7 +609,7 @@ static void wf_file_run_work(
         work->token,
         &publication
     );
-    wf_file_finish_execution(adapter, helper, &result);
+    wf_file_finish_execution(adapter, helper);
     if (published != WF_COMPLETION_PUBLISHED) {
         /* A legitimate accepted work item owns the unique terminal route.  A
          * failure here records an adapter/core defect; it never invokes writer
@@ -809,7 +648,7 @@ static void *wf_file_helper_main(void *context) {
         if (released_capacity != 0) {
             wf_completion_notify_capacity(adapter->runtime);
         }
-        wf_file_run_work(adapter, &work, 1, 1);
+        wf_file_run_work(adapter, &work, 1);
     }
 }
 
@@ -870,7 +709,6 @@ int wf_file_adapter_init(
     adapter->helper_capacity = helper_capacity;
     adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
-    atomic_init(&adapter->stat_exhaustion_retries, 0);
     atomic_init(&adapter->stat_capacity_waits, 0);
     atomic_init(&adapter->stat_helper_executions, 0);
     atomic_init(&adapter->stat_scheduler_executions, 0);
@@ -1049,12 +887,6 @@ static int wf_file_enqueue_locked(
     }
     adapter->queue_tail = (adapter->queue_tail + 1) % adapter->queue_capacity;
     adapter->queue_count += 1;
-    /* Accepted from here: a queue with an engine behind it is an operation
-     * that will retire, and a refused open anywhere in this process is
-     * entitled to wait for it.  It is reported before the entry becomes
-     * visible to a helper, so its retirement can never precede its
-     * acceptance. */
-    wf_completion_operation_accepted();
     atomic_fetch_add_explicit(
         &adapter->stat_submissions,
         1,
@@ -1142,7 +974,7 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
         if (!wf_file_take_work(adapter, &work, 0)) {
             break;
         }
-        wf_file_run_work(adapter, &work, 0, 1);
+        wf_file_run_work(adapter, &work, 0);
         executed += 1;
     }
     return executed;
@@ -1187,8 +1019,7 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
      * and then uses storage this teardown destroys: `queue_lock` and the
      * condition variable beside it.  The queue count is not among them — it is
      * an atomic this teardown never writes, which is what lets
-     * `wf_file_adapter_queued` be read with no lock at all, for the retirement
-     * ledger and for the decline check
+     * `wf_file_adapter_queued` be read with no lock at all, for the decline check
      * `wf_file_adapter_transfer_runs_on_caller`.  Storing zero after the
      * destroys would leave a window in which that
      * guard still answers yes and the mutex it guards no longer exists, so a
@@ -1224,10 +1055,6 @@ wf_file_adapter_statistics wf_file_adapter_statistics_snapshot(
     }
     statistics.submissions = atomic_load_explicit(
         &adapter->stat_submissions,
-        memory_order_relaxed
-    );
-    statistics.exhaustion_retries = atomic_load_explicit(
-        &adapter->stat_exhaustion_retries,
         memory_order_relaxed
     );
     statistics.capacity_waits = atomic_load_explicit(

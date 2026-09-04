@@ -146,7 +146,6 @@ static BOOL CALLBACK wf_windows_bridge_initialize(
     if (error != 0) {
         abort();
     }
-    wf_completion_retirement_announces_on(&wf_windows_bridge_runtime);
     error = wf_completion_set_ready_callback(
         &wf_windows_bridge_runtime,
         wf__writer_scheduler_ready
@@ -779,27 +778,6 @@ void wf__completion_wait_core_capacity(void) {
     }
 }
 
-int wf__windows_completion_progress_for_retirement(void) {
-    uint64_t observed;
-    int progressed;
-    if (atomic_load_explicit(
-            &wf_windows_bridge_ready,
-            memory_order_acquire
-        ) == 0u) {
-        return 0;
-    }
-    observed = wf_completion_wake_epoch(&wf_windows_bridge_runtime);
-    progressed = wf_windows_bridge_drain() != 0;
-    progressed |= wf__par_help_once();
-    if (!progressed) {
-        progressed |= wf__writer_scheduler_help_once();
-    }
-    if (!progressed) {
-        progressed |= wf_windows_bridge_progress(observed, 10u);
-    }
-    return progressed;
-}
-
 static int wf_windows_bridge_submit_pread(
     int descriptor,
     void *buffer,
@@ -1287,14 +1265,5 @@ uint64_t wf__completion_publications(void) {
 }
 uint64_t wf__completion_linux_io_uring_submissions(void) { return 0; }
 uint64_t wf__completion_linux_io_uring_submission_enters(void) { return 0; }
-uint64_t wf__completion_open_exhaustion_retries(void) {
-    return wf_windows_blocking_statistics_snapshot(
-               &wf_windows_bridge_blocking
-           ).exhaustion_retries
-        + wf__windows_direct_open_exhaustion_retries();
-}
-uint64_t wf__completion_open_exhaustion_waits(void) {
-    return wf_completion_retirement_waits();
-}
 
 #endif

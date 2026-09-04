@@ -137,9 +137,7 @@ static int wf_windows_blocking_error(void) {
 }
 
 static wf_windows_file_result wf_windows_blocking_execute_once(
-    wf_windows_blocking_entry *entry,
-    unsigned awarded_resource,
-    int on_an_award
+    wf_windows_blocking_entry *entry
 ) {
     wf_windows_file_result result;
     memset(&result, 0, sizeof(result));
@@ -158,9 +156,6 @@ static wf_windows_file_result wf_windows_blocking_execute_once(
     case WF_WINDOWS_FILE_OPEN_AT: {
         int error_code = 0;
         unsigned open_outcome = 1u;
-        unsigned took_resources = 0;
-        unsigned returned_resources = 0;
-        unsigned refused_resource = WF_WINDOWS_OPEN_REFUSED_NONE;
         result.value = wf__windows_completion_file_open_at_worker(
             entry->request.lease.handle,
             (const char *)(const void *)entry->path,
@@ -170,38 +165,10 @@ static wf_windows_file_result wf_windows_blocking_execute_once(
             entry->request.operation.open_at.expected_kind,
             entry->request.operation.open_at.descriptor_class,
             &error_code,
-            &open_outcome,
-            &took_resources,
-            &returned_resources,
-            &refused_resource,
-            awarded_resource,
-            on_an_award
+            &open_outcome
         );
         result.error_code = (uint32_t)error_code;
         result.open_outcome = open_outcome;
-        if ((took_resources & WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE) != 0) {
-            result.runtime_flags |= WF_WINDOWS_FILE_TOOK_NATIVE_HANDLE;
-        }
-        if ((took_resources & WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR) != 0) {
-            result.runtime_flags |= WF_WINDOWS_FILE_TOOK_CRT_DESCRIPTOR;
-        }
-        if ((returned_resources & WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE)
-            != 0) {
-            result.runtime_flags |= WF_WINDOWS_FILE_RETURNED_NATIVE_HANDLE;
-        }
-        if ((returned_resources & WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR)
-            != 0) {
-            result.runtime_flags |= WF_WINDOWS_FILE_RETURNED_CRT_DESCRIPTOR;
-        }
-        if (refused_resource == WF_WINDOWS_OPEN_REFUSED_NATIVE_HANDLE) {
-            result.runtime_flags |= WF_WINDOWS_FILE_REFUSED_NATIVE_HANDLE;
-        } else if (refused_resource
-                   == WF_WINDOWS_OPEN_REFUSED_CRT_DESCRIPTOR) {
-            result.runtime_flags |= WF_WINDOWS_FILE_REFUSED_CRT_DESCRIPTOR;
-        } else if (refused_resource
-                   == WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE) {
-            result.runtime_flags |= WF_WINDOWS_FILE_REFUSED_GENERAL_RESOURCE;
-        }
         break;
     }
     case WF_WINDOWS_FILE_DIRECTORY_NEXT:
@@ -217,220 +184,6 @@ static wf_windows_file_result wf_windows_blocking_execute_once(
         break;
     default:
         abort();
-    }
-    return result;
-}
-
-static void wf_windows_blocking_run_index(
-    wf_windows_blocking_adapter *adapter,
-    size_t index,
-    int may_run_owed_work
-);
-
-static void wf_windows_blocking_open_gate_enter(
-    wf_windows_blocking_adapter *adapter,
-    const wf_windows_blocking_entry *entry
-) {
-    if (adapter == NULL || entry == NULL
-        || entry->request.kind != WF_WINDOWS_FILE_OPEN_AT) {
-        abort();
-    }
-    wf__windows_open_order_enter(entry->open_ticket);
-
-    /* Later open tickets are deliberately absent from the retirement ledger.
-     * Otherwise the current ticket could wait forever for operations which
-     * are forbidden to acquire a host resource until it advances the gate. */
-    wf_completion_operation_accepted();
-}
-
-static void wf_windows_blocking_open_gate_leave(
-    wf_windows_blocking_adapter *adapter,
-    const wf_windows_blocking_entry *entry
-) {
-    if (adapter == NULL || entry == NULL
-        || entry->request.kind != WF_WINDOWS_FILE_OPEN_AT) {
-        abort();
-    }
-    wf__windows_open_order_leave(entry->open_ticket);
-}
-
-static wf_windows_file_result wf_windows_blocking_execute_host_once(
-    wf_windows_blocking_entry *entry,
-    unsigned awarded_resource,
-    int on_an_award
-) {
-    return wf_windows_blocking_execute_once(
-        entry,
-        awarded_resource,
-        on_an_award
-    );
-}
-
-static size_t wf_windows_blocking_owed(void *context) {
-    wf_windows_blocking_adapter *adapter =
-        (wf_windows_blocking_adapter *)context;
-    return adapter == NULL
-        ? 0
-        : atomic_load_explicit(
-              &adapter->retirement_queued,
-              memory_order_seq_cst
-          );
-}
-
-static int wf_windows_blocking_take_owed(
-    wf_windows_blocking_adapter *adapter,
-    wf_retirement_waiter *waiter
-) {
-    DWORD bytes = 0;
-    DWORD error;
-    ULONG_PTR key = 0;
-    OVERLAPPED *overlapped = NULL;
-    BOOL dequeued = GetQueuedCompletionStatus(
-        adapter->port,
-        &bytes,
-        &key,
-        &overlapped,
-        0
-    );
-    if (dequeued == FALSE) {
-        error = GetLastError();
-        if (error == WAIT_TIMEOUT && overlapped == NULL) {
-            return 0;
-        }
-        abort();
-    }
-    /* Stop packets are posted only after all accepted work has retired, so a
-     * live exhaustion waiter can never consume one. */
-    if (key == 0 || key > WF_WINDOWS_BLOCKING_CAPACITY
-        || bytes != 0 || overlapped != NULL) {
-        abort();
-    }
-    {
-        wf_windows_blocking_entry *entry = &adapter->entries[key - 1u];
-        if (atomic_load_explicit(&entry->state, memory_order_acquire)
-                != WF_WINDOWS_BLOCKING_ENTRY_QUEUED) {
-            abort();
-        }
-        if (entry->request.kind == WF_WINDOWS_FILE_OPEN_AT) {
-            /* The caller already owns the serving open ticket. Running a
-             * later open as owed work would deadlock on that same ticket and
-             * would let a future source operation participate in the current
-             * quiescence decision. Rotate it behind genuinely owed work. */
-            if (PostQueuedCompletionStatus(
-                    adapter->port,
-                    0,
-                    key,
-                    NULL
-                ) == FALSE) {
-                abort();
-            }
-            return 0;
-        }
-    }
-    if (atomic_fetch_sub_explicit(
-            &adapter->queued,
-            1,
-            memory_order_seq_cst
-        ) == 0) {
-        abort();
-    }
-    if (atomic_fetch_sub_explicit(
-            &adapter->retirement_queued,
-            1,
-            memory_order_seq_cst
-        ) == 0) {
-        abort();
-    }
-    wf_completion_retirement_defer_begin(waiter);
-    wf_windows_blocking_run_index(adapter, (size_t)key - 1u, 0);
-    wf_completion_retirement_defer_end(waiter);
-    return 1;
-}
-
-static wf_windows_file_result wf_windows_blocking_retire_and_retry(
-    wf_windows_blocking_adapter *adapter,
-    wf_windows_blocking_entry *entry,
-    int may_run_owed_work,
-    uint64_t seen,
-    unsigned resource
-) {
-    wf_retirement_waiter waiter;
-    unsigned awarded_resource = WF_WINDOWS_OPEN_REFUSED_NONE;
-    if (resource == WF_RETIREMENT_NATIVE_HANDLE) {
-        awarded_resource = WF_WINDOWS_OPEN_REFUSED_NATIVE_HANDLE;
-    } else if (resource == WF_RETIREMENT_CRT_DESCRIPTOR) {
-        awarded_resource = WF_WINDOWS_OPEN_REFUSED_CRT_DESCRIPTOR;
-    }
-    wf_completion_retirement_wait_begin_resource(
-        &waiter,
-        seen,
-        wf_windows_blocking_owed,
-        adapter,
-        may_run_owed_work,
-        resource
-    );
-    for (;;) {
-        if (may_run_owed_work != 0) {
-            while (wf_windows_blocking_take_owed(adapter, &waiter)) {
-            }
-        }
-        if (wf_completion_retirement_state(&waiter)
-            != WF_RETIREMENT_AWAITED) {
-            break;
-        }
-        /* Another worker can dequeue before it lowers `queued`. In that
-         * bounded window the no-packet result is not proof that work vanished;
-         * yield and re-read rather than sleeping through owed work. */
-        if (may_run_owed_work != 0
-            && wf_windows_blocking_owed(adapter) != 0) {
-            (void)SwitchToThread();
-            continue;
-        }
-        wf_completion_retirement_sleep(&waiter);
-    }
-    wf_completion_retirement_wait_end(&waiter);
-    atomic_fetch_add_explicit(
-        &adapter->stat_exhaustion_retries,
-        1,
-        memory_order_relaxed
-    );
-    {
-        wf_windows_file_result result = wf_windows_blocking_execute_host_once(
-            entry,
-            awarded_resource,
-            waiter.awarded
-        );
-        return result;
-    }
-}
-
-static wf_windows_file_result wf_windows_blocking_execute(
-    wf_windows_blocking_adapter *adapter,
-    wf_windows_blocking_entry *entry,
-    int may_run_owed_work
-) {
-    uint64_t seen = wf_completion_resource_returns(
-        WF_RETIREMENT_OPEN_QUIESCENCE
-    );
-    wf_windows_file_result result = wf_windows_blocking_execute_host_once(
-        entry,
-        WF_WINDOWS_OPEN_REFUSED_NONE,
-        0
-    );
-    if (result.kind != WF_WINDOWS_FILE_OPEN_AT || result.value >= 0) {
-        return result;
-    }
-    if ((result.runtime_flags
-         & (WF_WINDOWS_FILE_REFUSED_NATIVE_HANDLE
-            | WF_WINDOWS_FILE_REFUSED_CRT_DESCRIPTOR
-            | WF_WINDOWS_FILE_REFUSED_GENERAL_RESOURCE)) != 0) {
-        return wf_windows_blocking_retire_and_retry(
-            adapter,
-            entry,
-            may_run_owed_work,
-            seen,
-            WF_RETIREMENT_OPEN_QUIESCENCE
-        );
     }
     return result;
 }
@@ -458,9 +211,6 @@ static void wf_windows_blocking_publish(
     if (published != WF_COMPLETION_PUBLISHED) {
         abort();
     }
-    /* Open's provisional returns were announced at their exact host release
-     * sites. Terminal retirement ends this accepted operation only. */
-    wf_completion_operation_retired_resources(0);
     atomic_fetch_add_explicit(
         &adapter->stat_publications,
         1,
@@ -471,8 +221,7 @@ static void wf_windows_blocking_publish(
 
 static void wf_windows_blocking_run_index(
     wf_windows_blocking_adapter *adapter,
-    size_t index,
-    int may_run_owed_work
+    size_t index
 ) {
     wf_windows_blocking_entry *entry;
     wf_completion_token token;
@@ -497,17 +246,7 @@ static void wf_windows_blocking_run_index(
         1,
         memory_order_relaxed
     );
-    if (entry->request.kind == WF_WINDOWS_FILE_OPEN_AT) {
-        wf_windows_blocking_open_gate_enter(adapter, entry);
-    }
-    result = wf_windows_blocking_execute(
-        adapter,
-        entry,
-        may_run_owed_work
-    );
-    if (entry->request.kind == WF_WINDOWS_FILE_OPEN_AT) {
-        wf_windows_blocking_open_gate_leave(adapter, entry);
-    }
+    result = wf_windows_blocking_execute_once(entry);
     wf__windows_completion_descriptor_lease_release(
         &entry->request.lease
     );
@@ -563,23 +302,6 @@ static unsigned __stdcall wf_windows_blocking_worker(void *context) {
                 != WF_WINDOWS_BLOCKING_ENTRY_QUEUED) {
             abort();
         }
-        if (entry->request.kind == WF_WINDOWS_FILE_OPEN_AT
-            && !wf__windows_open_order_is_serving(entry->open_ticket)) {
-            /* A submitter can reserve the preceding ticket and be preempted
-             * before it posts that packet. Never let later tickets occupy the
-             * finite worker pool while waiting for it: rotate them until the
-             * serving packet becomes runnable. */
-            if (PostQueuedCompletionStatus(
-                    adapter->port,
-                    0,
-                    key,
-                    NULL
-                ) == FALSE) {
-                abort();
-            }
-            (void)SwitchToThread();
-            continue;
-        }
         if (atomic_fetch_sub_explicit(
                 &adapter->queued,
                 1,
@@ -587,19 +309,7 @@ static unsigned __stdcall wf_windows_blocking_worker(void *context) {
             ) == 0) {
             abort();
         }
-        if (entry->request.kind != WF_WINDOWS_FILE_OPEN_AT
-            && atomic_fetch_sub_explicit(
-                   &adapter->retirement_queued,
-                   1,
-                   memory_order_seq_cst
-               ) == 0) {
-            abort();
-        }
-        wf_windows_blocking_run_index(
-            adapter,
-            (size_t)key - 1u,
-            1
-        );
+        wf_windows_blocking_run_index(adapter, (size_t)key - 1u);
     }
 }
 
@@ -640,7 +350,6 @@ int wf_windows_blocking_init(
     adapter->runtime = runtime;
     atomic_init(&adapter->ready_workers, 0);
     atomic_init(&adapter->queued, 0);
-    atomic_init(&adapter->retirement_queued, 0);
     atomic_init(&adapter->in_flight, 0);
     atomic_init(&adapter->stopping, 0);
     atomic_init(&adapter->initialized, 0);
@@ -648,7 +357,6 @@ int wf_windows_blocking_init(
     atomic_init(&adapter->stat_executions, 0);
     atomic_init(&adapter->stat_publications, 0);
     atomic_init(&adapter->stat_queue_capacity_failures, 0);
-    atomic_init(&adapter->stat_exhaustion_retries, 0);
     for (index = 0; index < WF_WINDOWS_BLOCKING_CAPACITY; ++index) {
         atomic_init(
             &adapter->entries[index].state,
@@ -789,19 +497,6 @@ enum wf_windows_blocking_submit_result wf_windows_blocking_submit(
             ? WF_WINDOWS_BLOCKING_SUBMIT_STALE
             : WF_WINDOWS_BLOCKING_SUBMIT_INVALID;
     }
-    if (request->kind == WF_WINDOWS_FILE_OPEN_AT) {
-        entry->open_ticket = wf__windows_open_order_reserve();
-    } else {
-        /* Publish owed work before announcing acceptance. A sole worker may
-         * already be waiting for quiescence; the acceptance wake must let it
-         * observe and execute this job rather than go back to sleep. */
-        atomic_fetch_add_explicit(
-            &adapter->retirement_queued,
-            1,
-            memory_order_seq_cst
-        );
-        wf_completion_operation_accepted();
-    }
     atomic_fetch_add_explicit(&adapter->in_flight, 1, memory_order_relaxed);
     atomic_fetch_add_explicit(
         &adapter->stat_submissions,
@@ -845,9 +540,9 @@ int wf_windows_blocking_shutdown(wf_windows_blocking_adapter *adapter) {
         return EBUSY;
     }
     /* A consumer can reach process exit immediately after terminal
-     * publication while the publishing worker is still retiring its ledger
-     * and adapter counters. Stop packets must not enter the work port during
-     * that tail, because an exhaustion helper is also allowed to dequeue. */
+     * publication while the publishing worker is still lowering its adapter
+     * counters. Stop packets must not enter the work port during that
+     * tail. */
     started = GetTickCount64();
     while (atomic_load_explicit(&adapter->in_flight, memory_order_acquire)
            != 0) {
@@ -857,12 +552,6 @@ int wf_windows_blocking_shutdown(wf_windows_blocking_adapter *adapter) {
         (void)SwitchToThread();
     }
     if (atomic_load_explicit(&adapter->queued, memory_order_acquire) != 0) {
-        abort();
-    }
-    if (atomic_load_explicit(
-            &adapter->retirement_queued,
-            memory_order_acquire
-        ) != 0) {
         abort();
     }
     for (index = 0; index < adapter->worker_count; ++index) {
@@ -880,10 +569,6 @@ int wf_windows_blocking_shutdown(wf_windows_blocking_adapter *adapter) {
         return (int)GetLastError();
     }
     if (atomic_load_explicit(&adapter->queued, memory_order_acquire) != 0
-        || atomic_load_explicit(
-               &adapter->retirement_queued,
-               memory_order_acquire
-           ) != 0
         || atomic_load_explicit(&adapter->in_flight, memory_order_acquire)
             != 0
         || atomic_load_explicit(
@@ -941,10 +626,6 @@ wf_windows_blocking_statistics wf_windows_blocking_statistics_snapshot(
     );
     statistics.queue_capacity_failures = atomic_load_explicit(
         &adapter->stat_queue_capacity_failures,
-        memory_order_relaxed
-    );
-    statistics.exhaustion_retries = atomic_load_explicit(
-        &adapter->stat_exhaustion_retries,
         memory_order_relaxed
     );
     statistics.in_flight = atomic_load_explicit(

@@ -111,42 +111,6 @@ typedef struct wf_completion_statistics {
     uint64_t capacity_notifications;
 } wf_completion_statistics;
 
-/* Process-wide descriptor-retirement ledger.  This is the Windows-native
- * representation of the same contract implemented by runtime.c for POSIX:
- * overlapping open calls may wait for descriptors held by runtime work, then
- * retry exactly once in waiter-registration order. */
-typedef struct wf_retirement_waiter {
-    struct wf_retirement_waiter *next;
-    uint64_t seen;
-    size_t (*owed)(void *context);
-    void *owed_context;
-    unsigned resource;
-    int runs_owed;
-    int awarded;
-    int aside;
-} wf_retirement_waiter;
-
-enum wf_retirement_resource {
-    WF_RETIREMENT_NATIVE_HANDLE = 0,
-    WF_RETIREMENT_CRT_DESCRIPTOR = 1,
-    /* Windows exposes several resource-exhaustion classes through one open
-     * operation. This class has no early-return awards: its waiter retries
-     * only after all overlapping host operations have retired. */
-    WF_RETIREMENT_OPEN_QUIESCENCE = 2,
-    WF_RETIREMENT_RESOURCE_COUNT = 3
-};
-
-enum wf_retirement_resource_mask {
-    WF_RETIREMENT_RETURNED_NATIVE_HANDLE = 1u << 0,
-    WF_RETIREMENT_RETURNED_CRT_DESCRIPTOR = 1u << 1
-};
-
-enum wf_retirement_state {
-    WF_RETIREMENT_HAPPENED = 0,
-    WF_RETIREMENT_AWAITED = 1,
-    WF_RETIREMENT_UNREACHABLE = 2
-};
-
 struct wf_completion_runtime {
     wf_completion_slot *slots;
     size_t slot_count;
@@ -295,43 +259,6 @@ unsigned wf_completion_parked_scheduler_count(
 wf_completion_statistics wf_completion_statistics_snapshot(
     const wf_completion_runtime *runtime
 );
-
-uint64_t wf_completion_descriptor_returns(void);
-uint64_t wf_completion_resource_returns(unsigned resource);
-void wf_completion_resource_returned(unsigned resource);
-void wf_completion_operation_accepted(void);
-void wf_completion_operation_retired(int returned_a_descriptor);
-void wf_completion_operation_retired_resources(unsigned returned_resources);
-void wf_completion_retirement_open_took_a_descriptor(int on_an_award);
-void wf_completion_retirement_open_took_resource(
-    unsigned resource,
-    int on_an_award
-);
-uint64_t wf_completion_retirement_waits(void);
-size_t wf_completion_retirement_waiters(void);
-void wf_completion_retirement_wait_begin(
-    wf_retirement_waiter *waiter,
-    uint64_t seen,
-    size_t (*owed)(void *context),
-    void *owed_context,
-    int runs_owed
-);
-void wf_completion_retirement_wait_begin_resource(
-    wf_retirement_waiter *waiter,
-    uint64_t seen,
-    size_t (*owed)(void *context),
-    void *owed_context,
-    int runs_owed,
-    unsigned resource
-);
-void wf_completion_retirement_wait_end(wf_retirement_waiter *waiter);
-void wf_completion_retirement_defer_begin(wf_retirement_waiter *waiter);
-void wf_completion_retirement_defer_end(wf_retirement_waiter *waiter);
-enum wf_retirement_state wf_completion_retirement_state(
-    wf_retirement_waiter *waiter
-);
-void wf_completion_retirement_sleep(wf_retirement_waiter *waiter);
-void wf_completion_retirement_announces_on(wf_completion_runtime *runtime);
 
 _Static_assert(sizeof(wf_completion_token) == 16u, "completion token ABI");
 _Static_assert(

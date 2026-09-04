@@ -1108,8 +1108,7 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
         .0;
     assert!(!direct_write.contains("wf_bridge_submit_linux"));
     // A direct call executes the typed request through the bridge's own
-    // executor, which is what enters it in the process-wide retirement ledger
-    // for as long as it runs.
+    // executor rather than a bare host call.
     assert!(direct_write.contains("wf_bridge_execute_direct"));
     // Inside that executor the host attempt is timed rather than plain, so
     // the adapter's measurement of what its own operations cost keeps

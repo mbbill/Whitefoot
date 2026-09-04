@@ -61,7 +61,6 @@ enum wf_windows_blocking_entry_state {
 typedef struct wf_windows_blocking_entry {
     _Atomic unsigned state;
     wf_completion_token token;
-    uint64_t open_ticket;
     wf_windows_blocking_request request;
     uint16_t path[WF_WINDOWS_BLOCKING_PATH_UNITS];
 } wf_windows_blocking_entry;
@@ -71,7 +70,6 @@ typedef struct wf_windows_blocking_statistics {
     uint64_t executions;
     uint64_t publications;
     uint64_t queue_capacity_failures;
-    uint64_t exhaustion_retries;
     size_t in_flight;
     size_t worker_count;
 } wf_windows_blocking_statistics;
@@ -85,13 +83,11 @@ typedef struct wf_windows_blocking_adapter {
     size_t worker_count;
     _Atomic size_t ready_workers;
     _Atomic size_t queued;
-    _Atomic size_t retirement_queued;
     _Atomic size_t in_flight;
     _Atomic uint64_t stat_submissions;
     _Atomic uint64_t stat_executions;
     _Atomic uint64_t stat_publications;
     _Atomic uint64_t stat_queue_capacity_failures;
-    _Atomic uint64_t stat_exhaustion_retries;
     _Atomic unsigned stopping;
     _Atomic unsigned initialized;
 } wf_windows_blocking_adapter;

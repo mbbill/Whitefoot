@@ -1022,11 +1022,13 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   permit is the stated gap under constitution T4 (2026-09-04): `close`
   produces nothing the checker sees, so a pipeline overlaps it with a later
   `open`, the host answers `EMFILE` for a schedule the sequential program never
-  produces, and the runtime hides it with the descriptor retirement ledger
-  (`compiler/src/backend/completion/contract.h:409-417`). The branch
-  `io/t4-resource-relations` carries the v0.42 candidate that closes it
-  (`Status: CANDIDATE v0.42 supersedes v0.41` in `spec/kernel-spec.md`; the
-  plan is `docs/current-plan.md`). Completion remains the sole language-level
+  produces, and the runtime hid it with a descriptor retirement ledger. The
+  branch `io/t4-resource-relations` carries the v0.42 candidate that closes
+  it (`Status: CANDIDATE v0.42 supersedes v0.41` in `spec/kernel-spec.md`;
+  the plan is `docs/current-plan.md`): the permit is credit-backed by a
+  process-wide counter set from the target's descriptor budget, the three
+  explicit closes return the credit, and the ledger, its award order, the
+  thread-holding retry wait, and their Windows twins are deleted. Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
   io_uring work, Windows IOCP runtime, selective stackless slice, and component
   measurements were retained while the rejected group machinery was removed.

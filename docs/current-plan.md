@@ -111,10 +111,16 @@ can change while the implementation teaches us what they got wrong.
 
 ### Slices
 
+Slices 1–3 landed on `io/t4-resource-relations` (PR #13) on 2026-09-04;
+slice 4 is in progress there.
+
 1. Specification candidate + catalog + emitter + runtime counter (the tree
-   compiles; old programs fail at the new signature).
-2. Corpus and fixture rewrite; conformance verdicts; new cases.
+   compiles; old programs fail at the new signature). Done.
+2. Corpus and fixture rewrite; conformance verdicts; new cases. Done.
 3. Retirement ledger deletion and its tests; capacity accounting at start.
+   Done: the ledger, its award order, the retire-and-retry paths on every
+   route, the Windows open-order tickets and resource-attempt lock, and the
+   two probes that scripted them are gone.
 4. Docs (`docs/patterns.md` P9/P12, roadmap BOUND-1 current state, derivation
    ledger); canonical `make check` green; batch record in `docs/done/`.
 

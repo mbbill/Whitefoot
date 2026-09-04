@@ -216,14 +216,6 @@ uint64_t wf__completion_linux_io_uring_submissions(void);
  * doorbell is deferred, so this is far below the submission count and the
  * distance between them is what deferring bought. */
 uint64_t wf__completion_linux_io_uring_submission_enters(void);
-/* Opens the host refused for want of a descriptor that the runtime gave one
- * back for and re-attempted once before publishing an outcome, over every
- * route an open can take. */
-uint64_t wf__completion_open_exhaustion_retries(void);
-/* Opens the runtime held rather than published, because an operation in
- * flight somewhere in this process could still return the descriptor they
- * were refused. */
-uint64_t wf__completion_open_exhaustion_waits(void);
 
 #if defined(__cplusplus)
 }

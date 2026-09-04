@@ -91,8 +91,7 @@ COMPLETION_CFLAGS := $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFINES)
 COMPLETION_HARNESS_DEFINES := \
 	-DWF_FILE_UNCACHED_APPLY=wf_completion_test_uncached_apply \
 	-DWF_FILE_MONOTONIC_NS=wf_completion_test_monotonic_ns \
-	-DWF_FILE_OPENAT=wf_completion_test_openat \
-	-DWF_COMPLETION_RETIREMENT_POINT=wf_completion_test_retirement_point
+	-DWF_FILE_OPENAT=wf_completion_test_openat
 COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) $(COMPLETION_HARNESS_DEFINES)
 COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
@@ -112,9 +111,6 @@ COMPLETION_DEFAULT_ROUTE_SOURCES := \
 # The same runtime again, with the probe that puts a refused open on every
 # route at once. Built without COMPLETION_DEFINES for the same reason as the
 # default-route probe: the schedule it is about is the shipped one.
-COMPLETION_INTERLEAVE_SOURCES := \
-	$(filter-out %/harness.c,$(COMPLETION_SOURCES)) \
-	$(COMPLETION_DIR)/retirement_interleave_probe.c
 COMPLETION_CORE_READ_SOURCES := \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
@@ -229,8 +225,7 @@ docs:
 spec:
 	$(CARGO) run --bin whitefoot-spec --locked --offline
 
-completion-test: completion-core-read-test completion-default-route-test \
-		completion-retirement-interleave-test
+completion-test: completion-core-read-test completion-default-route-test
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_HARNESS_CFLAGS) $(COMPLETION_SOURCES) -o "$(COMPLETION_TMP)/harness"
 	@if $(NM) "$(COMPLETION_TMP)/harness" | \
@@ -297,23 +292,6 @@ completion-default-route-test:
 		unset WF_IO_HELPERS; WF_IO_NO_NATIVE_RING=1 \
 			"$(COMPLETION_TMP)/bridge-default-probe" "$(COMPLETION_TMP)"; \
 	fi
-
-# A refused open on every route at once, which is the one shape where a ledger
-# transition on one thread has to reach a waiter asleep somewhere else. It runs
-# at the two helper counts either side of the demand-driven pool's own decision
-# and reports its own skip where the host cannot hold the schedule still: a
-# status of 77 is that skip, and the reason is on stdout beside it.
-completion-retirement-interleave-test:
-	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_BASE_CFLAGS) $(COMPLETION_INTERLEAVE_SOURCES) \
-		-o "$(COMPLETION_TMP)/retirement-interleave-probe"
-	@for helpers in 1 4; do \
-		WF_IO_HELPERS=$$helpers \
-			"$(COMPLETION_TMP)/retirement-interleave-probe" \
-			"$(COMPLETION_TMP)"; \
-		status=$$?; \
-		if [ $$status -ne 0 ] && [ $$status -ne 77 ]; then exit $$status; fi; \
-	done
 
 completion-default-route-sanitize:
 	@mkdir -p "$(COMPLETION_TMP)"
@@ -463,22 +441,6 @@ completion-windows-cross:
 	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
 	$(WINDOWS_CC) -target x86_64-windows-gnu \
 		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-DWF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT=wf_windows_resource_probe_open_wait \
-		-DWF_WINDOWS_OPEN_ATTEMPT_POINT=wf_windows_resource_probe_open_acquired \
-		-DWF_WINDOWS_CLOSE_RELEASE_POINT=wf_windows_resource_probe_close_release \
-		-I$(COMPLETION_DIR) -Isrc/backend \
-		src/backend/windows_runtime.c \
-		$(COMPLETION_DIR)/windows_completion.c \
-		$(COMPLETION_DIR)/windows_iocp.c \
-		$(COMPLETION_DIR)/windows_blocking.c \
-		$(COMPLETION_DIR)/windows_bridge.c \
-		$(COMPLETION_DIR)/writer_scheduler_windows.c \
-		$(COMPLETION_DIR)/windows_resource_attempt_probe.c \
-		-o "$(COMPLETION_TMP)/windows-resource-attempt-probe.exe"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
 		-I$(COMPLETION_DIR) -Isrc/backend \
 		src/backend/windows_runtime.c \
 		$(COMPLETION_DIR)/windows_completion.c \
@@ -525,8 +487,7 @@ completion-windows-cross:
 	@imports="$$($(WINDOWS_OBJDUMP) -p \
 		"$(COMPLETION_TMP)/windows-blocking-probe.exe")"; \
 	for symbol in _beginthreadex CreateIoCompletionPort \
-		GetQueuedCompletionStatus PostQueuedCompletionStatus \
-		SleepConditionVariableSRW WakeAllConditionVariable; do \
+		GetQueuedCompletionStatus PostQueuedCompletionStatus; do \
 		if ! printf '%s\n' "$$imports" | grep -q "  $$symbol$$"; then \
 			echo "Windows blocking probe does not import $$symbol" >&2; \
 			exit 1; \
@@ -540,6 +501,5 @@ completion-windows-cross:
 	completion-core-read-stress completion-core-read-tsan completion-tsan \
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
-	completion-retirement-interleave-test \
 	completion-default-route-sanitize completion-default-route-tsan \
 	completion-windows-cross

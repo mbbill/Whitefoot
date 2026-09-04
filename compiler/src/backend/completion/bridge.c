@@ -92,12 +92,6 @@ static _Atomic unsigned wf_bridge_file_ready;
  * is otherwise invisible: neither the completion counter nor the fallback
  * adapter's counter moves for an operation that was never submitted. */
 static _Atomic uint64_t wf_bridge_demoted_opens;
-/* Opens a blocking direct call made, which the host refused for want of a
- * descriptor and which asked it again after this runtime gave one back.  The
- * two target engines count their own; together the three are what
- * `wf__completion_open_exhaustion_retries` reports, because the rule they
- * follow is one rule. */
-static _Atomic uint64_t wf_bridge_direct_exhaustion_retries;
 #if defined(__linux__)
 static wf_linux_io_uring_adapter wf_bridge_linux_adapter;
 static wf_linux_io_uring_entry wf_bridge_linux_entries[WF_BRIDGE_SLOT_COUNT];
@@ -236,8 +230,6 @@ static void wf_bridge_shutdown(void) {
     if (wf_bridge_ready == 0) {
         return;
     }
-    /* Nothing may announce on this runtime once it is being taken down. */
-    wf_completion_retirement_announces_on(NULL);
     if (wf_bridge_file_ready != 0) {
         (void)wf_file_adapter_shutdown(&wf_bridge_adapter);
         wf_bridge_file_ready = 0;
@@ -291,13 +283,6 @@ static void wf_bridge_initialize(void) {
     if (wf_bridge_error != 0) {
         return;
     }
-    /* The ledger's second endpoint.  A refused open inside a blocking direct
-     * call parks on this runtime rather than sleeping on the ledger, because
-     * it may be the only thread that can reap the completion it is waiting
-     * for; a ledger transition that never reached this endpoint would leave it
-     * parked on an answer that has already changed.  This bridge owns the
-     * runtime, so this is where the ledger is told about it. */
-    wf_completion_retirement_announces_on(&wf_bridge_runtime);
 #if defined(__linux__)
     if (!wf_bridge_native_ring_refused()
         && wf_linux_io_uring_init(
@@ -320,11 +305,6 @@ static void wf_bridge_initialize(void) {
     /* Darwin has no regular-file kernel completion facility in the supported
      * target set, so its qualified path is the bounded typed adapter. */
     if (!wf_bridge_ensure_file()) {
-        /* The endpoint is cleared before the storage it points at is
-         * destroyed, exactly as at shutdown: a ledger left holding this
-         * runtime would announce on freed storage the moment any adapter this
-         * bridge did not build refused an open. */
-        wf_completion_retirement_announces_on(NULL);
         (void)wf_completion_runtime_destroy(&wf_bridge_runtime);
         return;
     }
@@ -1246,121 +1226,16 @@ int wf__completion_file_write_submit_writer(
     );
 }
 
-/* True exactly for the result of an open the host refused because it had no
- * descriptor to give: the process limit and the system limit. */
-static int wf_bridge_open_lacked_a_descriptor(const wf_file_result *result) {
-    return result->kind == WF_FILE_OPEN_AT && result->value < 0
-        && (result->error_code == EMFILE || result->error_code == ENFILE);
-}
 
-/* Waits for this runtime to give a descriptor back, then re-attempts one open
- * a blocking direct call had refused.
- *
- * The rule stated in contract.h, on the third route an open can take.  What is
- * different here is only how the waiting is done: this thread cannot sleep on
- * the ledger, because on a target with a kernel completion ring it may be the
- * only thread that can reap the very completion it is waiting for.  So it
- * waits by driving the engines and parking on the runtime's own endpoint,
- * which every publication already wakes.  The epoch is read before the state,
- * so a retirement that lands between the two makes the park return at once
- * instead of sleeping through it.
- *
- * Exactly one re-attempt, as on either target engine, and made at the same
- * moment: a descriptor has come back, or nothing is left in this runtime that
- * could bring one and a later look could see no more than this one. */
-static wf_file_result wf_bridge_retire_and_retry_direct(
-    const wf_file_request *request,
-    uint64_t seen
-) {
-    wf_retirement_waiter waiter;
-    wf_file_result result;
-    wf_completion_retirement_wait_begin(&waiter, seen, NULL, NULL, 0);
-    for (;;) {
-        uint64_t epoch;
-        int progressed;
-        if (wf_bridge_ready == 0) {
-            /* No runtime to drive: whatever is in flight belongs to an
-             * adapter this bridge did not build, and the ledger's own wake is
-             * the only one there is. */
-            if (wf_completion_retirement_state(&waiter)
-                != WF_RETIREMENT_AWAITED) {
-                break;
-            }
-            wf_completion_retirement_sleep(&waiter);
-            continue;
-        }
-        /* Driving the engines runs other operations on this thread — with no
-         * helper, a queued adapter request, which can be an open that is
-         * refused in its turn and registers behind this waiter.  So this waiter
-         * stands aside for exactly as long as it is inside one of them, and has
-         * its place back before it decides or sleeps. */
-        wf_completion_retirement_defer_begin(&waiter);
-        progressed = wf_bridge_progress();
-        wf_completion_retirement_defer_end(&waiter);
-        /* The epoch after everything this thread does — the aside above
-         * included, which announces — and before the state it would park on.  A
-         * transition that lands after this read moves the epoch and the park
-         * returns at once; one that landed before it is in the state read
-         * below.  What this order rules out is the thread cancelling its own
-         * park: an announcement of its own between the two reads makes every
-         * park return immediately, which is not a wait but a spin.  Measured at
-         * the revision that read the epoch first, this loop never once reached
-         * a park that slept — tens of thousands of turns across runs, and zero
-         * sleeps in every one of them; here it sleeps. */
-        epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        if (wf_completion_retirement_state(&waiter) != WF_RETIREMENT_AWAITED) {
-            break;
-        }
-        if (progressed == 0) {
-            wf_bridge_park(epoch);
-        }
-    }
-    wf_completion_retirement_wait_end(&waiter);
-    atomic_fetch_add_explicit(
-        &wf_bridge_direct_exhaustion_retries,
-        1,
-        memory_order_relaxed
-    );
-    result = wf_file_execute_timed(&wf_bridge_adapter, request);
-    /* Charged for what it took, on the award it was granted or on none, the
-     * same way the bounded adapter's re-attempt is. */
-    if (wf_file_open_took_a_descriptor(&result)) {
-        wf_completion_retirement_open_took_a_descriptor(waiter.awarded);
-    }
-    return result;
-}
-
-/* One blocking direct host call, entered in the process-wide ledger.
- *
- * A direct call is an operation like any other while it runs: it can be
- * holding the descriptor a refused open elsewhere is waiting for, and when it
- * ends it may be giving one back.  Leaving it out of the ledger would make
- * both facts invisible and let another engine publish an exhaustion that this
- * call was about to answer. */
+/* One blocking direct host call.  A refusal the host gives it, including an
+ * open that found no descriptor, is the outcome the program sees: the
+ * descriptor an open needs is owned by its `FilePermit` [SYS-10], drawn from a
+ * factory whose capacity is inside what the host provides, so a refusal here
+ * is a genuine exhaustion and not a schedule's invention. */
 static wf_file_result wf_bridge_execute_direct(
     const wf_file_request *request
 ) {
-    uint64_t seen = wf_completion_descriptor_returns();
-    wf_file_result result;
-    wf_completion_operation_accepted();
-    result = wf_file_execute_timed(&wf_bridge_adapter, request);
-    if (wf_bridge_open_lacked_a_descriptor(&result)) {
-        result = wf_bridge_retire_and_retry_direct(request, seen);
-    } else if (wf_file_open_took_a_descriptor(&result)) {
-        /* This route's non-registered open: satisfied at the first attempt, so
-         * it never became a waiter, and charged here for the descriptor it
-         * took so that no waiter is promised it as well. */
-        wf_completion_retirement_open_took_a_descriptor(0);
-    }
-    wf_completion_operation_retired(wf_file_returned_a_descriptor(&result));
-    /* A direct call publishes nothing, so nothing else tells a scheduler
-     * parked on the completion endpoint that this runtime just gave a
-     * descriptor back.  A held open waiting for exactly that is released by a
-     * scheduler asking the ledger again, and this is what gets it there. */
-    if (wf_bridge_ready != 0 && wf_completion_retirement_waiters() != 0) {
-        wf_completion_notify_capacity(&wf_bridge_runtime);
-    }
-    return result;
+    return wf_file_execute_timed(&wf_bridge_adapter, request);
 }
 
 static int64_t wf_bridge_return_direct(wf_file_result result) {
@@ -1861,34 +1736,6 @@ uint64_t wf__completion_linux_io_uring_submission_enters(void) {
     return 0;
 }
 
-/* Opens the host refused for want of a descriptor that this runtime gave one
- * back for and re-attempted once, over every route an open can take. */
-uint64_t wf__completion_open_exhaustion_retries(void) {
-    uint64_t retries = atomic_load_explicit(
-        &wf_bridge_direct_exhaustion_retries,
-        memory_order_relaxed
-    );
-    retries += wf_bridge_file_ready == 0
-        ? 0
-        : wf_file_adapter_statistics_snapshot(&wf_bridge_adapter)
-            .exhaustion_retries;
-#if defined(__linux__)
-    if (wf_bridge_linux_ready != 0) {
-        retries += wf_linux_io_uring_statistics_snapshot(
-            &wf_bridge_linux_adapter
-        ).exhaustion_retries;
-    }
-#endif
-    return retries;
-}
-
-/* Opens this runtime held rather than published, over every route, because
- * something in flight could still give the descriptor they needed back.  A
- * test that has to stand at exactly that moment reads this; nothing in the
- * runtime decides anything on it. */
-uint64_t wf__completion_open_exhaustion_waits(void) {
-    return wf_completion_retirement_waits();
-}
 
 uint64_t wf__completion_file_demoted_opens(void) {
     return atomic_load_explicit(&wf_bridge_demoted_opens, memory_order_relaxed);

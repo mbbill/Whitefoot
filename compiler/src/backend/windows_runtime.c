@@ -72,108 +72,6 @@
     ((NTSTATUS)(LONG)0x80000006UL)
 #define WF_WINDOWS_STATUS_PENDING ((NTSTATUS)(LONG)0x00000103UL)
 
-#if !defined(WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT)
-#define WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT \
-    wf_windows_open_attempt_wait_point_absent
-static void wf_windows_open_attempt_wait_point_absent(void) {
-}
-#else
-extern void WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT(void);
-#endif
-
-#if !defined(WF_WINDOWS_OPEN_ATTEMPT_POINT)
-#define WF_WINDOWS_OPEN_ATTEMPT_POINT wf_windows_open_attempt_point_absent
-static void wf_windows_open_attempt_point_absent(void) {
-}
-#else
-extern void WF_WINDOWS_OPEN_ATTEMPT_POINT(void);
-#endif
-
-#if !defined(WF_WINDOWS_CLOSE_RELEASE_POINT)
-#define WF_WINDOWS_CLOSE_RELEASE_POINT wf_windows_close_release_point_absent
-static void wf_windows_close_release_point_absent(void) {
-}
-#else
-extern void WF_WINDOWS_CLOSE_RELEASE_POINT(void);
-#endif
-
-/* Open attempts from one source lane have two execution routes: earlier
- * operations enter the blocking adapter, while the source-last operation is
- * deliberately work-first and calls the direct ABI. Reserving a ticket at
- * submission/call entry keeps those routes in source order when the host has
- * only one descriptor left. Future tickets are not retirement operations yet,
- * so an exhausted current ticket never waits for work forbidden by the gate. */
-static SRWLOCK wf_windows_open_order_lock = SRWLOCK_INIT;
-static CONDITION_VARIABLE wf_windows_open_order_ready =
-    CONDITION_VARIABLE_INIT;
-static _Atomic uint64_t wf_windows_next_open_ticket;
-static uint64_t wf_windows_serving_open_ticket;
-static SRWLOCK wf_windows_open_resource_attempt_lock = SRWLOCK_INIT;
-
-void wf__windows_open_resource_attempt_enter(void) {
-    AcquireSRWLockExclusive(&wf_windows_open_resource_attempt_lock);
-}
-
-void wf__windows_open_resource_attempt_leave(void) {
-    ReleaseSRWLockExclusive(&wf_windows_open_resource_attempt_lock);
-}
-
-static void wf_windows_open_host_attempt_enter(void) {
-    WF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT();
-    wf__windows_open_resource_attempt_enter();
-    WF_WINDOWS_OPEN_ATTEMPT_POINT();
-}
-
-uint64_t wf__windows_open_order_reserve(void) {
-    uint64_t ticket = atomic_fetch_add_explicit(
-        &wf_windows_next_open_ticket,
-        1,
-        memory_order_seq_cst
-    );
-    if (ticket == UINT64_MAX) {
-        abort();
-    }
-    return ticket;
-}
-
-int wf__windows_open_order_is_serving(uint64_t ticket) {
-    int serving;
-    AcquireSRWLockShared(&wf_windows_open_order_lock);
-    serving = ticket == wf_windows_serving_open_ticket;
-    ReleaseSRWLockShared(&wf_windows_open_order_lock);
-    return serving;
-}
-
-void wf__windows_open_order_enter(uint64_t ticket) {
-    BOOL slept;
-    AcquireSRWLockExclusive(&wf_windows_open_order_lock);
-    while (ticket != wf_windows_serving_open_ticket) {
-        slept = SleepConditionVariableSRW(
-            &wf_windows_open_order_ready,
-            &wf_windows_open_order_lock,
-            INFINITE,
-            0
-        );
-        if (slept == FALSE) {
-            ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-            abort();
-        }
-    }
-    ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-}
-
-void wf__windows_open_order_leave(uint64_t ticket) {
-    AcquireSRWLockExclusive(&wf_windows_open_order_lock);
-    if (ticket != wf_windows_serving_open_ticket
-        || wf_windows_serving_open_ticket == UINT64_MAX) {
-        ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-        abort();
-    }
-    wf_windows_serving_open_ticket += 1u;
-    WakeAllConditionVariable(&wf_windows_open_order_ready);
-    ReleaseSRWLockExclusive(&wf_windows_open_order_lock);
-}
-
 typedef NTSTATUS(NTAPI *wf_windows_nt_create_file_fn)(
     PHANDLE,
     ACCESS_MASK,
@@ -259,7 +157,6 @@ _Static_assert(
 );
 
 static _Thread_local int wf_windows_error_code;
-static volatile LONG64 wf_windows_direct_open_retries;
 
 static void wf_windows_record_error(DWORD error_code) {
     DWORD recorded = error_code;
@@ -363,11 +260,7 @@ static DWORD wf_windows_nt_error(
         : (DWORD)mapped;
 }
 
-static int wf_windows_adopt_handle(
-    HANDLE handle,
-    int open_flags,
-    unsigned *returned_native_handle
-) {
+static int wf_windows_adopt_handle(HANDLE handle, int open_flags) {
     int descriptor;
     int saved_errno;
     errno = 0;
@@ -377,9 +270,6 @@ static int wf_windows_adopt_handle(
         DWORD mapped = wf_windows_error_from_errno(saved_errno);
         if (CloseHandle(handle) == FALSE) {
             abort();
-        }
-        if (returned_native_handle != NULL) {
-            *returned_native_handle = 1u;
         }
         wf_windows_record_error(mapped);
         return -1;
@@ -599,11 +489,7 @@ int wf__windows_open_cwd(const void *unused_path, int flags, ...) {
         wf_windows_record_error(GetLastError());
         return -1;
     }
-    descriptor = wf_windows_adopt_handle(
-        handle,
-        _O_RDONLY | _O_BINARY,
-        NULL
-    );
+    descriptor = wf_windows_adopt_handle(handle, _O_RDONLY | _O_BINARY);
     if (descriptor >= 0
         && wf__windows_completion_register_descriptor(
                descriptor,
@@ -670,70 +556,13 @@ int64_t wf__windows_diagnostic_write(const void *bytes, uint64_t length) {
     return (int64_t)written;
 }
 
-static void wf_windows_open_note_take(
-    unsigned *resources,
-    unsigned resource_mask,
-    unsigned awarded_resource,
-    int on_an_award
-) {
-    unsigned ledger_resource;
-    unsigned matching_award;
-    if (resource_mask != WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-        && resource_mask != WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR) {
-        abort();
-    }
-    if (resource_mask == WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE) {
-        ledger_resource = WF_RETIREMENT_NATIVE_HANDLE;
-        matching_award = WF_WINDOWS_OPEN_REFUSED_NATIVE_HANDLE;
-    } else {
-        ledger_resource = WF_RETIREMENT_CRT_DESCRIPTOR;
-        matching_award = WF_WINDOWS_OPEN_REFUSED_CRT_DESCRIPTOR;
-    }
-    wf_completion_retirement_open_took_resource(
-        ledger_resource,
-        on_an_award != 0 && awarded_resource == matching_award
-    );
-    *resources |= resource_mask;
-}
-
-static void wf_windows_open_note_return(
-    unsigned *resources,
-    unsigned resource_mask
-) {
-    unsigned ledger_resource;
-    if (resource_mask != WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-        && resource_mask != WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR) {
-        abort();
-    }
-    ledger_resource = resource_mask == WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-        ? WF_RETIREMENT_NATIVE_HANDLE
-        : WF_RETIREMENT_CRT_DESCRIPTOR;
-    wf_completion_resource_returned(ledger_resource);
-    *resources |= resource_mask;
-}
-
-static void wf_windows_open_return_provisional_handle(
-    HANDLE *handle,
-    unsigned *returned_resources
-) {
+static void wf_windows_open_return_provisional_handle(HANDLE *handle) {
     if (handle == NULL || !wf_windows_handle_valid(*handle)) {
         return;
     }
-    wf__windows_open_resource_attempt_enter();
     if (!wf_windows_close_provisional_handle(handle)) {
-        wf__windows_open_resource_attempt_leave();
         abort();
     }
-    wf_windows_open_note_return(
-        returned_resources,
-        WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-    );
-    wf__windows_open_resource_attempt_leave();
-}
-
-static int wf_windows_open_general_resource_exhausted(DWORD error) {
-    return error == ERROR_NOT_ENOUGH_MEMORY || error == ERROR_OUTOFMEMORY
-        || error == ERROR_NO_SYSTEM_RESOURCES;
 }
 
 int wf__windows_completion_file_open_at_worker(
@@ -745,12 +574,7 @@ int wf__windows_completion_file_open_at_worker(
     unsigned expected_kind,
     unsigned descriptor_class,
     int *error_code,
-    unsigned *open_outcome,
-    unsigned *took_resources,
-    unsigned *returned_resources,
-    unsigned *refused_resource,
-    unsigned awarded_resource,
-    int on_an_award
+    unsigned *open_outcome
 ) {
     const uint16_t *units = (const uint16_t *)(const void *)path;
     wf_windows_nt_api api;
@@ -774,20 +598,7 @@ int wf__windows_completion_file_open_at_worker(
     if (open_outcome != NULL) {
         *open_outcome = WF_WINDOWS_OPEN_FAILED;
     }
-    if (took_resources != NULL) {
-        *took_resources = 0;
-    }
-    if (returned_resources != NULL) {
-        *returned_resources = 0;
-    }
-    if (refused_resource != NULL) {
-        *refused_resource = WF_WINDOWS_OPEN_REFUSED_NONE;
-    }
     if (path == NULL || error_code == NULL || open_outcome == NULL
-        || took_resources == NULL || returned_resources == NULL
-        || refused_resource == NULL
-        || awarded_resource > WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE
-        || on_an_award < 0 || on_an_award > 1
         || (flags != 0 && flags != WF_WINDOWS_NO_FOLLOW)
         || has_mode > 1u || has_mode != 0u
         || expected_kind > WF_WINDOWS_EXPECT_DIRECTORY
@@ -845,7 +656,6 @@ int wf__windows_completion_file_open_at_worker(
     if (flags == WF_WINDOWS_NO_FOLLOW) {
         create_options |= FILE_OPEN_REPARSE_POINT;
     }
-    wf_windows_open_host_attempt_enter();
     status = api.create_file(
         &opened,
         desired_access,
@@ -859,15 +669,6 @@ int wf__windows_completion_file_open_at_worker(
         NULL,
         0
     );
-    if (wf_windows_handle_valid(opened)) {
-        wf_windows_open_note_take(
-            took_resources,
-            WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE,
-            awarded_resource,
-            on_an_award
-        );
-    }
-    wf__windows_open_resource_attempt_leave();
     if (status == WF_WINDOWS_STATUS_PENDING) {
         if (!wf_windows_handle_valid(opened)) {
             wf_windows_record_error(ERROR_INVALID_HANDLE);
@@ -882,16 +683,9 @@ int wf__windows_completion_file_open_at_worker(
             if (error == ERROR_SUCCESS) {
                 error = ERROR_GEN_FAILURE;
             }
-            wf_windows_open_return_provisional_handle(
-                &opened,
-                returned_resources
-            );
+            wf_windows_open_return_provisional_handle(&opened);
             wf_windows_record_error(error);
             *error_code = (int)error;
-            if (wf_windows_open_general_resource_exhausted(error)) {
-                *refused_resource =
-                    WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-            }
             return -1;
         }
         status = io_status.Status;
@@ -899,17 +693,9 @@ int wf__windows_completion_file_open_at_worker(
     if (status == WF_WINDOWS_STATUS_PENDING
         || !wf_windows_nt_success(status)) {
         DWORD error = wf_windows_nt_error(&api, status);
-        wf_windows_open_return_provisional_handle(
-            &opened,
-            returned_resources
-        );
+        wf_windows_open_return_provisional_handle(&opened);
         wf_windows_record_error(error);
         *error_code = (int)error;
-        if (error == ERROR_TOO_MANY_OPEN_FILES) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_NATIVE_HANDLE;
-        } else if (wf_windows_open_general_resource_exhausted(error)) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-        }
         return -1;
     }
     if (!wf_windows_handle_valid(opened)) {
@@ -924,16 +710,10 @@ int wf__windows_completion_file_open_at_worker(
             (DWORD)sizeof(tag_information)
         ) == FALSE) {
         DWORD error = GetLastError();
-        wf_windows_open_return_provisional_handle(
-            &opened,
-            returned_resources
-        );
+        wf_windows_open_return_provisional_handle(&opened);
         wf_windows_record_error(error);
         *error_code = (int)error;
         *open_outcome = WF_WINDOWS_OPEN_STATUS_FAILED;
-        if (wf_windows_open_general_resource_exhausted(error)) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-        }
         return -1;
     }
     outcome = wf_windows_kind_outcome(
@@ -941,46 +721,13 @@ int wf__windows_completion_file_open_at_worker(
         tag_information.FileAttributes
     );
     if (outcome != WF_WINDOWS_OPEN_SUCCEEDED) {
-        wf_windows_open_return_provisional_handle(
-            &opened,
-            returned_resources
-        );
+        wf_windows_open_return_provisional_handle(&opened);
         *open_outcome = outcome;
         return -1;
     }
-    {
-        unsigned returned_native_handle = 0;
-        wf__windows_open_resource_attempt_enter();
-        descriptor = wf_windows_adopt_handle(
-            opened,
-            _O_RDONLY | _O_BINARY,
-            &returned_native_handle
-        );
-        if (returned_native_handle != 0) {
-            wf_windows_open_note_return(
-                returned_resources,
-                WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-            );
-        }
-        if (descriptor >= 0) {
-            wf_windows_open_note_take(
-                took_resources,
-                WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR,
-                awarded_resource,
-                on_an_award
-            );
-        }
-        wf__windows_open_resource_attempt_leave();
-    }
+    descriptor = wf_windows_adopt_handle(opened, _O_RDONLY | _O_BINARY);
     if (descriptor < 0) {
         *error_code = wf_windows_error_code;
-        if (*error_code == ERROR_TOO_MANY_OPEN_FILES) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_CRT_DESCRIPTOR;
-        } else if (wf_windows_open_general_resource_exhausted(
-                       (DWORD)*error_code
-                   )) {
-            *refused_resource = WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE;
-        }
         return -1;
     }
     {
@@ -991,20 +738,7 @@ int wf__windows_completion_file_open_at_worker(
                   descriptor_class
               );
         if (registration_error != 0) {
-            int close_result;
-            wf__windows_open_resource_attempt_enter();
-            close_result = _close(descriptor);
-            if (close_result == 0) {
-                wf_windows_open_note_return(
-                    returned_resources,
-                    WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE
-                );
-            }
-            wf_windows_open_note_return(
-                returned_resources,
-                WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR
-            );
-            wf__windows_open_resource_attempt_leave();
+            (void)_close(descriptor);
             /* Association and registry storage are execution resources
              * introduced by this backend. They cannot become a source-level
              * open failure, and there is no permitted synchronous fallback. */
@@ -1026,16 +760,8 @@ int wf__completion_file_open_at_direct(
     int *error_code,
     unsigned *open_outcome
 ) {
-    wf_retirement_waiter waiter;
-    unsigned took_resources = 0;
-    unsigned returned_resources = 0;
-    unsigned refused_resource = WF_WINDOWS_OPEN_REFUSED_NONE;
-    uint64_t open_ticket = wf__windows_open_order_reserve();
     wf_windows_descriptor_lease root_lease;
-    int progressed;
     int result;
-    wf__windows_open_order_enter(open_ticket);
-    wf_completion_operation_accepted();
     if (!wf__windows_completion_descriptor_lease_acquire(
             directory,
             WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT,
@@ -1049,10 +775,12 @@ int wf__completion_file_open_at_direct(
         if (open_outcome != NULL) {
             *open_outcome = WF_WINDOWS_OPEN_FAILED;
         }
-        wf__windows_open_order_leave(open_ticket);
-        wf_completion_operation_retired_resources(0);
         return -1;
     }
+    /* A refusal the host gives this open, including one for want of a
+     * handle or a descriptor, is the outcome the program sees: the
+     * descriptor an open needs is owned by its `FilePermit` [SYS-10], drawn
+     * from a factory whose capacity is inside what the host provides. */
     result = wf__windows_completion_file_open_at_worker(
         root_lease.handle,
         path,
@@ -1062,65 +790,10 @@ int wf__completion_file_open_at_direct(
         expected_kind,
         descriptor_class,
         error_code,
-        open_outcome,
-        &took_resources,
-        &returned_resources,
-        &refused_resource,
-        WF_WINDOWS_OPEN_REFUSED_NONE,
-        0
+        open_outcome
     );
-    if (refused_resource != WF_WINDOWS_OPEN_REFUSED_NONE) {
-        wf_completion_retirement_wait_begin_resource(
-            &waiter,
-            wf_completion_resource_returns(WF_RETIREMENT_OPEN_QUIESCENCE),
-            NULL,
-            NULL,
-            0,
-            WF_RETIREMENT_OPEN_QUIESCENCE
-        );
-        for (;;) {
-            wf_completion_retirement_defer_begin(&waiter);
-            progressed = wf__windows_completion_progress_for_retirement();
-            wf_completion_retirement_defer_end(&waiter);
-            if (wf_completion_retirement_state(&waiter)
-                != WF_RETIREMENT_AWAITED) {
-                break;
-            }
-            if (!progressed) {
-                Sleep(1u);
-            }
-        }
-        wf_completion_retirement_wait_end(&waiter);
-        (void)InterlockedIncrement64(&wf_windows_direct_open_retries);
-        result = wf__windows_completion_file_open_at_worker(
-            root_lease.handle,
-            path,
-            flags,
-            mode,
-            has_mode,
-            expected_kind,
-            descriptor_class,
-            error_code,
-            open_outcome,
-            &took_resources,
-            &returned_resources,
-            &refused_resource,
-            WF_WINDOWS_OPEN_REFUSED_NONE,
-            0
-        );
-    }
     wf__windows_completion_descriptor_lease_release(&root_lease);
-    wf__windows_open_order_leave(open_ticket);
-    wf_completion_operation_retired_resources(0);
     return result;
-}
-
-uint64_t wf__windows_direct_open_exhaustion_retries(void) {
-    return (uint64_t)InterlockedCompareExchange64(
-        &wf_windows_direct_open_retries,
-        0,
-        0
-    );
 }
 
 int wf__completion_file_status_direct(
@@ -1148,7 +821,6 @@ int wf__completion_file_status_direct(
         wf_windows_record_error(ERROR_INVALID_HANDLE);
         return -1;
     }
-    wf_completion_operation_accepted();
     if (GetFileInformationByHandleEx(
             lease.handle,
             FileAttributeTagInfo,
@@ -1157,7 +829,6 @@ int wf__completion_file_status_direct(
         ) == FALSE) {
         wf_windows_record_error(GetLastError());
         wf__windows_completion_descriptor_lease_release(&lease);
-        wf_completion_operation_retired_resources(0);
         return -1;
     }
     memset(&cell, 0, sizeof(cell));
@@ -1167,7 +838,6 @@ int wf__completion_file_status_direct(
     cell.attributes = (uint32_t)tag_information.FileAttributes;
     memcpy(status, &cell, sizeof(cell));
     wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
     return 0;
 }
 
@@ -1176,38 +846,24 @@ int wf__completion_file_close_direct(int descriptor) {
     int saved_errno;
     int descriptor_was_valid;
     wf_windows_descriptor_close_ticket ticket;
-    wf_completion_operation_accepted();
     (void)wf__windows_completion_descriptor_close_begin(
         descriptor,
         &ticket
     );
     descriptor_was_valid = ticket.active != 0;
-    if (descriptor_was_valid != 0) {
-        wf__windows_open_resource_attempt_enter();
-    }
     errno = 0;
     result = _close(descriptor);
     saved_errno = errno;
     if (descriptor_was_valid != 0) {
-        WF_WINDOWS_CLOSE_RELEASE_POINT();
-        if (result == 0) {
-            wf_completion_resource_returned(
-                WF_RETIREMENT_NATIVE_HANDLE
-            );
-        }
-        wf_completion_resource_returned(WF_RETIREMENT_CRT_DESCRIPTOR);
-        wf__windows_open_resource_attempt_leave();
         wf__windows_completion_descriptor_close_finish(&ticket);
     }
     if (result != 0) {
         wf_windows_record_error(wf_windows_error_from_errno(saved_errno));
-        wf_completion_operation_retired_resources(0);
         return -1;
     }
     if (descriptor_was_valid == 0) {
         abort();
     }
-    wf_completion_operation_retired_resources(0);
     return 0;
 }
 
@@ -1313,7 +969,6 @@ int64_t wf__completion_file_pread_direct(
         wf_windows_record_error(ERROR_INVALID_HANDLE);
         return -1;
     }
-    wf_completion_operation_accepted();
     result = wf_windows_file_pread_worker(
         lease.handle,
         buffer,
@@ -1321,7 +976,6 @@ int64_t wf__completion_file_pread_direct(
         file_offset
     );
     wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
     return result;
 }
 
@@ -1364,14 +1018,12 @@ int64_t wf__completion_file_write_direct(
         wf_windows_record_error(ERROR_INVALID_HANDLE);
         return -1;
     }
-    wf_completion_operation_accepted();
     result = wf__windows_completion_file_write_worker(
         lease.handle,
         buffer,
         count
     );
     wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
     return result;
 }
 
@@ -1634,7 +1286,6 @@ int64_t wf__completion_directory_next_direct(
         wf_windows_record_error(ERROR_INVALID_HANDLE);
         return -1;
     }
-    wf_completion_operation_accepted();
     result = wf__windows_completion_directory_next_worker(
         lease.handle,
         buffer,
@@ -1642,7 +1293,6 @@ int64_t wf__completion_directory_next_direct(
         position
     );
     wf__windows_completion_descriptor_lease_release(&lease);
-    wf_completion_operation_retired_resources(0);
     return result;
 }
 

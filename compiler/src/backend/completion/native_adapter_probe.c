@@ -1001,8 +1001,6 @@ struct wf_completion_runtime {
     unsigned publications;
 };
 
-static unsigned probe_operations_accepted;
-static unsigned probe_operations_retired;
 static unsigned probe_descriptor_lease_releases;
 
 void wf__windows_completion_descriptor_lease_release(
@@ -1017,17 +1015,6 @@ void wf__windows_completion_descriptor_lease_release(
     }
     probe_descriptor_lease_releases += 1;
     memset(lease, 0, sizeof(*lease));
-}
-
-void wf_completion_operation_accepted(void) {
-    probe_operations_accepted += 1;
-}
-
-void wf_completion_operation_retired(int returned_a_descriptor) {
-    if (returned_a_descriptor != 0) {
-        abort();
-    }
-    probe_operations_retired += 1;
 }
 
 enum wf_completion_transition_result wf_completion_begin_submit(
@@ -1137,8 +1124,6 @@ int main(int argc, char **argv) {
         }
     }
     if (runtime.publications != 1
-        || probe_operations_accepted != 1
-        || probe_operations_retired != 1
         || probe_descriptor_lease_releases != 1
         || entries[0].lease.generation != 0
         || entries[1].lease.generation != 0

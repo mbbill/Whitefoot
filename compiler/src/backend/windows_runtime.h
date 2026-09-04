@@ -12,13 +12,6 @@
 extern "C" {
 #endif
 
-#define WF_WINDOWS_OPEN_RESOURCE_NATIVE_HANDLE (1u << 0)
-#define WF_WINDOWS_OPEN_RESOURCE_CRT_DESCRIPTOR (1u << 1)
-#define WF_WINDOWS_OPEN_REFUSED_NONE 0u
-#define WF_WINDOWS_OPEN_REFUSED_NATIVE_HANDLE 1u
-#define WF_WINDOWS_OPEN_REFUSED_CRT_DESCRIPTOR 2u
-#define WF_WINDOWS_OPEN_REFUSED_GENERAL_RESOURCE 3u
-
 #define WF_WINDOWS_DESCRIPTOR_CLASS_ANY 0u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE 1u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT 2u
@@ -98,19 +91,8 @@ int wf__windows_completion_file_open_at_worker(
     unsigned expected_kind,
     unsigned descriptor_class,
     int *error_code,
-    unsigned *open_outcome,
-    unsigned *took_resources,
-    unsigned *returned_resources,
-    unsigned *refused_resource,
-    unsigned awarded_resource,
-    int on_an_award
+    unsigned *open_outcome
 );
-uint64_t wf__windows_open_order_reserve(void);
-int wf__windows_open_order_is_serving(uint64_t ticket);
-void wf__windows_open_order_enter(uint64_t ticket);
-void wf__windows_open_order_leave(uint64_t ticket);
-void wf__windows_open_resource_attempt_enter(void);
-void wf__windows_open_resource_attempt_leave(void);
 int wf__windows_completion_register_descriptor(
     int descriptor,
     unsigned descriptor_class
@@ -167,11 +149,6 @@ int64_t wf__windows_directory_batch(
  * it becomes writer-visible. The return is zero or a Win32 error code. */
 int wf__windows_completion_associate_descriptor(int descriptor);
 
-/* Direct open exhaustion can coexist with already-owned IOCP/blocking work.
- * This bounded progress turn keeps the direct caller from sleeping while it
- * is the only scheduler able to reap that work. */
-int wf__windows_completion_progress_for_retirement(void);
-uint64_t wf__windows_direct_open_exhaustion_retries(void);
 
 #if defined(__cplusplus)
 }

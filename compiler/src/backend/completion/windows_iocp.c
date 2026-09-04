@@ -315,8 +315,6 @@ static int wf_windows_publish(
             1,
             memory_order_relaxed
         );
-    } else {
-        wf_completion_operation_retired(0);
     }
     atomic_fetch_add_explicit(
         &adapter->stat_completions,
@@ -380,8 +378,6 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
     }
 
     entry->lease = request->lease;
-    wf_completion_operation_accepted();
-
     atomic_store_explicit(
         &entry->state,
         WF_WINDOWS_IOCP_ENTRY_IN_FLIGHT,

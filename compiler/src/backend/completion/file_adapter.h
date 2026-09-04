@@ -280,49 +280,6 @@ typedef struct wf_file_result {
     unsigned char status[WF_FILE_STATUS_CAPACITY];
 } wf_file_result;
 
-/* Whether this finished operation put a descriptor back in the host's table,
- * which is the one thing `wf_completion_operation_retired` asks of it.
- *
- * A close ran the host call that returns one.  An open whose descriptor this
- * runtime obtained and then disposed of returns one too: the kind check refused
- * the descriptor, and the close made for it is a descriptor coming back, which
- * a refused open waiting on the ledger is entitled to see.  Every other ending
- * returns nothing — an open the host refused never held one, an open the
- * program now holds has not given it back, and a transfer, a status and a
- * directory batch were only lent one.
- *
- * It reads the finished operation's own record, so the answer follows the
- * operation rather than the route it took; the ring answers the same question
- * from its entry. */
-static inline int wf_file_returned_a_descriptor(const wf_file_result *result) {
-    if (result == NULL) {
-        return 0;
-    }
-    if (result->kind == WF_FILE_CLOSE) {
-        /* Only a close the host performed put a descriptor back; a refused
-         * close (EBADF) freed nothing, and counting it spends a refused
-         * open's one re-attempt on a return that never happened. */
-        return result->error_code == 0;
-    }
-    return result->kind == WF_FILE_OPEN_AT && result->value >= 0
-        && result->open_outcome != WF_FILE_OPEN_SUCCEEDED;
-}
-
-/* Whether the host satisfied this open, which is the one thing
- * `wf_completion_retirement_open_took_a_descriptor` asks of it: there is a
- * descriptor in this open's hand that was in the host's table before it ran.
- *
- * The kind check does not come into it.  An open the check refuses held the
- * descriptor all the same, and the close made for it is reported separately as
- * the return it is — so such an open is charged once here and counted once
- * there, and the two cancel exactly as they should. */
-static inline int wf_file_open_took_a_descriptor(
-    const wf_file_result *result
-) {
-    return result != NULL && result->kind == WF_FILE_OPEN_AT
-        && result->value >= 0;
-}
-
 typedef struct wf_file_work {
     wf_completion_token token;
     wf_file_request request;
@@ -353,11 +310,6 @@ enum wf_file_submit_result {
 
 typedef struct wf_file_adapter_statistics {
     uint64_t submissions;
-    /* Opens refused for want of a host descriptor that this adapter asked the
-     * host about a second time, after running work it still owed or after
-     * waiting for an operation in flight anywhere else to retire.  A refusal
-     * published without a second attempt is not counted here. */
-    uint64_t exhaustion_retries;
     uint64_t capacity_waits;
     uint64_t helper_executions;
     uint64_t scheduler_executions;
@@ -370,11 +322,8 @@ typedef struct wf_file_adapter {
     size_t queue_capacity;
     size_t queue_head;
     size_t queue_tail;
-    /* Mutated only under queue_lock, and atomic so the retirement ledger can
-     * read it while holding its own lock instead of this one: a refused open
-     * deciding whether to sleep must read the queue at the moment it decides,
-     * and reaching for queue_lock there would invert the order every
-     * submission takes. */
+    /* Mutated only under queue_lock, and atomic so the decline check can read
+     * it without taking the lock. */
     _Atomic size_t queue_count;
     pthread_t *helpers;
     /* Grown under queue_lock by a submitting thread and read without it by a
@@ -411,7 +360,6 @@ typedef struct wf_file_adapter {
     _Atomic unsigned initialized;
 
     _Atomic uint64_t stat_submissions;
-    _Atomic uint64_t stat_exhaustion_retries;
     _Atomic uint64_t stat_capacity_waits;
     _Atomic uint64_t stat_helper_executions;
     _Atomic uint64_t stat_scheduler_executions;
@@ -537,8 +485,7 @@ size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
  * named beside it because it is the other entry a delivered program reaches
  * without holding anything, and it holds nothing at any point: it asks
  * `wf_file_adapter_queued`, which is a plain atomic load of `queue_count` and
- * takes no lock — the retirement ledger requires exactly that of the same
- * read, because it asks for the count while holding its own lock — so a
+ * takes no lock — so a
  * shutdown in its window destroys nothing it touches, and the most it can do
  * to it is leave it a count nothing maintains any more.  Shutdown clears the
  * record's `initialized` flag before destroying the condition variable and the
