@@ -1,14 +1,14 @@
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The enumeration source is a cursor with one position, opened above the loop and advanced by every iteration through a retained exclusive borrow. It is not read-only, it is not prologue-only, and an opaque system nominal has no copy element type to replicate, so PAR-3 denies it permanently rather than for a stage-one reason. This is the ownership model working, not a gap.";
   let total = 0_u64;
-  region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         for @scan (index in 0_u64..4_u64) {
           let entries = buffer_new(1024_u64, 0_u8);
-          region 'b {
-            match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
+          region {
+            match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 1024_u64) {
               ListBytes(next: bytes, entries: reported) => {
                 set total = total +wrap reported;
               }

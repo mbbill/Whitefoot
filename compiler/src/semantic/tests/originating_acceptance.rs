@@ -147,9 +147,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unproved_system_endpoints_reject_under_sys8() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
-  region 'attempt {
-    match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
+    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
+  region {
+    match write_once(output: &uniq deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -174,8 +174,8 @@ command fn main(command.stdout as output: own Output) -> status: own ExitStatus 
 #[test]
 fn an_external_index_needs_a_real_control_flow_fact() {
     let direct = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  region 'a {
-    let index = args_count::<'a>(args: &'a args);
+  region {
+    let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
     let value = bytes[index];
     return exit_status(code: value);
@@ -187,8 +187,8 @@ fn an_external_index_needs_a_real_control_flow_fact() {
     });
 
     let guarded = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
-  region 'a {
-    let index = args_count::<'a>(args: &'a args);
+  region {
+    let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
     let room = len(bytes);
     if index < room {
@@ -214,14 +214,14 @@ fn an_external_call_actual_needs_a_real_control_flow_fact() {
 
 "#;
     let direct = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region 'a {{\n    let index = args_count::<'a>(args: &'a args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
     );
     rejects_as(direct.as_bytes(), SemanticRule::Fn8, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
     });
 
     let guarded = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region 'a {{\n    let index = args_count::<'a>(args: &'a args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let room = len(bytes);\n    if index < room {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let room = len(bytes);\n    if index < room {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }

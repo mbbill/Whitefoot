@@ -800,7 +800,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn source_invariant_discharges_the_weigh_addition_domain() {
-    let source = br#"fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
+    let source = br#"fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
   define capacity = len(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
@@ -818,12 +818,12 @@ fn source_invariant_discharges_the_weigh_addition_domain() {
   return sum;
 }
 
-fn add_one['w](weights: &'w buffer<u8>, count: own u64) -> result: own u32 reads(weights) contract {
+fn add_one(weights: &buffer<u8>, count: own u64) -> result: own u32 reads(weights) contract {
   define capacity = len(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
 } {
-  let total = weigh::<'w>(weights: weights, count: count);
+  let total = weigh(weights: weights, count: count);
   let incremented = total + 1_u32;
   return incremented;
 }
@@ -1427,7 +1427,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn active_invariant_proves_a_dynamic_buffer_index_obligation() {
-    let source = br#"fn read_prefix['v](values: &'v buffer<u8>, count: own u64) -> result: own unit reads(values) contract {
+    let source = br#"fn read_prefix(values: &buffer<u8>, count: own u64) -> result: own unit reads(values) contract {
   define capacity = len(deref(values));
   requires count <= capacity;
 } {
@@ -1576,7 +1576,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn exhaustion_facts_prove_both_system_range_components() {
-    let source = br#"fn publish_prefix['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+    let source = br#"fn publish_prefix(output: &uniq Output, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires limit <= capacity;
 } {
@@ -1590,8 +1590,8 @@ fn exhaustion_facts_prove_both_system_range_components() {
     set start = end;
     set end = end + 1_u64;
   }
-  region 'attempt {
-    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end);
+  region {
+    let outcome = write_once(output: &uniq deref(output), source: source, start: start, end: end);
   }
   return unit;
 }

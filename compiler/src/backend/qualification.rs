@@ -160,7 +160,18 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // erase before lowering as before. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.40 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.41";
+// v0.42 region-spelling review (2026-09-03): [FORM-8] decides only which of a
+// program's regions the writer spells. A region determined by its own position
+// is elided and one that relates two positions or that a caller chooses is
+// written; the regions themselves, their extents, and every liveness,
+// outlives, exclusivity, storage-duration, provenance, effect, and confinement
+// judgment over them are unchanged, and regions erase before lowering as
+// before. The seventeen [SYS-2] declaration records are re-rendered in that
+// same form without changing one signature identity, parameter name, order,
+// borrow mode, type, effect row, or count. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.41 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.42";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

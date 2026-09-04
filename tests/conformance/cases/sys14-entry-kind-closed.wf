@@ -3,14 +3,14 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let entries = buffer_new(4096_u64, 0_u8);
   let room = len(entries);
   let status = 0_u8;
-  region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         let produced = 0_u64;
         let announced = 0_u64;
-        region 'b {
-          match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 4096_u64) {
+        region {
+          match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 4096_u64) {
             ListBytes(next: bytes, entries: reported) => {
               set produced = bytes;
               set announced = reported;

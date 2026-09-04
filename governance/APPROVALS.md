@@ -2424,3 +2424,95 @@ ACTIVE-SPEC: v0.40 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0
   `compiler/tests/conformance/json.rs`, `tests/conformance/runner.py`, and
   `tests/conformance/test_runner.py` are byte-identical to `main`.
 ACTIVE-SPEC: v0.41 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168
+
+## 2026-09-03 — merge-time approval content: v0.42 one canonical region spelling ([FORM-8]) (1 rule added; 132 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this record
+  creates no separate approval step, and nothing in it asserts that the
+  approval has been given.
+- SPECIFICATION: activate Whitefoot v0.42 at exact SHA-256
+  `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`.
+  It supersedes active v0.41 at SHA-256
+  `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.41.md`. The candidate that preceded activation declared
+  `CANDIDATE v0.42 supersedes v0.41` and hashed to
+  `8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`;
+  activation flipped that status line to `ACTIVE v0.42` and changed no other
+  byte. Per the specification's own META-5
+  delta declaration: numbered rules are +1/-0 and 132 remain, the added rule
+  being [FORM-8] and no id retired; grammar productions are +0/-0 and 83
+  remain, with `mode`, `borrow_expr`, `region_stmt`, and the `slice` and
+  `arena` alternatives of `type` each gaining one optional REGIONID decision;
+  and fixed lowercase atoms, compound punctuation tokens, token bytes, writer
+  operation spellings, opaque system nominal spellings, runtime-trap families,
+  entry forms, contract block forms, exception clauses, and the 203 system
+  operations and declaration records are unchanged. The changed content makes
+  every region spelling forced. A REGIONID is written exactly where the
+  document does not otherwise fix the region it denotes: a declaration writes a
+  name only to relate two of its own positions or to name an output-position
+  region no parameter position determines, and the region parameter list then
+  holds exactly the written names in order of first written occurrence; a
+  `borrow_expr` writes its region only when it is not the innermost enclosing
+  `region_stmt`'s; a `region_stmt` writes its name only when its body still
+  references it; and a call's `::` type application writes exactly the callee
+  region parameters no parameter position determines, every other one being the
+  least region of the actual arguments at the positions naming it, so a call
+  whose regions are all determined writes no `::` application at all. The
+  seventeen [SYS-2] declaration records are re-rendered in that same form,
+  changing spelling only — no signature identity, parameter name, order, mode,
+  type, effect, or count moves. No liveness, outlives, exclusivity,
+  storage-duration, provenance, effect, or confinement judgment changes, and
+  the accepted-program set is unchanged up to respelling. The selection ground
+  the specification states is minimality under [FORM-1] and the owner ruling
+  of record that one semantics has one spelling, with the rule decidable from
+  the owning declaration's own text at every position.
+- CONFORMANCE BOUNDARY: relative to `main` tip
+  `30602914`, `tests/conformance` content changes as follows. Under
+  `tests/conformance/cases/`, 8 files are added, 123 are modified, and 3 are
+  deleted; git reports no rename. `manifest.jsonl` is modified: the three
+  deleted ids leave it, the eight added ids enter it, and two retained ids get
+  a new `doc` sentence. Added:
+  - `tests/conformance/cases/form8-neg-elided-related-region.wf`
+  - `tests/conformance/cases/form8-neg-elided-result-region.wf`
+  - `tests/conformance/cases/form8-neg-unreferenced-region-block-name.wf`
+  - `tests/conformance/cases/form8-neg-written-determined-region-argument.wf`
+  - `tests/conformance/cases/form8-neg-written-innermost-borrow-region.wf`
+  - `tests/conformance/cases/form8-neg-written-unrelated-parameter-region.wf`
+  - `tests/conformance/cases/form8-pos-elided-regions-run.wf`
+  - `tests/conformance/cases/form8-pos-related-pair-written.wf`
+
+  Deleted, each because the language rule it tested no longer exists:
+  - `tests/conformance/cases/type5-neg-wrong-region-arg-count.wf` — a user call
+    stating two region arguments where the callee declared one. [FORM-8] gives
+    a call exactly one legal region-argument list, so "wrong count" is no
+    longer a distinct fault; `form8-neg-written-determined-region-argument`
+    carries the surviving content, that writing a determined region argument is
+    rejected.
+  - `tests/conformance/cases/sys2-neg-wrong-region-arg-count.wf` — the same
+    fault for a system operation. Every [SYS-2] region occupies one parameter
+    position, so the legal list is empty and the same replacement covers it.
+  - `tests/conformance/cases/reject-sys2-args-count-missing-region.wf` — a
+    system call omitting a required region argument. Under [FORM-8] omitting it
+    is the required spelling, so the program this case declared invalid is now
+    the canonical one; `form8-pos-elided-regions-run` accepts and runs that
+    shape.
+
+  The 123 modified case sources are the mechanical [FORM-8] re-spelling and
+  nothing else, except two whose content is restated because the old spelling
+  became unwritable:
+  - `own3-neg-undeclared-signature-region` — the undeclared region moves from a
+    parameter mode to a body `borrow_expr`. A signature position can no longer
+    carry an undeclared name, because [FORM-8] admits a written name only when
+    the region parameter list holds it; the body borrow is where an undeclared
+    spelling is still reachable, and the case still reaches [OWN-3].
+  - `x-borrow-own-param-escape-no-return` — the caller-supplied region gains a
+    second position (a borrow parameter and the result share it) so that
+    [FORM-8] writes it at all. The escape under test is unchanged: a borrow of
+    an own local into a caller-supplied region, with nothing returning it, and
+    the case still reaches [OWN-10].
+
+  No other case changes its expectation kind, cited rule, or runnable status,
+  and coverage remains complete at 132/132 rules with [FORM-8] covered by case.
+ACTIVE-SPEC: v0.42 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761

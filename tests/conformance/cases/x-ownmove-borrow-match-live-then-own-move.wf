@@ -7,8 +7,8 @@ enum Sign {
 command fn main() -> status: own ExitStatus pure {
   doc "OWN-13 both modes: a shared-borrow match leaves s live; a later own match then moves it exactly once.";
   let s = Pos();
-  region 'r {
-    let b = &'r s;
+  region {
+    let b = &s;
     match deref(b) {
       Neg() => {
       }

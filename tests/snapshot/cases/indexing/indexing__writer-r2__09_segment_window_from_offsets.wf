@@ -1,4 +1,4 @@
-fn segment_sum['o, 'd](offsets: &'o buffer<u64>, data: &'d buffer<u32>, segment: own u64) -> total: own u32 reads(offsets, data) {
+fn segment_sum(offsets: &buffer<u64>, data: &buffer<u32>, segment: own u64) -> total: own u32 reads(offsets, data) {
   let segment_count_plus_one = len(deref(offsets));
   if segment_count_plus_one > 0_u64 {
   } else {
@@ -47,8 +47,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set data[3_u64] = 1_u32;
   set data[4_u64] = 1_u32;
   set data[5_u64] = 9_u32;
-  region 'r {
-    let middle = segment_sum::<'r, 'r>(offsets: &'r offsets, data: &'r data, segment: 1_u64);
+  region {
+    let middle = segment_sum(offsets: &offsets, data: &data, segment: 1_u64);
     if middle == 3_u32 {
     } else {
       return exit_status(code: 1_u8);

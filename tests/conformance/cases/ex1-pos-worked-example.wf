@@ -18,8 +18,8 @@ fn sign_of(x: own i32) -> result: own Sign pure {
 command fn main() -> status: own ExitStatus pure {
   doc "let-initializer match with give: a conditional value bound, then reused.";
   let a = 40_i32;
-  region 'r {
-    let p = &'r a;
+  region {
+    let p = &a;
     let v = match deref(p) +checked 2_i32 {
       Ok(value: w) => {
         give w;

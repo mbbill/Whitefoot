@@ -1,15 +1,15 @@
 # Whitefoot Direction Outline
 
 Status: CANONICAL DIRECTION OUTLINE
-Revision: 63 (v0.41 respells the six integer comparisons as symbols and
-delimits call-site type application with `::`)
+Revision: 65 (v0.42 makes every region spelling forced: a REGIONID is written
+exactly where the surrounding text does not already fix the region)
 
-The active language authority is v0.41, SHA-256
-`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`, carried by
+The active language authority is v0.42, SHA-256
+`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`, carried by
 the stable path [`spec/kernel-spec.md`](../spec/kernel-spec.md). It supersedes
-v0.40 at `15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`,
+v0.41 at `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`,
 archived byte-for-byte at
-[`spec/kernel-spec-v0.40.md`](../spec/kernel-spec-v0.40.md). The merge-time
+[`spec/kernel-spec-v0.41.md`](../spec/kernel-spec-v0.41.md). The merge-time
 approval record is in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md) and becomes effective
 with the owner's merge approval of the exact revision containing it; the batch
@@ -17,6 +17,27 @@ record for v0.39 remains [batch 0091](done/0091-par3-judgment.md). The
 execution plan is [`docs/current-plan.md`](current-plan.md).
 Project law is the [`Constitution`](constitution.md), and the operational
 process is [`WORKFLOW.md`](WORKFLOW.md).
+
+The stable path carries those exact **ACTIVE v0.42** bytes; the candidate that
+preceded activation hashed to
+`8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`, and
+activation flipped its status line and changed no other byte. The outgoing
+v0.41 bytes are archived and the chain in
+[`governance/APPROVALS.md`](../governance/APPROVALS.md) carries the new
+`ACTIVE-SPEC: v0.42` line.
+v0.42 adds [FORM-8], one canonical region spelling. A REGIONID is written
+exactly where the document does not otherwise fix the region: a declaration
+writes a name only to relate two of its own positions or to name an
+output-position region no parameter determines; a `borrow_expr` writes its
+region only when it is not the innermost enclosing `region_stmt`'s; a
+`region_stmt` writes its name only when its body still references it; and a
+call writes exactly the callee region parameters no parameter position
+determines, so a call whose regions are all determined writes no `::`
+application at all. No liveness, outlives, exclusivity, storage-duration,
+provenance, effect, or confinement judgment changes. Over the four `.wf` test
+corpora the rule takes 2623 written region tokens in 261 files to 260 in 75,
+and every remaining one carries a relation, a caller's choice, or an outer
+block a deeper one encloses.
 
 v0.40 carries source proof through the
 ordinary semantic compiler. It checks contracts, explicit loop-header
@@ -764,7 +785,7 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### outline:FLOOR-5 — Spelling rule and surface relief
 
-`[v0.23: class deletions and infix arithmetic]` `[v0.41: comparison symbols and the call-site delimiter]`
+`[v0.23: class deletions and infix arithmetic]` `[v0.41: comparison symbols and the call-site delimiter]` `[v0.42: forced region spelling]`
 
 - **Goal:** every surface byte carries a decision the checker cannot
   reconstruct (tests T1 decision / T2 boundary / T3 uniqueness / T4
@@ -779,9 +800,14 @@ and every slower-but-accepted divergence becomes a measured finding.
   the alphabet only inside `!=`, and a multiplied `use` relation is
   parenthesized. Bool logic, the bit family, float and enum comparison, and
   every unary operation stay named by ruling; ANF relaxation stays deferred.
+  v0.42 lands the third batch as [FORM-8]: a REGIONID is written exactly where
+  the surrounding text does not already fix the region denoted, and is absent
+  everywhere else, so each region position has one legal spelling.
 - **Missing / next:** nothing is open in this row; the retired comparison
-  names are free identifiers, and the corpus, snapshot index, conformance
-  manifest, and live documentation are respelled.
+  names are free identifiers, the corpus, snapshot index, conformance
+  manifest, and live documentation are respelled, and the writer trial that
+  would select [FORM-8]'s position partition against its alternatives is
+  registered in `spec/derivation/derivation-ledger.md`.
 - **Facts:** [sweep and rulings](../research/investigations/spelling-relief/SWEEP.md) ·
   [activation record](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
 

@@ -1,4 +1,4 @@
-fn get_bounded['r](b: &'r buffer<u8>, i: own u64) -> value: own u8 reads(b) contract {
+fn get_bounded(b: &buffer<u8>, i: own u64) -> value: own u8 reads(b) contract {
   define room = len(deref(b));
   requires i < room;
 } {
@@ -10,13 +10,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let buf = buffer_new(5_u64, 3_u8);
   let n = len(buf);
   let acc = 0_u64;
-  region 'r {
-    let p = &'r buf;
+  region {
+    let p = &buf;
     for (
       i in 0_u64..n,
       invariant bounded: i <= n
     ) {
-      let byte = get_bounded::<'r>(b: p, i: i);
+      let byte = get_bounded(b: p, i: i);
       let widened = cvt::<u8, u64>(byte);
       set acc = acc +wrap widened;
     }

@@ -1,6 +1,6 @@
 const data: array<u64, 6> =[3_u64, 7_u64, 0_u64, 9_u64, 2_u64, 5_u64];
 
-fn find_sentinel['r](values: own slice<'r, u64>) -> found: own u64 reads(values) {
+fn find_sentinel(values: own slice<u64>) -> found: own u64 reads(values) {
   doc "ACCEPT: counted for cursor scans a slice and breaks on the first sentinel value it meets.";
   let length = len(values);
   let found = length;
@@ -16,9 +16,9 @@ fn find_sentinel['r](values: own slice<'r, u64>) -> found: own u64 reads(values)
 }
 
 command fn main() -> status: own ExitStatus pure {
-  region 'scan {
-    let view = slice_of(&'scan data);
-    let found = find_sentinel::<'scan>(values: move view);
+  region {
+    let view = slice_of(&data);
+    let found = find_sentinel(values: move view);
     let correct = found == 2_u64;
     if correct {
     } else {

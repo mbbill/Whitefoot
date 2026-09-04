@@ -773,6 +773,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<StatementResult, CheckStop> {
         let declaration = self.declaration_at(node, DeclarationRole::LocalRegion)?;
         let region = declaration.id();
+        // [FORM-8] the block writes its name exactly when its body still
+        // references it after elision.
+        if self.writes_region(node)?
+            && !self.region_is_referenced_below(node, declaration.spelling())?
+        {
+            return self.issue_node(
+                SemanticRule::Form8,
+                node,
+                SemanticIssueKind::RegionSpelling {
+                    mechanical_fix: "drop the region name: nothing inside this block names it, \
+so the block is written `region { ... }`",
+                },
+            );
+        }
         let base_keys = bindings.keys().copied().collect::<HashSet<_>>();
         // A region block with arena allocations carries the compiler-owned
         // allocation list [STOR-3]: an ordinary hidden own binding keyed by

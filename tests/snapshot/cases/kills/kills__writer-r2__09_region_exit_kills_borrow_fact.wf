@@ -1,12 +1,12 @@
-fn room_of['r](b: &'r buffer<u8>) -> result: own u64 reads(b) {
+fn room_of(b: &buffer<u8>) -> result: own u64 reads(b) {
   return len(deref(b));
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "expected: ACCEPT -- a fact carried by a region-local borrow holder dies leaving the region [ENT-5](d); a fresh owned len() outside reestablishes it.";
   let data = buffer_new(4_u64, 6_u8);
-  region 'r {
-    let inner_room = room_of::<'r>(b: &'r data);
+  region {
+    let inner_room = room_of(b: &data);
     let inner_ok = 0_u64 < inner_room;
     if inner_ok {
     } else {

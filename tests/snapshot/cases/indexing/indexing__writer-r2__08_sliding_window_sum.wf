@@ -1,4 +1,4 @@
-fn window_sum['r](data: &'r buffer<u32>, start: own u64, width: own u64) -> total: own u32 reads(data) contract {
+fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own u32 reads(data) contract {
   define room = len(deref(data));
   requires start <= room;
   requires width <= room;
@@ -30,8 +30,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set data[3_u64] = 4_u32;
   set data[4_u64] = 5_u32;
   set data[5_u64] = 6_u32;
-  region 'r {
-    let total = window_sum::<'r>(data: &'r data, start: 2_u64, width: 3_u64);
+  region {
+    let total = window_sum(data: &data, start: 2_u64, width: 3_u64);
     if total == 12_u32 {
     } else {
       return exit_status(code: 1_u8);

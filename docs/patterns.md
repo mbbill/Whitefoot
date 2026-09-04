@@ -8,8 +8,9 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.41 guidance, including the comparison symbols
-and call-site `::` delimiter v0.41 activates, the source-proof forms introduced
+This document carries active v0.42 guidance, including the one canonical
+region spelling [FORM-8] activates, the comparison symbols and call-site `::`
+delimiter introduced by v0.41, the source-proof forms introduced
 by v0.40, the unified-state
 completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
@@ -261,9 +262,10 @@ maximum-size caller allocation, retry-after-partial-token mutation, and using
 
 Problem: a helper must pass through or select a read-only slice without moving
 the backing owner or hiding where the result may point.
-Pattern: return `own slice<'r, T>` directly. Every possible parameter supplier
-is also written as exactly `own slice<'r, T>` under the same formal region and
-element type. A function with several such parameters may return any of them,
+Pattern: return `own slice<'r, T>` directly. `'r` is written at the result and
+at every supplier because they share it [FORM-8]. Every possible parameter
+supplier is also written as exactly `own slice<'r, T>` under the same region
+and element type. A function with several such parameters may return any of them,
 but the caller conservatively treats all of them as possible origins. If a
 helper always selects one source and that precision matters, give that source
 the result region and put unrelated slices under distinct formal regions.
@@ -344,21 +346,26 @@ candidate guidance, introduced before v0.36 and preserved since.
 Decide which fix applies by asking why there are two sources. If the sources
 are structurally distinct — a node and its scratch buffer, a subject and its
 dictionary — give the non-source its own formal region:
-`fn pick['r, 's](a: &uniq 'r Node, b: &uniq 's Node) -> selected: &uniq 'r Node` is
-accepted, and its result is an ordinary holder over `a`'s storage that the
-caller binds, writes through, and reborrows from. If instead the choice is
+`fn pick['r](a: &uniq 'r Node, b: &uniq Node) -> selected: &uniq 'r Node` is
+accepted — `'r` is written because the result shares it with `a`, and `b`'s own
+region relates to nothing and is therefore left unwritten [FORM-8] — and its
+result is an ordinary holder over `a`'s storage that the caller binds, writes
+through, and reborrows from. If instead the choice is
 data-dependent, no signature can name the source, and the access belongs to
 the caller: return the decision as an owned value — a two-variant enum, or an
 index into a pool (P2) — and let the caller re-borrow from the place the
 decision names.
 
 The worked shape for the data-dependent case is three parts. The callee
-`fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads(a, b)` reads both
+`fn heavier(a: &Node, b: &Node) -> side: own Side reads(a, b)` reads both
 weights through its shared borrows and returns `Left()` or `Right()`. The
-superseded v0.36 spelled that effect `reads('r)`; since v0.39, `'r`
-remains only the shared loan lifetime. Both forms take shared borrows, so the returned owned decision has no
-borrow provenance. The caller binds
-`let side = heavier(a: &'a left, b: &'a right);`, and then `match side` takes
+superseded v0.36 spelled that effect `reads('r)`; since v0.39 a region
+remains only the shared loan lifetime, and since v0.42 neither parameter
+writes one because neither relates to another position [FORM-8]. Both forms
+take shared borrows, so the returned owned decision has no borrow provenance.
+The caller binds
+`let side = heavier(a: &left, b: &right);` inside the region block whose
+region those borrows take, and then `match side` takes
 the exclusive borrow it actually wants inside the taken arm, from `left` or
 from `right` by name. The result is longer than the rejected one-liner and
 that is the whole trade: the borrow is created where its source is a written
@@ -437,14 +444,14 @@ Pattern: construct the per-iteration scratch **inside** the loop body.
 for @scan (index in 0_u64..8192_u64) {
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
-  region 'name {
-    let rendered = name_at::<'name>(name: &uniq 'name name, index: index);
+  region {
+    let rendered = name_at(name: &uniq name, index: index);
   }
   region 'f {
-    let permit = reserve_file::<'f>(factory: &uniq 'f files);
-    region 'n {
-      match open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
-                              name: &'n name, start: 0_u64, end: 10_u64) {
+    let permit = reserve_file(factory: &uniq files);
+    region {
+      match open_file(permit: move permit, root: &'f cwd,
+                      name: &name, start: 0_u64, end: 10_u64) {
         Ok(value: handle) => { /* read, fold, accumulate */ }
         Err(error: problem) => { }
       }
@@ -475,25 +482,25 @@ copy rather than a fact to rediscover:
   prologues run in index order without overlapping, so one enclosing factory
   serves every iteration with no replication and no [OWN-5] relaxation. Write
   the reserve and the open in the loop body itself. Factoring the pair into a
-  helper — `fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, …)` —
-  costs the loop its pipeline, because the callee's own retained loan is what
+  helper — `fn open_source_from(factory: &uniq FileFactory, …)` — costs the
+  loop its pipeline, because the callee's own retained loan is what
   the staged judgment then sees. Two programs identical except for that
   factoring (‹loop› stands for the writer's own file and line; the verdict text
   after it is byte-exact):
 
   ```text
-  inline  PAR stage  ‹loop›             for  permitted  staged at open_file::<'f, 'f>(…); 5 places classified
+  inline  PAR stage  ‹loop›             for  permitted  staged at open_file(…); 5 places classified
   helper  PAR stage  ‹loop›             for  denied     condition 3: a may-suspend call retains a borrow
                      past its own submission on storage the body writes and the iteration does not
                      introduce; instead, give each iteration its own resource; or, where the body only
                      publishes to that storage — an output stream is the pointed case — hoist the
                      per-iteration write out of the loop, folding a total in the body and writing it
                      once after the loop; or leave this loop sequential, because storage that carries
-                     one position cannot be held by two iterations at once, at &uniq 'f files
+                     one position cannot be held by two iterations at once, at &uniq files
   ```
 
   When the factory is itself a borrow — which it is in any recursive walker —
-  [OWN-6] pushes the other way and admits no inline `region 'source { let
+  [OWN-6] pushes the other way and admits no inline `region { let
   permit = …; match open_… }`, because that region holds two statements. The
   two rules genuinely conflict there, and the resolution is that only one of
   the two forms is a program at all. Which form to write is decided by how the
@@ -502,13 +509,13 @@ copy rather than a fact to rediscover:
 
   ```text
   owned factory, inline    PAR stage  ‹loop›                   for  permitted  staged at
-                           open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name,
+                           open_file(permit: move permit, root: &'f cwd, name: &name,
                            start: 0_u64, end: 4_u64); 4 places classified
   borrowed factory, inline [OWN-6] InvalidChildReborrow — the program does not compile
   borrowed factory, helper PAR stage  ‹loop›                   for  denied     condition 3: a
                            may-suspend call retains a borrow past its own submission on storage the
                            body writes and the iteration does not introduce; … at
-                           &uniq 'open deref(factory)
+                           &uniq deref(factory)
   ```
 
   So: **in a loop whose factory is an owned entry parameter — every top-level
@@ -612,7 +619,7 @@ let fits = end <= room;
 ```
 
 The first line sits above the loop and above every `put_text` that writes
-through `&uniq 'put line`. The second sits inside the loop after all of them,
+through `&uniq line`. The second sits inside the loop after all of them,
 and it still discharges `emit_all`'s `requires length <= capacity`, because
 nothing between the two killed `len(line)`.
 
@@ -650,7 +657,7 @@ Pattern: the walk returns its own subtotal, the caller binds it under a fresh
 the record is used as a value — passed, returned, or rebound.
 
 ```whitefoot
-let sub = walk::<'recurse, 'c>(factory: &uniq 'recurse deref(factory), directory: dir);
+let sub = walk(factory: &uniq deref(factory), directory: dir);
 set totals.lines = totals.lines +wrap sub.lines;
 set totals.bytes = totals.bytes +wrap sub.bytes;
 ```
@@ -702,8 +709,8 @@ given its own. (‹loop› is the writer's file and line; verdicts are byte-exac
 ```whitefoot
 for @scan (index in 0_u64..8_u64) {
   /* P15's reserve, open, and read; then */
-  region 'say {
-    let written = write_once::<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
+  region {
+    let written = write_once(output: &uniq out, source: &data, start: 0_u64, end: 2_u64);
   }
 }
 ```
@@ -714,7 +721,7 @@ PAR stage  ‹loop›  for  denied  condition 3: a may-suspend call retains a bo
            its own resource; or, where the body only publishes to that storage — an output stream is the
            pointed case — hoist the per-iteration write out of the loop, folding a total in the body and
            writing it once after the loop; or leave this loop sequential, because storage that carries
-           one position cannot be held by two iterations at once, at &uniq 'say out
+           one position cannot be held by two iterations at once, at &uniq out
 ```
 
 Pattern: **hold no `&uniq` resource inside a loop body; hold a buffer instead,
@@ -733,18 +740,18 @@ for @scan (index in 0_u64..8_u64) {
     set page[index] = data[0_u64];
   }
 }
-region 'say {
-  let written = write_once::<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
+region {
+  let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
 }
 ```
 
 ```text
-PAR stage  ‹loop›  for  permitted  staged at open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
-           name: &'n name, start: 0_u64, end: 2_u64); 6 places classified
+PAR stage  ‹loop›  for  permitted  staged at open_file(permit: move permit, root: &cwd,
+           name: &name, start: 0_u64, end: 2_u64); 6 places classified
 ```
 
 Write into the page by element. A helper taking `&uniq` of it costs the loop
-its pipeline under condition 4 instead: `denied  &uniq 'page page  a call of
+its pipeline under condition 4 instead: `denied  &uniq page  a call of
 the remainder holds an exclusive loan on it, and two remainders coexist`.
 
 Current value: this is the explicit writer form. The [PAR-3] judgment can grant

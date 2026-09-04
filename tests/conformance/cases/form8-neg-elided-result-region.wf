@@ -1,0 +1,8 @@
+fn pass(value: &i32) -> result: &i32 pure {
+  doc "The result's region is not determined by any parameter position, so [FORM-8] writes it and the caller supplies it.";
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -84,7 +84,7 @@ fn counted_endpoints_require_exact_own_u64_with_type7_exclusive() {
     );
 
     assert_rule(
-        br#"fn walk['r](start: &'r u64) -> result: own unit pure {
+        br#"fn walk(start: &u64) -> result: own unit pure {
   for @items (i in start..1_u64) {
   }
   return unit;
@@ -132,7 +132,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     assert_checks(
-        br#"fn walk['l, 'u](lower: &'l u64, upper: &'u u64) -> result: own unit reads(lower, upper) {
+        br#"fn walk(lower: &u64, upper: &u64) -> result: own unit reads(lower, upper) {
   for @items (i in deref(lower)..deref(upper)) {
   }
   return unit;
@@ -171,7 +171,7 @@ command fn main() -> status: own ExitStatus pure {
   lower: u64;
 }
 
-fn probe['r](bounds: own Bounds, upper: &'r u64) -> result: own unit reads(bounds.lower, upper) {
+fn probe(bounds: own Bounds, upper: &u64) -> result: own unit reads(bounds.lower, upper) {
   for @items (i in bounds.lower..deref(upper)) {
   }
   return unit;
@@ -204,8 +204,8 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    region 'body {
-      let exclusive = &uniq 'body i;
+    region {
+      let exclusive = &uniq i;
     }
   }
   return exit_status(code: 0_u8);
@@ -216,15 +216,15 @@ fn counted_binder_is_not_source_writable_or_uniquely_borrowable() {
     );
 
     assert_rule(
-        br#"fn overwrite['r](target: &uniq 'r u64) -> result: own unit writes(target) {
+        br#"fn overwrite(target: &uniq u64) -> result: own unit writes(target) {
   set deref(target) = 9_u64;
   return unit;
 }
 
 command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    region 'body {
-      overwrite::<'body>(target: &uniq 'body i);
+    region {
+      overwrite(target: &uniq i);
     }
   }
   return exit_status(code: 0_u8);
@@ -259,9 +259,9 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let value = 0_u64;
-  region 'outer {
+  region {
     for @items (i in 0_u64..1_u64) {
-      let shared = &'outer value;
+      let shared = &value;
     }
   }
   return exit_status(code: 0_u8);
@@ -280,8 +280,8 @@ command fn main() -> status: own ExitStatus pure {
 
 command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
-    region 'body {
-      let shared = &'body i;
+    region {
+      let shared = &i;
     }
     let token = Token(value: i);
     let consumed = move token;

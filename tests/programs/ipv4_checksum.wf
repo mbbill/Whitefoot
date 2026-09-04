@@ -1,6 +1,6 @@
 const ipv4_header: array<u8, 20> =[69_u8, 0_u8, 0_u8, 84_u8, 0_u8, 0_u8, 64_u8, 0_u8, 64_u8, 1_u8, 0_u8, 0_u8, 192_u8, 168_u8, 0_u8, 1_u8, 192_u8, 168_u8, 0_u8, 199_u8];
 
-fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header) contract {
+fn ipv4_checksum(header: own slice<u8>) -> result: own u16 reads(header) contract {
   define length = len(header);
   define odd = iand(length, 1_u64);
   requires odd == 0_u64;
@@ -36,15 +36,15 @@ fn ipv4_checksum['r](header: own slice<'r, u8>) -> result: own u16 reads(header)
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
-  region 'static_view {
-    let view = slice_of(&'static_view ipv4_header);
+  region {
+    let view = slice_of(&ipv4_header);
     let view_length = len(view);
     let view_odd = iand(view_length, 1_u64);
     if view_odd == 0_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
-    let checksum = ipv4_checksum::<'static_view>(header: move view);
+    let checksum = ipv4_checksum(header: move view);
     if checksum == 47248_u16 {
     } else {
       return exit_status(code: 1_u8);
@@ -66,15 +66,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     set runtime_header[offset] = byte;
     set offset = offset +wrap 1_u64;
   }
-  region 'runtime_view {
-    let view = slice_of(&'runtime_view runtime_header);
+  region {
+    let view = slice_of(&runtime_header);
     let view_length = len(view);
     let view_odd = iand(view_length, 1_u64);
     if view_odd == 0_u64 {
     } else {
       return exit_status(code: 1_u8);
     }
-    let checksum = ipv4_checksum::<'runtime_view>(header: move view);
+    let checksum = ipv4_checksum(header: move view);
     if checksum == 47248_u16 {
     } else {
       return exit_status(code: 1_u8);

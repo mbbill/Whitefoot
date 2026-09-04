@@ -6,7 +6,7 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize ['r] (out: &uniq 'r Summary, b: own buffer<u8>) -> own unit writes(out.lines, out.words, out.bytes, out.first_space, out.last_space), traps {
+fn summarize  (out: &uniq Summary, b: own buffer<u8>) -> own unit writes(out.lines, out.words, out.bytes, out.first_space, out.last_space), traps {
   doc "Summarize one ordered byte chunk; empty chunks use bytes=0 as the identity marker.";
   let n: own u64 = len<u8>(b);
   let i: own u64 = 0_u64;

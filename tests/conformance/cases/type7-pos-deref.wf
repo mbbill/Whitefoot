@@ -1,8 +1,8 @@
 command fn main() -> status: own ExitStatus pure {
   doc "Reading through a reference is explicit via deref(place) [TYPE-7].";
   let a = 42_i32;
-  region 'r {
-    let p = &'r a;
+  region {
+    let p = &a;
     let v = deref(p);
     if v == 42_i32 {
     } else {

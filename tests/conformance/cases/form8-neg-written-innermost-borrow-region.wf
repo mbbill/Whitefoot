@@ -1,0 +1,15 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "The borrow takes the region of the `region` block that most closely encloses it, so [FORM-8] leaves its region unwritten.";
+  let a = 40_i32;
+  region 'r {
+    let p = &'r a;
+    let q = &'r a;
+    let left = deref(p);
+    let right = deref(q);
+    if left == right {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

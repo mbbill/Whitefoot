@@ -1,4 +1,4 @@
-fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
+fn tail_byte(data: &buffer<u8>) -> result: own u8 reads(data) {
   doc "A direct-place set commit publishes its finite S5 post-write image only after facts about the old target value die.";
   let n = len(deref(data));
   let have_room = n >= 8_u64;

@@ -1,4 +1,4 @@
-fn two_reads['i](input: &'i buffer<u8>) -> result: own u8 reads(input), traps {
+fn two_reads(input: &buffer<u8>) -> result: own u8 reads(input), traps {
   let acc = 0_u8;
   let i = 0_u64;
   loop @scan {
@@ -23,8 +23,8 @@ fn two_reads['i](input: &'i buffer<u8>) -> result: own u8 reads(input), traps {
 
 command fn main() -> status: own ExitStatus allocates(heap), traps {
   let input = buffer_new(8_u64, 1_u8);
-  region 'i {
-    let v = two_reads<'i>(input: &'i input);
+  region {
+    let v = two_reads(input: &input);
     claim sum: ieq(v, 8_u8) because "sum";
   }
   return exit_status(code: 0_u8);

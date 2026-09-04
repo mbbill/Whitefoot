@@ -467,22 +467,22 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_moved_holder_consume_precedes_its_projected_call_write() {
-    let source = br#"fn overwrite['r](out: &uniq 'r i32) -> result: own unit writes(out) {
+    let source = br#"fn overwrite(out: &uniq i32) -> result: own unit writes(out) {
   set deref(out) = 1_i32;
   return unit;
 }
 
-fn transfer['r](out: &uniq 'r i32) -> result: own i32 reads(out), writes(out) contract {
+fn transfer(out: &uniq i32) -> result: own i32 reads(out), writes(out) contract {
   ensures result == deref(out);
 } {
   let before = deref(out);
-  overwrite::<'r>(out: move out);
+  overwrite(out: move out);
   return before;
 }
 
-fn plain['r](out: &uniq 'r i32) -> result: own i32 reads(out), writes(out) {
+fn plain(out: &uniq i32) -> result: own i32 reads(out), writes(out) {
   let before = deref(out);
-  overwrite::<'r>(out: move out);
+  overwrite(out: move out);
   return before;
 }
 
@@ -632,7 +632,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invalid_exit() {
-    let source = br#"fn append['d, 'm](destination: &uniq 'd buffer<u8>, filled: own u64, text: own slice<'m, u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+    let source = br#"fn append(destination: &uniq buffer<u8>, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
   define capacity = len(deref(destination));
   define admitted = filled <= capacity;
   requires admitted;
@@ -845,16 +845,16 @@ fn a_borrowed_formal_substitution_consumes_its_one_formal_deref() {
   value: i32;
 }
 
-fn observe['r](pair: &'r Pair) -> result: own i32 reads(pair.value) contract {
+fn observe(pair: &Pair) -> result: own i32 reads(pair.value) contract {
   ensures result == deref(pair).value;
 } {
   return deref(pair).value;
 }
 
-fn caller['r](pair: &'r Pair) -> result: own i32 reads(pair.value) contract {
+fn caller(pair: &Pair) -> result: own i32 reads(pair.value) contract {
   ensures result == deref(pair).value;
 } {
-  let observed = observe::<'r>(pair: pair);
+  let observed = observe(pair: pair);
   return observed;
 }
 
@@ -872,7 +872,7 @@ fn a_moved_unique_actual_cannot_publish_a_stale_postcondition_relation() {
   changed: i32;
 }
 
-fn touch['r](pair: &uniq 'r Pair) -> result: own i32 reads(pair.kept), writes(pair.changed) contract {
+fn touch(pair: &uniq Pair) -> result: own i32 reads(pair.kept), writes(pair.changed) contract {
   ensures result == deref(pair).kept;
 } {
   set deref(pair).changed = 1_i32;
@@ -882,9 +882,9 @@ fn touch['r](pair: &uniq 'r Pair) -> result: own i32 reads(pair.kept), writes(pa
 fn caller(pair: own Pair) -> result: own i32 reads(pair.kept), writes(pair.changed) contract {
   ensures result == pair.kept;
 } {
-  region 'r {
-    let holder = &uniq 'r pair;
-    let observed = touch::<'r>(pair: move holder);
+  region {
+    let holder = &uniq pair;
+    let observed = touch(pair: move holder);
     return observed;
   }
 }
@@ -1067,8 +1067,8 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
 fn caller() -> result: own unit pure {
   let source = 1_i32;
   let observed = observe(value: source);
-  region 'write {
-    let writer = &uniq 'write source;
+  region {
+    let writer = &uniq source;
     set deref(writer) = 2_i32;
   }
   guard(left: observed, right: source);
@@ -1557,7 +1557,7 @@ fn from_box(owner: own box<Pair>) -> result: own i32 reads(owner) contract {
   return deref(owner).value;
 }
 
-fn from_shared['r](owner: &'r Pair) -> result: own i32 reads(owner.value) contract {
+fn from_shared(owner: &Pair) -> result: own i32 reads(owner.value) contract {
   ensures result == deref(owner).value;
 } {
   return deref(owner).value;
@@ -1583,7 +1583,7 @@ fn a_holder_alias_does_not_change_the_selected_return_term_identity() {
   value: i32;
 }
 
-fn from_shared_alias['r](owner: &'r Pair) -> result: own i32 reads(owner.value) contract {
+fn from_shared_alias(owner: &Pair) -> result: own i32 reads(owner.value) contract {
   ensures result == deref(owner).value;
 } {
   let alias = owner;

@@ -3,29 +3,29 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let data_a = buffer_new(1_u64, 0_u8);
   let data_b = buffer_new(1_u64, 0_u8);
   let pair = buffer_new(2_u64, 0_u8);
-  region 'arg_a {
-    match arg_get::<'arg_a>(args: &'arg_a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text_a) => {
         match relative_path(value: move text_a) {
           Ok(value: path_a) => {
-            region 'arg_b {
-              match arg_get::<'arg_b>(args: &'arg_b args, position: 2_u64) {
+            region {
+              match arg_get(args: &args, position: 2_u64) {
                 Ok(value: text_b) => {
                   match relative_path(value: move text_b) {
                     Ok(value: path_b) => {
-                      region 'open {
-                        let permit_a = reserve_file::<'open>(factory: &uniq 'open files);
-                        let permit_b = reserve_file::<'open>(factory: &uniq 'open files);
-                        let opened_a = open_read::<'open, 'open>(permit: move permit_a, root: &'open cwd, path: &'open path_a);
-                        let opened_b = open_read::<'open, 'open>(permit: move permit_b, root: &'open cwd, path: &'open path_b);
+                      region {
+                        let permit_a = reserve_file(factory: &uniq files);
+                        let permit_b = reserve_file(factory: &uniq files);
+                        let opened_a = open_read(permit: move permit_a, root: &cwd, path: &path_a);
+                        let opened_b = open_read(permit: move permit_b, root: &cwd, path: &path_b);
                         match move opened_a {
                           Ok(value: file_a) => {
                             match move opened_b {
                               Ok(value: file_b) => {
                                 region 'files {
-                                  region 'data {
-                                    let read_a = read_at::<'files, 'data>(file: &'files file_a, destination: &uniq 'data data_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                                    let read_b = read_at::<'files, 'data>(file: &'files file_b, destination: &uniq 'data data_b, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                  region {
+                                    let read_a = read_at(file: &'files file_a, destination: &uniq data_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                    let read_b = read_at(file: &'files file_b, destination: &uniq data_b, file_offset: 0_u64, start: 0_u64, end: 1_u64);
                                     match move read_a {
                                       ReadBytes(next: next_a) => {
                                         if next_a == 1_u64 {
@@ -58,8 +58,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                 }
                                 set pair[0_u64] = data_a[0_u64];
                                 set pair[1_u64] = data_b[0_u64];
-                                region 'output {
-                                  match write_once::<'output, 'output>(output: &uniq 'output out, source: &'output pair, start: 0_u64, end: 2_u64) {
+                                region {
+                                  match write_once(output: &uniq out, source: &pair, start: 0_u64, end: 2_u64) {
                                     Ok(value: published) => {
                                       if published == 2_u64 {
                                         return exit_status(code: 0_u8);

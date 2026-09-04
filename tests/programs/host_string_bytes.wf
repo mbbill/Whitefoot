@@ -1,17 +1,17 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   doc "Require one argument's complete target-native code-unit byte sequence to be the exact two bytes selected by the native target fixture, qualifying host_bytes_len and host_copy_bytes together [HOST-2, SYS-9].";
   let bytes = buffer_new(2_u64, 0_u8);
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
-          let length = host_bytes_len::<'v>(value: &'v text);
+          let length = host_bytes_len(value: &text);
           if length == 2_u64 {
           } else {
             return exit_status(code: 10_u8);
           }
-          region 'd {
-            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 2_u64) {
+          region {
+            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 0_u64, end: 2_u64) {
               Ok(value: next) => {
                 if next == 2_u64 {
                 } else {

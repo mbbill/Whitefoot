@@ -2,7 +2,7 @@ command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-3: an enclosing region outlives an inner one; a 'r borrow satisfies an 's destination.";
   let a = 7_i32;
   region 'r {
-    region 's {
+    region {
       let q = &'r a;
       if deref(q) == 7_i32 {
       } else {

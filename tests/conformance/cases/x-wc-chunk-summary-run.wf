@@ -6,7 +6,7 @@ struct Summary {
   last_space: u64;
 }
 
-fn summarize['r](out: &uniq 'r Summary, input: own buffer<u8>) -> function_result: own unit reads(input), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
+fn summarize(out: &uniq Summary, input: own buffer<u8>) -> function_result: own unit reads(input), writes(out.lines, out.words, out.bytes, out.first_space, out.last_space) {
   let length = len(input);
   let index_value = 0_u64;
   let lines = 0_u64;
@@ -105,17 +105,17 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set left_input[2_u64] = 98_u8;
   set left_input[3_u64] = 10_u8;
   let left = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region 'left_region {
-    summarize::<'left_region>(out: &uniq 'left_region left, input: move left_input);
+  region {
+    summarize(out: &uniq left, input: move left_input);
   }
   let right_input = buffer_new(1_u64, 99_u8);
   let right = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region 'right_region {
-    summarize::<'right_region>(out: &uniq 'right_region right, input: move right_input);
+  region {
+    summarize(out: &uniq right, input: move right_input);
   }
   let total = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region 'combine_region {
-    combine::<'combine_region>(out: &uniq 'combine_region total, left: &'combine_region left, right: &'combine_region right);
+  region {
+    combine(out: &uniq total, left: &left, right: &right);
   }
   if total.lines == 1_u64 {
   } else {
@@ -139,8 +139,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let empty = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 1_u64, last_space: 1_u64);
   let copied = Summary(lines: 0_u64, words: 0_u64, bytes: 0_u64, first_space: 0_u64, last_space: 0_u64);
-  region 'identity_region {
-    combine::<'identity_region>(out: &uniq 'identity_region copied, left: &'identity_region empty, right: &'identity_region total);
+  region {
+    combine(out: &uniq copied, left: &empty, right: &total);
   }
   if copied.lines == 1_u64 {
   } else {

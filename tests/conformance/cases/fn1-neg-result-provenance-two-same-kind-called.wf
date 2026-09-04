@@ -6,10 +6,10 @@ command fn main() -> status: own ExitStatus pure {
   doc "The still-illegal form, rejected at the boundary rather than at this binding: `pick` writes two parameters as uniq borrows in the result's formal region, so two provenance candidates leave the result's source undetermined and FN-1 rejects at the callee's complete `rtype` [FN-1]. OWN-6's binding-side rejection is unreachable once no accepted declaration reaches a call site. The restructuring is to give the source parameter its own region so exactly one parameter shares the result's region and kind.";
   let v = 1_i32;
   let w = 2_i32;
-  region 'a {
-    let ha = &uniq 'a v;
-    let hb = &uniq 'a w;
-    let r = pick::<'a>(a: &uniq 'a deref(ha), b: &uniq 'a deref(hb));
+  region {
+    let ha = &uniq v;
+    let hb = &uniq w;
+    let r = pick(a: &uniq deref(ha), b: &uniq deref(hb));
   }
   return exit_status(code: 0_u8);
 }

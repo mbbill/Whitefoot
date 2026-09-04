@@ -1,0 +1,17 @@
+fn peek(value: &i32) -> result: own i32 reads(value) {
+  return deref(value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The callee's only region occupies a parameter position, so this call's own argument determines it and [FORM-8] writes no type application.";
+  let a = 40_i32;
+  region 'r {
+    let p = &a;
+    let v = peek::<'r>(value: p);
+    if v == 40_i32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

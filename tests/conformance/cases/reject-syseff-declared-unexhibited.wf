@@ -1,7 +1,7 @@
 fn count_arguments(args: own Args) -> function_result: own u64 pure {
   doc "args_count observes the explicit Args state, so omitting reads(args) is an undeclared state effect rejected by EFF-2.";
-  region 'a {
-    let total = args_count::<'a>(args: &'a args);
+  region {
+    let total = args_count(args: &args);
     return total;
   }
 }

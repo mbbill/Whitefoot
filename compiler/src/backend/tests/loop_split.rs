@@ -82,7 +82,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -115,12 +115,12 @@ fn folded(lo: own u64, hi: own u64) -> result: own u64 pure {
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let value = folded(lo: 0_u64, hi: 400000_u64);
   let report = buffer_new(8_u64, 0_u8);
-  region 'r {
-    let filled = spell::<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
+  region {
+    let filled = spell(destination: &uniq report, at: 0_u64, value: value);
   }
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -299,7 +299,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -334,12 +334,12 @@ fn folded(salt: own u64, rounds: own u64, stride: own u64) -> result: own u64 pu
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = buffer_new(8_u64, 0_u8);
-  region 'r {
-    let filled = spell::<'r>(destination: &uniq 'r report, at: 0_u64, value: value);
+  region {
+    let filled = spell(destination: &uniq report, at: 0_u64, value: value);
   }
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: 8_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -401,8 +401,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let report = mapped();
   let size = len(report);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, end: size) {
+    region {
+      match write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: size) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }
@@ -448,7 +448,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
     source
         .replacen(
             "fn mapped() -> result: own buffer<u8> allocates(heap) {\n  let out = buffer_new(400000_u64, 0_u8);\n",
-            "fn mapped['m](out: &uniq 'm buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define room = len(deref(out));\n  requires 400000_u64 <= room;\n} {\n",
+            "fn mapped(out: &uniq buffer<u8>) -> result: own unit reads(out), writes(out) contract {\n  define room = len(deref(out));\n  requires 400000_u64 <= room;\n} {\n",
             1,
         )
         .replacen(
@@ -459,7 +459,7 @@ fn borrowed_read_modify_map_source() -> Vec<u8> {
         .replacen("  return move out;\n", "  return unit;\n", 1)
         .replacen(
             "  let report = mapped();\n",
-            "  let report = buffer_new(400000_u64, 0_u8);\n  region 'map {\n    let done = mapped::<'map>(out: &uniq 'map report);\n  }\n",
+            "  let report = buffer_new(400000_u64, 0_u8);\n  region {\n    let done = mapped(out: &uniq report);\n  }\n",
             1,
         )
         .into_bytes()
@@ -1247,7 +1247,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -1308,20 +1308,20 @@ fn admitted_combine_source() -> Vec<u8> {
     source.push_str(&format!(
         "\ncommand fn main(command.stdout as out: own Output) -> status: own ExitStatus \
          reads(out), writes(out), allocates(heap) {{\n  \
-         let report = buffer_new({width}_u64, 0_u8);\n  region 'r {{\n"
+         let report = buffer_new({width}_u64, 0_u8);\n  region {{\n"
     ));
     let mut at = "0_u64".to_owned();
     for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
         let name = combine.name;
         source.push_str(&format!(
             "    let v{index} = value_{name}(after: {at});\n    \
-             let a{index} = spell::<'r>(destination: &uniq 'r report, at: {at}, value: v{index});\n"
+             let a{index} = spell(destination: &uniq report, at: {at}, value: v{index});\n"
         ));
         at = format!("a{index}");
     }
     source.push_str(&format!(
-        "  }}\n  region 'o {{\n    region 's {{\n      \
-         match write_once::<'o, 's>(output: &uniq 'o out, source: &'s report, start: 0_u64, \
+        "  }}\n  region {{\n    region {{\n      \
+         match write_once(output: &uniq out, source: &report, start: 0_u64, \
          end: {width}_u64) {{\n        Ok(value: next) => {{\n          \
          return exit_status(code: 0_u8);\n        }}\n        Err(error: problem) => {{\n          \
          return exit_status(code: 1_u8);\n        }}\n      }}\n    }}\n  }}\n}}\n"

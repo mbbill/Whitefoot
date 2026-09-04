@@ -1,4 +1,4 @@
-fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own u64 reads(input), traps {
+fn find_byte (input: &buffer<u8>, needle: own u8) -> own u64 reads(input), traps {
   let length: own u64 = len<u8>(deref(input));
   let offset: own u64 = 0_u64;
   loop @scan {
@@ -24,11 +24,11 @@ fn find_byte ['r](input: &'r buffer<u8>, needle: own u8) -> own u64 reads(input)
   return length;
 }
 
-fn scan ['r](input: &'r buffer<u8>) -> own u64 reads(input), traps {
-  let quarter: own u64 = find_byte<'r>(input: input, needle: 251_u8);
-  let half: own u64 = find_byte<'r>(input: input, needle: 252_u8);
-  let end: own u64 = find_byte<'r>(input: input, needle: 253_u8);
-  let missing: own u64 = find_byte<'r>(input: input, needle: 254_u8);
+fn scan (input: &buffer<u8>) -> own u64 reads(input), traps {
+  let quarter: own u64 = find_byte(input: input, needle: 251_u8);
+  let half: own u64 = find_byte(input: input, needle: 252_u8);
+  let end: own u64 = find_byte(input: input, needle: 253_u8);
+  let missing: own u64 = find_byte(input: input, needle: 254_u8);
   let first: own u64 = iadd.wrap<u64>(quarter, half);
   let second: own u64 = iadd.wrap<u64>(end, missing);
   return iadd.wrap<u64>(first, second);

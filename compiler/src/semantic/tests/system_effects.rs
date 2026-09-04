@@ -75,9 +75,9 @@ fn the_canonical_release_case_holds_exactly() {
     assert_release_mismatch(CANONICAL_REJECT, "file", b"pure");
 }
 
-const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const BORROWED_ACCEPT: &[u8] = b"fn touch_read_file(file: &ReadFile) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
-const BORROWED_REJECT: &[u8] = b"fn touch_read_file['f](file: &'f ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+const BORROWED_REJECT: &[u8] = b"fn touch_read_file(file: &ReadFile) -> result: own unit writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
 
 #[test]
 fn a_borrowed_resource_parameter_contributes_no_release_row() {
@@ -110,9 +110,9 @@ fn over_declaring_the_release_row_rejects_likewise() {
 fn file_reservation_and_open_project_only_their_explicit_inputs() {
     assert_complete(
         br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  region 'state {
-    let permit = reserve_file::<'state>(factory: &uniq 'state files);
-    let opened = open_directory_source::<'state>(permit: move permit, directory: &'state cwd);
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    let opened = open_directory_source(permit: move permit, directory: &cwd);
   }
   return exit_status(code: 0_u8);
 }
@@ -124,8 +124,8 @@ fn file_reservation_and_open_project_only_their_explicit_inputs() {
 fn file_reservation_projects_the_factory_without_an_open() {
     assert_complete(
         br#"command fn main(command.files as files: own FileFactory) -> status: own ExitStatus reads(files), writes(files) {
-  region 'state {
-    let permit = reserve_file::<'state>(factory: &uniq 'state files);
+  region {
+    let permit = reserve_file(factory: &uniq files);
   }
   return exit_status(code: 0_u8);
 }
@@ -156,7 +156,7 @@ fn an_immutable_borrowing_helper_names_only_the_snapshot_state() {
     // The local borrow region still does not escape into the row. The new
     // authority component is `reads(args)`, independently of that lifetime.
     assert_complete(
-        b"fn count_arguments(args: own Args) -> result: own u64 reads(args) {\n  region 'a {\n    let total = args_count::<'a>(args: &'a args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn count_arguments(args: own Args) -> result: own u64 reads(args) {\n  region {\n    let total = args_count(args: &args);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -262,7 +262,7 @@ const PASS_OUTPUT_PREFIX: &str = r#"fn pass_output(output: own Output) -> result
 
 fn pass_output_program(effects: &str) -> Vec<u8> {
     format!(
-        "{PASS_OUTPUT_PREFIX}command fn main(command.stdout as out: own Output) -> status: own ExitStatus {effects} {{\n  let same = pass_output(output: move out);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once::<'o, 's>(output: &uniq 'o same, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "{PASS_OUTPUT_PREFIX}command fn main(command.stdout as out: own Output) -> status: own ExitStatus {effects} {{\n  let same = pass_output(output: move out);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region {{\n    let written = write_once(output: &uniq same, source: &bytes, start: 0_u64, end: 1_u64);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
@@ -348,7 +348,7 @@ fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> r
 "#
     };
     format!(
-        "{chooser}command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus {effects} {{\n  let flag = True();\n  let selected = forward_choice(left: move out, right: move err, take_left: flag);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region 'o {{\n    region 's {{\n      let written = write_once::<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);\n    }}\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "{chooser}command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus {effects} {{\n  let flag = True();\n  let selected = forward_choice(left: move out, right: move err, take_left: flag);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region {{\n    let written = write_once(output: &uniq selected, source: &bytes, start: 0_u64, end: 1_u64);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
@@ -395,8 +395,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let selected = delivered_wrapper(output: move out, first: flag);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      let written = write_once::<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    region {
+      let written = write_once(output: &uniq 'o selected, source: &bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -420,8 +420,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let selected = recursive_pass(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      let written = write_once::<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    region {
+      let written = write_once(output: &uniq 'o selected, source: &bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -449,8 +449,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let selected = mutual_b(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      let written = write_once::<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    region {
+      let written = write_once(output: &uniq 'o selected, source: &bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -461,9 +461,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_fresh_and_formal_result_join_remains_a_finite_origin_set() {
-    let source = br#"fn choose_file['r, 'p](existing: own Result<ReadFile, IoError>, permit: own FilePermit, root: &'r DirectoryRead, path: &'p RelativePath, fresh: own Bool) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(existing, permit) {
+    let source = br#"fn choose_file(existing: own Result<ReadFile, IoError>, permit: own FilePermit, root: &DirectoryRead, path: &RelativePath, fresh: own Bool) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(existing, permit) {
   if fresh {
-    return open_read::<'r, 'p>(permit: move permit, root: root, path: path);
+    return open_read(permit: move permit, root: root, path: path);
   } else {
     return move existing;
   }
@@ -771,8 +771,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let selected = through_loop(output: move out);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
-    region 's {
-      let written = write_once::<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+    region {
+      let written = write_once(output: &uniq 'o selected, source: &bytes, start: 0_u64, end: 1_u64);
     }
   }
   return exit_status(code: 0_u8);
@@ -783,13 +783,13 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_loop_break_join_retains_the_two_origins_an_update_can_select() {
-    let source = br#"fn loop_choice['p](selected: own Result<ReadFile, IoError>, factory: own FileFactory, root: own DirectoryRead, path: &'p RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads(selected, factory, root, path), writes(selected, factory, root) {
+    let source = br#"fn loop_choice(selected: own Result<ReadFile, IoError>, factory: own FileFactory, root: own DirectoryRead, path: &RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads(selected, factory, root, path), writes(selected, factory, root) {
   loop @once {
     if refresh {
-      region 'reservation {
-        let permit = reserve_file::<'reservation>(factory: &uniq 'reservation factory);
-        region 'lookup {
-          let replacement = open_read::<'lookup, 'p>(permit: move permit, root: &'lookup root, path: path);
+      region {
+        let permit = reserve_file(factory: &uniq factory);
+        region {
+          let replacement = open_read(permit: move permit, root: &root, path: path);
           let discarded = replace selected = move replacement;
         }
       }
@@ -858,8 +858,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     Ok(value: selected) => {
       let bytes = buffer_new(1_u64, 65_u8);
       region 'o {
-        region 's {
-          let written = write_once::<'o, 's>(output: &uniq 'o selected, source: &'s bytes, start: 0_u64, end: 1_u64);
+        region {
+          let written = write_once(output: &uniq 'o selected, source: &bytes, start: 0_u64, end: 1_u64);
         }
       }
     }
@@ -899,7 +899,7 @@ fn a_copy_only_parameter_is_a_valid_path_but_must_be_exhibited() {
 #[test]
 fn external_and_blocks_are_ordinary_function_and_parameter_names() {
     assert_complete(
-        b"fn external(blocks: own Args) -> result: own u64 reads(blocks) {\n  region 'a {\n    let total = args_count::<'a>(args: &'a blocks);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn external(blocks: own Args) -> result: own u64 reads(blocks) {\n  region {\n    let total = args_count(args: &blocks);\n    return total;\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -911,13 +911,13 @@ fn borrowing_one_owned_struct_field_projects_only_that_field_effect() {
   second: buffer<u8>;
 }
 
-fn length['v](value: &'v buffer<u8>) -> result: own u64 reads(value) {
+fn length(value: &buffer<u8>) -> result: own u64 reads(value) {
   return len(deref(value));
 }
 
 fn read_second(pair: own Pair) -> result: own unit reads(pair.second) {
-  region 'second {
-    let count = length::<'second>(value: &'second pair.second);
+  region {
+    let count = length(value: &pair.second);
   }
   return unit;
 }

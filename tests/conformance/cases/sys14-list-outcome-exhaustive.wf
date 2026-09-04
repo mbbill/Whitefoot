@@ -1,12 +1,12 @@
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "`ListOutcome` is a closed three-constructor outcome type [SYS-6, SYS-14]: `ListBytes` carrying the absolute end of the portable prefix and the exact number of entry records that prefix holds, `ListEnd`, and `ListFailed`. A match naming all three is exhaustive [ERR-2] and needs no default arm, because the portable class set is the sole discriminator. Each arm exits with its own code over a directory that holds entries, so exit 0 is reached only through `ListBytes`.";
   let entries = buffer_new(1024_u64, 0_u8);
-  region 'c {
-    let permit = reserve_file::<'c>(factory: &uniq 'c files);
-    match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+  region {
+    let permit = reserve_file(factory: &uniq files);
+    match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
-        region 'b {
-          match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 0_u64, end: 1024_u64) {
+        region {
+          match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 1024_u64) {
             ListBytes(next: bytes, entries: reported) => {
               return exit_status(code: 0_u8);
             }

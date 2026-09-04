@@ -214,14 +214,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.reject_region_bearing_storage_type(content_node, substitution)?;
             let content = self.parse_type_with(content_node, substitution)?;
-            let usage = self.use_at(node, LexicalUseRole::TypeRegion)?;
-            let ResolvedTarget::Source {
-                declaration: region,
-                class: DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
+            let region = self.type_region(node)?;
             return self
                 .arena_nominals
                 .get(&(region, content))
@@ -230,14 +223,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidResolution.into());
         }
         if self.has_fixed(node, FixedTerminal::Slice)? {
-            let usage = self.use_at(node, LexicalUseRole::TypeRegion)?;
-            let ResolvedTarget::Source {
-                declaration: region,
-                class: DeclarationClass::Region,
-            } = usage.target()
-            else {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            };
+            let region = self.type_region(node)?;
             let element_node = self
                 .tree
                 .first_child_with(node, Production::Type)?

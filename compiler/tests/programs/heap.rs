@@ -133,8 +133,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   let subject = ByteString(buf: move backing, fill: 1_u64);
   let needle_backing = buffer_new(1_u64, 7_u8);
   let needle = ByteString(buf: move needle_backing, fill: 1_u64);
-  region 'search {{
-    match bs_find::<'search, 'search>(haystack: &'search subject, needle: &'search needle) {{
+  region {{
+    match bs_find(haystack: &subject, needle: &needle) {{
       Some(value: at) => {{
       }}
       None() => {{

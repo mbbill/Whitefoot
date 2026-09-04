@@ -1,5 +1,5 @@
-fn invalid['data, 'storage](value: own slice<'data, u8>) -> function_result: own unit allocates(arena 'storage) {
-  arena_new::<'storage, slice<'data, u8>>(move value);
+fn invalid['storage](value: own slice<u8>) -> function_result: own unit allocates(arena 'storage) {
+  arena_new::<'storage, slice<u8>>(move value);
   return unit;
 }
 

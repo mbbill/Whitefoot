@@ -53,7 +53,7 @@ fn work(inh: own f64, v: own f64) -> result: own f64 pure {
   return fadd.strict(adj, lrb);
 }
 
-fn qfold['b](node: &uniq 'b box<QNode>, inh: own f64) -> result: own f64 reads(node), writes(node) {
+fn qfold(node: &uniq box<QNode>, inh: own f64) -> result: own f64 reads(node), writes(node) {
   doc "Folds the four-way tree. The four adjacent child calls are one chain: every ordered pair inside it has disjoint written footprints, so the checker should record a run of four and the backend should hand out three of them.";
   match deref(deref(node)) {
     QLeaf(v: lv, out: lslot) => {
@@ -64,10 +64,10 @@ fn qfold['b](node: &uniq 'b box<QNode>, inh: own f64) -> result: own f64 reads(n
     QBranch(a: pa, b: pb, c: pc, d: pd, v: bv, out: bslot) => {
       let own_h = work(inh: inh, v: deref(bv));
       let child_inh = fmul.strict(own_h, 0.5_f64);
-      let ra = qfold<'b>(node: move pa, inh: child_inh);
-      let rb = qfold<'b>(node: move pb, inh: child_inh);
-      let rc = qfold<'b>(node: move pc, inh: child_inh);
-      let rd = qfold<'b>(node: move pd, inh: child_inh);
+      let ra = qfold(node: move pa, inh: child_inh);
+      let rb = qfold(node: move pb, inh: child_inh);
+      let rc = qfold(node: move pc, inh: child_inh);
+      let rd = qfold(node: move pd, inh: child_inh);
       let ab = fadd.strict(ra, rb);
       let cd = fadd.strict(rc, rd);
       let kids = fadd.strict(ab, cd);
@@ -94,7 +94,7 @@ fn hex_digit(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   let limit = at +wrap 16_u64;
@@ -126,8 +126,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     if done {
       break @reps;
     }
-    region 'tree {
-      let total = qfold<'tree>(node: &uniq 'tree tree, inh: seed);
+    region {
+      let total = qfold(node: &uniq tree, inh: seed);
       set last = total;
     }
     set seed = fadd.strict(seed, 0.0625_f64);
@@ -135,12 +135,12 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   }
   let bits = reinterpret<f64, u64>(last);
   let report = buffer_new(17_u64, 10_u8);
-  region 'summary {
-    let first = spell_hex<'summary>(destination: &uniq 'summary report, at: 0_u64, value: bits);
+  region {
+    let first = spell_hex(destination: &uniq report, at: 0_u64, value: bits);
   }
   region 'o {
-    region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 17_u64) {
+    region {
+      match write_once(output: &'o out, source: &report, start: 0_u64, end: 17_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

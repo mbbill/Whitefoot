@@ -6,8 +6,8 @@ enum Cell {
 command fn main() -> status: own ExitStatus pure {
   doc "Borrow-match a payload enum through &'r: the scrutinee stays live for a second read, and each derived shared payload binder is explicitly dereferenced before its copy value is used [OWN-13, TYPE-7, GIVE-1, GRAM-10, OP-1, SCOPE-3].";
   let c = Full(v: 20_i32);
-  region 'r {
-    let p = &'r c;
+  region {
+    let p = &c;
     let a = match deref(p) {
       Full(v: x) => {
         give deref(x) +wrap 1_i32;
@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus pure {
         give 0_i32;
       }
     }
-    let q = &'r c;
+    let q = &c;
     let b = match deref(q) {
       Full(v: y) => {
         give deref(y) *wrap 2_i32;
