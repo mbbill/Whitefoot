@@ -36,8 +36,10 @@ size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
  * still spend on opens. Windows grants a process on the order of sixteen
  * million handles, so a fixed capacity far below that is a true lower bound
  * on what the target provides; an open holding a permit is never refused a
- * handle by this process's own consumption. Atomic because explicit closes
- * return credits on whichever thread resumed the closing frame. */
+ * handle by this process's own consumption. Nothing raises the count again:
+ * an explicit close hands the credit back as the permit it returns [SYS-10].
+ * Atomic because a permit may be reserved on whichever thread resumed the
+ * reserving frame. */
 #define WF_FILE_CAPACITY 4096L
 
 static volatile LONG wf__file_credits = (LONG)WF_FILE_CAPACITY;
@@ -52,10 +54,6 @@ int wf__file_reserve(void) {
         credits = seen;
     }
     return 0;
-}
-
-void wf__file_credit_return(void) {
-    (void)InterlockedIncrement(&wf__file_credits);
 }
 
 static volatile int wf__floor_latch;

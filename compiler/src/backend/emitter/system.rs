@@ -569,10 +569,7 @@ fn operation_declarations(
         // program [SYS-10].
         RESERVE_FILE => &["declare i32 @wf__file_reserve()"],
         CLOSE_READ | CLOSE_DIRECTORY | CLOSE_DIRECTORY_SOURCE => {
-            return Ok(vec![
-                format!("declare i32 @{}(i32)", target.close_symbol()),
-                "declare void @wf__file_credit_return()".to_owned(),
-            ]);
+            return Ok(vec![format!("declare i32 @{}(i32)", target.close_symbol())]);
         }
         _ => &[],
     };
@@ -2970,9 +2967,9 @@ fn emit_reserve_file(
 }
 
 /// An explicit close [SYS-10]: the same one native close attempt derived
-/// release performs, its diagnostic discarded the same way, then the credit
-/// the open spent goes back to the factory and the fresh permit is the
-/// erased bit.
+/// release performs, its diagnostic discarded the same way, and the credit the
+/// open held comes back as the fresh permit, which is the erased bit. The
+/// factory's count is untouched: the permit value is the credit.
 fn emit_close(
     implementation: ApprovedImplementation,
     resource: SystemResourceType,
@@ -2984,7 +2981,6 @@ fn emit_close(
         "define private {permit} @{symbol}({owner} %owner) alwaysinline {{\n\
          entry:\n  \
          %closed = call i32 @{close}({owner} %owner)\n  \
-         call void @wf__file_credit_return()\n  \
          ret {permit} true\n\
          }}\n\n",
         symbol = implementation.symbol(),

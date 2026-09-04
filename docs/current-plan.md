@@ -124,6 +124,18 @@ slice 4 is in progress there.
 4. Docs (`docs/patterns.md` P9/P12, roadmap BOUND-1 current state, derivation
    ledger); canonical `make check` green; batch record in `docs/done/`.
 
+### Open decision (owner)
+
+What a failed open does with its credit. The candidate now says a
+recoverable failure spends the credit for the rest of the program, which is
+what the compiler does (`docs/done/0106-backed-file-permit.md` §7). That
+costs a scanner one credit per `NotFound` or `PermissionDenied`, and the
+alternative that raises the count again is a relation the checker cannot see
+(a drain-time return behind the next prologue's `reserve_file`). The T4 form
+is for the open's `Err` to carry the permit back as a value, which changes
+every open's result type and every `Err` arm in the corpus. Decide before
+Batch 2.
+
 ## Batch 2: park on miss
 
 Sequenced after batch 1. The plan file is the specification of the work; its

@@ -81,12 +81,12 @@ size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
  * constant only has to be at least what the runtime actually holds, which is
  * a handful. Being below the true limit is the whole promise: an open that
  * holds a permit is never refused a descriptor by this process's own
- * consumption. `reserve_file` spends one credit without a host call, and an
- * explicit close returns one after its native close attempt.
- *
- * The count is atomic because closes run on whichever thread resumed the
- * closing frame, while `reserve_file` runs under the factory's unique loan.
- * Nothing here allocates, blocks, or waits. */
+ * consumption. `reserve_file` spends one credit without a host call, and
+ * nothing raises the count again: an explicit close hands the credit back as
+ * the permit it returns, and a permit or an open resource that derived
+ * release consumes spends its credit for the rest of the program [SYS-10].
+ * The count is atomic because a permit may be reserved on whichever thread
+ * resumed the reserving frame. Nothing here allocates, blocks, or waits. */
 #define WF_FILE_RUNTIME_RESERVE 64L
 #define WF_FILE_CAPACITY_CEILING (1L << 20)
 
@@ -128,13 +128,6 @@ int wf__file_reserve(void) {
         }
     }
     return 0;
-}
-
-/* Returns one credit: an explicit close's native close attempt has run, or an
- * unspent permit was released. */
-void wf__file_credit_return(void) {
-    (void)pthread_once(&wf__file_capacity_once, wf__file_capacity_init);
-    (void)atomic_fetch_add_explicit(&wf__file_credits, 1, memory_order_acq_rel);
 }
 
 /* ------------------------------------------------------- per-thread state */

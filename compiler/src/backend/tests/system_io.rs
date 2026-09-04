@@ -1323,3 +1323,119 @@ fn windows_descriptor_exhaustion_is_resource_exhaustion() {
         .expect("the closed portable class table contains ResourceExhausted");
     assert_eq!(exhausted.codes, &[4, 8, 14, 1450]);
 }
+
+/// Drains the factory, then closes the one open file explicitly and asks the
+/// factory again.
+///
+/// [SYS-10]: the permit an explicit close returns *is* the credit the open
+/// held; the factory's count is never raised. So after the drain the second
+/// `reserve_file` must refuse even though a close just ran, and the returned
+/// permit must still open. A close that also raised the count would let one
+/// credit open two descriptors, which is exactly the overlap-invented
+/// exhaustion T4 forbids in the other direction.
+pub(super) const CLOSE_KEEPS_THE_COUNT: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+  region 'a {
+    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            region 'c {
+              region 'p {
+                match reserve_file::<'c>(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                      Ok(value: file) => {
+                        for @drain (index in 0_u64..4096_u64) {
+                          region 'r {
+                            match reserve_file::<'r>(factory: &uniq 'r files) {
+                              Ok(value: extra) => {
+                              }
+                              Err(error: spent) => {
+                                break;
+                              }
+                            }
+                          }
+                        }
+                        let returned = close_read(file: move file);
+                        region 'q {
+                          match reserve_file::<'q>(factory: &uniq 'q files) {
+                            Ok(value: raised) => {
+                              return exit_status(code: 20_u8);
+                            }
+                            Err(error: spent) => {
+                            }
+                          }
+                        }
+                        match open_read::<'c, 'p>(permit: move returned, root: &'c cwd, path: &'p path) {
+                          Ok(value: again) => {
+                            return exit_status(code: 0_u8);
+                          }
+                          Err(error: problem) => {
+                            return exit_status(code: 21_u8);
+                          }
+                        }
+                      }
+                      Err(error: problem) => {
+                        return exit_status(code: 12_u8);
+                      }
+                    }
+                  }
+                  Err(error: spent) => {
+                    return exit_status(code: 15_u8);
+                  }
+                }
+              }
+            }
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 13_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 14_u8);
+      }
+    }
+  }
+}
+"#;
+
+/// Runs one emitted module under a lowered soft descriptor limit, so the
+/// factory's capacity (the limit less the runtime's reserve) is small enough
+/// to drain inside a test.
+#[cfg(unix)]
+fn run_in_directory_with_descriptor_limit(
+    llvm: &str,
+    fixtures: &[(&str, &[u8])],
+    argument: &[u8],
+    limit: u32,
+) -> std::process::Output {
+    let directory = test_directory();
+    let executable = build_executable(llvm, &directory);
+    write_fixtures(&directory, fixtures);
+    let output = Command::new("/bin/sh")
+        .current_dir(&directory)
+        .arg("-c")
+        .arg("ulimit -n \"$0\" && exec \"$1\" \"$2\"")
+        .arg(limit.to_string())
+        .arg(&executable)
+        .arg(std::ffi::OsStr::from_bytes(argument))
+        .output()
+        .expect("run backend test executable under a descriptor limit");
+    std::fs::remove_dir_all(&directory).expect("remove backend test directory");
+    output
+}
+
+#[cfg(unix)]
+#[test]
+fn an_explicit_close_returns_the_credit_as_the_permit_and_never_raises_the_count() {
+    let llvm = compile(CLOSE_KEEPS_THE_COUNT);
+    let output =
+        run_in_directory_with_descriptor_limit(&llvm, &[("one.txt", b"x")], b"one.txt", 100);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

@@ -55,8 +55,8 @@ relation. The relation is now on the API.
 - `wf_floor.c` / `wf_floor_windows.c`: one process-wide credit counter,
   initialised from `RLIMIT_NOFILE` less a 64-descriptor runtime reserve
   (ceiling 2^20) on POSIX and a fixed 4096 on Windows; `wf__file_reserve`
-  decrements or refuses, `wf__file_credit_return` increments. No heap, no
-  wait.
+  decrements or refuses, and nothing raises the count again (see §7). No
+  heap, no wait.
 - The descriptor retirement ledger is deleted on every route and target:
   `wf_completion_retirement_*`, `wf_completion_descriptor_returns`,
   `wf_completion_operation_accepted/retired`, the waiter struct and state
@@ -118,7 +118,7 @@ green against a mechanism that no longer exists:
 - Linux translation units (`linux_io_uring.c`, `bridge.c`, `runtime.c`,
   `file_adapter.c`, `harness.c`, `writer_scheduler.c`, `native_contract.c`)
   compile under `zig cc -target x86_64-linux-gnu -Werror -Wpedantic`.
-- `cargo test --profile gate --lib`: 1491 passed. `make conformance-run`:
+- `cargo test --profile gate --lib`: 1492 passed. `make conformance-run`:
   Pass=502, Xfail=1 (the recorded `ent5-neg-callee-uniq-buffer-replace-kills-length`),
   Skip=1. `make snapshot-run`: Pass=491, Flip=0.
 - Canonical `make check` stages on the branch: `repository-invariants`,
@@ -131,6 +131,50 @@ green against a mechanism that no longer exists:
   ACTIVE identity. It turns green at activation (archive the v0.41 bytes,
   install the ACTIVE v0.42 record), which is the merge step and not branch
   work.
+
+## 7. What the implementation revealed about the v0.42 text
+
+Three sentences of the candidate [SYS-10] did not survive contact with the
+emitter. Two are corrected in this batch; the third is the owner's call.
+
+1. **Explicit close counted the credit twice (fixed).** The first candidate
+   text had an explicit close both return a fresh `FilePermit` and "return
+   one [credit] after its native close attempt", and the emitter did exactly
+   that: `emit_close` called `wf__file_credit_return()` and returned the
+   permit bit. One credit could then open two descriptors: reserve, open,
+   close (count back up, permit in hand), reserve again. The permit value
+   *is* the credit. The counter increment is gone from the emitter and the
+   floor, `wf__file_credit_return` no longer exists, and [SYS-10] now says
+   the factory's count is never raised: a credit is at every moment exactly
+   one of unreserved, a `FilePermit` value, an open resource value, or spent.
+   `an_explicit_close_returns_the_credit_as_the_permit_and_never_raises_the_count`
+   (`system_io.rs`) drains the factory under `ulimit -n 100`, closes
+   explicitly, and checks that `reserve_file` still refuses while the
+   returned permit still opens; under a floor that never refuses it exits 20
+   instead of 0.
+2. **An unspent permit's release (text aligned).** The candidate said
+   releasing an unspent `FilePermit` returns its credit to the factory.
+   Nothing implemented it, and under T4 it would be one more relation the
+   checker cannot see: a release in one iteration's remainder raising a count
+   the next iteration's prologue reads. [SYS-10] now says derived release of
+   an unspent permit spends the credit, exactly as derived release of an open
+   resource does. The same test's drain loop drops one permit per iteration
+   and relies on it.
+3. **A failed open's credit (open decision).** The candidate said a
+   recoverable open failure "returns the credit to the factory, because no
+   descriptor was taken". Nothing implemented it, and the count-raising form
+   has the T4 defect of item 2 in a place that matters: in a staged pipeline
+   the failure is decided at drain, after the next iteration's `reserve_file`
+   ran, so a pipelined run could refuse a reserve the sequential run grants.
+   The text now says the failure spends the credit, which is what the
+   compiler does; but a scanner that meets `NotFound` or `PermissionDenied`
+   on many names then loses a credit per miss and is refused for the rest of
+   the program. The form that expresses the relation on the API is for the
+   open's `Err` to carry the permit back as a value (`Result<ReadFile,
+   OpenFailure>` with `error` and `permit` fields): no count changes, and the
+   program reuses or drops the permit it got back. That changes every open's
+   result type and every `Err` arm in the corpus, so it is presented to the
+   owner in `docs/current-plan.md` rather than taken here.
 
 ## Approval classes
 
