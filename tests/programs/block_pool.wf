@@ -24,7 +24,7 @@ fn pool_new['s: affine](store: &uniq Arena<'s, 65536, 16>) -> made: own Option<B
       }
     }
   }
-  let pool = BlockPool<'s>(free: move free);
+  let pool = BlockPool(free: move free);
   return Some<BlockPool<'s>>(value: move pool);
 }
 
@@ -34,7 +34,7 @@ fn pool_take['s: affine](pool: own BlockPool<'s>) -> (rest: own BlockPool<'s>, l
   let any = spare > 0_u64;
   if any {
     set (pool.free, one) = take_back(vector: move pool.free);
-    let ticket = Lease<'s>(run: move one);
+    let ticket = Lease(run: move one);
     return move pool, Some<Lease<'s>>(value: move ticket);
   }
   return move pool, None<Lease<'s>>();

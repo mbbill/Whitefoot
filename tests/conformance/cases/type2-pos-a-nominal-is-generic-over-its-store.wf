@@ -14,7 +14,7 @@ command fn main() -> status: own ExitStatus pure {
     let workspace = arena_frame::<4096, 16, 'a>();
     region {
       let page = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
-      let held = Chunk<'a>(page: move page);
+      let held = Chunk(page: move page);
       let (rest, width) = chunk_room(held: move held);
       if width == 256_u64 {
         return exit_status(code: 0_u8);

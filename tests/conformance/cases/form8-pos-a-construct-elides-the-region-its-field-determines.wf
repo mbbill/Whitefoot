@@ -3,7 +3,7 @@ struct Chunk['s] {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "TYPE-5: a construct of a nominal carrying region_params writes its region arguments as the leading members of its targs, on exactly the ground its type and const arguments are written on: construction consults no expected nominal type, so the written arguments are the only supply there is.";
+  doc "FORM-8: a construct writes a region argument only for a region parameter no field of the constructor it names determines. `Chunk`'s one field brands the store, so the operand fixes the instance and the construct writes nothing; the instance the field determined is the one the later read measures.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();
     region {

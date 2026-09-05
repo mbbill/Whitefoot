@@ -295,6 +295,42 @@ struct NominalTemplate {
     /// [PROV-6] whether the declaration writes the `linear` modifier. Every
     /// instance of a marked declaration is marked.
     linear: bool,
+    /// [FORM-8] one entry per constructor of this declaration — a struct has
+    /// one, an enum one per variant in tag order — and empty for a
+    /// declaration carrying no `region_params`.
+    constructors: Vec<ConstructorShape>,
+}
+
+/// One `construct` occurrence's declaration data [FORM-8, TYPE-5]: the
+/// template it names, the variant when its nominal is an enum, the
+/// declaration's own generic and region parameters, and the constructor's
+/// shape.
+struct ConstructorSite {
+    template: usize,
+    variant: Option<u32>,
+    generic_parameters: Vec<generics::GenericParameter>,
+    region_parameters: Vec<DeclarationId>,
+    shape: ConstructorShape,
+}
+
+/// What a `construct` of one nominal has to know *before* it forms the
+/// instance [FORM-8].
+///
+/// A construct writes a region argument only for a region parameter no field
+/// operand determines, and the operands are what determine the rest — so the
+/// instance is what the judgment produces and cannot be what it consults.
+/// This is read once, off the declaration's own symbolic instance, whose
+/// region arguments are its region parameters, while the templates are
+/// validated.
+#[derive(Clone, Default)]
+struct ConstructorShape {
+    /// The declared field names of this constructor, in declared order.
+    fields: Vec<String>,
+    /// Parallel to the declaration's `region_parameters`: the field whose
+    /// declared type names that region parameter, and `None` where no field
+    /// of this constructor does, which is exactly the region argument the
+    /// construct writes.
+    determining_field: Vec<Option<usize>>,
 }
 
 /// A nominal instance a derived type named, awaiting interning.

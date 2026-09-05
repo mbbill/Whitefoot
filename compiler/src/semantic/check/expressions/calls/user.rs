@@ -657,7 +657,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// type therefore determines the region from its actual. An instance
     /// carrying two or more region arguments names none, which is the same
     /// fail-closed reading `Vector<'s, Vector<'t, u8>>` already takes.
-    fn written_type_region(&self, ty: CheckedType) -> Result<Option<DeclarationId>, CheckStop> {
+    pub(in crate::semantic::check) fn written_type_region(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<DeclarationId>, CheckStop> {
         if let CheckedType::Nominal(id) = ty {
             return Ok(match self.nominal_region_axis(id)? {
                 Some([(_, region)]) => Some(*region),

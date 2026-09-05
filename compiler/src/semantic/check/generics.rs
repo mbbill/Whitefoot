@@ -2212,10 +2212,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         region_parameters: &[DeclarationId],
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
+        self.nominal_generic_substitution_with(node, parameters, region_parameters, &[], caller)
+    }
+
+    /// The same list where some region parameters are already fixed [FORM-8].
+    ///
+    /// A `type` position determines none of them and writes every one; a
+    /// `construct`'s field operands determine the ones their declared types
+    /// name, and the position writes exactly the rest, still as the leading
+    /// members of the same `targs` list. The two are one function because the
+    /// difference between them is exactly which formals arrive already bound.
+    pub(super) fn nominal_generic_substitution_with(
+        &self,
+        node: NodeId,
+        parameters: &[GenericParameter],
+        region_parameters: &[DeclarationId],
+        determined: &[(DeclarationId, DeclarationId)],
+        caller: &GenericSubstitution,
+    ) -> Result<GenericSubstitution, CheckStop> {
         // [TYPE-5] a generic nominal's construct writes that nominal's
         // arguments, and their absence or a wrong count is TYPE-5's own
         // violation, "at the complete `construct`".
-        let regions = self.nominal_region_arguments(node, region_parameters, caller)?;
+        let written_parameters = region_parameters
+            .iter()
+            .copied()
+            .filter(|formal| !determined.iter().any(|(bound, _)| bound == formal))
+            .collect::<Vec<_>>();
+        let written = self.nominal_region_arguments(node, &written_parameters, caller)?;
+        let mut regions = Vec::with_capacity(region_parameters.len());
+        for formal in region_parameters {
+            let actual = determined
+                .iter()
+                .chain(written.iter())
+                .find(|(bound, _)| bound == formal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            regions.push(*actual);
+        }
         Ok(self
             .generic_substitution(
                 node,
@@ -2223,7 +2255,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 caller,
                 false,
                 SemanticRule::Type5,
-                region_parameters.len(),
+                written_parameters.len(),
             )?
             .with_regions(regions))
     }

@@ -1715,6 +1715,210 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         )
     }
 
+    /// One `construct` of a nominal carrying `region_params` [FORM-8].
+    ///
+    /// Every other construct forms its instance from the written argument
+    /// list and then checks its operands against that instance's fields.
+    /// Here the operands come first, because they are what determines the
+    /// instance: a field whose declared type names one of the declaration's
+    /// region parameters supplies that region from its own actual, exactly as
+    /// a parameter position supplies a callee's formal region at a call, and
+    /// the position writes only the region parameters no field's declared
+    /// type mentions. [TYPE-5]'s ground is untouched — construction still
+    /// consults no expected nominal type, and it is the operands and the
+    /// written list, never a destination, that fix the instance.
+    ///
+    /// The instance is formed once the regions are known and every operand is
+    /// then compared against *its* declared field types by the ordinary exact
+    /// [TYPE-5] equality, so a second operand naming a second store is a
+    /// mismatch and not a second binding [PROV-1].
+    fn check_regional_construct(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        site: &super::ConstructorSite,
+        constructor_name: String,
+    ) -> Result<TypedExpression, CheckStop> {
+        let written_fields = match self
+            .tree
+            .first_child_with(node, Production::FieldinitList)?
+        {
+            Some(list) => self.tree.children_with(list, Production::Fieldinit)?,
+            None => Vec::new(),
+        };
+        if written_fields.len() != site.shape.fields.len() {
+            return self.issue_node(
+                SemanticRule::Gram8,
+                node,
+                SemanticIssueKind::InvalidConstructionFields {
+                    constructor: constructor_name,
+                    declared_fields: site.shape.fields.clone(),
+                },
+            );
+        }
+        // [FORM-8] a written region argument this construct's own operands
+        // determine carries no fact a reader can check, and the diagnostic
+        // names the one repair rather than an argument count.
+        self.reject_determined_region_arguments(node, site)?;
+        let mut atoms = Vec::with_capacity(written_fields.len());
+        let mut operands = Vec::with_capacity(written_fields.len());
+        let mut effects = EffectSet::NONE;
+        for (written, declared) in written_fields.into_iter().zip(&site.shape.fields) {
+            if self
+                .deferred_use_at(written, DeferredUseRole::FieldInitializer)?
+                .spelling()
+                != *declared
+            {
+                return self.issue_node(
+                    SemanticRule::Gram8,
+                    written,
+                    SemanticIssueKind::InvalidConstructionFields {
+                        constructor: constructor_name,
+                        declared_fields: site.shape.fields.clone(),
+                    },
+                );
+            }
+            let atom = self
+                .tree
+                .first_child_with(written, Production::Atom)?
+                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
+            let value = self.check_atom(function, atom, bindings, loop_depth)?;
+            effects = effects.union(value.effects.clone());
+            atoms.push(atom);
+            operands.push(value);
+        }
+        let mut determined = Vec::with_capacity(site.region_parameters.len());
+        for (slot, formal) in site.region_parameters.iter().enumerate() {
+            let Some(field) = site.shape.determining_field.get(slot).copied().flatten() else {
+                continue;
+            };
+            let operand = operands
+                .get(field)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let atom = *atoms
+                .get(field)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let ty = operand.expression.ty();
+            let Some(actual) = self.written_type_region(ty)? else {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        "a value whose type names the store this field's declared type brands"
+                            .to_owned(),
+                        self.checked_type_name(ty)?,
+                    ),
+                );
+            };
+            determined.push((*formal, actual));
+        }
+        let nominal = self.constructed_nominal(node, site, &determined, &function.substitution)?;
+        let declared_fields = match (&self.nominal(nominal)?.kind, site.variant) {
+            (CheckedNominalKind::Struct { fields }, None) => fields.clone(),
+            (CheckedNominalKind::Enum { variants }, Some(variant)) => variants
+                .get(variant as usize)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .fields
+                .clone(),
+            _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+        };
+        let mut fields = Vec::with_capacity(operands.len());
+        for ((value, atom), declared) in operands.into_iter().zip(atoms).zip(&declared_fields) {
+            if value.expression.ty() != declared.ty {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    atom,
+                    SemanticIssueKind::type_mismatch(
+                        self.checked_type_name(declared.ty)?,
+                        self.checked_type_name(value.expression.ty())?,
+                    ),
+                );
+            }
+            if value.mode != CheckedMode::Own {
+                return self.issue_node(
+                    SemanticRule::Type7,
+                    atom,
+                    SemanticIssueKind::MissingDereference {
+                        mechanical_fix: "write `deref(holder)`",
+                    },
+                );
+            }
+            fields.push(value.expression);
+        }
+        let carrier = self.tree.path(node)?.clone();
+        let expression = match site.variant {
+            None => CheckedExpression::ConstructStruct {
+                carrier,
+                nominal,
+                fields,
+            },
+            Some(variant) => CheckedExpression::ConstructEnum {
+                carrier,
+                nominal,
+                variant,
+                fields,
+            },
+        };
+        Ok(TypedExpression::owned(expression, effects))
+    }
+
+    /// [FORM-8] a construct that writes a region argument its own field
+    /// operands determine.
+    ///
+    /// The old spelling wrote every region parameter, so the shape this
+    /// refuses is the complete list where a shorter one is legal, and the
+    /// repair is to delete the members the operands supply. A list that is
+    /// wrong in some other way stays the ordinary [TYPE-5] argument fault.
+    fn reject_determined_region_arguments(
+        &self,
+        node: NodeId,
+        site: &super::ConstructorSite,
+    ) -> Result<(), CheckStop> {
+        let determined = site
+            .shape
+            .determining_field
+            .iter()
+            .filter(|field| field.is_some())
+            .count();
+        if determined == 0 {
+            return Ok(());
+        }
+        let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
+            return Ok(());
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        let expected = site
+            .generic_parameters
+            .len()
+            .saturating_add(site.region_parameters.len())
+            .saturating_sub(determined);
+        if arguments.len() <= expected {
+            return Ok(());
+        }
+        for argument in arguments.iter().take(site.region_parameters.len()) {
+            if self
+                .tree
+                .first_child_with(*argument, Production::Type)?
+                .is_some()
+                || self
+                    .tree
+                    .first_child_with(*argument, Production::Const)?
+                    .is_some()
+            {
+                return Ok(());
+            }
+        }
+        self.issue_node(
+            SemanticRule::Form8,
+            node,
+            SemanticIssueKind::RegionSpelling {
+                mechanical_fix: "drop the region argument",
+            },
+        )
+    }
+
     pub(super) fn check_construct(
         &self,
         function: &FunctionSignature,
@@ -1776,6 +1980,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let constructor = match usage.target() {
             ResolvedTarget::Source { declaration, .. } => {
+                // [FORM-8] a nominal carrying `region_params` has its region
+                // arguments determined by its field operands, so its
+                // instance is formed after they are checked and not before.
+                if let Some(site) = self.constructor_shape(declaration)? {
+                    return self.check_regional_construct(
+                        function,
+                        node,
+                        bindings,
+                        loop_depth,
+                        &site,
+                        constructor_name,
+                    );
+                }
                 self.source_constructor(node, declaration, &function.substitution)?
             }
             ResolvedTarget::Prelude(id) => match id.ordinal() {

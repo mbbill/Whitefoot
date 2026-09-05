@@ -143,6 +143,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             generic_parameters,
             region_parameters,
             linear,
+            constructors: Vec::new(),
         };
         let template_index = self.nominal_templates.len();
         if self
@@ -474,6 +475,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ResolvedTarget::Source { declaration, .. } = usage.target() else {
             return Ok(());
         };
+        // [FORM-8] a construct whose field operands determine a region
+        // parameter does not write it, so this pre-scan cannot read the
+        // instance off the written list: it is formed while the operands are
+        // checked, and interned then through the deferred-nominal route.
+        if self
+            .constructor_shape(declaration)?
+            .is_some_and(|site| site.shape.determining_field.iter().any(Option::is_some))
+        {
+            return Ok(());
+        }
         let constructor = *self
             .constructor_templates_by_declaration
             .get(&declaration)
@@ -742,10 +753,142 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let substitution =
                 self.symbolic_nominal_substitution(&parameters, &region_parameters)?;
-            self.ensure_source_nominal_instance(template_index, substitution)?;
+            let id = self.ensure_source_nominal_instance(template_index, substitution)?;
+            // [FORM-8] the one place a declaration's fields can be read
+            // against its own region parameters: this instance carries each
+            // region parameter as its own argument, so a field type naming
+            // one is visibly that parameter and not some caller's actual.
+            if !region_parameters.is_empty() {
+                let constructors = self.constructor_shapes(id, &region_parameters)?;
+                self.nominal_templates
+                    .get_mut(template_index)
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                    .constructors = constructors;
+            }
         }
         self.reject_recursive_nominal_layouts()?;
         self.restore_nominal_checkpoint(checkpoint)
+    }
+
+    /// One declaration's constructors, read off its symbolic instance
+    /// [FORM-8].
+    ///
+    /// A field determines a region parameter exactly when its declared type
+    /// names that region — the same relation [FORM-8] uses at a call, where a
+    /// parameter whose type names a formal region determines it from the
+    /// actual. Where two fields name one region parameter the first decides
+    /// it and the rest are the ordinary [TYPE-5] equality against the formed
+    /// instance, exactly as a call's second store operand is.
+    fn constructor_shapes(
+        &self,
+        id: NominalId,
+        region_parameters: &[crate::DeclarationId],
+    ) -> Result<Vec<super::ConstructorShape>, CheckStop> {
+        let variants: Vec<&[super::super::model::CheckedField]> = match &self.nominal(id)?.kind {
+            CheckedNominalKind::Struct { fields } => vec![fields.as_slice()],
+            CheckedNominalKind::Enum { variants } => variants
+                .iter()
+                .map(|variant| variant.fields.as_slice())
+                .collect(),
+            _ => return Ok(Vec::new()),
+        };
+        let mut constructors = Vec::with_capacity(variants.len());
+        for fields in variants {
+            let mut determining_field = vec![None; region_parameters.len()];
+            for (index, field) in fields.iter().enumerate() {
+                let Some(region) = self.written_type_region(field.ty)? else {
+                    continue;
+                };
+                let Some(slot) = region_parameters
+                    .iter()
+                    .position(|parameter| *parameter == region)
+                else {
+                    continue;
+                };
+                if determining_field[slot].is_none() {
+                    determining_field[slot] = Some(index);
+                }
+            }
+            constructors.push(super::ConstructorShape {
+                fields: fields.iter().map(|field| field.name.clone()).collect(),
+                determining_field,
+            });
+        }
+        Ok(constructors)
+    }
+
+    /// The constructor shape one `construct` names, when its declaration
+    /// carries `region_params` [FORM-8]; `None` for every declaration that
+    /// does not, where a construct writes no region argument at all and the
+    /// instance is formed from the written list alone.
+    pub(super) fn constructor_shape(
+        &self,
+        declaration: crate::DeclarationId,
+    ) -> Result<Option<super::ConstructorSite>, CheckStop> {
+        let constructor = *self
+            .constructor_templates_by_declaration
+            .get(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let (template_index, variant) = match constructor {
+            ConstructorTemplate::Struct { template } => (template, None),
+            ConstructorTemplate::Enum { template, variant } => (template, Some(variant)),
+        };
+        let template = self
+            .nominal_templates
+            .get(template_index)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let Some(shape) = template
+            .constructors
+            .get(variant.unwrap_or(0) as usize)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        Ok(Some(super::ConstructorSite {
+            template: template_index,
+            variant,
+            generic_parameters: template.generic_parameters.clone(),
+            region_parameters: template.region_parameters.clone(),
+            shape,
+        }))
+    }
+
+    /// The instance one `construct` names, at the regions its own field
+    /// operands determined and the ones it wrote [FORM-8, TYPE-5].
+    ///
+    /// No position of the writer's text need spell that instance — a
+    /// construct whose every region parameter a field determines writes no
+    /// region argument at all — so the interning pass cannot have found it,
+    /// and a miss is the ordinary deferred-nominal report the driver repairs.
+    pub(super) fn constructed_nominal(
+        &self,
+        node: NodeId,
+        site: &super::ConstructorSite,
+        determined: &[(crate::DeclarationId, crate::DeclarationId)],
+        caller: &GenericSubstitution,
+    ) -> Result<NominalId, CheckStop> {
+        let substitution = self.nominal_generic_substitution_with(
+            node,
+            &site.generic_parameters,
+            &site.region_parameters,
+            determined,
+            caller,
+        )?;
+        let declaration = self
+            .nominal_templates
+            .get(site.template)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .declaration;
+        if let Some(existing) = self.source_nominal_instance(declaration, &substitution) {
+            return Ok(existing);
+        }
+        self.pending_nominals
+            .borrow_mut()
+            .push(super::PendingNominal::SourceInstance {
+                template: site.template,
+                substitution,
+            });
+        Err(CheckStop::DeferredNominal)
     }
 
     fn complete_source_nominal_instance(&mut self, id: NominalId) -> Result<(), CheckStop> {

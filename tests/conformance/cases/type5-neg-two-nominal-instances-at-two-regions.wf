@@ -22,8 +22,8 @@ command fn main() -> status: own ExitStatus pure {
       region {
         let one = arena_vector_proved::<u8>(store: &uniq first, count: 256_u64);
         let two = arena_vector_proved::<u8>(store: &uniq second, count: 256_u64);
-        let held = Chunk<'a>(page: move one);
-        let other = Chunk<'b>(page: move two);
+        let held = Chunk(page: move one);
+        let other = Chunk(page: move two);
         let width = chunk_take(held: move held, other: move other);
         if width == 256_u64 {
           return exit_status(code: 0_u8);

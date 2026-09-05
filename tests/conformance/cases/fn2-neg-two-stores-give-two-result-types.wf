@@ -10,7 +10,7 @@ fn hold['s: affine](store: &uniq Arena<'s, 4096, 16>) -> made: own Option<Holder
         return None<Holder<'s>>();
       }
       Some(value: run) => {
-        let held = Holder<'s>(run: move run);
+        let held = Holder(run: move run);
         return Some<Holder<'s>>(value: move held);
       }
     }

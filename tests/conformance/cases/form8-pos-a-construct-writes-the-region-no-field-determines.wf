@@ -1,0 +1,14 @@
+struct Ticket['s] {
+  count: u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FORM-8: the other half. No field of `Ticket` names its region parameter, so no operand determines it and the construct writes it as the leading member of its own type-argument list, exactly as a call writes a region parameter no parameter position determines.";
+  region 'a {
+    let one = Ticket<'a>(count: 7_u64);
+    if one.count == 7_u64 {
+      return exit_status(code: 0_u8);
+    }
+  }
+  return exit_status(code: 1_u8);
+}

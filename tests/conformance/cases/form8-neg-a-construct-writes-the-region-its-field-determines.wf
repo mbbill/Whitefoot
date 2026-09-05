@@ -1,0 +1,19 @@
+struct Chunk['s] {
+  page: Vector<'s, u8>;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FORM-8: writing a determined region parameter at a construct is the same rejection writing one at a call is. The field operand already fixes the store, so the written argument carries no fact a reader can check and the mechanical fix is to drop it.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let page = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
+      let held = Chunk<'a>(page: move page);
+      let width = room_of(held.page);
+      if width == 256_u64 {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}
