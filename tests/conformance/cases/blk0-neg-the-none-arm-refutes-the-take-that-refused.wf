@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0, CALL-6: the None arm publishes room_of(store) < advance<T>(count), which is a fact and not an absence. A second take of the same count on that arm is therefore refuted rather than merely unproved, and the row's requirement is a static rejection naming the operation.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      match arena_vector::<u8>(store: &uniq workspace, count: 8192_u64) {
+        Some(value: run) => {
+          return exit_status(code: 1_u8);
+        }
+        None() => {
+          let again = arena_vector_proved::<u8>(store: &uniq workspace, count: 8192_u64);
+          let held = len_of(again);
+          if held == 0_u64 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

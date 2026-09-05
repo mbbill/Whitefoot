@@ -1,0 +1,24 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-3, OWN-7: an element placement writes the element position it names and no other. A measure written at P[0] is a fact about P[0], and the value displaced out of P[1] carries what P[1] had, which nothing established; the two literal offsets are provably distinct, so the placement at the second position is undischarged.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let blocks = fixed_vector::<Vector<'a, u8>, 2>();
+      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      let second = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+      let third = arena_vector_proved::<u8>(store: &uniq workspace, count: 32_u64);
+      let fourth = arena_vector_proved::<u8>(store: &uniq workspace, count: 64_u64);
+      let one = place_back(vector: move blocks, value: move first);
+      let two = place_back(vector: move one, value: move second);
+      let spare = replace two[0_u64] = move third;
+      let held = replace two[1_u64] = move fourth;
+      let filled = place_back(vector: move held, value: 9_u8);
+      let seen = filled[0_u64];
+      if seen == 9_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

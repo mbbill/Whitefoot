@@ -1,0 +1,24 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-3: the payload placement over an enum exactly one of whose variants carries fields. The construct carries the run's measures into the payload, the match consumes the scrutinee and the datum minted before that consume is read at the arm binder that names the payload, so the run keeps its figure across both events and the placement into it is discharged.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      let slot = Some<Vector<'a, u8>>(value: move block);
+      match slot {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: back) => {
+          let filled = place_back(vector: move back, value: 2_u8);
+          let seen = filled[0_u64];
+          if seen == 2_u8 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

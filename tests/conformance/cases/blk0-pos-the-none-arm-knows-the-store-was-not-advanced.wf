@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0, CALL-6: the other arm of the same row. The None arm publishes len_of(store) = len_of(store at the call), so the store the caller holds after a refused take is the store it held before it, and the smaller proved take that follows discharges its own room requirement from that and from the row's unrouted cap_of(store) relation.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      match arena_vector::<u8>(store: &uniq workspace, count: 8192_u64) {
+        Some(value: run) => {
+          return exit_status(code: 1_u8);
+        }
+        None() => {
+          let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+          let held = len_of(small);
+          if held == 0_u64 {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

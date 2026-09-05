@@ -1,0 +1,19 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-3: the element placement reaches a written element position and no other. place_back stores its value at position len_of(vector) and take_back takes one from position len_of(rest), and a measure term is not an offset a place relation may name, so a run put into a slot by a boundary row and taken back out by one arrives with no measures of its own and the next placement into it is undischarged.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let blocks = fixed_vector::<Vector<'a, u8>, 2>();
+      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      let one = place_back(vector: move blocks, value: move first);
+      let (rest, last) = take_back(vector: move one);
+      let filled = place_back(vector: move last, value: 3_u8);
+      let seen = filled[0_u64];
+      if seen == 3_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
