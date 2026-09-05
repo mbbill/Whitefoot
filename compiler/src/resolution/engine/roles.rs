@@ -554,10 +554,12 @@ fn classify_node(
                 return Err(ResolutionCompilerFailure::InvalidRoleShape);
             }
         }
-        // [FORM-8] `slice<T>` / `arena<T>`: the view still carries one region.
+        // [FORM-8] `Slice<T>`, `MutSlice<T>` / `arena<T>`: a view still
+        // carries one region [VIEW-1].
         Production::Type
             if !direct.is_empty()
                 && (has_fixed_terminal(classified, direct, FixedTerminal::Slice)
+                    || has_fixed_terminal(classified, direct, FixedTerminal::MutSlice)
                     || has_fixed_terminal(classified, direct, FixedTerminal::Arena))
                 && !names.iter().any(|index| {
                     name_predicate(classified, *index) == Some(TerminalPredicate::RegionIdentifier)
@@ -565,6 +567,8 @@ fn classify_node(
         {
             let anchor = if has_fixed_terminal(classified, direct, FixedTerminal::Slice) {
                 FixedTerminal::Slice
+            } else if has_fixed_terminal(classified, direct, FixedTerminal::MutSlice) {
+                FixedTerminal::MutSlice
             } else {
                 FixedTerminal::Arena
             };

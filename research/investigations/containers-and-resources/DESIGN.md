@@ -2256,6 +2256,18 @@ so `collect(out: move buf, source: line)` is the call spelling and a `move` is
 destructured. And an exclusive view and a shared read of one run cannot both be live,
 which is [OWN-5]'s ordinary conflict (probe `s6`) and which Q19 records as the cost it is.
 
+> **Correction, 2026-09-05, from B8e's implementation: what [S27] costs is a corpus
+> verdict, and the price is due before the rule is.** This entry prices the copy
+> classification at "a re-formation at every second use" and at [VIEW-4]'s added refusal.
+> Both are right and neither is what stopped it. Three `move`s of shared views stand in
+> one *accepted* conformance program — `fn1-pos-returned-slice-inputs-run` — and a `move`
+> of a copy value is [OWN-1]'s `MoveOfCopy`, so landing the classification moves that
+> program from accept to reject. The classification is therefore DEFERRED in v0.45 with a
+> stated delta, together with the loan's last-use end condition and [VIEW-4], and the
+> decision the owner actually faces is whether those three `move`s are rewritten. What
+> **did** land needs neither: the exclusive view is affine for its own reason [OWN-5] 606,
+> and every sentence of [VIEW-2] holds at both strengths.
+
 *Judgment:* the [OWN-1] classification of the two view types, which [PROV-3] use 1,
 [LIV-2] condition 1, [VIEW-4] and [CALL-3] read. *Publishes:* the two types, their loan
 strengths, their ownership classes, and the loan-bearing predicate. *Amends:* [TYPE-2]
@@ -2286,6 +2298,20 @@ drained ring is viewable; and a wrapped run is returned to the premise by 3.L.8'
 is exact inside one function and a loop backedge removes it ([ENT-5] 2942-2946), so a
 caller of `filled::<u8, 4096>()` knows `head_of(input)` only because `filled`'s contract
 publishes it and 3.L.3's `flat` invariant establishes it.
+
+> **Correction, 2026-09-05, from B8e's implementation: the non-wrap premise is not a
+> difference bound as written, and it is one as restated.** `head_of(vector) + len_of(vector)
+> <= cap_of(vector)` has three measure operands, and [BLK-0]'s record notation and
+> [ENT-4]'s closure both carry a *difference* between two terms. Under [MSR-2]'s standing
+> identity `len_of + room_of = cap_of` the premise is exactly `head_of(vector) <=
+> room_of(vector)`, which is a difference bound, is discharged by the closure the caller
+> already runs, and is satisfied by an empty run from `head_of <= cap_of` alone as this
+> entry says it must be. The row should be written that way when it lands. B8e did not
+> land it: the viewed domain is still `array<T, N>` and `buffer<T>`, so no source states
+> the premise at all, and the two rows are still [OP-1] table rows. Retiring them into
+> [BLK-0] needs two things this entry does not mention — a *shared* borrow mode, which
+> the kernel record's mode enumeration does not have, and an operand *class* rather than
+> the single run parameter `V`, because the transitional domain is four types.
 
 *Judgment:* [OWN-5] at the formation borrow, [MSR-4] discharge of the non-wrap
 requirement, and the ordinary [BLK-0] relation establishment through [CALL-6].
@@ -7500,6 +7526,69 @@ every other row's, and there is no conformance case to write for it until B7b.
 **Verdicts.** The adapter moves from Pass=634 over 636 cases to Pass=647 over 649, with
 the one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491,
 Flip=0. No corpus verdict moved and no program of the executable corpus changed.
+
+### 6.0q B8e landed in part (v0.45)
+
+**Two views, the element write, and the three parts of this rule set the corpus would
+not let land.** B8's rules are [VIEW-1], [VIEW-2], [VIEW-4], [VIEW-6] and [PROV-3]; two of
+them landed, and what stopped the rest is recorded here in the form the deferral takes
+rather than as a plan.
+
+- **[S35] renamed the type and the rename is the whole grammar change.** `slice<'r, T>` is
+  `Slice<'r, T>`, and because the type was a fixed atom of the `type` production and not an
+  entry of the nominal-type TYPEID domain, the capitalization is a *lexical* change: an
+  upper word is now read as its fixed terminal where the grammar has one and as a TYPEID
+  otherwise, which is the two-way reading a lower word already had. The lowercase word
+  `slice` is an ordinary identifier again. **Making the two views TYPEID entries beside
+  `Vector` was tried and declined**, and the reason is one this file should carry: an
+  elided view region is an *implicit region parameter* [FORM-8], minted by the role pass,
+  which runs before resolution; that pass can tell `Slice<u8>` from `Vector<u8>` by a fixed
+  atom or by a name comparison at a layer that holds no declarations, and the second is a
+  worse dependency than the atom.
+
+- **`MutSlice<'r, T>` is real, and `set view[i] = e;` through it runs.** The two views are
+  one checked shape at two loan strengths, the strength being a component of the type
+  name, so [TYPE-5]'s exact identity separates them with no clause of its own. [SET-1]
+  admits a target path through a view exactly at the exclusive strength; the write reaches
+  the origin through the view's own data pointer and leaves the descriptor unchanged, which
+  is one added IR instruction and one added emitter. Probe `p7`'s refusal is lifted, and
+  the same statement through a `Slice` is still refused, naming the shared view.
+
+- **Exclusivity is not a clause.** [VIEW-2] makes the formation's own access the access its
+  strength names, so a second `mut_slice_of` over one place takes a unique borrow the first
+  view's loan already refuses: two exclusive views of one range are [OWN-5]'s ordinary
+  conflict at the *second formation*, and two shared views are admitted for the reason a
+  second shared borrow is. That is the design's own sentence, implemented without a second
+  overlap notion.
+
+**[S27] is the one decision this batch had to hand back, and the corpus is why.** Making
+`Slice<'r, T>` copy would move a recorded verdict:
+`fn1-pos-returned-slice-inputs-run` writes `move pass_source`, `move left_source` and
+`move right_source` over shared views and is an accepted program, and a `move` of a copy
+value is [OWN-1]'s `MoveOfCopy`. The batch's instruction on a verdict flip is to stop and
+report, so the classification, the loan's last-use end condition and [VIEW-4]'s commit
+refusal are DEFERRED together with a stated delta. **This is not a cost the design
+overlooked** — 3.S already prices S27 at "a re-formation at every second use" — but it is
+the first place the price is paid by programs that already exist, and the owner's decision
+is whether those three `move`s are rewritten or the classification is dropped.
+
+**What else did not land, and what each costs.** The viewed domain is still `array<T, N>`
+and `buffer<T>`: neither run is viewable, so the non-wrap premise has no program to state
+it over and the two formation rows are still [OP-1] table rows rather than [BLK-0] records.
+Retiring them into the kernel domain is a larger change than its one-line description
+suggests, and the two obstacles are worth naming. The row's `vector` operand is a *shared*
+borrow, which [BLK-0]'s mode enumeration does not have; and the row's operand domain is
+four types rather than the one run parameter `V`, so the shape language needs a viewable
+class. Neither is deep, and both are outside a batch that had already changed the lexer.
+[VIEW-6]'s two-same-region-result refusal and [S31]'s child reborrow of an exclusive view
+are not implemented and are not stated as rules.
+
+**Verdicts.** The adapter moves from Pass=647 over 649 cases to Pass=653 over 655, with the
+one xfail and the one skip unchanged, coverage complete at 150/150, and the snapshot corpus
+at Pass=491, Flip=0. No corpus verdict moved. The respell touched 17 conformance case
+sources, 3 snapshot case sources, 4 `tests/programs` sources, the compiler's embedded test
+sources, the conformance manifest's own prose and `docs/patterns.md`, and every one of them
+keeps the verdict it recorded.
 
 ### 6.1 What the compiler did in this session
 

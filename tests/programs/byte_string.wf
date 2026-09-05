@@ -77,7 +77,7 @@ fn bs_push(s: &uniq ByteString, value: own u8) -> result: own unit reads(s.buf, 
   return unit;
 }
 
-fn bs_append_slice(s: &uniq ByteString, text: own slice<u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill), allocates(heap) {
+fn bs_append_slice(s: &uniq ByteString, text: own Slice<u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends every byte of one static message, growing the destination as needed.";
   let count = len_of(text);
   for @append (at in 0_u64..count) {

@@ -98,7 +98,7 @@ fn arena_content_views_stay_outside_the_slice_return_ceiling() {
 #[test]
 fn arena_content_borrows_obey_own10_with_the_arena_region() {
     assert_rule_kind(
-        br#"fn views['s](storage: own arena<array<u8, 2>>) -> result: own slice<'s, u8> pure {
+        br#"fn views['s](storage: own arena<array<u8, 2>>) -> result: own Slice<'s, u8> pure {
   let view = slice_of(&'s deref(storage));
   return move view;
 }

@@ -11,7 +11,7 @@ use crate::{
 use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::{
     CheckedConst, CheckedElement, CheckedFlatElement, CheckedGenericRequirement,
-    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, NominalId,
+    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, LoanStrength, NominalId,
 };
 use super::{
     CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType,
@@ -115,6 +115,7 @@ enum StableCheckedType {
     Slice {
         region: DeclarationId,
         element: StableFlatElement,
+        strength: LoanStrength,
     },
     Buffer {
         element: StableFlatElement,
@@ -1355,7 +1356,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 StableCheckedType::Array { element, length }
             }
-            CheckedType::Slice { region, element } => {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => {
                 let Some(element) = self.stabilize_flat_element(
                     element,
                     nominal_checkpoint,
@@ -1365,7 +1370,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 else {
                     return Ok(None);
                 };
-                StableCheckedType::Slice { region, element }
+                StableCheckedType::Slice {
+                    region,
+                    element,
+                    strength,
+                }
             }
             CheckedType::Buffer { element } => {
                 let Some(element) = self.stabilize_flat_element(
@@ -1610,9 +1619,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.reify_flat_element(element)?,
                 length: *length,
             },
-            StableCheckedType::Slice { region, element } => CheckedType::Slice {
+            StableCheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => CheckedType::Slice {
                 region: *region,
                 element: self.reify_flat_element(element)?,
+                strength: *strength,
             },
             StableCheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.reify_flat_element(element)?,

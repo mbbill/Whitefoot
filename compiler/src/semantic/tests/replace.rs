@@ -428,7 +428,7 @@ fn replace_rhs_type_mismatch_rejects_citing_type5() {
 }
 
 /// [SET-2] rejects a region-bearing target type under [STOR-5]'s relation,
-/// and that relation names `slice<'r, T>` and `arena<'r, T>` alike. The two
+/// and that relation names `Slice<'r, T>` and `arena<'r, T>` alike. The two
 /// programs differ only in which region-bearing constructor the target has.
 #[test]
 fn replace_of_a_region_bearing_place_rejects_citing_set2() {
@@ -447,7 +447,7 @@ fn replace_of_a_region_bearing_place_rejects_citing_set2() {
 "#,
         SemanticRule::Set2,
         SemanticIssueKind::InvalidReplaceTarget {
-            target_type: "slice<u8>".to_owned(),
+            target_type: "Slice<u8>".to_owned(),
             mechanical_fix: expected_fix,
         },
     );

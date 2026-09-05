@@ -240,7 +240,8 @@ supports them:
 - ordinary and counted control flow, `match`, `if`, `give`, `propagate`,
   `set`, and affine replacement;
 - acyclic structs and enums, `Option`, `Result`, fixed arrays, runtime buffers,
-  boxes, direct slices, and a finite monomorphizing generic subset;
+  boxes, the two direct views `Slice<'r, T>` and `MutSlice<'r, T>`, and a
+  finite monomorphizing generic subset;
 - shared and unique borrows over the implemented storage forms, exact
   caller-visible state effects, compiler-derived cleanup, and verified
   contracts; and
@@ -294,6 +295,25 @@ a run execute: `set v[i] = e;` and `replace v[i] = e;` commit at the window's
 logical offset `(head_of + i) mod cap_of`, under [OP-4]'s ordinary subscript
 obligation judged at the target place and [MSR-2]'s storage-granular kill, so
 the store kills every measure of the element and none of the run's own.
+**There are two views now, and the exclusive one writes.** [S35] capitalizes the
+view nominals, so v0.44's `slice<'r, T>` is spelled `Slice<'r, T>` and the
+lowercase word is an ordinary identifier again; `MutSlice<'r, T>` [VIEW-1] is
+the added view, formed by `mut_slice_of(&uniq p)` beside `slice_of(&p)`, and
+`set view[i] = e;` through it compiles, links and runs — the write goes through
+the view's own data pointer to the storage it views, and the descriptor is
+unchanged. [SET-1] admits a target path through a view exactly at the exclusive
+strength, so the same statement through a `Slice` is the refusal probe `p7`
+measured. Exclusivity is not a clause of its own: the formation takes the borrow
+its strength names, so a second `mut_slice_of` over one place meets the first
+view's loan and is refused there as an ordinary [OWN-5] conflict, while two
+`slice_of` views of one place are admitted. What is **not** implemented of the
+design's view half is named rather than hidden: `Slice<'r, T>` is still affine,
+because the copy classification would move the verdicts of three recorded
+programs that `move` a view; the viewed domain is still `array<T, N>` and
+`buffer<T>`, so neither run is viewable and the non-wrap premise a run source
+owes has no program to state it over; and the two formation rows are still
+[OP-1] table rows rather than [BLK-0] kernel records.
+
 Beside them stands one source-surface gap the container library needs and this
 compiler does not have: [MSR-3]'s construct, `set`-target, enum-payload and
 destructuring placements, so a measured value renamed by anything but a `let`

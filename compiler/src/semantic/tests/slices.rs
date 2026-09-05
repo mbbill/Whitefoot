@@ -9,7 +9,7 @@ use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};
 fn slices_retain_type_source_and_access_operations() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn first(values: own slice<u8>) -> result: own u8 reads(values) {
+fn first(values: own Slice<u8>) -> result: own u8 reads(values) {
   let length = len_of(values);
   let nonempty = 0_u64 < length;
   if nonempty {
@@ -70,7 +70,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn incoming_slice_reads_require_their_origin_effect() {
-    let source = br#"fn invalid(values: own slice<u8>) -> result: own u8 pure {
+    let source = br#"fn invalid(values: own Slice<u8>) -> result: own u8 pure {
   return values[0_u64];
 }
 
@@ -421,8 +421,11 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [SET-1, VIEW-1] a target path traverses a view exactly at exclusive loan
+/// strength: the shared view refuses the element write and the exclusive one
+/// performs it.
 #[test]
-fn slice_views_are_not_set_targets() {
+fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
@@ -435,8 +438,30 @@ fn slice_views_are_not_set_targets() {
 "#,
         SemanticRule::Set1,
         SemanticIssueKind::InvalidSetTarget {
-            root_class: "slice view".to_owned(),
-            required_classes: "live own storage or a live usable &uniq referent",
+            root_class: "shared view".to_owned(),
+            required_classes: "live own storage, a live usable &uniq referent, or an exclusive view",
+        },
+    );
+    with_semantics(
+        br#"command fn main() -> status: own ExitStatus pure {
+  let values = array_new::<u8, 2>(0_u8);
+  region {
+    let window = mut_slice_of(&uniq values);
+    set window[0_u64] = 1_u8;
+    let seen = window[0_u64];
+    if seen == 1_u8 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "an element write through an exclusive view is admitted: {outcome:?}"
+            );
         },
     );
 }
@@ -462,7 +487,7 @@ command fn main() -> status: own ExitStatus pure {
   value: u8;
 }
 
-fn observe(values: own slice<Item>) -> result: own unit pure {
+fn observe(values: own Slice<Item>) -> result: own unit pure {
   return unit;
 }
 
@@ -487,7 +512,7 @@ command fn main() -> status: own ExitStatus pure {
         UnsupportedSemanticFeature::RegionsAndBorrows,
     );
     assert_rule_kind(
-        br#"fn invalid['r](values: own array<u8, 2>) -> result: own slice<'r, u8> pure {
+        br#"fn invalid['r](values: own array<u8, 2>) -> result: own Slice<'r, u8> pure {
   return slice_of(&'r values);
 }
 
@@ -563,11 +588,11 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
 
 #[test]
 fn returned_slices_keep_signature_ceilings_and_substituted_call_origins() {
-    let source = br#"fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+    let source = br#"fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   return move value;
 }
 
-fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {
@@ -661,11 +686,11 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn returned_slice_origins_drive_effects_and_alias_conflicts() {
-    let wrapper = br#"fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+    let wrapper = br#"fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   return move value;
 }
 
-fn first(value: own slice<u8>) -> result: own u8 reads(value) {
+fn first(value: own Slice<u8>) -> result: own u8 reads(value) {
   let returned = pass(value: move value);
   let spare = len_of(returned);
   let ok = 0_u64 < spare;
@@ -688,7 +713,7 @@ command fn main() -> status: own ExitStatus pure {
     });
 
     assert_rule(
-        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+        br#"fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {
@@ -714,11 +739,11 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     assert_rule(
-        br#"fn consume(view: own slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
+        br#"fn consume(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
   return unit;
 }
 
-fn wrapper(view: own slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
+fn wrapper(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
   return consume(view: move view, output: move output);
 }
 
@@ -734,7 +759,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn slice_value_matches_and_borrowed_slice_results_are_rejected() {
     assert_rule(
-        br#"fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+        br#"fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   let selected = if take_left {
     give move left;
   } else {
@@ -758,7 +783,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"fn invalid['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: &'descriptor slice<'data, u8> pure {
+        br#"fn invalid['descriptor, 'data](value: &'descriptor Slice<'data, u8>) -> result: &'descriptor Slice<'data, u8> pure {
   return value;
 }
 
@@ -772,7 +797,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
 
-    let borrowed_input = br#"fn first(value: &slice<u8>) -> result: own u8 reads(value) {
+    let borrowed_input = br#"fn first(value: &Slice<u8>) -> result: own u8 reads(value) {
   let spare = len_of(deref(value));
   let ok = 0_u64 < spare;
   if ok {
@@ -782,7 +807,7 @@ command fn main() -> status: own ExitStatus pure {
   }
 }
 
-fn wrapper(value: &slice<u8>) -> result: own u8 reads(value) {
+fn wrapper(value: &Slice<u8>) -> result: own u8 reads(value) {
   return first(value: value);
 }
 

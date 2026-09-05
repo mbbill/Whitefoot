@@ -3872,4 +3872,82 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `blk1-pos-a-store-backed-run-is-a-run-element` keep the `room_of` branches
   B8c gave them, because the placements this batch lands do not reach the
   boundary rows those two programs pass their runs through.
-ACTIVE-SPEC: v0.45 1877abdc9545a2789eef360637495789b49f2c21152652337bee6dd8c2cde14c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B8e, the two views and the element write): v0.45 additionally lands
+  the container design's view half as far as its corpus admits. Numbered rules
+  +2/-0 (150 remain), being [VIEW-1] and [VIEW-2]; grammar productions +0/-0
+  (88 remain); unique fixed lowercase grammar atoms -1, being `slice`, released
+  to IDENT by [S35]'s capitalization, and unique fixed capitalized grammar
+  atoms +2, being `Slice`, which is v0.44's `slice` under its new spelling and
+  no new type, and `MutSlice` [S6, S35], the added view; writer operation
+  spellings +1, being `mut_slice_of` [S38], an [OP-1] table row that therefore
+  joins `ReservedLowerNames`. [TYPE-2], [SET-1], [OWN-5] and [OP-1] are amended
+  in place. [VIEW-1] states that there are two views at two loan strengths,
+  that the strength is a component of the type name so the two are distinct
+  types under [TYPE-5]'s exact identity, and that both are loan-bearing values
+  that own nothing and are stored nowhere. [VIEW-2] states the two formation
+  rows over one borrowed place, that the formed value and not the argument
+  borrow holds the loan, that the written borrow decides the row, and that the
+  formation's own access is the access its strength names — from which two
+  exclusive views of one place are refused at the second formation as [OWN-5]'s
+  ordinary conflict and two shared views are admitted. [SET-1] gains the one
+  target path this version admits through a view: a `MutSlice`-rooted element
+  target is writable and a `Slice`-rooted one is not, which is the refusal
+  probe `p7` measured. [OWN-5]'s slice-origin paragraphs are generalized to
+  both views, its one access clause becomes an access at the view's own
+  strength, and its formal-origin sentence becomes "writable inside its callee
+  exactly when that view's loan strength is exclusive".
+- CONSEQUENCE OF [S35]'s CAPITALIZATION: `Slice` and `MutSlice` are fixed atoms
+  of the `type` production [GRAM-3] rather than entries of the nominal-type
+  TYPEID domain, so an upper word is now read as its fixed terminal where the
+  grammar has one and as a TYPEID otherwise, and no source `struct` or `enum`
+  may be spelled `Slice` or `MutSlice`. The alternative — making them TYPEID
+  entries beside `Vector` and `FixedVector` — is recorded as declined for a
+  stated reason rather than passed over: an elided view region is an implicit
+  region parameter [FORM-8], and the pass that mints it runs before resolution,
+  so it can tell `Slice<u8>` from `Vector<u8>` only by a fixed atom or by a
+  name comparison at a layer that has no declarations yet. The respell moves
+  17 conformance case sources, 3 snapshot case sources, 4 `tests/programs`
+  sources, `docs/patterns.md`, the compiler's embedded test sources and the
+  conformance manifest's own prose; every one of them keeps the verdict it
+  recorded, and no `tests/snapshot/index.tsv` row and no
+  `tests/conformance/manifest.jsonl` expectation is edited by this merge.
+- CONSEQUENCE, THE THREE PARTS OF THE VIEW HALF THIS BATCH DID NOT LAND, each
+  DEFERRED in [META-5] with a stated delta rather than left unsaid. **[S27]'s
+  copy classification of `Slice<'r, T>` is not landed**, because it would move
+  recorded verdicts: `fn1-pos-returned-slice-inputs-run` writes `move
+  pass_source`, `move left_source` and `move right_source` over shared views
+  and is an accepted program today, and a `move` of a copy value is [OWN-1]'s
+  `MoveOfCopy`, so the classification cannot land without that program's
+  verdict moving from accept to reject. Its two consequences — the loan's
+  last-use end condition and the commit refusal a copy target needs — wait with
+  it. **The viewed domain is still `array<T, N>` and `buffer<T>`**, so neither
+  run is viewable, the non-wrap requirement a run source owes has no program to
+  state it over, and the two formation rows are still [OP-1] table rows rather
+  than [BLK-0] kernel declaration records. **The child reborrow of an exclusive
+  view and the two-same-region-result refusal are not landed at all**, and
+  neither is stated as a rule in this specification.
+- CONFORMANCE BOUNDARY (B8e): six added cases, no modification of a case's
+  expectation, no deletion and no rename, beside the source respell recorded
+  above.
+  `view1-pos-an-element-write-through-an-exclusive-view`
+  (`{"kind": "run", "exit": 0}`),
+  `view1-neg-an-element-write-through-a-shared-view`
+  (`{"kind": "reject", "rule": "SET-1"}`),
+  `view2-neg-two-exclusive-views-of-one-place`
+  (`{"kind": "reject", "rule": "OWN-5"}`),
+  `view2-pos-two-shared-views-of-one-place`
+  (`{"kind": "run", "exit": 0}`),
+  `view2-neg-an-exclusive-view-takes-a-unique-borrow`
+  (`{"kind": "reject", "rule": "TYPE-5"}`) and
+  `view2-neg-an-exclusive-view-of-a-named-const`
+  (`{"kind": "reject", "rule": "CONST-2"}`), each status runnable. Before this
+  batch the corpus holds 649 cases with the native adapter reporting Pass=647,
+  Xfail=1, Skip=1; after it the corpus holds 655 with the adapter reporting
+  Pass=653, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, rule coverage stays complete at
+  150/150, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0.
+  No verdict of either corpus moved and no program of the executable corpus
+  changed behaviour: every source the respell touched compiles to the same
+  verdict under the new spelling.
+ACTIVE-SPEC: v0.45 e394b997a6463f4fbe6c1e8e455d6a34fd062b5539f01e522d2595876b8263d1 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

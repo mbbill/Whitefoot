@@ -521,9 +521,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
                 (
                     CheckedExpression::SliceMeasure { measure, root },
-                    CheckedType::Slice { region, element },
+                    CheckedType::Slice {
+                        region,
+                        element,
+                        strength,
+                    },
                 ) if expanded_bindings.get(&root.binding).is_some_and(|source| {
-                    source.ty() == CheckedType::Slice { region, element }
+                    source.ty()
+                        == CheckedType::Slice {
+                            region,
+                            element,
+                            strength,
+                        }
                 }) =>
                 {
                     GoalOperation::SliceMeasure {

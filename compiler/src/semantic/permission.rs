@@ -1643,6 +1643,14 @@ pub(super) fn set_target_place(
             collect_operand_reads(places, &target.offset, node, footprint);
             rooted_container_place(places, &target.root)
         }
+        // [PAR-2] a view element store writes the origin, which the view's
+        // descriptor place stands for here exactly as a buffer's does: a
+        // resolved place carries no index segment, so one element write
+        // conflicts with any access to the view.
+        CheckedSetTarget::SliceIndex(target) => {
+            collect_operand_reads(places, &target.offset, node, footprint);
+            rooted_place(places, target.root.binding, &[])
+        }
     };
     if reads_target {
         footprint.reads.push(Access::Place {
@@ -1669,6 +1677,7 @@ fn collect_set_target_bindings(target: &CheckedSetTarget, out: &mut Vec<BindingI
         CheckedSetTarget::ArrayIndex(target) => collect_used_bindings(&target.offset, out),
         CheckedSetTarget::BufferIndex(target) => collect_used_bindings(&target.offset, out),
         CheckedSetTarget::RunIndex(target) => collect_used_bindings(&target.offset, out),
+        CheckedSetTarget::SliceIndex(target) => collect_used_bindings(&target.offset, out),
     }
 }
 

@@ -1099,9 +1099,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Array { .. }
             | CheckedType::Buffer { .. } => ty,
             CheckedType::Nominal(id) => self.substitute_nominal_regions(id, regions)?,
-            CheckedType::Slice { region, element } => CheckedType::Slice {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => CheckedType::Slice {
                 region: Self::substituted_region(regions, region),
                 element,
+                strength,
             },
             CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
                 element: self.substitute_element_regions(element, regions)?,
@@ -1582,13 +1587,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             (
                 CheckedType::Slice {
                     element: left_element,
+                    strength: left_strength,
                     ..
                 },
                 CheckedType::Slice {
                     element: right_element,
+                    strength: right_strength,
                     ..
                 },
-            ) => left_element == right_element,
+            ) => left_element == right_element && left_strength == right_strength,
             (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
             (
                 CheckedType::Extent {

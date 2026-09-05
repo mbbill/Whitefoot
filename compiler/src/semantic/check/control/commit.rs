@@ -627,6 +627,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .collect(),
                 Some(target.place_offset),
             ),
+            // A view has no field path of its own: the descriptor is a
+            // direct binding [VIEW-6], so the target path is the one
+            // subscript the statement wrote.
+            CheckedSetTarget::SliceIndex(target) => (
+                Vec::new(),
+                Some(Self::place_offset_of(&target.offset).unwrap_or(PlaceOffset::Opaque)),
+            ),
         };
         if let Some(offset) = offset {
             path.push(PlaceStep::Subscript(offset));

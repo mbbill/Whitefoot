@@ -1,0 +1,8 @@
+command fn main() -> status: own ExitStatus pure {
+  let table = array_new::<u8, 4>(7_u8);
+  region {
+    let window = slice_of(&table);
+    set window[0_u64] = 9_u8;
+  }
+  return exit_status(code: 0_u8);
+}

@@ -4,7 +4,7 @@ use super::*;
 fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
     let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
-fn sum(values: own slice<u8>) -> result: own u64 reads(values) {
+fn sum(values: own Slice<u8>) -> result: own u64 reads(values) {
   let total = 0_u64;
   let length = len_of(values);
   for (offset in 0_u64..length) {
@@ -81,11 +81,11 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
 fn returned_slice_descriptors_execute_without_transferring_storage() {
     let source = br#"const fixed: array<u8, 2> =[7_u8, 13_u8];
 
-fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   return move value;
 }
 
-fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {
@@ -93,11 +93,11 @@ fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r,
   }
 }
 
-fn fixed_view['r]() -> result: own slice<'r, u8> pure {
+fn fixed_view['r]() -> result: own Slice<'r, u8> pure {
   return slice_of(&'r fixed);
 }
 
-fn borrowed_first(value: &slice<u8>) -> result: own u8 reads(value) contract {
+fn borrowed_first(value: &Slice<u8>) -> result: own u8 reads(value) contract {
   define spare = len_of(deref(value));
   requires 0_u64 < spare;
 } {

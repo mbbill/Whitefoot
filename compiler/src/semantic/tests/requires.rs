@@ -1203,7 +1203,7 @@ command fn main() -> status: own ExitStatus pure {
 fn call_goal_substitutes_type_const_and_slice_region_arguments() {
     let source = br#"const bytes: array<u8, 2> =[4_u8, 9_u8];
 
-fn inspect(values: own slice<u8>) -> result: own unit pure contract {
+fn inspect(values: own Slice<u8>) -> result: own unit pure contract {
   define size = len_of(values);
   requires size == size;
 } {

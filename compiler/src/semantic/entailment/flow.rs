@@ -3240,6 +3240,14 @@ impl Analyzer<'_, '_> {
             CheckedSetTarget::RunIndex(target) => {
                 return self.container_root_place(&target.root).overlaps(place);
             }
+            // A view element store writes the origin's storage and not the
+            // descriptor's [PROV-3], and the origin is not this place term's
+            // root, so the descriptor place is what the term names.
+            CheckedSetTarget::SliceIndex(target) => PlaceTerm {
+                root: PlaceRoot::Binding(target.root.binding),
+                deref: self.is_holder(target.root.binding),
+                fields: Vec::new(),
+            },
         };
         self.resolve(&target).overlaps(place)
     }
@@ -4816,7 +4824,10 @@ impl Analyzer<'_, '_> {
             ),
             CheckedExpression::SliceMeasure { measure, root } => {
                 let ty = self.summary(root.binding)?.ty?;
-                let CheckedType::Slice { region, element } = ty else {
+                let CheckedType::Slice {
+                    region, element, ..
+                } = ty
+                else {
                     return None;
                 };
                 let argument = self.goal_binding_place(root.binding, std::iter::empty(), ty);
@@ -4834,7 +4845,10 @@ impl Analyzer<'_, '_> {
             }
             CheckedExpression::SliceIndex { root, offset, .. } if admitted_partial => {
                 let ty = self.summary(root.binding)?.ty?;
-                let CheckedType::Slice { region, element } = ty else {
+                let CheckedType::Slice {
+                    region, element, ..
+                } = ty
+                else {
                     return None;
                 };
                 if element != root.element {
@@ -7389,9 +7403,11 @@ impl Analyzer<'_, '_> {
                     .push(PlaceProjection::Subscript(target.place_offset));
                 Some(path)
             }
-            // Neither element domain names the offset its commit wrote, so
-            // neither has an element place a measure could be stated over.
-            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+            // No flat element domain names the offset its commit wrote, so
+            // none has an element place a measure could be stated over.
+            CheckedSetTarget::ArrayIndex(_)
+            | CheckedSetTarget::BufferIndex(_)
+            | CheckedSetTarget::SliceIndex(_) => None,
         }
     }
 
@@ -9333,6 +9349,29 @@ impl Analyzer<'_, '_> {
                     self.judge_obligation(
                         projected_place(base),
                         MeasuredKind::Buffer,
+                        None,
+                        &target.offset,
+                        target.obligation.clone(),
+                        states,
+                    );
+                }
+                reaches_target && self.obligations_since_discharged(obligation_start)
+            }
+            // [OP-4] a view element target owes the same bound its read owes:
+            // `i < len_of(view)`, over the view's own measure row [MSR-1].
+            CheckedSetTarget::SliceIndex(target) => {
+                let reaches_target =
+                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
+                let obligation_start = self.obligations.len();
+                if reaches_target {
+                    let base = PlaceTerm {
+                        root: PlaceRoot::Binding(target.root.binding),
+                        deref: self.is_holder(target.root.binding),
+                        fields: Vec::new(),
+                    };
+                    self.judge_obligation(
+                        projected_place(base),
+                        MeasuredKind::Slice,
                         None,
                         &target.offset,
                         target.obligation.clone(),
@@ -11674,6 +11713,21 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
+            // [MSR-2] a view element store writes one element of the view's
+            // own range, and a view's element is flat [TYPE-2], so the kill
+            // is the same element write a buffer's is.
+            CheckedSetTarget::SliceIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.root.binding),
+                    deref: self.is_holder(target.root.binding),
+                    fields: Vec::new(),
+                };
+                target_kills.push(KillEvent::Write {
+                    place: element_write_place(self.resolve(&spelled), PlaceOffset::Opaque),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
             // [MSR-2] an element store into a run overlaps the descriptor
             // storage of `v[i]` and none of `v`'s own, so it kills the
             // measures of the element and none of the run's.
@@ -11784,7 +11838,8 @@ impl Analyzer<'_, '_> {
             )),
             CheckedSetTarget::ArrayIndex(_)
             | CheckedSetTarget::BufferIndex(_)
-            | CheckedSetTarget::RunIndex(_) => None,
+            | CheckedSetTarget::RunIndex(_)
+            | CheckedSetTarget::SliceIndex(_) => None,
         };
         match values {
             CheckedCommitValues::ResultList { value, .. } => {
@@ -13472,6 +13527,18 @@ impl Analyzer<'_, '_> {
                     root: PlaceRoot::Binding(target.root.binding),
                     deref: self.is_holder(target.root.binding),
                     fields: target.root.fields.clone(),
+                };
+                events.push(KillEvent::Write {
+                    place: element_write_place(self.resolve(&spelled), PlaceOffset::Opaque),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
+            CheckedSetTarget::SliceIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.root.binding),
+                    deref: self.is_holder(target.root.binding),
+                    fields: Vec::new(),
                 };
                 events.push(KillEvent::Write {
                     place: element_write_place(self.resolve(&spelled), PlaceOffset::Opaque),

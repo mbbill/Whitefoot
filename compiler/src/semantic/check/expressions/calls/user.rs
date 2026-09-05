@@ -750,7 +750,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     const fn with_type_region(ty: CheckedType, region: DeclarationId) -> CheckedType {
         match ty {
-            CheckedType::Slice { element, .. } => CheckedType::Slice { region, element },
+            CheckedType::Slice {
+                element, strength, ..
+            } => CheckedType::Slice {
+                region,
+                element,
+                strength,
+            },
             CheckedType::Vector {
                 element, release, ..
             } => CheckedType::Vector {

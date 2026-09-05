@@ -335,7 +335,7 @@ fn region_bearing_array_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid(value: own array<slice<u8>, 1>) -> result: own unit pure {
+        br#"fn invalid(value: own array<Slice<u8>, 1>) -> result: own unit pure {
   return unit;
 }
 
@@ -347,8 +347,8 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid(value: own slice<u8>) -> result: own unit pure {
-  array_new::<slice<u8>, 1>(move value);
+        br#"fn invalid(value: own Slice<u8>) -> result: own unit pure {
+  array_new::<Slice<u8>, 1>(move value);
   return unit;
 }
 

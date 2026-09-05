@@ -5489,7 +5489,7 @@ fn from_buffer(values: own array<u8, count>) -> result: own u8 allocates(heap) {
   return values[b[0_u64]];
 }
 
-fn from_slice(values: own array<u8, count>, order: own slice<u64>) -> result: own u8 reads(order) {
+fn from_slice(values: own array<u8, count>, order: own Slice<u64>) -> result: own u8 reads(order) {
   return values[order[0_u64]];
 }
 

@@ -932,7 +932,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         rule: "TYPE-5",
-        sentences: &[r#"TypeMismatch { expected: "u64", found: "slice<u8>" }"#],
+        sentences: &[r#"TypeMismatch { expected: "u64", found: "Slice<u8>" }"#],
     },
     // -------------------------------------------------------------------
     // [TYPE-5] and [FORM-5]: projections, replacement, and operands.
@@ -1377,7 +1377,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 "#,
         rule: "LIV-2",
         sentences: &[
-            r#"target_type: "slice<u8>""#,
+            r#"target_type: "Slice<u8>""#,
             "a slice\'s static origin set and an arena\'s confinement are fixed at initialization; bind a new slice or arena under a new let",
         ],
     },

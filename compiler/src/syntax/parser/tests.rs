@@ -553,7 +553,7 @@ struct Types<T: Bound, const n: array<u8, 4>> {
 doc "types";
 a: i8; b: i16; c: i32; d: i64; e: u8; f: u16; g: u32; h: u64;
 i: f32; j: f64; k: unit; l: Name<T, 'r, n>; m: array<u8, n>;
-n: slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
+n: Slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 }
 enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
 linear struct Lease { doc "lease"; slot: u8; }

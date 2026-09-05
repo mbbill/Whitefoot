@@ -1,6 +1,6 @@
 const buffer_bytes: array<u8, 5> =[3_u8, 3_u8, 3_u8, 3_u8, 3_u8];
 
-fn slice_sum(data: own slice<u8>) -> total: own u32 reads(data) {
+fn slice_sum(data: own Slice<u8>) -> total: own u32 reads(data) {
   doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT across a function boundary, but no caller fact crosses into the callee, so len_of(data) is unbounded here and the checked sum + wide has no proved domain [ENT-2].";
   let length = len_of(data);
   let sum = 0_u32;

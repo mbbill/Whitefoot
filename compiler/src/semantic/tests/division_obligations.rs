@@ -1033,7 +1033,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_slice_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    let source = br#"fn increment(values: own slice<u8>) -> result: own u8 reads(values) {
+    let source = br#"fn increment(values: own Slice<u8>) -> result: own u8 reads(values) {
   let spare = len_of(values);
   if 0_u64 < spare {
     if values[0_u64] +defined 1_u8 {

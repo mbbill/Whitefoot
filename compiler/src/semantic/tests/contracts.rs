@@ -499,10 +499,10 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn positional_region_alpha_equality_includes_slice_type_regions() {
     let source = br#"contract ByteReader {
-  fn first(values: own slice<u8>) -> result: own u8 reads(values);
+  fn first(values: own Slice<u8>) -> result: own u8 reads(values);
 }
 
-fn read_first(bytes: own slice<u8>) -> result: own u8 reads(bytes) {
+fn read_first(bytes: own Slice<u8>) -> result: own u8 reads(bytes) {
   let spare = len_of(bytes);
   let ok = 0_u64 < spare;
   if ok {
@@ -557,7 +557,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn contract_slice_results_share_function_signature_formation() {
     let source = br#"contract SlicePass {
-  fn pass['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure;
+  fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure;
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -576,7 +576,7 @@ command fn main() -> status: own ExitStatus pure {
 
     assert_rule(
         br#"contract Invalid {
-  fn borrowed['descriptor, 'data](value: &uniq 'descriptor slice<'data, u8>) -> result: &uniq 'descriptor slice<'data, u8> pure;
+  fn borrowed['descriptor, 'data](value: &uniq 'descriptor Slice<'data, u8>) -> result: &uniq 'descriptor Slice<'data, u8> pure;
 }
 
 command fn main() -> status: own ExitStatus pure {

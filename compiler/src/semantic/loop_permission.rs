@@ -661,6 +661,7 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::ArrayIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::BufferIndex(target) => self.expression(&target.offset),
             CheckedSetTarget::RunIndex(target) => self.expression(&target.offset),
+            CheckedSetTarget::SliceIndex(target) => self.expression(&target.offset),
         }
     }
 
@@ -673,6 +674,7 @@ impl<'check> Survey<'check, '_> {
             CheckedSetTarget::ArrayIndex(target) => (target.binding, &target.obligation),
             CheckedSetTarget::BufferIndex(target) => (target.root.binding, &target.obligation),
             CheckedSetTarget::RunIndex(target) => (target.root.binding, &target.obligation),
+            CheckedSetTarget::SliceIndex(target) => (target.root.binding, &target.obligation),
             CheckedSetTarget::Place(_) => return None,
         };
         self.proven_affine_map_at(root, obligation)

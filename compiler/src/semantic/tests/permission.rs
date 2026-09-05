@@ -1502,7 +1502,7 @@ command fn main() -> status: own ExitStatus pure {
 /// nothing.
 #[test]
 fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
-    let source = br#"fn touch_uniqslice(v: &uniq slice<u8>) -> result: own u64 pure {
+    let source = br#"fn touch_uniqslice(v: &uniq Slice<u8>) -> result: own u64 pure {
   return 3_u64;
 }
 

@@ -632,7 +632,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_append_proves_the_admitted_result_and_refutes_only_the_blinded_invalid_exit() {
-    let source = br#"fn append(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+    let source = br#"fn append(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own Slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
   requires capacity == len_of(deref(destination));
   requires filled <= capacity;
   ensures result <= capacity;

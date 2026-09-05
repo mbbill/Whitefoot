@@ -183,7 +183,7 @@ fn region_bearing_box_and_arena_content_reject_under_stor5() {
         mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid(value: own box<slice<u8>>) -> result: own unit pure {
+        br#"fn invalid(value: own box<Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -195,7 +195,7 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid(value: own slice<u8>) -> result: own unit allocates(heap) {
+        br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
   box_new(move value);
   return unit;
 }
@@ -208,7 +208,7 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid(value: own arena<slice<u8>>) -> result: own unit pure {
+        br#"fn invalid(value: own arena<Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -220,8 +220,8 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid['storage](value: own slice<u8>) -> result: own unit allocates(arena 'storage) {
-  arena_new::<'storage, slice<u8>>(move value);
+        br#"fn invalid['storage](value: own Slice<u8>) -> result: own unit allocates(arena 'storage) {
+  arena_new::<'storage, Slice<u8>>(move value);
   return unit;
 }
 

@@ -278,9 +278,9 @@ maximum-size caller allocation, retry-after-partial-token mutation, and using
 
 Problem: a helper must pass through or select a read-only slice without moving
 the backing owner or hiding where the result may point.
-Pattern: return `own slice<'r, T>` directly. `'r` is written at the result and
+Pattern: return `own Slice<'r, T>` directly. `'r` is written at the result and
 at every supplier because they share it [FORM-8]. Every possible parameter
-supplier is also written as exactly `own slice<'r, T>` under the same region
+supplier is also written as exactly `own Slice<'r, T>` under the same region
 and element type. A function with several such parameters may return any of them,
 but the caller conservatively treats all of them as possible origins. If a
 helper always selects one source and that precision matters, give that source
@@ -1594,6 +1594,40 @@ read.
 
 Replaces: `take_back` / `replace` / `place_back` for a swap of two known
 positions, and an `Option<T>` slot standing in for a temporarily empty one.
+
+## P31. Write through a view with `mut_slice_of`, read with `slice_of`
+
+There are two views, and the one you form says what you may do through it:
+
+```whitefoot
+let window = mut_slice_of(&uniq table);
+set window[0_u64] = 9_u8;
+let seen = window[0_u64];
+```
+
+`slice_of` hands back `Slice<'r, T>`, which reads its range; `mut_slice_of`
+hands back `MutSlice<'r, T>`, which reads it and writes its elements. A
+writable target path traverses a view exactly at the exclusive strength
+[SET-1], so the same `set` through a `Slice` is a SET-1 rejection whose
+diagnostic names the shared view — the fix is to form the view with the other
+row, not to borrow the descriptor uniquely, which grants nothing over the
+viewed storage.
+
+**Only one exclusive view of a place may be live.** The formation itself takes
+the borrow its strength names, so a second `mut_slice_of` over one place meets
+the first view's loan and is refused at the second formation as an ordinary
+[OWN-5] conflict; two `slice_of` views of one place are admitted without limit
+and read the same elements. The refusal is reported where the second view is
+formed, so a program that wants two writable windows wants one view and two
+offsets, not two views.
+
+A named const is a legal `slice_of` source and never a `mut_slice_of` source:
+its storage is permanently read-only [CONST-2], and the rejection is at the
+operand.
+
+Replaces: taking a run or a buffer by value in order to write it, passing a
+`&uniq buffer<T>` where the callee only needs a window, and the `Option<T>`
+slot that stood in for a writable view.
 
 ## Known gaps (findings, not yet patterns)
 

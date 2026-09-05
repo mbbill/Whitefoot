@@ -1,4 +1,4 @@
-fn count_equal_prefix(left: own slice<u64>, right: own slice<u64>) -> matched: own u64 reads(left, right) {
+fn count_equal_prefix(left: own Slice<u64>, right: own Slice<u64>) -> matched: own u64 reads(left, right) {
   doc "ACCEPT: two cursors advance together in lockstep inside one ordinary loop, each guarded by its own bound.";
   let left_len = len_of(left);
   let right_len = len_of(right);

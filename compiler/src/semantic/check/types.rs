@@ -12,7 +12,7 @@ use super::super::model::{
     CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
     CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
     CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
-    ConstOperation, FloatType, IntegerType, evaluate_const_operation,
+    ConstOperation, FloatType, IntegerType, LoanStrength, evaluate_const_operation,
 };
 use super::floats::parse_float_literal;
 use super::generics::GenericSubstitution;
@@ -222,7 +222,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .map(CheckedType::Nominal)
                 .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
         }
-        if self.has_fixed(node, FixedTerminal::Slice)? {
+        // [VIEW-1] the two views are one type shape at two loan strengths,
+        // and the atom the writer wrote is which strength this is.
+        if let Some(strength) = self.written_loan_strength(node)? {
             let region = self.substituted_type_region(node, substitution)?;
             let element_node = self
                 .tree
@@ -232,7 +234,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let Some(element) = self.flat_element(element_type)? else {
                 return self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node);
             };
-            return Ok(CheckedType::Slice { region, element });
+            return Ok(CheckedType::Slice {
+                region,
+                element,
+                strength,
+            });
         }
         if self.has_fixed(node, FixedTerminal::Box)? {
             let referent_node = self
@@ -413,7 +419,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// [STOR-5]'s region-bearing relation over a checked type: a type is
     /// region-bearing when its complete type after generic substitution
-    /// contains `slice<'r, T>` or `arena<'r, T>` at any depth.
+    /// contains `Slice<'r, T>` or `arena<'r, T>` at any depth.
     ///
     /// The judgment is structural, so it holds for every region-bearing type
     /// constructor rather than an enumerated list of spellings: a slice, an
@@ -474,12 +480,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(false)
     }
 
+    /// The loan strength one written `type` node names, where that node is a
+    /// view [VIEW-1].
+    ///
+    /// The two views are two atoms of the `type` production [GRAM-3] and one
+    /// checked shape, so every rule that asks "is this written type a view"
+    /// asks this one question and reads the strength back where it needs it.
+    pub(in crate::semantic::check) fn written_loan_strength(
+        &self,
+        node: NodeId,
+    ) -> Result<Option<LoanStrength>, CheckStop> {
+        if self.has_fixed(node, FixedTerminal::Slice)? {
+            return Ok(Some(LoanStrength::Shared));
+        }
+        if self.has_fixed(node, FixedTerminal::MutSlice)? {
+            return Ok(Some(LoanStrength::Exclusive));
+        }
+        Ok(None)
+    }
+
     fn type_node_is_region_bearing_with(
         &self,
         node: NodeId,
         substitution: &GenericSubstitution,
     ) -> Result<bool, CheckStop> {
-        if self.has_fixed(node, FixedTerminal::Slice)?
+        if self.written_loan_strength(node)?.is_some()
             || self.has_fixed(node, FixedTerminal::Arena)?
         {
             return Ok(true);
@@ -1686,7 +1711,7 @@ extent's region is one the caller must choose, so it is written at every positio
                 .tree
                 .direct_token_with(node, TerminalPredicate::TypeIdentifier)?
                 .is_some())
-            || self.has_fixed(node, FixedTerminal::Slice)?
+            || self.written_loan_strength(node)?.is_some()
             || self.has_fixed(node, FixedTerminal::Box)?
             || self.has_fixed(node, FixedTerminal::Arena)?
             || self.has_fixed(node, FixedTerminal::Buffer)?;

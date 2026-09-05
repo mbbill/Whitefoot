@@ -142,13 +142,26 @@ fn derive_slice_return_ceiling(
     result_mode: CheckedMode,
     result: CheckedType,
 ) -> Vec<CheckedSliceOrigin> {
-    let (CheckedMode::Own, CheckedType::Slice { region, element }) = (result_mode, result) else {
+    let (
+        CheckedMode::Own,
+        CheckedType::Slice {
+            region,
+            element,
+            strength,
+        },
+    ) = (result_mode, result)
+    else {
         return Vec::new();
     };
     let mut ceiling = vec![CheckedSliceOrigin::ImmutableConst];
     for parameter in parameters {
         if parameter.mode == CheckedMode::Own
-            && parameter.ty == (CheckedType::Slice { region, element })
+            && parameter.ty
+                == (CheckedType::Slice {
+                    region,
+                    element,
+                    strength,
+                })
         {
             ceiling.push(CheckedSliceOrigin::FormalSlice {
                 parameter: parameter.declaration,
@@ -2223,6 +2236,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     &mut target.offset,
                                     requirements,
                                 )?,
+                            CheckedSetTarget::SliceIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
                         }
                     }
                     for value in values.expressions_mut() {
@@ -2244,6 +2262,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 requirements,
                             )?,
                         CheckedSetTarget::RunIndex(target) => self
+                            .install_expression_call_requirements(
+                                &mut target.offset,
+                                requirements,
+                            )?,
+                        CheckedSetTarget::SliceIndex(target) => self
                             .install_expression_call_requirements(
                                 &mut target.offset,
                                 requirements,
@@ -2448,6 +2471,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     bounds,
                                 )?;
                             }
+                            CheckedSetTarget::SliceIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
                         }
                     }
                     for value in values.expressions_mut() {
@@ -2465,6 +2494,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                         CheckedSetTarget::RunIndex(target) => {
+                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
+                        }
+                        CheckedSetTarget::SliceIndex(target) => {
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                     }
@@ -2816,9 +2848,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            CheckedType::Slice { region, element } => CheckedType::Slice {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => CheckedType::Slice {
                 region: self.instantiate_goal_region(region, signature, regions)?,
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                strength,
             },
             CheckedType::Buffer { element } => CheckedType::Buffer {
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,

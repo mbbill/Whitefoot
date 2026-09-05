@@ -1,4 +1,4 @@
-fn choose['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> return_value: own slice<'r, u8> pure {
+fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> return_value: own Slice<'r, u8> pure {
   let selected = if take_left {
     give move left;
   } else {

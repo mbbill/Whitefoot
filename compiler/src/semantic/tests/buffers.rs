@@ -674,8 +674,8 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
 #[test]
 fn buffer_vacant_rejects_a_region_bearing_payload_under_stor5() {
     assert_rule(
-        br#"fn invalid(value: own slice<u8>) -> result: own unit allocates(heap) {
-  let slots = buffer_vacant::<slice<u8>>(2_u64);
+        br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
+  let slots = buffer_vacant::<Slice<u8>>(2_u64);
   return unit;
 }
 
@@ -881,7 +881,7 @@ fn region_bearing_buffer_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice, arena, or provider as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid(value: own buffer<slice<u8>>) -> result: own unit pure {
+        br#"fn invalid(value: own buffer<Slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -892,7 +892,7 @@ command fn main() -> status: own ExitStatus pure {
         SemanticRule::Stor5,
         expected.clone(),
     );
-    // The operation half. In v0.22 this was `buffer_new::<slice<'r, u8>>(…)`,
+    // The operation half. In v0.22 this was `buffer_new::<Slice<'r, u8>>(…)`,
     // whose *written* element carried the violation and was cited at the
     // `targ`; A1 deletes that argument [OP-9], and a region-bearing fill is
     // then caught by the flat-element requirement citing OP-1 before STOR-5 is
@@ -901,7 +901,7 @@ command fn main() -> status: own ExitStatus pure {
     // derived from its operand [STOR-2, OP-2], so that is where the recorded
     // rule and kind still fire, at the operand atom the rule names.
     assert_rule(
-        br#"fn invalid(value: own slice<u8>) -> result: own unit allocates(heap) {
+        br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
   box_new(move value);
   return unit;
 }

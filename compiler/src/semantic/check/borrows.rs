@@ -9,7 +9,7 @@ use crate::{
 
 use super::super::model::{
     CheckedBufferRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSliceOrigin,
-    CheckedStatePath, CheckedType,
+    CheckedStatePath, CheckedType, LoanStrength,
 };
 use super::linearity::LinearityClass;
 use super::{
@@ -150,6 +150,34 @@ pub(super) struct SliceLoan {
     pub(super) region: DeclarationId,
     /// The exact source place protected for the complete named region.
     pub(super) place: ResolvedPlace,
+    /// [VIEW-1] the strength of the loan the view value holds.
+    ///
+    /// It is carried because two exclusive loans on one range are what
+    /// [OWN-5] 606 refuses, and because a target path through a view is
+    /// admitted at exclusive strength and at no other [SET-1].
+    pub(super) strength: LoanStrength,
+}
+
+impl SliceLoan {
+    /// Whether one access to the origin conflicts with this loan [OWN-5,
+    /// PROV-3 use 3].
+    ///
+    /// The refused set is the one use 3 states — a write, a replace or
+    /// exchange, a consume, and the unique borrow that would carry any of
+    /// them — and it is the same set at both strengths, because what
+    /// separates the two is the access the *formation* takes rather than the
+    /// access the standing loan refuses: an exclusive formation takes a
+    /// unique borrow, which a live loan of either strength refuses, so a
+    /// second `MutSlice` over one place meets the first loan and a second
+    /// `Slice` does not. A read of the origin is admitted by both, which is
+    /// what lets a view's own element read reach the storage it views.
+    pub(super) const fn refuses(&self, access: AccessKind) -> bool {
+        let _ = self.strength;
+        matches!(
+            access,
+            AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
+        )
+    }
 }
 
 /// The value a position requires of its operand, for [TYPE-7]'s implicit-read
@@ -1797,12 +1825,7 @@ and name it on the returned reborrow"
                 }
             }
             for loan in &local.slice_loans {
-                if places_overlap(&loan.place, place)
-                    && matches!(
-                        access,
-                        AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
-                    )
-                {
+                if places_overlap(&loan.place, place) && loan.refuses(access) {
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,

@@ -1960,7 +1960,7 @@ fn probe() -> result: own unit pure {
 
 /// Three roles moved position under v0.23 and the fixture follows them rather
 /// than the assertions moving. `TypeRegion` came only from a `let` annotation
-/// that A3 deletes, so it now rides a signature-borne `slice<'v, i32>`, which
+/// that A3 deletes, so it now rides a signature-borne `Slice<'v, i32>`, which
 /// [TYPE-5] keeps written. `OperationCallee` is the OPNAME form specifically
 /// (`roles.rs` keys it on `TerminalPredicate::OperationName`), and the
 /// fixture's only operation call was `iadd.wrap`, one of the rows [OP-7]
@@ -2004,7 +2004,7 @@ fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads(
   return arg;
 }
 
-fn viewer['v](values: own slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
+fn viewer['v](values: own Slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
   let held = arena_new::<'v, i32>(1_i32);
   return unit;
 }
@@ -2318,7 +2318,7 @@ fn future() -> result: own unit pure {
 fn sibling_contract_signatures_do_not_share_region_parameters() {
     let source = br#"contract Separate {
   fn first(value: &i32) -> result: own unit pure;
-  fn second() -> result: own slice<'r, i32> pure;
+  fn second() -> result: own Slice<'r, i32> pure;
 }
 "#;
     with_one_resolution(source, |outcome| {

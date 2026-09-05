@@ -613,12 +613,15 @@ fn alpha_equivalent_type(
             CheckedType::Slice {
                 region: left_region,
                 element: left_element,
+                strength: left_strength,
             },
             CheckedType::Slice {
                 region: right_region,
                 element: right_element,
+                strength: right_strength,
             },
         ) => Ok(left_element == right_element
+            && left_strength == right_strength
             && region_ordinal(left_region, left_regions)?
                 == region_ordinal(right_region, right_regions)?),
         _ => Ok(left == right),

@@ -313,7 +313,7 @@ fn a_stack_backed_slice_crossing_the_suspend_point_keeps_the_synchronous_abi() {
   return write_once(output: move output, source: source, start: start, end: end);
 }
 
-fn observe(values: own slice<u8>) -> result: own unit reads(values) contract {
+fn observe(values: own Slice<u8>) -> result: own unit reads(values) contract {
   define capacity = len_of(values);
   requires 0_u64 < capacity;
 } {

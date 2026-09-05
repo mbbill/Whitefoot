@@ -13,7 +13,8 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// and the three v0.25 counted-range spellings, plus v0.28's `ensures`,
 /// v0.33's contract, command, and integer-domain spellings, the v0.40 proof
 /// spellings, and v0.41's four compound comparisons and call-site `::`
-/// delimiter, plus v0.45's route-ordinal `is`. Retired source atoms are removed from this current-grammar
+/// delimiter, plus v0.45's route-ordinal `is` and its capitalized view atom
+/// `MutSlice` [S6, S35]. Retired source atoms are removed from this current-grammar
 /// inventory; the dense indices are compiler-local and are never serialized.
 /// First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
@@ -88,7 +89,7 @@ pub enum FixedTerminal {
     Unit,
     /// `array`.
     Array,
-    /// `slice`.
+    /// `Slice` [S35].
     Slice,
     /// `box`.
     Box,
@@ -226,10 +227,12 @@ pub enum FixedTerminal {
     Copy,
     /// `dispose`.
     Dispose,
+    /// `MutSlice` [S6, S35].
+    MutSlice,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 104] = [
     FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
@@ -275,6 +278,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::Unit,
     FixedTerminal::Array,
     FixedTerminal::Slice,
+    FixedTerminal::MutSlice,
     FixedTerminal::Box,
     FixedTerminal::Arena,
     FixedTerminal::Buffer,
@@ -379,7 +383,8 @@ impl FixedTerminal {
             Self::F64 => "f64",
             Self::Unit => "unit",
             Self::Array => "array",
-            Self::Slice => "slice",
+            Self::Slice => "Slice",
+            Self::MutSlice => "MutSlice",
             Self::Box => "box",
             Self::Arena => "arena",
             Self::Buffer => "buffer",
@@ -533,21 +538,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 111] = {
-    let mut predicates = [TerminalPredicate::Identifier; 111];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 112] = {
+    let mut predicates = [TerminalPredicate::Identifier; 112];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[103] = TerminalPredicate::Identifier;
-    predicates[104] = TerminalPredicate::TypeIdentifier;
-    predicates[105] = TerminalPredicate::RegionIdentifier;
-    predicates[106] = TerminalPredicate::Label;
-    predicates[107] = TerminalPredicate::OperationName;
-    predicates[108] = TerminalPredicate::Literal;
-    predicates[109] = TerminalPredicate::String;
-    predicates[110] = TerminalPredicate::Digits;
+    predicates[104] = TerminalPredicate::Identifier;
+    predicates[105] = TerminalPredicate::TypeIdentifier;
+    predicates[106] = TerminalPredicate::RegionIdentifier;
+    predicates[107] = TerminalPredicate::Label;
+    predicates[108] = TerminalPredicate::OperationName;
+    predicates[109] = TerminalPredicate::Literal;
+    predicates[110] = TerminalPredicate::String;
+    predicates[111] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -555,14 +560,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 103,
-            Self::TypeIdentifier => 104,
-            Self::RegionIdentifier => 105,
-            Self::Label => 106,
-            Self::OperationName => 107,
-            Self::Literal => 108,
-            Self::String => 109,
-            Self::Digits => 110,
+            Self::Identifier => 104,
+            Self::TypeIdentifier => 105,
+            Self::RegionIdentifier => 106,
+            Self::Label => 107,
+            Self::OperationName => 108,
+            Self::Literal => 109,
+            Self::String => 110,
+            Self::Digits => 111,
         }
     }
 
@@ -653,11 +658,19 @@ pub fn is_identifier(spelling: &[u8]) -> bool {
     lower_word(spelling) && FixedTerminal::from_spelling(spelling).is_none()
 }
 
-/// Tests active specification `TYPEID` membership.
+/// Tests active specification `TYPEID` membership, excluding the fixed
+/// capitalized spellings.
+///
+/// [S35] capitalizes the view nominals, so `Slice` is a fixed atom of the
+/// `type` production [GRAM-3] exactly as `array` and `buffer` are, and the
+/// same exclusion `is_identifier` makes for a fixed lowercase word is made
+/// here: a fixed spelling is its atom and never also a TYPEID, so no token
+/// carries two predicates one `type` decision would have to choose between.
 #[must_use]
 pub fn is_type_identifier(spelling: &[u8]) -> bool {
     spelling.first().is_some_and(u8::is_ascii_uppercase)
         && spelling[1..].iter().all(u8::is_ascii_alphanumeric)
+        && FixedTerminal::from_spelling(spelling).is_none()
 }
 
 /// Tests active specification `REGIONID` membership.
@@ -824,8 +837,12 @@ mod tests {
         assert_eq!(FixedTerminal::Affine as u8, 100);
         assert_eq!(FixedTerminal::Copy as u8, 101);
         assert_eq!(FixedTerminal::Dispose as u8, 102);
-        assert_eq!(TerminalPredicate::Identifier.index(), 103);
-        assert_eq!(TerminalPredicate::Digits.index(), 110);
+        // [S6, S35] `MutSlice` is the atom v0.45 appends, so it takes the
+        // enum's next discriminant and the external predicates start one
+        // place later than they did.
+        assert_eq!(FixedTerminal::MutSlice as u8, 103);
+        assert_eq!(TerminalPredicate::Identifier.index(), 104);
+        assert_eq!(TerminalPredicate::Digits.index(), 111);
     }
 
     #[test]

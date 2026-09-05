@@ -35,7 +35,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     borrow_kind: Some(borrow.kind),
                 }))
             }
-            CheckedType::Slice { region, element } if fields.is_empty() => {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } if fields.is_empty() => {
                 let slice = local
                     .slice
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
@@ -46,6 +50,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     root: CheckedSliceRoot {
                         binding: local.binding,
                         element,
+                        strength,
                     },
                     declaration,
                     descriptor: Some(borrow),

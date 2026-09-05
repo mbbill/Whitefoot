@@ -156,6 +156,9 @@ fn collect_set_target(
         CheckedSetTarget::RunIndex(target) => {
             collect_expression(&target.offset, direct, edges);
         }
+        CheckedSetTarget::SliceIndex(target) => {
+            collect_expression(&target.offset, direct, edges);
+        }
     }
 }
 

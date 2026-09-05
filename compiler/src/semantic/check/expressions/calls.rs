@@ -17,7 +17,7 @@ use crate::{
 use super::super::super::model::{
     CheckedBooleanOperation, CheckedExpression, CheckedIntegerArgument,
     CheckedIntegerArgumentSource, CheckedIntegerErrorClass, CheckedIntegerOperation,
-    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedType,
+    CheckedMeasure, CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedType, LoanStrength,
 };
 use super::super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, PendingNominal, PreludeType,
@@ -111,8 +111,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if let Some(measure) = measure_former(spelling) {
             return self.check_flat_measure(node, measure, function, bindings, loop_depth);
         }
-        if spelling == "slice_of" {
-            return self.check_slice_of(node, function, bindings, loop_depth);
+        // [VIEW-2] the two formation rows are one judgment at two loan
+        // strengths, so the spelling selects the strength and nothing else.
+        if let Some(strength) = view_former(spelling) {
+            return self.check_slice_of(node, strength, function, bindings, loop_depth);
         }
         if spelling == "cvt" {
             return self.check_conversion(node, function, bindings, loop_depth);
@@ -886,6 +888,19 @@ pub(in crate::semantic::check) const fn measure_former(spelling: &str) -> Option
         b"cap_of" => Some(CheckedMeasure::Capacity),
         b"room_of" => Some(CheckedMeasure::Room),
         b"head_of" => Some(CheckedMeasure::Head),
+        _ => None,
+    }
+}
+
+/// The [VIEW-1] loan strength one operation spelling forms, if it forms one.
+///
+/// The two view formation rows are one operation family over one borrowed
+/// place [VIEW-2]; this is the selection of the row within it, and the only
+/// place a spelling reaches a strength.
+pub(in crate::semantic::check) const fn view_former(spelling: &str) -> Option<LoanStrength> {
+    match spelling.as_bytes() {
+        b"slice_of" => Some(LoanStrength::Shared),
+        b"mut_slice_of" => Some(LoanStrength::Exclusive),
         _ => None,
     }
 }

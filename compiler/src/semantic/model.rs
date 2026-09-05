@@ -450,6 +450,43 @@ impl CheckedElement {
     }
 }
 
+/// The strength of the loan one view value holds on its origin ranges
+/// [VIEW-1, PROV-3].
+///
+/// [PROV-3] use 1 judges every access through a view at this strength: a
+/// shared-strength view is one shared access to the range of every resolved
+/// origin, an exclusive-strength one is one exclusive access to the same.
+/// [SET-1] admits a target path through a view exactly at `Exclusive`, and
+/// [OWN-1] classifies `Shared` copy and `Exclusive` affine [S27].
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum LoanStrength {
+    /// `Slice<'r, T>`: reads only, copy, and [OWN-5] admits any number.
+    Shared,
+    /// `MutSlice<'r, T>`: element writes, affine, and [OWN-5] refuses a
+    /// second one on one range.
+    Exclusive,
+}
+
+impl LoanStrength {
+    /// The nominal spelling of the view holding a loan of this strength
+    /// [S35], for a diagnostic that renders the type.
+    pub(crate) const fn spelling(self) -> &'static str {
+        match self {
+            Self::Shared => "Slice",
+            Self::Exclusive => "MutSlice",
+        }
+    }
+
+    /// The formation row that hands back a view of this strength [VIEW-2,
+    /// S38], for a diagnostic that names the operation the writer wrote.
+    pub(crate) const fn former(self) -> &'static str {
+        match self {
+            Self::Shared => "slice_of",
+            Self::Exclusive => "mut_slice_of",
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedType {
     Unit,
@@ -464,9 +501,18 @@ pub(crate) enum CheckedType {
         element: CheckedFlatElement,
         length: CheckedConst,
     },
+    /// One view [VIEW-1]: `Slice<'r, T>` at shared strength and
+    /// `MutSlice<'r, T>` at exclusive strength.
+    ///
+    /// The strength is a component of the type's identity, so the two views
+    /// are two types under the exact identity [TYPE-5] performs, and every
+    /// rule that reads the view as a view — its loan-bearing predicate
+    /// [PROV-3], its measure row [MSR-1], the storage positions it may not
+    /// occupy [STOR-5] — reads one variant.
     Slice {
         region: DeclarationId,
         element: CheckedFlatElement,
+        strength: LoanStrength,
     },
     Buffer {
         element: CheckedFlatElement,
@@ -1311,6 +1357,9 @@ pub(crate) struct CheckedBufferRoot {
 pub(crate) struct CheckedSliceRoot {
     pub(crate) binding: BindingId,
     pub(crate) element: CheckedFlatElement,
+    /// [VIEW-1] the strength of the loan the viewed value holds, which is
+    /// what [SET-1] reads to admit or refuse a target path through it.
+    pub(crate) strength: LoanStrength,
 }
 
 /// The base place of one compiler-owned measured value: a run [BLK-1] or a
@@ -1860,6 +1909,9 @@ pub(crate) enum CheckedExpression {
         source: CheckedSliceSource,
         region: DeclarationId,
         element: CheckedFlatElement,
+        /// [VIEW-2] which of the two formation rows this is: `slice_of`
+        /// hands back a shared loan and `mut_slice_of` an exclusive one.
+        strength: LoanStrength,
         origins: Vec<CheckedSliceOrigin>,
     },
     SliceMeasure {
@@ -2046,10 +2098,14 @@ impl CheckedExpression {
             Self::BufferIndex { root, .. } => root.element.ty(),
             Self::RunIndex { element_type, .. } => *element_type,
             Self::SliceOf {
-                region, element, ..
+                region,
+                element,
+                strength,
+                ..
             } => CheckedType::Slice {
                 region: *region,
                 element: *element,
+                strength: *strength,
             },
             Self::SliceMeasure { .. } => CheckedType::Integer(IntegerType::U64),
             Self::SliceIndex { root, .. } => root.element.ty(),
@@ -2154,6 +2210,22 @@ pub(crate) struct CheckedBufferSetTarget {
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
+/// One element-position store through a view [SET-1, VIEW-1].
+///
+/// The root's own loan strength is what admitted this target: [SET-1] admits
+/// a target path through a view exactly when that view's loan on its origin
+/// set is exclusive, so a `MutSlice` root reaches here and a `Slice` root is
+/// refused where the place is formed. The storage written is the origin's,
+/// which is why the statement's effect row and its [MSR-2] kill are stated
+/// over the view's origins and not over the descriptor.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedSliceSetTarget {
+    pub(crate) root: CheckedSliceRoot,
+    pub(crate) offset: CheckedExpression,
+    pub(crate) obligation: NodePath,
+    pub(crate) target_domain: CheckedTargetDomainObligation,
+}
+
 /// One element-position store into a run [BLK-3, SET-1, SET-2].
 ///
 /// The offset is a logical one and its [OP-4] obligation is against `len_of`;
@@ -2178,6 +2250,8 @@ pub(crate) enum CheckedSetTarget {
     ArrayIndex(Box<CheckedArraySetTarget>),
     BufferIndex(Box<CheckedBufferSetTarget>),
     RunIndex(Box<CheckedRunSetTarget>),
+    /// [SET-1, VIEW-1] one element-position store through an exclusive view.
+    SliceIndex(Box<CheckedSliceSetTarget>),
 }
 
 impl CheckedSetTarget {
@@ -2187,6 +2261,7 @@ impl CheckedSetTarget {
             Self::ArrayIndex(target) => target.binding,
             Self::BufferIndex(target) => target.root.binding,
             Self::RunIndex(target) => target.root.binding,
+            Self::SliceIndex(target) => target.root.binding,
         }
     }
 
@@ -2196,6 +2271,7 @@ impl CheckedSetTarget {
             Self::ArrayIndex(target) => target.element_type,
             Self::BufferIndex(target) => target.root.element.ty(),
             Self::RunIndex(target) => target.element_type,
+            Self::SliceIndex(target) => target.root.element.ty(),
         }
     }
 }

@@ -1509,6 +1509,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 index,
                 value,
             } => self.emit_buffer_store(*buffer, *index, *value),
+            IrInstruction::StoreSlice {
+                slice,
+                index,
+                value,
+            } => self.emit_slice_store(*slice, *index, *value),
             IrInstruction::Store {
                 address,
                 value,

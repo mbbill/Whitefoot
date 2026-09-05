@@ -15,8 +15,8 @@ use super::super::super::model::{
     CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedFlatElement,
     CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedPlaceStep, CheckedPlaceSubscript, CheckedRunSetTarget, CheckedRuntimeTargetObligations,
-    CheckedSetTarget, CheckedSliceRoot, CheckedTargetDomainObligation, CheckedType, IntegerType,
-    MeasureCell, NominalId,
+    CheckedSetTarget, CheckedSliceRoot, CheckedSliceSetTarget, CheckedTargetDomainObligation,
+    CheckedType, IntegerType, LoanStrength, MeasureCell, NominalId,
 };
 use super::super::super::places::{PlaceOffset, PlaceStep};
 use super::super::borrows::{
@@ -1138,15 +1138,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     node,
                 )?;
             }
-            CheckedIndexedPlace::Slice(_) => {
-                return self.issue_node(
-                    SemanticRule::Set1,
-                    node,
-                    SemanticIssueKind::InvalidSetTarget {
-                        root_class: "slice view".to_owned(),
-                        required_classes: "live own storage or a live usable &uniq referent",
-                    },
-                );
+            // [SET-1] as [PROV-3] amends it: a target path may traverse a
+            // view exactly when that view's loan strength on its resolved
+            // origin set is exclusive. A `MutSlice` root is admitted here and
+            // a `Slice` root is the refusal the rule states.
+            CheckedIndexedPlace::Slice(slice) => {
+                if slice.root.strength != LoanStrength::Exclusive {
+                    return self.issue_node(
+                        SemanticRule::Set1,
+                        node,
+                        SemanticIssueKind::InvalidSetTarget {
+                            root_class: "shared view".to_owned(),
+                            required_classes:
+                                "live own storage, a live usable &uniq referent, or an exclusive \
+view",
+                        },
+                    );
+                }
             }
             // [BLK-3] element access over a run is the ordinary surface and
             // needs no row: `set v[i] = e;` writes a copy element and
@@ -1202,9 +1210,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 }
             },
-            CheckedIndexedPlace::Slice(_) => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
-            }
+            CheckedIndexedPlace::Slice(slice) => slice.root.element.ty(),
         };
         self.check_mutation_target_class(node, element_type, form)?;
         let mut effects = offset.effects;
@@ -1286,8 +1292,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })),
                 )
             }
-            CheckedIndexedPlace::Slice(_) => {
-                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            // [SET-1, PROV-3] one element-position store through an exclusive
+            // view. The storage written is the origin's, so the effect row
+            // names every place the view's origin set resolves to [EFF-1]
+            // 1386, while the target place stays the descriptor the statement
+            // writes through.
+            CheckedIndexedPlace::Slice(slice) => {
+                for origin in slice.slice.effect_places() {
+                    for path in self.effect_paths_for_place(&origin, bindings)? {
+                        effects.add_write(path.clone());
+                        if form.is_replace() {
+                            effects.add_read(path);
+                        }
+                    }
+                }
+                let resolved = ResolvedPlace {
+                    root: slice.declaration,
+                    fields: Vec::new(),
+                };
+                (
+                    slice.declaration,
+                    resolved,
+                    CheckedSetTarget::SliceIndex(Box::new(CheckedSliceSetTarget {
+                        root: slice.root,
+                        offset: offset.expression,
+                        obligation,
+                        target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    })),
+                )
             }
         };
         // [MSR-2, LIV-2] a subscript target writes one element of `place`,
@@ -1598,7 +1630,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     borrow_kind: None,
                 }))
             }
-            CheckedType::Slice { region, element } => {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => {
                 let Some(fields) = fields else {
                     return self.unsupported(UnsupportedSemanticFeature::CompositeValues, anchor);
                 };
@@ -1613,7 +1649,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
                 Ok(CheckedIndexedPlace::Slice(CheckedSlicePlace {
-                    root: CheckedSliceRoot { binding, element },
+                    root: CheckedSliceRoot {
+                        binding,
+                        element,
+                        strength,
+                    },
                     declaration,
                     descriptor: None,
                     slice,

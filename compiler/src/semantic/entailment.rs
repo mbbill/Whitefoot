@@ -1207,6 +1207,9 @@ pub(super) fn collect_statement_calls(
                         CheckedSetTarget::RunIndex(target) => {
                             collect_expression_calls(caller, &target.offset, calls);
                         }
+                        CheckedSetTarget::SliceIndex(target) => {
+                            collect_expression_calls(caller, &target.offset, calls);
+                        }
                     }
                 }
                 for value in values.expressions() {
@@ -1224,6 +1227,9 @@ pub(super) fn collect_statement_calls(
                         collect_expression_calls(caller, &target.offset, calls);
                     }
                     CheckedSetTarget::RunIndex(target) => {
+                        collect_expression_calls(caller, &target.offset, calls);
+                    }
+                    CheckedSetTarget::SliceIndex(target) => {
                         collect_expression_calls(caller, &target.offset, calls);
                     }
                 }

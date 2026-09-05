@@ -2103,9 +2103,11 @@ impl<'program> IrBuilder<'program> {
                 self.promote_binding_if_needed(binding)?;
                 return Ok(());
             }
-            // An array element is copy [TYPE-2], so the checker never forms
-            // an element-position replace target over an array [SET-2].
-            CheckedSetTarget::ArrayIndex(_) => {
+            // An array element and a view element are both flat, and every
+            // flat element this version constructs is copy [TYPE-2], so the
+            // checker never forms an element-position replace target over
+            // either [SET-2].
+            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::SliceIndex(_) => {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };
@@ -2221,6 +2223,13 @@ impl<'program> IrBuilder<'program> {
             }
             CheckedSetTarget::RunIndex(target) => {
                 self.lower_run_element_commit(root, target, value)?
+            }
+            // The descriptor a view element store writes through is
+            // unchanged, so the root committed back is the root that was
+            // loaded [SET-1].
+            CheckedSetTarget::SliceIndex(target) => {
+                self.lower_slice_element_commit(target, value)?;
+                root
             }
         };
         self.commit_root_storage(binding, storage, replacement)

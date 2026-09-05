@@ -459,11 +459,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
-            CheckedType::Slice { region, element } => {
+            CheckedType::Slice {
+                region,
+                element,
+                strength,
+            } => {
                 let element = self.checked_type_name(element.ty())?;
+                let view = strength.spelling();
                 match self.region_spelling(region).as_str() {
-                    "" => format!("slice<{element}>"),
-                    region => format!("slice<{region}, {element}>"),
+                    "" => format!("{view}<{element}>"),
+                    region => format!("{view}<{region}, {element}>"),
                 }
             }
             CheckedType::Buffer { element } => {

@@ -2,7 +2,7 @@ struct Marker<T: affine> {
 }
 
 fn invalid() -> result: own unit pure {
-  let marker = Marker<slice<u8>>();
+  let marker = Marker<Slice<u8>>();
   return unit;
 }
 

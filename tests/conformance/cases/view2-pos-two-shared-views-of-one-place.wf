@@ -1,0 +1,14 @@
+command fn main() -> status: own ExitStatus pure {
+  let table = array_new::<u8, 4>(7_u8);
+  region {
+    let first = slice_of(&table);
+    let second = slice_of(&table);
+    let left = first[0_u64];
+    let right = second[0_u64];
+    if left == right {
+    } else {
+      return exit_status(code: 201_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

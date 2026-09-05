@@ -1,8 +1,8 @@
-fn pass_slice['r](value: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+fn pass_slice['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   return move value;
 }
 
-fn choose_slice['r](take_left: own Bool, left: own slice<'r, u8>, right: own slice<'r, u8>) -> result: own slice<'r, u8> pure {
+fn choose_slice['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   if take_left {
     return move left;
   } else {

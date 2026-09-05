@@ -1,4 +1,4 @@
-fn arena_view['r](storage: own arena<'r, array<u8, 2>>) -> result: own slice<'r, u8> pure {
+fn arena_view['r](storage: own arena<'r, array<u8, 2>>) -> result: own Slice<'r, u8> pure {
   let view = slice_of(&'r deref(storage));
   return move view;
 }

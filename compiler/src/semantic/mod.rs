@@ -50,9 +50,9 @@ pub(crate) use model::{
     CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure,
     CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedPlaceStep,
     CheckedProgramData, CheckedProjectedDrop, CheckedReleaseClass, CheckedRunSetTarget,
-    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource,
-    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, MeasureCell,
-    MeasuredKind, NominalId, PropagationContext,
+    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot, CheckedSliceSetTarget,
+    CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
+    MeasureCell, MeasuredKind, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:

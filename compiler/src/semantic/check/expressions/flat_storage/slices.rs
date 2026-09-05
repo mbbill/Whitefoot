@@ -8,6 +8,7 @@ use crate::{
 
 use super::super::super::super::model::{
     CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceSource, CheckedType,
+    LoanStrength,
 };
 use super::super::super::borrows::{AccessKind, ResolvedPlace, SliceInfo, SliceLoan};
 use super::super::super::{
@@ -16,9 +17,18 @@ use super::super::super::{
 use super::CheckedIndexedPlace;
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
+    /// [VIEW-2] one view formation, at the strength the written row names.
+    ///
+    /// The two rows are one judgment: `slice_of` takes a shared borrow of the
+    /// viewed storage and hands back a shared loan, `mut_slice_of` takes a
+    /// `&uniq` borrow and hands back an exclusive one, and every other
+    /// sentence — the region the borrow takes [OP-2], the origin the view
+    /// carries [PROV-3], the element the viewed place fixes — is written
+    /// once for both.
     pub(in crate::semantic::check) fn check_slice_of(
         &self,
         node: NodeId,
+        strength: LoanStrength,
         function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
@@ -32,7 +42,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Gram11,
                 node,
                 SemanticIssueKind::InvalidNamedArguments {
-                    callee: "slice_of".to_owned(),
+                    callee: strength.former().to_owned(),
                     declared_parameters: Vec::new(),
                 },
             );
@@ -62,14 +72,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 )
             })?;
-        if self.has_fixed(borrow, FixedTerminal::Uniq)? {
-            return self.issue_node(
-                SemanticRule::Type5,
-                atoms[0],
-                SemanticIssueKind::type_mismatch(
+        let written = if self.has_fixed(borrow, FixedTerminal::Uniq)? {
+            LoanStrength::Exclusive
+        } else {
+            LoanStrength::Shared
+        };
+        if written != strength {
+            let (expected, found) = match strength {
+                LoanStrength::Shared => (
                     "a written shared borrow of the viewed storage, `&'r place`",
                     "a `&uniq` borrow, which slice_of does not take",
                 ),
+                LoanStrength::Exclusive => (
+                    "a written unique borrow of the viewed storage, `&uniq 'r place`",
+                    "a shared borrow, which mut_slice_of does not take",
+                ),
+            };
+            return self.issue_node(
+                SemanticRule::Type5,
+                atoms[0],
+                SemanticIssueKind::type_mismatch(expected, found),
             );
         }
         // [OP-2] the result region is the one the operand's borrow takes,
@@ -94,7 +116,7 @@ inside the `region` block whose region it takes",
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
         if self.has_fixed(pbase, FixedTerminal::Deref)? {
             return self.check_arena_content_slice_of(
-                node, borrow, place_node, pbase, region, function, bindings, loop_depth,
+                node, borrow, place_node, pbase, region, strength, function, bindings, loop_depth,
             );
         }
         let root_use = self.use_at(pbase, LexicalUseRole::PlaceBase)?;
@@ -103,7 +125,17 @@ inside the `region` block whose region it takes",
         };
         let owner = match class {
             DeclarationClass::Value => Some(declaration),
-            DeclarationClass::NamedConst => None,
+            // [CONST-2] a named const is permanently fixed storage, so it is
+            // the `immutable-const` origin of a shared view and no origin an
+            // exclusive one could write through.
+            DeclarationClass::NamedConst if strength == LoanStrength::Shared => None,
+            DeclarationClass::NamedConst => {
+                return self.issue_node(
+                    SemanticRule::Const2,
+                    atoms[0],
+                    SemanticIssueKind::ImmutableSetTarget,
+                );
+            }
             _ => {
                 return self.issue_node(
                     SemanticRule::Type5,
@@ -186,18 +218,27 @@ inside the `region` block whose region it takes",
             }
         });
         let origins = vec![origin];
+        // [PROV-3] use 1: the formation's own access to the origin is the
+        // access the loan's strength names, so a second exclusive view of one
+        // place meets the first loan here and is the ordinary [OWN-5]
+        // conflict, while a second shared view does not.
+        let taken = match strength {
+            LoanStrength::Shared => AccessKind::SharedBorrow,
+            LoanStrength::Exclusive => AccessKind::UniqueBorrow,
+        };
         let accesses = if let Some(owner) = owner {
-            self.check_loan_access(bindings, None, &resolved, AccessKind::SharedBorrow, borrow)?;
+            self.check_loan_access(bindings, None, &resolved, taken, borrow)?;
             bindings
                 .get_mut(&owner)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?
                 .push_slice_loan(SliceLoan {
                     region,
                     place: resolved.clone(),
+                    strength,
                 });
             vec![PlaceAccess {
                 place: resolved,
-                kind: AccessKind::SharedBorrow,
+                kind: taken,
             }]
         } else {
             Vec::new()
@@ -208,6 +249,7 @@ inside the `region` block whose region it takes",
                 source,
                 region,
                 element,
+                strength,
                 origins: origins.clone(),
             },
             mode: CheckedMode::Own,
@@ -235,6 +277,7 @@ inside the `region` block whose region it takes",
         place_node: NodeId,
         pbase: NodeId,
         region: DeclarationId,
+        strength: LoanStrength,
         function: &FunctionSignature,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
         loop_depth: usize,
@@ -347,13 +390,18 @@ take the view in a region it outlives"
             root: declaration,
             fields: Vec::new(),
         };
-        self.check_loan_access(bindings, None, &resolved, AccessKind::SharedBorrow, borrow)?;
+        let taken = match strength {
+            LoanStrength::Shared => AccessKind::SharedBorrow,
+            LoanStrength::Exclusive => AccessKind::UniqueBorrow,
+        };
+        self.check_loan_access(bindings, None, &resolved, taken, borrow)?;
         bindings
             .get_mut(&declaration)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?
             .push_slice_loan(SliceLoan {
                 region,
                 place: resolved.clone(),
+                strength,
             });
         // The origin is the complete resolved place reached in arena content
         // [OWN-5]; reads through the formed view stay reads of storage this
@@ -373,6 +421,7 @@ take the view in a region it outlives"
                 },
                 region,
                 element,
+                strength,
                 origins: origins.clone(),
             },
             mode: CheckedMode::Own,
@@ -383,7 +432,7 @@ take the view in a region it outlives"
             effects: EffectSet::NONE,
             accesses: vec![PlaceAccess {
                 place: resolved,
-                kind: AccessKind::SharedBorrow,
+                kind: taken,
             }],
         })
     }

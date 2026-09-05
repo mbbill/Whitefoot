@@ -257,7 +257,7 @@ const BOOLEAN_SPELLINGS: [(&str, usize); 4] = [("band", 2), ("bor", 2), ("bxor",
 /// value operands. Listing them explicitly is what makes the coverage
 /// assertion below two-sided — a new row is a failure unless someone decides
 /// which side it belongs on.
-const UNMODELLED_ROW_SPELLINGS: [&str; 15] = [
+const UNMODELLED_ROW_SPELLINGS: [&str; 16] = [
     "buffer_fits",
     "buffer_vacant",
     "eeq",
@@ -269,6 +269,7 @@ const UNMODELLED_ROW_SPELLINGS: [&str; 15] = [
     "room_of",
     "head_of",
     "slice_of",
+    "mut_slice_of",
     "box_new",
     "arena_new",
     "array_new",
@@ -579,7 +580,7 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
     let expected = [
         (MeasuredKind::Array, "array<T, N>"),
         (MeasuredKind::Buffer, "buffer<T>"),
-        (MeasuredKind::Slice, "slice<'r, T>"),
+        (MeasuredKind::Slice, "Slice<'r, T>"),
         (MeasuredKind::FixedVector, "FixedVector<T, n>"),
         (MeasuredKind::Vector, "Vector<'s, T>"),
         (MeasuredKind::Extent, "Arena<'s, bytes, align>"),

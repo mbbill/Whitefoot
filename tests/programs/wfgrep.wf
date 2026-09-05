@@ -128,7 +128,7 @@ fn io_class(error: own IoError) -> result: own u8 pure {
   }
 }
 
-fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
+fn append_slice(destination: &uniq buffer<u8>, capacity: own u64, filled: own u64, text: own Slice<u8>) -> result: own u64 reads(destination, text), writes(destination) contract {
   requires capacity == len_of(deref(destination));
   requires filled <= capacity;
   ensures result <= capacity;
