@@ -1,0 +1,12 @@
+struct Holder<T: affine> {
+  value: T;
+}
+
+fn swapin<T: affine>(handle: &uniq Holder<T>, made: own T) -> code: own u8 pure {
+  doc "BLK-4: the closure is computed at the declaration, where the type parameter is opaque; no linearity class excludes both a container nominal and a loan-bearing argument, so every such referent is refused.";
+  return 0_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

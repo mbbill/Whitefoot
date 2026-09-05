@@ -1,0 +1,8 @@
+fn resize(run: &uniq Vector<u8>) -> code: own u8 reads(run) {
+  doc "BLK-4: the referent is a run, whose four boundary operations move exactly the measures the caller retained across this call [MSR-3].";
+  return 0_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

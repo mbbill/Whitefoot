@@ -103,6 +103,34 @@ fn the_fixed_run_library_proves_and_runs() {
     assert!(output.stderr.is_empty());
 }
 
+/// [S22, S23, PROV-1, PROV-6, BLK-2] the general store at execution: the entry
+/// receives its provider, the take is a real allocation, and the release is a
+/// real free.
+///
+/// The program is the whole path in one source: `command.heap` supplies the
+/// provider value, `heap_vector` takes a run of four slots from it, a counted
+/// loop fills the run under the three invariants 3.L.3 writes, and a helper
+/// holding the provider adds the bytes and lets the run reach its scope exit.
+/// D3 is what makes that last step legal, and the helper's own row carries the
+/// `writes(store)` the derived release spends.
+///
+/// The exit code is the sum, so a slot addressed wrongly reports a code rather
+/// than passing quietly; the two assertions below are the allocator pair,
+/// which is the half an exit code cannot see.
+#[test]
+fn the_general_store_hands_out_a_run_and_takes_it_back() {
+    let llvm = compile_program("heap_run.wf");
+    // One take, one free, and the free is the run's own backing release
+    // emitted at the scope exit that owns it [PROV-6, BLK-2].
+    assert_eq!(llvm.matches("call ptr @malloc").count(), 1);
+    assert!(llvm.contains("call void @free"));
+
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(12));
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 /// [BLK-1, PROV-6, S20, TYPE-5] the one-level lift at execution, under the two
 /// nominals 3.L.4 writes it with.
 ///

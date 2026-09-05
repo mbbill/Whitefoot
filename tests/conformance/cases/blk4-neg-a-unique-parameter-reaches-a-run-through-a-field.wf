@@ -1,0 +1,13 @@
+struct Env {
+  slots: FixedVector<u8, 4>;
+  count: u64;
+}
+
+fn touch(env: &uniq Env) -> code: own u8 reads(env.count) {
+  doc "BLK-4: depth is the reachability closure over fields, so a one-field wrapper does not nullify the refusal.";
+  return 0_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,27 @@
+fn take_one['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u8>> reads(store), writes(store), allocates(store) {
+  doc "BLK-4: a provider parameter is the one `&uniq` this rule does not refuse. No operation changes a provider's identity, only its measures, and every row that hands a provider's post-state back is a compiler-owned record whose relations are complete over what it writes.";
+  region {
+    return arena_vector::<u8>(store: &uniq deref(store), count: 8_u64);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The extent is reserved in this activation's own frame and the helper carves one run out of it.";
+  region 'a {
+    let workspace = arena_frame::<256, 16, 'a>();
+    region {
+      match take_one(store: &uniq workspace) {
+        Some(value: run) => {
+          let spare = room_of(run);
+          if spare == 8_u64 {
+            return exit_status(code: 0_u8);
+          }
+          return exit_status(code: 1_u8);
+        }
+        None() => {
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
+}
