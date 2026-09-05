@@ -1,5 +1,5 @@
 struct Pair {
-  page: buffer<u8>;
+  page: FixedVector<u8, 4>;
   spare: u64;
 }
 
@@ -11,7 +11,11 @@ fn look(holder: &Pair) -> size: own u64 reads(holder) {
 
 command fn main() -> status: own ExitStatus pure {
   doc "The caller.";
-  let run = buffer_new(4_u64, 0_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let r1 = place_back(vector: move empty, value: 0_u8);
+  let r2 = place_back(vector: move r1, value: 0_u8);
+  let r3 = place_back(vector: move r2, value: 0_u8);
+  let run = place_back(vector: move r3, value: 0_u8);
   let pair = Pair(page: move run, spare: 1_u64);
   region {
     let n = look(holder: &pair);

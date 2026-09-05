@@ -4,12 +4,16 @@ linear struct Tag {
 
 struct Holder {
   mark: Tag;
-  page: buffer<u8>;
+  page: FixedVector<u8, 4>;
 }
 
 command fn main() -> status: own ExitStatus pure {
   doc "PROV-6: no node of the operand's release graph, the operand's own type included, may be linear by the modifier. A type containing a modifier-linear node is taken apart by a destructuring consume first, so the marked component reaches a written statement rather than a silent walk.";
-  let run = buffer_new(4_u64, 0_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let r1 = place_back(vector: move empty, value: 0_u8);
+  let r2 = place_back(vector: move r1, value: 0_u8);
+  let r3 = place_back(vector: move r2, value: 0_u8);
+  let run = place_back(vector: move r3, value: 0_u8);
   let mark = Tag(slot: 1_u8);
   let holder = Holder(mark: move mark, page: move run);
   dispose holder;
