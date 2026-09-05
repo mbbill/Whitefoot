@@ -296,7 +296,7 @@ fn buffer_new_selects_its_element_from_the_fill_value() {
 fn box_content_that_bears_a_region_still_rejects_under_stor5() {
     assert_rule_at(
         br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
-  box_new(move value);
+  box_new(value);
   return unit;
 }
 
@@ -305,6 +305,8 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#,
         SemanticRule::Stor5,
-        "move value",
+        // [S27] the shared view is copy, so the operand that supplies the
+        // derived referent is written bare and the citation lands on it.
+        "value",
     );
 }

@@ -1,0 +1,13 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "A move of a copy value is the OWN-1 error, and VIEW-1 makes Slice copy: the shared view is used bare. The rejection is at the use, not at the formation, and its restructuring is to drop the move spelling.";
+  let data = array_new::<u8, 2>(13_u8);
+  region {
+    let window = slice_of(&data);
+    let taken = move window;
+    let width = len_of(taken);
+    if width == 2_u64 {
+      return exit_status(code: 0_u8);
+    }
+  }
+  return exit_status(code: 1_u8);
+}

@@ -1,0 +1,25 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "VIEW-2 widens the viewed domain to the two runs, and the formation row's own requirement head_of(vector) <= room_of(vector) is what makes the viewed window one contiguous range. This run has never had a front removal, so the requirement is discharged from the standing head_of = 0, and the program reads the viewed length and the first two elements back through the view.";
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 3_u8);
+  let two = place_back(vector: move one, value: 4_u8);
+  region {
+    let window = slice_of(&two);
+    let width = len_of(window);
+    if width == 2_u64 {
+    } else {
+      return exit_status(code: 21_u8);
+    }
+    let first = window[0_u64];
+    let second = window[1_u64];
+    if first == 3_u8 {
+    } else {
+      return exit_status(code: 22_u8);
+    }
+    if second == 4_u8 {
+    } else {
+      return exit_status(code: 23_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

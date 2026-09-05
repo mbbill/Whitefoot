@@ -902,7 +902,7 @@ command fn main() -> status: own ExitStatus pure {
     // rule and kind still fire, at the operand atom the rule names.
     assert_rule(
         br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
-  box_new(move value);
+  box_new(value);
   return unit;
 }
 

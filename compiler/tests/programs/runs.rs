@@ -22,6 +22,33 @@ fn a_run_is_a_queue_whose_window_wraps() {
     assert!(output.stderr.is_empty());
 }
 
+/// [VIEW-1, VIEW-2, PROV-3, S27, S31] the view half of the container design,
+/// executing: a view formed over a run, the shared view used twice with no
+/// `move`, an append to the run after that view's last use, a view of the same
+/// run drained to empty, and an exclusive view whose shared child reborrow
+/// reads what the parent wrote.
+///
+/// The program reports through its own exit code, so a descriptor that pointed
+/// at the wrong slot is visible rather than silent: it reads the viewed length
+/// back from the run, sums the window twice through the copy view, sums it
+/// again after the append, and reads the byte an element write through the
+/// exclusive view left. The run's window never wraps, which is what the
+/// formation row's own requirement `head_of(vector) <= room_of(vector)`
+/// [BLK-0] admits it for; the drained run satisfies that requirement from the
+/// standing `head_of <= cap_of` alone.
+#[test]
+fn a_run_is_viewable_and_a_copy_view_dies_at_its_last_use() {
+    let llvm = compile_program("run_views.wf");
+    // The view of an inline run is the address of slot `head` and the word
+    // `len`, taken in the run's own frame slot [VIEW-2].
+    assert!(llvm.contains("getelementptr inbounds { [4 x i8], i64, i64 }"));
+
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 /// [BLK-2, PROV-1, MSR-1] the store-backed half of the two runs at execution:
 /// one bump extent reserved in the entry's own frame, the proved take and the
 /// checked take over it, and the refusal a take the extent cannot hold gets.

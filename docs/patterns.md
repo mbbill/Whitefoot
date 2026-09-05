@@ -1625,12 +1625,49 @@ A named const is a legal `slice_of` source and never a `mut_slice_of` source:
 its storage is permanently read-only [CONST-2], and the rejection is at the
 operand.
 
-**View a `buffer<T>`, not an `array<T, N>`, when you mean to write.** An array
-is a value in this compiler — an element commit rebuilds it and writes it back
-to its binding — so a view of one carries a snapshot, and an exclusive view over
-an array stops as an explicit unsupported capability rather than writing where
-nobody can see it. A shared view over an array is unaffected, because a live
-shared loan refuses every write to the array while the view can be read.
+**A `Slice` is copy: use it bare, and its loan ends at its last use.** Write
+`total(window: window)` and not `total(window: move window)` — a `move` of one
+is the ordinary [OWN-1] `MoveOfCopy` — and the same view may be handed to two
+calls and read afterwards. What the classification buys back is the run: the
+storage a shared view reaches is writable again after that view's **last use**,
+inside the same region block, so
+
+```whitefoot
+let window = slice_of(&run);
+let sum = total(window: window);
+let longer = place_back(vector: move run, value: 9_u8);
+```
+
+compiles, while moving the `place_back` above the `total` call does not. A
+`MutSlice` stays affine and is moved as any other affine value is.
+
+**A view is bound once and never committed at.** `set view = other;` and
+`let old = replace view = other;` are both refused: the displaced view's loan
+would outlive the descriptor whose place it was held from [VIEW-4]. Bind a new
+view under a new `let` instead.
+
+**Read a run through a view, and drain it first if its window wrapped.** The two
+runs are viewable, and the formation carries the requirement that the window
+does not wrap: `head_of(vector) <= room_of(vector)`. A run only ever appended to
+and taken from the back satisfies it, and so does one drained to empty; a run
+that has had a front removal and been refilled does not, and the formation is
+refused citing [BLK-0] with the goal it could not discharge. The repair is
+3.L.8's drain — take the window front-to-back into a fresh run — and not a
+second view.
+
+**A shared view of a place an exclusive view already views is that view's
+child.** It is admitted, it reads the same range, and it freezes its parent
+while it lives: an element write through the `MutSlice` is refused until the
+child's last use, and admitted after it. That is how a reader and a writer of
+one buffer are spelled without two exclusive views.
+
+**View a `buffer<T>` or a `Vector<'s, T>`, not an `array<T, N>` or a
+`FixedVector<T, n>`, when you mean to write.** Inline storage is a value in this
+compiler — an element commit rebuilds it and writes it back to its binding — so
+a view of one carries a snapshot, and an exclusive view over inline storage
+stops as an explicit unsupported capability rather than writing where nobody can
+see it. A shared view is unaffected, because a live shared loan refuses every
+write to that storage while the view can be read.
 
 Replaces: taking a run or a buffer by value in order to write it, passing a
 `&uniq buffer<T>` where the callee only needs a window, and the `Option<T>`

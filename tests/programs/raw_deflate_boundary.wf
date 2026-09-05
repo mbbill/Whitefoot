@@ -222,7 +222,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
-        match relative_path(value: text) {
+        match relative_path(value: move text) {
           Ok(value: path) => {
             region {
               let permit = reserve_file(factory: &uniq files);

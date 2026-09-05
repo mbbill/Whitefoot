@@ -295,7 +295,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         form: MutationForm,
     ) -> Result<(), CheckStop> {
         let MutationForm::Set = form else {
-            if self.is_copy_type(ty)? && self.judges_class_spelling() {
+            // [SET-2, VIEW-4] a loan-bearing target is judged as the
+            // region-bearing target it is, before the copy class is read:
+            // [S27] made the shared view copy, and "use set for a copy place"
+            // is exactly the repair [VIEW-4] refuses at this same place.
+            if !Self::checked_type_is_loan_bearing(ty)
+                && self.is_copy_type(ty)?
+                && self.judges_class_spelling()
+            {
                 return self.issue_node(
                     SemanticRule::Set2,
                     node,

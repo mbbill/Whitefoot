@@ -1223,7 +1223,7 @@ fn guarded<T: Int, const n: u64>(value: own T, values: own array<u8, n>) -> resu
 command fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&bytes);
-    inspect(values: move view);
+    inspect(values: view);
   }
   let values = array_new::<u8, 3>(1_u8);
   let result = guarded::<i32, 3>(value: 4_i32, values: move values);

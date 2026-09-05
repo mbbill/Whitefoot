@@ -926,7 +926,7 @@ fn measure(view: own u64) -> out: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&digits);
-    let n = measure(view: move view);
+    let n = measure(view: view);
   }
   return exit_status(code: 0_u8);
 }
@@ -1367,18 +1367,40 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         name: "a-commit-target-carrying-a-region.wf",
         source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(4_u64, 0_u8);
+  let spare = buffer_new(4_u64, 0_u8);
   region {
-    let view = slice_of(&data);
-    let other = slice_of(&data);
-    set view = other;
+    let view = mut_slice_of(&uniq data);
+    let other = mut_slice_of(&uniq spare);
+    set view = move other;
   }
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "LIV-2",
         sentences: &[
-            r#"target_type: "Slice<u8>""#,
+            r#"target_type: "MutSlice<u8>""#,
             "a slice\'s static origin set and an arena\'s confinement are fixed at initialization; bind a new slice or arena under a new let",
+        ],
+    },
+    // [VIEW-4]: the same commit at a *copy* view, whose target [LIV-2]'s own
+    // condition would admit with nothing consumed.
+    Probe {
+        name: "a-commit-displacing-a-live-loan.wf",
+        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(4_u64, 0_u8);
+  let spare = buffer_new(4_u64, 0_u8);
+  region {
+    let view = slice_of(&data);
+    let other = slice_of(&spare);
+    set view = other;
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        rule: "VIEW-4",
+        sentences: &[
+            r#"target_type: "Slice<u8>""#,
+            "bind a new view under a new `let` rather than committing at this one",
         ],
     },
     // -------------------------------------------------------------------

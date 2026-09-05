@@ -196,7 +196,7 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_rule(
         br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
-  box_new(move value);
+  box_new(value);
   return unit;
 }
 
@@ -221,7 +221,7 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_rule(
         br#"fn invalid['storage](value: own Slice<u8>) -> result: own unit allocates(arena 'storage) {
-  arena_new::<'storage, Slice<u8>>(move value);
+  arena_new::<'storage, Slice<u8>>(value);
   return unit;
 }
 

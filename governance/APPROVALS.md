@@ -3969,4 +3969,99 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   No verdict of either corpus moved and no program of the executable corpus
   changed behaviour: every source the respell touched compiles to the same
   verdict under the new spelling.
-ACTIVE-SPEC: v0.45 8457e1dc74e269415639426c21edbc352e0f3ac62909a6a623e4613c0eeb21c9 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B8f, the copy view, the loan's extent, the viewable run and the
+  child reborrow): v0.45 additionally lands the rest of the container design's
+  view half. Numbered rules +2/-0 (152 remain), being [VIEW-4] and [VIEW-6];
+  grammar productions +0/-0 (88 remain); unique fixed grammar atoms +0/-0;
+  writer operation spellings +0/-0; kernel declaration records +8 (52 remain),
+  being [VIEW-2]'s two formation rows with their four type and region
+  parameters and their two value parameters. [OWN-1], [OWN-5], [VIEW-1] and
+  [VIEW-2] are amended in place. [OWN-1] moves `Slice<'r, T>` to copy and
+  leaves `MutSlice<'r, T>` affine [S27]; [VIEW-1] states that classification
+  and its two consequences, that a copy view's loan ends at its last use and
+  that a commit at a view place is [VIEW-4]'s refusal; [OWN-5] states the
+  loan's extent as its holding value's own liveness and replaces its
+  second-view refusal with [OWN-6]'s shared child reborrow, the parent frozen
+  against element writes while the child lives [S31]; [VIEW-2] states the
+  viewable operand class, which now contains the two runs, the row's declared
+  requirement `head_of(vector) <= room_of(vector)` and the four relations a
+  formation publishes. [VIEW-4] refuses a commit that would displace a live
+  loan and [VIEW-6] refuses two results of one view type at one formal region.
+- CONSEQUENCE OF [S27], THE THREE `move`s: the classification cannot land
+  without respelling the `move`s of shared views that stand in accepted
+  programs, and the owner's delegate decided (2026-09-05) to respell them and
+  keep every verdict. `fn1-pos-returned-slice-inputs-run` is MODIFIED — its
+  three argument `move`s and its two helpers' `return move` are written bare —
+  and its expectation `{"kind": "run", "exit": 0}` and its status are
+  unchanged. Six further conformance case sources, three snapshot case
+  sources, four `tests/programs` sources and the compiler's embedded test
+  sources are respelled the same way; every one keeps the verdict it recorded,
+  and no `tests/snapshot/index.tsv` row and no `manifest.jsonl` expectation is
+  edited by this merge beside the added and deleted cases listed below.
+- CONSEQUENCE, A COMPILER DEFECT THE CLASSIFICATION UNCOVERED: [EFF-1] states
+  that a view parameter's effect path names the viewed backing state and that
+  merely moving, returning or structurally repacking that value observes none
+  of it. The checker attributed a read at every place use of a loan-bearing
+  type, which the `move` spelling hid because a consume exhibits no read, so
+  `fn pass(value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure` became
+  an [EFF-2] mismatch the moment the bare spelling landed. The attribution is
+  narrowed by the loan-bearing predicate at the three place-use paths; a read
+  *through* a view is the subscript's own attribution and is untouched.
+- CONSEQUENCE, A SOUNDNESS HOLE THE VIEWABLE RUN OPENED AND CLOSED IN THE SAME
+  BATCH: a view is one contiguous range and a wrapped window is two, so
+  widening the operand class without the row's requirement admits a descriptor
+  over storage the run does not own — `place_back` four times, `take_front`,
+  `place_back`, `slice_of(&run)`, `view[3_u64]` compiled, linked and read a
+  byte outside the run. The requirement is submitted at every formation and
+  judged under [MSR-4]; the wrapped run is refused citing BLK-0 and the same
+  run drained to empty is accepted. `blk0-neg-a-view-over-a-wrapped-run` is the
+  recorded witness. The hole never reached `main`.
+- CONSEQUENCE, WHAT DID NOT LAND: the two formation spellings stay [OP-1] table
+  rows while the viewable class contains `array<T, N>` and `buffer<T>`, because
+  two declaration domains may not claim one spelling [TYPE-6]; and the child
+  reborrow formed through a *view holder* — `slice_of(&'r deref(destination))`
+  from a `&uniq MutSlice<'r, u8>` parameter — is not implemented, so the
+  fill-and-publish helper is still unwritable and [VIEW-6]'s ceiling half has no
+  positive case. Both are DEFERRED in [META-5] with stated deltas.
+- CONFORMANCE BOUNDARY (B8f): ten added cases, one deleted case, one modified
+  case source whose expectation is unchanged, and no rename.
+  Added:
+  `view1-pos-a-shared-view-is-used-twice-without-move`
+  (`{"kind": "run", "exit": 0}`),
+  `view1-neg-a-move-of-a-shared-view`
+  (`{"kind": "reject", "rule": "OWN-1"}`),
+  `view4-neg-a-set-at-a-view-binding`
+  (`{"kind": "reject", "rule": "VIEW-4"}`),
+  `prov3-pos-an-append-after-a-copy-view-went-dead`
+  (`{"kind": "run", "exit": 0}`),
+  `prov3-neg-an-append-while-a-copy-view-is-still-used`
+  (`{"kind": "reject", "rule": "OWN-5"}`),
+  `view2-pos-a-view-over-a-run`
+  (`{"kind": "run", "exit": 0}`),
+  `blk0-neg-a-view-over-a-wrapped-run`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `view2-pos-a-shared-child-reborrow-of-an-exclusive-view`
+  (`{"kind": "run", "exit": 0}`),
+  `view2-neg-an-element-write-while-a-child-view-lives`
+  (`{"kind": "reject", "rule": "OWN-5"}`) and
+  `view6-neg-two-same-region-view-results`
+  (`{"kind": "reject", "rule": "VIEW-6"}`), each status runnable.
+  Deleted: `view2-neg-a-shared-view-of-a-place-an-exclusive-view-holds`
+  (`{"kind": "reject", "rule": "OWN-5"}`, status runnable), added by B8e in this
+  same unmerged branch and never on `main`. Its refusal held only while this
+  specification stated no child reborrow of a view, which B8e's own record says
+  in those words; [S31] lands that reborrow, so the program it refused is now
+  accepted and is carried by the two cases named above — the positive child
+  reborrow and the element write the child freezes.
+  Modified: `fn1-pos-returned-slice-inputs-run`, source only, expectation
+  `{"kind": "run", "exit": 0}` and status runnable both unchanged.
+  Before this batch the corpus holds 657 cases with the native adapter
+  reporting Pass=654, Xfail=1, Skip=2; after it the corpus holds 666 with the
+  adapter reporting Pass=663, Xfail=1, Skip=2. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the two skips are
+  unchanged in id, expectation and status. Rule coverage stays complete at
+  152/152, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0.
+  No verdict of either corpus moved apart from the one deleted case recorded
+  above, and no program of the executable corpus changed behaviour;
+  `tests/programs/run_views.wf` is added and runs to exit 0.
+ACTIVE-SPEC: v0.45 c0d830f8f4f202d5a5ab0c0c9222893f76ae912ea68542f41bdfb524aa6be26f 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

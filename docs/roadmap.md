@@ -1083,9 +1083,14 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   [VIEW-1] and [VIEW-2] give the language `Slice<'r, T>` and `MutSlice<'r, T>`
   at shared and exclusive loan strength, and [SET-1] admits an element write
   through the exclusive one, so a helper can fill a caller's `buffer<T>` without
-  taking it. `Slice` is still affine, the viewed domain is still `array<T, N>`
-  and `buffer<T>` with the exclusive view over an array an explicit unsupported
-  capability, and neither run is viewable.
+  taking it. The shared view is copy and its loan ends at its last use, the two
+  runs are viewable under the formation rows' own non-wrap requirement, and a
+  shared child reborrow of an exclusive view is admitted with the parent frozen
+  while the child lives. An exclusive view over inline storage — an `array<T, N>`
+  or a `FixedVector<T, n>` — is an explicit unsupported capability, and a view
+  formed through a *view holder* rather than over the viewed place is absent, so
+  a helper handed `&uniq MutSlice<'r, u8>` fills its destination and cannot
+  publish it.
 - **Missing / next:** choose the smallest missing rule only after a real
   project cannot express its required access pattern. The 31-rule loan/freeze
   review candidate and older M1 model are parked evidence, not language

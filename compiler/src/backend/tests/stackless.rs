@@ -329,7 +329,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     region {
       let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
     }
-    let ignored = observe(values: move view);
+    let ignored = observe(values: view);
   }
   return exit_status(code: 0_u8);
 }

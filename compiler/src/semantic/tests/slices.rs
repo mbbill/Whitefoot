@@ -22,7 +22,7 @@ fn first(values: own Slice<u8>) -> result: own u8 reads(values) {
 command fn main() -> status: own ExitStatus pure {
   region {
     let values = slice_of(&bytes);
-    let value = first(values: move values);
+    let value = first(values: values);
   }
   return exit_status(code: 0_u8);
 }
@@ -130,6 +130,14 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [OWN-5, PROV-3] a live loan refuses a write to and a move of its origin,
+/// and a shared view's loan is live exactly while that view is still used.
+///
+/// Every program here uses the view *after* the offending statement, which is
+/// what makes the loan live there. The same programs without that later use
+/// are the accepts `a_copy_view_loan_ends_at_its_last_use` records: [S27]
+/// made the shared view copy, so it is consumed by nothing and its loan ends
+/// at its last use rather than at the end of its named data region.
 #[test]
 fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     assert_rule(
@@ -138,6 +146,7 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
   region {
     let window = slice_of(&values);
     set values[0_u64] = 1_u8;
+    let seen = window[0_u64];
   }
   return exit_status(code: 0_u8);
 }
@@ -151,6 +160,7 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
   region {
     let window = slice_of(&values);
     let taken = move values;
+    let seen = window[0_u64];
   }
   return exit_status(code: 0_u8);
 }
@@ -160,33 +170,51 @@ fn a_live_slice_prevents_writes_and_moves_of_its_source() {
     );
 }
 
+/// [PROV-3, OWN-5] a copy view's loan ends at its last use, and the region
+/// that named it is the ceiling rather than the extent.
+///
+/// Before [S27] every shared loan lived to the end of its named data region,
+/// which is what the two rejections below measured. The classification made
+/// the shared view copy, so it is consumed by nothing and its loan ends where
+/// its own liveness does: a use after the offending statement keeps the loan
+/// live — in an enclosing region and out of a branch alike — and a view with
+/// no later use leaves the storage writable at the next statement.
 #[test]
-fn slice_loans_live_until_their_named_data_region_ends() {
-    assert_rule(
-        br#"command fn main() -> status: own ExitStatus pure {
+fn slice_loans_live_until_their_last_use_inside_their_named_data_region() {
+    // A view formed in an inner block, naming the outer region, is the
+    // program the region extent used to refuse. Its binding cannot be used
+    // after that block at all, so its last use is inside it and the loan
+    // cannot reach the write [PROV-3].
+    let inner_view = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
   region 'outer {
     region {
       let view = slice_of(&'outer values);
+      let seen = view[0_u64];
     }
     set values[0_u64] = 1_u8;
   }
   return exit_status(code: 0_u8);
 }
-"#,
-        SemanticRule::Own5,
-        SemanticIssueKind::BorrowConflict,
-    );
+"#;
+    with_semantics(inner_view, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "a view whose binding is gone has no later use: {outcome:?}"
+        );
+    });
 
     assert_rule(
         br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
   let take_view = True();
   region {
+    let view = slice_of(&values);
     if take_view {
-      let view = slice_of(&values);
+      let seen = view[0_u64];
     }
     set values[0_u64] = 1_u8;
+    let after = view[1_u64];
   }
   return exit_status(code: 0_u8);
 }
@@ -194,6 +222,25 @@ fn slice_loans_live_until_their_named_data_region_ends() {
         SemanticRule::Own5,
         SemanticIssueKind::BorrowConflict,
     );
+
+    // The loan ends at the view's last use, so the write the region used to
+    // refuse is admitted inside that same region [PROV-3].
+    let dead_view = br#"command fn main() -> status: own ExitStatus pure {
+  let values = array_new::<u8, 2>(0_u8);
+  region {
+    let view = slice_of(&values);
+    let seen = view[0_u64];
+    set values[0_u64] = 1_u8;
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(dead_view, |outcome| {
+        assert!(
+            matches!(outcome, SemanticOutcome::Complete(_)),
+            "a copy view's loan must end at its last use: {outcome:?}"
+        );
+    });
 
     let ended_region = br#"command fn main() -> status: own ExitStatus pure {
   let values = array_new::<u8, 2>(0_u8);
@@ -223,6 +270,7 @@ fn slice_loans_follow_structured_break_region_exits() {
       break @once;
     }
     set values[0_u64] = 1_u8;
+    let seen = view[0_u64];
   }
   return exit_status(code: 0_u8);
 }
@@ -286,6 +334,7 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
   region {{
     let view = slice_of(&owner.source);
     let taken = move owner.sibling;
+    let seen = view[0_u64];
   }}
   return exit_status(code: 0_u8);
 }}
@@ -309,6 +358,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   region {{
     let view = slice_of(&owner.source);
     consume(value: move owner.sibling);
+    let seen = view[0_u64];
   }}
   return exit_status(code: 0_u8);
 }}
@@ -343,6 +393,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
       Empty() => {
       }
     }
+    let seen = view[0_u64];
   }
   return exit_status(code: 0_u8);
 }
@@ -366,6 +417,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }} else {{
       give buffer_new(1_u64, 0_u8);
     }}
+    let seen = view[0_u64];
   }}
   return exit_status(code: 0_u8);
 }}
@@ -386,6 +438,7 @@ fn invalid(owner: own Owner) -> result: own Result<unit, Overflow> pure {
   region {
     let view = slice_of(&owner.source);
     let value = propagate owner.result;
+    let seen = view[0_u64];
   }
   return Ok<unit, Overflow>(value: unit);
 }
@@ -559,6 +612,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
   region {
     let view = slice_of(&data);
     let taken = move data;
+    let seen = view[0_u64];
   }
   return exit_status(code: 0_u8);
 }
@@ -589,14 +643,14 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
 #[test]
 fn returned_slices_keep_signature_ceilings_and_substituted_call_origins() {
     let source = br#"fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
-  return move value;
+  return value;
 }
 
 fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   if take_left {
-    return move left;
+    return left;
   } else {
-    return move right;
+    return right;
   }
 }
 
@@ -605,7 +659,7 @@ command fn main() -> status: own ExitStatus pure {
   let right = array_new::<u8, 2>(29_u8);
   region {
     let pass_source = slice_of(&left);
-    let passed = pass(value: move pass_source);
+    let passed = pass(value: pass_source);
     let passed_room = len_of(passed);
     let passed_ok = 0_u64 < passed_room;
     if passed_ok {
@@ -616,7 +670,7 @@ command fn main() -> status: own ExitStatus pure {
     let left_source = slice_of(&left);
     let right_source = slice_of(&right);
     let take_left = False();
-    let selected = choose(take_left: take_left, left: move left_source, right: move right_source);
+    let selected = choose(take_left: take_left, left: left_source, right: right_source);
     let selected_room = len_of(selected);
     let selected_ok = 0_u64 < selected_room;
     if selected_ok {
@@ -687,11 +741,11 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn returned_slice_origins_drive_effects_and_alias_conflicts() {
     let wrapper = br#"fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
-  return move value;
+  return value;
 }
 
 fn first(value: own Slice<u8>) -> result: own u8 reads(value) {
-  let returned = pass(value: move value);
+  let returned = pass(value: value);
   let spare = len_of(returned);
   let ok = 0_u64 < spare;
   if ok {
@@ -715,9 +769,9 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(
         br#"fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   if take_left {
-    return move left;
+    return left;
   } else {
-    return move right;
+    return right;
   }
 }
 
@@ -728,8 +782,9 @@ command fn main() -> status: own ExitStatus pure {
     let left_view = slice_of(&left);
     let right_view = slice_of(&right);
     let take_left = True();
-    let selected = choose(take_left: take_left, left: move left_view, right: move right_view);
+    let selected = choose(take_left: take_left, left: left_view, right: right_view);
     set right[0_u64] = 1_u8;
+    let seen = selected[0_u64];
   }
   return exit_status(code: 0_u8);
 }
@@ -744,7 +799,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 fn wrapper(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
-  return consume(view: move view, output: move output);
+  return consume(view: view, output: move output);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -761,9 +816,9 @@ fn slice_value_matches_and_borrowed_slice_results_are_rejected() {
     assert_rule(
         br#"fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   let selected = if take_left {
-    give move left;
+    give left;
   } else {
-    give move right;
+    give right;
   }
   return move selected;
 }

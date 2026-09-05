@@ -310,17 +310,33 @@ write through an exclusive view of an array would reach the snapshot. That stops
 as the explicit unsupported capability `ExclusiveViewOverArray` rather than
 lowering a write nobody can observe; the shared view over an array is unaffected,
 because a live shared loan refuses every write to its origin and the snapshot and
-the array therefore agree wherever the view is readable. Exclusivity is not a
-clause of its own: the formation takes the borrow
+the array therefore agree wherever the view is readable; a `FixedVector<T, n>`
+is inline storage for the same reason and stops the same way. Exclusivity is not
+a clause of its own: the formation takes the borrow
 its strength names, so a second `mut_slice_of` over one place meets the first
 view's loan and is refused there as an ordinary [OWN-5] conflict, while two
-`slice_of` views of one place are admitted. What is **not** implemented of the
-design's view half is named rather than hidden: `Slice<'r, T>` is still affine,
-because the copy classification would move the verdicts of three recorded
-programs that `move` a view; the viewed domain is still `array<T, N>` and
-`buffer<T>`, so neither run is viewable and the non-wrap premise a run source
-owes has no program to state it over; and the two formation rows are still
-[OP-1] table rows rather than [BLK-0] kernel records.
+`slice_of` views of one place are admitted.
+**The shared view is copy, and its loan ends at its last use.** A `Slice` is
+used bare, a `move` of one is [OWN-1]'s `MoveOfCopy`, and the storage it reaches
+is writable again after that view's last use rather than at the end of its
+region — which is what lets a run be appended to inside the block a view of it
+was formed in. A commit at either view type is [VIEW-4]'s refusal, because a
+copy target would otherwise be displaced with nothing consumed.
+**The two runs are viewable**, and the formation carries the row's own
+requirement `head_of(vector) <= room_of(vector)`, submitted at the call and
+judged under [MSR-4]: a run whose window wraps is refused citing [BLK-0], and one
+drained to empty is accepted. The two formation rows' record data is [BLK-0]'s —
+a viewable operand class, a shared-borrow operand mode, the requirement and four
+published relations — while their spelling stays an [OP-1] table entry until
+`array<T, N>` and `buffer<T>` retire, because two domains may not claim one
+spelling.
+**A shared view of a place a live exclusive view holds is that view's child
+reborrow**: it is admitted, and the parent may not write the elements it views
+until the child's last use. What is **not** implemented of the design's view
+half is named rather than hidden: a view formed through a *view holder* —
+`slice_of(&'r deref(destination))` from a `&uniq MutSlice<'r, u8>` parameter —
+so a helper handed a destination fills it and cannot publish it, which is the
+one shape [VIEW-6]'s ceiling half needs.
 
 Beside them stands one source-surface gap the container library needs and this
 compiler does not have: [MSR-3]'s construct, `set`-target, enum-payload and

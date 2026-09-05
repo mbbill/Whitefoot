@@ -19,7 +19,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let code = 0_u8;
   region {
     let view = slice_of(&bytes);
-    let total = sum(values: move view);
+    let total = sum(values: view);
     if total != 10_u64 {
       set code = 1_u8;
     }
@@ -27,7 +27,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let local = array_new::<u8, 4>(3_u8);
   region {
     let view = slice_of(&local);
-    let total = sum(values: move view);
+    let total = sum(values: view);
     if total != 12_u64 {
       set code = 2_u8;
     }
@@ -35,7 +35,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let runtime = buffer_new(4_u64, 2_u8);
   region {
     let view = slice_of(&runtime);
-    let total = sum(values: move view);
+    let total = sum(values: view);
     if total != 8_u64 {
       set code = 3_u8;
     }
@@ -82,14 +82,14 @@ fn returned_slice_descriptors_execute_without_transferring_storage() {
     let source = br#"const fixed: array<u8, 2> =[7_u8, 13_u8];
 
 fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
-  return move value;
+  return value;
 }
 
 fn choose['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   if take_left {
-    return move left;
+    return left;
   } else {
-    return move right;
+    return right;
   }
 }
 
@@ -116,7 +116,7 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
     let initial = slice_of(&left);
-    let passed = pass(value: move initial);
+    let passed = pass(value: initial);
     let passed_room = len_of(passed);
     if 0_u64 < passed_room {
       let pass_value = passed[0_u64];
@@ -129,7 +129,7 @@ command fn main() -> status: own ExitStatus pure {
     let left_view = slice_of(&left);
     let right_view = slice_of(&right);
     let take_left = False();
-    let selected = choose(take_left: take_left, left: move left_view, right: move right_view);
+    let selected = choose(take_left: take_left, left: left_view, right: right_view);
     let selected_room = len_of(selected);
     if 0_u64 < selected_room {
       let selected_value = selected[0_u64];

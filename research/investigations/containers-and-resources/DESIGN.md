@@ -7609,6 +7609,100 @@ sources, 3 snapshot case sources, 4 `tests/programs` sources, the compiler's emb
 sources, the conformance manifest's own prose and `docs/patterns.md`, and every one of them
 keeps the verdict it recorded.
 
+### 6.0r B8f landed (v0.45)
+
+**The rest of §7's B8, and the one decision the corpus had handed back.** [S27], [PROV-3]'s
+extent, [VIEW-4], [S31]'s child reborrow, [VIEW-6]'s same-region result refusal and the
+viewable run all landed; the fill-and-publish helper did not, and its delta is stated below.
+
+- **[S27] landed, and the three `move`s were respelled rather than the classification
+  dropped** (owner's delegate, 2026-09-05). `Slice<'r, T>` is copy and `MutSlice<'r, T>`
+  stays affine, which is one arm of the checker's ownership classification keyed on the
+  loan strength the type name carries. `fn1-pos-returned-slice-inputs-run` keeps its
+  recorded verdict — `run`, exit 0 — with `move pass_source`, `move left_source`, `move
+  right_source` and its two helpers' `return move` respelled away, and the same respell
+  reached six further conformance cases, three snapshot cases, four `tests/programs`
+  sources and the compiler's embedded test sources. **Every verdict of both corpora is
+  unchanged.** 6.0q's own sentence — that the decision the owner faces is whether those
+  three `move`s are rewritten — is now answered, and this entry supersedes it.
+
+- **A compiler defect the classification uncovered, and it is [EFF-1]'s own sentence.**
+  With the shared view used bare, `fn pass_slice(value: own Slice<'r, u8>) -> result: own
+  Slice<'r, u8>` began exhibiting `reads(value)` and its accepted `pure` row became an
+  [EFF-2] mismatch. [EFF-1] states the answer: a view parameter's effect path names the
+  viewed backing state and not the descriptor, and *merely moving, returning, or
+  structurally repacking that value does not observe it*. The checker attributed a read at
+  every place use of a loan-bearing type, which a consume had hidden because a consume
+  exhibits no read; a read *through* the view is the subscript's own attribution and is
+  untouched. Three place-use paths were narrowed by the predicate rather than by a name.
+
+- **[PROV-3]'s extent is the loan's holder set, and the last use is decided on document
+  order.** A loan now records the bindings that hold it — every binding whose value's
+  origin set names its place, which is the four events the rule enumerates (formation,
+  copy, pass, return) judged once over the set — and a *shared* loan is live at an access
+  exactly while one holder is live and still used at or after that point. Document order is
+  the canonical tree's own path order, so a use in a later statement or a later branch
+  compares greater; the one place document order is not execution order is a loop body, and
+  a use inside the innermost loop body containing the access keeps the loan live. Two
+  conservative arms are stated rather than hidden: a loan **no binding took** keeps
+  [OWN-4]'s region extent, because this checker has no program point between two operands
+  of one statement, and an **exclusive** loan keeps it too, which is the conservative
+  reading of the consume an affine view ends at.
+
+- **[VIEW-4] landed for `set` and is subsumed for `replace`.** A commit at a loan-bearing
+  place is refused unless the same statement's right-hand side consumes the displaced
+  value. The `replace` form is refused by [SET-2]'s region-free target class first, and
+  [DIAG-1] gives the citation to the lower-ranked rule, so `set2-neg-region-bearing-target`
+  keeps its recorded SET-2 verdict and no second case is written for a program that already
+  exists. Retiring that [SET-2] clause into [VIEW-4] would move a recorded verdict and is
+  not done here.
+
+- **The viewable run is where the batch found its soundness hole.** Widening the operand
+  class to the two runs [BLK-1] made the non-wrap premise reachable, and without it the
+  descriptor is one range over a window that is two: `place_back` four times, `take_front`,
+  `place_back`, `slice_of(&run)`, `view[3_u64]` compiled, linked and read a byte the run
+  does not own. The premise is now a declared requirement of the row, written as the
+  difference bound `head_of(vector) <= room_of(vector)` exactly as this file's 2026-09-05
+  correction says it must be, submitted at the formation and judged under [MSR-4]; the
+  wrapped run is refused citing [BLK-0] with the row, the requirement's position in its own
+  list and the instantiated goal, and the same run drained to empty is accepted from the
+  standing `head_of <= cap_of` alone. `blk0-neg-a-view-over-a-wrapped-run` is the witness.
+
+- **The rows are [BLK-0] records and their spelling is not.** §3.S's open item — whether the
+  run joins the existing [OP-1] `slice_of` family or the spelling passes to the kernel
+  domain — is decided as **one family now, the kernel domain at B7b** (owner's delegate,
+  2026-09-05). The record data moved: `KernelShape::Viewable` is the operand class,
+  `KernelMode::Shared` is the borrow mode [BLK-0]'s enumeration lacked, and each row carries
+  the requirement and the four relations a view publishes, judged by the record table's own
+  completeness and consistency tests. The *spelling* stayed, because [BLK-0]'s named
+  argument form would respell about a hundred and twenty live call sites and make fourteen
+  recorded conformance cases MODIFIED for no test of this batch; two domains may not claim
+  one spelling [TYPE-6], so the move lands with [S34]'s retirement of `array` and `buffer`.
+  That is a stated delta in [META-5], not an omission.
+
+- **[S31] landed for the child formed over the viewed place, and B8e's refusal is where its
+  admission went.** An exclusive loan now refuses the unique borrow a second *exclusive*
+  view would take and admits a second *shared* one; the parent is frozen against element
+  writes while the child lives, and resumes at the child's last use, which is [PROV-3]'s
+  extent doing the work. `view2-neg-a-shared-view-of-a-place-an-exclusive-view-holds` is
+  **deleted** and replaced by the positive case and the write refusal, which is the
+  disposition 6.0q predicted in its own words. What did **not** land is the child formed
+  through a *view holder* — `slice_of(&'r deref(destination))` from a `&uniq MutSlice<'r,
+  u8>` parameter — so **the fill-and-publish helper is still unwritable** and [VIEW-6]'s
+  ceiling half has no positive case. Its cost is exactly what 3.S.[S30] records: a helper
+  handed a destination can fill it and cannot publish it, so [VIEW-7]'s `write_once` still
+  takes its source from the function that owns the run. It needs a checked source for a
+  reborrowed descriptor, its lowering, and the call-boundary loan the returned child carries
+  at the caller; none of those is deep, and none of them is one line.
+
+**Verdicts.** The adapter moves from Pass=654 over 657 cases to Pass=663 over 666, the one
+xfail and the two skips unchanged, with coverage complete at 152/152 and the snapshot corpus
+at Pass=491, Flip=0. One case is deleted and ten are added; ten case sources are respelled
+and every one keeps the verdict it recorded. `tests/programs/run_views.wf` is the executable
+witness: a view over a run, the copy view used twice bare, an append after that view's last
+use inside the same region, a drained run viewed, and an exclusive view whose shared child
+reads what the parent wrote.
+
 ### 6.1 What the compiler did in this session
 
 ```text
