@@ -8,7 +8,9 @@ fn demux['r](source: own Slice<'r, u8>) -> (left: own Slice<'r, u8>, right: own 
 
 command fn main() -> status: own ExitStatus pure {
   doc "VIEW-6: an ordered result list containing two results of the same view type at the same formal region is refused at the second result_binding. FN-1's ceiling is stated over the type and the region, so each result would carry every origin the other does and this demux returns two views each of which may alias its whole input. The restructuring is to give each result its own formal region.";
-  let data = array_new::<u8, 2>(13_u8);
+  let data = fixed_vector::<u8, 2>();
+  set data = place_back(vector: move data, value: 13_u8);
+  set data = place_back(vector: move data, value: 13_u8);
   region {
     let window = slice_of(&data);
     let (left, right) = demux(source: window);

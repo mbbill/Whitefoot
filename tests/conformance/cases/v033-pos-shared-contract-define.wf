@@ -1,4 +1,4 @@
-fn bounded_index(values: own array<u8, 8>, index: own u64) -> output: own u64 pure contract {
+fn bounded_index(values: own FixedVector<u8, 8>, index: own u64) -> output: own u64 pure contract {
   define capacity = len_of(values);
   requires index < capacity;
   ensures output < capacity;
@@ -7,7 +7,15 @@ fn bounded_index(values: own array<u8, 8>, index: own u64) -> output: own u64 pu
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 8>(0_u8);
+  let values = fixed_vector::<u8, 8>();
+  set values = place_back(vector: move values, value: 0_u8);
+  set values = place_back(vector: move values, value: 0_u8);
+  set values = place_back(vector: move values, value: 0_u8);
+  set values = place_back(vector: move values, value: 0_u8);
+  set values = place_back(vector: move values, value: 0_u8);
+  set values = place_back(vector: move values, value: 0_u8);
+  set values = place_back(vector: move values, value: 0_u8);
+  set values = place_back(vector: move values, value: 0_u8);
   let output = bounded_index(values: move values, index: 7_u64);
   if output == 7_u64 {
     return exit_status(code: 0_u8);

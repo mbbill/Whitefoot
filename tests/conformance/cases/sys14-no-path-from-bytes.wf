@@ -1,9 +1,9 @@
 command fn main(command.cwd as cwd: own DirectoryRead) -> status: own ExitStatus pure {
-  doc "An entry name reaches source only as bytes [SYS-14]: this specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] while a path value is an inline lease over that snapshot [PATH-1]. The gap is closed by the type system, not by convention, so handing `relative_path` a `buffer<u8>` is a rejection.";
-  let name = buffer_new(3_u64, 0_u8);
-  set name[0_u64] = 97_u8;
-  set name[1_u64] = 98_u8;
-  set name[2_u64] = 99_u8;
+  doc "An entry name reaches source only as bytes [SYS-14]: this specification declares no operation turning an enumerated name into a `HostString` or a `RelativePath`, because a name's backing is not the command-lifetime argument snapshot [HOST-3] while a path value is an inline lease over that snapshot [PATH-1]. The gap is closed by the type system, not by convention, so handing `relative_path` a run of bytes is a rejection.";
+  let name = fixed_vector::<u8, 3>();
+  set name = place_back(vector: move name, value: 97_u8);
+  set name = place_back(vector: move name, value: 98_u8);
+  set name = place_back(vector: move name, value: 99_u8);
   match relative_path(value: move name) {
     Ok(value: path) => {
       return exit_status(code: 7_u8);

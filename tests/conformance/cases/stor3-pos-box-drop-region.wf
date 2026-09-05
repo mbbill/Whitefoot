@@ -1,11 +1,17 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "A box allocated in a region is freed by a compiler-derived drop on the region-exit edge, in reverse declaration order [STOR-3]; surfaced in the elaborated artifact [DIAG-2].";
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "A cell taken at the general store inside a region is released by a compiler-derived walk on the region-exit edge, in reverse declaration order [STOR-3]; surfaced in the elaborated artifact [DIAG-2].";
   region {
-    let b = box_new(9_i32);
-    let v = deref(b);
-    if v == 9_i32 {
-    } else {
-      return exit_status(code: 1_u8);
+    match heap_box(store: &uniq heap, value: 9_i32) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: b) => {
+        let v = deref(b);
+        if v == 9_i32 {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+      }
     }
   }
   return exit_status(code: 0_u8);

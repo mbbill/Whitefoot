@@ -1,41 +1,75 @@
 struct Columns {
-  left: buffer<u64>;
-  right: buffer<u64>;
+  left: Vector<u64>;
+  right: Vector<u64>;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Parallel runtime-length columns are filled, folded, and released through one struct owner; counted-loop range facts discharge the indexing.";
-  let left = buffer_new(6_u64, 0_u64);
-  let right = buffer_new(6_u64, 0_u64);
-  let columns = Columns(left: move left, right: move right);
-  let length = len_of(columns.left);
-  for (fill_index in 0_u64..length) {
-    set columns.left[fill_index] = fill_index;
-    let doubled = fill_index *wrap 2_u64;
-    let right_room = len_of(columns.right);
-    let fill_right_ok = fill_index < right_room;
-    if fill_right_ok {
-      set columns.right[fill_index] = doubled;
-    } else {
-      return exit_status(code: 202_u8);
+  region {
+    match heap_vector::<u64>(store: &uniq heap, count: 6_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: left_fresh) => {
+        let left = move left_fresh;
+        for @build_left (
+          at in 0_u64..6_u64,
+          invariant grown: len_of(left) >= at,
+          invariant spare: room_of(left) + at >= 6_u64,
+          invariant flat: head_of(left) <= 0_u64
+        ) {
+          set left = place_back(vector: move left, value: 0_u64);
+        }
+        region {
+          match heap_vector::<u64>(store: &uniq heap, count: 6_u64) {
+            None() => {
+              return exit_status(code: 71_u8);
+            }
+            Some(value: right_fresh) => {
+              let right = move right_fresh;
+              for @build_right (
+                at in 0_u64..6_u64,
+                invariant grown: len_of(right) >= at,
+                invariant spare: room_of(right) + at >= 6_u64,
+                invariant flat: head_of(right) <= 0_u64
+              ) {
+                set right = place_back(vector: move right, value: 0_u64);
+              }
+              let columns = Columns(left: move left, right: move right);
+              let length = len_of(columns.left);
+              for (fill_index in 0_u64..length) {
+                set columns.left[fill_index] = fill_index;
+                let doubled = fill_index *wrap 2_u64;
+                let right_room = len_of(columns.right);
+                let fill_right_ok = fill_index < right_room;
+                if fill_right_ok {
+                  set columns.right[fill_index] = doubled;
+                } else {
+                  return exit_status(code: 202_u8);
+                }
+              }
+              let total = 0_u64;
+              for (fold_index in 0_u64..length) {
+                let left_value = columns.left[fold_index];
+                let right_room = len_of(columns.right);
+                let fold_right_ok = fold_index < right_room;
+                if fold_right_ok {
+                  let right_value = columns.right[fold_index];
+                  set total = total +wrap left_value;
+                  set total = total +wrap right_value;
+                } else {
+                  return exit_status(code: 203_u8);
+                }
+              }
+              if total == 45_u64 {
+              } else {
+                return exit_status(code: 201_u8);
+              }
+              return exit_status(code: 0_u8);
+            }
+          }
+        }
+      }
     }
   }
-  let total = 0_u64;
-  for (fold_index in 0_u64..length) {
-    let left_value = columns.left[fold_index];
-    let right_room = len_of(columns.right);
-    let fold_right_ok = fold_index < right_room;
-    if fold_right_ok {
-      let right_value = columns.right[fold_index];
-      set total = total +wrap left_value;
-      set total = total +wrap right_value;
-    } else {
-      return exit_status(code: 203_u8);
-    }
-  }
-  if total == 45_u64 {
-  } else {
-    return exit_status(code: 201_u8);
-  }
-  return exit_status(code: 0_u8);
 }

@@ -1,7 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "VIEW-4: a commit at a loan-bearing place is admitted exactly when the displaced value is consumed by the same statement's right-hand side. A set at a Slice binding consumes nothing ,  LIV-2 makes a copy target dead at the commit ,  so the displaced view's loan would outlive the descriptor whose place it was held from, and the rejection is at the complete target place with the restructuring to bind a new view under a new let.";
-  let left = array_new::<u8, 2>(11_u8);
-  let right = array_new::<u8, 2>(29_u8);
+  let left = fixed_vector::<u8, 2>();
+  set left = place_back(vector: move left, value: 11_u8);
+  set left = place_back(vector: move left, value: 11_u8);
+  let right = fixed_vector::<u8, 2>();
+  set right = place_back(vector: move right, value: 29_u8);
+  set right = place_back(vector: move right, value: 29_u8);
   region {
     let window = slice_of(&left);
     set window = slice_of(&right);

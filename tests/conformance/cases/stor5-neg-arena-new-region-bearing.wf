@@ -1,8 +1,19 @@
-fn invalid['storage](value: own Slice<u8>) -> function_result: own unit allocates(arena 'storage) {
-  arena_new::<'storage, Slice<u8>>(value);
-  return unit;
-}
-
 command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
+  doc "A take at a bump extent cannot hide a direct slice in extent-resident content; STOR-5 owns the region-bearing content rejection before unsupported extent execution or lowering matters.";
+  let data = fixed_vector::<u8, 2>();
+  set data = place_back(vector: move data, value: 11_u8);
+  region 'r {
+    let workspace = arena_frame::<64, 8, 'r>();
+    region {
+      let window = slice_of(&data);
+      match arena_box(store: &uniq workspace, value: window) {
+        Ok(value: cell) => {
+          return exit_status(code: 1_u8);
+        }
+        Err(error: back) => {
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
 }

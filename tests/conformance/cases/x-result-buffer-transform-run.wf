@@ -2,62 +2,73 @@ enum DecodeError {
   ZeroByte();
 }
 
-fn transform(input: own buffer<u8>) -> function_result: own Result<buffer<u8>, DecodeError> reads(input) {
-  let length = len_of(input);
-  let output = buffer_new(length, 0_u8);
+fn transform<const n: u64>(input: own FixedVector<u8, n>) -> function_result: own Result<FixedVector<u8, n>, DecodeError> reads(input) contract {
+  requires len_of(input) >= n;
+} {
+  let output = fixed_vector::<u8, n>();
+  for @build (
+    at in 0_u64..n,
+    invariant grown: len_of(output) >= at,
+    invariant spare: room_of(output) + at >= n,
+    invariant flat: head_of(output) <= 0_u64
+  ) {
+    set output = place_back(vector: move output, value: 0_u8);
+  }
+  let length = len_of(output);
   for (offset in 0_u64..length) {
     let byte = input[offset];
     let zero = byte == 0_u8;
     if zero {
       let error = ZeroByte();
-      return Err<buffer<u8>, DecodeError>(error: error);
+      return Err<FixedVector<u8, n>, DecodeError>(error: error);
     } else {
       let transformed = byte +wrap 1_u8;
       set output[offset] = transformed;
     }
   }
-  return Ok<buffer<u8>, DecodeError>(value: move output);
+  return Ok<FixedVector<u8, n>, DecodeError>(value: move output);
 }
 
-fn abandon(result: own Result<buffer<u8>, DecodeError>) -> function_result: own unit pure {
+fn abandon<const n: u64>(result: own Result<FixedVector<u8, n>, DecodeError>) -> function_result: own unit pure {
   return unit;
 }
 
-fn success_matches(value: &buffer<u8>) -> result: own Bool reads(value) {
-  let length = len_of(deref(value));
+fn success_matches(value: own FixedVector<u8, 3>) -> result: own Bool reads(value) {
+  let length = len_of(value);
   let expected_length = length == 3_u64;
   if expected_length {
   } else {
     return False();
   }
-  let first = deref(value)[0_u64];
-  let middle = deref(value)[1_u64];
+  let first = value[0_u64];
+  let middle = value[1_u64];
   let first_expected = first == 2_u8;
   let middle_expected = middle == 5_u8;
   return band(first_expected, middle_expected);
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let success_input = buffer_new(3_u64, 1_u8);
-  set success_input[1_u64] = 4_u8;
-  let success = transform(input: move success_input);
+  let success_input = fixed_vector::<u8, 3>();
+  set success_input = place_back(vector: move success_input, value: 1_u8);
+  set success_input = place_back(vector: move success_input, value: 4_u8);
+  set success_input = place_back(vector: move success_input, value: 1_u8);
+  let success = transform::<3>(input: move success_input);
   match move success {
     Ok(value: transformed) => {
-      region {
-        let matches = success_matches(value: &transformed);
-        if matches {
-        } else {
-          return exit_status(code: 1_u8);
-        }
+      let matches = success_matches(value: move transformed);
+      if matches {
+      } else {
+        return exit_status(code: 1_u8);
       }
     }
     Err(error: success_error) => {
       return exit_status(code: 2_u8);
     }
   }
-  let failure_input = buffer_new(2_u64, 8_u8);
-  set failure_input[1_u64] = 0_u8;
-  let failure = transform(input: move failure_input);
+  let failure_input = fixed_vector::<u8, 2>();
+  set failure_input = place_back(vector: move failure_input, value: 8_u8);
+  set failure_input = place_back(vector: move failure_input, value: 0_u8);
+  let failure = transform::<2>(input: move failure_input);
   match move failure {
     Ok(value: failure_value) => {
       return exit_status(code: 3_u8);
@@ -69,11 +80,13 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
-  let abandoned_input = buffer_new(1_u64, 6_u8);
-  let abandoned = transform(input: move abandoned_input);
-  abandon(result: move abandoned);
-  let abandoned_error_input = buffer_new(1_u64, 0_u8);
-  let abandoned_error = transform(input: move abandoned_error_input);
-  abandon(result: move abandoned_error);
+  let abandoned_input = fixed_vector::<u8, 1>();
+  set abandoned_input = place_back(vector: move abandoned_input, value: 6_u8);
+  let abandoned = transform::<1>(input: move abandoned_input);
+  abandon::<1>(result: move abandoned);
+  let abandoned_error_input = fixed_vector::<u8, 1>();
+  set abandoned_error_input = place_back(vector: move abandoned_error_input, value: 0_u8);
+  let abandoned_error = transform::<1>(input: move abandoned_error_input);
+  abandon::<1>(result: move abandoned_error);
   return exit_status(code: 0_u8);
 }

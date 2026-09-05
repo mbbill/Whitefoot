@@ -1,19 +1,28 @@
 linear struct Chunk {
-  page: buffer<u8>;
+  page: Vector<u8>;
   spare: u8;
 }
 
-fn exchange(taken: own buffer<u8>) -> given: own buffer<u8> pure {
+fn exchange(taken: own Vector<u8>) -> given: own Vector<u8> pure {
   doc "Hands the run back, which is what makes the read-out a commit rather than an abandonment.";
   return move taken;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "PROV-6: the exception the partial-consume refusal is stated with. A [LIV-2] target list every member of which is reinitialised at that statement's one commit leaves no residual, so the refusal does not reach it; every other consume of a sub-place of a linear value does.";
-  let run = buffer_new(4_u64, 0_u8);
-  let chunk = Chunk(page: move run, spare: 5_u8);
-  set chunk.page = exchange(taken: move chunk.page);
-  let Chunk(page: page, spare: spare) = move chunk;
-  dispose page;
-  return exit_status(code: spare);
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let run = move fresh;
+        let chunk = Chunk(page: move run, spare: 5_u8);
+        set chunk.page = exchange(taken: move chunk.page);
+        let Chunk(page: page, spare: spare) = move chunk;
+        dispose page;
+        return exit_status(code: spare);
+      }
+    }
+  }
 }

@@ -14,7 +14,9 @@ fn first_byte(window: own Slice<u8>) -> byte: own u8 reads(window) {
 
 command fn main() -> status: own ExitStatus pure {
   doc "VIEW-1 makes Slice copy, so a shared view is used bare and every use is a second shared loan on the same range, which OWN-5 admits without limit. The program forms one view, hands it to a helper twice with no move, reads its own length after both calls, and observes the same byte each time.";
-  let data = array_new::<u8, 2>(13_u8);
+  let data = fixed_vector::<u8, 2>();
+  set data = place_back(vector: move data, value: 13_u8);
+  set data = place_back(vector: move data, value: 13_u8);
   region {
     let window = slice_of(&data);
     let once = first_byte(window: window);
