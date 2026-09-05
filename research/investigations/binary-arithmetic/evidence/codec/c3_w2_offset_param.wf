@@ -1,0 +1,47 @@
+fn table_byte(data: own buffer<u8>, offset: own u64) -> value: own u8 reads(data) contract {
+  define room = len(data);
+  requires offset < room;
+} {
+  doc "W2: the accessor takes an already-formed offset and keeps its plain u8 result; the contract CAN state offset < len(data) because both sides are terms.";
+  return data[offset];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "the caller still has to form index * record_width and prove it in range, so the guard and its dead edge move here rather than disappearing";
+  let table = buffer_new(12_u64, 0_u8);
+  set table[7_u64] = 42_u8;
+  let record_width = 3_u64;
+  let index = 2_u64;
+  let field = 1_u64;
+  let room = len(table);
+  let base = index * record_width;
+  let start_ok = base <= room;
+  if start_ok {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let left = room - base;
+  let record_ok = record_width <= left;
+  if record_ok {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  let field_ok = field < record_width;
+  if field_ok {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  invariant slot_in_room: base + field < room;
+  let at = base + field;
+  let at_in_room = at < room;
+  if at_in_room {
+  } else {
+    return exit_status(code: 6_u8);
+  }
+  let value = table_byte(data: move table, offset: at);
+  if value == 42_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

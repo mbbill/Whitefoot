@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "FACE B workaround: dominating branches bound each operand, then the exact product is admitted.";
+  let config = buffer_new(2_u64, 4_u32);
+  let count = config[0_u64];
+  let width = config[1_u64];
+  let count_ok = count <= 1000_u32;
+  if count_ok {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let width_ok = width <= 64_u32;
+  if width_ok {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let bytes = count * width;
+  if bytes == 16_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

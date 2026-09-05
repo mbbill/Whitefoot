@@ -1,0 +1,25 @@
+TOTAL .wf files scanned: 1229
+TOTAL nonliteral<op>nonliteral SITES: 62
+DISTINCT FILES: 21
+
+    1  research/experiments/io-completion-bench/programs/many_files_loop.wf
+    1  research/experiments/io-completion-bench/programs/many_files_narrow.wf
+    4  research/experiments/io-completion-bench/programs/many_files_wide.wf
+    8  research/experiments/io-completion-bench/programs/many_files_wide8.wf
+    8  research/experiments/io-completion-bench/programs/read_heavy_narrow.wf
+    8  research/experiments/io-completion-bench/programs/read_heavy_narrow_4k.wf
+    8  research/experiments/io-completion-bench/programs/read_heavy_wide8.wf
+    8  research/experiments/io-completion-bench/programs/read_heavy_wide8_4k.wf
+    1  tests/conformance/cases/gram9-pos-three-address.wf
+    1  tests/conformance/cases/x-arith-loop-checked-multiply-overflow.wf
+    1  tests/conformance/cases/x-integ-loop-product-checked-overflow.wf
+    1  tests/snapshot/cases/arithmetic-domain/arithmetic-domain__writer-r1__11_mul_checked_result.wf
+    1  tests/snapshot/cases/arithmetic-domain/arithmetic-domain__writer-r1__13_cvt_widen_signed_then_mul.wf
+    1  tests/snapshot/cases/cursor-loops/cursor-loops__writer-r1__04_two_cursor_dot_product.wf
+    1  tests/snapshot/cases/cursor-loops/cursor-loops__writer-r2__p09_labelled_break_grid_search.wf
+    1  tests/snapshot/cases/indexing/indexing__writer-r1__grid_index.wf
+    4  tests/snapshot/cases/indexing/indexing__writer-r2__06_row_col_from_flat_index.wf
+    1  tests/snapshot/cases/kills/kills__writer-r2__06_chain_middle_replace.wf
+    1  tests/snapshot/cases/real-programs/real-programs__writer-r1__fir_window_sum.wf
+    1  tests/snapshot/cases/signed/signed__writer-r1__p05_signed_div_rem_negative.wf
+    1  tests/snapshot/cases/signed/signed__writer-r2__10_i16_checked_multiply.wf

@@ -1,0 +1,55 @@
+fn transpose(src: &buffer<u8>, dst: &uniq buffer<u8>, width: own u64, height: own u64) -> moved: own u64 reads(src, dst), writes(dst) {
+  doc "ATTEMPT: hoist the destination bound out of the inner loop as a header invariant. Expected to fail: the backedge needs dst_off + height < dcap.";
+  let scap = len(deref(src));
+  let dcap = len(deref(dst));
+  let moved = 0_u64;
+  let src_base = 0_u64;
+  let src_left = scap;
+  for (
+    r in 0_u64..height,
+    invariant s_lo: src_base + src_left <= scap,
+    invariant s_hi: scap <= src_base + src_left
+  ) {
+    let row_ok = width <= src_left;
+    if row_ok {
+    } else {
+      return moved;
+    }
+    invariant row_fits: src_base + width <= scap;
+    let start_ok = r < dcap;
+    if start_ok {
+    } else {
+      return moved;
+    }
+    let dst_off = r;
+    for (
+      c in 0_u64..width,
+      invariant dbound: dst_off < dcap
+    ) {
+      invariant sidx: src_base + c < scap;
+      let src_at = src_base + c;
+      let byte = deref(src)[src_at];
+      set deref(dst)[dst_off] = byte;
+      set dst_off = dst_off +wrap height;
+      set moved = moved +wrap 1_u64;
+    }
+    set src_base = src_base + width;
+    set src_left = src_left - width;
+  }
+  return moved;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let src = buffer_new(12_u64, 7_u8);
+  let dst = buffer_new(12_u64, 0_u8);
+  region {
+    let s = &src;
+    let d = &uniq dst;
+    let moved = transpose(src: s, dst: move d, width: 4_u64, height: 3_u64);
+    if moved == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

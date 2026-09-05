@@ -1,0 +1,31 @@
+fn transpose(src: &buffer<u8>, dst: &uniq buffer<u8>, width: own u64, height: own u64) -> done: own u64 reads(src), writes(dst) {
+  doc "NATURAL: transpose a width x height 8-bit image into a height x width one.";
+  let moved = 0_u64;
+  for (r in 0_u64..height) {
+    for (c in 0_u64..width) {
+      let src_row = r * width;
+      let src_at = src_row + c;
+      let dst_row = c * height;
+      let dst_at = dst_row + r;
+      let byte = deref(src)[src_at];
+      set deref(dst)[dst_at] = byte;
+      set moved = moved +wrap 1_u64;
+    }
+  }
+  return moved;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let src = buffer_new(12_u64, 7_u8);
+  let dst = buffer_new(12_u64, 0_u8);
+  region {
+    let s = &src;
+    let d = &uniq dst;
+    let moved = transpose(src: s, dst: move d, width: 4_u64, height: 3_u64);
+    if moved == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

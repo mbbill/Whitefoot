@@ -1,0 +1,23 @@
+fn grid_get(cells: own buffer<u8>, width: own u64, height: own u64, row: own u64, col: own u64) -> value: own u8 reads(cells) contract {
+  define capacity = width *wrap height;
+  requires row < height;
+  requires col < width;
+  requires capacity <= len(cells);
+} {
+  doc "PROBE 2: put the nonlinear product in a `define` (as output-capacity-lockstep does for groups *wrap 3_u64), then requires the define name (a bare atom) against len(cells). Tests whether `define` admits a genuine two-nonliteral-parameter * at all, bare (not *wrap/*checked).";
+  let row_base = row * width;
+  let at = row_base + col;
+  let byte = cells[at];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let cells = buffer_new(12_u64, 0_u8);
+  set cells[9_u64] = 99_u8;
+  let found = grid_get(cells: move cells, width: 4_u64, height: 3_u64, row: 2_u64, col: 1_u64);
+  if found == 99_u8 {
+    return exit_status(code: 0_u8);
+  } else {
+    return exit_status(code: 1_u8);
+  }
+}

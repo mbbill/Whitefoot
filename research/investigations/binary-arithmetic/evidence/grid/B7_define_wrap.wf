@@ -1,0 +1,27 @@
+fn image_sum(pixels: &buffer<u8>, width: own u64, height: own u64) -> total: own u64 reads(pixels) contract {
+  define area = width *wrap height;
+  requires area <= len(deref(pixels));
+} {
+  let capacity = len(deref(pixels));
+  let has_one = 0_u64 < capacity;
+  if has_one {
+  } else {
+    return 0_u64;
+  }
+  let first = deref(pixels)[0_u64];
+  let wide = cvt::<u8, u64>(first);
+  return wide;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let pixels = buffer_new(12_u64, 1_u8);
+  region {
+    let p = &pixels;
+    let total = image_sum(pixels: p, width: 4_u64, height: 3_u64);
+    if total == 1_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

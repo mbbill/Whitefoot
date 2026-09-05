@@ -1,0 +1,17 @@
+fn flat(row: own u64, width: own u64) -> at: own u64 pure contract {
+  requires row <= 1024_u64;
+  requires width <= 1024_u64;
+} {
+  doc "FACE B PROBE: row and width are both proved <= 1024, so row * width <= 2^20.";
+  let at = row * width;
+  return at;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = flat(row: 2_u64, width: 4_u64);
+  if v == 8_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

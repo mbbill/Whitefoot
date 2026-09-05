@@ -1,0 +1,25 @@
+fn record_byte(data: own buffer<u8>, record_width: own u64, index: own u64, field: own u64) -> value: own u8 reads(data) contract {
+  define room = len(data);
+  requires record_width >= 1_u64;
+  requires record_width <= 64_u64;
+  requires index <= 65535_u64;
+  requires field < record_width;
+  requires room >= record_width;
+} {
+  doc "NATURAL: read one field of record `index` from a fixed-width record table; the caller has already validated that the table holds `index` records.";
+  let base = index * record_width;
+  let at = base + field;
+  return data[at];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "binary-search style random probe into a 4-record, 3-byte-per-record table";
+  let table = buffer_new(12_u64, 0_u8);
+  set table[7_u64] = 42_u8;
+  let value = record_byte(data: move table, record_width: 3_u64, index: 2_u64, field: 1_u64);
+  if value == 42_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

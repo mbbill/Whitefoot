@@ -1,0 +1,18 @@
+fn flat(row: own u64, width: own u64) -> at: own u64 pure contract {
+  requires row <= 65536_u64;
+  requires width <= 65536_u64;
+} {
+  doc "PROBE: can the writer restate the product result's magnitude as a local invariant?";
+  let base = row * width;
+  invariant small: base <= 4294967296_u64;
+  return base;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = flat(row: 2_u64, width: 4_u64);
+  if v == 8_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

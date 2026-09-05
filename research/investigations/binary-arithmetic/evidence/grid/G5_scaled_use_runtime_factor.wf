@@ -1,0 +1,19 @@
+fn probe(p: own u64, k: own u64, n: own u64, bcap: own u64) -> ok: own u64 pure contract {
+  requires p < k;
+} {
+  doc "ATTEMPT: scale a premise by the runtime stride n. [PRF-1] admits only an integer-literal factor.";
+  let step = 0_u64;
+  invariant reach: step <= bcap {
+    use n * (p < k);
+  }
+  return step;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = probe(p: 1_u64, k: 2_u64, n: 3_u64, bcap: 9_u64);
+  if v == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

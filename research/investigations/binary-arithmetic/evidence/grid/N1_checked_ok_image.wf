@@ -1,0 +1,26 @@
+fn probe(base: own u64, span: own u64, capacity: own u64) -> ok: own u64 pure {
+  doc "PROBE: does the Ok payload of a checked add denote base + span, so a later compare against capacity proves base + span <= capacity?";
+  match base +checked span {
+    Ok(value: e) => {
+      let fits = e <= capacity;
+      if fits {
+      } else {
+        return 0_u64;
+      }
+      invariant reach: base + span <= capacity;
+      return e;
+    }
+    Err(error: overflow) => {
+      return 0_u64;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = probe(base: 2_u64, span: 3_u64, capacity: 10_u64);
+  if v == 5_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

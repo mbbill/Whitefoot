@@ -1,0 +1,50 @@
+const b64_alphabet: array<u8, 64> =[65_u8, 66_u8, 67_u8, 68_u8, 69_u8, 70_u8, 71_u8, 72_u8, 73_u8, 74_u8, 75_u8, 76_u8, 77_u8, 78_u8, 79_u8, 80_u8, 81_u8, 82_u8, 83_u8, 84_u8, 85_u8, 86_u8, 87_u8, 88_u8, 89_u8, 90_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8, 103_u8, 104_u8, 105_u8, 106_u8, 107_u8, 108_u8, 109_u8, 110_u8, 111_u8, 112_u8, 113_u8, 114_u8, 115_u8, 116_u8, 117_u8, 118_u8, 119_u8, 120_u8, 121_u8, 122_u8, 48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 43_u8, 47_u8];
+
+fn base64_encode(src: own buffer<u8>) -> out: own buffer<u8> reads(src), allocates(heap) contract {
+  define count = len(src);
+  requires count <= 1000000_u64;
+} {
+  doc "C6: base64 encoder; capacity is ceil(n/3)*4, so the natural capacity math is one division and one multiplication by source literals.";
+  let count = len(src);
+  let padded = count + 2_u64;
+  let groups = padded / 3_u64;
+  let out_length = groups * 4_u64;
+  let out = buffer_new(out_length, 61_u8);
+  for (g in 0_u64..groups) {
+    let source_at = g * 3_u64;
+    let dest_at = g * 4_u64;
+    invariant group_start: 3_u64 * g < count {
+      use 3 * (g < groups);
+      use 3_u64 * groups <= padded;
+    }
+    let byte0 = src[source_at];
+    let shifted0 = ishr(byte0, 2_u32);
+    let sextet0 = iand(shifted0, 63_u8);
+    let high = cvt::<u8, u64>(sextet0);
+    let high_digit = b64_alphabet[high];
+    invariant dest_slot: 4_u64 * g < out_length {
+      use 4 * (g < groups);
+    }
+    set out[dest_at] = high_digit;
+  }
+  return move out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "encode three bytes into one group";
+  let src = buffer_new(3_u64, 0_u8);
+  set src[0_u64] = 77_u8;
+  let encoded = base64_encode(src: move src);
+  let produced = len(encoded);
+  let long_enough = produced >= 4_u64;
+  if long_enough {
+  } else {
+    return exit_status(code: 9_u8);
+  }
+  let d0 = encoded[0_u64];
+  if d0 == 84_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
