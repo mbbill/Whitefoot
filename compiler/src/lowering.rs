@@ -291,11 +291,24 @@ const fn lower_release_class(value: crate::semantic::CheckedReleaseClass) -> IrR
     }
 }
 
-fn lower_element(value: CheckedElement) -> Result<IrElement, LoweringFailure> {
+/// One nominal's lowered identity, read through the region erasure
+/// [S20, PROV-1]: two instances of one declaration that differ only in their
+/// region arguments are two checked types and one IR nominal.
+fn erased_nominal(erasure: &[IrNominalId], id: crate::NominalId) -> IrNominalId {
+    erasure
+        .get(id.0 as usize)
+        .copied()
+        .unwrap_or(IrNominalId(id.0))
+}
+
+fn lower_element(
+    erasure: &[IrNominalId],
+    value: CheckedElement,
+) -> Result<IrElement, LoweringFailure> {
     Ok(match value {
-        CheckedElement::Flat(element) => IrElement::Flat(lower_flat_element(element)?),
+        CheckedElement::Flat(element) => IrElement::Flat(lower_flat_element(erasure, element)?),
         CheckedElement::FixedVector { element, length } => IrElement::FixedVector {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
             length: match length.value() {
                 Some(value) => value,
                 None => return Err(LoweringFailure::InvalidCheckedProgram),
@@ -304,13 +317,16 @@ fn lower_element(value: CheckedElement) -> Result<IrElement, LoweringFailure> {
         CheckedElement::Vector {
             element, release, ..
         } => IrElement::Vector {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
             release: lower_release_class(release),
         },
     })
 }
 
-const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, LoweringFailure> {
+fn lower_flat_element(
+    erasure: &[IrNominalId],
+    value: CheckedFlatElement,
+) -> Result<IrFlatElement, LoweringFailure> {
     Ok(match value {
         CheckedFlatElement::Unit => IrFlatElement::Unit,
         CheckedFlatElement::Bool => IrFlatElement::Bool,
@@ -329,12 +345,14 @@ const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, 
         CheckedFlatElement::GenericFloat(_) => {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        CheckedFlatElement::TagOnlyNominal(id) => IrFlatElement::TagOnlyNominal(IrNominalId(id.0)),
-        CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(IrNominalId(id.0)),
+        CheckedFlatElement::TagOnlyNominal(id) => {
+            IrFlatElement::TagOnlyNominal(erased_nominal(erasure, id))
+        }
+        CheckedFlatElement::Nominal(id) => IrFlatElement::Nominal(erased_nominal(erasure, id)),
     })
 }
 
-fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
+fn lower_type(erasure: &[IrNominalId], value: CheckedType) -> Result<IrType, LoweringFailure> {
     Ok(match value {
         CheckedType::Unit => IrType::Unit,
         CheckedType::Bool => IrType::Bool,
@@ -348,21 +366,21 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
         CheckedType::Generic(_) | CheckedType::GenericInt(_) | CheckedType::GenericFloat(_) => {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
-        CheckedType::Nominal(id) => IrType::Nominal(IrNominalId(id.0)),
+        CheckedType::Nominal(id) => IrType::Nominal(erased_nominal(erasure, id)),
         CheckedType::Array { element, length } => IrType::Array {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
             length: length
                 .value()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
         },
         CheckedType::Buffer { element } => IrType::Buffer {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
         },
         CheckedType::Slice { element, .. } => IrType::Slice {
-            element: lower_flat_element(element)?,
+            element: lower_flat_element(erasure, element)?,
         },
         CheckedType::FixedVector { element, length } => IrType::FixedVector {
-            element: lower_element(element)?,
+            element: lower_element(erasure, element)?,
             length: length
                 .value()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
@@ -371,7 +389,7 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
             element, release, ..
         } => IrType::Vector {
             release: lower_release_class(release),
-            element: lower_element(element)?,
+            element: lower_element(erasure, element)?,
         },
         CheckedType::Heap { .. } | CheckedType::Extent { .. } => IrType::Provider,
     })
@@ -498,12 +516,10 @@ pub enum IrEnumType {
     Nominal(IrNominalId),
 }
 
-impl From<CheckedEnumType> for IrEnumType {
-    fn from(value: CheckedEnumType) -> Self {
-        match value {
-            CheckedEnumType::Bool => Self::Bool,
-            CheckedEnumType::Nominal(id) => Self::Nominal(IrNominalId(id.0)),
-        }
+fn lower_enum_type(erasure: &[IrNominalId], value: CheckedEnumType) -> IrEnumType {
+    match value {
+        CheckedEnumType::Bool => IrEnumType::Bool,
+        CheckedEnumType::Nominal(id) => IrEnumType::Nominal(erased_nominal(erasure, id)),
     }
 }
 

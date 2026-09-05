@@ -11,7 +11,7 @@ impl IrBuilder<'_> {
         source: &CheckedSliceSource,
         expected_element: CheckedFlatElement,
     ) -> Result<IrValueId, LoweringFailure> {
-        let element = lower_flat_element(expected_element)?;
+        let element = lower_flat_element(self.erasure, expected_element)?;
         let operation = match source {
             CheckedSliceSource::Array { root, length } => {
                 let (array, ty) = self.array_root(root)?;
@@ -68,7 +68,7 @@ impl IrBuilder<'_> {
         target_domain: CheckedTargetDomainObligation,
     ) -> Result<IrValueId, LoweringFailure> {
         let slice = self.slice_root(root)?;
-        let element = lower_flat_element(root.element)?;
+        let element = lower_flat_element(self.erasure, root.element)?;
         let offset = self.expression(offset)?;
         if self.value_type(offset)?
             != (IrType::Integer {
@@ -92,7 +92,7 @@ impl IrBuilder<'_> {
         let slice = self.binding_value(root.binding)?;
         if self.value_type(slice)?
             != (IrType::Slice {
-                element: lower_flat_element(root.element)?,
+                element: lower_flat_element(self.erasure, root.element)?,
             })
         {
             return Err(LoweringFailure::InvalidCheckedProgram);

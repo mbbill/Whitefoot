@@ -66,6 +66,17 @@ pub(super) enum GenericArgument {
 #[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
 pub(super) struct GenericSubstitution {
     bindings: Vec<(DeclarationId, GenericArgument)>,
+    /// [S20, PROV-1] the region axis of one nominal instance: each
+    /// `region_params` member of the owning declaration bound to the actual
+    /// region this instance names.
+    ///
+    /// A nominal's region parameters are components of its type name
+    /// [TYPE-2], so two instances of one declaration at two regions are two
+    /// types and the instance key carries them beside the type and const
+    /// arguments. A function's region parameters are not in this axis: a call
+    /// substitutes them positionally from its own actuals [FORM-8] and mints
+    /// no second signature for a second region.
+    regions: Vec<(DeclarationId, DeclarationId)>,
 }
 
 /// Nominal-arena-independent identity for a concrete substitution discovered
@@ -74,6 +85,7 @@ pub(super) struct GenericSubstitution {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct StableGenericSubstitution {
     bindings: Vec<(DeclarationId, StableGenericArgument)>,
+    regions: Vec<(DeclarationId, DeclarationId)>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -190,11 +202,32 @@ impl GenericSubstitution {
                 return Err(SemanticCompilerFailure::InvalidResolution);
             }
         }
-        Ok(Self { bindings })
+        Ok(Self {
+            bindings,
+            regions: Vec::new(),
+        })
+    }
+
+    /// The same substitution carrying one nominal's region axis [S20].
+    pub(super) fn with_regions(mut self, regions: Vec<(DeclarationId, DeclarationId)>) -> Self {
+        self.regions = regions;
+        self
     }
 
     pub(super) fn len(&self) -> usize {
         self.bindings.len()
+    }
+
+    /// The actual region one formal region parameter of the owning nominal
+    /// denotes in this instance [S20, PROV-1].
+    pub(super) fn region_argument(&self, declaration: DeclarationId) -> Option<DeclarationId> {
+        self.regions
+            .iter()
+            .find_map(|(formal, actual)| (*formal == declaration).then_some(*actual))
+    }
+
+    pub(super) fn region_arguments(&self) -> &[(DeclarationId, DeclarationId)] {
+        &self.regions
     }
 
     pub(super) fn type_argument(&self, declaration: DeclarationId) -> Option<CheckedType> {
@@ -658,7 +691,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .get(id.0 as usize)
                     .is_some_and(|instance| instance.substitution == substitution)
             })
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn instantiate_function_signature(
@@ -1172,7 +1205,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             bindings.push((*declaration, stable));
         }
-        Ok(Some(StableGenericSubstitution { bindings }))
+        Ok(Some(StableGenericSubstitution {
+            bindings,
+            regions: substitution.regions.clone(),
+        }))
     }
 
     fn stabilize_concrete_type(
@@ -1191,7 +1227,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         visiting: &mut HashSet<NominalId>,
     ) -> Result<StableCheckedType, CheckStop> {
         self.stabilize_type(ty, nominal_checkpoint, visiting, true)?
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn stabilize_type(
@@ -1413,7 +1449,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             bindings.push((*declaration, stable));
         }
-        Ok(Some(StableGenericSubstitution { bindings }))
+        Ok(Some(StableGenericSubstitution {
+            bindings,
+            regions: substitution.regions.clone(),
+        }))
     }
 
     fn stabilize_element(
@@ -1526,7 +1565,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             bindings.push((*declaration, argument));
         }
-        GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+        GenericSubstitution::from_bindings(bindings)
+            .map(|reified| reified.with_regions(substitution.regions.clone()))
+            .map_err(CheckStop::Compiler)
     }
 
     fn reify_concrete_type(&mut self, ty: &StableCheckedType) -> Result<CheckedType, CheckStop> {
@@ -1739,6 +1780,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             })
             .collect();
         GenericSubstitution::from_bindings(bindings).map_err(CheckStop::Compiler)
+    }
+
+    /// The symbolic instance of one nominal template: every type and const
+    /// parameter stands for itself, and so does every region parameter
+    /// [S20]. It is the instance a declaration is judged once at, before any
+    /// concrete instance exists.
+    pub(super) fn symbolic_nominal_substitution(
+        &self,
+        parameters: &[GenericParameter],
+        region_parameters: &[DeclarationId],
+    ) -> Result<GenericSubstitution, CheckStop> {
+        Ok(self
+            .symbolic_generic_substitution(parameters)?
+            .with_regions(
+                region_parameters
+                    .iter()
+                    .map(|region| (*region, *region))
+                    .collect(),
+            ))
     }
 
     fn reject_generic_call_cycles(&self) -> Result<(), CheckStop> {
@@ -2131,19 +2191,114 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             caller,
             true,
             SemanticRule::Fn2,
+            0,
         )
     }
 
+    /// One nominal instance's complete argument list: its region arguments,
+    /// then its type and const arguments [S20, TYPE-5, FORM-8].
+    ///
+    /// A nominal's region parameters are components of its type name, so a
+    /// `type` and a `construct` alike write them, as the leading members of
+    /// the same `targs` list its type and const arguments follow — the
+    /// spelling the two runs and the two providers already use. They are
+    /// written on exactly the ground [TYPE-5] gives a construct's type
+    /// arguments: construction consults no expected nominal type, so nothing
+    /// but the written arguments fixes the instance.
     pub(super) fn nominal_generic_substitution(
         &self,
         node: NodeId,
         parameters: &[GenericParameter],
+        region_parameters: &[DeclarationId],
         caller: &GenericSubstitution,
     ) -> Result<GenericSubstitution, CheckStop> {
         // [TYPE-5] a generic nominal's construct writes that nominal's
         // arguments, and their absence or a wrong count is TYPE-5's own
         // violation, "at the complete `construct`".
-        self.generic_substitution(node, parameters, caller, false, SemanticRule::Type5)
+        let regions = self.nominal_region_arguments(node, region_parameters, caller)?;
+        Ok(self
+            .generic_substitution(
+                node,
+                parameters,
+                caller,
+                false,
+                SemanticRule::Type5,
+                region_parameters.len(),
+            )?
+            .with_regions(regions))
+    }
+
+    /// The leading region members of one nominal's written argument list
+    /// [S20, FORM-8].
+    ///
+    /// Each member is a bare REGIONID resolved in the writing scope, and one
+    /// that resolves to a region parameter of an enclosing nominal instance
+    /// takes that instance's own actual: a field type `Inner<'s>` inside
+    /// `struct Outer['s]` names `Outer`'s region, so `Outer<'a>` holds an
+    /// `Inner<'a>` and not an `Inner<'s>` [PROV-1].
+    fn nominal_region_arguments(
+        &self,
+        node: NodeId,
+        region_parameters: &[DeclarationId],
+        caller: &GenericSubstitution,
+    ) -> Result<Vec<(DeclarationId, DeclarationId)>, CheckStop> {
+        if region_parameters.is_empty() {
+            return Ok(Vec::new());
+        }
+        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
+            None => Vec::new(),
+        };
+        if arguments.len() < region_parameters.len() {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    crate::semantic::written_count(region_parameters.len(), "region argument"),
+                    crate::semantic::written_count(arguments.len(), "type argument"),
+                ),
+            );
+        }
+        let mut regions = Vec::with_capacity(region_parameters.len());
+        for (formal, argument) in region_parameters.iter().copied().zip(arguments) {
+            if self
+                .tree
+                .first_child_with(argument, Production::Type)?
+                .is_some()
+                || self
+                    .tree
+                    .first_child_with(argument, Production::Const)?
+                    .is_some()
+            {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    argument,
+                    SemanticIssueKind::type_mismatch(
+                        "a region argument in this position, which this nominal declares a \
+region parameter for",
+                        "an argument that does not name a region",
+                    ),
+                );
+            }
+            let usage = self.use_at(argument, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return self.issue_node(
+                    SemanticRule::Type5,
+                    argument,
+                    SemanticIssueKind::type_mismatch(
+                        "a region argument in this position",
+                        "an argument that does not name a region",
+                    ),
+                );
+            };
+            let actual = caller.region_argument(declaration).unwrap_or(declaration);
+            regions.push((formal, actual));
+        }
+        Ok(regions)
     }
 
     /// One argument list, read for two callee classes.
@@ -2160,9 +2315,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         caller: &GenericSubstitution,
         allow_trailing_regions: bool,
         argument_rule: SemanticRule,
+        leading_regions: usize,
     ) -> Result<GenericSubstitution, CheckStop> {
         if parameters.is_empty() {
-            if !allow_trailing_regions
+            if leading_regions == 0
+                && !allow_trailing_regions
                 && self
                     .tree
                     .first_child_with(node, Production::Targs)?
@@ -2177,6 +2334,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ),
                 );
             }
+            // A nominal that declares only region parameters writes exactly
+            // those and nothing else [S20, TYPE-5].
+            if leading_regions > 0 {
+                let written = match self.tree.first_child_with(node, Production::Targs)? {
+                    Some(targs) => self.tree.children_with(targs, Production::Targ)?.len(),
+                    None => 0,
+                };
+                if written != leading_regions {
+                    return self.issue_node(
+                        argument_rule,
+                        node,
+                        SemanticIssueKind::type_mismatch(
+                            crate::semantic::written_count(leading_regions, "region argument"),
+                            crate::semantic::written_count(written, "type argument"),
+                        ),
+                    );
+                }
+            }
             return Ok(GenericSubstitution::default());
         }
         let Some(targs) = self.tree.first_child_with(node, Production::Targs)? else {
@@ -2190,18 +2365,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         };
         let arguments = self.tree.children_with(targs, Production::Targ)?;
-        if (allow_trailing_regions && arguments.len() < parameters.len())
-            || (!allow_trailing_regions && arguments.len() != parameters.len())
+        let expected = parameters.len().saturating_add(leading_regions);
+        if (allow_trailing_regions && arguments.len() < expected)
+            || (!allow_trailing_regions && arguments.len() != expected)
         {
             return self.issue_node(
                 argument_rule,
                 node,
                 SemanticIssueKind::type_mismatch(
-                    crate::semantic::written_count(parameters.len(), "type argument"),
+                    crate::semantic::written_count(expected, "type argument"),
                     crate::semantic::written_count(arguments.len(), "type argument"),
                 ),
             );
         }
+        // [S20, FORM-8] the leading members are the nominal's region
+        // arguments, already read by `nominal_region_arguments`.
+        let arguments = arguments
+            .into_iter()
+            .skip(leading_regions)
+            .collect::<Vec<_>>();
         for argument in arguments.iter().take(parameters.len()) {
             self.reject_region_bearing_generic_argument(*argument, caller)?;
         }

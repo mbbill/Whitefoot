@@ -29,8 +29,18 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
     overlap: OverlapLowering,
 ) -> Result<IrProgram<'classified, 'lexed, 'source>, LoweringFailure> {
     let entry = lower_entry(&checked.data.entry);
-    let nominals = lower_nominals(&checked.data)?;
-    let constants = lower_constants(&checked.data)?;
+    // [S20, PROV-1] the region erasure: where a nominal instance's region
+    // arguments leave the program. Two instances of one declaration that
+    // differ only in them are two checked types and one IR nominal.
+    let erasure = checked
+        .data
+        .nominal_lowering_alias
+        .iter()
+        .map(|alias| IrNominalId(alias.0))
+        .collect::<Vec<_>>();
+    let erasure = erasure.as_slice();
+    let nominals = lower_nominals(erasure, &checked.data)?;
+    let constants = lower_constants(erasure, &checked.data)?;
     // Each function's declared IR result carries its result *mode*: a borrow
     // of addressed content is an address. A call site must produce exactly
     // the callee's declared result type, so the declared results are computed
@@ -42,7 +52,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .map(|function| {
             lower_borrow_mode_type(
                 function.result_mode,
-                lower_type(function.result)?,
+                lower_type(erasure, function.result)?,
                 &nominals,
             )
         })
@@ -63,6 +73,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         .map_err(|_| LoweringFailure::CounterOverflow)?;
     let synthesis = SynthesisCell::new(Synthesis::new(source_functions));
     let context = LoweringContext {
+        erasure,
         nominals: &nominals,
         constants: &constants,
         function_results: &function_results,
@@ -104,6 +115,9 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
 /// growing an argument list at every level.
 #[derive(Clone, Copy)]
 struct LoweringContext<'program> {
+    /// [S20, PROV-1] each nominal's lowered identity, with its region axis
+    /// erased.
+    erasure: &'program [IrNominalId],
     nominals: &'program [IrNominal],
     constants: &'program [IrGlobalConstant],
     /// Every source function's declared IR result, indexed by [`FunctionId`].
@@ -128,11 +142,11 @@ fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFai
         CheckedValue::Unit => Ok(IrConstant::Unit),
         CheckedValue::Bool(value) => Ok(IrConstant::Bool(*value)),
         CheckedValue::Integer { ty, bits } => Ok(IrConstant::Integer {
-            ty: lower_type(crate::semantic::CheckedType::Integer(*ty))?,
+            ty: lower_type(&[], crate::semantic::CheckedType::Integer(*ty))?,
             bits: *bits,
         }),
         CheckedValue::Float { ty, bits } => Ok(IrConstant::Float {
-            ty: lower_type(crate::semantic::CheckedType::Float(*ty))?,
+            ty: lower_type(&[], crate::semantic::CheckedType::Float(*ty))?,
             bits: *bits,
         }),
         CheckedValue::ConstGeneric { .. }
@@ -160,7 +174,10 @@ fn lower_global_value(value: &CheckedValue) -> Result<IrGlobalValue, LoweringFai
     }
 }
 
-fn lower_constants(data: &CheckedProgramData) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
+fn lower_constants(
+    erasure: &[IrNominalId],
+    data: &CheckedProgramData,
+) -> Result<Vec<IrGlobalConstant>, LoweringFailure> {
     data.constants
         .iter()
         .enumerate()
@@ -171,14 +188,17 @@ fn lower_constants(data: &CheckedProgramData) -> Result<Vec<IrGlobalConstant>, L
             Ok(IrGlobalConstant {
                 id: IrConstantId(constant.id.0),
                 name: constant.name.clone(),
-                ty: lower_type(constant.ty)?,
+                ty: lower_type(erasure, constant.ty)?,
                 value: lower_global_value(&constant.value)?,
             })
         })
         .collect()
 }
 
-fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringFailure> {
+fn lower_nominals(
+    erasure: &[IrNominalId],
+    data: &CheckedProgramData,
+) -> Result<Vec<IrNominal>, LoweringFailure> {
     data.nominals
         .get(..data.executable_nominal_count)
         .ok_or(LoweringFailure::InvalidCheckedProgram)?
@@ -243,7 +263,7 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                         .iter()
                         .map(|field| {
                             Ok(IrField {
-                                ty: lower_type(field.ty)?,
+                                ty: lower_type(erasure, field.ty)?,
                             })
                         })
                         .collect::<Result<Vec<_>, LoweringFailure>>()?,
@@ -259,7 +279,7 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                                     .iter()
                                     .map(|field| {
                                         Ok(IrField {
-                                            ty: lower_type(field.ty)?,
+                                            ty: lower_type(erasure, field.ty)?,
                                         })
                                     })
                                     .collect::<Result<Vec<_>, LoweringFailure>>()?,
@@ -268,10 +288,10 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                         .collect::<Result<Vec<_>, LoweringFailure>>()?,
                 },
                 CheckedNominalKind::Box { referent } => IrNominalKind::Box {
-                    referent: lower_type(*referent)?,
+                    referent: lower_type(erasure, *referent)?,
                 },
                 CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
-                    content: lower_type(*content)?,
+                    content: lower_type(erasure, *content)?,
                 },
                 CheckedNominalKind::ArenaStorage => IrNominalKind::ArenaStorage,
                 // The opaque type's own [SYS-2] identity, [SYS-5] release
@@ -326,7 +346,7 @@ fn lower_function<'program>(
         &function.symbol,
     )?;
     for parameter in &function.parameters {
-        let ty = lower_parameter_type(parameter, context.nominals)?;
+        let ty = lower_parameter_type(context.erasure, parameter, context.nominals)?;
         let value = builder.new_parameter(ty)?;
         if builder.bindings.insert(parameter.binding, value).is_some() {
             return Err(LoweringFailure::InvalidCheckedProgram);
@@ -351,10 +371,11 @@ fn lower_function<'program>(
 }
 
 fn lower_parameter_type(
+    erasure: &[IrNominalId],
     parameter: &CheckedParameter,
     nominals: &[IrNominal],
 ) -> Result<IrType, LoweringFailure> {
-    lower_borrow_mode_type(parameter.mode, lower_type(parameter.ty)?, nominals)
+    lower_borrow_mode_type(parameter.mode, lower_type(erasure, parameter.ty)?, nominals)
 }
 
 /// The representation a borrow-mode value carries.
@@ -404,6 +425,9 @@ fn block_successors(block: &BuildingBlock) -> Vec<IrBlockId> {
 }
 
 struct IrBuilder<'program> {
+    /// [S20, PROV-1] each nominal's lowered identity, with its region axis
+    /// erased.
+    erasure: &'program [IrNominalId],
     nominals: &'program [IrNominal],
     constants: &'program [IrGlobalConstant],
     bindings: HashMap<BindingId, IrValueId>,
@@ -471,12 +495,14 @@ impl<'program> IrBuilder<'program> {
         function_name: &'program str,
     ) -> Result<Self, LoweringFailure> {
         let LoweringContext {
+            erasure,
             nominals,
             constants,
             function_results,
             synthesis,
         } = context;
         let mut builder = Self {
+            erasure,
             nominals,
             constants,
             bindings: HashMap::new(),
@@ -504,9 +530,19 @@ impl<'program> IrBuilder<'program> {
         Ok(builder)
     }
 
+    /// One nominal's lowered identity [S20, PROV-1]: the instance it lowers
+    /// as, with its region axis erased.
+    fn erased(&self, id: crate::NominalId) -> IrNominalId {
+        self.erasure
+            .get(id.0 as usize)
+            .copied()
+            .unwrap_or(IrNominalId(id.0))
+    }
+
     /// This builder's own shared half, for the builders it creates.
     const fn context(&self) -> LoweringContext<'program> {
         LoweringContext {
+            erasure: self.erasure,
             nominals: self.nominals,
             constants: self.constants,
             function_results: self.function_results,
@@ -1031,14 +1067,14 @@ impl<'program> IrBuilder<'program> {
                 } => {
                     let aggregate = self.expression(expression)?;
                     self.note_call_result(expression, aggregate)?;
-                    if self.value_type(aggregate)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                    if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
                     for (ordinal, (binding, ty)) in bindings.iter().enumerate() {
                         let field = u32::try_from(ordinal)
                             .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
                         let value = self.project_struct_path(aggregate, &[field], true)?;
-                        if self.value_type(value)? != lower_type(*ty)? {
+                        if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                             return Err(LoweringFailure::InvalidCheckedProgram);
                         }
                         if self.bindings.insert(*binding, value).is_some() {
@@ -1218,7 +1254,7 @@ impl<'program> IrBuilder<'program> {
                         *enum_type,
                         arms,
                         *continues,
-                        Some((*binding, lower_type(*result_type)?)),
+                        Some((*binding, lower_type(self.erasure, *result_type)?)),
                         give_target.clone(),
                     )?;
                     if self.current.is_some() {
@@ -1361,7 +1397,7 @@ impl<'program> IrBuilder<'program> {
         }
         self.terminate(IrTerminator::Match {
             scrutinee,
-            enum_type: enum_type.into(),
+            enum_type: crate::lowering::lower_enum_type(self.erasure, enum_type),
             targets: arms
                 .iter()
                 .zip(&arm_blocks)
@@ -1379,10 +1415,10 @@ impl<'program> IrBuilder<'program> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
                 let value = self.define(
-                    lower_type(binder.ty)?,
+                    lower_type(self.erasure, binder.ty)?,
                     IrOperation::ProjectVariant {
                         aggregate: scrutinee,
-                        nominal: IrNominalId(nominal.0),
+                        nominal: self.erased(nominal),
                         variant: arm.tag,
                         field: binder.field,
                     },
@@ -1453,7 +1489,7 @@ impl<'program> IrBuilder<'program> {
                     .get(binding)
                     .copied()
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                let expected = lower_type(*ty)?;
+                let expected = lower_type(self.erasure, *ty)?;
                 let actual = self.value_type(value)?;
                 let value = if self.addressed_bindings.contains(binding) {
                     self.load_storage_value(value)?
@@ -1471,12 +1507,12 @@ impl<'program> IrBuilder<'program> {
                 Ok(value)
             }
             CheckedExpression::Constant(value) => {
-                let ty = lower_type(value.ty())?;
+                let ty = lower_type(self.erasure, value.ty())?;
                 let constant = lower_scalar_constant(value)?;
                 self.define(ty, IrOperation::Constant(constant))
             }
             CheckedExpression::NamedConstant { value, .. } => {
-                let ty = lower_type(value.ty())?;
+                let ty = lower_type(self.erasure, value.ty())?;
                 let constant = lower_scalar_constant(value)?;
                 self.define(ty, IrOperation::Constant(constant))
             }
@@ -1518,7 +1554,7 @@ impl<'program> IrBuilder<'program> {
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 self.define(
-                    lower_type(*result)?,
+                    lower_type(self.erasure, *result)?,
                     IrOperation::SystemCall {
                         operation: IrSystemOperation(*operation),
                         target_action: *target_action,
@@ -1533,7 +1569,7 @@ impl<'program> IrBuilder<'program> {
                 binding, nominal, ..
             } => {
                 let value = self.binding_value(*binding)?;
-                if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
@@ -1549,10 +1585,10 @@ impl<'program> IrBuilder<'program> {
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 self.define(
-                    lower_type(expression.ty())?,
+                    lower_type(self.erasure, expression.ty())?,
                     IrOperation::Integer {
                         operation: (*operation).into(),
-                        operand_type: lower_type(*operand_type)?,
+                        operand_type: lower_type(self.erasure, *operand_type)?,
                         arguments,
                     },
                 )
@@ -1568,10 +1604,10 @@ impl<'program> IrBuilder<'program> {
                     .map(|argument| self.expression(argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 self.define(
-                    lower_type(expression.ty())?,
+                    lower_type(self.erasure, expression.ty())?,
                     IrOperation::Float {
                         operation: (*operation).into(),
-                        operand_type: lower_type(*operand_type)?,
+                        operand_type: lower_type(self.erasure, *operand_type)?,
                         arguments,
                     },
                 )
@@ -1584,7 +1620,7 @@ impl<'program> IrBuilder<'program> {
             } => {
                 let value = self.expression(value)?;
                 self.define(
-                    lower_type(expression.ty())?,
+                    lower_type(self.erasure, expression.ty())?,
                     IrOperation::NumericConversion {
                         source_type: lower_numeric_type(*source),
                         destination_type: lower_numeric_type(*destination),
@@ -1640,7 +1676,7 @@ impl<'program> IrBuilder<'program> {
                     IrType::Bool,
                     IrOperation::EnumEquality {
                         equal: *equal,
-                        operand_type: lower_type(*operand_type)?,
+                        operand_type: lower_type(self.erasure, *operand_type)?,
                         arguments: [left, right],
                     },
                 )
@@ -1651,7 +1687,7 @@ impl<'program> IrBuilder<'program> {
                 target_domain,
                 ..
             } => {
-                let IrType::Array { element, .. } = lower_type(*ty)? else {
+                let IrType::Array { element, .. } = lower_type(self.erasure, *ty)? else {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 };
                 let value = self.expression(value)?;
@@ -1659,7 +1695,7 @@ impl<'program> IrBuilder<'program> {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 self.define(
-                    lower_type(*ty)?,
+                    lower_type(self.erasure, *ty)?,
                     IrOperation::ArrayFill {
                         value,
                         target_domain: (*target_domain).into(),
@@ -1717,7 +1753,7 @@ impl<'program> IrBuilder<'program> {
                 let length = length
                     .value()
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?;
-                if element.ty() != lower_type(*element_type)? || actual != length {
+                if element.ty() != lower_type(self.erasure, *element_type)? || actual != length {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 let offset = self.expression(offset)?;
@@ -1817,7 +1853,7 @@ impl<'program> IrBuilder<'program> {
             } => self.lower_slice_index(root, offset, *target_domain),
             CheckedExpression::BoxNew { nominal, value, .. } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
                     IrType::Nominal(nominal),
                     IrOperation::BoxNew { nominal, value },
@@ -1825,7 +1861,7 @@ impl<'program> IrBuilder<'program> {
             }
             CheckedExpression::BoxDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 let IrNominalKind::Box { referent } = self
                     .nominals
                     .get(nominal.index())
@@ -1843,7 +1879,7 @@ impl<'program> IrBuilder<'program> {
                 ..
             } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 let IrNominalKind::Arena { content } = self
                     .nominals
                     .get(nominal.index())
@@ -1867,7 +1903,7 @@ impl<'program> IrBuilder<'program> {
             }
             CheckedExpression::ArenaDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 if self.value_type(value)? != IrType::Nominal(nominal) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
@@ -1886,18 +1922,18 @@ impl<'program> IrBuilder<'program> {
                 binding, nominal, ..
             } => {
                 let value = self.binding_value(*binding)?;
-                if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
             }
             CheckedExpression::BorrowAddressed { binding, ty, .. }
             | CheckedExpression::ReborrowAddressed { binding, ty, .. } => {
-                self.lower_addressed_borrow(*binding, lower_type(*ty)?)
+                self.lower_addressed_borrow(*binding, lower_type(self.erasure, *ty)?)
             }
             CheckedExpression::DerefAddressed { binding, ty, .. } => {
                 let value = self.binding_value(*binding)?;
-                if self.value_type(value)? != lower_type(*ty)? {
+                if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 Ok(value)
@@ -1909,7 +1945,7 @@ impl<'program> IrBuilder<'program> {
                     .iter()
                     .map(|field| self.expression(field))
                     .collect::<Result<Vec<_>, _>>()?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
                     IrType::Nominal(nominal),
                     IrOperation::ConstructStruct { nominal, fields },
@@ -1925,7 +1961,7 @@ impl<'program> IrBuilder<'program> {
                     .iter()
                     .map(|field| self.expression(field))
                     .collect::<Result<Vec<_>, _>>()?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
                     IrType::Nominal(nominal),
                     IrOperation::ConstructEnum {
@@ -1949,7 +1985,7 @@ impl<'program> IrBuilder<'program> {
                     lowered_drops.push(self.lower_projected_drop(root, drop)?);
                 }
                 let value = self.project_struct_path(root, fields, *consume_root)?;
-                if self.value_type(value)? != lower_type(*ty)? {
+                if self.value_type(value)? != lower_type(self.erasure, *ty)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 for drop in lowered_drops {
@@ -1967,9 +2003,9 @@ impl<'program> IrBuilder<'program> {
                 ..
             } => {
                 let aggregate = self.expression(value)?;
-                let nominal = IrNominalId(nominal.0);
+                let nominal = self.erased(*nominal);
                 self.define(
-                    lower_type(*ty)?,
+                    lower_type(self.erasure, *ty)?,
                     IrOperation::ProjectStruct {
                         aggregate,
                         nominal,
@@ -2073,7 +2109,7 @@ impl<'program> IrBuilder<'program> {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }
         };
-        if self.value_type(previous)? != lower_type(target.ty())? {
+        if self.value_type(previous)? != lower_type(self.erasure, target.ty())? {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         if self.bindings.insert(binding, previous).is_some() {
@@ -2104,7 +2140,7 @@ impl<'program> IrBuilder<'program> {
             CheckedCommitValues::ResultList { nominal, value } => {
                 let aggregate = self.expression(value)?;
                 self.note_call_result(value, aggregate)?;
-                if self.value_type(aggregate)? != IrType::Nominal(IrNominalId(nominal.0)) {
+                if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 let mut ordinals = Vec::with_capacity(targets.len());
@@ -2146,7 +2182,7 @@ impl<'program> IrBuilder<'program> {
             && place.declares
         {
             if place.fields.is_empty() {
-                if self.value_type(value)? != lower_type(place.ty)? {
+                if self.value_type(value)? != lower_type(self.erasure, place.ty)? {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
                 if self.bindings.insert(binding, value).is_some() {
@@ -2163,7 +2199,7 @@ impl<'program> IrBuilder<'program> {
             .copied()
             .ok_or(LoweringFailure::InvalidCheckedProgram)?;
         let root = self.load_storage_value(storage)?;
-        if self.value_type(value)? != lower_type(target.ty())? {
+        if self.value_type(value)? != lower_type(self.erasure, target.ty())? {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         let replacement = match target {
@@ -2234,7 +2270,7 @@ impl<'program> IrBuilder<'program> {
         target: &CheckedArraySetTarget,
         value: IrValueId,
     ) -> Result<IrValueId, LoweringFailure> {
-        let array_type = lower_type(target.array_type)?;
+        let array_type = lower_type(self.erasure, target.array_type)?;
         let IrType::Array { element, length } = array_type else {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
@@ -2244,7 +2280,7 @@ impl<'program> IrBuilder<'program> {
             self.project_struct_path(root, &target.fields, false)?
         };
         if self.value_type(array)? != array_type
-            || element.ty() != lower_type(target.element_type)?
+            || element.ty() != lower_type(self.erasure, target.element_type)?
             || Some(length) != target.length.value()
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
@@ -2398,7 +2434,7 @@ impl<'program> IrBuilder<'program> {
         } else {
             self.project_struct_path(root, &drop.fields, false)?
         };
-        let ty = lower_type(drop.ty)?;
+        let ty = lower_type(self.erasure, drop.ty)?;
         if self.value_type(value)? != ty {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
@@ -2437,7 +2473,7 @@ impl<'program> IrBuilder<'program> {
             } else {
                 self.project_struct_path(root, &drop.fields, false)?
             };
-            let ty = lower_type(drop.ty)?;
+            let ty = lower_type(self.erasure, drop.ty)?;
             if self.value_type(value)? != ty {
                 return Err(LoweringFailure::InvalidCheckedProgram);
             }

@@ -286,6 +286,12 @@ struct NominalTemplate {
     name: String,
     role: DeclarationRole,
     generic_parameters: Vec<GenericParameter>,
+    /// [S20, GRAM-2] the declaration's own `region_params`, in written order.
+    ///
+    /// They are components of the nominal's type name [TYPE-2], so an
+    /// instance is keyed on them beside its type and const arguments and two
+    /// instances at two regions are two types [PROV-1].
+    region_parameters: Vec<DeclarationId>,
     /// [PROV-6] whether the declaration writes the `linear` modifier. Every
     /// instance of a marked declaration is marked.
     linear: bool,
@@ -1240,6 +1246,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(CheckedProgramData {
             nominals: self.nominals.clone(),
             executable_nominal_count,
+            nominal_lowering_alias: self.nominal_lowering_aliases()?,
             constants: self.checked_constants.clone(),
             derived_consts,
             functions,
@@ -2766,12 +2773,52 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bytes: self.instantiate_goal_const(bytes, signature)?,
                 align: self.instantiate_goal_const(align, signature)?,
             },
+            CheckedType::Nominal(id) => self.instantiate_goal_nominal(id, signature, regions)?,
             CheckedType::Unit
             | CheckedType::Bool
             | CheckedType::Integer(_)
-            | CheckedType::Float(_)
-            | CheckedType::Nominal(_) => ty,
+            | CheckedType::Float(_) => ty,
         })
+    }
+
+    /// [S20] one nominal instance read at a caller: its region arguments
+    /// substituted, which is the instance the caller's own value has.
+    ///
+    /// The substituted instance already exists wherever the caller can hold a
+    /// value of it, so this is a lookup and never a minting; where it does
+    /// not, the declaration's own instance stands and the ordinary type
+    /// judgment decides.
+    fn instantiate_goal_nominal(
+        &self,
+        id: NominalId,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedType, CheckStop> {
+        let Some((template, substitution)) = self.source_nominal_instance_entry(id)? else {
+            return Ok(CheckedType::Nominal(id));
+        };
+        if substitution.region_arguments().is_empty() {
+            return Ok(CheckedType::Nominal(id));
+        }
+        let substitution = substitution.clone();
+        let mut mapped = Vec::with_capacity(substitution.region_arguments().len());
+        for (formal, actual) in substitution.region_arguments() {
+            mapped.push((
+                *formal,
+                self.instantiate_goal_region(*actual, signature, regions)?,
+            ));
+        }
+        if mapped == substitution.region_arguments() {
+            return Ok(CheckedType::Nominal(id));
+        }
+        let declaration = self
+            .nominal_templates
+            .get(template)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .declaration;
+        Ok(self
+            .source_nominal_instance(declaration, &substitution.with_regions(mapped))
+            .map_or(CheckedType::Nominal(id), CheckedType::Nominal))
     }
 
     fn instantiate_goal_flat_element(
@@ -2866,7 +2913,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .borrow()
             .get(id.0 as usize)
             .copied()
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     /// Combines two const operands under one const operation.
@@ -2919,7 +2966,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         regions
             .get(index)
             .copied()
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     fn instantiate_goal_value(

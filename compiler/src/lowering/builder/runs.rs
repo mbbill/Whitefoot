@@ -124,7 +124,7 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.define(
-            lower_element(element)?.ty(),
+            lower_element(self.erasure, element)?.ty(),
             IrOperation::RunIndex {
                 run,
                 offset,
@@ -170,7 +170,7 @@ impl IrBuilder<'_> {
         let run = self.project_container_root(root, &target.root)?;
         let index = self.expression(&target.offset)?;
         let previous = self.define(
-            lower_element(element)?.ty(),
+            lower_element(self.erasure, element)?.ty(),
             IrOperation::RunIndex {
                 run,
                 offset: index,
@@ -214,7 +214,7 @@ impl IrBuilder<'_> {
                 width: 64,
                 signed: false,
             })
-            || self.value_type(value)? != lower_element(element)?.ty()
+            || self.value_type(value)? != lower_element(self.erasure, element)?.ty()
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
@@ -240,7 +240,7 @@ impl IrBuilder<'_> {
         } else {
             self.project_struct_path(root, &container.fields, false)?
         };
-        if self.value_type(value)? != lower_type(container.ty)? {
+        if self.value_type(value)? != lower_type(self.erasure, container.ty)? {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(value)
@@ -259,7 +259,7 @@ impl IrBuilder<'_> {
         arguments: &[CheckedExpression],
         result: CheckedType,
     ) -> Result<IrValueId, LoweringFailure> {
-        let result_type = lower_type(result)?;
+        let result_type = lower_type(self.erasure, result)?;
         match row {
             crate::KernelRow::FixedVector => {
                 if !arguments.is_empty() {
@@ -337,7 +337,7 @@ impl IrBuilder<'_> {
             _ => Some(self.refusal_of(result)?),
         };
         self.define(
-            lower_type(result)?,
+            lower_type(self.erasure, result)?,
             IrOperation::StoreTake(crate::IrStoreTake {
                 store,
                 count,
@@ -354,7 +354,7 @@ impl IrBuilder<'_> {
         let CheckedType::Nominal(id) = result else {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
-        let nominal = IrNominalId(id.0);
+        let nominal = self.erased(id);
         let IrNominalKind::Enum { variants } = &self
             .nominals
             .get(nominal.index())
@@ -402,9 +402,12 @@ impl IrBuilder<'_> {
             crate::KernelRow::TakeFront => IrBoundary::TakeFront,
             _ => return Err(LoweringFailure::InvalidCheckedProgram),
         };
-        let run_type = lower_type(instance.run.ok_or(LoweringFailure::InvalidCheckedProgram)?)?;
-        let result_type = lower_type(result)?;
-        let element_type = lower_type(instance.element)?;
+        let run_type = lower_type(
+            self.erasure,
+            instance.run.ok_or(LoweringFailure::InvalidCheckedProgram)?,
+        )?;
+        let result_type = lower_type(self.erasure, result)?;
+        let element_type = lower_type(self.erasure, instance.element)?;
         let [run, rest @ ..] = arguments else {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
@@ -448,7 +451,7 @@ impl IrBuilder<'_> {
         let CheckedType::Nominal(nominal) = result else {
             return Err(LoweringFailure::InvalidCheckedProgram);
         };
-        let nominal = IrNominalId(nominal.0);
+        let nominal = self.erased(nominal);
         self.define(
             IrType::Nominal(nominal),
             IrOperation::ConstructStruct {
@@ -470,7 +473,7 @@ impl IrBuilder<'_> {
         } else {
             self.project_struct_path(value, &root.fields, false)?
         };
-        if self.value_type(value)? != lower_type(root.ty)? {
+        if self.value_type(value)? != lower_type(self.erasure, root.ty)? {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         Ok(value)

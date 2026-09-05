@@ -95,7 +95,7 @@ fn recognize_guard(
     else {
         return None;
     };
-    if crate::lowering::lower_type(*operand_type).ok()? != U64 {
+    if crate::lowering::lower_type(&[], *operand_type).ok()? != U64 {
         return None;
     }
     let breaks_on: u32 = match operation {
@@ -148,7 +148,7 @@ fn recognize_load(
     };
     if !root.fields.is_empty()
         || !declared_outside.contains(&root.binding)
-        || crate::lowering::lower_type(root.element.ty()).ok()? != U8
+        || crate::lowering::lower_type(&[], root.element.ty()).ok()? != U8
     {
         return None;
     }
@@ -185,7 +185,7 @@ fn recognize_increment(increment: &CheckedStatement, induction: BindingId) -> bo
     else {
         return false;
     };
-    if crate::lowering::lower_type(*operand_type) != Ok(U64) {
+    if crate::lowering::lower_type(&[], *operand_type) != Ok(U64) {
         return false;
     }
     let [CheckedExpression::Binding { binding, .. }, one] = arguments.as_slice() else {
@@ -285,7 +285,7 @@ fn needle_test(
     else {
         return None;
     };
-    if crate::lowering::lower_type(*operand_type).ok()? != U8 {
+    if crate::lowering::lower_type(&[], *operand_type).ok()? != U8 {
         return None;
     }
     let [left, right] = arguments.as_slice() else {

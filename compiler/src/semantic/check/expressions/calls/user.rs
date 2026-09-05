@@ -33,12 +33,22 @@ pub(in crate::semantic::check) struct RegionBinding {
     /// The substituted region: fixed for a written argument, and the least
     /// actual region observed so far for an inferred one.
     region: Option<DeclarationId>,
+    /// [PROV-1] the actual this formal took at its first *store* position.
+    ///
+    /// A store region is invariant: two values have the same store exactly
+    /// when their types name the same region, decided by exact identity. A
+    /// loan region relates two positions by outlives and takes the least
+    /// region observed; a store region takes the first and every later
+    /// position of the same formal must name it exactly, which is the
+    /// ordinary [TYPE-5] argument mismatch where it does not.
+    store: Option<DeclarationId>,
 }
 
 impl RegionBinding {
     const INFERRED: Self = Self {
         written: false,
         region: None,
+        store: None,
     };
 }
 
@@ -239,8 +249,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 ),
                 (
-                    Self::written_type_region(parameter.ty),
-                    Self::written_type_region(expected_type),
+                    self.written_type_region(parameter.ty)?,
+                    self.written_type_region(expected_type)?,
                 ),
             ] {
                 let (Some(formal), Some(actual)) = (formal, actual) else {
@@ -252,6 +262,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                 if !binding.written {
                     self.observe_actual_region(&mut binding, actual, atom)?;
+                    // [PROV-1] a store region is invariant, so the first
+                    // position that names it fixes it and every later one is
+                    // substituted with that region rather than with its own
+                    // actual.
+                    if binding.store.is_none()
+                        && self.written_store_type_region(parameter.ty)? == Some(formal)
+                    {
+                        binding.store = Some(actual);
+                    }
                     *region_bindings
                         .get_mut(index)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)? = binding;
@@ -599,13 +618,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// itself.
     /// Whether one formal region occupies a parameter position of this
     /// callable: a `param` mode or a `slice` parameter type [FORM-8].
-    fn formal_region_is_determined(signature: &FunctionSignature, formal: DeclarationId) -> bool {
-        signature.parameters.iter().any(|parameter| {
-            matches!(
+    fn formal_region_is_determined(
+        &self,
+        signature: &FunctionSignature,
+        formal: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        for parameter in &signature.parameters {
+            if matches!(
                 parameter.mode,
                 CheckedMode::Shared(region) | CheckedMode::Unique(region) if region == formal
-            ) || Self::written_type_region(parameter.ty) == Some(formal)
-        })
+            ) || self.written_type_region(parameter.ty)? == Some(formal)
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     /// The one region a type writes [FORM-8, PROV-1].
@@ -624,7 +651,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// alone, so the inner is not substituted and the position is the ordinary
     /// [TYPE-5] region mismatch: fail-closed, and an explicit gap rather than a
     /// silent second binding.
-    const fn written_type_region(ty: CheckedType) -> Option<DeclarationId> {
+    /// [S20] a source nominal instance carrying exactly one region argument
+    /// names that region on the same ground: its region parameter is a
+    /// component of its type name [TYPE-2, PROV-1], and a parameter of that
+    /// type therefore determines the region from its actual. An instance
+    /// carrying two or more region arguments names none, which is the same
+    /// fail-closed reading `Vector<'s, Vector<'t, u8>>` already takes.
+    fn written_type_region(&self, ty: CheckedType) -> Result<Option<DeclarationId>, CheckStop> {
+        if let CheckedType::Nominal(id) = ty {
+            return Ok(match self.nominal_region_axis(id)? {
+                Some([(_, region)]) => Some(*region),
+                _ => None,
+            });
+        }
+        Ok(Self::written_container_type_region(ty))
+    }
+
+    /// The one *store* region a type writes [PROV-1]: the same relation minus
+    /// a view's loan region, which names no store and relates two positions
+    /// by outlives rather than by identity.
+    fn written_store_type_region(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Option<DeclarationId>, CheckStop> {
+        if matches!(ty, CheckedType::Slice { .. }) {
+            return Ok(None);
+        }
+        self.written_type_region(ty)
+    }
+
+    const fn written_container_type_region(ty: CheckedType) -> Option<DeclarationId> {
         match ty {
             CheckedType::Slice { region, .. }
             | CheckedType::Vector { region, .. }
@@ -644,6 +700,51 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [PROV-6], and [PROV-6]'s own instantiation check makes the actual's
     /// store class equal the formal bound's, so the class the formal carried
     /// is the class the actual has and the substitution preserves it.
+    /// The same type with its written region replaced, over a source nominal
+    /// [S20].
+    ///
+    /// A nominal instance is a nominal-arena identity rather than a structure,
+    /// so the substituted type is the instance of the same declaration with
+    /// the same type and const arguments and this region — which is exactly
+    /// the actual's own instance when the two agree, and no instance at all
+    /// when they do not. Reading it off the actual mints nothing during
+    /// checking and rejects a genuine mismatch through the ordinary [TYPE-5]
+    /// equality below.
+    fn with_nominal_type_region(
+        &self,
+        ty: CheckedType,
+        region: DeclarationId,
+        actual: CheckedType,
+    ) -> Result<CheckedType, CheckStop> {
+        let (CheckedType::Nominal(formal_id), CheckedType::Nominal(actual_id)) = (ty, actual)
+        else {
+            return Ok(ty);
+        };
+        let (Some((_, formal)), Some((_, actual))) = (
+            self.source_nominal_instance_entry(formal_id)?,
+            self.source_nominal_instance_entry(actual_id)?,
+        ) else {
+            return Ok(ty);
+        };
+        let substituted = formal
+            .region_arguments()
+            .iter()
+            .map(|(parameter, _)| (*parameter, region))
+            .collect::<Vec<_>>();
+        if substituted != actual.region_arguments() {
+            return Ok(ty);
+        }
+        // The two instances must be one representation as well as one
+        // declaration: a formal region whose store class differs from the
+        // actual's gives its runs a different release action [PROV-6], and
+        // that difference is a [TYPE-5] mismatch at this argument rather than
+        // a substitution.
+        if !self.nominals_differ_only_in_region(actual_id, formal_id)? {
+            return Ok(ty);
+        }
+        Ok(CheckedType::Nominal(actual_id))
+    }
+
     const fn with_type_region(ty: CheckedType, region: DeclarationId) -> CheckedType {
         match ty {
             CheckedType::Slice { element, .. } => CheckedType::Slice { region, element },
@@ -680,15 +781,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The formal regions a caller writes: exactly those the callee's own
     /// parameter positions leave undetermined [FORM-8].
-    fn caller_chosen_regions(signature: &FunctionSignature) -> Vec<usize> {
-        (0..signature.written_regions)
-            .filter(|index| {
-                signature
-                    .region_parameters
-                    .get(*index)
-                    .is_some_and(|formal| !Self::formal_region_is_determined(signature, *formal))
-            })
-            .collect()
+    fn caller_chosen_regions(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<Vec<usize>, CheckStop> {
+        let mut chosen = Vec::new();
+        for index in 0..signature.written_regions {
+            let Some(formal) = signature.region_parameters.get(index) else {
+                continue;
+            };
+            if !self.formal_region_is_determined(signature, *formal)? {
+                chosen.push(index);
+            }
+        }
+        Ok(chosen)
     }
 
     /// Binds each formal region of the callee for one call.
@@ -711,7 +817,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         signature: &FunctionSignature,
     ) -> Result<Vec<RegionBinding>, CheckStop> {
         let generic_count = signature.substitution.len();
-        let chosen = Self::caller_chosen_regions(signature);
+        let chosen = self.caller_chosen_regions(signature)?;
         let written = match self.tree.first_child_with(node, Production::Targs)? {
             Some(targs) => {
                 let arguments = self.tree.children_with(targs, Production::Targ)?;
@@ -828,6 +934,7 @@ call's own arguments and is not written",
             *binding = RegionBinding {
                 written: true,
                 region: Some(declaration),
+                store: Some(declaration),
             };
         }
         Ok(bindings)
@@ -1060,7 +1167,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         bindings: &[RegionBinding],
         actual: CheckedType,
     ) -> Result<CheckedType, CheckStop> {
-        let Some(formal) = Self::written_type_region(ty) else {
+        let Some(formal) = self.written_type_region(ty)? else {
             return Ok(ty);
         };
         let Ok(index) = Self::formal_region_index(signature, formal) else {
@@ -1074,12 +1181,27 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let region = match (binding.written, binding.region) {
             (true, Some(region)) => region,
-            (false, _) => match Self::written_type_region(actual) {
+            // [PROV-1] a store region already fixed by an earlier position of
+            // this call is the substitution here too, so a second argument
+            // naming a second store is the ordinary [TYPE-5] mismatch and not
+            // a second binding.
+            (false, _)
+                if binding.store.is_some()
+                    && self.written_store_type_region(ty)? == Some(formal) =>
+            {
+                binding
+                    .store
+                    .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            }
+            (false, _) => match self.written_type_region(actual)? {
                 Some(region) => region,
                 None => return Ok(ty),
             },
             _ => return Ok(ty),
         };
+        if matches!(ty, CheckedType::Nominal(_)) {
+            return self.with_nominal_type_region(ty, region, actual);
+        }
         Ok(Self::with_type_region(ty, region))
     }
 
@@ -1090,12 +1212,18 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         signature: &FunctionSignature,
         actual_regions: &[DeclarationId],
     ) -> Result<CheckedType, CheckStop> {
-        let Some(formal) = Self::written_type_region(ty) else {
+        let Some(formal) = self.written_type_region(ty)? else {
             return Ok(ty);
         };
         let Ok(index) = Self::formal_region_index(signature, formal) else {
             return Ok(ty);
         };
+        // [S20] a nominal result keeps the declaration's own region: no
+        // instance of it at the actual region need exist at this call, and the
+        // caller's next transfer substitutes it from the actual it holds.
+        if matches!(ty, CheckedType::Nominal(_)) {
+            return Ok(ty);
+        }
         Ok(Self::with_type_region(
             ty,
             *actual_regions

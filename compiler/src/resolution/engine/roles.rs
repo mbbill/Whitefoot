@@ -517,8 +517,13 @@ fn classify_node(
                 // ordinary `let` bindings of the enclosing block, exactly as
                 // [CALL-4]'s binder list's are; only a `match` arm's binder is
                 // arm-scoped and judged by [GRAM-10]'s freshness rule.
+                //
+                // Which of the two a `fieldbind` is, is decided by the
+                // construct that owns its list and not by whether an arm is
+                // anywhere above it: a destructuring consume written inside a
+                // `match` arm has an `arm` ancestor and is still a `let`.
                 let destructuring_binder = !selector_field
-                    && ancestor_with_production(topology, owner, Production::Arm).is_none();
+                    && nearest_binder_owner(topology, owner) == Some(Production::LetStmt);
                 add_complete(
                     classified,
                     owner,
@@ -896,6 +901,18 @@ fn affine_atom_role(topology: &FinalizedTopology, pbase: NodeId) -> LexicalUseRo
         return LexicalUseRole::InvariantValue;
     }
     LexicalUseRole::PlaceBase
+}
+
+/// Which construct owns the `fieldbind` at `node`: the `let_stmt` of a
+/// destructuring consume, or the `arm` of a `match` [GRAM-4, PROV-6].
+fn nearest_binder_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<Production> {
+    loop {
+        let record = topology.node(node)?;
+        if matches!(record.production, Production::LetStmt | Production::Arm) {
+            return Some(record.production);
+        }
+        node = record.parent?;
+    }
 }
 
 fn ancestor_with_production(

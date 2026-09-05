@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind, CheckedNumericType,
-    CheckedType, CheckedVariant, NominalId,
+    CheckedConstructor, CheckedElement, CheckedField, CheckedFlatElement, CheckedNominal,
+    CheckedNominalKind, CheckedNumericType, CheckedType, CheckedVariant, NominalId,
 };
 use super::generics::GenericSubstitution;
 use super::{
@@ -32,7 +32,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.declare_nominal_template(node)?;
         }
         for index in 0..self.nominal_templates.len() {
-            if self.nominal_templates[index].generic_parameters.is_empty() {
+            if self.nominal_templates[index].generic_parameters.is_empty()
+                && self.nominal_templates[index].region_parameters.is_empty()
+            {
                 self.declare_source_nominal_instance(index, GenericSubstitution::default())?;
             }
         }
@@ -85,15 +87,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(template_index)
                 .cloned()
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-            if template.generic_parameters.is_empty()
+            if (template.generic_parameters.is_empty() && template.region_parameters.is_empty())
                 || self.postcondition_declaration_unavailable(template.declaration)
             {
                 continue;
             }
             let checkpoint = self.nominal_checkpoint();
             let result = (|| {
-                let substitution =
-                    self.symbolic_generic_substitution(&template.generic_parameters)?;
+                let substitution = self.symbolic_nominal_substitution(
+                    &template.generic_parameters,
+                    &template.region_parameters,
+                )?;
                 self.ensure_source_nominal_instance(template_index, substitution)?;
                 self.reject_recursive_nominal_layouts()
             })();
@@ -128,12 +132,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             Vec::new()
         };
         let linear = self.declaration_is_linear(node)?;
+        // [S20, GRAM-2] a nominal's `region_params` are its own, exactly as a
+        // function's are, and each is a component of its type name.
+        let region_parameters = self.parse_region_parameters(node)?;
         let template = NominalTemplate {
             declaration: declaration_id,
             node,
             name: declaration.spelling().to_owned(),
             role,
             generic_parameters,
+            region_parameters,
             linear,
         };
         let template_index = self.nominal_templates.len();
@@ -414,6 +422,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let instance = self.nominal_generic_substitution(
                     node,
                     &template.generic_parameters,
+                    &template.region_parameters,
                     substitution,
                 )?;
                 self.ensure_source_nominal_instance(template_index, instance)?;
@@ -478,8 +487,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(template_index)
             .cloned()
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let substitution =
-            self.nominal_generic_substitution(node, &template.generic_parameters, caller)?;
+        let substitution = self.nominal_generic_substitution(
+            node,
+            &template.generic_parameters,
+            &template.region_parameters,
+            caller,
+        )?;
         self.ensure_source_nominal_instance(template_index, substitution)?;
         Ok(())
     }
@@ -721,10 +734,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             let parameters = self.nominal_templates[template_index]
                 .generic_parameters
                 .clone();
-            if parameters.is_empty() {
+            let region_parameters = self.nominal_templates[template_index]
+                .region_parameters
+                .clone();
+            if parameters.is_empty() && region_parameters.is_empty() {
                 continue;
             }
-            let substitution = self.symbolic_generic_substitution(&parameters)?;
+            let substitution =
+                self.symbolic_nominal_substitution(&parameters, &region_parameters)?;
             self.ensure_source_nominal_instance(template_index, substitution)?;
         }
         self.reject_recursive_nominal_layouts()?;
@@ -855,6 +872,289 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(variants)
     }
 
+    /// [S20] where each nominal instance's region axis leaves the program.
+    ///
+    /// Two instances of one declaration whose type and const arguments agree
+    /// and whose regions differ are two checked types and one representation:
+    /// a region names a store for the proof and nothing at run time, exactly
+    /// as `Vector<'a, T>` and `Vector<'b, T>` are one lowered run. The first
+    /// such instance is the one they all lower as, so a callee's own
+    /// formal-region instance and a caller's actual-region instance meet as
+    /// one IR nominal at the boundary between them.
+    pub(super) fn nominal_lowering_aliases(&self) -> Result<Vec<NominalId>, CheckStop> {
+        let mut aliases = Vec::with_capacity(self.nominals.len());
+        for index in 0..self.nominals.len() {
+            let id = NominalId(
+                u32::try_from(index).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+            );
+            let mut alias = id;
+            for earlier in 0..index {
+                let candidate = NominalId(
+                    u32::try_from(earlier).map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+                );
+                if self.nominals_differ_only_in_region(id, candidate)? {
+                    alias = candidate;
+                    break;
+                }
+            }
+            aliases.push(alias);
+        }
+        Ok(aliases)
+    }
+
+    /// [S20] whether two nominals are two instances of one declaration that
+    /// differ in their region arguments alone.
+    ///
+    /// Same declaration, same type and const arguments, and the same lowered
+    /// content: a region names a store for the proof, so two such instances
+    /// are two checked types and one representation. The content comparison is
+    /// what keeps a difference the run time *can* see out of the relation — a
+    /// run's release class is read off its region's own declaration [PROV-6],
+    /// so two instances whose classes differ are two representations and are
+    /// not related here.
+    pub(super) fn nominals_differ_only_in_region(
+        &self,
+        left: NominalId,
+        right: NominalId,
+    ) -> Result<bool, CheckStop> {
+        let (Some((left_template, left_instance)), Some((right_template, right_instance))) = (
+            self.source_nominal_instance_entry(left)?,
+            self.source_nominal_instance_entry(right)?,
+        ) else {
+            return Ok(false);
+        };
+        if left_template != right_template
+            || left_instance.entries() != right_instance.entries()
+            || left_instance.region_arguments().is_empty()
+        {
+            return Ok(false);
+        }
+        self.nominal_content_is_region_blind_equal(left, right, 0)
+    }
+
+    /// The two instances' fields or variant payloads, compared with every
+    /// region erased and every region-derived datum kept [S20, PROV-6].
+    fn nominal_content_is_region_blind_equal(
+        &self,
+        left: NominalId,
+        right: NominalId,
+        depth: usize,
+    ) -> Result<bool, CheckStop> {
+        if depth > 16 {
+            return Ok(false);
+        }
+        let (left_nominal, right_nominal) = (self.nominal(left)?, self.nominal(right)?);
+        if left_nominal.linear != right_nominal.linear {
+            return Ok(false);
+        }
+        let (left_types, right_types) = (
+            Self::nominal_content_types(&left_nominal.kind),
+            Self::nominal_content_types(&right_nominal.kind),
+        );
+        let (Some(left_types), Some(right_types)) = (left_types, right_types) else {
+            return Ok(false);
+        };
+        if left_types.len() != right_types.len() {
+            return Ok(false);
+        }
+        for (left_type, right_type) in left_types.into_iter().zip(right_types) {
+            if !self.types_are_region_blind_equal(left_type, right_type, depth)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn nominal_content_types(kind: &CheckedNominalKind) -> Option<Vec<CheckedType>> {
+        match kind {
+            CheckedNominalKind::Struct { fields } => {
+                Some(fields.iter().map(|field| field.ty).collect())
+            }
+            CheckedNominalKind::Enum { variants } => Some(
+                variants
+                    .iter()
+                    .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
+                    .collect(),
+            ),
+            _ => None,
+        }
+    }
+
+    /// One slot's content [BLK-1], compared with every region erased and every
+    /// region-derived datum kept [S20].
+    fn elements_are_region_blind_equal(
+        &self,
+        left: CheckedElement,
+        right: CheckedElement,
+        depth: usize,
+    ) -> Result<bool, CheckStop> {
+        Ok(match (left, right) {
+            (CheckedElement::Flat(left), CheckedElement::Flat(right)) => {
+                self.flat_elements_are_region_blind_equal(left, right, depth)?
+            }
+            (
+                CheckedElement::FixedVector {
+                    element: left_element,
+                    length: left_length,
+                },
+                CheckedElement::FixedVector {
+                    element: right_element,
+                    length: right_length,
+                },
+            ) => {
+                left_length == right_length
+                    && self.flat_elements_are_region_blind_equal(
+                        left_element,
+                        right_element,
+                        depth,
+                    )?
+            }
+            (
+                CheckedElement::Vector {
+                    element: left_element,
+                    release: left_release,
+                    ..
+                },
+                CheckedElement::Vector {
+                    element: right_element,
+                    release: right_release,
+                    ..
+                },
+            ) => {
+                left_release == right_release
+                    && self.flat_elements_are_region_blind_equal(
+                        left_element,
+                        right_element,
+                        depth,
+                    )?
+            }
+            _ => false,
+        })
+    }
+
+    fn flat_elements_are_region_blind_equal(
+        &self,
+        left: CheckedFlatElement,
+        right: CheckedFlatElement,
+        depth: usize,
+    ) -> Result<bool, CheckStop> {
+        Ok(match (left, right) {
+            (CheckedFlatElement::Nominal(left), CheckedFlatElement::Nominal(right))
+            | (
+                CheckedFlatElement::TagOnlyNominal(left),
+                CheckedFlatElement::TagOnlyNominal(right),
+            ) => self.types_are_region_blind_equal(
+                CheckedType::Nominal(left),
+                CheckedType::Nominal(right),
+                depth,
+            )?,
+            _ => left == right,
+        })
+    }
+
+    fn types_are_region_blind_equal(
+        &self,
+        left: CheckedType,
+        right: CheckedType,
+        depth: usize,
+    ) -> Result<bool, CheckStop> {
+        Ok(match (left, right) {
+            (CheckedType::Nominal(left), CheckedType::Nominal(right)) => {
+                left == right
+                    || (self
+                        .source_nominal_instance_entry(left)?
+                        .map(|(index, _)| index)
+                        == self
+                            .source_nominal_instance_entry(right)?
+                            .map(|(index, _)| index)
+                        && self.source_nominal_instance_entry(left)?.is_some()
+                        && self.nominal_content_is_region_blind_equal(
+                            left,
+                            right,
+                            depth.saturating_add(1),
+                        )?)
+            }
+            (
+                CheckedType::Vector {
+                    element: left_element,
+                    release: left_release,
+                    ..
+                },
+                CheckedType::Vector {
+                    element: right_element,
+                    release: right_release,
+                    ..
+                },
+            ) => {
+                left_release == right_release
+                    && self.elements_are_region_blind_equal(left_element, right_element, depth)?
+            }
+            (
+                CheckedType::FixedVector {
+                    element: left_element,
+                    length: left_length,
+                },
+                CheckedType::FixedVector {
+                    element: right_element,
+                    length: right_length,
+                },
+            ) => {
+                left_length == right_length
+                    && self.elements_are_region_blind_equal(left_element, right_element, depth)?
+            }
+            (
+                CheckedType::Slice {
+                    element: left_element,
+                    ..
+                },
+                CheckedType::Slice {
+                    element: right_element,
+                    ..
+                },
+            ) => left_element == right_element,
+            (CheckedType::Heap { .. }, CheckedType::Heap { .. }) => true,
+            (
+                CheckedType::Extent {
+                    bytes: left_bytes,
+                    align: left_align,
+                    ..
+                },
+                CheckedType::Extent {
+                    bytes: right_bytes,
+                    align: right_align,
+                    ..
+                },
+            ) => left_bytes == right_bytes && left_align == right_align,
+            _ => left == right,
+        })
+    }
+
+    /// The template index and instance arguments of one source nominal, when
+    /// it is a source declaration's instance rather than a compiler-owned
+    /// nominal [S20].
+    pub(super) fn source_nominal_instance_entry(
+        &self,
+        id: NominalId,
+    ) -> Result<Option<(usize, &GenericSubstitution)>, CheckStop> {
+        Ok(self
+            .source_nominal_instances
+            .get(id.0 as usize)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?
+            .as_ref()
+            .map(|(template, substitution)| (*template, substitution)))
+    }
+
+    /// One nominal instance's region axis [S20], absent for every nominal that
+    /// is not a source declaration's instance.
+    pub(super) fn nominal_region_axis(
+        &self,
+        id: NominalId,
+    ) -> Result<Option<&[(crate::DeclarationId, crate::DeclarationId)]>, CheckStop> {
+        Ok(self
+            .source_nominal_instance_entry(id)?
+            .map(|(_, substitution)| substitution.region_arguments()))
+    }
+
     pub(super) fn source_nominal_instance(
         &self,
         declaration: crate::DeclarationId,
@@ -886,8 +1186,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .nominal_templates
             .get(template_index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let substitution =
-            self.nominal_generic_substitution(node, &template.generic_parameters, caller)?;
+        let substitution = self.nominal_generic_substitution(
+            node,
+            &template.generic_parameters,
+            &template.region_parameters,
+            caller,
+        )?;
         let nominal = self
             .source_nominal_instance(template.declaration, &substitution)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;

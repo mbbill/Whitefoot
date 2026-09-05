@@ -2510,6 +2510,16 @@ pub(crate) struct CheckedProgramData {
     // Nominal instances discovered by the ordinary function path form this
     // prefix. Later instances exist only to type-check static metadata.
     pub(crate) executable_nominal_count: usize,
+    /// For each nominal, the instance it lowers as: itself, or the first
+    /// instance of the same declaration whose type and const arguments agree
+    /// and whose region axis differs [S20, PROV-1].
+    ///
+    /// A region is a proof-time identity. Two instances at two regions are two
+    /// checked types — that is what makes a run of one store unusable at
+    /// another — and the same one runtime representation, exactly as
+    /// `Vector<'a, T>` and `Vector<'b, T>` are one [`IrType::Vector`]. This is
+    /// where the region leaves the program.
+    pub(crate) nominal_lowering_alias: Vec<NominalId>,
     pub(crate) constants: Vec<CheckedConstant>,
     /// Immutable structural table for every symbolic const expression named
     /// by retained schema metadata. `DerivedConstId` is meaningful only

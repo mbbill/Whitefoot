@@ -214,16 +214,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             self.reject_region_bearing_storage_type(content_node, substitution)?;
             let content = self.parse_type_with(content_node, substitution)?;
-            let region = self.type_region(node)?;
+            let region = self.substituted_type_region(node, substitution)?;
             return self
                 .arena_nominals
                 .get(&(region, content))
                 .copied()
                 .map(CheckedType::Nominal)
-                .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
         }
         if self.has_fixed(node, FixedTerminal::Slice)? {
-            let region = self.type_region(node)?;
+            let region = self.substituted_type_region(node, substitution)?;
             let element_node = self
                 .tree
                 .first_child_with(node, Production::Type)?
@@ -246,7 +246,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .get(&referent)
                 .copied()
                 .map(CheckedType::Nominal)
-                .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
         }
         if self
             .tree
@@ -275,7 +275,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(&PreludeType::Option(value))
                         .copied()
                         .map(CheckedType::Nominal)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                        .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
                 ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(8) => {
                     let (ok, error) = self.result_type_arguments_with(node, substitution)?;
@@ -284,7 +284,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .get(&PreludeType::Result(ok, error))
                         .copied()
                         .map(CheckedType::Nominal)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                        .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
                 ResolvedTarget::Prelude(id) if matches!(id.ordinal(), 15 | 17 | 20) => {
                     if targs.is_some() {
@@ -324,12 +324,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     let instance = self.nominal_generic_substitution(
                         node,
                         &template.generic_parameters,
+                        &template.region_parameters,
                         substitution,
                     )?;
                     return self
                         .source_nominal_instance(declaration, &instance)
                         .map(CheckedType::Nominal)
-                        .ok_or(SemanticCompilerFailure::InvalidResolution.into());
+                        .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
                 }
                 ResolvedTarget::Source {
                     declaration,
@@ -616,7 +617,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             else {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             };
-            written_region = Some(declaration);
+            written_region = Some(
+                substitution
+                    .region_argument(declaration)
+                    .unwrap_or(declaration),
+            );
             rest = &arguments[1..];
         }
         let expected = match shape {
@@ -749,6 +754,17 @@ extent's region is one the caller must choose, so it is written at every positio
     /// [PROV-1]'s brand resolution for an elided store region: the enclosing
     /// nominal's sole region parameter at a stored position, and the entry
     /// heap's store region everywhere else.
+    /// The region one `slice` or `arena` type carries, read through the
+    /// enclosing nominal instance's region axis [S20, PROV-1].
+    fn substituted_type_region(
+        &self,
+        node: NodeId,
+        substitution: &GenericSubstitution,
+    ) -> Result<crate::DeclarationId, CheckStop> {
+        let region = self.type_region(node)?;
+        Ok(substitution.region_argument(region).unwrap_or(region))
+    }
+
     pub(in crate::semantic::check) fn elided_store_region(&self) -> crate::DeclarationId {
         self.elided_store_brand
             .get()
@@ -1661,7 +1677,7 @@ extent's region is one the caller must choose, so it is written at every positio
     pub(super) fn constant(&self, id: CheckedConstantId) -> Result<&CheckedConstant, CheckStop> {
         self.checked_constants
             .get(id.0 as usize)
-            .ok_or(SemanticCompilerFailure::InvalidResolution.into())
+            .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into())
     }
 
     pub(super) fn parse_const_type(&self, node: NodeId) -> Result<CheckedType, CheckStop> {
