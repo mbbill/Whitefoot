@@ -1,6 +1,14 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: same size-8 array and cursor as cl07 but the sentinel check runs before the index, so cursor==8 breaks before values[cursor] is ever reached";
-  let values = array_new::<u64, 8>(0_u64);
+  let values = fixed_vector::<u64, 8>();
+  set values = place_back(vector: move values, value: 0_u64);
+  set values = place_back(vector: move values, value: 0_u64);
+  set values = place_back(vector: move values, value: 0_u64);
+  set values = place_back(vector: move values, value: 0_u64);
+  set values = place_back(vector: move values, value: 0_u64);
+  set values = place_back(vector: move values, value: 0_u64);
+  set values = place_back(vector: move values, value: 0_u64);
+  set values = place_back(vector: move values, value: 0_u64);
   let cursor = 0_u64;
   loop (
     invariant bounded: cursor <= 8_u64

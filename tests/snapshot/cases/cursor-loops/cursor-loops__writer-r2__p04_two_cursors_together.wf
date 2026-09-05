@@ -36,13 +36,23 @@ fn count_equal_prefix(left: own Slice<u64>, right: own Slice<u64>) -> matched: o
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let a = buffer_new(5_u64, 0_u64);
+  let a = fixed_vector::<u64, 5>();
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
+  set a = place_back(vector: move a, value: 0_u64);
   set a[0_u64] = 1_u64;
   set a[1_u64] = 2_u64;
   set a[2_u64] = 3_u64;
   set a[3_u64] = 9_u64;
   set a[4_u64] = 5_u64;
-  let b = buffer_new(5_u64, 0_u64);
+  let b = fixed_vector::<u64, 5>();
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
+  set b = place_back(vector: move b, value: 0_u64);
   set b[0_u64] = 1_u64;
   set b[1_u64] = 2_u64;
   set b[2_u64] = 3_u64;

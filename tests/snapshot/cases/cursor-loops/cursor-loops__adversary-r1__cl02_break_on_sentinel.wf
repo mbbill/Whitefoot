@@ -1,6 +1,14 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: ordinary loop scans a fixed array and breaks when it finds sentinel byte 9, index proven safe by the pre-index bound check";
-  let values = array_new::<u8, 8>(3_u8);
+  let values = fixed_vector::<u8, 8>();
+  set values = place_back(vector: move values, value: 3_u8);
+  set values = place_back(vector: move values, value: 3_u8);
+  set values = place_back(vector: move values, value: 3_u8);
+  set values = place_back(vector: move values, value: 3_u8);
+  set values = place_back(vector: move values, value: 3_u8);
+  set values = place_back(vector: move values, value: 3_u8);
+  set values = place_back(vector: move values, value: 3_u8);
+  set values = place_back(vector: move values, value: 3_u8);
   set values[5_u64] = 9_u8;
   let cursor = 0_u64;
   let found = False();
