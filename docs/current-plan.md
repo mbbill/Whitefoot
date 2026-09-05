@@ -336,3 +336,29 @@ one the checker can see.
    permit is.
 5. Only then the rest of the roadmap's list: clock, timers, network,
    cancellation, namespace mutation.
+
+### Recorded 2026-09-05, deferred until batch 2 is done: prove the core
+
+The owner asked whether the scheduler core can be proved rather than only
+enumerated, and decided to study it after batch 2 rather than now. The idea to
+study, as discussed:
+
+- Rewrite the core in Whitefoot. The stacks, records, lanes, ready list and
+  free list become indices into fixed arrays instead of pointers, so every
+  access is a bounds-checked operation the language already proves.
+- Keep the minimal primitives in C with contracts: the atomics, the stack
+  switch, sleep and wake, the reservation, the mutex, the yield. Their
+  `requires`/`ensures` are the trust base, and the enumerator's replacement
+  `prim.h` stays the executable check of the same contracts.
+- Prefer the locked form (`PARK-ON-MISS.md` §6 fallback) for the proved
+  version: under the one mutex the shared state is a sequential value, so the
+  §11 invariants become monitor invariants that Whitefoot's sequential proofs
+  can carry across every entry and exit. The lock-free deque and the claim
+  protocol stay the measured alternative, not the proved one, unless §12 shows
+  the locked form loses.
+- Intermediate steps if the rewrite is too far: a GenMC or CDSChecker run of
+  the C core for the weak-memory question the enumerator's sequentially
+  consistent model does not ask, and a TLA+ model of the claim and park
+  protocols checked by TLC.
+
+Nothing in this note is a batch 2 requirement.
