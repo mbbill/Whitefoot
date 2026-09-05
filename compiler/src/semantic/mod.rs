@@ -44,14 +44,15 @@ pub(crate) use loop_permission::{LoopActualization, LoopCombine, LoopPermission}
 pub(crate) use model::{
     BindingId, CheckedArrayRoot, CheckedArraySetTarget, CheckedBodyDisposition,
     CheckedBooleanOperation, CheckedBufferRoot, CheckedBufferSetTarget, CheckedCommitValues,
-    CheckedConst, CheckedConstructor, CheckedContainerRoot, CheckedDrop, CheckedEntryForm,
-    CheckedEnumType, CheckedExpression, CheckedFlatElement, CheckedFloatOperation, CheckedFunction,
-    CheckedIntegerOperation, CheckedKernelInstance, CheckedLayoutCeiling, CheckedLayoutMagnitude,
-    CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedNumericType, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
-    CheckedReleaseClass, CheckedRunSetTarget, CheckedRuntimeTargetObligations, CheckedSetTarget,
-    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
-    CheckedType, CheckedValue, MeasureCell, MeasuredKind, NominalId, PropagationContext,
+    CheckedConst, CheckedConstructor, CheckedContainerRoot, CheckedDrop, CheckedElement,
+    CheckedEntryForm, CheckedEnumType, CheckedExpression, CheckedFlatElement,
+    CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedKernelInstance,
+    CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId, CheckedMatchArm, CheckedMeasure,
+    CheckedMode, CheckedNominalKind, CheckedNumericType, CheckedParameter, CheckedProgramData,
+    CheckedProjectedDrop, CheckedReleaseClass, CheckedRunSetTarget,
+    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot, CheckedSliceSource,
+    CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue, MeasureCell,
+    MeasuredKind, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:

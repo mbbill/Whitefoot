@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::super::model::{
-    CheckedConst, CheckedConstant, CheckedConstantId, CheckedExpression, CheckedFlatElement,
-    CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
+    CheckedConst, CheckedConstant, CheckedConstantId, CheckedElement, CheckedExpression,
+    CheckedFlatElement, CheckedMatchArm, CheckedMode, CheckedNominalKind, CheckedResultStateOrigin,
     CheckedStateOrigins, CheckedStatePath, CheckedStatement, CheckedType, CheckedValue,
     ConstOperation, FloatType, IntegerType, evaluate_const_operation,
 };
@@ -438,10 +438,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Slice { .. }
                 | CheckedType::Heap { .. }
                 | CheckedType::Extent { .. } => return Ok(true),
-                CheckedType::Array { element, .. }
-                | CheckedType::Buffer { element }
-                | CheckedType::FixedVector { element, .. }
-                | CheckedType::Vector { element, .. } => {
+                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                    pending.push(element.ty());
+                }
+                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
                     pending.push(element.ty());
                 }
                 CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
@@ -635,24 +635,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )
         };
         // [BLK-1] what a slot may hold: every copy element, one region-free
-        // affine nominal stored by value, and — in a run's element position
-        // alone — one unbounded type parameter, which [FN-2] resolves at
-        // every concrete instance. A run of runs is outside it and is an
-        // explicit unsupported capability rather than a source rejection.
-        let element_of = |argument: NodeId| -> Result<CheckedFlatElement, CheckStop> {
+        // affine nominal stored by value, one type parameter under any of its
+        // three bounds — which [FN-2] resolves at every concrete instance —
+        // and one element that is itself a run, descriptor included. The lift
+        // is one level: the element run's own element is flat, so a third
+        // level is an explicit unsupported capability rather than a source
+        // rejection.
+        let element_of = |argument: NodeId| -> Result<CheckedElement, CheckStop> {
             let element_node = self
                 .tree
                 .first_child_with(argument, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
             if let CheckedType::Generic(declaration) = element_type {
-                return Ok(CheckedFlatElement::Generic(declaration));
+                return Ok(CheckedElement::Flat(CheckedFlatElement::Generic(
+                    declaration,
+                )));
+            }
+            if let Some(lifted) = Self::run_element(element_type) {
+                return Ok(lifted);
             }
             match self.buffer_element(element_type)? {
-                Some(element) => Ok(element),
+                Some(element) => Ok(CheckedElement::Flat(element)),
                 None => self
                     .unsupported(UnsupportedSemanticFeature::CompositeValues, element_node)
-                    .map(|()| CheckedFlatElement::Unit),
+                    .map(|()| CheckedElement::Flat(CheckedFlatElement::Unit)),
             }
         };
         match shape {
@@ -1745,6 +1752,32 @@ extent's region is one the caller must choose, so it is written at every positio
                 node,
                 SemanticIssueKind::type_mismatch(TYPE2_FLAT_ELEMENT, self.checked_type_name(ty)?),
             ),
+        }
+    }
+
+    /// The one-level lift of [BLK-1]'s element domain: a run whose own
+    /// element is flat is itself an element, its descriptor included.
+    ///
+    /// It is `None` for every other type, including a run whose element is
+    /// already lifted — that is the second level, which this version does not
+    /// represent — so a caller falls through to the flat domain and, failing
+    /// that, to the unsupported capability.
+    pub(super) const fn run_element(ty: CheckedType) -> Option<CheckedElement> {
+        match ty {
+            CheckedType::FixedVector {
+                element: CheckedElement::Flat(element),
+                length,
+            } => Some(CheckedElement::FixedVector { element, length }),
+            CheckedType::Vector {
+                region,
+                element: CheckedElement::Flat(element),
+                release,
+            } => Some(CheckedElement::Vector {
+                region,
+                element,
+                release,
+            }),
+            _ => None,
         }
     }
 

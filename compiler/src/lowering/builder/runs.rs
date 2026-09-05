@@ -124,7 +124,7 @@ impl IrBuilder<'_> {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         self.define(
-            lower_flat_element(element)?.ty(),
+            lower_element(element)?.ty(),
             IrOperation::RunIndex {
                 run,
                 offset,
@@ -170,7 +170,7 @@ impl IrBuilder<'_> {
         let run = self.project_container_root(root, &target.root)?;
         let index = self.expression(&target.offset)?;
         let previous = self.define(
-            lower_flat_element(element)?.ty(),
+            lower_element(element)?.ty(),
             IrOperation::RunIndex {
                 run,
                 offset: index,
@@ -214,7 +214,7 @@ impl IrBuilder<'_> {
                 width: 64,
                 signed: false,
             })
-            || self.value_type(value)? != lower_flat_element(element)?.ty()
+            || self.value_type(value)? != lower_element(element)?.ty()
         {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }

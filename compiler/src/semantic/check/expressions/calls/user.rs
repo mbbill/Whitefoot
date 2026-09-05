@@ -10,8 +10,8 @@ use super::super::super::super::goal::{
     EvaluatedValueOccurrence, GoalDatum, GoalExpression, GoalProjection,
 };
 use super::super::super::super::model::{
-    CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow, CheckedSliceOrigin,
-    CheckedStateOrigins, CheckedType,
+    CheckedElement, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow,
+    CheckedSliceOrigin, CheckedStateOrigins, CheckedType,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
@@ -608,24 +608,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
-    /// The one region a type writes at its own top level [FORM-8, PROV-1].
+    /// The one region a type writes [FORM-8, PROV-1].
     ///
     /// A view names its loan region and each store-branded type names its
     /// store region; every other type names none. This is the region axis of
     /// substitution: a parameter whose type names a formal region determines
     /// that region from its actual, exactly as a borrow mode does, so the
     /// caller does not write it.
+    ///
+    /// [BLK-1]'s one-level lift puts a second place a store region can be
+    /// written: a frame-resident run of store-backed runs names its store in
+    /// its element position and nowhere else, and that region is determined by
+    /// the actual exactly as a top-level one is. Where both levels name a
+    /// region — `Vector<'s, Vector<'t, u8>>` — this reports the outer one
+    /// alone, so the inner is not substituted and the position is the ordinary
+    /// [TYPE-5] region mismatch: fail-closed, and an explicit gap rather than a
+    /// silent second binding.
     const fn written_type_region(ty: CheckedType) -> Option<DeclarationId> {
         match ty {
             CheckedType::Slice { region, .. }
             | CheckedType::Vector { region, .. }
             | CheckedType::Heap { region }
             | CheckedType::Extent { region, .. } => Some(region),
+            CheckedType::FixedVector {
+                element: CheckedElement::Vector { region, .. },
+                ..
+            } => Some(region),
             _ => None,
         }
     }
 
     /// The same type with its written region replaced [FN-2, OWN-12].
+    ///
+    /// A run's release class is a function of its region's declaration alone
+    /// [PROV-6], and [PROV-6]'s own instantiation check makes the actual's
+    /// store class equal the formal bound's, so the class the formal carried
+    /// is the class the actual has and the substitution preserves it.
     const fn with_type_region(ty: CheckedType, region: DeclarationId) -> CheckedType {
         match ty {
             CheckedType::Slice { element, .. } => CheckedType::Slice { region, element },
@@ -641,6 +659,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 region,
                 bytes,
                 align,
+            },
+            CheckedType::FixedVector {
+                element:
+                    CheckedElement::Vector {
+                        element, release, ..
+                    },
+                length,
+            } => CheckedType::FixedVector {
+                element: CheckedElement::Vector {
+                    region,
+                    element,
+                    release,
+                },
+                length,
             },
             other => other,
         }

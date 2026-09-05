@@ -10,8 +10,8 @@ use crate::{
 
 use super::super::goal::{CheckedRequirement, GoalDatum, GoalExpression, GoalOperation};
 use super::super::model::{
-    CheckedConst, CheckedFlatElement, CheckedGenericRequirement, CheckedNominalKind, CheckedType,
-    CheckedValue, FloatType, IntegerType, NominalId,
+    CheckedConst, CheckedElement, CheckedFlatElement, CheckedGenericRequirement,
+    CheckedNominalKind, CheckedType, CheckedValue, FloatType, IntegerType, NominalId,
 };
 use super::{
     CheckStop, Checker, FunctionSignature, FunctionTemplate, PreludeType,
@@ -108,12 +108,12 @@ enum StableCheckedType {
         element: StableFlatElement,
     },
     FixedVector {
-        element: StableFlatElement,
+        element: StableElement,
         length: CheckedConst,
     },
     Vector {
         region: DeclarationId,
-        element: StableFlatElement,
+        element: StableElement,
     },
     Heap {
         region: DeclarationId,
@@ -122,6 +122,23 @@ enum StableCheckedType {
         region: DeclarationId,
         bytes: CheckedConst,
         align: CheckedConst,
+    },
+}
+
+/// The interned form of [BLK-1]'s element domain, with the same one-level
+/// lift [`crate::semantic::CheckedElement`] carries.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+enum StableElement {
+    Flat(StableFlatElement),
+    FixedVector {
+        element: StableFlatElement,
+        length: CheckedConst,
+    },
+    /// A store-branded element run. Its release class is a function of its
+    /// region alone, so it is recomputed on reification rather than interned.
+    Vector {
+        region: DeclarationId,
+        element: StableFlatElement,
     },
 }
 
@@ -1327,12 +1344,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 StableCheckedType::Buffer { element }
             }
             CheckedType::FixedVector { element, length } => {
-                let Some(element) = self.stabilize_flat_element(
-                    element,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
                 else {
                     return Ok(None);
                 };
@@ -1344,12 +1357,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Vector {
                 region, element, ..
             } => {
-                let Some(element) = self.stabilize_flat_element(
-                    element,
-                    nominal_checkpoint,
-                    visiting,
-                    allow_symbolic,
-                )?
+                let Some(element) =
+                    self.stabilize_element(element, nominal_checkpoint, visiting, allow_symbolic)?
                 else {
                     return Ok(None);
                 };
@@ -1405,6 +1414,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings.push((*declaration, stable));
         }
         Ok(Some(StableGenericSubstitution { bindings }))
+    }
+
+    fn stabilize_element(
+        &self,
+        element: CheckedElement,
+        nominal_checkpoint: usize,
+        visiting: &mut HashSet<NominalId>,
+        allow_symbolic: bool,
+    ) -> Result<Option<StableElement>, CheckStop> {
+        Ok(match element {
+            CheckedElement::Flat(flat) => self
+                .stabilize_flat_element(flat, nominal_checkpoint, visiting, allow_symbolic)?
+                .map(StableElement::Flat),
+            CheckedElement::FixedVector { element, length } => {
+                if !allow_symbolic && !length.is_concrete() {
+                    return Ok(None);
+                }
+                self.stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
+                    .map(|element| StableElement::FixedVector { element, length })
+            }
+            CheckedElement::Vector {
+                region, element, ..
+            } => self
+                .stabilize_flat_element(element, nominal_checkpoint, visiting, allow_symbolic)?
+                .map(|element| StableElement::Vector { region, element }),
+        })
     }
 
     fn stabilize_flat_element(
@@ -1542,12 +1577,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.reify_flat_element(element)?,
             },
             StableCheckedType::FixedVector { element, length } => CheckedType::FixedVector {
-                element: self.reify_flat_element(element)?,
+                element: self.reify_element(element)?,
                 length: *length,
             },
             StableCheckedType::Vector { region, element } => CheckedType::Vector {
                 region: *region,
-                element: self.reify_flat_element(element)?,
+                element: self.reify_element(element)?,
                 release: self.vector_release_class(*region)?,
             },
             StableCheckedType::Heap { region } => CheckedType::Heap { region: *region },
@@ -1559,6 +1594,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 region: *region,
                 bytes: *bytes,
                 align: *align,
+            },
+        })
+    }
+
+    fn reify_element(&mut self, element: &StableElement) -> Result<CheckedElement, CheckStop> {
+        Ok(match element {
+            StableElement::Flat(flat) => CheckedElement::Flat(self.reify_flat_element(flat)?),
+            StableElement::FixedVector { element, length } => CheckedElement::FixedVector {
+                element: self.reify_flat_element(element)?,
+                length: *length,
+            },
+            StableElement::Vector { region, element } => CheckedElement::Vector {
+                region: *region,
+                element: self.reify_flat_element(element)?,
+                release: self.vector_release_class(*region)?,
             },
         })
     }
@@ -2286,13 +2336,13 @@ fn collect_operation_nominals(operation: GoalOperation, output: &mut Vec<Nominal
         | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
         | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. }
-        | GoalOperation::RunIndex { element, .. } => {
+        | GoalOperation::SliceIndex { element, .. } => {
             collect_flat_element_nominals(element, output);
         }
+        GoalOperation::RunIndex { element, .. } => collect_element_nominals(element, output),
         GoalOperation::ContainerMeasure { element, .. } => {
             if let Some(element) = element {
-                collect_flat_element_nominals(element, output);
+                collect_element_nominals(element, output);
             }
         }
         GoalOperation::NumericConversion { .. }
@@ -2306,9 +2356,10 @@ fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
         CheckedType::Nominal(id) => output.push(id),
         CheckedType::Array { element, .. }
         | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element }
-        | CheckedType::FixedVector { element, .. }
-        | CheckedType::Vector { element, .. } => collect_flat_element_nominals(element, output),
+        | CheckedType::Buffer { element } => collect_flat_element_nominals(element, output),
+        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+            collect_element_nominals(element, output);
+        }
         CheckedType::Unit
         | CheckedType::Bool
         | CheckedType::Integer(_)
@@ -2318,6 +2369,15 @@ fn collect_type_nominals(ty: CheckedType, output: &mut Vec<NominalId>) {
         | CheckedType::GenericFloat(_)
         | CheckedType::Heap { .. }
         | CheckedType::Extent { .. } => {}
+    }
+}
+
+fn collect_element_nominals(element: CheckedElement, output: &mut Vec<NominalId>) {
+    match element {
+        CheckedElement::Flat(flat) => collect_flat_element_nominals(flat, output),
+        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
+            collect_flat_element_nominals(element, output);
+        }
     }
 }
 
@@ -2414,13 +2474,15 @@ fn rewrite_operation_nominals(
         | GoalOperation::BufferMeasure { element, .. }
         | GoalOperation::BufferIndex { element }
         | GoalOperation::SliceMeasure { element, .. }
-        | GoalOperation::SliceIndex { element, .. }
-        | GoalOperation::RunIndex { element, .. } => {
+        | GoalOperation::SliceIndex { element, .. } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+        }
+        GoalOperation::RunIndex { element, .. } => {
+            rewrite_element_nominals(element, checkpoint, replacements)?;
         }
         GoalOperation::ContainerMeasure { element, .. } => {
             if let Some(element) = element {
-                rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+                rewrite_element_nominals(element, checkpoint, replacements)?;
             }
         }
         GoalOperation::NumericConversion { .. }
@@ -2443,10 +2505,11 @@ fn rewrite_type_nominals(
         }
         CheckedType::Array { element, .. }
         | CheckedType::Slice { element, .. }
-        | CheckedType::Buffer { element }
-        | CheckedType::FixedVector { element, .. }
-        | CheckedType::Vector { element, .. } => {
+        | CheckedType::Buffer { element } => {
             rewrite_flat_element_nominals(element, checkpoint, replacements)?;
+        }
+        CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+            rewrite_element_nominals(element, checkpoint, replacements)?;
         }
         CheckedType::Unit
         | CheckedType::Bool
@@ -2460,6 +2523,19 @@ fn rewrite_type_nominals(
         | CheckedType::Nominal(_) => {}
     }
     Ok(())
+}
+
+fn rewrite_element_nominals(
+    element: &mut CheckedElement,
+    checkpoint: usize,
+    replacements: &HashMap<NominalId, NominalId>,
+) -> Result<(), CheckStop> {
+    match element {
+        CheckedElement::Flat(flat) => rewrite_flat_element_nominals(flat, checkpoint, replacements),
+        CheckedElement::FixedVector { element, .. } | CheckedElement::Vector { element, .. } => {
+            rewrite_flat_element_nominals(element, checkpoint, replacements)
+        }
+    }
 }
 
 fn rewrite_flat_element_nominals(

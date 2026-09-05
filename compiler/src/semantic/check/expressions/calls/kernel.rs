@@ -718,22 +718,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The element type of a run at one instance [BLK-1].
     ///
-    /// [BLK-1] states what a slot may hold, and a run's element domain is the
-    /// one `buffer` formation already has: every copy element, and one
-    /// region-free affine nominal stored by value. An element type outside
-    /// it — a run of runs, or an unbounded type parameter, which no storage
-    /// element position admits in this version — is an explicit unsupported
-    /// capability and never a source rejection.
+    /// [BLK-1] states what a slot may hold: every copy element, one
+    /// region-free affine nominal stored by value, one type parameter at the
+    /// symbolic instance, and one element that is itself a run. The last is
+    /// the one-level lift, so an element run whose own element is already a
+    /// run is outside the domain this version represents and is an explicit
+    /// unsupported capability rather than a source rejection.
     fn kernel_element(
         &self,
         element: CheckedType,
         node: NodeId,
-    ) -> Result<super::super::super::super::model::CheckedFlatElement, CheckStop> {
-        if let super::super::super::super::model::CheckedType::Generic(declaration) = element {
-            return Ok(super::super::super::super::model::CheckedFlatElement::Generic(declaration));
+    ) -> Result<super::super::super::super::model::CheckedElement, CheckStop> {
+        use super::super::super::super::model::{CheckedElement, CheckedFlatElement};
+        if let CheckedType::Generic(declaration) = element {
+            return Ok(CheckedElement::Flat(CheckedFlatElement::Generic(
+                declaration,
+            )));
+        }
+        if let Some(lifted) = Self::run_element(element) {
+            return Ok(lifted);
         }
         match self.buffer_element(element)? {
-            Some(element) => Ok(element),
+            Some(element) => Ok(CheckedElement::Flat(element)),
             None => self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, node),
         }
     }

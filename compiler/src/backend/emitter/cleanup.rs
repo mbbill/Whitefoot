@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::fmt::Write;
 
-use crate::{IrFlatElement, IrVariant};
+use crate::{IrFlatElement, IrReleaseClass, IrVariant};
 
 use super::super::qualification::Qualification;
 use super::super::target::TargetLayout;
@@ -78,7 +78,133 @@ pub(super) fn emit_resource_drop_helpers(
             "  %next = add i64 %index, 1\n  br label %head\ndone:\n  call void @free(ptr %pointer)\n  ret void\n}\n\n",
         );
     }
+    for (index, ty) in cleanup_run_types(program)?.into_iter().enumerate() {
+        emit_run_drop_helper(program, qualification, &mut output, index, ty)?;
+    }
     Ok(output)
+}
+
+/// [PROV-6, BLK-1] one run's release: its window is visited, in ascending
+/// logical order, and only then is its own backing released.
+///
+/// The walk is over the window and not over the capacity, because a slot
+/// outside the window is raw [BLK-1] and reading it would be an uninitialized
+/// read. The physical slot of logical offset `i` is `(head + i) mod cap`,
+/// which is the one conditional subtract a subscript already emits.
+///
+/// The backing release itself is empty in this version and is emitted after
+/// the walk: a frame-resident run reclaims no storage of its own, and every
+/// store-resident run this version can form is taken from a bump extent, whose
+/// region reset reclaims the whole extent [BLK-2]. The general store's free
+/// lands with `heap_vector`, and it lands *here*, after the loop, which is what
+/// [PROV-6]'s ordering requires.
+fn emit_run_drop_helper(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+    output: &mut String,
+    index: usize,
+    ty: IrType,
+) -> Result<(), BackendFailure> {
+    let run_llvm = llvm_type(program, ty)?;
+    let symbol = run_drop_helper_symbol(index);
+    writeln!(
+        output,
+        "define private void @{symbol}({run_llvm} %value) {{\nentry:"
+    )
+    .map_err(|_| BackendFailure::TextEmission)?;
+    let element = match ty {
+        // A frame-resident run's slots are inside its own value, so the walk
+        // needs an address for it; its capacity is the type constant.
+        IrType::FixedVector { element, length } => {
+            writeln!(
+                output,
+                "  %storage = alloca {run_llvm}\n  store {run_llvm} %value, ptr %storage\n  %pointer = getelementptr inbounds {run_llvm}, ptr %storage, i64 0, i32 0, i64 0\n  %capacity = add i64 {length}, 0\n  %length = extractvalue {run_llvm} %value, 1\n  %origin = extractvalue {run_llvm} %value, 2"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            element
+        }
+        // A store-resident run's slots are behind its descriptor pointer.
+        IrType::Vector { element, .. } => {
+            writeln!(
+                output,
+                "  %pointer = extractvalue {run_llvm} %value, 0\n  %capacity = extractvalue {run_llvm} %value, 1\n  %length = extractvalue {run_llvm} %value, 2\n  %origin = extractvalue {run_llvm} %value, 3"
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            element
+        }
+        _ => return Err(BackendFailure::InvalidIr),
+    };
+    let element_ty = element.ty();
+    let element_llvm = llvm_type(program, element_ty)?;
+    writeln!(
+        output,
+        "  br label %walk\nwalk:\n  %index = phi i64 [ 0, %entry ], [ %next, %body ]\n  %continue = icmp ult i64 %index, %length\n  br i1 %continue, label %body, label %done\nbody:\n  %raw = add i64 %origin, %index\n  %over = icmp uge i64 %raw, %capacity\n  %reduced = sub i64 %raw, %capacity\n  %physical = select i1 %over, i64 %reduced, i64 %raw\n  %element.pointer = getelementptr inbounds {element_llvm}, ptr %pointer, i64 %physical\n  %element = load {element_llvm}, ptr %element.pointer"
+    )
+    .map_err(|_| BackendFailure::TextEmission)?;
+    let mut temporary = 0_u32;
+    emit_value_cleanup(
+        program,
+        qualification,
+        output,
+        &mut temporary,
+        element_ty,
+        "%element".to_owned(),
+    )?;
+    output.push_str("  %next = add i64 %index, 1\n  br label %walk\ndone:\n  ret void\n}\n\n");
+    Ok(())
+}
+
+/// Every run type in the program whose window holds values deriving a release
+/// action, in deterministic order.
+///
+/// The one-level lift [BLK-1] means an element run's own element is flat, so
+/// closing the enumeration over element types takes one extra pass and not a
+/// fixed point.
+fn cleanup_run_types(program: &IrProgram<'_, '_, '_>) -> Result<Vec<IrType>, BackendFailure> {
+    let mut candidates: Vec<IrType> = Vec::new();
+    for ty in program_types(program) {
+        if !matches!(ty, IrType::FixedVector { .. } | IrType::Vector { .. }) {
+            continue;
+        }
+        if !candidates.contains(&ty) {
+            candidates.push(ty);
+        }
+        let (IrType::FixedVector { element, .. } | IrType::Vector { element, .. }) = ty else {
+            continue;
+        };
+        let inner = element.ty();
+        if matches!(inner, IrType::FixedVector { .. } | IrType::Vector { .. })
+            && !candidates.contains(&inner)
+        {
+            candidates.push(inner);
+        }
+    }
+    let mut needed = Vec::new();
+    for ty in candidates {
+        let (IrType::FixedVector { element, .. } | IrType::Vector { element, .. }) = ty else {
+            continue;
+        };
+        if type_requires_cleanup(program, element.ty())? {
+            needed.push(ty);
+        }
+    }
+    Ok(needed)
+}
+
+fn run_drop_helper_symbol(index: usize) -> String {
+    format!("wf.drop.run.{index}")
+}
+
+/// The helper one run type's release walk is emitted as, when its window holds
+/// values that derive a release action.
+fn run_drop_helper(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+) -> Result<Option<String>, BackendFailure> {
+    Ok(cleanup_run_types(program)?
+        .into_iter()
+        .position(|candidate| candidate == ty)
+        .map(run_drop_helper_symbol))
 }
 
 /// Every buffer element nominal in the program whose element drop derives an
@@ -145,11 +271,20 @@ pub(super) fn type_requires_cleanup(
     while let Some(current) = pending.pop() {
         match current {
             IrType::Buffer { .. } => return Ok(true),
-            // A store-resident run always reclaims its own storage; a
-            // frame-resident run reclaims none of its own and needs a walk
-            // only when its window holds values that do [STOR-3, BLK-1].
-            IrType::Vector { .. } => return Ok(true),
-            IrType::FixedVector { element, .. } => pending.push(element.ty()),
+            // A run's own backing action is its release class [PROV-6]: a
+            // general store's run spends that store's provider capability, and
+            // a bump extent's run is reclaimed by its own region reset, which
+            // is no action at all. A frame-resident run reclaims none of its
+            // own either. Every run still needs a walk when its window holds
+            // values that derive one, and [PROV-6] visits those elements
+            // before the backing is released [STOR-3, BLK-1].
+            IrType::Vector {
+                release: IrReleaseClass::General,
+                ..
+            } => return Ok(true),
+            IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
+                pending.push(element.ty());
+            }
             IrType::Provider => {}
             IrType::Nominal(id)
                 if matches!(
@@ -362,25 +497,22 @@ fn emit_cleanup_jobs(
                         }
                     }
                 }
-                // A store-resident run's release is one reclamation of its
-                // own run to its store [STOR-3, BLK-1]. Every run this
-                // version can form is taken from a bump extent, whose own
-                // release at its region's scope exit reclaims the whole
-                // extent [PROV-6], so the run's action is empty and the
-                // reclamation is not performed twice. The general store's
-                // free lands with `heap_vector`, which is the row that first
-                // makes such a run. A run whose element type derives a
-                // release action of its own is an explicit unsupported
-                // capability, refused at its type before lowering.
-                IrType::Vector { element, .. } => {
-                    if type_requires_cleanup(program, element.ty())? {
-                        return Err(BackendFailure::InvalidIr);
-                    }
-                }
-                // A frame-resident run reclaims no storage of its own.
-                IrType::FixedVector { element, .. } => {
-                    if type_requires_cleanup(program, element.ty())? {
-                        return Err(BackendFailure::InvalidIr);
+                // A run's release visits its window and then releases its own
+                // backing [PROV-6, BLK-1], and the helper is what carries
+                // that order. A frame-resident run reclaims no storage of its
+                // own, and every store-resident run this version can form is
+                // taken from a bump extent, whose region reset reclaims the
+                // whole extent [BLK-2] — so both backings are empty here and
+                // a run whose window derives no action emits nothing at all.
+                // The general store's free lands with `heap_vector`, after
+                // the walk the helper already performs.
+                IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
+                    if type_requires_cleanup(program, element.ty())?
+                        && let Some(symbol) = run_drop_helper(program, ty)?
+                    {
+                        let run_llvm = llvm_type(program, ty)?;
+                        writeln!(output, "  call void @{symbol}({run_llvm} {operand})")
+                            .map_err(|_| BackendFailure::TextEmission)?;
                     }
                 }
                 IrType::Unit

@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    IrArrayRoot, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind, IrOperation,
-    IrProgram, IrTargetDomainObligation, IrType, IrValueId, SystemIntegerResultBound,
+    IrArrayRoot, IrElement, IrFlatElement, IrFunction, IrInstruction, IrNominalId, IrNominalKind,
+    IrOperation, IrProgram, IrTargetDomainObligation, IrType, IrValueId, SystemIntegerResultBound,
 };
 
 use super::qualification::Qualification;
@@ -931,16 +931,16 @@ impl LayoutComputer<'_, '_, '_, '_> {
             // window origin [BLK-1]; a provider is proof-only and carries at
             // most its own cursor.
             IrType::Vector { element, .. } => {
-                self.flat_element(element)?;
+                self.element(element)?;
                 Ok(Layout { size: 32, align: 8 })
             }
             IrType::Provider => Ok(Layout { size: 16, align: 8 }),
             IrType::FixedVector { length: 0, element } => {
-                self.flat_element(element)?;
+                self.element(element)?;
                 Ok(Layout { size: 16, align: 8 })
             }
             IrType::FixedVector { element, length } => {
-                let element = self.flat_element(element)?;
+                let element = self.element(element)?;
                 let stride = align_up(
                     self.target,
                     element.size,
@@ -965,6 +965,14 @@ impl LayoutComputer<'_, '_, '_, '_> {
     }
 
     fn flat_element(&mut self, element: IrFlatElement) -> Result<Layout, TargetLayoutFailure> {
+        self.layout(element.ty())
+    }
+
+    /// One run slot's layout [BLK-1, OP-9]. A slot holding a run holds that
+    /// run's complete representation -- a `FixedVector`'s slots and two
+    /// descriptor words inline, a `Vector`'s four-word descriptor -- so the
+    /// slot layout is that type's own.
+    fn element(&mut self, element: IrElement) -> Result<Layout, TargetLayoutFailure> {
         self.layout(element.ty())
     }
 

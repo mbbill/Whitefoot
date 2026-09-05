@@ -75,3 +75,37 @@ fn the_fixed_run_library_proves_and_runs() {
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }
+
+/// [BLK-1, PROV-6, FORM-8] the one-level lift at execution: a frame-resident
+/// run whose elements are store-backed runs, and the block pool 3.L.4 writes
+/// over it.
+///
+/// The program is the design's pool with its two nominals removed, which is
+/// exactly what this version cannot spell: a source nominal generic over its
+/// store region has no instantiation, so `BlockPool['s]` and `Lease['s]` wait,
+/// and the free list is the bare `FixedVector<Vector<'s, u8>, 8>` the struct
+/// would have held. What it does exercise is everything the lift was for —
+/// eight arena-backed runs carved into one run of runs, a lease taken off the
+/// back boundary and a block returned to it, and both pool operations generic
+/// over the store, which needs the formal region a run's *element* names to be
+/// determined by the actual.
+///
+/// The exit code is the program's own report: it reads the free list's length
+/// after the carve, the leased block's own `room_of`, and the length the
+/// release leaves, so an element slot laid out or addressed wrongly reports a
+/// nonzero code rather than passing quietly.
+#[test]
+fn a_run_of_store_backed_runs_is_a_block_pool() {
+    let llvm = compile_program("block_pool.wf");
+    // One slot holds a whole four-word descriptor, so the run's storage is
+    // eight of them and the element load is that aggregate [BLK-1, OP-9].
+    assert!(llvm.contains("[8 x { ptr, i64, i64, i64 }]"));
+    // The blocks come out of the extent's own frame reservation: no
+    // allocation call is emitted for a bump take [BLK-2, STOR-1].
+    assert!(!llvm.contains("call ptr @malloc"));
+
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}

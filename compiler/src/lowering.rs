@@ -6,9 +6,9 @@
 //! judgment.
 
 use crate::semantic::{
-    CheckedBooleanOperation, CheckedEnumType, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedLoopId,
-    CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
+    CheckedBooleanOperation, CheckedElement, CheckedEnumType, CheckedFlatElement,
+    CheckedFloatOperation, CheckedIntegerOperation, CheckedLayoutCeiling, CheckedLayoutMagnitude,
+    CheckedLoopId, CheckedNumericType, CheckedProgram, CheckedRuntimeTargetObligations,
     CheckedTargetDomainObligation, CheckedType,
 };
 use crate::{SystemRelease, SystemResourceContract};
@@ -100,6 +100,38 @@ impl IrFlatElement {
             Self::Integer { width, signed } => IrType::Integer { width, signed },
             Self::Float { width } => IrType::Float { width },
             Self::TagOnlyNominal(id) | Self::Nominal(id) => IrType::Nominal(id),
+        }
+    }
+}
+
+/// [BLK-1] the type of one slot of a run, with the same one-level lift the
+/// checked element domain carries: a flat element, or one run of flat
+/// elements whose descriptor lives in the slot.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrElement {
+    Flat(IrFlatElement),
+    FixedVector {
+        element: IrFlatElement,
+        length: u64,
+    },
+    Vector {
+        element: IrFlatElement,
+        release: IrReleaseClass,
+    },
+}
+
+impl IrElement {
+    pub const fn ty(self) -> IrType {
+        match self {
+            Self::Flat(element) => element.ty(),
+            Self::FixedVector { element, length } => IrType::FixedVector {
+                element: Self::Flat(element),
+                length,
+            },
+            Self::Vector { element, release } => IrType::Vector {
+                element: Self::Flat(element),
+                release,
+            },
         }
     }
 }
@@ -236,20 +268,46 @@ pub enum IrType {
     /// descriptor words `len` and `head`. The capacity is the type constant
     /// and is stored nowhere.
     FixedVector {
-        element: IrFlatElement,
+        element: IrElement,
         length: u64,
     },
     /// One `Vector<'s, T>` [BLK-1]: the descriptor `{ pointer, cap, len,
     /// head }` over a run taken from the store `'s` names. The region is
     /// erased here, and the release action it decided travels in its place.
     Vector {
-        element: IrFlatElement,
+        element: IrElement,
         release: IrReleaseClass,
     },
     /// One provider value [PROV-1]. It is proof-only: the general store's
     /// provider carries no runtime state at all, and the bump extent's
     /// carries exactly its cursor.
     Provider,
+}
+
+const fn lower_release_class(value: crate::semantic::CheckedReleaseClass) -> IrReleaseClass {
+    match value {
+        crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
+        crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
+    }
+}
+
+fn lower_element(value: CheckedElement) -> Result<IrElement, LoweringFailure> {
+    Ok(match value {
+        CheckedElement::Flat(element) => IrElement::Flat(lower_flat_element(element)?),
+        CheckedElement::FixedVector { element, length } => IrElement::FixedVector {
+            element: lower_flat_element(element)?,
+            length: match length.value() {
+                Some(value) => value,
+                None => return Err(LoweringFailure::InvalidCheckedProgram),
+            },
+        },
+        CheckedElement::Vector {
+            element, release, ..
+        } => IrElement::Vector {
+            element: lower_flat_element(element)?,
+            release: lower_release_class(release),
+        },
+    })
 }
 
 const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, LoweringFailure> {
@@ -304,7 +362,7 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
             element: lower_flat_element(element)?,
         },
         CheckedType::FixedVector { element, length } => IrType::FixedVector {
-            element: lower_flat_element(element)?,
+            element: lower_element(element)?,
             length: length
                 .value()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
@@ -312,11 +370,8 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
         CheckedType::Vector {
             element, release, ..
         } => IrType::Vector {
-            release: match release {
-                crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
-                crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
-            },
-            element: lower_flat_element(element)?,
+            release: lower_release_class(release),
+            element: lower_element(element)?,
         },
         CheckedType::Heap { .. } | CheckedType::Extent { .. } => IrType::Provider,
     })

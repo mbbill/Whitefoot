@@ -1,0 +1,35 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-1, what a slot may hold: a run's element type is any nameable type, a run included, so a FixedVector<FixedVector<u8, 4>, 2> holds complete inner runs, each with its own two descriptor words in its own slot. An element that is a run is affine, so it leaves the outer window through a boundary row and comes back with its own measures and its own window intact.";
+  let outer = fixed_vector::<FixedVector<u8, 4>, 2>();
+  let inner = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move inner, value: 7_u8);
+  let two = place_back(vector: move one, value: 9_u8);
+  let held = place_back(vector: move outer, value: move two);
+  let count = len_of(held);
+  if count == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let (rest, first) = take_back(vector: move held);
+  let emptied = len_of(rest);
+  if emptied == 0_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let width = len_of(first);
+  if width == 2_u64 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let front = first[0_u64];
+  if front == 7_u8 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  let back = first[1_u64];
+  if back == 9_u8 {
+  } else {
+    return exit_status(code: 5_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -271,7 +271,7 @@ fn build_tables(
                         record_index,
                         scope: declarations[record_index].scope,
                         owner: role.owner_chain.first().copied(),
-                        region_owner: function_owner(topology, role.owner),
+                        region_owner: region_scope_owner(topology, role.owner),
                         visibility: declaration_visibility(topology, role, declaration_role)?,
                         entries,
                     });
@@ -806,6 +806,29 @@ fn function_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<Node
     loop {
         let record = topology.node(node)?;
         if matches!(record.production, Production::FnDecl | Production::FnSig) {
+            return Some(node);
+        }
+        node = record.parent?;
+    }
+}
+
+/// The declaration one region identifier's uniqueness is judged within
+/// [OWN-3].
+///
+/// [OWN-3] states the scope as "unique within a function (parameters
+/// included)", and [S20] gave a nominal its own `region_params`, which are not
+/// inside any function. Reaching no owner made every nominal's region
+/// parameter share one unit-wide scope, so a unit declaring `Lease['s]` and
+/// `BlockPool['s]` — 3.L.4's own two nominals — was refused for a repetition
+/// [OWN-3] does not state. A nominal is a declaration with its own region
+/// parameters, so it is its own region scope exactly as a function is.
+fn region_scope_owner(topology: &FinalizedTopology, mut node: NodeId) -> Option<NodeId> {
+    loop {
+        let record = topology.node(node)?;
+        if matches!(
+            record.production,
+            Production::FnDecl | Production::FnSig | Production::StructDecl | Production::EnumDecl
+        ) {
             return Some(node);
         }
         node = record.parent?;

@@ -1,9 +1,9 @@
 use crate::{DeclarationId, NodePath};
 
 use super::model::{
-    BindingId, CheckedBooleanOperation, CheckedConst, CheckedFlatElement, CheckedFloatOperation,
-    CheckedIntegerOperation, CheckedMeasure, CheckedNumericType, CheckedType, CheckedValue,
-    FunctionId, MeasuredKind,
+    BindingId, CheckedBooleanOperation, CheckedConst, CheckedElement, CheckedFlatElement,
+    CheckedFloatOperation, CheckedIntegerOperation, CheckedMeasure, CheckedNumericType,
+    CheckedType, CheckedValue, FunctionId, MeasuredKind,
 };
 
 /// One function requirement, split into predicate and occurrence identity.
@@ -254,7 +254,7 @@ pub(crate) enum GoalOperation {
         measure: CheckedMeasure,
         measured: MeasuredKind,
         /// The element type of a run; a bump extent has none.
-        element: Option<CheckedFlatElement>,
+        element: Option<CheckedElement>,
         /// A `FixedVector`'s capacity or an `Arena`'s byte extent; a
         /// `Vector`'s capacity is a descriptor word and has none.
         constant: Option<CheckedConst>,
@@ -263,7 +263,7 @@ pub(crate) enum GoalOperation {
     /// discharged before this expression is used as a proof operand.
     RunIndex {
         measured: MeasuredKind,
-        element: CheckedFlatElement,
+        element: CheckedElement,
         constant: Option<CheckedConst>,
     },
     /// One slice element value whose own OP-4 obligation has already been

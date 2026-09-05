@@ -10,7 +10,7 @@
 //! `head < cap` and `i < len <= cap`, the sum is below `2 * cap` and the
 //! modulus is one conditional subtract; no division is emitted.
 
-use crate::{IrBoundary, IrFlatElement, IrMeasure};
+use crate::{IrBoundary, IrElement, IrMeasure};
 
 use super::*;
 
@@ -19,9 +19,9 @@ use super::*;
 enum RunShape {
     /// `FixedVector<T, n>`: `n` inline slots, then `len` and `head`. The
     /// capacity is the type constant and is stored nowhere.
-    Inline { element: IrFlatElement, length: u64 },
+    Inline { element: IrElement, length: u64 },
     /// `Vector<'s, T>`: the descriptor `{ pointer, cap, len, head }`.
-    Descriptor { element: IrFlatElement },
+    Descriptor { element: IrElement },
 }
 
 impl RunShape {
@@ -33,7 +33,7 @@ impl RunShape {
         }
     }
 
-    const fn element(self) -> IrFlatElement {
+    const fn element(self) -> IrElement {
         match self {
             Self::Inline { element, .. } | Self::Descriptor { element } => element,
         }

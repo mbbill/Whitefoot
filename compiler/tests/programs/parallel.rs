@@ -243,6 +243,7 @@ fn the_caller_bounded_fold_is_granted_lanes_and_publishes_the_same_bytes() {
 /// silently falling behind the corpus it is intended to cover.
 const CORPUS_UNITS: &[&[&str]] = &[
     &["arena_workspace.wf"],
+    &["block_pool.wf"],
     &["byte_string.wf"],
     &["completion_read_boundary.wf"],
     &["completion_windows_capacity.wf"],

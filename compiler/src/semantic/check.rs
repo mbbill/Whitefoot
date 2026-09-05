@@ -36,7 +36,7 @@ use super::goal::{
     GoalOperation, GoalProjection, first_ephemeral_argument,
 };
 use super::model::{
-    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract,
+    BindingId, CheckedConst, CheckedConstant, CheckedConstantId, CheckedContract, CheckedElement,
     CheckedExpression, CheckedFlatElement, CheckedFunction, CheckedGenericRequirement, CheckedMode,
     CheckedNominal, CheckedNominalKind, CheckedParameter, CheckedProgramData,
     CheckedResultStateOrigin, CheckedSetTarget, CheckedSliceOrigin, CheckedStateOrigins,
@@ -2692,7 +2692,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 measure,
                 measured,
                 element: element
-                    .map(|element| self.instantiate_goal_flat_element(element, signature, regions))
+                    .map(|element| self.instantiate_goal_element(element, signature, regions))
                     .transpose()?,
                 constant: constant
                     .map(|constant| self.instantiate_goal_const(constant, signature))
@@ -2704,7 +2704,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 constant,
             } => GoalOperation::RunIndex {
                 measured,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 constant: constant
                     .map(|constant| self.instantiate_goal_const(constant, signature))
                     .transpose()?,
@@ -2741,7 +2741,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
             },
             CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                element: self.instantiate_goal_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
             CheckedType::Vector {
@@ -2750,7 +2750,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let region = self.instantiate_goal_region(region, signature, regions)?;
                 CheckedType::Vector {
                     region,
-                    element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                    element: self.instantiate_goal_element(element, signature, regions)?,
                     release: self.vector_release_class(region)?,
                 }
             }
@@ -2806,6 +2806,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         })
+    }
+
+    /// One run element at a caller's instance [BLK-1].
+    ///
+    /// The lift is one level, so an element that is itself a run instantiates
+    /// through the ordinary type path and is re-lifted; anything the lift does
+    /// not carry is the flat domain's own instantiation.
+    fn instantiate_goal_element(
+        &self,
+        element: CheckedElement,
+        signature: &FunctionSignature,
+        regions: &[DeclarationId],
+    ) -> Result<CheckedElement, CheckStop> {
+        if element.is_run() {
+            let ty = self.instantiate_goal_type(element.ty(), signature, regions)?;
+            return Self::run_element(ty)
+                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
+        }
+        let flat = element
+            .flat()
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        let ty = self.instantiate_goal_type(flat.ty(), signature, regions)?;
+        if let Some(lifted) = Self::run_element(ty) {
+            return Ok(lifted);
+        }
+        Ok(CheckedElement::Flat(
+            self.instantiate_goal_flat_element(flat, signature, regions)?,
+        ))
     }
 
     fn instantiate_goal_const(
