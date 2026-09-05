@@ -902,34 +902,380 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(aliases)
     }
 
-    /// [S20] whether two nominals are two instances of one declaration that
-    /// differ in their region arguments alone.
+    /// The actual one formal region of a call denotes, or the region itself
+    /// when this call substitutes nothing for it [FORM-8].
+    fn substituted_region(
+        regions: &[(crate::DeclarationId, crate::DeclarationId)],
+        region: crate::DeclarationId,
+    ) -> crate::DeclarationId {
+        regions
+            .iter()
+            .find_map(|(formal, actual)| (*formal == region).then_some(*actual))
+            .unwrap_or(region)
+    }
+
+    /// One checked type with each formal region replaced by the actual a call
+    /// determined for it [FN-2, FORM-8, PROV-1].
     ///
-    /// Same declaration, same type and const arguments, and the same lowered
-    /// content: a region names a store for the proof, so two such instances
-    /// are two checked types and one representation. The content comparison is
-    /// what keeps a difference the run time *can* see out of the relation — a
-    /// run's release class is read off its region's own declaration [PROV-6],
-    /// so two instances whose classes differ are two representations and are
-    /// not related here.
+    /// A call's region arguments are fixed by its operands and by the `::`
+    /// members [FORM-8] leaves it to write, and [FN-2] substitutes them into
+    /// every position of the callee's signature — a result position exactly as
+    /// much as a parameter position. Two calls of one declaration at two
+    /// stores therefore hand back two types, which is what [PROV-1]'s
+    /// invariant store region means where the value is produced rather than
+    /// consumed.
+    ///
+    /// The walk is structural and closed over the checked type domain, so a
+    /// region is reached wherever it occurs: under `Option` and `Result`, in
+    /// a source nominal's own instance and in that instance's type arguments,
+    /// in a run's element position, and in the compiler-owned result-list
+    /// nominal a multi-result callable hands back [CALL-4]. A run's release
+    /// class is a function of its region's declaration [PROV-6], so it is
+    /// re-read from the substituted region rather than carried across.
+    ///
+    /// An instance the substitution names may exist nowhere in the caller's
+    /// written text — no position of `let held = make(store: &uniq one);`
+    /// spells the result's type — so a miss is the ordinary deferred-nominal
+    /// report the driver repairs, exactly as a derived `box<T>` is.
+    pub(super) fn substitute_type_regions(
+        &self,
+        ty: CheckedType,
+        regions: &[(crate::DeclarationId, crate::DeclarationId)],
+    ) -> Result<CheckedType, CheckStop> {
+        if regions.is_empty() {
+            return Ok(ty);
+        }
+        Ok(match ty {
+            CheckedType::Unit
+            | CheckedType::Bool
+            | CheckedType::Integer(_)
+            | CheckedType::Float(_)
+            | CheckedType::Generic(_)
+            | CheckedType::GenericInt(_)
+            | CheckedType::GenericFloat(_)
+            | CheckedType::Array { .. }
+            | CheckedType::Buffer { .. } => ty,
+            CheckedType::Nominal(id) => self.substitute_nominal_regions(id, regions)?,
+            CheckedType::Slice { region, element } => CheckedType::Slice {
+                region: Self::substituted_region(regions, region),
+                element,
+            },
+            CheckedType::FixedVector { element, length } => CheckedType::FixedVector {
+                element: self.substitute_element_regions(element, regions)?,
+                length,
+            },
+            CheckedType::Vector {
+                region, element, ..
+            } => {
+                let region = Self::substituted_region(regions, region);
+                CheckedType::Vector {
+                    region,
+                    element,
+                    release: self.vector_release_class(region)?,
+                }
+            }
+            CheckedType::Heap { region } => CheckedType::Heap {
+                region: Self::substituted_region(regions, region),
+            },
+            CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            } => CheckedType::Extent {
+                region: Self::substituted_region(regions, region),
+                bytes,
+                align,
+            },
+        })
+    }
+
+    /// One slot's content with the same substitution [BLK-1].
+    fn substitute_element_regions(
+        &self,
+        element: CheckedElement,
+        regions: &[(crate::DeclarationId, crate::DeclarationId)],
+    ) -> Result<CheckedElement, CheckStop> {
+        Ok(match element {
+            CheckedElement::Flat(_) | CheckedElement::FixedVector { .. } => element,
+            CheckedElement::Vector {
+                region, element, ..
+            } => {
+                let region = Self::substituted_region(regions, region);
+                CheckedElement::Vector {
+                    region,
+                    element,
+                    release: self.vector_release_class(region)?,
+                }
+            }
+        })
+    }
+
+    /// One nominal instance with the same substitution, reported as a
+    /// deferred nominal when the instance it names is not interned yet.
+    fn substitute_nominal_regions(
+        &self,
+        id: NominalId,
+        regions: &[(crate::DeclarationId, crate::DeclarationId)],
+    ) -> Result<CheckedType, CheckStop> {
+        if let Some(prelude) = self.prelude_type(id) {
+            let substituted = match prelude {
+                PreludeType::Option(value) => {
+                    PreludeType::Option(self.substitute_type_regions(value, regions)?)
+                }
+                PreludeType::Result(ok, error) => PreludeType::Result(
+                    self.substitute_type_regions(ok, regions)?,
+                    self.substitute_type_regions(error, regions)?,
+                ),
+                PreludeType::Overflow | PreludeType::DivError | PreludeType::NarrowError => prelude,
+            };
+            if substituted == prelude {
+                return Ok(CheckedType::Nominal(id));
+            }
+            return Ok(CheckedType::Nominal(self.prelude_nominal(substituted)?));
+        }
+        if let Some((template, instance)) = self.source_nominal_instance_entry(id)? {
+            let mut changed = false;
+            let mut bindings = Vec::with_capacity(instance.entries().len());
+            for (declaration, argument) in instance.entries() {
+                bindings.push((
+                    *declaration,
+                    match argument {
+                        super::generics::GenericArgument::Type(ty) => {
+                            let substituted = self.substitute_type_regions(*ty, regions)?;
+                            changed |= substituted != *ty;
+                            super::generics::GenericArgument::Type(substituted)
+                        }
+                        super::generics::GenericArgument::Const(value) => {
+                            super::generics::GenericArgument::Const(*value)
+                        }
+                    },
+                ));
+            }
+            let mut axis = Vec::with_capacity(instance.region_arguments().len());
+            for (formal, actual) in instance.region_arguments() {
+                let substituted = Self::substituted_region(regions, *actual);
+                changed |= substituted != *actual;
+                axis.push((*formal, substituted));
+            }
+            if !changed {
+                return Ok(CheckedType::Nominal(id));
+            }
+            let target = GenericSubstitution::from_bindings(bindings)?.with_regions(axis);
+            let declaration = self
+                .nominal_templates
+                .get(template)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+                .declaration;
+            if let Some(existing) = self.source_nominal_instance(declaration, &target) {
+                return Ok(CheckedType::Nominal(existing));
+            }
+            self.pending_nominals
+                .borrow_mut()
+                .push(super::PendingNominal::SourceInstance {
+                    template,
+                    substitution: target,
+                });
+            return Err(CheckStop::DeferredNominal);
+        }
+        if let Some((results, _)) = self
+            .result_list_nominals
+            .iter()
+            .find(|(_, candidate)| **candidate == id)
+        {
+            let mut changed = false;
+            let mut substituted = Vec::with_capacity(results.len());
+            for (name, ty) in results {
+                let ordinal = self.substitute_type_regions(*ty, regions)?;
+                changed |= ordinal != *ty;
+                substituted.push((name.clone(), ordinal));
+            }
+            if !changed {
+                return Ok(CheckedType::Nominal(id));
+            }
+            let Some(existing) = self.result_list_nominal(&substituted) else {
+                self.pending_nominals
+                    .borrow_mut()
+                    .push(super::PendingNominal::ResultList(substituted));
+                return Err(CheckStop::DeferredNominal);
+            };
+            return Ok(CheckedType::Nominal(existing));
+        }
+        match &self.nominal(id)?.kind {
+            CheckedNominalKind::Box { referent } => {
+                let substituted = self.substitute_type_regions(*referent, regions)?;
+                if substituted == *referent {
+                    return Ok(CheckedType::Nominal(id));
+                }
+                let Some(existing) = self.box_nominals.get(&substituted).copied() else {
+                    self.pending_nominals
+                        .borrow_mut()
+                        .push(super::PendingNominal::Box(substituted));
+                    return Err(CheckStop::DeferredNominal);
+                };
+                Ok(CheckedType::Nominal(existing))
+            }
+            CheckedNominalKind::Arena { region, content } => {
+                let substituted_region = Self::substituted_region(regions, *region);
+                let substituted_content = self.substitute_type_regions(*content, regions)?;
+                if substituted_region == *region && substituted_content == *content {
+                    return Ok(CheckedType::Nominal(id));
+                }
+                let key = (substituted_region, substituted_content);
+                let Some(existing) = self.arena_nominals.get(&key).copied() else {
+                    self.pending_nominals
+                        .borrow_mut()
+                        .push(super::PendingNominal::Arena(key.0, key.1));
+                    return Err(CheckStop::DeferredNominal);
+                };
+                Ok(CheckedType::Nominal(existing))
+            }
+            CheckedNominalKind::Struct { .. }
+            | CheckedNominalKind::Enum { .. }
+            | CheckedNominalKind::ArenaStorage
+            | CheckedNominalKind::SystemResource { .. } => Ok(CheckedType::Nominal(id)),
+        }
+    }
+
+    /// [S20] whether two nominals are two names for one representation that
+    /// differ in their regions alone.
+    ///
+    /// The same name shape — one source declaration at two regions, one
+    /// prelude shape over two region-blind-equal arguments, one result list
+    /// [CALL-4] with the same ordinal names, one `box` or one `arena`
+    /// [STOR-2] — and the same lowered content: a region names a store for
+    /// the proof, so two such nominals are two checked types and one IR
+    /// nominal. The content comparison is what keeps a difference the run
+    /// time *can* see out of the relation — a run's release class is read off
+    /// its region's own declaration [PROV-6], so two instances whose classes
+    /// differ are two representations and are not related here.
+    ///
+    /// The relation reaches beyond a source instance because a call's region
+    /// substitution does: a callee returning `own Option<BlockPool<'s>>`
+    /// hands its caller an `Option<BlockPool<'a>>` [FN-2], and a multi-result
+    /// callee hands back its result-list nominal with every ordinal
+    /// substituted, so those two classes meet at the same boundary a source
+    /// instance does.
     pub(super) fn nominals_differ_only_in_region(
         &self,
         left: NominalId,
         right: NominalId,
     ) -> Result<bool, CheckStop> {
-        let (Some((left_template, left_instance)), Some((right_template, right_instance))) = (
-            self.source_nominal_instance_entry(left)?,
-            self.source_nominal_instance_entry(right)?,
-        ) else {
-            return Ok(false);
-        };
-        if left_template != right_template
-            || left_instance.entries() != right_instance.entries()
-            || left_instance.region_arguments().is_empty()
-        {
+        if left == right {
             return Ok(false);
         }
-        self.nominal_content_is_region_blind_equal(left, right, 0)
+        self.nominals_are_region_blind_equal(left, right, 0)
+    }
+
+    fn nominals_are_region_blind_equal(
+        &self,
+        left: NominalId,
+        right: NominalId,
+        depth: usize,
+    ) -> Result<bool, CheckStop> {
+        if left == right {
+            return Ok(true);
+        }
+        if depth > 16 {
+            return Ok(false);
+        }
+        // [STOR-2] a box and an arena carry their whole content in the kind
+        // rather than in fields, so the content comparison below has nothing
+        // to read for them.
+        match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
+            (
+                CheckedNominalKind::Box { referent: left },
+                CheckedNominalKind::Box { referent: right },
+            )
+            | (
+                CheckedNominalKind::Arena { content: left, .. },
+                CheckedNominalKind::Arena { content: right, .. },
+            ) => {
+                return self.types_are_region_blind_equal(*left, *right, depth.saturating_add(1));
+            }
+            (CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }, _)
+            | (_, CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }) => {
+                return Ok(false);
+            }
+            _ => {}
+        }
+        if !self.nominal_names_are_region_blind_equal(left, right, depth)? {
+            return Ok(false);
+        }
+        self.nominal_content_is_region_blind_equal(left, right, depth)
+    }
+
+    /// Whether two nominals name the same shape once every region is erased:
+    /// the half of the relation that is about identity rather than layout.
+    fn nominal_names_are_region_blind_equal(
+        &self,
+        left: NominalId,
+        right: NominalId,
+        depth: usize,
+    ) -> Result<bool, CheckStop> {
+        let (left_source, right_source) = (
+            self.source_nominal_instance_entry(left)?,
+            self.source_nominal_instance_entry(right)?,
+        );
+        if let (Some((left_template, left_instance)), Some((right_template, right_instance))) =
+            (left_source, right_source)
+        {
+            return Ok(left_template == right_template
+                && left_instance.entries() == right_instance.entries()
+                && !left_instance.region_arguments().is_empty());
+        }
+        if left_source.is_some() || right_source.is_some() {
+            return Ok(false);
+        }
+        let (left_prelude, right_prelude) = (self.prelude_type(left), self.prelude_type(right));
+        if let (Some(left_prelude), Some(right_prelude)) = (left_prelude, right_prelude) {
+            return self.prelude_types_are_region_blind_equal(left_prelude, right_prelude, depth);
+        }
+        if left_prelude.is_some() || right_prelude.is_some() {
+            return Ok(false);
+        }
+        let (left_list, right_list) = (
+            self.result_list_ordinal_names(left),
+            self.result_list_ordinal_names(right),
+        );
+        if let (Some(left_list), Some(right_list)) = (&left_list, &right_list) {
+            return Ok(left_list == right_list);
+        }
+        Ok(false)
+    }
+
+    /// One prelude instance's arguments, compared with every region erased.
+    fn prelude_types_are_region_blind_equal(
+        &self,
+        left: PreludeType,
+        right: PreludeType,
+        depth: usize,
+    ) -> Result<bool, CheckStop> {
+        Ok(match (left, right) {
+            (PreludeType::Option(left), PreludeType::Option(right)) => {
+                self.types_are_region_blind_equal(left, right, depth.saturating_add(1))?
+            }
+            (
+                PreludeType::Result(left_ok, left_error),
+                PreludeType::Result(right_ok, right_error),
+            ) => {
+                self.types_are_region_blind_equal(left_ok, right_ok, depth.saturating_add(1))?
+                    && self.types_are_region_blind_equal(
+                        left_error,
+                        right_error,
+                        depth.saturating_add(1),
+                    )?
+            }
+            (left, right) => left == right,
+        })
+    }
+
+    /// The ordinal names of a compiler-owned result-list nominal [CALL-4],
+    /// absent for every nominal that is not one.
+    fn result_list_ordinal_names(&self, id: NominalId) -> Option<Vec<String>> {
+        self.result_list_nominals
+            .iter()
+            .find(|(_, candidate)| **candidate == id)
+            .map(|(results, _)| results.iter().map(|(name, _)| name.clone()).collect())
     }
 
     /// The two instances' fields or variant payloads, compared with every
@@ -1060,19 +1406,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<bool, CheckStop> {
         Ok(match (left, right) {
             (CheckedType::Nominal(left), CheckedType::Nominal(right)) => {
-                left == right
-                    || (self
-                        .source_nominal_instance_entry(left)?
-                        .map(|(index, _)| index)
-                        == self
-                            .source_nominal_instance_entry(right)?
-                            .map(|(index, _)| index)
-                        && self.source_nominal_instance_entry(left)?.is_some()
-                        && self.nominal_content_is_region_blind_equal(
-                            left,
-                            right,
-                            depth.saturating_add(1),
-                        )?)
+                self.nominals_are_region_blind_equal(left, right, depth.saturating_add(1))?
             }
             (
                 CheckedType::Vector {

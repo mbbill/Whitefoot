@@ -1,0 +1,31 @@
+fn nothing['s: affine]() -> made: own Option<Vector<'s, u8>> pure {
+  doc "Reports no run at all, over a store no parameter position names.";
+  return None<Vector<'s, u8>>();
+}
+
+fn absorb['s: affine](store: &uniq Arena<'s, 4096, 16>, spare: own Option<Vector<'s, u8>>) -> width: own u64 reads(spare) {
+  doc "Reports the capacity of a run of this store, or zero when there is none.";
+  match spare {
+    None() => {
+      return 0_u64;
+    }
+    Some(value: run) => {
+      return cap_of(run);
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FORM-8: a region parameter that occupies no input position of its declaration is written at the call, and FN-2 substitutes it into the result. The absorb call then fixes the same region from its own store operand, so the empty result is admitted at 'a and not at the declaration's own 's.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let spare = nothing::<'a>();
+      let width = absorb(store: &uniq workspace, spare: move spare);
+      if width == 0_u64 {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

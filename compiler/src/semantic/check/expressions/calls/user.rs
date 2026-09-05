@@ -1167,6 +1167,13 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         bindings: &[RegionBinding],
         actual: CheckedType,
     ) -> Result<CheckedType, CheckStop> {
+        // [FN-2] every region this call has already fixed is substituted into
+        // the whole of this parameter's type first, so a region one level
+        // down — the run inside an `Option<Vector<'s, T>>` parameter beside
+        // the `Arena<'s, ...>` operand that fixed `'s` — is this call's
+        // actual and not the declaration's own formal.
+        let ty =
+            self.substitute_type_regions(ty, &Self::fixed_call_regions(signature, bindings))?;
         let Some(formal) = self.written_type_region(ty)? else {
             return Ok(ty);
         };
@@ -1206,30 +1213,75 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
     }
 
     /// One formal type with every formal region already resolved.
+    ///
+    /// [FN-2] substitutes a call's region arguments into every position of the
+    /// callee's signature, and a result position is one of them: the type the
+    /// caller receives names the store the call's own operands and written
+    /// `::` members determined [FORM-8], never the declaration's formal
+    /// region. Two calls of `fn f['s: affine](store: &uniq Arena<'s, ...>) ->
+    /// made: own BlockPool<'s>` at two extents therefore produce two types,
+    /// which is [PROV-1]'s invariant store region read at the position where
+    /// the value is produced.
+    ///
+    /// The substitution is over the complete checked type, so it reaches a
+    /// region under `Option`, inside a nominal instance, in a run's element
+    /// position, and in the result-list nominal a multi-result callable hands
+    /// back. A region this declaration does not parameterize — the entry
+    /// heap's store region [PROV-1] is the one such region a signature can
+    /// name — occurs in no formal pair and is left alone.
     fn substitute_result_type(
         &self,
         ty: CheckedType,
         signature: &FunctionSignature,
         actual_regions: &[DeclarationId],
     ) -> Result<CheckedType, CheckStop> {
-        let Some(formal) = self.written_type_region(ty)? else {
-            return Ok(ty);
-        };
-        let Ok(index) = Self::formal_region_index(signature, formal) else {
-            return Ok(ty);
-        };
-        // [S20] a nominal result keeps the declaration's own region: no
-        // instance of it at the actual region need exist at this call, and the
-        // caller's next transfer substitutes it from the actual it holds.
-        if matches!(ty, CheckedType::Nominal(_)) {
-            return Ok(ty);
-        }
-        Ok(Self::with_type_region(
-            ty,
-            *actual_regions
-                .get(index)
-                .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-        ))
+        let substitution = Self::call_region_substitution(signature, actual_regions);
+        self.substitute_type_regions(ty, &substitution)
+    }
+
+    /// Every formal region this call has already fixed, paired with the
+    /// region it fixed it to.
+    ///
+    /// A region the caller wrote in its `::` list is fixed by that member,
+    /// and a store region an earlier operand position named is fixed by that
+    /// operand and invariant afterwards [PROV-1]. A region no position has
+    /// bound yet is deliberately absent: [FORM-8] leaves it to the actual at
+    /// the position that first names it, which is the judgment
+    /// [`Self::substitute_parameter_type`] makes at its own top level.
+    fn fixed_call_regions(
+        signature: &FunctionSignature,
+        bindings: &[RegionBinding],
+    ) -> Vec<(DeclarationId, DeclarationId)> {
+        signature
+            .region_parameters
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(index, formal)| {
+                let binding = bindings.get(index)?;
+                let region = if binding.written {
+                    binding.region
+                } else {
+                    binding.store
+                }?;
+                (region != formal).then_some((formal, region))
+            })
+            .collect()
+    }
+
+    /// Every formal region of one call that its actual differs from, paired
+    /// with that actual [FORM-8].
+    fn call_region_substitution(
+        signature: &FunctionSignature,
+        actual_regions: &[DeclarationId],
+    ) -> Vec<(DeclarationId, DeclarationId)> {
+        signature
+            .region_parameters
+            .iter()
+            .copied()
+            .zip(actual_regions.iter().copied())
+            .filter(|(formal, actual)| formal != actual)
+            .collect()
     }
 
     fn substitute_slice_result(

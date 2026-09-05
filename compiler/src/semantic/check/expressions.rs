@@ -436,7 +436,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::GenericFloat(declaration) => {
                 format!("<Float-parameter:{}>", declaration.index())
             }
-            CheckedType::Nominal(id) => self.nominal(id)?.name.clone(),
+            // [S20] a nominal's region arguments are components of its type
+            // name [TYPE-2], so a diagnostic that reports two instances of one
+            // declaration has to spell them: the two sides of a [TYPE-5]
+            // mismatch between `BlockPool<'a>` and `BlockPool<'b>` are
+            // otherwise the same word twice.
+            CheckedType::Nominal(id) => {
+                let name = self.nominal(id)?.name.clone();
+                match self.nominal_region_axis(id)? {
+                    Some(axis) if !axis.is_empty() => {
+                        let arguments = axis
+                            .iter()
+                            .map(|(_, actual)| self.region_spelling(*actual))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("{name}<{arguments}>")
+                    }
+                    _ => name,
+                }
+            }
             CheckedType::Array { element, length } => {
                 let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)

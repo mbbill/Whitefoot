@@ -312,6 +312,17 @@ enum PendingNominal {
     ArenaStorage,
     /// A prelude instance, such as the `Result<T, E>` a checked row produces.
     Prelude(PreludeType),
+    /// [S20, FN-2] one source nominal instance at a region a call determined.
+    ///
+    /// A callee's result names its own formal region, and the instance the
+    /// caller receives is that declaration at the actual region [FORM-8]. No
+    /// caller position need write that type, so the interning pass cannot
+    /// have found it; the checking path records the template and the
+    /// substituted instance key here and the driver interns it.
+    SourceInstance {
+        template: usize,
+        substitution: GenericSubstitution,
+    },
 }
 
 #[derive(Clone)]
@@ -1094,15 +1105,38 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         for index in 0..self.signatures.len() {
             function_inventory.push(self.check_function_interning_nominals(index)?);
         }
-        // Function checking discovers only the instances a derived type
-        // names, which are box and prelude ones; a *source* nominal instance
-        // is always interned from a written type before it runs.
-        for instance in self
-            .source_nominal_instances
-            .iter()
-            .skip(nominal_count_before_function_checking)
-        {
-            if instance.is_some() {
+        // Function checking discovers the instances a derived type names: a
+        // purely local `box<T>` [STOR-2], the `Result<T, E>` a checked row
+        // produces, and — since a call substitutes its region arguments into
+        // every position of the callee's signature, results included
+        // [FN-2] — a *source* instance of a declaration this unit already
+        // names at another region. That last class is admitted here on one
+        // condition: it is one representation with an instance the written
+        // text already interned [S20], so lowering still erases it onto that
+        // instance's own IR nominal and the executable prefix closes over a
+        // complete set of representations. A source instance discovered here
+        // that is related to no earlier one would be a representation no
+        // written type produced, and is a compiler defect.
+        for index in nominal_count_before_function_checking..self.nominals.len() {
+            let id = NominalId(
+                u32::try_from(index)
+                    .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
+            );
+            if self.source_nominal_instance_entry(id)?.is_none() {
+                continue;
+            }
+            let mut related = false;
+            for earlier in 0..nominal_count_before_function_checking {
+                let earlier = NominalId(
+                    u32::try_from(earlier)
+                        .map_err(|_| CheckStop::from(SemanticCompilerFailure::CounterOverflow))?,
+                );
+                if self.nominals_differ_only_in_region(id, earlier)? {
+                    related = true;
+                    break;
+                }
+            }
+            if !related {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         }
@@ -1563,6 +1597,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             }
                             PendingNominal::Prelude(ty) => {
                                 self.intern_prelude_nominal(ty)?;
+                            }
+                            PendingNominal::SourceInstance {
+                                template,
+                                substitution,
+                            } => {
+                                self.ensure_source_nominal_instance(template, substitution)?;
                             }
                         }
                     }

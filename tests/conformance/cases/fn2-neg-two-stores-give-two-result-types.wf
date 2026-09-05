@@ -1,0 +1,48 @@
+struct Holder['s] {
+  run: Vector<'s, u8>;
+}
+
+fn hold['s: affine](store: &uniq Arena<'s, 4096, 16>) -> made: own Option<Holder<'s>> reads(store), writes(store) {
+  doc "Takes one run out of the store and wraps it in a nominal generic over that store.";
+  region {
+    match arena_vector::<u8>(store: &uniq deref(store), count: 16_u64) {
+      None() => {
+        return None<Holder<'s>>();
+      }
+      Some(value: run) => {
+        let held = Holder<'s>(run: move run);
+        return Some<Holder<'s>>(value: move held);
+      }
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FN-2: a call's region arguments are substituted into every position of the callee's signature, results included, so two calls of one declaration at two extents hand back two types. The set below would put a Holder<'b> into a binding of Holder<'a>, whose run lives in an extent that is not the binding's, and is the ordinary TYPE-5 mismatch.";
+  region 'a {
+    let first = arena_frame::<4096, 16, 'a>();
+    region 'b {
+      let second = arena_frame::<4096, 16, 'b>();
+      region {
+        match hold(store: &uniq first) {
+          None() => {
+            return exit_status(code: 1_u8);
+          }
+          Some(value: one) => {
+            let kept = move one;
+            let Holder(run: gone) = move kept;
+            match hold(store: &uniq second) {
+              None() => {
+                return exit_status(code: 2_u8);
+              }
+              Some(value: two) => {
+                set kept = move two;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
