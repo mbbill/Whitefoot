@@ -1045,6 +1045,47 @@ nothing about that store's post-state* (Q17).
 > have made the placement depend on the element class rather than on the naming event,
 > which is what the closure sentence forbids, so the implementation keys on the event.
 
+> **Correction, decided 2026-09-05, from B8d's implementation: the placements are seven,
+> the `replace` displaced binding joins them, and two of them carry a boundary the place
+> representation fixes.** Every remaining placement of the list above landed —
+> **construct**, the [LIV-2] `set`-target half of **rebind**, **payload** and the
+> destructuring **field** — and one the list did not have landed with them.
+>
+> - **The seventh is the element placement**, and it is what the list was missing rather
+>   than a new kind of event: a measured value committed at an element position of a run
+>   keeps its measures as facts about `P[i]`, and the [SET-2] `replace` that displaces the
+>   value at that position gives the displaced value those facts. **The "two naming events
+>   outside the list" paragraph above is superseded for the first of the two.** [SET-2]
+>   528 is unchanged and is why this works: the commit still establishes no fact of its
+>   own, and the datum carries a fact the target place *already had*. A `replace` whose
+>   target's measures nothing established still hands back a value with none, which is
+>   3.L.2's `take_at` cost exactly as that section prices it; what changed is that the
+>   cost is now paid only where the measures were never there. The borrow-mode arm binder
+>   stays outside the list.
+> - **An element position is a place only at an offset a place relation can name**
+>   [MSR-1] — a written literal, a live `own` fragment-integer binding, an in-scope const
+>   generic — because [OWN-7] decides two element places by their offsets and an offset
+>   provably distinct from nothing would relate two elements of one run as one term. A
+>   commit at any other offset carries no measure and, being an element write of unknown
+>   position, kills every measure of every element of that run [MSR-2].
+> - **The boundary rows therefore still carry nothing through the slot they write, and
+>   this is the honest limit of the batch.** `place_back` stores its value at position
+>   `len_of(vector)` and `take_back` takes one from position `len_of(rest)`; a measure
+>   term is not an offset this version admits and cannot become one without an offset
+>   domain [OWN-7] can decide. A run put into a slot by a boundary row and taken back out
+>   by one arrives with no measures of its own, so 3.L.4's price stands and
+>   `tests/programs/block_pool.wf` and the case
+>   `blk1-pos-a-store-backed-run-is-a-run-element` keep the `room_of` branches B8c gave
+>   them.
+> - **The payload placement is stated over a single-payload-variant enum.** A tracked
+>   place's path is field selections, `deref` wrappings and subscripts [ENT-2], and none
+>   of those names a variant, so `Result`'s `Ok(value)` and `Err(error)` would be one
+>   place and a fact written at one would be read at the other. Where exactly one variant
+>   carries fields — the prelude `Option`, and every enum 3.L writes — the field path
+>   selects one storage on every execution and the payload is an ordinary [MSR-1] measure
+>   place. The remainder is [MSR-3]'s one DEFERRED clause and needs a place step that
+>   names the variant it selects.
+
 **One sentence fixes what an [INV-1] affine atom over a measured place is keyed by.**
 
 > An [INV-1] affine atom over a measured place is keyed by the [ENT-2] term. **A [LIV-2]
@@ -2809,6 +2850,30 @@ body or is refused by [CALL-7]; 3.L.2's `take_at` is the worked case.
 instantiated relations are contradictory at the establishment point is a hard error citing
 CALL-6 at the row or the `fn_decl`, because [MSR-4] step 1 discharges every goal from a
 contradiction — which is how three of round 7's four memory BREAKS reached memory.
+
+> **Correction, decided 2026-09-05, from B8d's implementation: the sentence above is one
+> judgment over the unrouted half and a different thing over the routed half.** A row's
+> **unrouted** relations are a member of every exit's set, so they hold wherever the
+> call's continuation is reached at all and B8c's reading stands unchanged: a caller state
+> that turns contradictory across them turned so on the row's own relations. A caller
+> state that turns contradictory across a row's **routed** relations is admitted, and this
+> is not a weakening. A routed relation is available only on the arm its route names, so a
+> contradiction there is the ordinary [ENT-3] statement that this arm is not reached —
+> exactly what a written guard the caller can refute produces, and exactly as sound, since
+> the arm does not execute. `arena_vector::<u8>(store: &uniq workspace, count: 8192_u64)`
+> over a 4096-byte extent publishes `len_of(store) = len_of(store at the call) +
+> advance<T>(count)` on its `Some` arm against a `cap_of(store)` of 4096, and the arm it
+> makes underivable is the arm that never runs. The exits of one call partition its
+> outcomes, so at most one of them can be refuted this way and the caller reaches a
+> consistent state on the arm it takes.
+>
+> **What is asserted on every exit instead is the denotation itself.** Where a row names
+> one measure of one formal both `at the call` and in its post-state, the two are two
+> terms at every instantiation [MSR-3]. That is the position B8c's defect actually
+> occupied — reading one term for both gives the row's own relation the shape `t = t +
+> advance<T>(count)` — and stating it as [MSR-3] states it is a stronger check than
+> measuring its consequence in the caller's state, because it does not depend on what the
+> caller happened to know.
 
 *Judgment:* the S13 instantiation at the call, the establishment and restriction, the kill
 from the call, the admission test on a relation that omits the result datum, and the
@@ -4992,6 +5057,39 @@ the open.
 > already-determined parameter is then the ordinary exact [TYPE-5] equality and never a
 > second binding [PROV-1]. `tests/programs/block_pool.wf` and the three B8a conformance
 > cases are respelled to match.
+
+> **Correction, decided 2026-09-05, from B8d's implementation: the pool's two `room_of`
+> branches stay, and the reason is now exactly one sentence rather than two.** This
+> section prices the branch twice — once for a leased block's capacity and once, in B7a6's
+> superseded correction above, for its room — and attributes it to two different gaps.
+> After B8d only one of the two is still open, and it is not [CALL-4]'s.
+>
+> **[MSR-3]'s element placements landed and do not reach this shape.** A measured value
+> committed at a *written* element position keeps its measures there and a `replace`
+> hands them back to the displaced value, so a run that passes through `free[at]` keeps
+> its figure. `pool_take` does not pass its block through a written element position: it
+> calls `take_back`, whose value ordinal comes from position `len_of(rest)`, and a measure
+> term is not an offset [OWN-7] can decide. `pool_new`'s `place_back` is the same
+> position on the way in. The sentence "putting one into a `FixedVector` element and
+> taking it out loses the figure `pool_new` established" is therefore still true of the
+> *boundary* rows and no longer true of the language, and what would retire it is an
+> offset domain that admits a measure term rather than a further placement.
+>
+> **`pool_release`'s requirement is still discharged by a branch and still for
+> [CALL-4]'s reason.** `pool_take`'s `when leased is Some(value: got): room_of(rest.free)
+> >= 1_u64` names a measure over a *result* place formed with a field selection, which is
+> [CALL-4]'s own first DEFERRED admission, and a route over `Some` rather than `Ok`, which
+> is its second. Neither moved here. What did move is the arm binder itself: [MSR-3]'s
+> payload placement carries a measured payload's own measures to the binder that names it,
+> so a routed clause over the payload binder will reach `got` the day [CALL-4]'s two
+> admissions land, with no third gap between them.
+>
+> **What `pool_new` gains instead is its own loop body.** `arena_vector`'s routed row now
+> publishes on the arm its route names, so on the `Some(value: run)` arm the caller holds
+> `len_of(run) = 0`, `cap_of(run) = 256`, `room_of(run) = 256` and `head_of(run) = 0` —
+> the four measures the block above always meant and no caller could read. The body's
+> `place_back` discharges its own requirement from the loop invariant as before; what is
+> new is that a writer may now state and prove anything about the carved block itself.
 
 ```wf-design
 fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own T)
@@ -7315,6 +7413,93 @@ element placements are DEFERRED — so its `place_back` was discharging `room_of
 branches. That is the second cost of this repair being real rather than cosmetic, and it
 is the price the design already names: a measured value that passes through a slot loses
 its figure until [MSR-3]'s element placements land.
+
+### 6.0p B8d landed (v0.45)
+
+**The routed half of every row's publication, five more places a measured value keeps its
+figure, and a fourth soundness hole the second of those found.** 6.0o closed the
+contradiction a row was publishing and left the routed half of the same publication where
+it was; this batch is that half, together with the placements every later batch leans on.
+
+- **A routed row publishes on the arm its route selects.** [CALL-6] states publication
+  once for every callee — instantiated at the call, established on its continuation, a
+  routed relation restricted to the arm its route names — and `establish_kernel_relations`
+  skipped every relation carrying a route. `arena_vector`'s two arms therefore published
+  **nothing**: a caller that matched the `Option` learned neither the four measures of the
+  run the `Some` arm binds nor the two the `None` arm states about the store, and the
+  row's own `cap_of(store) = cap_of(store at the call)`, a member of both arms' sets,
+  reached neither. That is an omission and not an unsoundness — the caller derived less
+  than the row published, never more — and it is what made every caller of a refusing
+  formation row read `room_of` and branch. The destination list and the match arm are now
+  one path over one filter, `KernelPlace::Payload` denoting the arm's own payload binder,
+  and the `&uniq` state operand keeping the denotation [MSR-3] gives its position on both
+  arms. `pool_new`'s `Some(value: run)` arm now holds `len_of(run) = 0`, `cap_of(run) =
+  256`, `room_of(run) = 256` and `head_of(run) = 0`.
+
+- **B8c's per-call consistency assert splits with the set it judges, and [BLK-0] says
+  why.** A row's unrouted relations hold wherever the call's continuation is reached at
+  all, so the assert over them is unchanged and now runs on every exit rather than only on
+  a destination list. A contradiction across the *routed* half is admitted, because a
+  routed relation is available only on its own arm and a contradiction there is the
+  ordinary [ENT-3] statement that the arm is not reached — the same thing a written guard
+  the caller can refute produces, and the exits of one call partition its outcomes so at
+  most one can be refuted this way. What replaces the assert on every exit is the
+  denotation itself: a measure named both `at the call` and in a post-state is two terms
+  at every instantiation, which is where B8c's defect actually lived.
+
+- **[MSR-3] states one placement table, and five more of its rows land.** A **placement
+  datum** is the entry and call placements' own former at every naming event inside a body
+  at which a measured value crosses from one place to another: minted before the
+  statement's kills, read after them, empty support, formed and never proved. The
+  [LIV-2] `set`-target rebind, the **construct** (`Lease(run: move block)` gives
+  `lease.run` what `block` had), the **destructuring** (`let Lease(run: back) = move
+  lease;` gives `back` what `lease.run` had), the **payload** and a new **element**
+  placement all landed. The design's "two naming events outside the list" paragraph is
+  superseded for the first of its two: a `replace`'s displaced binding now carries what
+  the target place had, and [SET-2] 528 is unchanged — the commit still establishes no
+  fact, and the datum carries a fact the place already had.
+
+- **Two of the placements carry a boundary the place representation fixes, and both are
+  stated in the rule.** An element position is a place only at an offset a place relation
+  can name [MSR-1], because [OWN-7] decides two element places by their offsets; and a
+  tracked place's path is field selections, `deref` wrappings and subscripts [ENT-2], none
+  of which names a variant, so the payload placement is stated over a nominal enum exactly
+  one of whose variants carries fields — the prelude `Option` is one and the prelude
+  `Result` is not. The first of the two is why **the boundary rows still carry nothing
+  through the slot they write**: `place_back` stores at `len_of(vector)` and `take_back`
+  takes from `len_of(rest)`, and a measure term is not an offset this version admits. The
+  price 3.L.4 names is therefore still paid, and `tests/programs/block_pool.wf` and
+  `blk1-pos-a-store-backed-run-is-a-run-element` keep the `room_of` branches B8c gave
+  them.
+
+- **A fourth soundness hole, found by the element placement and closed here.** [ENT-5]'s
+  element-position carve-out is removed rather than narrowed in v0.45 and B8b landed that
+  removal for an L0 measure term; the **goal** path kept the old clause verbatim, so an
+  element write killed no measure goal, whatever place either named. A signed goal over
+  `len_of(P[i])` survived the write that replaced `P[i]`. Nothing stood on it while no
+  source re-established that measure — the residual was unproved and the program refused —
+  but the element placement establishes it, and the two together are a contradiction the
+  caller never wrote: `let width = len_of(grid[0_u64]); if width == 1_u64 { let old =
+  replace grid[0_u64] = move fresh; let seen = probe[9_u64]; ... }` compiles, links and
+  runs, reading slot nine of a four-slot array. `msr2-neg-an-element-store-kills-the-
+  element-s-own-length` is the corpus witness and it flipped to that accept. The repair is
+  the sentence [ENT-5] already states and the L0 path already reads: an element write
+  kills a measure goal over a place the written place is a prefix of, and no other. No
+  rule is amended, because the specification already said this.
+
+**What this batch did not reach.** The payload placement over an enum more than one of
+whose variants carries fields is [MSR-3]'s one remaining DEFERRED clause and needs a place
+step that names the variant it selects. The boundary rows' slot positions need an offset
+domain [OWN-7] can decide and are named as such rather than deferred. And `heap_vector`'s
+routed row instantiates on exactly the path `arena_vector`'s does — the publication is
+generic over the record — but no program can reach it: [FN-7]'s `command.heap` row is
+DEFERRED, so the row is reachable at a checked declaration and stops at lowering with an
+explicit unsupported report. Its declared set is judged by the row-data unit test with
+every other row's, and there is no conformance case to write for it until B7b.
+
+**Verdicts.** The adapter moves from Pass=634 over 636 cases to Pass=647 over 649, with
+the one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491,
+Flip=0. No corpus verdict moved and no program of the executable corpus changed.
 
 ### 6.1 What the compiler did in this session
 

@@ -209,7 +209,20 @@ consistency judgment over a compiler-owned row, checked at every call and over
 every row's own set. Beside it B8c lands the owner's [FORM-8] ruling at a
 `construct` — a region argument is written only for a region parameter no
 field's declared type determines — and the [INV-1] affine factor's subscripted
-measure place, which was B8b's one unreached position.
+measure place, which was B8b's one unreached position. **B8d lands the routed
+half of every row's publication and five more of [MSR-3]'s placements**: a
+`match` arm now receives the relations its route selects, so a caller of
+`arena_vector` holds the four measures of the run on the `Some` arm and
+`room_of(store) < advance<T>(count)` on the `None` arm where it held neither;
+and a measured value keeps its measures across a [LIV-2] `set` target, a
+`construct`'s field, a destructuring binder, an element position with the
+`replace` that displaces it, and a single-payload enum's arm binder. The
+boundary rows [BLK-3] still carry nothing through the slot they write, because
+`place_back`'s position is `len_of(vector)` and a measure term is not an offset
+the place rules can name; that is now the stated limit rather than a deferred
+clause. B8d also closes a fourth soundness hole its own element placement found:
+[ENT-5]'s element-position carve-out survived on the **goal** path, so a measure
+goal over `len_of(P[i])` outlived the write that replaced `P[i]`.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

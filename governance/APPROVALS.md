@@ -3726,4 +3726,141 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   region argument at its two constructs for the same reason as the first three
   modified cases and keeps its recorded behaviour; it is outside the
   conformance boundary.
+- CONTENT (B8d, the routed exit and [MSR-3]'s remaining placements): v0.45
+  amends four rules in place and adds and retires none, so META-5's counts do
+  not move; [MSR-3], [CALL-4], [ENT-2] and [ENT-5] are already named in its
+  amended-rule list and [BLK-0] is a rule this version itself adds. One DEFERRED
+  clause lands in part and two narrow; the count of DEFERRED clauses stays six.
+  [MSR-3] states one **placement table** in place of its rebind paragraph. A
+  **placement datum** is the same former the entry and call placements use, at
+  every naming event inside a body at which a measured value crosses from one
+  place to another, identified by `(that statement's NodePath, which placement,
+  the ordinal within that statement, which measure it denotes)`, established
+  equal to that measure of the event's source place immediately before the
+  statement's own kills and equal to that measure of the event's destination
+  place at its normal continuation; it carries the closure a call datum carries
+  and is formed, never proved. The table's six rows are the **rebind** (one
+  `let` binder or one [LIV-2] `set` target that is a place, whose right-hand
+  side at that ordinal is a bare use of one measured place), the **element**
+  (the same where the [LIV-2] target is an element position of a run), the
+  **displaced** value of one [SET-2] `replace`, the **construct** (one field
+  operand of a `construct` that is a bare use of one measured place, carried
+  into that field of the constructed value), the **destructuring** (one binder
+  of a destructuring consume [GRAM-4], carried out of the field it names) and
+  the **payload** (one arm binder of a `match` whose scrutinee is a bare use of
+  one enum place). The rule states two boundaries as consequences of what a
+  place is. An element position is a place exactly where its offset is one a
+  place relation can name [MSR-1] — a written literal, a live `own`
+  fragment-integer binding, an in-scope const generic [MSR-6] — because two
+  element places are decided by their offsets [OWN-7]; a commit at any other
+  offset carries no measure and kills every measure of every element of that
+  run [MSR-2]. And because a tracked place's path is field selections, `deref`
+  wrappings and subscripts [ENT-2], none of which names a variant, the payload
+  placement is stated over a nominal enum exactly one of whose variants carries
+  fields — the prelude `Option` is such a nominal and the prelude `Result` is
+  not. The element placement reaches only a written element position, so a
+  boundary operation [BLK-3] carries no measure through the slot it writes:
+  `place_back` stores at position `len_of(vector)` and `take_back` takes from
+  position `len_of(rest)`, and a measure term is not an offset this version
+  admits. [MSR-3]'s DEFERRED clause narrows from four placements to one, the
+  payload placement over an enum more than one of whose variants carries fields,
+  which needs a place step that names the variant it selects. [ENT-2] clause (h)
+  is widened from the call datum alone to the measure-datum family and gives
+  each of the three its own identity, which is the sentence [MSR-3] already
+  relied on and the term list did not carry; [ENT-5]'s empty-support sentence
+  names the same three. [CALL-4]'s own DEFERRED clause narrows: the arm binder
+  of an own-place `match` whose scrutinee is not the call itself and the
+  destructuring-consume binder now receive a published [MSR-1] measure of the
+  transferred value, which is what the payload and destructuring placements
+  carry, and what remains deferred there is a published relation of any other
+  shape, which names terms no placement mints. [BLK-0]'s consistency sentence
+  splits with the set it judges: the half a caller reaches on every exit — a
+  row's unrouted relations — keeps B8c's judgment unchanged, while a caller
+  state that turns contradictory across a row's **routed** relations is admitted
+  and the rule says why. A routed relation is available only on the arm its
+  route names [CALL-6], so a contradiction there is the ordinary [ENT-3]
+  statement that this arm is not reached, exactly as a written guard the caller
+  can refute makes its own arm underivable; an acquisition asked for more bytes
+  than the store can hold publishes `len_of(store) = len_of(store at the call) +
+  advance<T>(count)` on its `Some` arm against a `cap_of(store)` that cannot
+  hold it, and the arm it makes underivable is the arm that never runs. The
+  exits of one call partition its outcomes, so at most one of them is refuted
+  this way. What [BLK-0] now asserts on every exit instead is [MSR-3]'s
+  denotation itself: where a row names one measure of one formal both `at the
+  call` and in its post-state, the two are two terms at every instantiation, and
+  a caller reading one term for both gives the row's own relation the shape
+  `t = t + advance<T>(count)`, which is the contradiction B8c closed.
+- CONSEQUENCE (B8d, the routed half of every row's publication, which reached no
+  caller): `establish_kernel_relations` skipped every relation carrying a route,
+  so `arena_vector`'s two arms published nothing at all. A caller that matched
+  the `Option` learned neither the four measures of the run the `Some` arm binds
+  nor the two the `None` arm states about the store, and the row's own
+  `cap_of(store) = cap_of(store at the call)`, which is a member of both arms'
+  sets, reached neither arm. This is an omission and not an unsoundness — the
+  caller derived less than the row published, never more — and it is what made
+  every caller of a refusing formation row read `room_of` and branch. The
+  destination list and the match arm are now one path over one filter, with
+  `KernelPlace::Payload` denoting the arm's own payload binder.
+- CONSEQUENCE (B8d, a fourth soundness hole, found by the element placement and
+  closed): [ENT-5]'s element-position carve-out — "an element write kills no
+  measure at all" — is removed in v0.45 rather than narrowed, and B8b landed
+  that removal for an L0 measure term. The **goal** path kept the old clause
+  verbatim: an element write killed no measure goal, whatever place either
+  named. A signed goal over `len_of(P[i])` therefore survived the write that
+  replaced `P[i]`. Nothing stood on it while no source re-established that
+  measure — the residual was unproved and the program refused — but this
+  batch's element placement establishes it, and the two together are a
+  contradiction the caller never wrote: `let width = len_of(grid[0_u64]); if
+  width == 1_u64 { let old = replace grid[0_u64] = move fresh; let seen =
+  probe[9_u64]; ... }` compiles, links and runs, reading slot nine of a
+  four-slot array, because the stale `+ (width == 1_u64)` goal over
+  `len_of(grid[0])` meets the placement's `len_of(grid[0]) = 0` and [ENT-4]
+  derives everything. The corpus witness is
+  `msr2-neg-an-element-store-kills-the-element-s-own-length`, which flipped from
+  its recorded rejection to that accept and which the repair returns to its
+  recorded verdict. The repair is the sentence [ENT-5] already states and the L0
+  path already reads: an element write kills a measure goal over a place the
+  written place is a prefix of, and no other. No rule is amended, because the
+  specification already said this.
+- CONFORMANCE BOUNDARY (B8d): this batch ADDS thirteen conformance cases and
+  their thirteen manifest rows, and MODIFIES, DELETES and RENAMES none. No
+  adapter, runner, or collection wiring changes, and no expectation, rule
+  citation, status or doc of any existing row is touched. The added ids are
+  `blk0-pos-a-routed-row-publishes-its-payload-on-the-some-arm`
+  (`{"kind": "run", "exit": 0}`),
+  `blk0-pos-the-none-arm-knows-the-store-was-not-advanced`
+  (`{"kind": "run", "exit": 0}`),
+  `blk0-neg-the-none-arm-refutes-the-take-that-refused`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `blk0-pos-the-some-arm-publishes-the-store-s-own-advance`
+  (`{"kind": "run", "exit": 0}`),
+  `blk0-neg-the-some-arm-s-advance-bounds-the-next-take`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `msr3-pos-a-set-target-carries-the-value-s-measures`
+  (`{"kind": "run", "exit": 0}`),
+  `msr3-pos-a-construct-field-and-its-destructuring-carry-the-measures`
+  (`{"kind": "run", "exit": 0}`),
+  `msr3-pos-an-element-position-keeps-the-value-put-into-it`
+  (`{"kind": "run", "exit": 0}`),
+  `msr3-neg-one-element-position-is-not-another`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `msr3-neg-a-rebind-carries-the-run-and-not-its-elements`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `msr3-neg-a-boundary-row-carries-no-measure-through-the-slot`
+  (`{"kind": "reject", "rule": "BLK-0"}`),
+  `msr3-pos-a-payload-binder-carries-the-payload-s-measures`
+  (`{"kind": "run", "exit": 0}`) and
+  `msr3-neg-a-two-payload-enum-has-no-payload-place`
+  (`{"kind": "reject", "rule": "BLK-0"}`), each status runnable. Before this
+  batch the corpus holds 636 cases with the native adapter reporting Pass=634,
+  Xfail=1, Skip=1; after it the corpus holds 649 with the adapter reporting
+  Pass=647, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, rule coverage stays complete at
+  148/148, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0. No
+  verdict of either corpus moved, and no program of the executable corpus
+  changed: `tests/programs/block_pool.wf` and the case
+  `blk1-pos-a-store-backed-run-is-a-run-element` keep the `room_of` branches
+  B8c gave them, because the placements this batch lands do not reach the
+  boundary rows those two programs pass their runs through.
 ACTIVE-SPEC: v0.45 1877abdc9545a2789eef360637495789b49f2c21152652337bee6dd8c2cde14c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

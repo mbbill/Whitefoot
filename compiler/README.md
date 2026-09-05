@@ -415,7 +415,49 @@ read of a four-slot array compiled, linked and ran. The class is now closed at
 both ends: a unit test closes each row's own requirement and relation lists per
 declared exit under the same difference-bound closure [CALL-6] uses, and the
 establishment path asserts at every call of every row that the caller's fact
-state did not turn contradictory across it.
+state did not turn contradictory across the half of its set every exit carries.
+Across the **routed** half no such assert is made, because a routed relation is
+available only on the arm its route names and a contradiction there is the
+ordinary statement that the arm is not reached: an acquisition asked for more
+bytes than the extent holds publishes `len_of(store) = len_of(store at the call)
++ advance<T>(count)` on a `Some` arm the caller can refute, and the arm it makes
+underivable is the arm that never runs. What is asserted on every exit instead is
+the denotation itself — a measure a row names both `at the call` and in its
+post-state is two terms at every instantiation — which is the position the defect
+above actually occupied.
+
+A row's routed relations reach the arm the caller matches. The destination list a
+binder or target list gives an unrouted result and one arm of a `match` over a
+routed one are one publication path over one filter: an unrouted relation is a
+member of every exit's set and a routed one only of the arm its route names, and
+the payload place a routed clause names is the arm's own binder. A caller of
+`arena_vector` therefore holds the four measures of the run on its `Some` arm and
+`room_of(store) < advance<T>(count)` on its `None` arm, where before it held
+neither.
+
+A measured value keeps its measures across seven naming events [MSR-3], each one
+minting an immutable datum before the statement's own kills and reading it back
+after them: body entry, a call's pre-transfer point, a `let` or [LIV-2] `set`
+rebind, an element-position commit, the value a [SET-2] `replace` displaces, a
+`construct`'s field operand, a destructuring consume's binder, and a `match` arm's
+payload binder. Two of them carry a boundary the place representation fixes. An
+element position is a place only at an offset the place relations can name, so
+the boundary rows carry nothing through the slot they write — `place_back` stores
+at `len_of(vector)` and `take_back` takes from `len_of(rest)`, and a measure term
+is not such an offset — and a run pushed onto a free list and leased back off it
+still arrives with no measures of its own. And a place's path names no variant, so
+the payload placement is stated over an enum exactly one of whose variants carries
+fields; `Option` is one and `Result` is not.
+
+A fourth repair came with the element placement. [ENT-5]'s element-position
+carve-out is removed rather than narrowed, and the L0 measure-term path landed
+that removal while the **goal** path kept the old clause: an element write killed
+no measure goal at all, so a signed goal over `len_of(P[i])` survived the write
+that replaced `P[i]`. Nothing stood on it while nothing re-established that
+measure, but the element placement does, and the two together made the fact state
+contradictory and a nine-slot read of a four-slot array compile. A measure goal
+now dies at an element write over a place the written place is a prefix of, and no
+other, which is the sentence the L0 path already read.
 
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.

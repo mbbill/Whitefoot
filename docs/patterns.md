@@ -1429,11 +1429,42 @@ one slot kills that slot's measures and none of the run's own, so a
 `replace grid[i] = e;` costs you `len_of(grid[i])` and leaves `len_of(grid)`
 standing.
 
+A measured value **written at a slot keeps its figure there, and the value the
+same slot hands back inherits it** — that is one of [MSR-3]'s placements, and it
+reaches exactly the two routes that name the position:
+
+```whitefoot
+let spare = replace free[0_u64] = move fresh;   // free[0]'s measures are fresh's
+let held = replace free[0_u64] = move other;    // held's measures are fresh's
+let filled = place_back(vector: move held, value: 3_u8);   // and this discharges
+```
+
+The boundary rows are the exception, and they are the common case, so plan for
+it: `place_back` puts its value at position `len_of(vector)` and `take_back`
+takes one from position `len_of(rest)`, and neither is an offset the place rules
+can name. **A block pushed onto a free list with `place_back` and leased off it
+with `take_back` therefore comes back with no measures of its own**, and a
+caller that needs its room reads `room_of` once and branches:
+
+```whitefoot
+let (rest, block) = take_back(vector: move free);
+let spare = room_of(block);
+if spare > 0_u64 {
+  let filled = place_back(vector: move block, value: 7_u8);
+}
+```
+
+That branch is not a workaround for a missing check; it is the honest price of a
+capacity that lives in a descriptor rather than in a type. Reach for
+`replace free[i] = e` when the position is written and you want the figure to
+travel, and for the boundary rows when you want the end of the run.
+
 One limit remains: one level of *element* is what exists, so a run of runs of
 runs is an unsupported capability.
 
-Replaces: an `Option<T>` slot array standing in for a run of runs, and a
-parallel array of lengths beside a run of buffers.
+Replaces: an `Option<T>` slot array standing in for a run of runs, a parallel
+array of lengths beside a run of buffers, and a hand-written `cap` field beside
+every leased block.
 
 ## P29. Give a nominal the store its contents live in
 
@@ -1497,6 +1528,24 @@ one function cannot be handed a pool of one arena and a lease of another.
 `linear` on such a nominal is what buys must-return: a path that neither returns
 the lease nor takes it apart with `let Lease(run: back) = move lease;` is
 refused, which is how a pool gets its blocks back.
+
+**A measured field keeps its figure across the wrapper, in both directions.**
+The construct carries what the operand had into the field, and the destructuring
+consume carries it back out to the binder that names the field, so a block does
+not lose its room by being put in a `Lease` and taken out again:
+
+```whitefoot
+let ticket = Lease(run: move block);          // lease.run has block's measures
+let Lease(run: back) = move ticket;           // and back has lease.run's
+let filled = place_back(vector: move back, value: 7_u8);
+```
+
+The same holds through an enum whose nominal has **one** payload-carrying
+variant — `Option` is one — so `Some<Vector<'a, u8>>(value: move block)` and the
+`Some(value: back)` arm that consumes it are the same pair. `Result` is not one:
+its `Ok(value)` and `Err(error)` are two storages one field path cannot tell
+apart, so a payload of a `Result` arrives with no measures and a caller that
+needs one reads it and branches.
 
 Two shapes to design around. A loop that allocates from a `&uniq` store
 parameter has **one statement per iteration** — a child reborrow's region cannot
