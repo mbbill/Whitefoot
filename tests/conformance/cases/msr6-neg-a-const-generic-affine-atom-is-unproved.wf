@@ -1,0 +1,17 @@
+fn overstated<const n: u64>() -> result: own FixedVector<u8, n> pure {
+  doc "States a loop invariant over the const generic that the run's own capacity refutes: an empty run has n slots of room and not n + 1.";
+  let built = seq_fixed::<u8, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant spare: room_of(built) >= n + 1_u64
+  ) {
+    set built = seq_place(vector: move built, value: 7_u8);
+  }
+  return move built;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-6, INV-1: admitting a const generic as an affine atom adds a spelling and no fact source, so an invariant naming one is proved or refused exactly as one naming a local is.";
+  let bytes = overstated::<4>();
+  return exit_status(code: 0_u8);
+}

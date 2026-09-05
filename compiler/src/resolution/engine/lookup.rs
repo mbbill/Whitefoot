@@ -305,8 +305,13 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
         LexicalUseRole::FunctionBinding => vec![DeclarationClass::Function],
         LexicalUseRole::GenericNumericSuffix => vec![DeclarationClass::GenericType],
+        // [MSR-6, INV-1] an affine atom is one bare place whose `pbase` is an
+        // IDENT, and an in-scope const generic is a value in exactly that
+        // position: it is a constant of [ENT-2] clause (c) rather than a
+        // tracked place, so it reaches the affine domain as an immutable atom
+        // nothing kills.
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
-            vec![DeclarationClass::Value]
+            vec![DeclarationClass::Value, DeclarationClass::ConstGeneric]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
@@ -351,7 +356,7 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         ],
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
-            vec![DeclarationClass::Value]
+            vec![DeclarationClass::Value, DeclarationClass::ConstGeneric]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }

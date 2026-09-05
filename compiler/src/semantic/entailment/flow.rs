@@ -9675,6 +9675,14 @@ impl Analyzer<'_, '_> {
                             .ok_or(AffineCheckError::CoefficientMismatch)?;
                         values.push(self.measure_atom(term));
                     }
+                    // [INV-1, MSR-6, ENT-2] a const generic at the symbolic
+                    // instance is the declaration-anchored constant term, and
+                    // no [ENT-5] event kills it, so its image is one
+                    // immutable atom for the whole walk.
+                    CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
+                        let term = self.terms.intern(TermKind::ConstParameter(*declaration));
+                        values.push(self.measure_atom(term));
+                    }
                     CheckedAffineExpressionKind::Add(left, right) => {
                         pending.push(Pending::Add);
                         pending.push(Pending::Visit(right));
@@ -9863,6 +9871,7 @@ impl Analyzer<'_, '_> {
             CheckedAffineExpressionKind::Measure(measure) => self
                 .render_affine_measure(measure)
                 .unwrap_or_else(|| "?".to_owned()),
+            CheckedAffineExpressionKind::ConstGeneric { name, .. } => name.clone(),
             CheckedAffineExpressionKind::Add(left, right) => format!(
                 "({} + {})",
                 self.render_checked_affine_expression(left, counted_next_binder),
@@ -9957,7 +9966,8 @@ impl Analyzer<'_, '_> {
                     let index = u32::try_from(index).ok()?;
                     Some(AffineForm::term(AffineTermId::from_index(index)))
                 }
-                CheckedAffineExpressionKind::Measure(_) => {
+                CheckedAffineExpressionKind::Measure(_)
+                | CheckedAffineExpressionKind::ConstGeneric { .. } => {
                     let term = *measures.get(*visited)?;
                     *visited = visited.checked_add(1)?;
                     let index = leaves
@@ -10355,6 +10365,9 @@ impl Analyzer<'_, '_> {
             | CheckedAffineExpressionKind::Local { .. } => {}
             CheckedAffineExpressionKind::Measure(measure) => {
                 out.push(self.checked_measure_term(measure)?);
+            }
+            CheckedAffineExpressionKind::ConstGeneric { declaration, .. } => {
+                out.push(self.terms.intern(TermKind::ConstParameter(*declaration)));
             }
             CheckedAffineExpressionKind::Add(left, right)
             | CheckedAffineExpressionKind::Subtract(left, right) => {

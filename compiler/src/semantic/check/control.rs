@@ -174,7 +174,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 };
                 Ok(Self::continuing_statement(statement, value.effects))
             }
-            Production::InvariantStmt => self.check_local_invariant(node, bindings),
+            Production::InvariantStmt => {
+                self.check_local_invariant(node, bindings, &function.substitution)
+            }
             // [FN-1, GRAM-4] a `return` writes exactly as many expressions as
             // the enclosing declaration writes results, and expression i
             // produces result ordinal i. A count mismatch is the ordinary

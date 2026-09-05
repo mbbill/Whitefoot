@@ -4,12 +4,11 @@ fn vacant<T, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contr
   ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of n slots, every one holding None.";
-  let limit = n;
   let built = seq_fixed::<Option<T>, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= limit,
+    invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
     let empty = None<T>();
@@ -24,12 +23,11 @@ fn filled<const n: u64>(value: own u8) -> result: own FixedVector<u8, n> pure co
   ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of n slots, every one holding a copy of value.";
-  let limit = n;
   let built = seq_fixed::<u8, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: len_of(built) >= at,
-    invariant spare: room_of(built) + at >= limit,
+    invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
     set built = seq_place(vector: move built, value: value);
@@ -94,7 +92,6 @@ fn rebase<const n: u64>(vector: own FixedVector<u8, n>, spare: own FixedVector<u
 } {
   doc "Moves every element of a wrapped run into a fresh run, in order, so the result does not wrap.";
   let count = len_of(vector);
-  let limit = n;
   let one = 0_u8;
   let built = move spare;
   for @rot (
@@ -103,8 +100,8 @@ fn rebase<const n: u64>(vector: own FixedVector<u8, n>, spare: own FixedVector<u
     invariant gone: len_of(vector) + at <= count,
     invariant made_lo: len_of(built) >= at,
     invariant made_hi: len_of(built) <= at,
-    invariant spare_lo: room_of(built) + at >= limit,
-    invariant spare_hi: room_of(built) + at <= limit,
+    invariant spare_lo: room_of(built) + at >= n,
+    invariant spare_hi: room_of(built) + at <= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
     set (vector, one) = seq_take_front(vector: move vector);

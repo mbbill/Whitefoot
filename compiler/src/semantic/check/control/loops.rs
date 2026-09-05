@@ -35,6 +35,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_id: CheckedLoopId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
+        substitution: &super::super::generics::GenericSubstitution,
     ) -> Result<Vec<CheckedLoopInvariant>, CheckStop> {
         let mut names = HashSet::new();
         let mut invariants = Vec::with_capacity(nodes.len());
@@ -44,6 +45,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 loop_id,
                 bindings,
                 allowed_values,
+                substitution,
                 &mut names,
             )?);
         }
@@ -135,6 +137,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             &body_bindings,
             &allowed_invariant_values,
+            &function.substitution,
         )?;
         let mut checked = self.check_block(
             function,
@@ -270,6 +273,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_id: CheckedLoopId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
+        substitution: &super::super::generics::GenericSubstitution,
         names: &mut HashSet<String>,
     ) -> Result<CheckedLoopInvariant, CheckStop> {
         let declaration = self.declaration_at(node, DeclarationRole::Invariant)?;
@@ -291,6 +295,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
             bindings,
             allowed_values,
+            substitution,
             AffineProofOwner::InvariantTarget,
         )?;
 
@@ -479,6 +484,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             &body_bindings,
             &allowed_invariant_values,
+            &function.substitution,
         )?;
         let mut checked = self.check_block(
             function,

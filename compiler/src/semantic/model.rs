@@ -41,6 +41,21 @@ pub(crate) enum CheckedAffineExpressionKind {
         binding: BindingId,
         ty: IntegerType,
     },
+    /// [INV-1, MSR-6] one in-scope const generic written as an affine atom,
+    /// at the one source-canonical symbolic instance.
+    ///
+    /// A concrete instance reads the mathematical constant [FN-2] fixed for
+    /// it and forms [`Self::Constant`]; the symbolic instance keeps the
+    /// declaration-anchored constant term [ENT-2] clause (c) already gives
+    /// it, which nothing kills, so the affine image is one immutable atom for
+    /// the whole walk.
+    ConstGeneric {
+        declaration: DeclarationId,
+        ty: IntegerType,
+        /// The writer's own spelling, so a residual renders `n` and never an
+        /// internal identity.
+        name: String,
+    },
     /// [INV-1, MSR-1] one measure former written as an affine factor. The
     /// inner expression is exactly the measure read the [OP-1] reader row
     /// checks, so the affine domain reaches the same [ENT-2] term the
