@@ -200,7 +200,16 @@ element-position kill is the overlap relation rather than a flag, [OWN-7] and
 [LIV-2] condition 2 read the complete path over `grid[i][j]`, and the lowering
 reads a descriptor through the slot address. B8b also closes two soundness
 holes: a call's region arguments now reach every result position, and a run's
-element read owes the bounds obligation only its target owed.
+element read owes the bounds obligation only its target owed. **B8c closes the
+third and largest of them**: a kernel row's post-state measure and its
+`at the call` datum were one term and the row's `writes` killed nothing, so
+`arena_vector_proved` published a contradiction and every caller of it
+discharged every [OP-4] obligation it contained. [BLK-0] now carries [CALL-6]'s
+consistency judgment over a compiler-owned row, checked at every call and over
+every row's own set. Beside it B8c lands the owner's [FORM-8] ruling at a
+`construct` — a region argument is written only for a region parameter no
+field's declared type determines — and the [INV-1] affine factor's subscripted
+measure place, which was B8b's one unreached position.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

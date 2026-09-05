@@ -4967,6 +4967,32 @@ the open.
 >   type, so the written arguments are the only supply there is. The block above already
 >   writes them.
 
+> **Correction, decided 2026-09-05, from the owner's [FORM-8] ruling: a construct elides
+> the region arguments its own field operands determine, and the bullet above is
+> superseded.** [FORM-8] is language-wide and decidable from the code alone — a region is
+> written exactly where the surrounding text does not determine it — and a `construct`'s
+> field operands are surrounding text. A field determines a region parameter exactly when
+> its declared type names it, which is the *same* relation a parameter position bears at a
+> call, so `BlockPool`'s `free: FixedVector<Vector<'s, u8>, 8>` and `Lease`'s `run:
+> Vector<'s, u8>` each fix `'s` from their operand and the canonical spellings are
+> `BlockPool(free: move free)` and `Lease(run: move one)`. Writing the argument anyway is a
+> hard [FORM-8] error whose mechanical fix is `drop the region argument`. A construct
+> writes a region parameter no field's declared type mentions — `struct Ticket['s] { count:
+> u64; }` is built `Ticket<'a>(count: 7_u64)` — and one whose complete type application is
+> then empty writes no `targs` list at all.
+>
+> **[TYPE-5]'s ground is unchanged and is the reason this works.** Construction consults
+> no expected nominal type: it is the field operands and the written members, never a
+> destination, that fix the instance. What the sentence "nothing fixes a nominal's region
+> argument at a `type` or a `construct`" got wrong was only the construct half — a `type`
+> position still writes every one of them. The implementation reads this off the
+> declaration's own symbolic instance, whose region arguments *are* its region parameters,
+> checks every field operand before the instance exists, and forms the instance from the
+> regions they determined and the ones the position wrote; a second field naming an
+> already-determined parameter is then the ordinary exact [TYPE-5] equality and never a
+> second binding [PROV-1]. `tests/programs/block_pool.wf` and the three B8a conformance
+> cases are respelled to match.
+
 ```wf-design
 fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own T)
     -> (rest: own FixedVector<T, n>, unplaced: own Option<T>)
@@ -7193,6 +7219,103 @@ belongs with that row and its own conformance evidence rather than here.
 629, with the one xfail and the one skip unchanged, and the snapshot corpus
 stays at Pass=491, Flip=0. No corpus verdict moved.
 
+### 6.0o B8c landed (v0.45)
+
+**The contradiction a kernel row was publishing, the region a construct no longer writes,
+and the subscript an invariant may now name.** 6.0n found the first of these and left it
+where it lay, saying the repair belonged with the row; this batch is that repair, together
+with the owner's [FORM-8] ruling at a `construct` and the one position B8b did not reach.
+
+- **A row was making its caller's fact state universally discharging.** The reproducer is
+  6.0n's: `region 'a { let workspace = arena_frame::<8192, 16, 'a>(); let table =
+  array_new::<u8, 4>(0_u8); region { let first = arena_vector_proved::<u8>(store: &uniq
+  workspace, count: 8_u64); let seen = table[9_u64]; ... } }` compiled, linked and ran,
+  reading slot nine of a four-slot array; remove the acquisition and `table[9_u64]` is
+  refused at [OP-4] as it should be. Two defects made it, and they compose. **The first is
+  the denotation.** A.2 says every operand denotes what [MSR-3]'s table gives its
+  parameter's mode, and the compiler read *this call's call datum* for both of them,
+  because [ENT-2] clause (h) keys a call datum on the call, the ordinal, the projections
+  and the measure — and on nothing that separates a post-state occurrence of a measure
+  from the `at the call` occurrence of the same one. The row's own `len_of(store) =
+  len_of(store at the call) + advance<T>(count)` therefore instantiated as `t = t +
+  advance<T>(count)` over **one** term, which is the bound pair `advance<T>(count) <= 0`
+  and `advance<T>(count) >= 0`, and at a written count of eight `u8`s that is `8 <= 0`.
+  **The second is the kill.** A row's declared effect row is a callee effect like any
+  other and nothing collected it, so the store's pre-call measure facts —
+  `len_of(workspace) = 0` among them, established by `arena_frame`'s own row — survived
+  beside the row's post-state relations, and `0 = 0 + 8` is the same contradiction one
+  statement later. Both are landed: the operand *position* decides the denotation before
+  the datum table is consulted, and the place a row's `writes` names is written by the
+  call, so every fact whose support that place reaches dies at the boundary [ENT-5].
+
+- **[BLK-0] gains the sentence that makes this checkable, and the compiler checks it two
+  ways.** A row's published set is subject to [CALL-6]'s consistency judgment exactly as a
+  source declaration's is. That is not a restatement of "one fact was wrong": at a
+  contradictory point [ENT-4]'s least closure derives every relation and both signs of
+  every goal, so a caller discharges *every* obligation it submits after the call, the
+  subscript bounds and the integer domains among them — which is why one wrong
+  instantiation on one row bought a nine-slot read of a four-slot array in a function that
+  never mentioned the store again. Because a row's set is fixed by the specification and
+  not by a program, a row that fails the judgment is a defect in the specification or in
+  its implementation and is never a source rejection, so it is caught where defects are
+  caught: a unit test closes each row's own requirement and relation lists per declared
+  exit under the same difference-bound closure [CALL-6] uses, at three resolutions of the
+  one non-constant displacement `advance<T>(count)`, and the establishment path asserts at
+  **every** call of **every** row that the caller's fact state did not turn contradictory
+  across it. The instantiation defect above lives in the second check and not the first,
+  which is exactly why both are here.
+
+- **A `construct` elides the region arguments its own fields determine.** 6.0m recorded
+  that a construct writes its nominal's region arguments on [TYPE-5]'s ground —
+  construction consults no expected nominal type, so the written arguments are the only
+  supply there is. The owner's ruling is that this reads [FORM-8] one clause too narrowly:
+  a region is written exactly where the surrounding text does not determine it, and a
+  construct's **field operands are surrounding text**. A field determines a region
+  parameter exactly when its declared type names it, which is the same relation a
+  parameter position bears at a call, so `BlockPool(free: move free)` and `Lease(run: move
+  one)` are the canonical spellings and writing the argument is a [FORM-8] rejection whose
+  fix is `drop the region argument`. What does not move is [TYPE-5]'s ground: it is the
+  operands and the written members, never a destination, that fix the instance. The
+  implementation is what that ordering costs — the instance is formed **after** the
+  operands are checked, so the `&mut` pre-scan tolerates an elided list and interns
+  nothing, the shape a construct needs beforehand is read once off the declaration's own
+  symbolic instance (whose region arguments *are* its region parameters, which is what
+  makes a field type naming one visibly that parameter), and the formed instance is
+  reached through the deferred-nominal route no written text could have interned. A
+  nominal none of whose fields names its region — `struct Ticket['s] { count: u64; }` —
+  still writes it, and a construct whose complete type application is then empty writes no
+  `targs` list at all.
+
+- **An [INV-1] affine factor's measure place takes subscripts.** 6.0n named this the one
+  position its change did not reach, and called it a threading question rather than a
+  representation one; it was. The affine reader threaded a `GenericSubstitution` where the
+  place former needs a `FunctionSignature` and a loop depth, across five signatures. With
+  those in hand the place is formed under the enclosing concrete instance at the enclosing
+  depth — the same premise set the same place has anywhere else — and the subscript inside
+  it owes [OP-4]'s own bound, judged where the relation is *written*: at a loop header in
+  its entering ProofContext, at an `invariant_stmt` at that statement. An invariant
+  evaluates nothing and reads no storage, but a measure over a place whose subscripts are
+  not all discharged is no term there either, so the relation names a slot the run has or
+  it names nothing.
+
+**Verdicts, and the two cases the batch had to move.** The adapter moves from Pass=627
+over 629 cases to Pass=634 over 636, with the one xfail and the one skip unchanged, and
+the snapshot corpus stays at Pass=491, Flip=0. Three B8a conformance cases and
+`tests/programs/block_pool.wf` are respelled for [FORM-8] and keep the verdicts they
+recorded. Two more moved and both are named here because neither is a respelling.
+`type5-neg-a-construct-elides-its-nominal-region-argument` is **deleted**: its source is
+byte-for-byte the added `form8-pos-a-construct-elides-the-region-its-field-determines`
+apart from its `doc`, and it pinned exactly the sentence the ruling above retires, so the
+same program is now the positive case of the rule that replaced it rather than a verdict
+edited in place. And `blk1-pos-a-store-backed-run-is-a-run-element` **was standing on the
+contradiction**: it takes an arena-backed run out of a slot and appends one byte, and a
+run put into a slot and taken back out carries no measure of its own, because [MSR-3]'s
+element placements are DEFERRED — so its `place_back` was discharging `room_of(last) >
+0_u64` from the row's own contradiction and from nothing else. It now reads `room_of` and
+branches. That is the second cost of this repair being real rather than cosmetic, and it
+is the price the design already names: a measured value that passes through a slot loses
+its figure until [MSR-3]'s element placements land.
+
 ### 6.1 What the compiler did in this session
 
 ```text
@@ -8134,3 +8257,45 @@ twelve.
 L9's published displacement. **Nothing here removes from the middle, clears, truncates,
 grows, exchanges, swaps, rebases, or constructs a filled or vacant run** — each is 3.L,
 and 3.L.6 records that none needed a row the four boundary operations do not have.
+
+> **Correction, decided 2026-09-05, from B8c's implementation: `len_of(store)` and
+> `len_of(store at the call)` are two terms, and the row's own `writes` is what leaves
+> room for the second.** The paragraph above is right that every operand denotes what
+> [MSR-3]'s table gives its parameter's mode. What the compiler did was read *this call's
+> call datum* for **both** denotations, because [ENT-2] clause (h) keys a call datum on
+> the call, the ordinal, the projections and the measure and on nothing that separates a
+> post-state occurrence of a measure from the `at the call` occurrence of the same one.
+> `arena_vector_proved`'s own `len_of(store) = len_of(store at the call) +
+> advance<T>(count)` therefore instantiated as `t = t + advance<T>(count)` over one term,
+> which is the pair of bounds `advance<T>(count) <= 0` and `advance<T>(count) >= 0`, and
+> at a written `count` of 8 `u8`s that is `8 <= 0`. **The row introduced a contradiction
+> into every caller's fact state**, and [ENT-4]'s least closure derives every relation
+> and both signs of every goal from a contradictory point, so a function that called this
+> row discharged *every* [OP-4] obligation it contained: `region 'a { let workspace =
+> arena_frame::<8192, 16, 'a>(); let table = array_new::<u8, 4>(0_u8); region { let first
+> = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64); let seen =
+> table[9_u64]; ... } }` compiled, linked and ran, reading slot nine of a four-slot array.
+> 6.0n found it at B8b's base commit and left it here; this is the repair.
+>
+> Two things were missing and both land. **The operand position decides the denotation
+> before the datum table is consulted**, so an `own` operand and an `at the call` form
+> mint or read this call's datum and the plain occurrence of a `&uniq` state operand is
+> the live term after the call's own kills. And **a row's declared effect row is a callee
+> effect like any other** [ENT-5]: the place its `writes` names is written by the call, so
+> every fact whose support that place reaches dies at the call boundary and what a caller
+> holds about the store afterwards is exactly what the row published. Without the second
+> the first is not enough — the post-state occurrence is the caller's own live term, which
+> the pre-call `len_of(workspace) = 0` still pins, and `0 = 0 + 8` is the same
+> contradiction one statement later.
+>
+> **[BLK-0] gains the sentence that makes this a judgment rather than an accident.** A
+> row's published set is subject to [CALL-6]'s consistency judgment exactly as a source
+> declaration's is: the relations one row carries on one declared exit, together with its
+> own requirements, are not contradictory, and establishing them at a call never makes the
+> caller's state contradictory where it was not already. Because a row's set is fixed by
+> the specification rather than by a program, a row that fails the judgment is a defect in
+> the specification or in its implementation and is never a source rejection — so the
+> compiler carries it two ways: a unit test closes each row's own requirement and relation
+> lists per declared exit under the same difference-bound closure [CALL-6] uses, at three
+> resolutions of `advance<T>(count)`, and the establishment path asserts at **every** call
+> of every row that the caller's state did not turn contradictory across it.

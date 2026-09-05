@@ -321,10 +321,20 @@ nominals included: `struct BlockPool['s]` holds the free list,
 `pool_release` are all three generic over the store. A source nominal's
 `region_params` are components of its type name, so an instance is keyed on its
 region arguments beside its type and const arguments and two instances at two
-regions are two types; a `type` and a `construct` write those arguments as the
+regions are two types; a `type` position writes those arguments as the
 leading members of the same `targs` list the two runs and the two providers
 already use, and a parameter type naming such a nominal determines its region
-from the actual exactly as `Vector<'s, T>` does. Where the axis leaves the
+from the actual exactly as `Vector<'s, T>` does. A `construct` writes only what
+its own operands leave open [FORM-8]: a field whose declared type names one of
+the nominal's region parameters determines it from its actual, exactly as a
+parameter position determines a callee's formal, so `BlockPool(free: move
+free)` writes nothing and `BlockPool<'a>(free: move free)` is refused with
+`drop the region argument`, while `struct Ticket['s] { count: u64; }`, no field
+of which names `'s`, is still built `Ticket<'a>(count: 7_u64)`. The instance is
+therefore formed *after* the operands are checked and not before — the shape a
+construct needs beforehand is read off the declaration's own symbolic instance,
+whose region arguments are its region parameters — and construction still
+consults no expected nominal type. Where the axis leaves the
 program is the lowering: a region names a store for the proof and nothing at run
 time, so two instances that differ only in their region arguments — and in
 nothing a run time can see, a run's release class included — are **one IR
@@ -367,10 +377,14 @@ kills every measure of `P[i]` and no measure of `P`, and a whole-value write of
 against the prefix that reaches its base, submitted where the place is formed,
 and the lowering projects a measured place step by step — a field selection is
 the ordinary struct projection and a subscript is [BLK-1]'s element read — so a
-descriptor is read through the slot address that holds it. One position is not
-reached: an [INV-1] affine factor is checked without the enclosing concrete
-instance in hand, so a subscript inside a measure place there is an explicit
-unsupported capability.
+descriptor is read through the slot address that holds it. An [INV-1] affine
+factor reaches the same place: its measure place is formed under the enclosing
+concrete instance and at the enclosing loop depth, so
+`invariant flat: len_of(grid[0_u64]) <= cap_of(grid[0_u64])` is a header
+relation, and the subscript inside it owes [OP-4]'s bound where the relation is
+written — at the loop header in its entering context, at an `invariant`
+statement at that statement — because a measure over a place whose subscripts
+are not all discharged is no term there either.
 
 Two soundness repairs landed with that path. A call's region arguments are
 substituted into **every** position of the callee's signature, results included
@@ -382,6 +396,27 @@ run of one store be typed later as a run of another. And a run's element
 **read** now owes [OP-4]'s bounds obligation, which only its element-position
 target did: `let run = fixed_vector::<u8, 4>(); let seen = run[0_u64];`
 compiled, linked and ran, reading a slot outside an empty run's window.
+
+A third one is what [BLK-0]'s consistency sentence is for. A kernel row's
+operand denotation is decided by its position [MSR-3] *before* the call-datum
+table is consulted, because that table is keyed on the call, the ordinal, the
+projections and the measure and on nothing that separates a `&uniq` state
+operand's post-state from that call's `at the call` datum; reading the datum for
+both made `arena_vector_proved`'s own `len_of(store) = len_of(store at the call)
++ advance<T>(count)` the pair of bounds `advance<T>(count) <= 0` and
+`>= 0` over one term. And a row's declared effect row is a callee effect like
+any other, so the place its `writes` names is written by the call and every fact
+whose support that place reaches dies there; without that the post-state term is
+still pinned by the caller's pre-call `len_of(store) = 0` and the same
+contradiction arrives one statement later. Either way [ENT-4]'s least closure
+made the caller's whole fact state universally discharging, so a function that
+called the row discharged *every* [OP-4] obligation it contained and a nine-slot
+read of a four-slot array compiled, linked and ran. The class is now closed at
+both ends: a unit test closes each row's own requirement and relation lists per
+declared exit under the same difference-bound closure [CALL-6] uses, and the
+establishment path asserts at every call of every row that the caller's fact
+state did not turn contradictory across it.
+
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 

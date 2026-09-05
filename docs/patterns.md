@@ -1451,12 +1451,36 @@ struct BlockPool['s] {
 }
 ```
 
-Write the region argument at every `type` position and at every `construct`,
-as the leading member of the same `<...>` list a type argument goes in:
-`BlockPool<'a>` names the type, `BlockPool<'a>(free: move free)` builds one,
-and `Some<BlockPool<'a>>(value: move pool)` carries one. Construction consults
-no expected type, so those written arguments are the only thing that fixes the
-instance.
+Write the region argument at every `type` position, as the leading member of
+the same `<...>` list a type argument goes in: `BlockPool<'a>` names the type
+and `Some<BlockPool<'a>>(value: move pool)` carries one, because `Option`'s own
+argument is a type position.
+
+At a `construct` you write only the region parameters **no field determines**.
+A field determines one exactly when its declared type names it, which is the
+same relation a parameter position bears at a call, so `BlockPool`'s `free :
+FixedVector<Vector<'s, u8>, 8>` fixes `'s` from its operand and the construct
+writes nothing:
+
+```whitefoot
+let pool = BlockPool(free: move free);
+let ticket = Lease(run: move one);
+```
+
+Writing it anyway — `BlockPool<'a>(free: move free)` — is a [FORM-8] rejection
+whose fix is to drop the argument. A nominal none of whose fields names its
+region has nothing to determine it, so the construct writes it after all:
+
+```whitefoot
+struct Ticket['s] {
+  count: u64;
+}
+
+let one = Ticket<'a>(count: 7_u64);
+```
+
+Construction still consults no expected type: the field operands and the
+written members are the only supply there is, and never a destination.
 
 At a call you write **nothing**: a parameter whose type names the nominal's
 region determines it from the actual, exactly as `Vector<'s, T>` does.

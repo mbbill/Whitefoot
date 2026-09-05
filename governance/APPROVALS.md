@@ -3577,4 +3577,153 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `tests/programs/run_queue.wf`, gains the `ensures` its own subscript now
   needs and keeps its recorded behaviour; it is outside the conformance
   boundary.
-ACTIVE-SPEC: v0.45 34577fe6bb2739804784c249d1de29f1ebc112c02eac6737714416af86532e9b 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B8c, the row consistency judgment, the construct's determined
+  regions, and the invariant's subscripted place): v0.45 amends three rules in
+  place and adds and retires none, so META-5's counts do not move; [FORM-8]
+  joins its amended-rule list, and [TYPE-5] and [INV-1] are already named
+  there, while [BLK-0] is a rule this version itself adds. No DEFERRED clause
+  lands and none is added. [BLK-0] states that a row's published set is subject
+  to [CALL-6]'s consistency judgment exactly as a source declaration's is: the
+  relations one row carries on one declared exit, together with that row's own
+  requirements, are not contradictory, and establishing them at a call never
+  makes the caller's fact state contradictory where it was not already, every
+  requirement having been discharged before any relation is established
+  [MSR-4]. A contradictory published set is not one wrong fact: at a
+  contradictory point [ENT-4] derives every relation and both signs of every
+  goal, so the caller discharges every obligation it submits after that call,
+  the subscript bounds and the integer domains among them. Because a row's set
+  is fixed by the specification rather than by a program, a row that fails the
+  judgment is a defect in the specification or in its implementation and is
+  never a source rejection. The same rule now says in the same place that
+  `<measure>(<parameter> at the call)` and the post-state occurrence of the
+  same measure are **two terms** wherever both occur, even though the
+  parameter, the place and the measure are the same one, and that a row's
+  declared effect row is a callee effect [ENT-5] like any other, so the place
+  its `writes` names is written by the call and what a caller holds about that
+  place afterwards is exactly what the row published. [FORM-8] extends its own
+  judgment to a `construct`: a construct of a nominal carrying `region_params`
+  writes, as the leading region members of its `targs` list, exactly those
+  region parameters that the declared type of no field of the constructor it
+  names determines; a field determines one exactly when its declared type names
+  that region, which is the same relation a parameter position bears at a call;
+  an enum's variants are decided one by one; the first determining field fixes
+  the region and a later field naming the same parameter is the ordinary exact
+  [TYPE-5] equality and never a second binding [PROV-1]; and writing a
+  determined region parameter, or omitting an undetermined one, is a hard error
+  citing FORM-8 at the complete `construct`, whose mechanical fix is `drop the
+  region argument`. [TYPE-5]'s sentence that "nothing fixes a nominal's region
+  argument at a `type` or a `construct`" is corrected to that division: a
+  `type` position fixes none of them and writes every one, while a
+  `construct`'s own field operands fix exactly the ones their declared types
+  name. Construction still consults no expected nominal type, which is why the
+  field operands and the written members are the only supply there is. [INV-1]
+  states that a subscript inside an affine factor's measure place is an
+  ordinary [OP-4] occurrence: its offset resolves in the same context the rule
+  gives an IDENT and is one of the offsets [ENT-2] clause (b) admits, and it
+  owes `i < len_of(base)` against the prefix reaching its base, judged where
+  the relation is written — at the loop header in its entering ProofContext, at
+  an `invariant_stmt` in that statement's entering one — so a measure over a
+  place whose subscripts are not all discharged is no term there either.
+- CONSEQUENCE (B8c, the third soundness hole, closed at both ends): 6.0n of the
+  containers design recorded a hole older than that batch and left it where it
+  lay — a function that called `arena_vector_proved` discharged *every* [OP-4]
+  obligation it contained, so `region 'a { let workspace = arena_frame::<8192,
+  16, 'a>(); let table = array_new::<u8, 4>(0_u8); region { let first =
+  arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64); let seen =
+  table[9_u64]; ... } }` compiled, linked and ran, reading slot nine of a
+  four-slot array. Two defects made it, and the [BLK-0] sentences above are
+  what they violated. First, the compiler read *this call's call datum* for
+  both denotations of a `&uniq` state operand's measure, because [ENT-2] clause
+  (h) keys a call datum on the call, the ordinal, the projections and the
+  measure and on nothing that separates a post-state occurrence from an `at the
+  call` one; the row's own `len_of(store) = len_of(store at the call) +
+  advance<T>(count)` then instantiated as `t = t + advance<T>(count)` over one
+  term, which is the bound pair `advance<T>(count) <= 0` and `>= 0`, and at a
+  written `count` of eight `u8`s that is `8 <= 0`. The operand position now
+  decides the denotation before the datum table is consulted. Second, a row's
+  `writes` killed nothing at the caller, so the store's pre-call measure facts
+  survived beside the row's post-state relations and `0 = 0 + 8` was the same
+  contradiction one statement later; a row's declared effect row is now
+  collected as the callee effect it is. The class is closed at both ends rather
+  than the instance repaired: a unit test over the row inventory closes each
+  row's own requirement and relation lists per declared exit under the same
+  difference-bound closure [CALL-6] uses, at three resolutions of
+  `advance<T>(count)`, and the establishment path asserts at every call of every
+  row that the caller's fact state did not turn contradictory across it. The
+  same audit was run over `arena_vector`'s routed `Option` form and over
+  `place_back` and `take_back`, whose operands are `own` and therefore denote
+  the call datum on both sides; the conformance cases record the two formation
+  rows.
+- CONFORMANCE BOUNDARY (B8c): this batch ADDS eight conformance cases and their
+  eight manifest rows, MODIFIES the source of four existing cases without
+  touching any expectation, DELETES one case and its manifest row, and RENAMES
+  none. No adapter, runner, or collection wiring changes. The added ids are
+  `blk0-neg-a-row-does-not-discharge-its-caller-s-obligations`
+  (`{"kind": "reject", "rule": "OP-4"}`),
+  `blk0-neg-the-refusing-formation-row-discharges-nothing-either`
+  (`{"kind": "reject", "rule": "OP-4"}`),
+  `blk0-pos-a-row-s-published-state-is-what-its-caller-holds`
+  (`{"kind": "run", "exit": 0}`),
+  `form8-pos-a-construct-elides-the-region-its-field-determines`
+  (`{"kind": "run", "exit": 0}`),
+  `form8-neg-a-construct-writes-the-region-its-field-determines`
+  (`{"kind": "reject", "rule": "FORM-8"}`),
+  `form8-pos-a-construct-writes-the-region-no-field-determines`
+  (`{"kind": "run", "exit": 0}`),
+  `inv1-pos-a-subscript-inside-an-invariant-s-measure-place`
+  (`{"kind": "run", "exit": 0}`) and
+  `inv1-neg-a-subscript-inside-an-invariant-owes-its-bound`
+  (`{"kind": "reject", "rule": "OP-4"}`), each status runnable. The first three
+  MODIFIED cases are `fn2-neg-two-stores-give-two-result-types`,
+  `type2-pos-a-nominal-is-generic-over-its-store` and
+  `type5-neg-two-nominal-instances-at-two-regions`: each writes a region
+  argument at a `construct` whose field operand determines it, which [FORM-8]
+  now refuses, and each drops exactly that argument -- `Holder<'s>(run: move
+  run)` to `Holder(run: move run)`, `Chunk<'a>(page: move page)` to `Chunk(page:
+  move page)`, and the two `Chunk` constructs of the third case likewise. Their
+  ids, expectations, rule citations, statuses and docs are unchanged, and each
+  keeps the verdict it recorded before this merge: `{"kind": "reject", "rule":
+  "TYPE-5"}` before and after for the first, `{"kind": "run", "exit": 0}`
+  before and after for the second, and `{"kind": "reject", "rule": "TYPE-5"}`
+  before and after for the third. The fourth MODIFIED case is
+  `blk1-pos-a-store-backed-run-is-a-run-element`
+  (`{"kind": "run", "exit": 0}` before and after), and its source moves for the
+  soundness repair above rather than for [FORM-8]: the case takes an
+  arena-backed run out of a slot and appends one byte to it, and a run put into
+  a slot and taken back out carries no measure of its own, because [MSR-3]'s
+  element placements are DEFERRED. Its `place_back` was therefore discharging
+  `room_of(last) > 0_u64` from the contradiction the row it calls was
+  publishing, and nothing else. The case now reads `room_of` and branches, which
+  is the ordinary [MSR-4] discharge and the mechanical fix the row's own
+  diagnostic names; the doc records why the branch is there. This is the same
+  class of repair `tests/programs/run_queue.wf` took at B8b, made inside the
+  boundary because this case is inside it.
+- CONFORMANCE BOUNDARY (B8c, the one DELETED case): the DELETED case is
+  `type5-neg-a-construct-elides-its-nominal-region-argument`, whose recorded
+  expectation was `{"kind": "reject", "rule": "TYPE-5"}` and whose source is
+  byte-for-byte the added case
+  `form8-pos-a-construct-elides-the-region-its-field-determines` apart from its
+  `doc`. It pinned exactly the sentence the [FORM-8] amendment above retires —
+  that a construct of a nominal carrying `region_params` writes its region
+  arguments unconditionally — so it is not modified to a new verdict but
+  superseded in place: the same program is now the positive case of the rule
+  that replaced it, and the negative direction the corpus loses with it is
+  pinned by `form8-neg-a-construct-writes-the-region-its-field-determines`. Rule
+  coverage of TYPE-5 is unaffected; the runner reports coverage complete after
+  the deletion. This boundary is a DELETE and an ADD and not a RENAME, and it is
+  written that way here because `git` similarity detection will present the two
+  as one rename: the two programs are byte-identical apart from their `doc`, but
+  the id, the doc and the recorded expectation all change, and no expectation is
+  carried across — the deleted manifest row is deleted and the added row is
+  added. Before this batch the corpus holds 629 cases with the native
+  adapter reporting Pass=627, Xfail=1, Skip=1; after it the corpus holds 636
+  with the adapter reporting Pass=634, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, rule coverage stays complete at
+  148/148, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0:
+  no verdict of either corpus moved except the one this record deletes. One
+  program of the executable corpus, `tests/programs/block_pool.wf`, drops the
+  region argument at its two constructs for the same reason as the first three
+  modified cases and keeps its recorded behaviour; it is outside the
+  conformance boundary.
+ACTIVE-SPEC: v0.45 eb3a72ac4aa7387e0b024e99bc553a118f1ae2343112f512c39bf680751e421d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
