@@ -253,6 +253,25 @@ keeps conservative LLVM when no specification-backed optimization fact exists.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 
+### Known defect: unguarded affine expression nesting depth
+
+A proof-domain affine expression nesting parentheses about 1400 deep aborts
+the driver with a stack overflow and no diagnostic at all (exit 134,
+`fatal runtime error: stack overflow`); 1200 rejects normally in a third of a
+second, and about 20000 does not even abort within twenty seconds, so a
+superlinear cost sits on top of the recursion. It reaches this from both a
+`use` premise and an `invariant` target, so it is in the shared `affine_expr`
+handling rather than in either position. Measured against a build from before
+the v0.48 `use` amendment, it reproduces identically, so it is not that
+amendment's.
+
+An internal error is not a source rejection, and a crash with no diagnostic
+gives a writer nothing to act on. The repair is the pattern this compiler
+already uses for structural limits — the 4096-entry `proof_use` capacity and
+`AffineCheckError::LimitExceeded` — applied to nesting depth, in whichever of
+the parser and the semantic former actually overflows. Removed when that limit
+exists and a test pins it.
+
 ## Running and checking
 
 From `compiler/`:
