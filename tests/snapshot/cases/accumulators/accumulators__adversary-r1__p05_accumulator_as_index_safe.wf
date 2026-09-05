@@ -1,6 +1,12 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- data has length 6 but the loop only scans the first 5 slots, so count <= 5 < 6 = len_of(data); the explicit dominating in_bounds check discharges data[count] before the read.";
-  let data = buffer_new(6_u64, 7_u8);
+  let data = fixed_vector::<u8, 6>();
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
   let count = 0_u64;
   for (
     i in 0_u64..5_u64,

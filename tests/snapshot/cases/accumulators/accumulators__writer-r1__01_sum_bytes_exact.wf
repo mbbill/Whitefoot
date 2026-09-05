@@ -1,6 +1,14 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: per-byte bound sum over a small buffer, proved by header invariant sum <= 255*i.";
-  let data = buffer_new(8_u64, 3_u8);
+  let data = fixed_vector::<u8, 8>();
+  set data = place_back(vector: move data, value: 3_u8);
+  set data = place_back(vector: move data, value: 3_u8);
+  set data = place_back(vector: move data, value: 3_u8);
+  set data = place_back(vector: move data, value: 3_u8);
+  set data = place_back(vector: move data, value: 3_u8);
+  set data = place_back(vector: move data, value: 3_u8);
+  set data = place_back(vector: move data, value: 3_u8);
+  set data = place_back(vector: move data, value: 3_u8);
   let sum = 0_u64;
   for (
     i in 0_u64..8_u64,

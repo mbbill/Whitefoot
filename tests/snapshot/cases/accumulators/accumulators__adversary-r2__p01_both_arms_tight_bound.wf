@@ -1,6 +1,12 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- both if and else arms accumulate (2 when the byte equals 9, else 1), so sum after i iterations is at most 2*i; the invariant sum <= 2*i is provably true on every path since 1 <= 2 as well.";
-  let data = buffer_new(6_u64, 9_u8);
+  let data = fixed_vector::<u8, 6>();
+  set data = place_back(vector: move data, value: 9_u8);
+  set data = place_back(vector: move data, value: 9_u8);
+  set data = place_back(vector: move data, value: 9_u8);
+  set data = place_back(vector: move data, value: 9_u8);
+  set data = place_back(vector: move data, value: 9_u8);
+  set data = place_back(vector: move data, value: 9_u8);
   set data[2_u64] = 0_u8;
   let sum = 0_u64;
   for (

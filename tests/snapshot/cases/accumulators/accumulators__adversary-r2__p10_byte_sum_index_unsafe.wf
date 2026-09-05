@@ -1,7 +1,18 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-4] -- idx accumulates the widened byte values themselves (not a match count), so after 3 iterations idx can reach 3*255=765; table has length 256, and the concrete violating trace is data all 100s: idx = 100+100+100 = 300, and table[300] indexes past a length-256 buffer.";
-  let data = buffer_new(3_u64, 100_u8);
-  let table = buffer_new(256_u64, 0_u8);
+  let data = fixed_vector::<u8, 3>();
+  set data = place_back(vector: move data, value: 100_u8);
+  set data = place_back(vector: move data, value: 100_u8);
+  set data = place_back(vector: move data, value: 100_u8);
+  let table = fixed_vector::<u8, 256>();
+  for (
+    at_table in 0_u64..256_u64,
+    invariant grown_table: len_of(table) >= at_table,
+    invariant spare_table: room_of(table) + at_table >= 256_u64,
+    invariant flat_table: head_of(table) <= 0_u64
+  ) {
+    set table = place_back(vector: move table, value: 0_u8);
+  }
   let idx = 0_u64;
   for (
     i in 0_u64..3_u64,
