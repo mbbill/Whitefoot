@@ -1,6 +1,6 @@
 const source: array<u8, 6> =[0_u8, 9_u8, 0_u8, 8_u8, 0_u8, 7_u8];
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a nonzero-count accumulator, bounded by the header invariant, is later used as the write index that appends a terminator into a heap buffer.";
   let dest = buffer_new(8_u64, 0_u8);
   let count = 0_u64;

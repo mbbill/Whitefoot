@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "SET-2 admits a replace whose target type is affine and region-free. A box<u64> descriptor is affine and carries no region, so exchanging one owning descriptor for another is accepted, the previous box is bound as a fresh own binding, and the target root stays live. This is the positive control for the region-bearing rejection: the two targets differ exactly in bearing a region.";
   let first = box_new(1_u64);
   let second = box_new(2_u64);

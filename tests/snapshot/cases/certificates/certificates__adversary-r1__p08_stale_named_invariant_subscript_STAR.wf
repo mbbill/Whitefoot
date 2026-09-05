@@ -11,7 +11,7 @@ fn probe(table: own buffer<u8>, idx: own u64, limit: own u64) -> found: own u8 r
   return byte;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let table = buffer_new(4_u64, 0_u8);
   let found = probe(table: move table, idx: 1_u64, limit: 4_u64);
   return exit_status(code: found);

@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "`open_directory` validates its caller-owned name range before any host call [SYS-14]. An empty range names no component, so it yields `InvalidPath` with both detail fields zero, no host call, and no DirectoryRead result. The buffer holds a perfectly valid component; only the requested range is empty, which is what makes this the range judgment rather than a content judgment.";
   let name = buffer_new(3_u64, 0_u8);
   set name[0_u64] = 97_u8;

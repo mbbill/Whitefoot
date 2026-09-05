@@ -8,7 +8,7 @@ fn exchange(taken: own buffer<u8>) -> given: own buffer<u8> pure {
   return move taken;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "PROV-6: the exception the partial-consume refusal is stated with. A [LIV-2] target list every member of which is reinitialised at that statement's one commit leaves no residual, so the refusal does not reach it; every other consume of a sub-place of a linear value does.";
   let run = buffer_new(4_u64, 0_u8);
   let chunk = Chunk(page: move run, spare: 5_u8);

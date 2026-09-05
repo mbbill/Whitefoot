@@ -365,7 +365,7 @@ pub(crate) const PRODUCTION_ROOTS: [GrammarNodeId; 88] = [
     GrammarNodeId::new(122),
     GrammarNodeId::new(132),
     GrammarNodeId::new(458),
-    GrammarNodeId::new(890),
+    GrammarNodeId::new(897),
     GrammarNodeId::new(550),
     GrammarNodeId::new(587),
     GrammarNodeId::new(594),
@@ -473,7 +473,7 @@ pub(crate) const PRODUCTION_OWNERS: [RuleOwner; 88] = [
 ];
 
 #[rustfmt::skip]
-pub(crate) const GRAMMAR_CHILDREN: [GrammarNodeId; 809] = [
+pub(crate) const GRAMMAR_CHILDREN: [GrammarNodeId; 816] = [
     GrammarNodeId::new(1),
     GrammarNodeId::new(3),
     GrammarNodeId::new(4),
@@ -1270,19 +1270,26 @@ pub(crate) const GRAMMAR_CHILDREN: [GrammarNodeId; 809] = [
     GrammarNodeId::new(880),
     GrammarNodeId::new(881),
     GrammarNodeId::new(882),
-    GrammarNodeId::new(889),
+    GrammarNodeId::new(896),
     GrammarNodeId::new(883),
     GrammarNodeId::new(884),
+    GrammarNodeId::new(891),
     GrammarNodeId::new(885),
     GrammarNodeId::new(886),
     GrammarNodeId::new(887),
     GrammarNodeId::new(888),
-    GrammarNodeId::new(891),
+    GrammarNodeId::new(889),
+    GrammarNodeId::new(890),
     GrammarNodeId::new(892),
     GrammarNodeId::new(893),
     GrammarNodeId::new(894),
     GrammarNodeId::new(895),
-    GrammarNodeId::new(896),
+    GrammarNodeId::new(898),
+    GrammarNodeId::new(899),
+    GrammarNodeId::new(900),
+    GrammarNodeId::new(901),
+    GrammarNodeId::new(902),
+    GrammarNodeId::new(903),
 ];
 
 #[rustfmt::skip]
@@ -1645,7 +1652,7 @@ pub(crate) const GRAMMAR_TERMINALS: [LookaheadPredicate; 365] = [
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::RightParen)),
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Allocates)),
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::LeftParen)),
-    LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Heap)),
+    LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)),
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Arena)),
     LookaheadPredicate::Terminal(TerminalPredicate::RegionIdentifier),
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::RightParen)),
@@ -1655,7 +1662,7 @@ pub(crate) const GRAMMAR_TERMINALS: [LookaheadPredicate; 365] = [
 ];
 
 #[rustfmt::skip]
-pub(crate) const GRAMMAR_NODES: [GrammarNode; 897] = [
+pub(crate) const GRAMMAR_NODES: [GrammarNode; 904] = [
     GrammarNode::new(GrammarNodeKind::RepeatZero, 0, 1, Some(0), false),
     GrammarNode::new(GrammarNodeKind::Production(Production::Item), 0, 0, None, false),
     GrammarNode::new(GrammarNodeKind::Choice, 1, 6, Some(1), false),
@@ -2538,25 +2545,32 @@ pub(crate) const GRAMMAR_NODES: [GrammarNode; 897] = [
     GrammarNode::new(GrammarNodeKind::Sequence, 793, 4, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 356, 1, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 357, 1, None, false),
-    GrammarNode::new(GrammarNodeKind::RepeatOne, 797, 1, Some(132), false),
-    GrammarNode::new(GrammarNodeKind::Group, 798, 1, None, false),
-    GrammarNode::new(GrammarNodeKind::Choice, 799, 2, Some(133), false),
+    GrammarNode::new(GrammarNodeKind::Group, 797, 1, None, false),
+    GrammarNode::new(GrammarNodeKind::Choice, 798, 2, Some(132), false),
+    GrammarNode::new(GrammarNodeKind::Sequence, 800, 2, None, false),
+    GrammarNode::new(GrammarNodeKind::Production(Production::EffectPath), 0, 0, None, false),
+    GrammarNode::new(GrammarNodeKind::RepeatZero, 802, 1, Some(133), false),
+    GrammarNode::new(GrammarNodeKind::Group, 803, 1, None, false),
+    GrammarNode::new(GrammarNodeKind::Sequence, 804, 2, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 358, 1, None, false),
-    GrammarNode::new(GrammarNodeKind::Sequence, 801, 2, None, false),
+    GrammarNode::new(GrammarNodeKind::Production(Production::EffectPath), 0, 0, None, false),
+    GrammarNode::new(GrammarNodeKind::RepeatOne, 806, 1, Some(134), false),
+    GrammarNode::new(GrammarNodeKind::Group, 807, 1, None, false),
+    GrammarNode::new(GrammarNodeKind::Sequence, 808, 2, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 359, 1, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 360, 1, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 361, 1, None, false),
-    GrammarNode::new(GrammarNodeKind::Sequence, 803, 2, None, false),
+    GrammarNode::new(GrammarNodeKind::Sequence, 810, 2, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 362, 1, None, false),
-    GrammarNode::new(GrammarNodeKind::RepeatZero, 805, 1, Some(134), false),
-    GrammarNode::new(GrammarNodeKind::Group, 806, 1, None, false),
-    GrammarNode::new(GrammarNodeKind::Sequence, 807, 2, None, false),
+    GrammarNode::new(GrammarNodeKind::RepeatZero, 812, 1, Some(135), false),
+    GrammarNode::new(GrammarNodeKind::Group, 813, 1, None, false),
+    GrammarNode::new(GrammarNodeKind::Sequence, 814, 2, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 363, 1, None, false),
     GrammarNode::new(GrammarNodeKind::TerminalSequence, 364, 1, None, false),
 ];
 
 #[rustfmt::skip]
-pub(crate) const DECISIONS: [Decision; 135] = [
+pub(crate) const DECISIONS: [Decision; 136] = [
     Decision::new(GrammarNodeId::new(0), Production::Program, DecisionKind::Repeat0, DecisionContext::ProgramItems, 2, 0, 27),
     Decision::new(GrammarNodeId::new(2), Production::Item, DecisionKind::Choice, DecisionContext::ConstructEntry, 6, 27, 26),
     Decision::new(GrammarNodeId::new(10), Production::StructDecl, DecisionKind::Optional, DecisionContext::Ordinary, 2, 53, 2),
@@ -2689,13 +2703,14 @@ pub(crate) const DECISIONS: [Decision; 135] = [
     Decision::new(GrammarNodeId::new(858), Production::Effect, DecisionKind::Choice, DecisionContext::Ordinary, 3, 6275, 3),
     Decision::new(GrammarNodeId::new(863), Production::Effect, DecisionKind::Repeat0, DecisionContext::Ordinary, 2, 6278, 5),
     Decision::new(GrammarNodeId::new(873), Production::Effect, DecisionKind::Repeat0, DecisionContext::Ordinary, 2, 6283, 5),
-    Decision::new(GrammarNodeId::new(882), Production::Effect, DecisionKind::Repeat1, DecisionContext::Ordinary, 2, 6288, 8),
-    Decision::new(GrammarNodeId::new(884), Production::Effect, DecisionKind::Choice, DecisionContext::Ordinary, 2, 6296, 4),
-    Decision::new(GrammarNodeId::new(892), Production::EffectPath, DecisionKind::Repeat0, DecisionContext::Ordinary, 2, 6300, 11),
+    Decision::new(GrammarNodeId::new(883), Production::Effect, DecisionKind::Choice, DecisionContext::Ordinary, 2, 6288, 4),
+    Decision::new(GrammarNodeId::new(886), Production::Effect, DecisionKind::Repeat0, DecisionContext::Ordinary, 2, 6292, 5),
+    Decision::new(GrammarNodeId::new(891), Production::Effect, DecisionKind::Repeat1, DecisionContext::Ordinary, 2, 6297, 5),
+    Decision::new(GrammarNodeId::new(899), Production::EffectPath, DecisionKind::Repeat0, DecisionContext::Ordinary, 2, 6302, 16),
 ];
 
 #[rustfmt::skip]
-pub(crate) const SELECT_ATOMS: [SelectAtom; 591] = [
+pub(crate) const SELECT_ATOMS: [SelectAtom; 589] = [
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Command)), Some(GrammarNodeId::new(97)), true, None, false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Fn)), Some(GrammarNodeId::new(65)), true, None, false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Conform)), Some(GrammarNodeId::new(187)), true, None, false),
@@ -3270,27 +3285,25 @@ pub(crate) const SELECT_ATOMS: [SelectAtom; 591] = [
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(856)), true, None, false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::LeftBrace)), Some(GrammarNodeId::new(104)), false, None, false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(866)), true, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Identifier), Some(GrammarNodeId::new(891)), true, Some(NamePredicate::Identifier), false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Identifier), Some(GrammarNodeId::new(898)), true, Some(NamePredicate::Identifier), false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::RightParen)), Some(GrammarNodeId::new(868)), false, None, false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(856)), false, None, false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(876)), true, None, false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::RightParen)), Some(GrammarNodeId::new(878)), false, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Arena)), Some(GrammarNodeId::new(887)), true, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::RegionIdentifier), Some(GrammarNodeId::new(888)), true, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Heap)), Some(GrammarNodeId::new(885)), true, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Arena)), Some(GrammarNodeId::new(887)), false, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Heap)), Some(GrammarNodeId::new(885)), false, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::RightParen)), Some(GrammarNodeId::new(889)), false, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::RegionIdentifier), Some(GrammarNodeId::new(888)), true, Some(NamePredicate::RegionIdentifier), false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Dot)), Some(GrammarNodeId::new(895)), true, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Identifier), Some(GrammarNodeId::new(896)), true, Some(NamePredicate::Identifier), false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(889)), true, None, false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Dot)), Some(GrammarNodeId::new(902)), true, None, false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::RightParen)), Some(GrammarNodeId::new(896)), false, None, false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Arena)), Some(GrammarNodeId::new(894)), true, None, false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::RegionIdentifier), Some(GrammarNodeId::new(895)), true, Some(NamePredicate::RegionIdentifier), false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Identifier), Some(GrammarNodeId::new(903)), true, Some(NamePredicate::Identifier), false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(866)), false, None, false),
-    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Identifier), Some(GrammarNodeId::new(891)), false, Some(NamePredicate::Identifier), false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Identifier), Some(GrammarNodeId::new(898)), false, Some(NamePredicate::Identifier), false),
     SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(876)), false, None, false),
+    SelectAtom::new(LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Comma)), Some(GrammarNodeId::new(889)), false, None, false),
 ];
 
 #[rustfmt::skip]
-pub(crate) static SELECT_ROWS: [SelectRow; 6311] = [
+pub(crate) static SELECT_ROWS: [SelectRow; 6318] = [
     SelectRow::new(0, 0, 1),
     SelectRow::new(0, 2, 3),
     SelectRow::new(0, 2, 4),
@@ -9579,21 +9592,24 @@ pub(crate) static SELECT_ROWS: [SelectRow; 6311] = [
     SelectRow::new(1, 578, 321),
     SelectRow::new(1, 578, 97),
     SelectRow::new(1, 578, 322),
-    SelectRow::new(0, 579, 580),
-    SelectRow::new(0, 581, 582),
-    SelectRow::new(0, 581, 583),
-    SelectRow::new(0, 581, 584),
-    SelectRow::new(1, 584, 576),
-    SelectRow::new(1, 584, 321),
-    SelectRow::new(1, 584, 97),
-    SelectRow::new(1, 584, 322),
-    SelectRow::new(0, 581, 582),
-    SelectRow::new(0, 581, 583),
-    SelectRow::new(0, 581, 584),
-    SelectRow::new(1, 579, 585),
-    SelectRow::new(0, 586, 587),
-    SelectRow::new(1, 588, 589),
-    SelectRow::new(1, 590, 589),
+    SelectRow::new(0, 574, 579),
+    SelectRow::new(0, 574, 580),
+    SelectRow::new(0, 574, 581),
+    SelectRow::new(1, 582, 583),
+    SelectRow::new(0, 579, 574),
+    SelectRow::new(1, 581, 576),
+    SelectRow::new(1, 581, 321),
+    SelectRow::new(1, 581, 97),
+    SelectRow::new(1, 581, 322),
+    SelectRow::new(0, 582, 583),
+    SelectRow::new(1, 581, 576),
+    SelectRow::new(1, 581, 321),
+    SelectRow::new(1, 581, 97),
+    SelectRow::new(1, 581, 322),
+    SelectRow::new(0, 580, 584),
+    SelectRow::new(1, 585, 586),
+    SelectRow::new(1, 587, 586),
+    SelectRow::new(1, 588, 586),
     SelectRow::new(1, 575, 576),
     SelectRow::new(1, 575, 321),
     SelectRow::new(1, 575, 97),
@@ -9602,10 +9618,14 @@ pub(crate) static SELECT_ROWS: [SelectRow; 6311] = [
     SelectRow::new(1, 578, 321),
     SelectRow::new(1, 578, 97),
     SelectRow::new(1, 578, 322),
+    SelectRow::new(1, 581, 576),
+    SelectRow::new(1, 581, 321),
+    SelectRow::new(1, 581, 97),
+    SelectRow::new(1, 581, 322),
 ];
 
 #[rustfmt::skip]
-pub(crate) const DIAGNOSTIC_ORDER: [LookaheadPredicate; 112] = [
+pub(crate) const DIAGNOSTIC_ORDER: [LookaheadPredicate; 111] = [
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Linear)),
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Struct)),
     LookaheadPredicate::Terminal(TerminalPredicate::TypeIdentifier),
@@ -9717,5 +9737,4 @@ pub(crate) const DIAGNOSTIC_ORDER: [LookaheadPredicate; 112] = [
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Reads)),
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Writes)),
     LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Allocates)),
-    LookaheadPredicate::Terminal(TerminalPredicate::Fixed(FixedTerminal::Heap)),
 ];

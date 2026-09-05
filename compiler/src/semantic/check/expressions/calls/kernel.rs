@@ -974,9 +974,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         effects: &mut EffectSet,
     ) -> Result<(), CheckStop> {
-        for (access, declared) in [
-            (AccessKind::Read, signature.effects.reads),
-            (AccessKind::Write, signature.effects.writes),
+        // [S23] a row's `allocates` ordinal projects exactly as its `reads`
+        // and `writes` ordinals do; the loan access it needs is the write the
+        // same row already declares over the same provider operand [EFF-1].
+        for (access, declared, allocation) in [
+            (AccessKind::Read, signature.effects.reads, false),
+            (AccessKind::Write, signature.effects.writes, false),
+            (AccessKind::Write, signature.effects.allocates, true),
         ] {
             let Some(ordinal) = declared else {
                 continue;
@@ -1020,9 +1024,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 {
                     continue;
                 }
-                match access {
-                    AccessKind::Read => effects.add_read(path),
-                    AccessKind::Write => effects.add_write(path),
+                match (access, allocation) {
+                    (_, true) => effects.add_allocation(path),
+                    (AccessKind::Read, false) => effects.add_read(path),
+                    (AccessKind::Write, false) => effects.add_write(path),
                     _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                 }
             }

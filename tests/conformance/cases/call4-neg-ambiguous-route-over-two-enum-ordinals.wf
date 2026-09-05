@@ -6,7 +6,7 @@ fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, other: o
   return Ok<u64, Overflow>(value: measured), Ok<u64, Overflow>(value: measured);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "CALL-4: a route two declared result ordinals could carry is refused at the declaration, where the ordinal set is fixed.";
   return exit_status(code: 0_u8);
 }

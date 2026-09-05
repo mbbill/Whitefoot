@@ -516,7 +516,7 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
@@ -550,7 +550,7 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
     let arms = class_arms(12, named, default);
     format!(
-        r#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {{
+        r#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {{
   let name = buffer_new(1_u64, 65_u8);
   region 'c {{
     region {{
@@ -1044,7 +1044,7 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
     // the operation row has a target column: the resource-record writer is the
     // compiler's own and must never be scriptable, or a forced short write
     // could truncate the record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -1096,7 +1096,7 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region {{

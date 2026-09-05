@@ -13,7 +13,7 @@ struct ParseOutput {
   next: u64;
 }
 
-fn parse_expression(input: &buffer<u8>, offset: own u64) -> result: own Result<ParseOutput, ParseError> reads(input), allocates(heap) {
+fn parse_expression(input: &buffer<u8>, offset: own u64) -> result: own Result<ParseOutput, ParseError> reads(input) {
   let size = len_of(deref(input));
   let available = offset < size;
   if available {
@@ -68,7 +68,7 @@ fn evaluate(expression: &box<Expression>) -> result: own Result<u64, Overflow> r
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let input = buffer_new(5_u64, 0_u8);
   set input[0_u64] = 43_u8;
   set input[1_u64] = 50_u8;

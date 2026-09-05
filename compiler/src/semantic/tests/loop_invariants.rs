@@ -1501,7 +1501,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn exhaustion_fact_proves_filled_and_vacant_buffer_allocation_fit() {
     let source =
-        br#"fn allocate_prefix(count: own u64) -> result: own unit allocates(heap) contract {
+        br#"fn allocate_prefix(count: own u64) -> result: own unit pure contract {
   requires count <= 1000_u64;
 } {
   let length = 0_u64;
@@ -2641,7 +2641,7 @@ fn a_measure_former_is_an_affine_factor_of_a_header_invariant() {
   return seen;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let run = buffer_new(8_u64, 0_u8);
   let total = headroom(run: move run);
   return exit_status(code: 0_u8);
@@ -2664,7 +2664,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// would discharge from a length the run no longer has.
 #[test]
 fn a_write_that_kills_a_measure_retargets_the_invariant_image() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   doc "The measure the header names is replaced inside the body.";
   let data = buffer_new(4_u64, 0_u8);
   for (

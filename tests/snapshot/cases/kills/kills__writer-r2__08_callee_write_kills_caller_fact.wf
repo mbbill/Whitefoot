@@ -22,7 +22,7 @@ fn push_one(v: &uniq ByteVec, x: own u8) -> result: own unit reads(v.buf, v.fill
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- the callee's projected `writes(fill)` kills the caller's fact about the field [ENT-5](b); rereading it after the call reestablishes it.";
   let buf = buffer_new(4_u64, 0_u8);
   let v = ByteVec(buf: move buf, fill: 0_u64);

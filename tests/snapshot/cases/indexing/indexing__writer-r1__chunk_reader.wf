@@ -26,7 +26,7 @@ fn reader_next_chunk(r: &uniq ChunkReader, chunk_size: own u64) -> result: own O
   return Some<u64>(value: chunk_size);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(10_u64, 7_u8);
   let reader = reader_new(buf: move buf);
   region {

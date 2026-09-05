@@ -35,7 +35,7 @@ fn proxy_counter(counter: &uniq Counter) -> function_result: own unit reads(coun
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
   region {

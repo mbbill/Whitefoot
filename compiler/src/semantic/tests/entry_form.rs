@@ -63,7 +63,7 @@ fn the_no_input_command_entry_admits_every_live_effect_subset() {
     // With no formal capability there is no legal IDENT subject for reads or
     // writes. FN-7 admits every canonical subset of the remaining command
     // categories; an unexhibited admitted row is EFF-2's later judgment.
-    for row in [&b"pure"[..], &b"allocates(heap)"[..]] {
+    for row in [&b"pure"[..], &b"pure"[..]] {
         let mut source = b"command fn main() -> status: own ExitStatus ".to_vec();
         source.extend_from_slice(row);
         source.extend_from_slice(b" {\n  return exit_status(code: 0_u8);\n}\n");
@@ -151,7 +151,7 @@ fn admitted_but_unexhibited_entry_effects_reach_eff2() {
     // Allocation remains an admitted entry category. This body does not
     // exhibit it, so it passes FN-7 and rejects later under EFF-2.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );

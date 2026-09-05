@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   doc "Require one argument's complete target-native code-unit byte sequence to be the exact two bytes selected by the native target fixture, qualifying host_bytes_len and host_copy_bytes together [HOST-2, SYS-9].";
   let bytes = buffer_new(2_u64, 0_u8);
   region {

@@ -33,7 +33,7 @@ fn binary_search(table: &buffer<u32>, target: own u32) -> found: own Bool reads(
   return False();
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for the certified halving, but the narrowing branch that lowers hi joins the branch that does not, so the backedge target hi <= spare is unprovable [ENT-6]; the reported header failure also masks the body probe the finder read as a proof.";
   let table = buffer_new(5_u64, 0_u32);
   set table[0_u64] = 1_u32;

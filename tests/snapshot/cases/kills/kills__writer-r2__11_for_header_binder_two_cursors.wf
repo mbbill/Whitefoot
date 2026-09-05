@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- P11: the compiler-owned for-binder update on `i` is a kill on every backedge [ENT-5], but the structural half-open bound licenses `marks[i]` with no written invariant, even while the loop-carried `step` is set fresh each iteration.";
   let marks = buffer_new(5_u64, 0_u32);
   let base = 100_u32;

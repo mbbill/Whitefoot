@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "`directory_next` takes an exclusive `DirectorySource` borrow because advancing enumeration changes that source's state. This negative case deliberately requests two simultaneous unique borrows of the same owner, so ordinary OWN-5 exclusivity rejects them.";
   let entries = buffer_new(1024_u64, 0_u8);
   region {

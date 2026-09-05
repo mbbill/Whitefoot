@@ -883,7 +883,7 @@ fn bool_conditionals_execute_through_the_existing_match_lowering() {
 /// content reads back, and it is released. `box<u64>` is spelled nowhere.
 #[test]
 fn a_derived_box_nominal_allocates_reads_back_and_releases() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let flag = True();
   let owner = box_new(flag);
   let loaded = deref(owner);

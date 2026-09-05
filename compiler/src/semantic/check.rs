@@ -549,6 +549,13 @@ const EFF2_ROW_FIX: &str = "declare exactly the row the body exhibits: add every
 struct EffectSet {
     reads: Vec<super::model::CheckedStatePath>,
     writes: Vec<super::model::CheckedStatePath>,
+    /// [S23] the declared and exhibited `allocates` paths: one formal-rooted
+    /// path per store whose provider is a value.
+    allocates: Vec<super::model::CheckedStatePath>,
+    /// The ambient heap of `box<T>` and `buffer<T>` [STOR-1]. Its store has no
+    /// provider value, so [EFF-1] gives it no `effect_path` and no written
+    /// entry; the flag is derived, never declared, and never compared, and it
+    /// exists because [PROG-1]'s resource closure still reads it.
     allocates_heap: bool,
     allocates_arenas: Vec<DeclarationId>,
 }
@@ -557,12 +564,14 @@ impl EffectSet {
     const NONE: Self = Self {
         reads: Vec::new(),
         writes: Vec::new(),
+        allocates: Vec::new(),
         allocates_heap: false,
         allocates_arenas: Vec::new(),
     };
     const ALLOCATES_HEAP: Self = Self {
         reads: Vec::new(),
         writes: Vec::new(),
+        allocates: Vec::new(),
         allocates_heap: true,
         allocates_arenas: Vec::new(),
     };
@@ -572,6 +581,9 @@ impl EffectSet {
         }
         for path in other.writes {
             self.add_write(path);
+        }
+        for path in other.allocates {
+            self.add_allocation(path);
         }
         self.allocates_heap |= other.allocates_heap;
         for region in other.allocates_arenas {
@@ -591,6 +603,23 @@ impl EffectSet {
         if !self.writes.contains(&path) {
             self.writes.push(path);
             self.writes.sort_unstable();
+        }
+    }
+
+    /// The row a writer declares. The ambient heap [STOR-1] has no
+    /// `effect_path` and therefore no written entry [EFF-1, S23], so it is not
+    /// part of the row [EFF-2] compares in either direction.
+    fn written_row(&self) -> Self {
+        Self {
+            allocates_heap: false,
+            ..self.clone()
+        }
+    }
+
+    fn add_allocation(&mut self, path: super::model::CheckedStatePath) {
+        if !self.allocates.contains(&path) {
+            self.allocates.push(path);
+            self.allocates.sort_unstable();
         }
     }
 
@@ -875,14 +904,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ));
         }
         let mut allocations = Vec::new();
-        if effects.allocates_heap {
-            allocations.push("heap".to_owned());
+        for path in &effects.allocates {
+            allocations.push(self.render_effect_path(path, signature)?);
         }
         for region in &effects.allocates_arenas {
             allocations.push(format!("arena {}", self.region_phrase(*region)?));
         }
         if !allocations.is_empty() {
-            categories.push(format!("allocates({})", allocations.join(" ")));
+            let separator = if effects.allocates.is_empty() { " " } else { ", " };
+            categories.push(format!("allocates({})", allocations.join(separator)));
         }
         Ok(if categories.is_empty() {
             "pure".to_owned()
@@ -973,8 +1003,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ));
                 }
             }
-            if left.allocates_heap && !right.allocates_heap {
-                out.push("allocates(heap)".to_owned());
+            for path in &left.allocates {
+                if !right.allocates.contains(path) {
+                    out.push(format!(
+                        "allocates({})",
+                        self.render_effect_path(path, signature)?
+                    ));
+                }
             }
             for region in &left.allocates_arenas {
                 if !right.allocates_arenas.contains(region) {
@@ -1877,14 +1912,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             release = release.union(site.effects.clone());
         }
         let exhibited = syntactic.clone().union(release.clone());
-        if !self.deriving_result_state_origin.get() && exhibited != signature.declared_effects {
+        if !self.deriving_result_state_origin.get()
+            && exhibited.written_row() != signature.declared_effects.written_row()
+        {
             // A state transition contributed only by a release has no offending
             // source occurrence. Keep the owner-bearing diagnostic for that
             // case even though the current system releases have empty memory
             // rows; later resource families may carry an ordinary memory row.
-            let release_only = release.clone().union(syntactic.clone()) != syntactic
-                && release.clone().union(signature.declared_effects.clone())
-                    != signature.declared_effects;
+            let release_only = release.clone().union(syntactic.clone()).written_row()
+                != syntactic.written_row()
+                && release
+                    .clone()
+                    .union(signature.declared_effects.clone())
+                    .written_row()
+                    != signature.declared_effects.written_row();
             if release_only {
                 let owner = release_sites
                     .iter()
@@ -1985,7 +2026,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .cloned()
                 .unwrap_or(CheckedResultStateOrigin::Unknown),
             slice_return_ceiling: signature.slice_return_ceiling.clone(),
-            declared_allocates_heap: signature.declared_effects.allocates_heap,
+            reaches_ambient_heap: checked.effects.allocates_heap,
             declared_state_writes: signature.declared_effects.writes.clone(),
             target_action: crate::TargetAction::INLINE,
             requirements,

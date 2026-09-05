@@ -987,7 +987,7 @@ fn a_box_deref_actual_survives_a_cross_formal_owner_move_as_a_call_datum() {
   return value;
 }
 
-fn caller() -> result: own i32 allocates(heap) contract {
+fn caller() -> result: own i32 pure contract {
   ensures result == 1_i32;
 } {
   let owner = box_new(1_i32);
@@ -1048,7 +1048,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller() -> result: own unit allocates(heap) {
+fn caller() -> result: own unit pure {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
@@ -1159,7 +1159,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller() -> result: own unit allocates(heap) {
+fn caller() -> result: own unit pure {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));
@@ -1198,7 +1198,7 @@ fn guard(left: own i32, right: own i32) -> result: own unit pure contract {
   return unit;
 }
 
-fn caller(choose: own Bool) -> result: own unit allocates(heap) {
+fn caller(choose: own Bool) -> result: own unit pure {
   let owner = box_new(1_i32);
   let expected = deref(owner);
   let observed = observe(value: deref(owner));

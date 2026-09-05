@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "Forming a shared Slice over a place a live MutSlice views is that view's shared child reborrow of a unique loan, which OWN-6 already admits for places. The child carries the parent's range, the parent may not write the elements it views while the child lives, and the parent resumes where the child's own liveness ends. The program forms the child, reads through it, then writes through the parent after the child's last use and reads that write back through the parent.";
   let table = buffer_new(3_u64, 7_u8);
   region {

@@ -25,7 +25,7 @@ fn sum_chunks(buf: own buffer<u8>, chunk_size: own u64) -> total: own u64 reads(
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(9_u64, 2_u8);
   let total = sum_chunks(buf: move buf, chunk_size: 3_u64);
   if total == 6_u64 {

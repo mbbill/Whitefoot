@@ -6,7 +6,7 @@ fn read_shared(short: own buffer<u8>, long: own buffer<u8>) -> value: own u8 rea
   return long[3_u64];
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "MSR-5: a clause names a measure of a place directly on either side of its comparison.";
   let small = buffer_new(4_u64, 0_u8);
   let large = buffer_new(8_u64, 0_u8);

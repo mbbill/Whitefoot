@@ -20,7 +20,7 @@ fn view_total(window: own Slice<u8>) -> total: own u64 reads(window) {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let empty = fixed_vector::<u8, 4>();
   let one = place_back(vector: move empty, value: 3_u8);
   let two = place_back(vector: move one, value: 4_u8);

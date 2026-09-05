@@ -929,7 +929,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identity() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @plain (index in 0_u64..1_u64) {
     set total = total +wrap 1_u64;
@@ -1021,7 +1021,7 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
 
 #[test]
 fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
@@ -1069,7 +1069,7 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
 
 #[test]
 fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @first (index in 0_u64..3_u64) {
@@ -1114,7 +1114,7 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
 
 #[test]
 fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligations() {
-    let source = br#"fn allocate(n: own u64) -> result: own unit allocates(heap) contract {
+    let source = br#"fn allocate(n: own u64) -> result: own unit pure contract {
   requires n <= 1000_u64;
 } {
   let filled = buffer_new(n, 7_u16);
@@ -1122,7 +1122,7 @@ fn buffer_allocations_lower_the_source_proved_length_ceiling_into_target_obligat
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   allocate(n: 4_u64);
   return exit_status(code: 0_u8);
 }
@@ -1201,7 +1201,7 @@ fn a_memory_only_release_carries_no_system_action_or_row() {
 /// and `{STEP}` varied per case.
 fn byte_walk_source(middle: &str, step: &str) -> Vec<u8> {
     format!(
-        "command fn main() -> status: own ExitStatus allocates(heap) {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len_of(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "command fn main() -> status: own ExitStatus pure {{\n  let data = buffer_new(64_u64, 97_u8);\n  let mark = 88_u8;\n  let seen = 0_u64;\n  let stop = len_of(data);\n  let cursor = 0_u64;\n  loop @walk {{\n    let done = cursor >= stop;\n    if done {{\n      break @walk;\n    }}\n    let byte = data[cursor];\n{middle}    set cursor = cursor +wrap {step};\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }

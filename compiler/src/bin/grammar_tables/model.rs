@@ -133,7 +133,6 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("reads", "Reads"),
         ("writes", "Writes"),
         ("allocates", "Allocates"),
-        ("heap", "Heap"),
         ("as", "As"),
         // FLOOR-5 additions: `if` plus the twenty `infix_op` spellings.
         // `else` already exists for statement and value conditionals. Verified

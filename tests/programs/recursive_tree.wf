@@ -3,12 +3,12 @@ enum Tree {
   Branch(left: box<Tree>, right: box<Tree>);
 }
 
-fn boxed_leaf() -> result: own box<Tree> allocates(heap) {
+fn boxed_leaf() -> result: own box<Tree> pure {
   let leaf = Leaf();
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> allocates(heap) {
+fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> pure {
   let branch = Branch(left: move left, right: move right);
   return box_new(move branch);
 }
@@ -27,7 +27,7 @@ fn count(tree: &box<Tree>) -> result: own Result<u64, Overflow> reads(tree) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let leaf0 = boxed_leaf();
   let leaf1 = boxed_leaf();
   let leaf2 = boxed_leaf();

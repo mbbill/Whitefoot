@@ -14,7 +14,7 @@ fn fill_all(out: &uniq buffer<u8>, value: own u8) -> result: own unit reads(out)
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a header invariant on the write cursor establishes the store requires on every reborrowed call.";
   let target = buffer_new(4_u64, 0_u8);
   region {

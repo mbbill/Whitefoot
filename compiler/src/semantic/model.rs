@@ -2502,7 +2502,10 @@ pub(crate) struct CheckedFunction {
     /// Closed-world state origin of this function's result.
     pub(crate) result_state_origin: CheckedResultStateOrigin,
     pub(crate) slice_return_ceiling: Vec<CheckedSliceOrigin>,
-    pub(crate) declared_allocates_heap: bool,
+    /// Whether this function's own body reaches an ambient-heap allocation
+    /// [STOR-1]. The ambient heap has no provider value, so [EFF-1] gives it
+    /// no written entry and this is derived rather than declared [S23].
+    pub(crate) reaches_ambient_heap: bool,
     /// Formal state paths named by `writes(...)`.
     pub(crate) declared_state_writes: Vec<CheckedStatePath>,
     /// Conservative fixed-point summary of every reachable target action.
@@ -2548,6 +2551,10 @@ pub(crate) struct CheckedGenericRequirement {
 pub(crate) struct CheckedEffects {
     pub(crate) reads: Vec<CheckedStatePath>,
     pub(crate) writes: Vec<CheckedStatePath>,
+    /// [S23] the declared `allocates` paths.
+    pub(crate) allocates: Vec<CheckedStatePath>,
+    /// The ambient heap [STOR-1], which has no `effect_path` and no written
+    /// entry; derived, never declared.
     pub(crate) allocates_heap: bool,
     pub(crate) allocates_arenas: Vec<DeclarationId>,
 }

@@ -23,7 +23,7 @@ fn with_holder(rest: &[u8]) -> Vec<u8> {
 #[test]
 fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(2_u64, 9_u8);
@@ -57,7 +57,7 @@ fn replace_of_an_affine_field_accepts_and_retains_the_commit() {
 #[test]
 fn replace_of_a_copy_place_rejects_citing_set2() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 3_u64);
   let old = replace holder.count = 4_u64;
@@ -78,7 +78,7 @@ fn replace_of_a_copy_place_rejects_citing_set2() {
 #[test]
 fn set_of_an_affine_place_still_rejects_and_names_replace() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(1_u64, 0_u8);
@@ -103,7 +103,7 @@ fn replace_kills_the_stale_length_fact_at_the_commit() {
     // discharge the post-replace subscript over the two-element buffer and
     // the accepted program would write out of bounds.
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len_of(holder.payload);
@@ -130,7 +130,7 @@ fn the_same_subscript_discharges_without_the_replace() {
     // The control for the kill test: identical program minus the commit.
     // Rejection above plus acceptance here attributes the kill to SET-2.
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(4_u64, 7_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let size = len_of(holder.payload);
@@ -159,7 +159,7 @@ fn replace_leaves_the_target_root_live() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(3_u64, 2_u8);
@@ -186,7 +186,7 @@ fn replace_of_a_dead_root_rejects_citing_own1() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let gone = sink(h: move holder);
@@ -207,7 +207,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 #[test]
 fn replace_through_a_shared_borrow_rejects() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(2_u64, 1_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   region {
@@ -229,7 +229,7 @@ fn replace_through_a_shared_borrow_rejects() {
 
 #[test]
 fn element_position_replace_accepts_an_affine_element_and_keeps_its_bounds_obligations() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
@@ -288,7 +288,7 @@ fn push(v: &uniq OptVec, x: own u32) -> result: own unit reads(v.buf, v.fill), w
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let empty = buffer_vacant::<u32>(2_u64);
   let v = OptVec(buf: move empty, fill: 0_u64);
   region {
@@ -306,7 +306,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn element_position_replace_keeps_the_bounds_obligation() {
-    let source = br#"fn hollow(n: own u64) -> result: own unit allocates(heap) contract {
+    let source = br#"fn hollow(n: own u64) -> result: own unit pure contract {
   requires buffer_fits::<Option<u32>>(n);
 } {
   let slots = buffer_vacant::<u32>(n);
@@ -314,7 +314,7 @@ fn element_position_replace_keeps_the_bounds_obligation() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   hollow(n: 2_u64);
   return exit_status(code: 0_u8);
 }
@@ -329,7 +329,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn element_replacement_rhs_must_be_the_exact_element_type() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<u32>(4_u64);
   let taken = replace slots[0_u64] = 3_u32;
   return exit_status(code: 0_u8);
@@ -347,7 +347,7 @@ fn element_replacement_rhs_must_be_the_exact_element_type() {
 fn affine_elements_leave_their_slots_only_through_replace() {
     // SET-1 on an affine element names replace [STOR-1].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<u32>(4_u64);
   set slots[0_u64] = None<u32>();
   return exit_status(code: 0_u8);
@@ -361,7 +361,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // A bare element read would mint a second owner [OWN-1].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<u32>(4_u64);
   let observed = slots[0_u64];
   return exit_status(code: 0_u8);
@@ -374,7 +374,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
     );
     // `move` out of a slot is not an admitted element exit [TYPE-2].
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<u32>(4_u64);
   let observed = move slots[0_u64];
   return exit_status(code: 0_u8);
@@ -390,7 +390,7 @@ fn affine_elements_leave_their_slots_only_through_replace() {
 #[test]
 fn element_position_replace_rejects_while_every_element_is_copy() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(2_u64, 1_u8);
   let old = replace first[0_u64] = 3_u8;
   return exit_status(code: 0_u8);
@@ -410,7 +410,7 @@ fn element_position_replace_rejects_while_every_element_is_copy() {
 #[test]
 fn replace_rhs_type_mismatch_rejects_citing_type5() {
     let source = with_holder(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 0_u8);
   let holder = Holder(payload: move first, count: 0_u64);
   let second = buffer_new(1_u64, 0_u16);
@@ -474,7 +474,7 @@ fn replace_of_a_region_bearing_place_rejects_citing_set2() {
 /// accepted and the fresh binding owns the previous box.
 #[test]
 fn replace_of_a_box_descriptor_accepts() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let first = box_new(1_u64);
   let second = box_new(2_u64);
   let previous = replace first = move second;

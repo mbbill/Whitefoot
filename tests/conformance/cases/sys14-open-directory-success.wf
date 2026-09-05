@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "`open_directory`'s success class: a name range holding one real component of the invocation directory yields a fresh owned `DirectoryRead` value [SYS-14] by changing the explicitly supplied root state rather than consulting ambient authority [SYS-7]. Exit 0 is reached only through `Ok`, so a build that answered every open with a validation failure would not pass.";
   let name = buffer_new(3_u64, 0_u8);
   set name[0_u64] = 115_u8;

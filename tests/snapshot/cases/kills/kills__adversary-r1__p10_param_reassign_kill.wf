@@ -9,7 +9,7 @@ fn pick(b: own buffer<u8>, idx: own u64, stray: own u64) -> result: own u8 reads
   return b[idx];
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expect: REJECT (ENT-5) - idx param is bound-checked at entry, then set idx=stray (kill), reused for subscript unproven; stray=50,len=6 -> OOB";
   let buf = buffer_new(6_u64, 8_u8);
   let value = pick(b: move buf, idx: 2_u64, stray: 50_u64);

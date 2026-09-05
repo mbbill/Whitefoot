@@ -22,7 +22,7 @@ fn fold_prefix(source: &buffer<u8>, produced: own u64, seed: own u64) -> result:
   return sum;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "The fold of the hoisted destination is written before the transfer that fills it, so on every path through the body the read of that storage precedes any write of it in the same iteration. No coverage proof can ever admit this shape; PAR-3 denies it here for the stage-one reason it denies every hoisted destination, that the body writes storage the iteration does not introduce and a may-suspend call retains a borrow of it.";
   let name = buffer_new(16_u64, 97_u8);
   let data = buffer_new(64_u64, 0_u8);

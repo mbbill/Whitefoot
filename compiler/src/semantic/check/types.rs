@@ -905,10 +905,11 @@ extent's region is one the caller must choose, so it is written at every positio
                 }
                 1
             } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
-                for terminal in self.tree.direct_token_indices(effect)? {
-                    if self.tree.token_bytes(*terminal)? == b"heap" {
-                        declared.allocates_heap = true;
-                    }
+                // [S23] the entry takes the same formal-rooted paths `reads`
+                // and `writes` take; the `arena REGIONID` alternative is the
+                // transitional half [EFF-1] keeps while `arena<'r, T>` lives.
+                for path in self.effect_paths(effect, parameters)? {
+                    declared.add_allocation(path);
                 }
                 for region in self.effect_allocation_regions(effect)? {
                     declared.add_arena_allocation(region);

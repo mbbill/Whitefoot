@@ -11,7 +11,7 @@ fn sentinel_status(bytes: &buffer<u8>, failure: own u8) -> result: own u8 reads(
   return 0_u8;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   doc "SYS-8: on a recoverable failure of a copy operation the whole buffer is unchanged. CopyTooSmall states the exact length the destination range must have for the same call to succeed [SYS-6], and the sentinel prefill witnesses the no-write half, which stays observable because the program keeps running.";
   let bytes = buffer_new(4_u64, 90_u8);
   region {

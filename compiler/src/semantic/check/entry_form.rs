@@ -56,14 +56,14 @@ const COMMAND_INPUTS: [StandardInput; 5] = [
     // [FN-7] DEFERRED: the sixth row, `command.heap as heap: own Heap`, by
     // which a program obtains the one general store [PROV-1]. Its label tail
     // is the spelling [EFF-1] fixes as the allocation atom of
-    // `allocates(heap)`, which [FORM-3] therefore excludes from IDENT, so no
+    // `pure`, which [FORM-3] therefore excludes from IDENT, so no
     // source can write the row until that atom retires.
 ];
 
 const COMMAND_RESULT: &str = "own ExitStatus";
 const COMMAND_RESULT_NOMINAL: &str = "ExitStatus";
 const COMMAND_EFFECTS: &str = "parameter-rooted reads/writes over selected command inputs, \
-     and `allocates(heap)` in EFF-1 canonical order";
+     and `pure` in EFF-1 canonical order";
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     /// Admits the unit's [FN-7] entry and returns the form it admitted.
@@ -383,24 +383,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// Reports whether every category written in a `command` entry's row is
     /// admitted by that kind row.
     ///
-    /// The admitted set is parameter-rooted `reads`/`writes` and
-    /// `allocates(heap)`; `pure` is the empty subset. Arena allocation still
-    /// fails here. EFF-1 separately resolves and type-checks every state path.
+    /// The admitted set is parameter-rooted `reads`, `writes` and
+    /// `allocates` paths; `pure` is the empty subset. Every category now takes
+    /// the same formal-rooted `effect_path` [S23], so this judgment is one of
+    /// category membership and EFF-1 separately resolves and type-checks every
+    /// state path, the entry's own labelled inputs being its only formals.
     fn command_effects_admitted(&self, effects: NodeId) -> Result<bool, CheckStop> {
         if self.has_fixed(effects, FixedTerminal::Pure)? {
             return Ok(true);
         }
         for effect in self.tree.children_with(effects, Production::Effect)? {
-            let admitted = if self.has_fixed(effect, FixedTerminal::Reads)?
+            let admitted = self.has_fixed(effect, FixedTerminal::Reads)?
                 || self.has_fixed(effect, FixedTerminal::Writes)?
-            {
-                true
-            } else if self.has_fixed(effect, FixedTerminal::Allocates)? {
-                self.has_fixed(effect, FixedTerminal::Heap)?
-                    && !self.has_fixed(effect, FixedTerminal::Arena)?
-            } else {
-                false
-            };
+                || self.has_fixed(effect, FixedTerminal::Allocates)?;
             if !admitted {
                 return Ok(false);
             }

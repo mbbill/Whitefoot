@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-2] -- count_a and count_b are independent match counters over different buffers with no proved relation between them; the checked `count_a - count_b` is genuinely false for the concrete trace where first is all 1s (count_a=0) and second is all 9s (count_b=3), since 0 - 3 underflows u64.";
   let first = buffer_new(4_u64, 1_u8);
   let second = buffer_new(3_u64, 9_u8);

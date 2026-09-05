@@ -327,7 +327,7 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
 "#;
 
     let direct_move = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap) {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -351,7 +351,7 @@ fn consuming_a_projection_respects_loans_of_residual_fields() {
   return unit;
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -380,7 +380,7 @@ struct Owner {
   sibling: Slot;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let source = buffer_new(1_u64, 0_u8);
   let sibling_value = buffer_new(1_u64, 0_u8);
   let sibling = Full(value: move sibling_value);
@@ -405,7 +405,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     );
 
     let given = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap) {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -454,7 +454,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     let ended_region = format!(
-        r#"{OWNER}command fn main() -> status: own ExitStatus allocates(heap) {{
+        r#"{OWNER}command fn main() -> status: own ExitStatus pure {{
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -496,7 +496,7 @@ fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
         },
     );
     with_semantics(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(2_u64, 0_u8);
   region {
     let window = mut_slice_of(&uniq values);
@@ -585,7 +585,7 @@ command fn main() -> status: own ExitStatus pure {
 /// untested, and one that only derived would not reject the deleted form.
 #[test]
 fn slice_of_derives_its_region_and_rejects_a_written_argument() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   region {
     region {
@@ -607,7 +607,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // `'outer` outlives the binding the view is taken from is not the point —
     // the loan is keyed on the region the borrow writes.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   region {
     let view = slice_of(&data);
@@ -627,7 +627,7 @@ fn slice_of_derives_its_region_and_rejects_a_written_argument() {
     // asserts — the `derivation.rs:224` class.
     // The written `<'view, u8>` IS the subject and must stay written.
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   region 'view {
     slice_of::<'view, u8>(&data);

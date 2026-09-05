@@ -33,7 +33,7 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> f
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let length = 4_u64;
   let left = buffer_new(length, 0_u64);
   let right = buffer_new(length, 0_u64);

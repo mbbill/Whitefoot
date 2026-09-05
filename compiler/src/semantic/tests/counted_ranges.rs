@@ -101,7 +101,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let start = box_new(0_u64);
   for @items (i in start..1_u64) {
   }
@@ -115,7 +115,7 @@ command fn main() -> status: own ExitStatus pure {
     );
 
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let start = box_new(0_u64);
   loop @outer {
     for @items (i in start..1_u64) {
@@ -295,7 +295,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_cleanup_is_attached_only_to_taken_body_exits() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   for @items (i in 0_u64..1_u64) {
     let values = buffer_new(1_u64, 0_u8);
     break @items;
@@ -334,7 +334,7 @@ fn source() -> result: own Result<u64, Fail> pure {
   return Ok<u64, Fail>(value: 1_u64);
 }
 
-fn leave() -> result: own unit allocates(heap) {
+fn leave() -> result: own unit pure {
   for @items (i in 0_u64..1_u64) {
     let values = buffer_new(1_u64, 0_u8);
     return unit;
@@ -342,7 +342,7 @@ fn leave() -> result: own unit allocates(heap) {
   return unit;
 }
 
-fn forward() -> result: own Result<unit, Fail> allocates(heap) {
+fn forward() -> result: own Result<unit, Fail> pure {
   for @items (i in 0_u64..1_u64) {
     let values = buffer_new(1_u64, 0_u8);
     let value = propagate source();

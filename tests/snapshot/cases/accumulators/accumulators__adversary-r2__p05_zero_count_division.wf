@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-2] -- count is a match counter that can legitimately be zero (no byte equals 9); dividing the fixed total by count is unproved for a zero divisor, and it is genuinely false for the concrete trace where data is all 3s: count=0, so total / count divides by zero.";
   let data = buffer_new(5_u64, 3_u8);
   let count = 0_u64;

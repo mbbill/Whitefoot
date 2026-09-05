@@ -22,7 +22,7 @@ fn scan_with_carry(buf: own buffer<u8>, start_carry: own u64) -> total: own u64 
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(5_u64, 2_u8);
   let total = scan_with_carry(buf: move buf, start_carry: 1_u64);
   if total == 10_u64 {

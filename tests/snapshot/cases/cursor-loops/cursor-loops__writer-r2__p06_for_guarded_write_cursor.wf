@@ -16,7 +16,7 @@ fn count_nonzero(values: own buffer<u64>) -> kept: own u64 reads(values) {
   return write_at;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let source = buffer_new(6_u64, 0_u64);
   set source[0_u64] = 4_u64;
   set source[1_u64] = 0_u64;

@@ -74,7 +74,7 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
 /// overlap is decided solely from the concrete actual places.
 #[test]
 fn independent_direct_output_operations_are_permitted() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -100,7 +100,7 @@ fn independent_direct_output_operations_are_permitted() {
 /// same named region therefore fail before overlap permission is considered.
 #[test]
 fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region {
@@ -122,7 +122,7 @@ fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
 
 #[test]
 fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'out {
     region 'err {
@@ -182,7 +182,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 /// file loans coexist, while the two destination loans remain disjoint.
 #[test]
 fn positioned_reads_on_one_file_with_disjoint_destinations_are_permitted() {
-    let source = br#"fn probe(file: own ReadFile) -> result: own unit reads(file), writes(file), allocates(heap) {
+    let source = br#"fn probe(file: own ReadFile) -> result: own unit reads(file), writes(file) {
   let left = buffer_new(1_u64, 0_u8);
   let right = buffer_new(1_u64, 0_u8);
   region 'file {
@@ -234,12 +234,12 @@ fn two_child_unique_sibling_calls_are_permitted_and_eligible() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new(move branch);
 }
@@ -259,7 +259,7 @@ fn fold(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -354,7 +354,7 @@ fn reads_only_siblings_over_one_place_form_one_eligible_chain() {
   return len_of(deref(data));
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(8_u64, 1_u64);
   region {
     let lo = width(data: &buf);
@@ -573,7 +573,7 @@ fn take(v: own u64) -> result: own u64 pure {
   return v;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(4_u64, 1_u64);
   region {
     let a = fill(dst: &uniq buf, mark: 9_u64);
@@ -751,12 +751,12 @@ fn a_recursive_closure_requires_source_proof_and_then_is_eligible() {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new(move branch);
 }
@@ -783,7 +783,7 @@ fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node)
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -809,12 +809,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   Branch(left: box<BoxNode>, right: box<BoxNode>, w: u64);
 }
 
-fn boxed_leaf(w: own u64) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_leaf(w: own u64) -> result: own box<BoxNode> pure {
   let leaf = Leaf(w: w);
   return box_new(move leaf);
 }
 
-fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> allocates(heap) {
+fn boxed_branch(left: own box<BoxNode>, right: own box<BoxNode>) -> result: own box<BoxNode> pure {
   let branch = Branch(left: move left, right: move right, w: 0_u64);
   return box_new(move branch);
 }
@@ -845,7 +845,7 @@ fn bubble(node: &uniq box<BoxNode>) -> result: own u64 reads(node), writes(node)
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let leaf0 = boxed_leaf(w: 3_u64);
   let leaf1 = boxed_leaf(w: 4_u64);
   let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
@@ -1434,7 +1434,7 @@ fn eat_box(node: own box<u64>) -> result: own u64 pure {
   return 9_u64;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let node = box_new(41_u64);
   region {
     let a = ignore_box(node: &node);
@@ -1506,7 +1506,7 @@ fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
   return 3_u64;
 }
 
-fn a_pure_uniqslice() -> result: own u64 allocates(heap) {
+fn a_pure_uniqslice() -> result: own u64 pure {
   let buf = buffer_new(8_u64, 1_u8);
   region {
     let v = slice_of(&buf);
@@ -1519,7 +1519,7 @@ fn a_pure_uniqslice() -> result: own u64 allocates(heap) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let p = a_pure_uniqslice();
   return exit_status(code: 0_u8);
 }
@@ -1589,7 +1589,7 @@ command fn main() -> status: own ExitStatus pure {
 /// all about a program that plainly performs two independent operations.
 #[test]
 fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -1637,7 +1637,7 @@ fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
 /// match written *between* two bound calls already gets.
 #[test]
 fn a_scrutinee_call_denies_against_a_later_call_it_is_read_before() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {

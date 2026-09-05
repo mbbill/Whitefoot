@@ -24,7 +24,7 @@ fn first_byte(source: &buffer<u8>) -> result: own u64 reads(source) {
   return cvt::<u8, u64>(byte);
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies with condition 5. Whole-place write-before-read would admit this program and publish a different total.";
   let scratch = buffer_new(1_u64, 0_u8);
   let name = buffer_new(16_u64, 97_u8);

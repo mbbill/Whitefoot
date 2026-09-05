@@ -7,7 +7,7 @@ struct Holder {
   state: State;
 }
 
-command fn main() -> return_value: own ExitStatus allocates(heap) {
+command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-1: projected Copy reads do not consume their affine struct or buffer owner.";
   let state = Ready();
   let holder = Holder(state: state);

@@ -315,7 +315,7 @@ command fn main() -> status: own ExitStatus pure {
         assert_eq!(issue.rule(), SemanticRule::Op2);
     });
     let extra_effect_row =
-        br#"fn ratio(n: own i32, d: own i32) -> result: own i32 allocates(heap) {
+        br#"fn ratio(n: own i32, d: own i32) -> result: own i32 pure {
   let q = n / d;
   return q;
 }
@@ -366,7 +366,7 @@ fn a_checked_division_attaches_no_obligation() {
 /// EFF-2 before the undischarged exact-division obligation is reported.
 #[test]
 fn effect_mismatch_precedes_static_division_rejection() {
-    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 allocates(heap) {
+    let source = br#"fn ratio(n: own u64, d: own u64) -> result: own u64 pure {
   let q = n / d;
   let r = n % d;
   return q;

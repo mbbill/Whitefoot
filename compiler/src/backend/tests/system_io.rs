@@ -121,7 +121,7 @@ pub(super) fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -
 
 /// Opens one argument-named path under `command.cwd` and reads its first
 /// bytes, reporting the exact count.
-const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -362,7 +362,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
 }
 
 /// Drains one file in three-byte requests, reporting `total * 10 + requests`.
-pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -458,7 +458,7 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
 }
 
 /// Reports a zero-length read's endpoint, then the following request's endpoint.
-const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -560,7 +560,7 @@ fn a_zero_length_read_reports_no_bytes_without_issuing_a_host_transfer() {
 
 /// Reads three bytes into the middle of a sentinel buffer and digests the
 /// complete buffer afterwards.
-const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -659,7 +659,7 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 }
 
 /// Writes nothing, then the two-byte prefix at offset one.
-pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(4_u64, 119_u8);
   set bytes[1_u64] = 120_u8;
   set bytes[2_u64] = 121_u8;
@@ -719,7 +719,7 @@ fn write_once_publishes_the_requested_range_and_reports_its_absolute_endpoint() 
 }
 
 /// Requests a range that runs past the end of its source buffer.
-const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(4_u64, 65_u8);
   region 'o {
     region {
@@ -746,7 +746,7 @@ fn an_out_of_range_transfer_is_a_static_sys8_rejection() {
 }
 
 /// Publishes three reservations through one Output root.
-const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
@@ -806,7 +806,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
         "set status = 43_u8;",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
+        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {{
   let bytes = buffer_new(1_u64, 65_u8);
   let attempts = 0_u64;
   let status = 44_u8;
@@ -849,7 +849,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
 }
 
 /// Drains one file through a reusable buffer and publishes one byte.
-const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
+const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -1057,7 +1057,7 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
 /// routes, retypes it as a relative path, opens that path under the initial
 /// directory, copies the file to standard output through a reused buffer,
 /// echoes the argument to standard error, and returns a command code.
-const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
+const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files) {
   let echo = buffer_new(64_u64, 0_u8);
   let name_length = 0_u64;
   region {

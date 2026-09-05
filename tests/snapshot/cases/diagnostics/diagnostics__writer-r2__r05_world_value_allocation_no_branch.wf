@@ -1,10 +1,10 @@
-fn allocate(count: own u64) -> result: own unit allocates(heap) {
+fn allocate(count: own u64) -> result: own unit pure {
   doc "EXPECT REJECT under Op9: count is passed straight through from an external world value (an argument count) with no compile-time ceiling, so an invariant asserting it fits would be dishonest here; the correct repair is a real dominating branch that tests buffer_fits::<u16>(count) before allocating.";
   let values = buffer_new(count, 0_u16);
   return unit;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let n = args_count(args: &args);
     let margin = 1_u64;

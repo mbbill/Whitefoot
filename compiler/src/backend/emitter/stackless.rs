@@ -877,7 +877,7 @@ mod root_frame_layout_tests {
   return write_once(output: move output, source: source, start: start, end: end);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region {
     let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);

@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "A zero-length destination range is a well-formed request that transfers nothing [SYS-8, SYS-14]: it yields `ListBytes(next: 0, entries: 0)`, never `ListEnd`. End of enumeration is a separate outcome from an empty transfer, exactly as a full buffer is a separate outcome from end of input, so a program cannot read a zero endpoint as exhaustion.";
   let entries = buffer_new(1024_u64, 0_u8);
   region {

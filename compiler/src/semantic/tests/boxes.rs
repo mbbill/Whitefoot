@@ -5,7 +5,7 @@ use super::{assert_rule, assert_unsupported, with_semantics};
 
 #[test]
 fn box_creation_dereference_and_cleanup_are_explicit() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let value = 41_u64;
   let owner = box_new(value);
   let loaded = deref(owner);
@@ -58,7 +58,7 @@ fn whole_box_replacement_preserves_the_owner_shape() {
   value: u64;
 }
 
-fn replace_owner() -> result: own u64 allocates(heap) {
+fn replace_owner() -> result: own u64 pure {
   let first_value = Pair(value: 0_u64);
   let first = box_new(move first_value);
   let second_value = Pair(value: 1_u64);
@@ -92,7 +92,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let extracted = move deref(owner);
@@ -114,7 +114,7 @@ fn affine_box_referent_move_stays_an_explicit_capability_boundary() {
 #[test]
 fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let b = box_new(4_i32);
   set deref(b) = 7_i32;
   return exit_status(code: 0_u8);
@@ -125,7 +125,7 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
     // [SET-2] shares SET-1's writability relation, so an affine, region-free
     // box content is a legal `replace` target and reaches the same stop.
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let other = buffer_new(1_u64, 1_u8);
@@ -144,7 +144,7 @@ fn box_content_set_targets_are_own_rooted_rather_than_holder_derefs() {
 #[test]
 fn box_content_set_targets_keep_their_source_rejections() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(1_u64, 0_u8);
   let owner = box_new(move bytes);
   let other = buffer_new(1_u64, 1_u8);
@@ -163,7 +163,7 @@ fn box_content_set_targets_keep_their_source_rejections() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let b = box_new(4_i32);
   eat(b: move b);
   set deref(b) = 7_i32;
@@ -195,7 +195,7 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
+        br#"fn invalid(value: own Slice<u8>) -> result: own unit pure {
   box_new(value);
   return unit;
 }
@@ -237,7 +237,7 @@ command fn main() -> status: own ExitStatus pure {
     // does, so the derived judgment is STOR-5's relation over that type
     // rather than a slice-shaped operand test.
     assert_rule(
-        br#"fn invalid(value: own arena<u64>) -> result: own unit allocates(heap) {
+        br#"fn invalid(value: own arena<u64>) -> result: own unit pure {
   box_new(move value);
   return unit;
 }
@@ -260,7 +260,7 @@ command fn main() -> status: own ExitStatus pure {
 /// implementation limitation deciding what source was acceptable.
 #[test]
 fn a_derived_box_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewhere() {
-    let named_nowhere = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let named_nowhere = br#"command fn main() -> status: own ExitStatus pure {
   let owner = box_new(41_u64);
   let loaded = deref(owner);
   return exit_status(code: 0_u8);
@@ -270,7 +270,7 @@ fn a_derived_box_nominal_is_interned_whether_or_not_the_type_is_spelled_elsewher
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let owner = box_new(41_u64);
   take(b: move owner);
   return exit_status(code: 0_u8);

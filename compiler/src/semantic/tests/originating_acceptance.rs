@@ -128,7 +128,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unproved_allocation_ceiling_rejects_under_op9() {
-    let source = br#"fn allocate(count: own u64) -> result: own unit allocates(heap) {
+    let source = br#"fn allocate(count: own u64) -> result: own unit pure {
   let values = buffer_new(count, 0_u16);
   return unit;
 }
@@ -173,7 +173,7 @@ command fn main(command.stdout as output: own Output) -> status: own ExitStatus 
 
 #[test]
 fn an_external_index_needs_a_real_control_flow_fact() {
-    let direct = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+    let direct = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
@@ -186,7 +186,7 @@ fn an_external_index_needs_a_real_control_flow_fact() {
         matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
     });
 
-    let guarded = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+    let guarded = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
@@ -214,14 +214,14 @@ fn an_external_call_actual_needs_a_real_control_flow_fact() {
 
 "#;
     let direct = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let value = read_at_index(bytes: move bytes, index: index);\n    return exit_status(code: value);\n  }}\n}}\n"
     );
     rejects_as(direct.as_bytes(), SemanticRule::Fn8, |kind| {
         matches!(kind, SemanticIssueKind::UndischargedCallRequirement(_))
     });
 
     let guarded = format!(
-        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
+        "{function}command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {{\n  region {{\n    let index = args_count(args: &args);\n    let bytes = buffer_new(4_u64, 0_u8);\n    let spare = len_of(bytes);\n    if index < spare {{\n      let value = read_at_index(bytes: move bytes, index: index);\n      return exit_status(code: value);\n    }} else {{\n      return exit_status(code: 0_u8);\n    }}\n  }}\n}}\n"
     );
     accepts(guarded.as_bytes());
 }

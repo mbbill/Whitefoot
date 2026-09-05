@@ -13,7 +13,7 @@ fn window_sum(data: own buffer<u8>, start: own u64, end: own u64) -> total: own 
   return sum;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(8_u64, 3_u8);
   let total = window_sum(data: move data, start: 2_u64, end: 6_u64);
   if total == 12_u32 {

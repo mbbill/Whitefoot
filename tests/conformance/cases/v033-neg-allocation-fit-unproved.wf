@@ -1,4 +1,4 @@
-fn make(length: own u64) -> values: own buffer<i64> allocates(heap) {
+fn make(length: own u64) -> values: own buffer<i64> pure {
   return buffer_new(length, 0_i64);
 }
 

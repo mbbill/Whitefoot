@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-4] -- count_a is bounded by 3 and count_b by 4, so combined can reach 7, but target has length 7 (valid indices 0..6); concrete violating trace: first and second are all 5s, so count_a=3, count_b=4, combined=7, and target[7] indexes one past the end of a length-7 buffer.";
   let first = buffer_new(3_u64, 5_u8);
   let second = buffer_new(4_u64, 5_u8);

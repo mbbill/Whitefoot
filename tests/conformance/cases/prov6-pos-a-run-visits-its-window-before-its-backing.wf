@@ -2,7 +2,7 @@ struct Holder {
   data: buffer<u8>;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "PROV-6: a container's elements are visited before its backing is released. The run's own backing is its owner's frame and reclaims nothing, and its window holds elements that each own one heap allocation, so the derived release is exactly the window walk in ascending logical order and the storage every element owns is freed once.";
   let empty = fixed_vector::<Holder, 4>();
   let first_bytes = buffer_new(2_u64, 3_u8);

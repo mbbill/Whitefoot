@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: the loop walks only a computed prefix of the buffer, and the bound tracks that shorter span.";
   let data = buffer_new(10_u64, 6_u8);
   let spare = len_of(data);

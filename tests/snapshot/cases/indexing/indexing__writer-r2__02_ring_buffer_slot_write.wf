@@ -23,7 +23,7 @@ fn push_slot(r: &uniq Ring, value: own u8) -> result: own unit reads(r.slots, r.
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the ring-buffer slot front+used, wrapped by %capacity, always lands inside the fixed-size backing buffer under [OP-4] and [OP-2]'s remainder domain.";
   let backing = buffer_new(4_u64, 0_u8);
   let ring = Ring(slots: move backing, front: 1_u64, used: 2_u64);

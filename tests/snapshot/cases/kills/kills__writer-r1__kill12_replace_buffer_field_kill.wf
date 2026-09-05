@@ -9,7 +9,7 @@ fn swap_in(s: &uniq Staged, fresh: own buffer<u8>) -> result: own buffer<u8> rea
   return move old;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let first_active = buffer_new(3_u64, 1_u8);
   let idle = buffer_new(3_u64, 0_u8);
   let staged = Staged(active: move first_active, pending: move idle);

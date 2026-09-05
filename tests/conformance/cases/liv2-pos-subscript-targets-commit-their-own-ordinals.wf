@@ -3,7 +3,7 @@ fn two_bytes(bound: own u64) -> (small: own u8, large: own u8) pure {
   return 1_u8, 2_u8;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "LIV-2 admits a subscript in a target list: every target's offset is evaluated before the commit, and ordinal i lands at target i. The two runs are non-overlapping places, so the second condition admits the pair; the exit code reports the byte the second target received.";
   let left = buffer_new(4_u64, 0_u8);
   let right = buffer_new(4_u64, 0_u8);

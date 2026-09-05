@@ -276,7 +276,7 @@ command fn main() -> status: own ExitStatus pure {
 /// its second operand, and `len` then derives from the place it is given.
 #[test]
 fn buffer_new_selects_its_element_from_the_fill_value() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 7_u8);
   let count = len_of(data);
   return exit_status(code: 0_u8);
@@ -295,7 +295,7 @@ fn buffer_new_selects_its_element_from_the_fill_value() {
 #[test]
 fn box_content_that_bears_a_region_still_rejects_under_stor5() {
     assert_rule_at(
-        br#"fn invalid(value: own Slice<u8>) -> result: own unit allocates(heap) {
+        br#"fn invalid(value: own Slice<u8>) -> result: own unit pure {
   box_new(value);
   return unit;
 }

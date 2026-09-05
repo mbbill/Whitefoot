@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: sum and count are maintained together, each with its own header invariant.";
   let data = buffer_new(5_u64, 4_u8);
   let sum = 0_u64;

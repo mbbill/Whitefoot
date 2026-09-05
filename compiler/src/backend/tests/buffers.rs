@@ -5,7 +5,7 @@ use super::system::with_ir;
 use super::*;
 
 const AFFINE_INVARIANT_BOUNDED_ALLOCATION: &[u8] =
-    br#"fn allocate(n: own u64, half: own u64) -> result: own unit allocates(heap) contract {
+    br#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {
   requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
@@ -23,7 +23,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
 
 const U64_BUFFER_ALLOCATION: &[u8] =
-    br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -93,7 +93,7 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
   return sum;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let weights = buffer_new(4_u64, 7_u8);
   let code = 0_u8;
   region {
@@ -133,7 +133,7 @@ fn primitive_buffers_cross_functions_update_and_free_once() {
   }
 }
 
-fn make(n: own u64) -> result: own buffer<u16> allocates(heap) {
+fn make(n: own u64) -> result: own buffer<u16> pure {
   let bounded = bounded_count(n: n);
   return buffer_new(bounded, 3_u16);
 }
@@ -142,7 +142,7 @@ fn replacement() -> result: own u16 pure {
   return 9_u16;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = make(n: 4_u64);
   let length = len_of(values);
   let stored = 0_u16;
@@ -207,12 +207,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn buffer_length_qualifies_same_element_reallocation_without_a_target_guard() {
-    let source = br#"fn refill(source: own buffer<u8>) -> result: own buffer<u8> reads(source), allocates(heap) {
+    let source = br#"fn refill(source: own buffer<u8>) -> result: own buffer<u8> reads(source) {
   let length = len_of(source);
   return buffer_new(length, 0_u8);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let initial = buffer_new(4_u64, 7_u8);
   let copied = refill(source: move initial);
   let length = len_of(copied);
@@ -244,7 +244,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn op9_overflow_is_rejected_before_lowering() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(18446744073709551615_u64, 0_u64);
   return exit_status(code: 0_u8);
 }
@@ -266,7 +266,7 @@ fn an_out_of_bounds_buffer_set_is_an_op4_compile_rejection() {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(2_u64, 0_u8);
   set values[2_u64] = replacement();
   return exit_status(code: 0_u8);
@@ -279,7 +279,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 #[test]
 fn empty_buffer_has_zero_length_and_a_normal_free() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(0_u64, 7_u8);
   let length = len_of(values);
   if length != 0_u64 {
@@ -296,7 +296,7 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
 
 #[test]
 fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
-    let source = br#"fn cleanup(flag: own Bool) -> result: own unit allocates(heap) {
+    let source = br#"fn cleanup(flag: own Bool) -> result: own unit pure {
   let values = buffer_new(2_u64, 0_u8);
   if flag {
     return unit;
@@ -308,7 +308,7 @@ fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let true_value = True();
   let false_value = False();
   cleanup(flag: true_value);
@@ -399,7 +399,7 @@ fn observe(pool: &Pool) -> result: own u64 reads(pool.left, pool.count) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let left = buffer_new(2_u64, 0_u64);
   let right = buffer_new(2_u64, 0_u64);
   let pool = Pool(left: move left, right: move right, count: 0_u64);
@@ -514,7 +514,7 @@ fn update(columns: own Columns) -> result: own Columns reads(columns.left), writ
   return move columns;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let left = buffer_new(2_u64, 0_u16);
   let right = buffer_new(2_u64, 0_u16);
   let columns = Columns(left: move left, right: move right);
@@ -568,7 +568,7 @@ struct Owner {
   suffix: buffer<u64>;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 0_u8);
   let second = buffer_new(1_u64, 0_u16);
   let pair = Pair(first: move first, second: move second);
@@ -604,7 +604,7 @@ fn take(owner: own Owner) -> result: own buffer<u8> pure {
   return move owner.pair.first;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(1_u64, 0_u8);
   let second = buffer_new(1_u64, 0_u8);
   let pair = Pair(first: move first, second: move second);
@@ -642,7 +642,7 @@ fn compiler_independent_struct_of_buffers_checksum_executes() {
 
 #[test]
 fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<box<u64>>(3_u64);
   let first = box_new(11_u64);
   let wrapped = Some<box<u64>>(value: move first);
@@ -718,7 +718,7 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<u32>(4_u64);
   let filled = Some<u32>(value: 7_u32);
   let vacant = replace slots[2_u64] = move filled;
@@ -739,7 +739,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
 
 #[test]
 fn buffer_vacant_op9_overflow_is_rejected_before_lowering() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<u64>(18446744073709551615_u64);
   return exit_status(code: 0_u8);
 }

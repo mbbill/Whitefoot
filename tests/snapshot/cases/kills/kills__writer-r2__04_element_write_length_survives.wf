@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- P16: an element write never kills the buffer's length fact, so `spare` stays live across every set into the buffer.";
   let line = buffer_new(6_u64, 0_u8);
   let spare = len_of(line);

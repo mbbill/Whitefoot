@@ -1,6 +1,6 @@
 const fir_weights: array<u32, 3> =[1_u32, 2_u32, 1_u32];
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- slides a fixed 3-tap integer FIR window across a sample buffer with bounds-checked reads";
   let samples = buffer_new(6_u64, 0_u32);
   set samples[0_u64] = 1_u32;

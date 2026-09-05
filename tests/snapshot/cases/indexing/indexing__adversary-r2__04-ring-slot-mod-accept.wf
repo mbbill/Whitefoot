@@ -12,7 +12,7 @@ fn ring_slot(buf: own buffer<u8>, front: own u64, used: own u64) -> found: own u
   return byte;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(8_u64, 0_u8);
   let found = ring_slot(buf: move buf, front: 5_u64, used: 6_u64);
   return exit_status(code: found);

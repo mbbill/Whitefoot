@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- a local's bound dies at its own set [ENT-5](a); the guard after the write reestablishes it before use.";
   let data = buffer_new(4_u64, 9_u8);
   let spare = len_of(data);

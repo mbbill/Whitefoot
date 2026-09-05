@@ -131,7 +131,7 @@ fn the_traversal_source_requires_the_complete_file_permit_inventory() {
 /// from ownership rather than from any traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "Moves one enumeration handle and then uses the moved binding.";
   let scratch = buffer_new(64_u64, 0_u8);
   region {
@@ -169,7 +169,7 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
 /// even with the traversal surface admitted.
 #[test]
 fn program_bytes_still_cannot_become_a_path_value() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd) {
   doc "Attempts to construct a relative path from program bytes.";
   let name = buffer_new(8_u64, 97_u8);
   region {
@@ -195,7 +195,7 @@ fn program_bytes_still_cannot_become_a_path_value() {
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "Omits one enumeration outcome from an otherwise complete match.";
   let scratch = buffer_new(64_u64, 0_u8);
   region {

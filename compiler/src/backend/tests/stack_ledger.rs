@@ -307,7 +307,7 @@ const RECURSIVE_VALUE: &[u8] = br#"enum Tree {
   Branch(left: box<Tree>, right: box<Tree>);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let left = Leaf();
   let right = Leaf();
   let boxed_left = box_new(move left);

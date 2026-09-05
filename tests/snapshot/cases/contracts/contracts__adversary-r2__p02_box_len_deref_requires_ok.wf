@@ -5,7 +5,7 @@ fn get_borrowed(holder: &buffer<u8>, i: own u64) -> value: own u8 reads(holder) 
   return deref(holder)[i];
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: requires uses define spare = len_of(deref(holder)); index 5 is within len 6.";
   let buf = buffer_new(6_u64, 9_u8);
   region {

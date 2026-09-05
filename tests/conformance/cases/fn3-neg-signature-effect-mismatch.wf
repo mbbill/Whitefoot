@@ -2,7 +2,7 @@ contract PureMember {
   fn apply(x: own i32) -> result: own i32 pure;
 }
 
-fn allocating_apply(x: own i32) -> result: own i32 allocates(heap) {
+fn allocating_apply(x: own i32) -> result: own i32 pure {
   let scratch = buffer_new(1_u64, 0_u8);
   return x;
 }

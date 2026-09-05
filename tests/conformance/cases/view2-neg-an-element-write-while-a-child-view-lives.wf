@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "The other half of the child reborrow: while the child lives the parent is frozen. An element write through the exclusive view is refused citing OWN-5 at the target, because the child would otherwise read storage the parent changed under it. Without the refusal the program below writes 9 through the MutSlice and reads 7 back through the Slice, which is the exclusivity OWN-5 states failing at one range.";
   let table = buffer_new(3_u64, 7_u8);
   region {

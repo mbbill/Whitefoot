@@ -10,7 +10,7 @@ fn ring_slot(buf: own buffer<u8>, front: own u64, used: own u64) -> value: own u
   return value;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(4_u64, 9_u8);
   let value = ring_slot(buf: move buf, front: 3_u64, used: 5_u64);
   if value == 9_u8 {

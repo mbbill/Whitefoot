@@ -13,7 +13,7 @@ fn cursor_read_at(table: own buffer<u8>, cursor: own Cursor) -> value: own u8 re
   return table[cursor.idx];
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let table = buffer_new(4_u64, 7_u8);
   let start = Cursor(idx: 0_u64, limit: 4_u64);
   let value = cursor_read_at(table: move table, cursor: move start);

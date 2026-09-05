@@ -18,7 +18,7 @@ fn store_byte(out: &uniq buffer<u8>, i: own u64, value: own u8, pick: own Bool) 
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let scratch = buffer_new(8_u64, 0_u8);
   let take_direct = True();
   let take_reversed = False();

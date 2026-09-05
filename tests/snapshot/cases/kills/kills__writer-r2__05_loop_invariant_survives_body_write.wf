@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- the header invariant is reproved on the backedge despite the body's set to the value it names [INV-1].";
   let weights = buffer_new(5_u64, 3_u8);
   let sum = 0_u32;

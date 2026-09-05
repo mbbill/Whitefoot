@@ -11,7 +11,7 @@ fn probe_midpoint(table: &buffer<u32>, lo: own u64, hi: own u64) -> found: own u
   return value;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: lo < hi and hi <= spare let the automatic affine rule fold the division image 2*half <= span into 2*mid + 1 <= 2*hi, which with hi <= spare discharges the subscript [ENT-6, OP-4].";
   let table = buffer_new(7_u64, 0_u32);
   region {

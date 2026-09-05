@@ -304,7 +304,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "system-range-residual.wf",
-        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let header = buffer_new(4_u64, 65_u8);
   let payload = buffer_new(9_u64, 66_u8);
   let wide = len_of(payload);
@@ -319,7 +319,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "bounds-residual.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let table = buffer_new(4_u64, 0_u8);
   let other = buffer_new(9_u64, 0_u8);
   let pick = len_of(other);
@@ -335,7 +335,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "system-argument-does-not-name-a-region.wf",
-        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let payload = buffer_new(4_u64, 65_u8);
   region {
     let sent = write_once::<ExitStatus>(output: &uniq out, source: &payload, start: 0_u64, end: 4_u64);
@@ -699,7 +699,7 @@ command fn main() -> status: own ExitStatus pure {
     // -------------------------------------------------------------------
     Probe {
         name: "buffer-length-is-not-a-u64.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let flag = 1_u64 > 0_u64;
   let store = buffer_new(flag, 0_u8);
   return exit_status(code: 0_u8);
@@ -710,7 +710,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "subscript-is-not-the-last-suffix.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   let one = store[0_u64].value;
   return exit_status(code: 0_u8);
@@ -723,7 +723,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "indexed-operand-is-a-move.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   let n = len_of(move store);
   return exit_status(code: 0_u8);
@@ -775,7 +775,7 @@ command fn main() -> status: own ExitStatus pure {
     },
     Probe {
         name: "slice-of-a-unique-borrow.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   region {
     let view = slice_of(&uniq store);
@@ -813,7 +813,7 @@ command fn main() -> status: own ExitStatus pure {
   return len_of(deref(data));
 }
 
-fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> allocates(heap) {
+fn caller['r](anchor: &'r buffer<u8>) -> out: &'r buffer<u8> pure {
   let local = buffer_new(4_u64, 0_u8);
   let counted = sum(data: &'r local);
   return anchor;
@@ -891,7 +891,7 @@ command fn main() -> status: own ExitStatus pure {
   return len_of(deref(data));
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let store = buffer_new(4_u64, 0_u8);
   region {
     let n = measure(data: &uniq store);
@@ -904,7 +904,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     },
     Probe {
         name: "shared-borrow-where-a-unique-one-is-required.wf",
-        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+        source: br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let payload = buffer_new(4_u64, 65_u8);
   region {
     let sent = write_once(output: &out, source: &payload, start: 0_u64, end: 4_u64);
@@ -1112,7 +1112,7 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   let r = need(x: data[0_u64]);
   return exit_status(code: 0_u8);
@@ -1301,7 +1301,7 @@ command fn main() -> status: own ExitStatus pure {
   return n;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   let flag = 1_u64;
   let taken = 0_u64;
@@ -1328,7 +1328,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return n;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
@@ -1348,7 +1348,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return 1_u8, 2_u8;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let v = buffer_new(4_u64, 0_u8);
   let i = 0_u64;
   let j = 1_u64;
@@ -1365,7 +1365,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     },
     Probe {
         name: "a-commit-target-carrying-a-region.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   let spare = buffer_new(4_u64, 0_u8);
   region {
@@ -1386,7 +1386,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     // condition would admit with nothing consumed.
     Probe {
         name: "a-commit-displacing-a-live-loan.wf",
-        source: br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        source: br#"command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(4_u64, 0_u8);
   let spare = buffer_new(4_u64, 0_u8);
   region {

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: each byte is scaled by a fixed factor before accumulation, bound tightened to 510 per step.";
   let data = buffer_new(5_u64, 3_u8);
   let sum = 0_u64;

@@ -266,7 +266,7 @@ command fn main() -> status: own ExitStatus pure {
 /// it reads out is this iteration's, not the previous one's.
 #[test]
 fn a_replace_of_iteration_own_storage_is_permitted() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   for @swap (i in 0_u64..8_u64) {
     let held = buffer_new(4_u64, 0_u64);
     let fresh = buffer_new(4_u64, i);
@@ -311,7 +311,7 @@ fn nested_counted_loops_are_each_judged_on_their_own_terms() {
 /// iterations would repeatedly write the same element and is denied.
 #[test]
 fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(8_u64, 0_u64);
   for @rows (r in 0_u64..8_u64) {
     for @cols (c in 0_u64..4_u64) {
@@ -352,7 +352,7 @@ fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   region {
     let t = tally(src: &data, limit: 64_u64);
@@ -390,7 +390,7 @@ fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   region {
     let t = tally(src: &data, limit: 64_u64);
@@ -511,7 +511,7 @@ fn carried_state_that_is_no_reduction_is_denied_by_condition_one() {
 /// the destination is carried state no operation combines.
 #[test]
 fn a_replace_of_enclosing_storage_is_denied_by_condition_one() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let held = buffer_new(4_u64, 0_u64);
   for @swap (i in 0_u64..8_u64) {
     let fresh = buffer_new(4_u64, i);
@@ -554,7 +554,7 @@ fn an_accumulator_read_outside_its_combine_is_denied_by_condition_one() {
 /// stops depending on that coincidence.
 #[test]
 fn an_accumulator_read_in_a_write_subscript_is_denied_by_condition_one() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let table = buffer_new(64_u64, 0_u64);
   let cursor = 0_u64;
   for @fill (i in 0_u64..8_u64) {
@@ -677,7 +677,7 @@ fn a_nested_endpoint_reading_the_accumulator_denies_only_the_outer_loop() {
 /// disjoint range `[i, i + 1)`.
 #[test]
 fn a_proven_counted_binder_element_map_is_permitted() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     set out[i] = i *wrap i;
@@ -699,7 +699,7 @@ fn a_proven_counted_binder_element_map_is_permitted() {
 /// elements.
 #[test]
 fn a_copied_affine_binder_element_map_is_permitted() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(128_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let step = i;
@@ -721,7 +721,7 @@ fn a_copied_affine_binder_element_map_is_permitted() {
 /// exact coefficient and constant computed at that program point.
 #[test]
 fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(128_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let step = i;
@@ -760,7 +760,7 @@ fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
 /// the element access itself, but PAR-2 correctly keeps the whole-root write.
 #[test]
 fn a_zero_coefficient_element_map_is_denied() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i - i;
@@ -780,7 +780,7 @@ fn a_zero_coefficient_element_map_is_denied() {
 /// mapped root to carry the same coefficient and constant.
 #[test]
 fn two_different_affine_maps_of_one_root_are_denied() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(128_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let even = i * 2_u64;
@@ -802,7 +802,7 @@ fn two_different_affine_maps_of_one_root_are_denied() {
 /// on a distinct element.
 #[test]
 fn repeated_writes_with_the_same_affine_map_are_permitted() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(128_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i * 2_u64;
@@ -824,7 +824,7 @@ fn repeated_writes_with_the_same_affine_map_are_permitted() {
 /// write image; this is not treated as a whole-buffer dependence.
 #[test]
 fn a_same_index_read_modify_write_is_permitted() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u8);
   for @update (i in 0_u64..64_u64) {
     let old = out[i];
@@ -846,7 +846,7 @@ fn a_same_index_read_modify_write_is_permitted() {
 /// condition 2 fail-closed.
 #[test]
 fn a_whole_collection_read_still_denies_a_same_map_update() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u8);
   for @update (i in 0_u64..64_u64) {
     let spare = len_of(out);
@@ -878,7 +878,7 @@ fn a_unique_borrowed_output_accepts_a_proved_element_map() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u8);
   region {
     let filled = fill(out: &uniq out, count: 64_u64);
@@ -897,7 +897,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// distinct roots disjoint, so each may use its own injective affine image.
 #[test]
 fn different_owned_roots_may_use_different_affine_maps() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let evens = buffer_new(128_u64, 0_u64);
   let shifted = buffer_new(65_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
@@ -952,7 +952,7 @@ command fn main() -> status: own ExitStatus pure {
 /// payload; no synthetic map accumulator is introduced.
 #[test]
 fn an_exact_map_with_a_reduction_uses_reduction_actualization() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   let total = 0_u64;
   for @fill (i in 0_u64..64_u64) {
@@ -988,7 +988,7 @@ fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
   return move output;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let output = buffer_new(64_u64, 0_u64);
   let filled = fill(output: move output, limit: 64_u64);
   return exit_status(code: 0_u8);
@@ -1015,7 +1015,7 @@ fn a_shared_call_loan_on_the_mapped_root_is_denied() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     region {
@@ -1034,7 +1034,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// fail-closed permission verdict without changing ordinary source acceptance.
 #[test]
 fn an_unproved_counted_binder_element_map_remains_denied() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = i + 1_u64;
@@ -1056,7 +1056,7 @@ fn an_unproved_counted_binder_element_map_remains_denied() {
 /// being distinguishable.
 #[test]
 fn a_non_injective_element_write_is_denied_by_condition_two() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
     let slot = iand(i, 7_u64);
@@ -1076,7 +1076,7 @@ fn a_non_injective_element_write_is_denied_by_condition_two() {
 /// fixed same-map refinement refuses it.
 #[test]
 fn a_stencil_is_denied_by_condition_two() {
-    let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = b"command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(64_u64, 1_u64);
   for @fill (i in 1_u64..64_u64) {
     let prior = i -wrap 1_u64;
@@ -1184,7 +1184,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 /// loop-iteration overlap.
 #[test]
 fn a_direct_directory_state_transition_keeps_its_unique_loan() {
-    let source = b"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = b"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let destination = buffer_new(1_u64, 0_u8);
   region {
     let permit = reserve_file(factory: &uniq files);
@@ -1359,7 +1359,7 @@ fn a_give_in_the_body_is_denied_by_condition_four() {
   return answer +wrap acc;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region {
@@ -1392,7 +1392,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return answer +wrap acc;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
   region {
@@ -1635,7 +1635,7 @@ fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   region {
     let t = tally(src: &data);
@@ -1659,7 +1659,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   region {
     let t = tally(src: &data, bounded_limit: 64_u64, limit: 64_u64);
@@ -1679,7 +1679,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   region {
     let t = tally(src: &data, limit: 64_u64);
@@ -1700,7 +1700,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(64_u64, 1_u64);
   region {
     let t = tally(src: &data, limit: 64_u64);
@@ -1818,7 +1818,7 @@ fn a_body_statement_forming_a_borrow_is_refused() {
 /// refuses borrows of enclosing storage, not borrowing as such.
 #[test]
 fn a_body_borrow_of_iteration_own_storage_stays_permitted() {
-    let source = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+    let source = br#"command fn main() -> status: own ExitStatus pure {
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     let local = buffer_new(4_u64, 7_u8);

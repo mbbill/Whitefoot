@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: two buffers are each summed by their own bounded loop, then combined once after both.";
   let first = buffer_new(4_u64, 2_u8);
   let second = buffer_new(3_u64, 5_u8);

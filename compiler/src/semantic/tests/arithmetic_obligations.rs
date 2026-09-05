@@ -390,7 +390,7 @@ fn a_subscripted_class_operand_is_underivable_and_rejects() {
 /// obligation, while the matching `pure` row reaches OP-2.
 #[test]
 fn effect_mismatch_precedes_static_integer_domain_rejection() {
-    let extra_effect_row = br#"fn bump(x: own u64) -> result: own u64 allocates(heap) {
+    let extra_effect_row = br#"fn bump(x: own u64) -> result: own u64 pure {
   let y = x + 1_u64;
   return y;
 }

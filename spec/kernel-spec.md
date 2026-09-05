@@ -149,7 +149,7 @@ An absent REGIONID is neither a default nor a second meaning for a written one: 
 Every clause below is decided by reading the owning declaration's own text, so a writer chooses the one legal spelling from the declaration alone and never from a checker verdict.
 Being unnamed removes no obligation: an unnamed region has the ordinary extent, liveness, outlives, exclusivity, storage-duration, confinement, and loop judgments of the construct that introduces it [OWN-3, OWN-4, OWN-5, OWN-10, OWN-11, STOR-4].
 
-The region positions of one `fn_decl` or `fn_sig` are its input positions — every REGIONID slot of its `param` list, in a `param`'s `mode` and at any depth of its `type` — and its output positions — every REGIONID slot of its `result_binding` `rtype` at any depth, and the REGIONID of each `arena` entry of an `allocates` effect [EFF-1].
+The region positions of one `fn_decl` or `fn_sig` are its input positions — every REGIONID slot of its `param` list, in a `param`'s `mode` and at any depth of its `type` — and its output positions — every REGIONID slot of its `result_binding` `rtype` at any depth, and the REGIONID of each `arena` entry of an `allocates` effect [EFF-1]. An `allocates` entry over a store whose provider is a value carries a formal-rooted `effect_path` and no REGIONID.
 `region_params` is a list of written names rather than a position, and a `reads` or `writes` `effect_path` names a place rather than a region [EFF-1], so neither is a position.
 A region name is written at a position exactly when the same region is meant at two or more positions of that same declaration, or when the position is an output position and that region is meant at no input position of that declaration.
 The first case is the only way to relate two positions; the second is the only region a caller must choose, because no actual argument determines it.
@@ -1031,7 +1031,7 @@ fn fixed_vector<T, const n: u64>() -> result: own FixedVector<T, n> pure
   ensures head_of(result) == 0_u64;
 
 fn arena_vector<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, count: own u64)
-    -> made: own Option<Vector<'s, T>> reads(store), writes(store), allocates(arena 's)
+    -> made: own Option<Vector<'s, T>> reads(store), writes(store), allocates(store)
   requires align >= align_ceiling(T);
   requires fits::<T>(count);
   ensures when made is Some(value: r): len_of(r) == 0_u64;
@@ -1044,7 +1044,7 @@ fn arena_vector<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s
   ensures cap_of(store) == cap_of(store at the call);
 
 fn arena_vector_proved<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, count: own u64)
-    -> result: own Vector<'s, T> reads(store), writes(store), allocates(arena 's)
+    -> result: own Vector<'s, T> reads(store), writes(store), allocates(store)
   requires align >= align_ceiling(T);
   requires fits::<T>(count);
   requires room_of(store) >= advance<T>(count);
@@ -1056,7 +1056,7 @@ fn arena_vector_proved<T, const bytes: u64, const align: u64>['s](store: &uniq A
   ensures cap_of(store) == cap_of(store at the call);
 
 fn heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)
-    -> made: own Option<Vector<'s, T>> reads(store), writes(store), allocates(heap)
+    -> made: own Option<Vector<'s, T>> reads(store), writes(store), allocates(store)
   requires fits::<T>(count);
   ensures when made is Some(value: r): len_of(r) == 0_u64;
   ensures when made is Some(value: r): cap_of(r) == count;
@@ -1073,7 +1073,7 @@ fn arena_frame<const bytes: u64, const align: u64>['s]() -> result: own Arena<'s
 Each arena row additionally requires `align >= align_ceiling(T)` as a compile-time comparison of two constants, which is what makes the bump cursor a multiple of `align` at every program point, the padding at a take zero, and `len_of(arena)` exact [MSR-1].
 Every failure of a kernel acquisition is an `Option` and this domain declares no failure nominal, because no kernel acquisition takes an affine input: a count is copy and a provider is borrowed, so a refusal has nothing to hand back.
 The general store has no proved form, because no honest compile-time domain predicate exists for it; the arena has one, whose `room_of` requirement [MSR-4] discharges and whose failure is therefore a static rejection with no runtime fallback.
-`Heap<'s>` has no formation row at all: the one general store enters a program as the entry's `heap` standard input and by no other route, and that row is [FN-7]'s own DEFERRED entry.
+`Heap<'s>` has no formation row at all: the one general store enters a program as the entry's `heap` standard input [FN-7] and by no other route.
 
 `arena_frame::<bytes, align, 's>()` reserves one bump extent per activation of the region block naming `'s`, laid out in that activation's own frame.
 Its written `'s` must be a region introduced by an enclosing `region_stmt` of the reserving function; a caller-supplied region parameter is not admitted, and the occurrence must be a statement of that region block and of no loop inside it.
@@ -1641,7 +1641,7 @@ Region parameters are permitted and are not a `generics` child.
 Its callable signature equals the member signature exactly: the two signatures have the same number of region parameters and value parameters; corresponding parameter modes and types, result mode and type, and normalized effect rows are equal after replacing every occurrence of the member's first, second, and later declared region parameters with the bound function's region parameters at those same zero-based ordinals.
 The two mandatory result-binder spellings are ignored by that equality.
 This replacement applies inside modes, types, and arena-allocation payloads; type components then use the preceding exact concrete-type identity recursively.
-After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to three components: the set of declared read paths, the set of declared write paths, and the allocation set whose members are `heap` and each alpha-mapped `arena` region; `pure` is three empty components.
+After each signature's independently applicable EFF-1 judgment and the bound function declaration's EFF-2 judgment succeed, an effect row normalizes to three components: the set of declared read paths, the set of declared write paths, and the allocation set whose members are the declared allocation paths under the same ordinal identity this rule fixes for a path and each alpha-mapped `arena` region; `pure` is three empty components.
 An effect path uses its root parameter's zero-based ordinal followed by its static source-struct field ordinals. Parameter and field spellings do not create signature identity.
 Equality requires all three components to be equal.
 A `fn_sig` has no body and no compiler-derived release, so it declares these components without an EFF-2 judgment of its own; the bound `fn_decl` must exhibit exactly the member's declared row under [EFF-2], including a path the bound function contributes only through release.
@@ -1735,7 +1735,7 @@ Rejection-rate measurement is a registered experiment.
 That declaration is the unit's sole entry and must carry the exact fixed `command` program-kind marker.
 It is nongeneric, declares no region parameters, and has no `contract_block`.
 Its mandatory result binder is writer-named and its written result is exactly `own ExitStatus`.
-Its written effect row is any subset of `reads` and `writes` paths rooted in its own labelled inputs and `allocates(heap)`, in [EFF-1] canonical order; `pure` is the empty subset and no arena allocation is admitted.
+Its written effect row is any subset of `reads`, `writes` and `allocates` paths rooted in its own labelled inputs, in [EFF-1] canonical order; `pure` is the empty subset and no arena allocation is admitted, `main` declaring no region parameter.
 The entry is invoked exactly once by program start [PROG-3].
 A source `call` whose callee resolves to it is a hard FN-7 rejection: its standard inputs are supplied only at start and source has no second entry route.
 No other `fn_decl` may carry `program_kind` or `input_label`, and a main without `command` is not an alternate entry form.
@@ -1749,6 +1749,7 @@ The closed standard-input table for kind `command` is:
 | 2 | `command.stdout` | `own Output` | the standard output sink |
 | 3 | `command.stderr` | `own Output` | the standard error sink |
 | 4 | `command.files` | `own FileFactory` | the source of one-shot file-open permits |
+| 5 | `command.heap` | `own Heap` | the one general store the runtime minted before start [PROV-1] |
 
 Every value parameter of main carries an `input_label` and selects one row of that table.
 Its label tail equals that row's tail and the written mode and type equal the row exactly; the `command` prefix is fixed by grammar and there is no conversion, default, or inferred mode [TYPE-4, TYPE-5].
@@ -1756,13 +1757,15 @@ Every row is optional and each may be selected at most once: an unused standard 
 A `command` entry that selects no row is admitted and receives no standard input.
 The binder IDENT written after `as` is chosen by the writer and is an ordinary `param` declaration in the lexical IDENT domain [TYPE-6].
 Ordinal identity, never type identity, selects the supplied value: `command.stdout` and `command.stderr` share one type and remain two distinct inputs.
-DEFERRED: one further row, ordinal 5, `command.heap as heap: own Heap`, by which a program obtains the one general store [PROV-1]; its delta is numbered rules +0, grammar productions +0, and entry standard-input rows +1.
-It is deferred because its label tail is the spelling [EFF-1] fixes as the allocation atom of `allocates(heap)`, which [FORM-3] therefore excludes from IDENT, so no source can write the row until that atom retires in favour of an allocation path; the two are one amendment and land together.
+Ordinal 5 is `command.heap as heap: own Heap` [S22], the row by which a program obtains the one general store [PROV-1], and its `Heap<'s>` is branded to the entry heap's store region, which has no written spelling because `main` declares no region parameter.
+The binder is the writer's as every other row's is; `heap` became an ordinary IDENT when [EFF-1]'s allocation atom retired in favour of an allocation path [S23], and a `main` whose binder is spelled `heap` writes its own allocation entry as `allocates(heap)` — the same bytes as the retired atom, now a path rooted at that parameter.
+The `Heap` the entry receives is dropped on the return edge with the empty release row: the provider is the proof-only value [STOR-1] gives it, and reclaiming the general store itself is program exit.
+An entry that omits the row publishes the whole-program fact `heap-unreachable` and can reach no allocation of the general store, every route to a `Heap<'s>` value being this row and a written parameter carrying one onward [PROV-2].
 An unknown, repeated, or out-of-order label, a mode or type differing from its row, an unlabelled main parameter, an `input_label` on another `fn_decl`, and an `input_label` in a `fn_sig` are each a hard FN-7 rejection.
 No label tail is a member of [OP-1]'s `ModeWords`, because [GRAM-1] would form `command.` plus that tail as one operation-name token.
 The system declaration domain is admitted to every compilation unit under [SYS-3]; entry validation therefore never changes which system names exist or lets an invalid entry steal an earlier undeclared-name diagnostic.
 
-The one canonical byte sequence for a complete five-input entry header whose body immediately returns is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {` because the normal return edge performs the directory state's compiler-derived close while the file factory's logical consume has an empty row.
+The one canonical byte sequence for a complete six-input entry header whose body immediately returns is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus writes(cwd) {` because the normal return edge performs the directory state's compiler-derived close while the file factory's and the heap's logical consumes both have empty rows.
 The [FORM-2] rule renders it without amendment; `program_kind`, `input_label`, and `result_binding` introduce no formatting boundary.
 
 The entry states a program's complete standard-input access in its own signature, so no system value reaches another function except as a written parameter [FN-1]: there is no ambient system state, and no entry-supplied aggregate that source can own, name, or pass.
@@ -1940,7 +1943,7 @@ DEFERRED: the same two positions for a published relation that is not one of [MS
 effects := "pure" | effect ("," effect)*
 effect := "reads" "(" effect_path ("," effect_path)* ")"
         | "writes" "(" effect_path ("," effect_path)* ")"
-        | "allocates" "(" ("heap" | "arena" REGIONID)+ ")"
+        | "allocates" "(" ( effect_path ("," effect_path)* | ("arena" REGIONID)+ ) ")"
 effect_path := IDENT ("." IDENT)*
 ```
 
@@ -1955,6 +1958,13 @@ For a borrow parameter, its effect path names the borrowed referent rather than 
 
 The row describes observations and changes of ordinary Whitefoot state and allocation. It does not distinguish memory from outside state and does not describe a host scheduling mechanism. Opaque system resources, buffers, aggregates, factories, permits, clocks, and Sources all use the same path, exactness, call-substitution, and ownership rules. No type or path carries a writer-visible capability category.
 `reads(path)` means the operation observes that state. `writes(path)` means the operation replaces or advances that state. They remain independent exact facts: an operation which observes prior state while changing it names the path in both categories, while a complete overwrite need only write it.
+`allocates(path)` [S23] means the operation acquires storage from the store whose provider that path selects, and the entry takes the same formal-rooted paths the other two categories take: an `allocates` entry is exhibited exactly when the body reaches an allocation whose provider argument projects to that path under [EFF-2]'s call-boundary projection.
+An allocating row names the same provider path in all three categories, in this rule's canonical order `reads(p), writes(p), allocates(p)`, an allocator observing its prior state while changing it; a release exhibits `writes` of the resolved provider place and no `allocates`, spending the store's capability without acquiring from it [PROV-6].
+A function *reaches a store* when its own row carries an `allocates` or `writes` entry whose selected type at the leaf is that store's provider type, or when it calls one that does; the unit being closed [PROG-1], that transitive closure is exact and is computed from signatures alone.
+Storage whose store's provider is not a value has no `effect_path`, and the two such stores this version still carries are treated differently because they differ in what a caller must know.
+The ambient heap of `box<T>` and `buffer<T>` [STOR-1] has no written entry at all: it is reached from every scope, its release resolves no provider place and carries the empty row [PROV-6], so an allocation of it is checked, reachable and reclaimed exactly as before while contributing nothing writable to a row.
+The region-bounded storage of `arena<'r, T>` [STOR-2] keeps the entry `allocates(arena 'r)`, whose REGIONID is a region position of the declaration [GRAM-2]: an allocation into a *caller-supplied* region is a write of the caller's own storage, and dropping it would leave a callee's arena allocation invisible at a call, which is [PAR-1]'s overlap footprint. That alternative of the production is transitional and retires with `arena<'r, T>` and its `arena_new` row; its retirement delta is grammar productions +0 and unique fixed lowercase grammar atoms -1.
+Neither absence is a licence: a `resource_closed` entry [PROG-1] still reaches no ambient-heap allocation, and the reachability that judgment reads is the compiler's own retained allocation record rather than the written row.
 Whether a target uses a native completion queue, readiness, polling, a bounded blocking helper, an interrupt, or inline completion is target data [QUAL-1], not a source effect.
 
 [EFF-2] A concrete function declaration exhibits the union of exactly two contributions: its body-syntactic contribution and its release contribution.

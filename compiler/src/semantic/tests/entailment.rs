@@ -5484,7 +5484,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_buffer_offset_renders_the_outer_subscript_and_a_failed_slice_offset_stops_there() {
     let source = br#"const count: u64 = 4_u64;
 
-fn from_buffer(values: own array<u8, count>) -> result: own u8 allocates(heap) {
+fn from_buffer(values: own array<u8, count>) -> result: own u8 pure {
   let b = buffer_new(4_u64, 0_u64);
   return values[b[0_u64]];
 }
@@ -5633,12 +5633,12 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_allocation_length_equality_proves_a_constant_offset_and_a_runtime_length_does_not() {
-    let source = br#"fn sized() -> result: own u8 allocates(heap) {
+    let source = br#"fn sized() -> result: own u8 pure {
   let b = buffer_new(4_u64, 0_u8);
   return b[3_u64];
 }
 
-fn runtime(n: own u64) -> result: own u8 allocates(heap) contract {
+fn runtime(n: own u64) -> result: own u8 pure contract {
   requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
@@ -5689,7 +5689,7 @@ command fn main() -> status: own ExitStatus pure {
 fn an_allocation_length_binding_carries_the_length_into_a_branch() {
     // `let m = len::<T>(P)` establishes m = len_of(P), so a branch over m is a
     // branch over the length itself [ENT-3] S6.
-    let source = br#"fn read(n: own u64, i: own u64) -> result: own u8 allocates(heap) contract {
+    let source = br#"fn read(n: own u64, i: own u64) -> result: own u8 pure contract {
   requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
@@ -5736,7 +5736,7 @@ fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
     // never kills its length fact. Writing n kills facts that still mention n,
     // but first projects the already true 3 < len_of(b) consequence whose two
     // endpoints survive the write.
-    let source = br#"fn kept(n: own u64) -> result: own u8 allocates(heap) contract {
+    let source = br#"fn kept(n: own u64) -> result: own u8 pure contract {
   requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
@@ -5748,7 +5748,7 @@ fn buffer_bounds_survive_writes_that_only_kill_their_establishment_middle() {
   }
 }
 
-fn killed(n: own u64) -> result: own u8 allocates(heap) contract {
+fn killed(n: own u64) -> result: own u8 pure contract {
   requires buffer_fits::<u8>(n);
 } {
   let b = buffer_new(n, 0_u8);
@@ -5826,7 +5826,7 @@ fn eat(b: own buffer<u8>) -> result: own unit pure {
   return unit;
 }
 
-fn kept(other: own array<u8, wide>) -> result: own u8 allocates(heap) {
+fn kept(other: own array<u8, wide>) -> result: own u8 pure {
   let b = buffer_new(4_u64, 0_u8);
   let m = len_of(b);
   let sample = other[m];
@@ -5834,7 +5834,7 @@ fn kept(other: own array<u8, wide>) -> result: own u8 allocates(heap) {
   return sample;
 }
 
-fn killed(other: own array<u8, wide>) -> result: own u8 allocates(heap) {
+fn killed(other: own array<u8, wide>) -> result: own u8 pure {
   let b = buffer_new(4_u64, 0_u8);
   let m = len_of(b);
   eat(b: move b);
@@ -6084,7 +6084,7 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
   return out;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let input = buffer_new(4096_u64, 7_u8);
   region {
     let byte = tail_byte(data: &input);
@@ -7528,7 +7528,7 @@ fn exact(output: &uniq Output, source: &buffer<u8>, table: own array<u8, count>)
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let batch = buffer_new(4_u64, 0_u8);
   let table = array_new::<u8, count>(0_u8);
   region {
@@ -7567,7 +7567,7 @@ fn a_transfer_endpoint_bound_enters_the_observing_arm_only() {
     // payload is an unrelated required size and gains nothing [ENT-3] S10.
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let table = array_new::<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
   region {
@@ -7614,7 +7614,7 @@ fn a_host_copy_utf8_success_endpoint_is_bounded_by_end() {
     // the byte-preserving copy producer: copied <= 3 < len_of(table).
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let table = array_new::<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
   region {
@@ -7691,7 +7691,7 @@ fn killed(output: own Output, source: &buffer<u8>, table: own array<u8, count>, 
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let batch = buffer_new(3_u64, 0_u8);
   let table = array_new::<u8, count>(0_u8);
   region {
@@ -7725,7 +7725,7 @@ fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
     // `Result`, so the observing arm is named per operation [ENT-3] S10.
     let source = br#"const count: u64 = 4_u64;
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   let table = array_new::<u8, count>(0_u8);
   region {
     match arg_get(args: &args, position: 1_u64) {
@@ -8744,7 +8744,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_range_does_not_duplicate_the_deref_of_a_let_bound_owning_box() {
-    let source = br#"fn probe() -> result: own unit allocates(heap) {
+    let source = br#"fn probe() -> result: own unit pure {
   let holder = box_new(0_u64);
   for @items (i in deref(holder)..1_u64) {
   }
@@ -9191,7 +9191,7 @@ fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
   return unit;
 }
 
-fn caller() -> result: own unit allocates(heap) {
+fn caller() -> result: own unit pure {
   let owner = box_new(5_i32);
   let positive = deref(owner) > 0_i32;
   let small = deref(owner) < 10_i32;

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "Creation: box_new(v) returns own box<T> [STOR-2]; content is read through deref.";
   let b = box_new(5_i32);
   let v = deref(b);

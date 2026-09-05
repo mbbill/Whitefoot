@@ -58,7 +58,7 @@ fn depth(chain: &box<Chain>) -> result: own u64 reads(chain) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let end = End();
   let bottom = box_new(move end);
   let one = More(next: move bottom);
@@ -763,19 +763,19 @@ const HEAP_RECORD_LANE: &[u8] = br#"fn leafwork(v: own u64) -> result: own u64 p
   return v *wrap 3_u64;
 }
 
-fn build(n: own u64) -> result: own u64 allocates(heap) {
+fn build(n: own u64) -> result: own u64 pure {
   let b = buffer_new(4000000000000000000_u64, 7_u8);
   let e = b[0_u64];
   return 0_u64 +wrap n;
 }
 
-fn both(n: own u64) -> result: own u64 allocates(heap) {
+fn both(n: own u64) -> result: own u64 pure {
   let a = build(n: n);
   let c = leafwork(v: n);
   return a +wrap c;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let r = both(n: 5_u64);
   let ok = r > 0_u64;
   if ok {
@@ -825,14 +825,14 @@ fn page_size() -> usize {
 /// taking the refusal edge with it — so a naively written case would ask for
 /// sixteen terabytes, return normally, and test nothing at all. Routing the
 /// index through a type range leaves the optimizer unable to decide the load.
-const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 allocates(heap) {
+const REFUSED_ALLOCATION: &[u8] = br#"fn giant(i: own u8) -> result: own u8 pure {
   let b = buffer_new(4000000000000000000_u64, 7_u8);
   let wide = cvt::<u8, u64>(i);
   let element = b[wide];
   return element;
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   let count = 0_u64;
   region {
     set count = args_count(args: &args);
@@ -855,7 +855,7 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
 /// The lengths are constants so the fit obligation discharges statically and
 /// the fixture stays about the refusal edges rather than about proving a
 /// dynamic length fits.
-const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 allocates(heap) {
+const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 pure {
   let filled = buffer_new(4_u64, 5_u64);
   let vacant = buffer_vacant::<u32>(4_u64);
   let boxed = box_new(7_u64);
@@ -872,7 +872,7 @@ const ALL_HEAP_FORMS: &[u8] = br#"fn shapes(n: own u64) -> result: own u64 alloc
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let total = shapes(n: 4_u64);
   match cvt::<u64, u8>(total) {
     Ok(value: byte) => {
@@ -1125,17 +1125,17 @@ struct Holder {{
   node: box<Tree>;
 }}
 
-fn boxed_leaf() -> result: own box<Tree> allocates(heap) {{
+fn boxed_leaf() -> result: own box<Tree> pure {{
   let leaf = Leaf();
   return box_new(move leaf);
 }}
 
-fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> allocates(heap) {{
+fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> pure {{
   let branch = Branch(left: move left, right: move right);
   return box_new(move branch);
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let seed = boxed_leaf();
   let held = Holder(node: move seed);
   for @grow (i in 0_u64..{depth}_u64) {{
@@ -1171,7 +1171,7 @@ fn buffer_chain_source(depth: u64) -> Vec<u8> {
   Cons(kids: box<buffer<Option<Chain>>>);
 }}
 
-fn nest(inner: own Chain) -> result: own Chain allocates(heap) {{
+fn nest(inner: own Chain) -> result: own Chain pure {{
   let slots = buffer_vacant::<Chain>(1_u64);
   let filled = Some<Chain>(value: move inner);
   let vacant = replace slots[0_u64] = move filled;
@@ -1185,7 +1185,7 @@ fn nest(inner: own Chain) -> result: own Chain allocates(heap) {{
   return Cons(kids: move held);
 }}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let holder = buffer_vacant::<Chain>(1_u64);
   let seed = Nil();
   let seeded = Some<Chain>(value: move seed);
@@ -1224,7 +1224,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
 
 /// A value whose ownership graph is a chain rather than a cycle: deep in
 /// nothing, and reached by the same emitter.
-const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus allocates(heap) {
+const SHALLOW_OWNERSHIP: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<box<u64>>(2_u64);
   let boxed = box_new(7_u64);
   let wrapped = Some<box<u64>>(value: move boxed);
@@ -1434,7 +1434,7 @@ const BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: box<buffer<Option<Chain>>>);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let inner = buffer_vacant::<Chain>(2_u64);
   let b = box_new(move inner);
   let node = Cons(kids: move b);
@@ -1497,13 +1497,13 @@ const WIDE_BUFFER_CYCLE: &[u8] = br#"enum Chain {
   Cons(kids: box<buffer<Option<Chain>>>);
 }
 
-fn leafy() -> result: own Chain allocates(heap) {
+fn leafy() -> result: own Chain pure {
   let slots = buffer_vacant::<Chain>(1_u64);
   let held = box_new(move slots);
   return Cons(kids: move held);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let slots = buffer_vacant::<Chain>(4_u64);
   let child0 = leafy();
   let first = Some<Chain>(value: move child0);

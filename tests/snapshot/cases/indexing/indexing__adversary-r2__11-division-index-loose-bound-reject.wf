@@ -9,7 +9,7 @@ fn bucket_of(values: own buffer<u8>, n: own u64) -> found: own u8 reads(values) 
   return byte;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(10_u64, 4_u8);
   let found = bucket_of(values: move values, n: 100_u64);
   return exit_status(code: found);

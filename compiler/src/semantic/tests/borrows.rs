@@ -65,7 +65,7 @@ fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> f
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let length = 4_u64;
   let left = buffer_new(length, 0_u64);
   let right = buffer_new(length, 0_u64);
@@ -176,7 +176,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u8);
   region {
     let first = &uniq values;
@@ -189,7 +189,7 @@ fn live_buffer_loans_reject_overlapping_borrows_and_owner_writes() {
         SemanticIssueKind::BorrowConflict,
     );
     assert_rule(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u8);
   region {
     let shared = &values;
@@ -210,7 +210,7 @@ fn user_calls_reject_overlapping_unique_arguments() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u8);
   region {
     two(first: &uniq values, second: &uniq values);
@@ -444,7 +444,7 @@ fn struct_borrow_roots_block_owner_access_and_affine_moves() {
   count: u64;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u64);
   let pool = Pool(values: move values, count: 0_u64);
   region {
@@ -532,7 +532,7 @@ fn consume(source: &buffer<u8>, sibling: own buffer<u8>) -> result: own unit pur
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let source = buffer_new(1_u64, 0_u8);
   let sibling = buffer_new(1_u64, 0_u8);
   let owner = Owner(source: move source, sibling: move sibling);
@@ -588,7 +588,7 @@ fn proxy_counter(counter: &uniq Counter) -> function_result: own unit reads(coun
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
   region {
@@ -697,7 +697,7 @@ command fn main() -> status: own ExitStatus pure {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(1_u64, 0_u8);
   loop @once {
     region {
@@ -720,7 +720,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let out = buffer_new(1_u64, 0_u8);
   region 'r {
     loop @once {
@@ -762,7 +762,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let batch = buffer_new(1_u64, 0_u8);
   region {
     publish(output: &uniq out, source: &batch, count: 1_u64);
@@ -1094,7 +1094,7 @@ fn box_content_borrows_are_ordinary_borrows_rather_than_reborrows() {
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let b = box_new(4_i32);
   region {
     bump(n: &uniq deref(b));
@@ -1110,7 +1110,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return unit;
 }
 
-fn outer['s](anchor: &'s i32) -> result: &'s i32 allocates(heap) {
+fn outer['s](anchor: &'s i32) -> result: &'s i32 pure {
   let b = box_new(4_i32);
   hold(n: &uniq 's deref(b));
   return anchor;
@@ -1373,7 +1373,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     const HELPER: &[u8] = b"fn passthru['r0](x: &uniq 'r0 u64) -> result: &uniq 'r0 u64 pure {\n  return &uniq 'r0 deref(x);\n}\n\n";
     let mut killed = HELPER.to_vec();
     killed.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n    set deref(r) = 9_u64;\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&killed, |outcome| {
         let SemanticOutcome::SourceIssue { issue } = outcome else {
@@ -1387,7 +1387,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
     });
     let mut control = HELPER.to_vec();
     control.extend_from_slice(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let i = 1_u64;\n  let b = buffer_new(4_u64, 0_u64);\n  region {\n    let r = passthru(x: &uniq i);\n  }\n  let e = b[i];\n  return exit_status(code: 0_u8);\n}\n",
     );
     with_semantics_extension(&control, |outcome| {
         let SemanticOutcome::Complete(_) = outcome else {

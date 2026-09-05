@@ -204,7 +204,7 @@ fn memory_reclamation_contributes_no_release_row() {
         b"fn consume(data: own buffer<u8>) -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
     assert_complete(
-        b"command fn main() -> status: own ExitStatus allocates(heap) {\n  let boxed = box_new(0_u64);\n  let stored = buffer_new(4_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main() -> status: own ExitStatus pure {\n  let boxed = box_new(0_u64);\n  let stored = buffer_new(4_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -215,7 +215,7 @@ fn release_attribution_is_transitive_over_owned_content() {
     // boxed `ReadFile` with its fixed state-release row, so the row is
     // exhibited through the indirection.
     assert_complete(
-        b"fn stash(file: own ReadFile) -> result: own unit writes(file), allocates(heap) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn stash(file: own ReadFile) -> result: own unit writes(file) {\n  let boxed = box_new(move file);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
     );
 }
 
@@ -224,7 +224,7 @@ fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     // The replacement keeps the same canonical-order and multiplicity
     // coverage over the live categories: reads, writes, and allocates.
     assert_rule_kind(
-        b"fn probe(file: own ReadFile) -> result: own unit allocates(heap), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff1,
         |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
     );
@@ -269,9 +269,9 @@ fn pass_output_program(effects: &str) -> Vec<u8> {
 
 #[test]
 fn a_user_result_cannot_wash_an_output_formal_origin() {
-    let accepted = pass_output_program("reads(out), writes(out), allocates(heap)");
+    let accepted = pass_output_program("reads(out), writes(out)");
     assert_complete(&accepted);
-    let washed = pass_output_program("allocates(heap)");
+    let washed = pass_output_program("pure");
     assert_rule_kind(&washed, SemanticRule::Eff2, |kind| {
         matches!(kind, SemanticIssueKind::EffectMismatch { .. })
     });
@@ -356,9 +356,9 @@ fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> r
 #[test]
 fn a_control_flow_result_projects_to_every_possible_formal() {
     let accepted =
-        choose_output_program("reads(out, err), writes(out, err), allocates(heap)", false);
+        choose_output_program("reads(out, err), writes(out, err)", false);
     assert_complete(&accepted);
-    let narrowed = choose_output_program("reads(out), writes(out), allocates(heap)", false);
+    let narrowed = choose_output_program("reads(out), writes(out)", false);
     assert_rule_kind(&narrowed, SemanticRule::Eff2, |kind| {
         matches!(kind, SemanticIssueKind::EffectMismatch { .. })
     });
@@ -390,7 +390,7 @@ fn delivered_wrapper(output: own Output, first: own Bool) -> result: own Output 
   return delivered(output: move output, first: first);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   let selected = delivered_wrapper(output: move out, first: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -415,7 +415,7 @@ fn a_recursive_pass_through_reaches_the_formal_fixed_point() {
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   let selected = recursive_pass(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -444,7 +444,7 @@ fn mutual_b(output: own Output, stop: own Bool) -> result: own Output pure {
   return mutual_a(output: move output, stop: stop);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   let selected = mutual_b(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -767,7 +767,7 @@ fn an_unrelated_loop_does_not_destroy_a_formal_origin() {
   return move output;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let selected = through_loop(output: move out);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
@@ -852,7 +852,7 @@ fn an_optional_result_projects_its_present_formal_and_keeps_its_absent_route() {
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let flag = True();
   match maybe_output(output: move out, present: flag) {
     Ok(value: selected) => {

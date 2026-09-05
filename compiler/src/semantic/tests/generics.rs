@@ -677,7 +677,7 @@ fn numeric_and_const_parameters_flow_through_flat_storage_operations() {
   return array_new::<T, n>(value);
 }
 
-fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> pure contract {
   requires buffer_fits::<T>(length);
 } {
   return buffer_new(length, value);
@@ -687,13 +687,13 @@ fn filled_float_array<T: Float, const n: u64>(value: own T) -> result: own array
   return array_new::<T, n>(value);
 }
 
-fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+fn filled_float_buffer<T: Float>(length: own u64, value: own T) -> result: own buffer<T> pure contract {
   requires buffer_fits::<T>(length);
 } {
   return buffer_new(length, value);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let bytes = filled_array::<u8, 2>(value: 7_u8);
   let words = filled_array::<i64, 3>(value: -5_i64);
   let byte = bytes[1_u64];

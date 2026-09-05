@@ -12,7 +12,7 @@ fn headroom(run: own buffer<u8>) -> total: own u64 reads(run) contract {
   return seen;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "[INV-1, MSR-1, MSR-5] a measure former is an affine factor of a header invariant. The relation the writer states is the one a contract clause already states, in the same spelling, and the checker proves it at the loop base and at every backedge over the same [ENT-2] measure term the automatic derivation of a numeric goal already carries an atom for.";
   let run = buffer_new(8_u64, 0_u8);
   let total = headroom(run: move run);

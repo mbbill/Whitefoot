@@ -132,7 +132,7 @@ fn search_layer_with_entry() -> String {
     let layer = &source[start..end];
     format!(
         "{layer}
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let backing = buffer_new(1_u64, 7_u8);
   let subject = ByteString(buf: move backing, fill: 1_u64);
   let needle_backing = buffer_new(1_u64, 7_u8);

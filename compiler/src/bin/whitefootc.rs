@@ -773,7 +773,7 @@ fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u
   return write_once(output: move output, source: source, start: start, end: end);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let fill = paired(value: 32_u8);
   let bytes = buffer_new(1_u64, fill);
   region {
@@ -1088,7 +1088,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     /// staged judgment denies it on `&uniq 'say out`, which is storage
     /// carrying one position, and the denial is the same under every lowering
     /// because the judgment is pure.
-    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   doc "Writes one line per iteration to standard output.";
   let page = buffer_new(8_u64, 0_u8);
   for @scan (index in 0_u64..4_u64) {

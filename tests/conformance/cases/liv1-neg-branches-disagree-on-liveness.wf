@@ -4,7 +4,7 @@ fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
   return n;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "LIV-1: one branch consumes the run and the other does not, so the two predecessors of the join disagree about whether it is live there.";
   let c = buffer_new(4_u64, 0_u8);
   let flag = 1_u64;

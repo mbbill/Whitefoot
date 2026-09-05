@@ -13,7 +13,7 @@ fn bucket_of(counts: &uniq buffer<u32>, hash: own u64) -> result: own unit reads
   return unit;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a nonzero constant-length bucket table plus a runtime-value modulus keeps the remainder inside [0, buckets) automatically under [OP-2, OP-4]; a plain buffer literal always has that fact, no invariant needed.";
   let counts = buffer_new(8_u64, 0_u32);
   region {

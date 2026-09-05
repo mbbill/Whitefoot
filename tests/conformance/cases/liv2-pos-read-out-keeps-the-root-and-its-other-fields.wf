@@ -3,14 +3,14 @@ struct Frame {
   run: buffer<u8>;
 }
 
-fn grow(old: own buffer<u8>) -> bigger: own buffer<u8> reads(old), allocates(heap) {
+fn grow(old: own buffer<u8>) -> bigger: own buffer<u8> reads(old) {
   doc "Consumes the run it is handed and hands back another.";
   let seen = len_of(old);
   let fresh = buffer_new(8_u64, 0_u8);
   return move fresh;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "LIV-2's read-out sentence: a `move` of a sub-place of a target place is that target's read-out and is not the partial consume that kills the root. The struct's other field is read after the commit, which no dead root admits, and the exit code reports it.";
   let run = buffer_new(4_u64, 0_u8);
   let frame = Frame(tag: 3_u8, run: move run);

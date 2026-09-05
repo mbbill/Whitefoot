@@ -13,7 +13,7 @@ const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq buffer<u8>, source: 
   return length;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let length = 4_u64;
   let source = buffer_new(length, 7_u8);
   let output = buffer_new(length, 0_u8);

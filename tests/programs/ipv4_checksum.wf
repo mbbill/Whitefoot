@@ -35,7 +35,7 @@ fn ipv4_checksum(header: own Slice<u8>) -> result: own u16 reads(header) contrac
   return checksum;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&ipv4_header);
     let view_length = len_of(view);

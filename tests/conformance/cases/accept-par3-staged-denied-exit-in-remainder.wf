@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "The body returns on its first failed open, and that edge lies after the submission the body is cut at. With later iterations already submitted, an iteration's decision to leave would be taken after opens the source-order execution never performs, and an open is an externally observable transition that is not rolled back, so PAR-3 denies by the exit condition. The admitted form takes the exit in the prologue.";
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {

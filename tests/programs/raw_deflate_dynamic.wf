@@ -102,7 +102,7 @@ fn copy_distance(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffe
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> reads(lengths), allocates(heap) contract {
+fn build_huffman_table(lengths: own buffer<u8>, symbol_count: own u64, max_bits: own u32, allow_single: own Bool, allow_empty: own Bool) -> result: own Result<HuffmanTable, InflateError> reads(lengths) contract {
   define lengths_room = len_of(lengths);
   define symbol_limit = symbol_count <= 286_u64;
   requires buffer_fits::<u64>(symbol_count);

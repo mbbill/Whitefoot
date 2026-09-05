@@ -220,7 +220,7 @@ fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
     let control = format!(
         r#"{declaration}
 
-command fn main() -> status: own ExitStatus allocates(heap) {{
+command fn main() -> status: own ExitStatus pure {{
   let empty_text = buffer_new(0_u64, 1_u8);
   let empty_destination = buffer_new(3_u64, 9_u8);
   region {{

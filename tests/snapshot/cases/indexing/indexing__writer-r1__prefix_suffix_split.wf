@@ -27,7 +27,7 @@ fn tail_sum(data: own buffer<u8>, split: own u64) -> total: own u32 reads(data) 
   return sum;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let data = buffer_new(6_u64, 2_u8);
   let data2 = buffer_new(6_u64, 2_u8);
   let prefix = head_sum(data: move data, split: 2_u64);

@@ -15,7 +15,7 @@ fn sum(values: own Slice<u8>) -> result: own u64 reads(values) {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let code = 0_u8;
   region {
     let view = slice_of(&bytes);

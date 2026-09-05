@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: per-byte bound sum over a small buffer, proved by header invariant sum <= 255*i.";
   let data = buffer_new(8_u64, 3_u8);
   let sum = 0_u64;

@@ -3,7 +3,7 @@ linear struct Chunk {
   spare: u8;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "PROV-6: `let N(f1: b1, ..., fk: bk) = move v;` consumes a value of nominal struct type whole and binds every declared field in declaration order. No residual of the consumed value survives it, so the statement is the second route out of a scope for a value linear in it, and its binders are ordinary own bindings of the enclosing block.";
   let run = buffer_new(4_u64, 0_u8);
   let chunk = Chunk(page: move run, spare: 7_u8);

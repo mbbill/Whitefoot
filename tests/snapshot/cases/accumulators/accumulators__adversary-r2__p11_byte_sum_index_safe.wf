@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- idx accumulates the widened byte values over 3 iterations, so idx is provably at most 3*255=765; table has length 766, so table[idx] (max index 765) is always in bounds, discharged by the explicit dominating in_bounds check.";
   let data = buffer_new(3_u64, 100_u8);
   let table = buffer_new(766_u64, 0_u8);

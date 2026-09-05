@@ -60,7 +60,7 @@ fn grayscale(input: &buffer<u8>, output: &uniq buffer<u8>) -> result: own Result
   return Ok<unit, NarrowError>(value: unit);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let input = buffer_new(24_u64, 0_u8);
   set input[3_u64] = 255_u8;
   set input[4_u64] = 255_u8;

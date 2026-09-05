@@ -10,7 +10,7 @@ fn find_byte(input: &buffer<u8>, needle: own u8) -> function_result: own Option<
   return None<u64>();
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let bytes = buffer_new(6_u64, 0_u8);
   set bytes[0_u64] = 10_u8;
   set bytes[1_u64] = 20_u8;

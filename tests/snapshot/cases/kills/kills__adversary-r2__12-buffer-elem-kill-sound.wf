@@ -22,7 +22,7 @@ fn h2(buf: &uniq buffer<u8>, i: own u64, w: own u8) -> result: own u8 reads(buf)
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: after set buf[i]=w kills old<=5, code reproves cur <= 5_u8 via an if-guard before the add";
   let raw = buffer_new(1_u64, 0_u8);
   region {

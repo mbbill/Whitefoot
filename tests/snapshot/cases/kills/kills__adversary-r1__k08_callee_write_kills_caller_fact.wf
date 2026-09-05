@@ -20,7 +20,7 @@ fn read_after_shrink(table: own buffer<u8>, cursor: own Cursor) -> value: own u8
   return table[cursor.idx];
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let table = buffer_new(4_u64, 7_u8);
   let start = Cursor(idx: 3_u64, limit: 4_u64);
   let ok = start.idx < start.limit;

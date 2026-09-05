@@ -3,7 +3,7 @@ fn two_bytes(bound: own u64) -> (low: own u8, high: own u8) pure {
   return 1_u8, 2_u8;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "LIV-2's second condition: two subscripts of one run whose offsets are not both literals with unequal values overlap [OWN-7], and the commit order would decide the result, so the second target is the rejection.";
   let v = buffer_new(4_u64, 0_u8);
   let i = 0_u64;

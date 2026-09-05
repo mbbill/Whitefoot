@@ -1,4 +1,4 @@
-fn allocate_then_return(x: own i32) -> function_result: own i32 allocates(heap) {
+fn allocate_then_return(x: own i32) -> function_result: own i32 pure {
   doc "The allocation effect is part of the callee's checked row.";
   let scratch = buffer_new(1_u64, 0_u8);
   return x;

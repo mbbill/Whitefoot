@@ -21,7 +21,7 @@ fn combined_probe(table: own buffer<u8>, first: own u64, first_limit: own u64, s
   return byte;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an explicit use directed local invariant combines three published premises to establish a subscript's domain obligation.";
   let table = buffer_new(12_u64, 3_u8);
   let byte = combined_probe(table: move table, first: 2_u64, first_limit: 3_u64, second: 3_u64, second_limit: 3_u64, third: 3_u64, third_limit: 3_u64);

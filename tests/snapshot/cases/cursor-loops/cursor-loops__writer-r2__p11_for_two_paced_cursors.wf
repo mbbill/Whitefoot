@@ -16,7 +16,7 @@ fn double_step_sum(source: own buffer<u64>) -> total: own u64 reads(source) {
   return total;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let source = buffer_new(6_u64, 0_u64);
   set source[0_u64] = 1_u64;
   set source[1_u64] = 2_u64;

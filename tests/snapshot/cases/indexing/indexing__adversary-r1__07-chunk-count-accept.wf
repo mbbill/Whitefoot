@@ -23,7 +23,7 @@ fn last_chunk_status(buf: own buffer<u8>, status: own buffer<u8>) -> value: own 
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(9_u64, 0_u8);
   let stat = buffer_new(9_u64, 3_u8);
   let value = last_chunk_status(buf: move buf, status: move stat);

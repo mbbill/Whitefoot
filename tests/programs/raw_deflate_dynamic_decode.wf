@@ -94,7 +94,7 @@ fn read_dynamic_code_lengths(state: &uniq InflateState, input: &buffer<u8>, code
   return Ok<unit, InflateError>(value: unit);
 }
 
-fn decode_dynamic(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffer<u8>) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out), allocates(heap) {
+fn decode_dynamic(state: &uniq InflateState, input: &buffer<u8>, out: &uniq buffer<u8>) -> result: own Result<unit, InflateError> reads(state.input_offset, state.output_offset, state.hold, state.bits, input, out), writes(state.input_offset, state.output_offset, state.hold, state.bits, out) {
   let literal_count_bits = 0_u64;
   region {
     match read_bits(state: &uniq deref(state), input: &deref(input), count: 5_u32, mask: 31_u64) {

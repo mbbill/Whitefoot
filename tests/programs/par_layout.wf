@@ -3,12 +3,12 @@ enum LNode {
   Branch(left: box<LNode>, right: box<LNode>, w: f64, h: f64, out: f64);
 }
 
-fn boxed_leaf(w: own f64) -> result: own box<LNode> allocates(heap) {
+fn boxed_leaf(w: own f64) -> result: own box<LNode> pure {
   let leaf = Leaf(w: w, h: 0.5_f64, out: 0.0_f64);
   return box_new(move leaf);
 }
 
-fn build(depth: own u64, w: own f64) -> result: own box<LNode> allocates(heap) {
+fn build(depth: own u64, w: own f64) -> result: own box<LNode> pure {
   let done = depth == 0_u64;
   if done {
     return boxed_leaf(w: w);
@@ -185,7 +185,7 @@ fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> resu
   return limit;
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out) {
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes. The complete invocation count selects identical benchmark batches; an ordinary argument-free invocation has one batch.";
   let batches = 1_u64;
   region {

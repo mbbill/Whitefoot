@@ -143,8 +143,6 @@ pub enum FixedTerminal {
     Writes,
     /// `allocates`.
     Allocates,
-    /// `heap`.
-    Heap,
     /// `as`.
     As,
     /// `if`.
@@ -232,7 +230,7 @@ pub enum FixedTerminal {
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 104] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
@@ -336,7 +334,6 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 104] = [
     FixedTerminal::Reads,
     FixedTerminal::Writes,
     FixedTerminal::Allocates,
-    FixedTerminal::Heap,
 ];
 
 impl FixedTerminal {
@@ -412,7 +409,6 @@ impl FixedTerminal {
             Self::Reads => "reads",
             Self::Writes => "writes",
             Self::Allocates => "allocates",
-            Self::Heap => "heap",
             Self::As => "as",
             Self::If => "if",
             Self::Plus => "+",

@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   doc "EXPECT REJECT under Op4: index comes from args_count, a genuinely external world value the compiler cannot bound at compile time, so an invariant could never be written honestly here; the correct repair is a real dominating branch on index < spare, not an invariant.";
   region {
     let index = args_count(args: &args);

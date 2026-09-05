@@ -1,4 +1,4 @@
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   doc "SYS-8: the positive baseline of the output half. One write_once makes at most one host output attempt and its Ok payload is the absolute endpoint after the accepted prefix; the target adds no hidden userspace buffering, so source observes exactly [start, next) as accepted [SYS-12].";
   let bytes = buffer_new(5_u64, 65_u8);
   region 'o {

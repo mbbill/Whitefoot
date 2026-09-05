@@ -146,7 +146,7 @@ fn with_mutated_ir_for_overlap<ResultValue>(
 }
 
 /// Reads one argument's bytes and returns their wrapping sum as the status.
-const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 reads(value), allocates(heap) {
+const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> result: own u64 reads(value) {
   region 'v {
     let length = host_bytes_len(value: &value);
     let bytes = buffer_new(length, 0_u8);
@@ -181,7 +181,7 @@ const ARGUMENT_CHECKSUM: &[u8] = br#"fn checksum(value: own HostString) -> resul
   }
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -493,7 +493,7 @@ fn the_text_route_validates_completely_and_reports_the_exact_encoded_length() {
 
 #[test]
 fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
-    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -551,7 +551,7 @@ fn a_copy_into_a_short_destination_is_recoverable_and_writes_no_byte() {
 
 #[test]
 fn an_out_of_range_copy_is_a_static_sys8_rejection() {
-    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+    let source = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -754,7 +754,7 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 
 #[test]
 fn a_target_without_directory_relative_resolution_rejects_component_opening() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region {
@@ -790,7 +790,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -817,7 +817,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 
 #[test]
 fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
     region {
@@ -1054,7 +1054,7 @@ fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
 
 #[test]
 fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -1141,7 +1141,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
         ));
     });
 
-    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out) {
   region {
     match arg_get(args: &args, position: 0_u64) {
       Ok(value: text) => {
@@ -1203,7 +1203,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
 
 #[test]
 fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region {
@@ -1258,7 +1258,7 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 
 #[test]
 fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let destination = buffer_new(64_u64, 0_u8);
   region {
     let permit = reserve_file(factory: &uniq files);
@@ -1322,7 +1322,7 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
 /// rows embed, which the two counted assertions below state.
 #[test]
 fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let destination = buffer_new(64_u64, 0_u8);
   region {
     let permit = reserve_file(factory: &uniq files);

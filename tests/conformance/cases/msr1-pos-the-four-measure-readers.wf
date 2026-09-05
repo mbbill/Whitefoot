@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "[MSR-1] the four measures are one quantity read two ways, a term and an [OP-1] reader. This version's measure table gives every cell of every measured type an exact value: an array's len and cap are its N, a buffer's and a slice's cap is its own extent, and room and head are zero everywhere because each of the three is completely initialized over its whole capacity at its formation. The program reads all four over a buffer, an array and a slice and observes those values.";
   let run = buffer_new(8_u64, 0_u8);
   let fixed = array_new::<u8, 4>(0_u8);

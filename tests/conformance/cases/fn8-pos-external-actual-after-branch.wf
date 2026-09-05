@@ -5,7 +5,7 @@ fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(
   return bytes[index];
 }
 
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
+command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);

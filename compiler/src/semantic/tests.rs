@@ -509,7 +509,7 @@ fn semantic_rule_owners_remain_distinct() {
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn helper() -> result: own unit allocates(heap) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper() -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -553,7 +553,7 @@ fn loops_enforce_own11_for_outer_affine_moves() {
   return n;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
@@ -575,7 +575,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return n;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
@@ -888,7 +888,7 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
   return move cell;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   for (i in 0_u64..2_u64) {
     set c = consume(cell: move c);
@@ -1273,7 +1273,7 @@ fn a_read_out_target_is_dead_for_the_rest_of_the_right_hand_side() {
   return move left;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let c = buffer_new(4_u64, 0_u8);
   set c = pair(left: move c, right: move c);
   return exit_status(code: 0_u8);
@@ -1291,7 +1291,7 @@ fn pair(left: own buffer<u8>, right: own buffer<u8>) -> out: own buffer<u8> pure
   return move left;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(4_u64, 0_u8);
   let holder = Holder(run: move first);
   set holder.run = pair(left: move holder.run, right: move holder.run);
@@ -1311,7 +1311,7 @@ fn take(left: own buffer<u8>, right: own Holder) -> out: own buffer<u8> pure {
   return move left;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let first = buffer_new(4_u64, 0_u8);
   let second = buffer_new(4_u64, 0_u8);
   let holder = Holder(run: move first, spare: move second);

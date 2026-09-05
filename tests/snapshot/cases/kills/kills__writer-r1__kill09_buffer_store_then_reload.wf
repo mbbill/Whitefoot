@@ -12,7 +12,7 @@ fn store_then_double(out: &uniq buffer<u32>, at: own u64, value: own u32) -> res
   return doubled;
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let scratch = buffer_new(4_u64, 0_u32);
   let result = 0_u32;
   region {

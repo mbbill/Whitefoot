@@ -1416,9 +1416,14 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?,
             );
         }
-        for (access, declared) in [
-            (AccessKind::Read, &signature.declared_effects.reads),
-            (AccessKind::Write, &signature.declared_effects.writes),
+        // [S23] the third category projects exactly as the other two do. Its
+        // loan access is the write an allocator already performs on the same
+        // provider path [EFF-1], so the check is the write check and no second
+        // access is attributed.
+        for (access, declared, allocation) in [
+            (AccessKind::Read, &signature.declared_effects.reads, false),
+            (AccessKind::Write, &signature.declared_effects.writes, false),
+            (AccessKind::Write, &signature.declared_effects.allocates, true),
         ] {
             for formal in declared {
                 let index = signature
@@ -1505,9 +1510,10 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     {
                         continue;
                     }
-                    match access {
-                        AccessKind::Read => effects.add_read(path),
-                        AccessKind::Write => effects.add_write(path),
+                    match (access, allocation) {
+                        (_, true) => effects.add_allocation(path),
+                        (AccessKind::Read, false) => effects.add_read(path),
+                        (AccessKind::Write, false) => effects.add_write(path),
                         _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
                     }
                 }

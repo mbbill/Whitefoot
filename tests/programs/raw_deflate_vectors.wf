@@ -10,7 +10,7 @@ const literal_only_dynamic_input_bytes: array<u8, 13> =[5_u8, 192_u8, 129_u8, 8_
 
 const dynamic_expected_bytes: array<u8, 100> =[16_u8, 15_u8, 0_u8, 0_u8, 12_u8, 9_u8, 8_u8, 3_u8, 7_u8, 7_u8, 7_u8, 1_u8, 5_u8, 4_u8, 9_u8, 18_u8, 15_u8, 6_u8, 5_u8, 2_u8, 0_u8, 0_u8, 5_u8, 3_u8, 4_u8, 13_u8, 6_u8, 6_u8, 2_u8, 0_u8, 3_u8, 1_u8, 6_u8, 19_u8, 8_u8, 1_u8, 13_u8, 11_u8, 9_u8, 14_u8, 10_u8, 11_u8, 4_u8, 17_u8, 16_u8, 1_u8, 10_u8, 9_u8, 5_u8, 6_u8, 5_u8, 14_u8, 6_u8, 12_u8, 4_u8, 13_u8, 13_u8, 5_u8, 7_u8, 14_u8, 9_u8, 5_u8, 2_u8, 3_u8, 9_u8, 1_u8, 14_u8, 2_u8, 14_u8, 3_u8, 16_u8, 9_u8, 6_u8, 6_u8, 8_u8, 7_u8, 3_u8, 2_u8, 6_u8, 15_u8, 7_u8, 0_u8, 11_u8, 9_u8, 14_u8, 2_u8, 10_u8, 0_u8, 8_u8, 3_u8, 2_u8, 13_u8, 1_u8, 6_u8, 12_u8, 2_u8, 2_u8, 13_u8, 4_u8, 9_u8];
 
-fn make_dynamic_input() -> result: own buffer<u8> allocates(heap) {
+fn make_dynamic_input() -> result: own buffer<u8> pure {
   let input = buffer_new(72_u64, 0_u8);
   for @fill_dynamic_source (index_value in 0_u64..72_u64) {
     let byte = dynamic_input_bytes[index_value];
@@ -19,7 +19,7 @@ fn make_dynamic_input() -> result: own buffer<u8> allocates(heap) {
   return move input;
 }
 
-fn make_dynamic_match_input() -> result: own buffer<u8> allocates(heap) {
+fn make_dynamic_match_input() -> result: own buffer<u8> pure {
   let input = buffer_new(82_u64, 0_u8);
   for @fill_dynamic_match_source (index_value in 0_u64..82_u64) {
     let byte = dynamic_match_input_bytes[index_value];
@@ -28,7 +28,7 @@ fn make_dynamic_match_input() -> result: own buffer<u8> allocates(heap) {
   return move input;
 }
 
-fn make_literal_only_dynamic_input() -> result: own buffer<u8> allocates(heap) {
+fn make_literal_only_dynamic_input() -> result: own buffer<u8> pure {
   let input = buffer_new(13_u64, 0_u8);
   for @fill_literal_only_dynamic_source (index_value in 0_u64..13_u64) {
     let byte = literal_only_dynamic_input_bytes[index_value];
@@ -63,7 +63,7 @@ fn error_code(error: own InflateError) -> result: own u8 pure {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let valid_input = buffer_new(15_u64, 0_u8);
   set valid_input[0_u64] = 0_u8;
   set valid_input[1_u64] = 2_u8;

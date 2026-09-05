@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "D2's swap and its three-target rotation. The value list is evaluated completely before the one commit, so `set (p, q) = move q, move p;` exchanges the two values rather than writing one over the other; the copy pair reports the exchange in the exit code and the run triple exercises the same commit over affine values, each of which is moved exactly once and released exactly once.";
   let low = 3_u8;
   let high = 5_u8;

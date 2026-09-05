@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expect: ACCEPT - an element write never kills a length fact [ENT-5]; index 3 stays proven by len_of(buf)=4 after writing index 0";
   let buf = buffer_new(4_u64, 0_u8);
   let limit = len_of(buf);

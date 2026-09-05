@@ -29,7 +29,7 @@ fn safe_read(b: own buffer<u8>, raw: own u64) -> value: own u8 reads(b) {
   }
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: after the nonempty branch guards limit > 0, clamp_index's ensures safe < limit with limit bound to spare is consumed directly as the callee requires i < spare of get_bounded, so raw = 99 against a 4-byte buffer clamps to 0 and reads in-bounds.";
   let buf = buffer_new(4_u64, 6_u8);
   let value = safe_read(b: move buf, raw: 99_u64);

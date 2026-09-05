@@ -27,7 +27,7 @@ fn relay(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64
   return publish(output: move output, source: source, start: start, end: end);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region {
     let outcome = relay(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
@@ -45,7 +45,7 @@ const STACKLESS_EMPTY_WRAPPER: &[u8] = br#"fn publish(output: &uniq Output, sour
   return write_once(output: move output, source: source, start: start, end: end);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region {
     let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 0_u64);
@@ -281,7 +281,7 @@ __attribute__((destructor)) static void report_writer_resume(void) {
 #[test]
 fn unsupported_branching_may_suspend_shape_keeps_the_synchronous_abi() {
     let llvm = compile(
-        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region {
     match write_once(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64) {
@@ -321,7 +321,7 @@ fn observe(values: own Slice<u8>) -> result: own unit reads(values) contract {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   let local = array_new::<u8, 1>(65_u8);
   let bytes = buffer_new(1_u64, 65_u8);
   region {

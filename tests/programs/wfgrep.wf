@@ -531,7 +531,7 @@ fn shift_input_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) 
   return move accepted;
 }
 
-fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, path: &buffer<u8>, path_length: own u64, out: &uniq Output) -> result: own u8 reads(file, pattern, path, out), writes(out), allocates(heap) {
+fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, path: &buffer<u8>, path_length: own u64, out: &uniq Output) -> result: own u8 reads(file, pattern, path, out), writes(out) {
   doc "Reads one open file and publishes `PATH:LINE:TEXT` for every line that holds the literal pattern bytes.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(8192_u64, 0_u8);
@@ -748,7 +748,7 @@ fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead,
   return open_directory(permit: move permit, root: root, name: name, start: start, end: end);
 }
 
-fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, prefix_length: own u64, pattern: &buffer<u8>, pattern_length: own u64, out: &uniq Output, err: &uniq Output) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err), allocates(heap) {
+fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, prefix_length: own u64, pattern: &buffer<u8>, pattern_length: own u64, out: &uniq Output, err: &uniq Output) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err) {
   doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no source-level depth limit; stack availability remains outside this version's portable result model. Two program bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
   let matched = 0_u8;
   let failed = 0_u8;
@@ -1179,7 +1179,7 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, pr
   return packed;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files) {
   doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two remaining fixed bounds: 64 entries per directory, beyond which it truncates and still returns normally, and a thousand-byte display path, beyond which the descent stops and the run exits 2 with nothing on standard error.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);

@@ -1,4 +1,4 @@
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "expect: ACCEPT - a<b<c derives a<c whose support is {a,c} only; mutating the middle term b afterward must not kill a<c, so buf[a] still discharges";
   let buf = buffer_new(10_u64, 4_u8);
   let a = 2_u64;

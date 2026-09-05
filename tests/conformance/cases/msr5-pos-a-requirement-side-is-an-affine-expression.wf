@@ -5,7 +5,7 @@ fn transposed(run: own buffer<u8>, at: own u64) -> value: own u8 reads(run) cont
   return run[at];
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   doc "MSR-5, FN-8: a requirement side is the whole affine expression, so the caller's obligation and the callee's subscript bound are the one relation the writer stated.";
   let run = buffer_new(8_u64, 4_u8);
   let value = transposed(run: move run, at: 3_u64);

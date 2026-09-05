@@ -223,7 +223,7 @@ fn float_constants_work_in_aggregates_arrays_and_buffers() {
 
 const values: array<f32, 2> =[1.5_f32, 2.5_f32];
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let sample = Sample(value: values[0_u64]);
   let storage = buffer_new(2_u64, 0.0_f32);
   set storage[1_u64] = sample.value;

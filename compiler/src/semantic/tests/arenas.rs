@@ -376,7 +376,7 @@ command fn main() -> status: own ExitStatus pure {
         UnsupportedSemanticFeature::ArenaRuntime,
     );
     assert_unsupported(
-        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+        br#"command fn main() -> status: own ExitStatus pure {
   let boxed = box_new(9_i32);
   region 'r {
     let a = arena_new::<'r, box<i32>>(move boxed);

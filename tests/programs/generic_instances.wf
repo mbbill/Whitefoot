@@ -15,14 +15,14 @@ fn filled_array<T: Int, const n: u64>(value: own T) -> result: own array<T, n> p
   return array_new::<T, n>(value);
 }
 
-fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> allocates(heap) contract {
+fn filled_buffer<T: Int>(length: own u64, value: own T) -> result: own buffer<T> pure contract {
   requires buffer_fits::<T>(length);
   requires length <= 1152921504606846975_u64;
 } {
   return buffer_new(length, value);
 }
 
-command fn main() -> status: own ExitStatus allocates(heap) {
+command fn main() -> status: own ExitStatus pure {
   let small_maximum = maximum::<u8>(left: 4_u8, right: 9_u8);
   let signed_maximum = maximum::<i64>(left: -7_i64, right: -2_i64);
   let short_input = array_new::<u8, 2>(7_u8);
