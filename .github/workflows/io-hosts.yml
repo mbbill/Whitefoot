@@ -593,6 +593,17 @@ jobs:
           # for exactly this proof -- `sched/grant_observer.c`, which reports
           # the core's own steal count at process exit and is linked into no
           # shipped program -- against the runtime the driver stages here.
+          #
+          # `$WINDOWS_UNITS` is exactly what the driver stages for this module,
+          # not a superset of it. `par_layout` reaches `Output.write_once`, so
+          # `module_requires_completion_runtime` is true for it and
+          # `whitefootc` stages the floor group, the core group *and* the
+          # completion group (`src/bin/whitefootc.rs`, `runtime_units`); that
+          # union is this list plus `wf_floor_windows.c`. So the only thing
+          # this executable has that the production one above does not is the
+          # observer, and the only thing it does that the production one does
+          # not is run a C-runtime call from an exit handler while the detached
+          # pool is still in its loop.
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
@@ -608,9 +619,90 @@ jobs:
             > "$par_dir/observed.txt" 2> "$par_dir/observed.err"
           observed_status=$?
           set -e
+          echo "--- observed --par run: stdout ---"
+          tr -d $'\r' < "$par_dir/observed.txt" || true
           echo "--- observed --par run: stderr ---"
           tr -d $'\r' < "$par_dir/observed.err" || true
           echo "--- observed --par run: exit status: ${observed_status} ---"
+          # A run that ends in an access violation writes no fail-stop line --
+          # the runtime never reaches one -- so a failure here buys what it can
+          # before it reports. Everything below is diagnosis on failure only:
+          # it asserts nothing and changes nothing about the verdict.
+          if [ "$observed_status" -ne 0 ]; then
+            # First, the one control that separates the two candidates. This
+            # executable is the observed link with the observer removed and
+            # nothing else changed, so the unit set is byte-for-byte what the
+            # driver stages for this module. If it succeeds, the exit-handler
+            # path the observer adds is the fault; if it fails too, the link
+            # shape itself is, and the production executable above differing
+            # from it becomes the thing to explain.
+            echo "--- control: the same link without the observer ---"
+            clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
+              -I compiler/src/backend \
+              -I compiler/src/backend/completion \
+              $WINDOWS_UNITS \
+              compiler/src/backend/wf_floor_windows.c \
+              -x ir "$par_dir/par-layout.ll" \
+              -Wno-override-module \
+              -o "$par_dir/par-layout-control.exe" \
+              > "$par_dir/control-link.txt" 2>&1 \
+              && {
+                set +e
+                WF_WORKERS=4 "$par_dir/par-layout-control.exe" \
+                  > "$par_dir/control.txt" 2> "$par_dir/control.err"
+                control_status=$?
+                set -e
+                echo "--- control run: stderr ---"
+                tr -d $'\r' < "$par_dir/control.err" || true
+                echo "--- control run: exit status: ${control_status} ---"
+              } || {
+                echo "the control link did not build:" >&2
+                tr -d $'\r' < "$par_dir/control-link.txt" >&2 || true
+              }
+
+            # Second, the same link under AddressSanitizer. LLVM on this runner
+            # ships `clang_rt.asan` for x86_64-pc-windows-msvc; a runner where
+            # it does not says so here and the step goes on.
+            echo "--- observed link under AddressSanitizer ---"
+            if clang -std=c11 -O2 -g -municode -fsanitize=address \
+              -I compiler/src/backend \
+              -I compiler/src/backend/completion \
+              $WINDOWS_UNITS \
+              compiler/src/backend/wf_floor_windows.c \
+              compiler/src/backend/sched/grant_observer.c \
+              -x ir "$par_dir/par-layout.ll" \
+              -Wno-override-module \
+              -o "$par_dir/par-layout-asan.exe" \
+              > "$par_dir/asan-link.txt" 2>&1; then
+              set +e
+              WF_WORKERS=4 "$par_dir/par-layout-asan.exe" \
+                > "$par_dir/asan.txt" 2> "$par_dir/asan.err"
+              asan_status=$?
+              set -e
+              echo "--- sanitized run: stderr ---"
+              tr -d $'\r' < "$par_dir/asan.err" || true
+              echo "--- sanitized run: exit status: ${asan_status} ---"
+            else
+              echo "the sanitized link did not build:"
+              tr -d $'\r' < "$par_dir/asan-link.txt" || true
+            fi
+
+            # Third, the faulting instruction and every thread's stack, when
+            # this runner carries the Windows Kits debugger.
+            cdb='C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\cdb.exe'
+            if [ -x "$cdb" ]; then
+              echo "--- observed run under cdb ---"
+              set +e
+              WF_WORKERS=4 "$cdb" -g -G -o \
+                -c 'g; !analyze -v; ~*k; q' \
+                "$par_dir/par-layout-observed.exe" \
+                > "$par_dir/cdb.txt" 2>&1
+              set -e
+              tr -d $'\r' < "$par_dir/cdb.txt" || true
+            else
+              echo "--- cdb.exe is not installed on this runner ---"
+            fi
+          fi
           test "$observed_status" -eq 0 || \
             fail_par "the observed --par run failed" "$observed_status"
           cmp "$par_dir/reference.txt" "$par_dir/observed.txt" || \
