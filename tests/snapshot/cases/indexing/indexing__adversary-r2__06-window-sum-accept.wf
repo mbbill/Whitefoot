@@ -1,4 +1,4 @@
-fn window_sum(buf: own buffer<u8>, offset: own u64, length: own u64) -> total: own u64 reads(buf) {
+fn window_sum<const n: u64>(buf: own FixedVector<u8, n>, offset: own u64, length: own u64) -> total: own u64 reads(buf) {
   doc "expect ACCEPT: runtime-checked offset+length within spare, so every i in offset..end is < spare and buf[i] is in bounds";
   let spare = len_of(buf);
   let end = offset +wrap length;
@@ -21,8 +21,18 @@ fn window_sum(buf: own buffer<u8>, offset: own u64, length: own u64) -> total: o
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(10_u64, 3_u8);
-  let total = window_sum(buf: move buf, offset: 2_u64, length: 5_u64);
+  let buf = fixed_vector::<u8, 10>();
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  set buf = place_back(vector: move buf, value: 3_u8);
+  let total = window_sum::<10>(buf: move buf, offset: 2_u64, length: 5_u64);
   if total == 15_u64 {
   } else {
     return exit_status(code: 1_u8);

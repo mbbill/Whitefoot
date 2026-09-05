@@ -1,4 +1,4 @@
-fn scan_with_carry(buf: own buffer<u8>, start_carry: own u64) -> total: own u64 reads(buf) {
+fn scan_with_carry<const n: u64>(buf: own FixedVector<u8, n>, start_carry: own u64) -> total: own u64 reads(buf) {
   doc "expect REJECT (OP-2): carry can exceed cursor on the first iteration (cursor=0, carry=1), so cursor - carry underflows u64 before any bound on carry < cursor is established";
   let spare = len_of(buf);
   let cursor = 0_u64;
@@ -23,8 +23,13 @@ fn scan_with_carry(buf: own buffer<u8>, start_carry: own u64) -> total: own u64 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(5_u64, 2_u8);
-  let total = scan_with_carry(buf: move buf, start_carry: 1_u64);
+  let buf = fixed_vector::<u8, 5>();
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  let total = scan_with_carry::<5>(buf: move buf, start_carry: 1_u64);
   if total == 10_u64 {
   } else {
     return exit_status(code: 1_u8);

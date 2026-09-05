@@ -1,4 +1,4 @@
-fn sum_all(left: own buffer<u8>, right: own buffer<u8>) -> total: own u64 reads(left, right) {
+fn sum_all<const n_left: u64, const n_right: u64>(left: own FixedVector<u8, n_left>, right: own FixedVector<u8, n_right>) -> total: own u64 reads(left, right) {
   doc "expect ACCEPT: two independent cursor loops, one per buffer, each cursor bounded by its own buffer's length via its own loop invariant";
   let left_len = len_of(left);
   let i = 0_u64;
@@ -35,9 +35,14 @@ fn sum_all(left: own buffer<u8>, right: own buffer<u8>) -> total: own u64 reads(
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left = buffer_new(3_u64, 2_u8);
-  let right = buffer_new(2_u64, 5_u8);
-  let total = sum_all(left: move left, right: move right);
+  let left = fixed_vector::<u8, 3>();
+  set left = place_back(vector: move left, value: 2_u8);
+  set left = place_back(vector: move left, value: 2_u8);
+  set left = place_back(vector: move left, value: 2_u8);
+  let right = fixed_vector::<u8, 2>();
+  set right = place_back(vector: move right, value: 5_u8);
+  set right = place_back(vector: move right, value: 5_u8);
+  let total = sum_all::<3, 2>(left: move left, right: move right);
   if total == 16_u64 {
   } else {
     return exit_status(code: 1_u8);

@@ -1,4 +1,4 @@
-fn sum_chunks(buf: own buffer<u8>, chunk_size: own u64) -> total: own u64 reads(buf) contract {
+fn sum_chunks<const n: u64>(buf: own FixedVector<u8, n>, chunk_size: own u64) -> total: own u64 reads(buf) contract {
   define spare = len_of(buf);
   requires chunk_size > 0_u64;
   requires chunk_size <= 2147483648_u64;
@@ -26,8 +26,17 @@ fn sum_chunks(buf: own buffer<u8>, chunk_size: own u64) -> total: own u64 reads(
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(9_u64, 2_u8);
-  let total = sum_chunks(buf: move buf, chunk_size: 3_u64);
+  let buf = fixed_vector::<u8, 9>();
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  set buf = place_back(vector: move buf, value: 2_u8);
+  let total = sum_chunks::<9>(buf: move buf, chunk_size: 3_u64);
   if total == 6_u64 {
   } else {
     return exit_status(code: 1_u8);

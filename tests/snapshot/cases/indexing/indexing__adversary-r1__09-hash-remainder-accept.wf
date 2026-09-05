@@ -1,4 +1,4 @@
-fn bucket_of(table: own buffer<u8>, key: own u64) -> value: own u8 reads(table) contract {
+fn bucket_of<const n: u64>(table: own FixedVector<u8, n>, key: own u64) -> value: own u8 reads(table) contract {
   define table_size = len_of(table);
   requires table_size > 0_u64;
 } {
@@ -11,9 +11,16 @@ fn bucket_of(table: own buffer<u8>, key: own u64) -> value: own u8 reads(table) 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(7_u64, 0_u8);
+  let table = fixed_vector::<u8, 7>();
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
   set table[5_u64] = 42_u8;
-  let value = bucket_of(table: move table, key: 12_u64);
+  let value = bucket_of::<7>(table: move table, key: 12_u64);
   if value == 42_u8 {
   } else {
     return exit_status(code: 1_u8);
