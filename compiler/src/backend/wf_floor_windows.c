@@ -117,10 +117,15 @@ volatile int *wf__floor_record_latch(void) { return &wf__floor_latch; }
 
 static const char WF_FLOOR_STACK_RECORD[] = "{\"resource\":\"stack\"}\n";
 
-static void wf__floor_emit_stack_record(void) {
+/* The floor's own writer.
+ *
+ * `WriteFile` on the standard error handle rather than `stdio`, because the
+ * record's first writer is an exception handler running on a stack that has
+ * just overflowed: the emergency stack `SetThreadStackGuarantee` reserves is
+ * enough for a system call and not for the CRT's buffered path. */
+static void wf__floor_write_error(const char *text, DWORD length) {
     HANDLE error_handle = GetStdHandle(STD_ERROR_HANDLE);
     DWORD offset = 0;
-    const DWORD length = (DWORD)(sizeof(WF_FLOOR_STACK_RECORD) - 1u);
 
     if (error_handle == NULL || error_handle == INVALID_HANDLE_VALUE) {
         return;
@@ -129,7 +134,7 @@ static void wf__floor_emit_stack_record(void) {
         DWORD written = 0;
         if (WriteFile(
                 error_handle,
-                WF_FLOOR_STACK_RECORD + offset,
+                text + offset,
                 length - offset,
                 &written,
                 NULL
@@ -140,6 +145,37 @@ static void wf__floor_emit_stack_record(void) {
         offset += written;
     }
 }
+
+static void wf__floor_emit_stack_record(void) {
+    wf__floor_write_error(
+        WF_FLOOR_STACK_RECORD,
+        (DWORD)(sizeof(WF_FLOOR_STACK_RECORD) - 1u)
+    );
+}
+
+/* This floor's one fail-stop, for the ends that are *not* a classified
+ * exhaustion.
+ *
+ * A floor that cannot install its handler, or cannot start or join the thread
+ * it runs the program on, has no classified boundary left to offer, and that
+ * is a trusted-computing-base defect rather than a program outcome.  It says
+ * which one before it ends the process: a bare `abort` under the release UCRT
+ * takes the fast-fail path, which a shell reports as a bare status with no
+ * message at all.
+ *
+ * The classified exhaustion itself does not come through here.  It has already
+ * written the one record the boundary is defined as, and a second line beside
+ * it would be a second record on the one channel that is allowed exactly
+ * one. */
+static _Noreturn void wf__floor_fail(const char *reason, DWORD length) {
+    static const char prefix[] = "whitefoot floor: ";
+    wf__floor_write_error(prefix, (DWORD)(sizeof(prefix) - 1u));
+    wf__floor_write_error(reason, length);
+    wf__floor_write_error("\n", 1u);
+    abort();
+}
+
+#define WF_FLOOR_FAIL(text) wf__floor_fail((text), (DWORD)(sizeof(text) - 1u))
 
 static LONG CALLBACK wf__floor_exception_handler(
     EXCEPTION_POINTERS *exception
@@ -155,6 +191,9 @@ static LONG CALLBACK wf__floor_exception_handler(
             1,
             0
         ) == 0) {
+        /* The one classified exhaustion: the record above *is* the message,
+         * and this abort is deliberately bare so the channel carries exactly
+         * that one line (see `wf__floor_fail`). */
         wf__floor_emit_stack_record();
         abort();
     }
@@ -199,7 +238,9 @@ void wf__floor_attach_thread(void) {
          * cannot preserve Whitefoot's one classified exhaustion boundary.
          * Continuing would be a silent change of runtime semantics, so the
          * native backend is unavailable rather than degraded. */
-        abort();
+        WF_FLOOR_FAIL(
+            "the exhaustion handler or its emergency stack could not be installed"
+        );
     }
 }
 
@@ -259,12 +300,12 @@ int wf__floor_run(int argc, void *argv) {
         NULL
     );
     if (thread_value == 0) {
-        abort();
+        WF_FLOOR_FAIL("the program's own thread could not be started");
     }
     thread = (HANDLE)thread_value;
 
     if (WaitForSingleObject(thread, INFINITE) != WAIT_OBJECT_0) {
-        abort();
+        WF_FLOOR_FAIL("the program's own thread could not be joined");
     }
     (void)CloseHandle(thread);
     return call.status;

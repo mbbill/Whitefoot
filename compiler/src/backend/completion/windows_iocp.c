@@ -13,6 +13,7 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -73,6 +74,20 @@ _Static_assert(
     _Alignof(wf_windows_iocp_state) <= _Alignof(wf_completion_ring_state),
     "the IOCP ring state must not out-align the record's ring block"
 );
+
+/* This leaf's one fail-stop.
+ *
+ * Each `abort` below is a trusted-computing-base defect, not an operation
+ * outcome, and a fail-stop that writes nothing cannot be diagnosed from a
+ * crash log: the release UCRT ends such a process through the fast-fail path,
+ * which a shell reports as a bare status with no message at all. This writes
+ * one line and then aborts exactly where the bare call did, and changes no
+ * control flow. */
+static _Noreturn void wf_windows_iocp_fail(const char *reason) {
+    (void)fprintf(stderr, "whitefoot completion port: %s\n", reason);
+    (void)fflush(stderr);
+    abort();
+}
 
 static wf_windows_iocp_state *wf_windows_state_of(
     wf_completion_record *record
@@ -154,6 +169,31 @@ int wf_windows_iocp_associate(
         || handle == INVALID_HANDLE_VALUE) {
         return EINVAL;
     }
+    /* A request the kernel answers synchronously is already complete, so the
+     * submitting thread publishes it and the port is spared a round trip that
+     * carries no news.  A pending request still has exactly one packet.
+     *
+     * This is asked *before* the port takes the handle, and the order is the
+     * whole of this function's failure story.  A handle cannot be taken off a
+     * completion port: there is no call for it, and the association lasts as
+     * long as the handle does.  Asking second would mean that a host which
+     * refuses these modes -- a file system that does not carry them is the
+     * documented case -- leaves the handle bound to this port with the skip it
+     * needs unset, and every later transfer on it belongs to no engine: the
+     * ring is refused for it here, so it goes to the bounded adapter, whose
+     * overlapped read would then post its completion to this port instead of
+     * signalling its own event, wedging that read and handing the reaper an
+     * `OVERLAPPED` that is not a record.  Asking first leaves a refused handle
+     * exactly as it was found, which is what makes `file_windows.c`'s
+     * "the handle it reads is one the port never took" true rather than
+     * hopeful. */
+    if (WF_WINDOWS_IOCP_NOTIFICATION_CALL(
+            handle,
+            (UCHAR)(FILE_SKIP_COMPLETION_PORT_ON_SUCCESS
+                | FILE_SKIP_SET_EVENT_ON_HANDLE)
+        ) == FALSE) {
+        return (int)GetLastError();
+    }
     associated = CreateIoCompletionPort(
         handle,
         adapter->port,
@@ -161,16 +201,6 @@ int wf_windows_iocp_associate(
         0
     );
     if (associated != adapter->port) {
-        return (int)GetLastError();
-    }
-    /* A request the kernel answers synchronously is already complete, so the
-     * submitting thread publishes it and the port is spared a round trip that
-     * carries no news.  A pending request still has exactly one packet. */
-    if (WF_WINDOWS_IOCP_NOTIFICATION_CALL(
-            handle,
-            (UCHAR)(FILE_SKIP_COMPLETION_PORT_ON_SUCCESS
-                | FILE_SKIP_SET_EVENT_ON_HANDLE)
-        ) == FALSE) {
         return (int)GetLastError();
     }
     return 0;
@@ -299,7 +329,9 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
              * OVERLAPPED and the caller's buffer live with no packet to come,
              * so this is an invariant failure rather than an I/O result. */
             if (error_code == ERROR_IO_INCOMPLETE) {
-                abort();
+                wf_windows_iocp_fail(
+                    "an inline-completed transfer reported that it is still incomplete"
+                );
             }
             if (error_code == ERROR_SUCCESS) {
                 error_code = ERROR_GEN_FAILURE;
@@ -469,7 +501,9 @@ void wf_windows_iocp_notify(void *context) {
             /* A port this process owns that will not take a packet leaves the
              * announced sleeper asleep forever, and no later wake can repair
              * it; fail-stop here rather than hang. */
-            abort();
+            wf_windows_iocp_fail(
+                "a port this process owns refused a wake packet, which would leave an announced sleeper asleep forever"
+            );
         }
         atomic_fetch_add_explicit(
             &adapter->stat_host_wake_posts,
@@ -560,7 +594,9 @@ int wf_windows_iocp_park(
             memory_order_relaxed
         );
         if (previous == 0) {
-            abort();
+            wf_windows_iocp_fail(
+                "a thread left the parked count when the count was already zero"
+            );
         }
     }
     wf_completion_wait_unlock(&adapter->runtime->wait);

@@ -23,6 +23,7 @@
 #include <stddef.h>
 #include <stdatomic.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -154,6 +155,20 @@ _Static_assert(
         && sizeof(wf_windows_rtl_status_to_dos_error_fn) == sizeof(FARPROC),
     "GetProcAddress does not fit the native procedure pointers"
 );
+
+/* This leaf's one fail-stop.
+ *
+ * Each `abort` below is a trusted-computing-base defect, not an operation
+ * outcome, and a fail-stop that writes nothing cannot be diagnosed from a
+ * crash log: the release UCRT ends such a process through the fast-fail path,
+ * which a shell reports as a bare status with no message at all. This writes
+ * one line and then aborts exactly where the bare call did, and changes no
+ * control flow. */
+static _Noreturn void wf_windows_fail(const char *reason) {
+    (void)fprintf(stderr, "whitefoot windows runtime: %s\n", reason);
+    (void)fflush(stderr);
+    abort();
+}
 
 static _Thread_local int wf_windows_error_code;
 
@@ -344,7 +359,9 @@ void wf__windows_completion_forget_descriptor(int descriptor) {
 static int wf_windows_close_provisional_handle(HANDLE *handle) {
     if (handle != NULL && wf_windows_handle_valid(*handle)) {
         if (CloseHandle(*handle) == FALSE) {
-            abort();
+            wf_windows_fail(
+                "a provisional handle this runtime owns could not be closed"
+            );
         }
         *handle = INVALID_HANDLE_VALUE;
         return 1;
@@ -415,7 +432,9 @@ static int wf_windows_adopt_handle(HANDLE handle, int open_flags) {
     if (descriptor < 0) {
         DWORD mapped = wf_windows_error_from_errno(saved_errno);
         if (CloseHandle(handle) == FALSE) {
-            abort();
+            wf_windows_fail(
+                "a handle could not be closed after its descriptor adoption failed"
+            );
         }
         wf_windows_record_error(mapped);
         return -1;
@@ -642,9 +661,13 @@ int wf__windows_open_cwd(const void *unused_path, int flags, ...) {
                WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT
            ) != 0) {
         if (_close(descriptor) != 0) {
-            abort();
+            wf_windows_fail(
+                "a directory root descriptor could not be closed after its registration failed"
+            );
         }
-        abort();
+        wf_windows_fail(
+            "a directory root descriptor could not be registered"
+        );
     }
     return descriptor;
 }
@@ -662,9 +685,13 @@ static int wf_windows_duplicate_descriptor(int descriptor) {
                    WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT
                ) != 0) {
         if (_close(duplicate) != 0) {
-            abort();
+            wf_windows_fail(
+                "an output descriptor could not be closed after its registration failed"
+            );
         }
-        abort();
+        wf_windows_fail(
+            "an output descriptor could not be registered"
+        );
     }
     return duplicate;
 }
@@ -707,7 +734,9 @@ static void wf_windows_open_return_provisional_handle(HANDLE *handle) {
         return;
     }
     if (!wf_windows_close_provisional_handle(handle)) {
-        abort();
+        wf_windows_fail(
+            "an open could not return its provisional handle"
+        );
     }
 }
 
@@ -888,7 +917,9 @@ int wf__windows_completion_file_open_at_worker(
             /* Association and registry storage are execution resources
              * introduced by this backend. They cannot become a source-level
              * open failure, and there is no permitted synchronous fallback. */
-            abort();
+            wf_windows_fail(
+                "an opened descriptor could not be registered, and an open has no permitted synchronous fallback"
+            );
         }
     }
     *open_outcome = WF_WINDOWS_OPEN_SUCCEEDED;

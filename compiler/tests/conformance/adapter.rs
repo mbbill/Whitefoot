@@ -44,10 +44,11 @@ use whitefoot::{
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
     COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
-    CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
-    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER,
-    SourceInput, compile, module_requires_completion_runtime, module_requires_parallel_runtime,
+    COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE,
+    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
+    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE,
+    SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -258,6 +259,12 @@ fn link(module: &str, directory: &Path) -> PathBuf {
                 "completion/linux_io_uring.h",
                 COMPLETION_LINUX_IO_URING_HEADER,
             ),
+            // Every header of the runtime is staged on every platform, exactly
+            // as the driver stages them (`src/bin/whitefootc.rs`): a header is
+            // never a clang input, and `bridge.c` is one shared unit whose
+            // Windows arm names these two in text this host does not compile.
+            ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
             ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
             ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
             ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),

@@ -16,9 +16,12 @@
  *
  * The CI build renames only `bridge.c`'s two initializers and its abort to
  * these symbols, leaving every other linked runtime unit on its production
- * implementation.  The exit status is 86 and nothing is written on either
- * channel, so a bridge that returned from the submit instead would be visible
- * as the 87 below.
+ * implementation.  The exit status is 86, stdout is empty, and stderr carries
+ * exactly the one line the production fail-stop writes before it ends the
+ * process (`bridge.c`, `wf_bridge_fail`); a bridge that returned from the
+ * submit instead would be visible as the 87 below.  The abort is what is
+ * renamed rather than that fail-stop, so the line under test is the shipped
+ * one: only the last instruction of the shipped path is replaced.
  */
 
 #if defined(WF_WINDOWS_BRIDGE_INIT_PROBE_DECLARATIONS)

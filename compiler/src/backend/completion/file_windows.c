@@ -51,11 +51,17 @@ static wf_file_result wf_file_windows_refused(
 /* One positioned read, made to wait here rather than on the port.
  *
  * This is the route a Windows run takes when it has no completion ring at all
- * -- `WF_IO_NO_NATIVE_RING`, and the negative control the gate runs -- so the
- * handle it reads is one the port never took.  The offset travels in an
- * `OVERLAPPED` because that is how a Windows read names one; the event beside
- * it is this call's own, so two reads of one handle cannot take each other's
- * completion. */
+ * -- `WF_IO_NO_NATIVE_RING`, and the negative control the gate runs -- and the
+ * route a run *with* a ring takes for a handle the ring would not have.  In
+ * both cases the handle it reads is one the port never took, and that is a
+ * property the ring maintains rather than an assumption made here:
+ * `windows_iocp.c`'s `wf_windows_iocp_associate` asks for its skip modes
+ * before it binds the handle to the port, so a handle it refuses is left
+ * exactly as it was found.  This read may therefore signal its own event.
+ *
+ * The offset travels in an `OVERLAPPED` because that is how a Windows read
+ * names one; the event beside it is this call's own, so two reads of one
+ * handle cannot take each other's completion. */
 static wf_file_result wf_file_windows_pread(const wf_file_request *request) {
     wf_file_result result;
     OVERLAPPED overlapped;

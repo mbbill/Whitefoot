@@ -51,15 +51,15 @@ use crate::{
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_FILE_POSIX_HEADER, COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
     COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
-    CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome,
-    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
-    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER,
-    SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits, TerminalOutcome,
-    audit_canonical, check_semantics, check_semantics_arithmetic_obligations,
-    check_semantics_division_obligations, classify_terminals, compile as compile_program,
-    emit_llvm, finalize, lower_checked, module_requires_completion_runtime,
-    module_requires_parallel_runtime, parse, resolve,
+    COMPLETION_WINDOWS_IOCP_HEADER, CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE,
+    FinalizeLimits, FinalizeOutcome, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome, SCHED_CORE_HEADER,
+    SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER,
+    SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SemanticOutcome, SourceBundle, SourceInput,
+    SourceLimits, TerminalLimits, TerminalOutcome, WINDOWS_RUNTIME_HEADER, audit_canonical,
+    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
+    module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -382,6 +382,12 @@ pub(super) fn append_runtime_units(
                 "completion/linux_io_uring.h",
                 COMPLETION_LINUX_IO_URING_HEADER,
             ),
+            // Every header of the runtime is staged on every platform, exactly
+            // as the driver stages them (`src/bin/whitefootc.rs`): a header is
+            // never a clang input, and `bridge.c` is one shared unit whose
+            // Windows arm names these two in text this host does not compile.
+            ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
             ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
             ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
             ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),

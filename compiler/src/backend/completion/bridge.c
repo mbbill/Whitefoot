@@ -112,6 +112,25 @@ static _Atomic uint64_t wf_bridge_inline_executions;
 static int wf_bridge_progress(void);
 static void wf_bridge_park(uint64_t observed_epoch);
 
+/* The bridge's one fail-stop.
+ *
+ * Every `abort` in this unit is a trusted-computing-base defect rather than an
+ * operation outcome, and each one is reached from a different place, so the
+ * only thing that tells a reader of a crash log which one fired is the line it
+ * wrote on the way out.  A bare `abort` writes nothing, and on Windows the
+ * release UCRT ends such a process through the fast-fail path, which a shell
+ * reports as a bare status with no message at all -- a fail-stop nobody can
+ * diagnose.  This changes no control flow: it writes one line and then aborts
+ * exactly where the bare call did.
+ *
+ * The channel is `stderr` and the write is unbuffered, because the next thing
+ * this process does is die. */
+static _Noreturn void wf_bridge_fail(const char *reason) {
+    (void)fprintf(stderr, "whitefoot completion: %s\n", reason);
+    (void)fflush(stderr);
+    abort();
+}
+
 /* The platform's kernel completion ring, behind eight names; see "the ring"
  * below for what each one owes and why this is the only part of the bridge
  * that is written more than once. */
@@ -253,6 +272,31 @@ static void wf_bridge_shutdown(void) {
     wf_bridge_ready = 0;
 }
 
+/* ------------------------------------------------------------- the ring */
+
+/* The platform's kernel completion ring, behind eight names.
+ *
+ * This is the whole of what the bridge cannot write once.  Everything else in
+ * this unit -- the routing, the helper policy, the in-place wait, the
+ * own-record run, the joins, the window, the statistics and the
+ * `wf__sched_host_*` seam -- is one implementation, and each of the three arms
+ * below is exactly its platform's ring behind these names:
+ *
+ *   start      builds it, or answers that this run has none;
+ *   ready      whether it exists;
+ *   offer      hands it one record, or answers that it has no form for it;
+ *   progress   reaps what is ready, without waiting;
+ *   flush      rings a deferred doorbell before this thread blocks elsewhere;
+ *   park       sleeps on it until an event arrives;
+ *   shutdown   takes it down at process exit;
+ *   submissions / submission_enters, its two counters.
+ *
+ * A platform with no ring answers "no" to all of them and every operation
+ * takes the bounded adapter, which is the Darwin route and the route
+ * WF_IO_NO_NATIVE_RING selects on either of the other two. */
+
+#if defined(__linux__) || defined(_WIN32)
+
 /* WF_IO_NO_NATIVE_RING: run this process on the bounded adapter route.
  *
  * Runtime policy of the same class as WF_IO_NOCACHE and WF_IO_HELPERS, and
@@ -279,28 +323,7 @@ static int wf_bridge_native_ring_refused(void) {
         && text[0] == '1' && text[1] == 0;
 }
 
-/* ------------------------------------------------------------- the ring */
-
-/* The platform's kernel completion ring, behind eight names.
- *
- * This is the whole of what the bridge cannot write once.  Everything else in
- * this unit -- the routing, the helper policy, the in-place wait, the
- * own-record run, the joins, the window, the statistics and the
- * `wf__sched_host_*` seam -- is one implementation, and each of the three arms
- * below is exactly its platform's ring behind these names:
- *
- *   start      builds it, or answers that this run has none;
- *   ready      whether it exists;
- *   offer      hands it one record, or answers that it has no form for it;
- *   progress   reaps what is ready, without waiting;
- *   flush      rings a deferred doorbell before this thread blocks elsewhere;
- *   park       sleeps on it until an event arrives;
- *   shutdown   takes it down at process exit;
- *   submissions / submission_enters, its two counters.
- *
- * A platform with no ring answers "no" to all of them and every operation
- * takes the bounded adapter, which is the Darwin route and the route
- * WF_IO_NO_NATIVE_RING selects on either of the other two. */
+#endif
 
 #if defined(__linux__)
 
@@ -349,10 +372,14 @@ static int wf_bridge_ring_offer(wf_completion_record *record) {
         != WF_LINUX_IO_URING_TARGET_OWNS) {
         /* The kind and shape were both answered before the record was
          * offered, so any other answer is a target-runtime failure. */
-        abort();
+        wf_bridge_fail(
+            "the io_uring target refused a record whose kind and shape it had already accepted"
+        );
     }
     if (wf_linux_io_uring_progress_error(&wf_bridge_linux_adapter) != 0) {
-        abort();
+        wf_bridge_fail(
+            "the io_uring target reported a failure while submitting"
+        );
     }
     return 1;
 }
@@ -372,7 +399,9 @@ static int wf_bridge_ring_progress(void) {
          * duplicate an operation, and ignoring the error would strand its
          * owned operation forever. A target-runtime failure is a fail-stop TCB
          * defect, not a writer-visible IoError. */
-        abort();
+        wf_bridge_fail(
+            "the io_uring target failed while reaping completions"
+        );
     }
     return published != 0;
 }
@@ -393,7 +422,9 @@ static int wf_bridge_ring_park(uint64_t observed_epoch) {
             observed_epoch,
             UINT32_MAX
         ) != 0) {
-        abort();
+        wf_bridge_fail(
+            "the io_uring target failed while parking on the ring"
+        );
     }
     return 1;
 }
@@ -455,7 +486,9 @@ static void wf_bridge_verify_required_ring(void) {
     );
     if (statistics.submissions == 0
         || statistics.completions != statistics.submissions) {
-        abort();
+        wf_bridge_fail(
+            "WF_REQUIRE_WINDOWS_IOCP was set and this run did not complete every operation it submitted to the port"
+        );
     }
 }
 
@@ -492,7 +525,9 @@ static int wf_bridge_ring_start(void) {
     if (wf_bridge_windows_ring_required()) {
         wf_bridge_windows_require_ring = 1u;
         if (atexit(wf_bridge_verify_required_ring) != 0) {
-            abort();
+            wf_bridge_fail(
+                "the completion port's exit-time check could not be registered"
+            );
         }
     }
     return 1;
@@ -570,10 +605,14 @@ static int wf_bridge_ring_offer(wf_completion_record *record) {
     }
     if (wf_windows_iocp_submit(&wf_bridge_windows_adapter, record, handle)
         != WF_WINDOWS_IOCP_TARGET_OWNS) {
-        abort();
+        wf_bridge_fail(
+            "the completion port refused a record whose kind and shape it had already accepted"
+        );
     }
     if (wf_windows_iocp_progress_error(&wf_bridge_windows_adapter) != 0) {
-        abort();
+        wf_bridge_fail(
+            "the completion port reported a failure while submitting"
+        );
     }
     return 1;
 }
@@ -585,7 +624,9 @@ static int wf_bridge_ring_progress(void) {
     }
     if (wf_windows_iocp_progress(&wf_bridge_windows_adapter, 1u, &published)
         != 0) {
-        abort();
+        wf_bridge_fail(
+            "the completion port failed while reaping completions"
+        );
     }
     return published != 0;
 }
@@ -603,7 +644,9 @@ static int wf_bridge_ring_park(uint64_t observed_epoch) {
             observed_epoch,
             UINT32_MAX
         ) != 0) {
-        abort();
+        wf_bridge_fail(
+            "the completion port failed while parking on the port"
+        );
     }
     return 1;
 }
@@ -632,7 +675,12 @@ static uint64_t wf_bridge_ring_submission_enters(void) {
 #else
 
 /* A target with no kernel completion ring in the supported set: its qualified
- * path is the bounded typed adapter, and every one of these answers "no". */
+ * path is the bounded typed adapter, and every one of these answers "no".
+ *
+ * This arm consults WF_IO_NO_NATIVE_RING nowhere, and its reader is not
+ * compiled here: a run on a target with no ring is already the route that
+ * setting selects, so a start that read it could only agree with itself.  The
+ * reader sits above with the two arms that have something to refuse. */
 static int wf_bridge_ring_ready(void) {
     return 0;
 }
@@ -733,7 +781,9 @@ static void wf_bridge_initialize(void) {
 static void wf_bridge_require(void) {
     wf__sched_once(&wf_bridge_once, wf_bridge_initialize);
     if (wf_bridge_ready == 0) {
-        abort();
+        wf_bridge_fail(
+            "the completion bridge could not initialize"
+        );
     }
 }
 
@@ -862,7 +912,9 @@ static void wf_bridge_park(uint64_t observed_epoch) {
                 UINT32_MAX
             );
         if (parked == WF_COMPLETION_PARK_FAILED) {
-            abort();
+            wf_bridge_fail(
+                "the completion runtime's park failed"
+            );
         }
     }
 }
@@ -1038,7 +1090,9 @@ static void wf_bridge_join(wf_completion_record *record) {
 
 static wf_completion_record *wf_bridge_record_of(const void *record) {
     if (record == NULL) {
-        abort();
+        wf_bridge_fail(
+            "a join was given no record"
+        );
     }
     return (wf_completion_record *)(uintptr_t)record;
 }
@@ -1050,7 +1104,9 @@ void wf__completion_file_join(
 ) {
     wf_completion_record *held = wf_bridge_record_of(record);
     if (value == NULL || error_code == NULL) {
-        abort();
+        wf_bridge_fail(
+            "a join was given no place to publish its result"
+        );
     }
     wf_bridge_join(held);
     *value = held->result.value;
@@ -1065,11 +1121,15 @@ void wf__completion_file_open_join(
 ) {
     wf_completion_record *held = wf_bridge_record_of(record);
     if (value == NULL || error_code == NULL || open_outcome == NULL) {
-        abort();
+        wf_bridge_fail(
+            "an open join was given no place to publish its result"
+        );
     }
     wf_bridge_join(held);
     if (held->result.kind != WF_FILE_OPEN_AT) {
-        abort();
+        wf_bridge_fail(
+            "an open join was given a record that is not an open"
+        );
     }
     *value = held->result.value;
     *error_code = held->result.error_code;
@@ -1090,13 +1150,17 @@ void wf__completion_file_status_join(
     if (value == NULL || error_code == NULL || status == NULL
         || status_size == NULL
         || (uint64_t)(size_t)status_capacity != status_capacity) {
-        abort();
+        wf_bridge_fail(
+            "a status join was given no place to publish its result"
+        );
     }
     wf_bridge_join(held);
     if (held->result.kind != WF_FILE_STATUS
         || held->request.operation.status.destination != status
         || held->request.operation.status.capacity != (size_t)status_capacity) {
-        abort();
+        wf_bridge_fail(
+            "a status join was given a record that is not the status it submitted"
+        );
     }
     *value = held->result.value;
     *error_code = held->result.error_code;
@@ -1230,7 +1294,9 @@ static int wf_bridge_positioned_read_runs_on_caller(uint64_t count) {
 static wf_completion_record *wf_bridge_begin(void *record) {
     wf_completion_record *held;
     if (record == NULL) {
-        abort();
+        wf_bridge_fail(
+            "a submit was given no record"
+        );
     }
     wf_bridge_require();
     held = (wf_completion_record *)record;
@@ -1265,7 +1331,9 @@ void wf__completion_file_read_submit(
 ) {
     wf_completion_record *held = wf_bridge_begin(record);
     if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
-        abort();
+        wf_bridge_fail(
+            "a read was submitted with a buffer and a count that do not describe a range"
+        );
     }
     held->request.kind = WF_FILE_READ;
     held->request.operation.read.descriptor = descriptor;
@@ -1305,7 +1373,9 @@ void wf__completion_file_pread_submit(
 ) {
     wf_completion_record *held = wf_bridge_begin(record);
     if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
-        abort();
+        wf_bridge_fail(
+            "a positioned read was submitted with a buffer and a count that do not describe a range"
+        );
     }
     held->request.kind = WF_FILE_PREAD;
     held->request.operation.pread.descriptor = descriptor;
@@ -1341,7 +1411,9 @@ void wf__completion_file_write_submit(
 ) {
     wf_completion_record *held = wf_bridge_begin(record);
     if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
-        abort();
+        wf_bridge_fail(
+            "a write was submitted with a buffer and a count that do not describe a range"
+        );
     }
     /* write_once is an unpositioned Output operation. The native adapter's
      * write request fixes an explicit offset, which would change regular
@@ -1382,7 +1454,9 @@ void wf__completion_file_open_at_submit(
     wf_completion_record *held = wf_bridge_begin(record);
     if (path == NULL || has_mode > 1u
         || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
-        abort();
+        wf_bridge_fail(
+            "an open was submitted with no path, or with a mode or expected kind out of range"
+        );
     }
     /* The name is the submitting frame's own and stays live until the join,
      * so nothing is copied and no length can refuse the completion path
@@ -1410,7 +1484,9 @@ void wf__completion_file_status_submit(
     wf_completion_record *held = wf_bridge_begin(record);
     if (status == NULL
         || (uint64_t)(size_t)status_capacity != status_capacity) {
-        abort();
+        wf_bridge_fail(
+            "a status was submitted with no destination, or with a capacity out of range"
+        );
     }
     held->request.kind = WF_FILE_STATUS;
     held->request.operation.status.descriptor = descriptor;
@@ -1440,7 +1516,9 @@ void wf__completion_directory_next_submit(
     wf_completion_record *held = wf_bridge_begin(record);
     if (position == NULL || (buffer == NULL && count != 0)
         || (uint64_t)(size_t)count != count) {
-        abort();
+        wf_bridge_fail(
+            "a directory read was submitted with no position, or with a buffer and a count that do not describe a range"
+        );
     }
     held->request.kind = WF_FILE_DIRECTORY_NEXT;
     held->request.operation.directory_next.descriptor = descriptor;
@@ -1457,7 +1535,9 @@ void wf__completion_directory_next_submit(
     (void)count;
     (void)position;
     (void)record;
-    abort();
+    wf_bridge_fail(
+        "this target has no directory enumeration facility and no such request may reach this entry"
+    );
 #endif
 }
 

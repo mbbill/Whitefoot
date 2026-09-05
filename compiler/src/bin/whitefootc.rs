@@ -6,26 +6,25 @@ use std::process::{Command, Stdio};
 
 use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, CompilerLimits,
-    FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
-    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, compile_with_io_notices,
-    compile_with_permission_ledger, module_requires_completion_runtime,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER,
+    CompilerLimits, FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
+    compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime, stack_ledger,
 };
 
 #[cfg(not(target_os = "windows"))]
 use whitefoot::{
-    COMPLETION_FILE_POSIX_HEADER, COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
+    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
     FLOOR_RUNTIME_SOURCE, SCHED_PRIM_HOST_SOURCE,
 };
 
 #[cfg(target_os = "windows")]
 use whitefoot::{
-    COMPLETION_FILE_WINDOWS_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_WINDOWS_SOURCE,
-    COMPLETION_WINDOWS_IOCP_HEADER, COMPLETION_WINDOWS_IOCP_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE,
-    SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE,
+    COMPLETION_FILE_WINDOWS_SOURCE, COMPLETION_WAIT_WINDOWS_SOURCE, COMPLETION_WINDOWS_IOCP_SOURCE,
+    FLOOR_WINDOWS_RUNTIME_SOURCE, SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_SOURCE,
 };
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
@@ -67,17 +66,33 @@ const fn unit(relative_path: &'static str, source: &'static str) -> RuntimeUnit 
     }
 }
 
+/// One rule holds for all six lists below, and it is what makes the staged
+/// tree the same shape on every platform: *every header of a group is shared*,
+/// and only the group's `.c` files and its clang input list are this
+/// platform's.
+///
+/// A header is inert -- it is never a clang input, and it reaches the compiler
+/// only when a compiled unit includes it -- so staging one a link will not
+/// open costs a write and nothing else. Staging one a link *does* open is not
+/// optional, and the two are not distinguishable by platform: `bridge.c` is
+/// one shared unit whose `#if` arms name `windows_iocp.h` and
+/// `../windows_runtime.h` in text that a POSIX build never compiles but that
+/// any reader, and `runtime_staging_closes_every_quoted_include`, still walks.
+/// Splitting headers by platform would make that walk answer differently on
+/// two hosts for one set of bytes.
+///
 /// The units every program links, whatever it does: the resource-exhaustion
 /// floor, and on Windows the host runtime whose bootstrap the emitted module
 /// names.
+const FLOOR_SHARED_UNITS: &[RuntimeUnit] = &[unit("windows_runtime.h", WINDOWS_RUNTIME_HEADER)];
+
 #[cfg(not(target_os = "windows"))]
-const FLOOR_UNITS: &[RuntimeUnit] = &[unit("wf_floor.c", FLOOR_RUNTIME_SOURCE)];
+const FLOOR_PLATFORM_UNITS: &[RuntimeUnit] = &[unit("wf_floor.c", FLOOR_RUNTIME_SOURCE)];
 #[cfg(not(target_os = "windows"))]
 const FLOOR_COMPILE_UNITS: &[&str] = &["wf_floor.c"];
 
 #[cfg(target_os = "windows")]
-const FLOOR_UNITS: &[RuntimeUnit] = &[
-    unit("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+const FLOOR_PLATFORM_UNITS: &[RuntimeUnit] = &[
     unit("wf_floor_windows.c", FLOOR_WINDOWS_RUNTIME_SOURCE),
     unit("windows_runtime.c", WINDOWS_RUNTIME_SOURCE),
 ];
@@ -107,13 +122,19 @@ const CORE_PLATFORM_UNITS: &[RuntimeUnit] =
 #[cfg(target_os = "windows")]
 const CORE_COMPILE_UNITS: &[&str] = &["sched/core.c", "sched/prim_windows.c", "sched/entry.c"];
 
-/// The completion runtime: one wake epoch, one bridge, one file adapter, and
-/// per platform the wait set, the host leaf of the adapter, and the kernel
-/// completion ring.
+/// The completion runtime: one wake epoch, one bridge, one file adapter, every
+/// platform's header, and per platform the wait set, the host leaf of the
+/// adapter, and the kernel completion ring.
 const COMPLETION_SHARED_UNITS: &[RuntimeUnit] = &[
     unit("completion/contract.h", COMPLETION_CONTRACT_HEADER),
     unit("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
     unit("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+    unit("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+    unit(
+        "completion/linux_io_uring.h",
+        COMPLETION_LINUX_IO_URING_HEADER,
+    ),
+    unit("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
     unit("completion/runtime.c", COMPLETION_RUNTIME_SOURCE),
     unit("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
     unit("completion/bridge.c", COMPLETION_BRIDGE_SOURCE),
@@ -121,11 +142,6 @@ const COMPLETION_SHARED_UNITS: &[RuntimeUnit] = &[
 
 #[cfg(not(target_os = "windows"))]
 const COMPLETION_PLATFORM_UNITS: &[RuntimeUnit] = &[
-    unit("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
-    unit(
-        "completion/linux_io_uring.h",
-        COMPLETION_LINUX_IO_URING_HEADER,
-    ),
     unit("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
     unit("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
     unit(
@@ -145,7 +161,6 @@ const COMPLETION_COMPILE_UNITS: &[&str] = &[
 
 #[cfg(target_os = "windows")]
 const COMPLETION_PLATFORM_UNITS: &[RuntimeUnit] = &[
-    unit("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
     unit("completion/wait_windows.c", COMPLETION_WAIT_WINDOWS_SOURCE),
     unit("completion/file_windows.c", COMPLETION_FILE_WINDOWS_SOURCE),
     unit("completion/windows_iocp.c", COMPLETION_WINDOWS_IOCP_SOURCE),
@@ -356,7 +371,8 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
 /// second, and each of the three groups a shared part plus this platform's
 /// leaves.
 fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'static str>) {
-    let mut staged: Vec<RuntimeUnit> = FLOOR_UNITS.to_vec();
+    let mut staged: Vec<RuntimeUnit> = FLOOR_SHARED_UNITS.to_vec();
+    staged.extend_from_slice(FLOOR_PLATFORM_UNITS);
     let mut compiled: Vec<&'static str> = FLOOR_COMPILE_UNITS.to_vec();
     if core {
         staged.extend_from_slice(CORE_SHARED_UNITS);
@@ -706,7 +722,10 @@ mod tests {
         assert!(!module_requires_parallel_runtime(plain));
         assert!(!module_requires_completion_runtime(plain));
         let (staged, compiled) = runtime_units(false, false);
-        assert_eq!(staged.len(), super::FLOOR_UNITS.len());
+        assert_eq!(
+            staged.len(),
+            super::FLOOR_SHARED_UNITS.len() + super::FLOOR_PLATFORM_UNITS.len()
+        );
         assert_eq!(compiled, super::FLOOR_COMPILE_UNITS.to_vec());
 
         let layout = compile_parallel_fixture("tests/programs/par_layout.wf", PAR_LAYOUT);
