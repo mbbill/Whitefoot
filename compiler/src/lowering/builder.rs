@@ -287,8 +287,11 @@ fn lower_nominals(
                         })
                         .collect::<Result<Vec<_>, LoweringFailure>>()?,
                 },
-                CheckedNominalKind::Box { referent } => IrNominalKind::Box {
+                CheckedNominalKind::Box {
+                    referent, release, ..
+                } => IrNominalKind::Box {
                     referent: lower_type(erasure, *referent)?,
+                    release: lower_release_class(*release),
                 },
                 CheckedNominalKind::Arena { content, .. } => IrNominalKind::Arena {
                     content: lower_type(erasure, *content)?,
@@ -1067,8 +1070,31 @@ impl<'program> IrBuilder<'program> {
                 } => {
                     let aggregate = self.expression(expression)?;
                     self.note_call_result(expression, aggregate)?;
-                    if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
+                    let erased = self.erased(*nominal);
+                    if self.value_type(aggregate)? != IrType::Nominal(erased) {
                         return Err(LoweringFailure::InvalidCheckedProgram);
+                    }
+                    // [S39] a cell's one binder is its referent, loaded out
+                    // while the cell's own storage is released.
+                    if let Some(IrNominalKind::Box { .. }) =
+                        self.nominals.get(erased.index()).map(IrNominal::kind)
+                    {
+                        let [(binding, ty)] = bindings.as_slice() else {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        };
+                        let referent = lower_type(self.erasure, *ty)?;
+                        let value = self.define(
+                            referent,
+                            IrOperation::BoxTake {
+                                nominal: erased,
+                                value: aggregate,
+                            },
+                        )?;
+                        if self.bindings.insert(*binding, value).is_some() {
+                            return Err(LoweringFailure::InvalidCheckedProgram);
+                        }
+                        self.promote_binding_if_needed(*binding)?;
+                        continue;
                     }
                     for (ordinal, (binding, ty)) in bindings.iter().enumerate() {
                         let field = u32::try_from(ordinal)
@@ -1862,7 +1888,7 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::BoxDeref { nominal, value, .. } => {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);
-                let IrNominalKind::Box { referent } = self
+                let IrNominalKind::Box { referent, .. } = self
                     .nominals
                     .get(nominal.index())
                     .ok_or(LoweringFailure::InvalidCheckedProgram)?

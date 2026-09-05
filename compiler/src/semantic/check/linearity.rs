@@ -68,9 +68,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Vector { release, .. } => {
                 release == super::super::model::CheckedReleaseClass::General
             }
-            CheckedType::Nominal(id) => {
-                matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. })
-            }
+            // A cell is released to the store its own region names [S39]: a
+            // general store's cell frees, a bump extent's is reclaimed by
+            // its region's own reset, and the ambient heap's `box<T>` is
+            // released to a store that is not a value at all.
+            CheckedType::Nominal(id) => matches!(
+                self.nominal(id)?.kind,
+                CheckedNominalKind::Box {
+                    release: super::super::model::CheckedReleaseClass::General,
+                    ..
+                }
+            ),
             _ => false,
         })
     }
@@ -116,7 +124,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
                 .collect(),
-            CheckedNominalKind::Box { referent } => vec![*referent],
+            CheckedNominalKind::Box { referent, .. } => vec![*referent],
             CheckedNominalKind::Arena { content, .. } => vec![*content],
             CheckedNominalKind::ArenaStorage | CheckedNominalKind::SystemResource { .. } => {
                 Vec::new()
@@ -226,14 +234,28 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
         let mut stores = Vec::new();
         for node in self.release_graph_nodes(ty)? {
-            if let CheckedType::Vector {
-                region,
-                release: super::super::model::CheckedReleaseClass::General,
-                ..
-            } = node
-                && !stores.contains(&region)
+            let store = match node {
+                CheckedType::Vector {
+                    region,
+                    release: super::super::model::CheckedReleaseClass::General,
+                    ..
+                } => Some(region),
+                // [S39] a cell branded to a general store spends that
+                // store's capability exactly as a run branded to it does.
+                CheckedType::Nominal(id) => match self.nominal(id)?.kind {
+                    CheckedNominalKind::Box {
+                        region: Some(region),
+                        release: super::super::model::CheckedReleaseClass::General,
+                        ..
+                    } => Some(region),
+                    _ => None,
+                },
+                _ => None,
+            };
+            if let Some(store) = store
+                && !stores.contains(&store)
             {
-                stores.push(region);
+                stores.push(store);
             }
         }
         Ok(stores)

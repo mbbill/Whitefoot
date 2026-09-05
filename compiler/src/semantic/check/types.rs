@@ -473,7 +473,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 CheckedType::Nominal(id) => match &self.nominal(id)?.kind {
                     CheckedNominalKind::Arena { .. } => return Ok(true),
-                    CheckedNominalKind::Box { referent } => pending.push(*referent),
+                    CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
                     CheckedNominalKind::Struct { fields } => {
                         pending.extend(fields.iter().map(|field| field.ty));
                     }
@@ -676,6 +676,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             crate::ContainerShape::Heap => "Heap with no further argument",
             crate::ContainerShape::Arena => "Arena<'s, bytes, align> with two constants",
+            crate::ContainerShape::Box => "Box<'s, T> with one referent type",
         };
         let mismatch = |found: &str| -> Result<CheckedType, CheckStop> {
             self.issue_node(
@@ -763,6 +764,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 Ok(CheckedType::Heap {
                     region: written_region.unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION),
                 })
+            }
+            // [S39] one store-resident cell. Its referent is any nameable
+            // type — the element domain's flat restriction is [BLK-1]'s and
+            // belongs to a run's slots, not to a cell — and its region is the
+            // store brand [PROV-1] resolves exactly as a run's.
+            crate::ContainerShape::Box => {
+                let [referent] = rest else {
+                    return mismatch("a Box type-argument list of a different length");
+                };
+                let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)?
+                else {
+                    return mismatch("a const argument in the Box referent position");
+                };
+                let referent = self.parse_type_with(referent_node, substitution)?;
+                let region = written_region.unwrap_or_else(|| self.elided_store_region());
+                self.store_box_nominal(region, referent)
+                    .map(CheckedType::Nominal)
             }
             crate::ContainerShape::Arena => {
                 let [bytes, align] = rest else {

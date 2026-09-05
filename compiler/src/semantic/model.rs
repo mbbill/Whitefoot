@@ -784,8 +784,18 @@ pub(crate) enum CheckedNominalKind {
     Enum {
         variants: Vec<CheckedVariant>,
     },
+    /// One boxed cell. `region` is `None` for the ambient-heap `box<T>`
+    /// [STOR-2] and `Some(store)` for the store-branded `Box<'s, T>` [S39],
+    /// whose region is a component of its type exactly as a run's is
+    /// [PROV-1] and whose release class that region decides [PROV-6].
     Box {
         referent: CheckedType,
+        region: Option<DeclarationId>,
+        /// [PROV-6] which release action this cell's own reclamation is, read
+        /// off `region` at the moment the nominal is interned. The ambient
+        /// heap's `box<T>` and a general store's cell both free; a bump
+        /// extent's cell is reclaimed by its region's own reset.
+        release: CheckedReleaseClass,
     },
     /// One `arena<'r, T>` instance [STOR-1, STOR-2]. The region is part of
     /// the type's identity, so `arena<'r, T>` and `arena<'s, T>` are two

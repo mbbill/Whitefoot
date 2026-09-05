@@ -501,13 +501,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // the operand's borrow and the viewed place rather than a
             // `fieldinit_list`, so their three shapes never reach this
             // argument path.
-            KernelShape::Viewable | KernelShape::Slice | KernelShape::MutSlice => {
-                Err(SemanticCompilerFailure::InvalidResolution.into())
-            }
+            KernelShape::Viewable
+            | KernelShape::Slice
+            | KernelShape::MutSlice
+            // No row takes a cell or an outcome as an operand [S39].
+            | KernelShape::Box
+            | KernelShape::ResultBox => Err(SemanticCompilerFailure::InvalidResolution.into()),
             KernelShape::U64 => Ok(CheckedType::Integer(IntegerType::U64)),
-            KernelShape::Element => instance
-                .element
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into()),
+            // `T` is written on every row that has no operand of this shape,
+            // and supplied by this operand on the two cell formations [S39],
+            // where the value the cell takes is what fixes it [BLK-0].
+            KernelShape::Element => match instance.element {
+                Some(element) => Ok(element),
+                None => {
+                    let actual = argument.expression.ty();
+                    if self.checked_type_is_region_bearing(actual)?
+                        || self.is_loan_bearing(actual)?
+                    {
+                        return self.issue_node(
+                            SemanticRule::Stor5,
+                            atom,
+                            SemanticIssueKind::RegionBearingStorage {
+                                mechanical_fix:
+                                    "keep the slice, arena, or provider as a direct local, \
+                                     parameter, or result; do not store it inside another value",
+                            },
+                        );
+                    }
+                    instance.element = Some(actual);
+                    Ok(actual)
+                }
+            },
             // `V` is supplied by the `vector` operand and never written
             // [BLK-3]; its admitted arguments are exactly the two runs, and
             // its element type is that run's own.
@@ -711,6 +735,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.prelude_nominal(super::super::super::PreludeType::Option(payload))?,
                 )
             }
+            // [S39] one store-resident cell, and the outcome of forming one.
+            // The refusal arm carries the value the row consumed, so the
+            // outcome is a `Result<Box<'s, T>, T>` rather than an `Option`.
+            KernelShape::Box => {
+                CheckedType::Nominal(self.store_box_nominal(region()?, instance.element)?)
+            }
+            KernelShape::ResultBox => {
+                let cell =
+                    CheckedType::Nominal(self.store_box_nominal(region()?, instance.element)?);
+                CheckedType::Nominal(self.prelude_nominal(
+                    super::super::super::PreludeType::Result(cell, instance.element),
+                )?)
+            }
             KernelShape::Extent => CheckedType::Extent {
                 region: region()?,
                 bytes: instance
@@ -819,6 +856,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 goal_arguments,
                 ordinal,
             ),
+            KernelOffset::AdvanceCell => {
+                super::super::super::super::kernel::kernel_cell_advance(instance)
+            }
         };
         if !matches!(term.operand, KernelOperand::Zero) {
             return match displacement {
@@ -865,6 +905,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             ordinal,
                         )
                         .is_some()
+                    }
+                    KernelOffset::AdvanceCell => {
+                        super::super::super::super::kernel::kernel_cell_advance(instance).is_some()
                     }
                 })
         })

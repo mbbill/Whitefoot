@@ -13,7 +13,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         if ty != IrType::Nominal(nominal) {
             return Err(BackendFailure::InvalidIr);
         }
-        let IrNominalKind::Box { referent } = self.nominal(nominal)?.kind() else {
+        let IrNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind() else {
             return Err(BackendFailure::InvalidIr);
         };
         if self.value_type(value) != Some(*referent) {
@@ -37,6 +37,43 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// [S39, PROV-6] the destructuring consume of one cell: the referent is
+    /// loaded out and the cell's own storage is released, which is a free on
+    /// a general store and nothing at all on a bump extent, whose region
+    /// reset reclaims the whole reservation.
+    pub(super) fn emit_box_take(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        nominal: IrNominalId,
+        value: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        let IrNominalKind::Box { referent, release } = self.nominal(nominal)?.kind() else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if ty != *referent || self.value_type(value) != Some(IrType::Nominal(nominal)) {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let release = *release;
+        writeln!(
+            self.output,
+            "  {} = load {}, ptr {}",
+            self.value_name(result),
+            llvm_type(self.program, ty)?,
+            self.value_name(value)
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        if release == crate::IrReleaseClass::General {
+            writeln!(
+                self.output,
+                "  call void @free(ptr {})",
+                self.value_name(value)
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+        }
+        Ok(())
+    }
+
     pub(super) fn emit_box_deref(
         &mut self,
         result: IrValueId,
@@ -44,7 +81,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         nominal: IrNominalId,
         value: IrValueId,
     ) -> Result<(), BackendFailure> {
-        let IrNominalKind::Box { referent } = self.nominal(nominal)?.kind() else {
+        let IrNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind() else {
             return Err(BackendFailure::InvalidIr);
         };
         if ty != *referent || self.value_type(value) != Some(IrType::Nominal(nominal)) {

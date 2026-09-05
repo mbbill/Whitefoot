@@ -544,7 +544,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let CheckedType::Nominal(nominal) = nested.ty() else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
-                let CheckedNominalKind::Box { referent } = self.nominal(nominal)?.kind else {
+                let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
                 (

@@ -194,6 +194,93 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// [S39] one cell formation: the store's take of one cell's bytes, the
+    /// move of the value into it, and the outcome that carries either.
+    ///
+    /// The store's answer decides the arm, so this is the one kernel row
+    /// whose emission branches: the value is written into the cell only on
+    /// the arm where the store gave one, and it is handed back in the
+    /// refusal's own payload on the other. Both payload fields of the
+    /// outcome are written and the tag decides which the release walk and
+    /// every reader select [PRE-1].
+    pub(super) fn emit_store_box(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        cell: crate::IrStoreBox,
+    ) -> Result<(), BackendFailure> {
+        let crate::IrStoreBox {
+            store,
+            value,
+            bytes,
+            extent,
+            outcome,
+        } = cell;
+        if self.value_type(store) != Some(IrType::Address(crate::IrAddressed::Provider)) {
+            return Err(BackendFailure::InvalidIr);
+        }
+        if ty != IrType::Nominal(outcome.nominal) {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let referent_type = llvm_type(
+            self.program,
+            self.value_type(value).ok_or(BackendFailure::InvalidIr)?,
+        )?;
+        let provider = llvm_type(self.program, IrType::Provider)?;
+        let address = self.value_name(store);
+        // A zero-byte cell still needs one distinct address to store into.
+        let request = bytes.max(1);
+        let (pointer, taken) = match extent {
+            Some(extent) => {
+                let count = "1".to_owned();
+                let (pointer, _, taken) =
+                    self.emit_bump_take(&address, &provider, &count, request, extent)?;
+                (pointer, taken)
+            }
+            None => {
+                let raw = self.next_temporary()?;
+                let supplied = self.next_temporary()?;
+                writeln!(
+                    self.output,
+                    "  %{raw} = call ptr @malloc(i64 {request})\n  %{supplied} = icmp ne ptr %{raw}, null",
+                )
+                .map_err(|_| BackendFailure::TextEmission)?;
+                (format!("%{raw}"), format!("%{supplied}"))
+            }
+        };
+        let made = format!("box.made.v{}", result.ordinal());
+        let refused = format!("box.refused.v{}", result.ordinal());
+        let joined = super::store_box_join_label(result);
+        writeln!(
+            self.output,
+            "  br i1 {taken}, label %{made}, label %{refused}\n\
+             {made}:\n  store {referent_type} {}, ptr {pointer}\n  br label %{joined}\n\
+             {refused}:\n  br label %{joined}\n\
+             {joined}:",
+            self.value_name(value),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let outcome_type = llvm_type(self.program, ty)?;
+        let variants = self.refusal_variants(outcome)?;
+        let ok_field = variant_field_base(&variants, outcome.made)?;
+        let err_field = variant_field_base(&variants, outcome.refused)?;
+        let tag = self.next_temporary()?;
+        let tagged = self.next_temporary()?;
+        let carried = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{tag} = phi i32 [ {}, %{made} ], [ {}, %{refused} ]\n  \
+             %{tagged} = insertvalue {outcome_type} zeroinitializer, i32 %{tag}, 0\n  \
+             %{carried} = insertvalue {outcome_type} %{tagged}, ptr {pointer}, {ok_field}\n  \
+             {} = insertvalue {outcome_type} %{carried}, {referent_type} {}, {err_field}",
+            outcome.made,
+            outcome.refused,
+            self.value_name(result),
+            self.value_name(value),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
     /// The bump take: the cursor advance, the refusal condition, and the
     /// store's own new state.
     ///

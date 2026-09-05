@@ -1163,7 +1163,7 @@ inside the `region` block whose region it takes",
             return Ok(None);
         };
         let content = match self.nominal(nominal)?.kind {
-            CheckedNominalKind::Box { referent } => OwnedContent::Boxed(referent),
+            CheckedNominalKind::Box { referent, .. } => OwnedContent::Boxed(referent),
             CheckedNominalKind::Arena { region, content } => OwnedContent::Arena {
                 source: region,
                 content,
@@ -1677,7 +1677,7 @@ and name it on the returned reborrow"
         let CheckedType::Nominal(nominal) = ty else {
             return Ok(false);
         };
-        let CheckedNominalKind::Box { referent } = self.nominal(nominal)?.kind else {
+        let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind else {
             return Ok(false);
         };
         self.satisfies_requirement(referent, required)

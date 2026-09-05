@@ -301,7 +301,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     );
                 };
                 match self.nominal(nominal)?.kind {
-                    CheckedNominalKind::Box { referent } => {
+                    CheckedNominalKind::Box { referent, .. } => {
                         inner.expression = CheckedExpression::BoxDeref {
                             carrier: self.tree.path(carrier)?.clone(),
                             nominal,

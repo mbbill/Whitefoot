@@ -162,6 +162,25 @@ pub struct IrExtentConstants {
     pub align: u64,
 }
 
+/// [S39] one cell formation: the store's own take, the value the cell takes,
+/// and the outcome that carries either.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrStoreBox {
+    /// The `&uniq` provider operand's address.
+    pub store: IrValueId,
+    /// The value the cell takes, consumed by this operation.
+    pub value: IrValueId,
+    /// The bytes one cell occupies, which is one stride rounded up to the
+    /// store's own alignment where it has one [OP-9].
+    pub bytes: u64,
+    /// `Some` for a bump extent, whose take is a cursor advance inside the
+    /// reservation; `None` for the general store, which is asked.
+    pub extent: Option<IrExtentConstants>,
+    /// The `Result<Box<'s, T>, T>` the row hands back: `made` is the `Ok`
+    /// tag and `refused` the `Err` tag.
+    pub outcome: IrRefusal,
+}
+
 /// The `Option` a refusing [BLK-2] row hands back, by the tags [PRE-1] gives
 /// its two variants.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -284,7 +303,7 @@ pub enum IrType {
     Provider,
 }
 
-const fn lower_release_class(value: crate::semantic::CheckedReleaseClass) -> IrReleaseClass {
+pub(crate) const fn lower_release_class(value: crate::semantic::CheckedReleaseClass) -> IrReleaseClass {
     match value {
         crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
         crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
@@ -444,6 +463,11 @@ pub enum IrNominalKind {
     },
     Box {
         referent: IrType,
+        /// [PROV-6, S39] which release action this cell's own reclamation is.
+        /// The ambient-heap `box<T>` [STOR-2] and a `Box<'s, T>` at a general
+        /// store both free their cell; a `Box<'s, T>` at a bump extent is
+        /// reclaimed by its region's own reset and has no action of its own.
+        release: IrReleaseClass,
     },
     /// One `arena<'r, T>` instance: a pointer-shaped handle to region-owned
     /// heap content, released with its region rather than with an owner
@@ -1020,6 +1044,8 @@ pub enum IrOperation {
     /// nothing to give; a row whose domain requirement is proved carries
     /// none and always succeeds.
     StoreTake(IrStoreTake),
+    /// [S39] one cell formation over a store.
+    StoreBox(IrStoreBox),
     /// [MSR-1] one measure of a run or a bump extent, read as its [OP-1]
     /// reader row loads it. A cell the measure table fixes as a constant
     /// never reaches here.
@@ -1105,6 +1131,13 @@ pub enum IrOperation {
         target_domain: IrTargetDomainObligation,
     },
     BoxNew {
+        nominal: IrNominalId,
+        value: IrValueId,
+    },
+    /// [S39] the destructuring consume of a cell: its referent is loaded out
+    /// and its own storage is released, which is a free on a general store
+    /// and nothing on a bump extent.
+    BoxTake {
         nominal: IrNominalId,
         value: IrValueId,
     },

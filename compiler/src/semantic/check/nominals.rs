@@ -155,6 +155,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Err(CheckStop::DeferredNominal)
     }
 
+    /// [S39] the `Box<'s, T>` nominal for one (store region, referent), or
+    /// the deferral that interns it.
+    pub(super) fn store_box_nominal(
+        &self,
+        region: crate::DeclarationId,
+        referent: CheckedType,
+    ) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.store_box_nominals.get(&(region, referent)) {
+            return Ok(*id);
+        }
+        self.pending_nominals
+            .borrow_mut()
+            .push(PendingNominal::StoreBox(region, referent));
+        Err(CheckStop::DeferredNominal)
+    }
+
     pub(super) fn intern_box_nominal(
         &mut self,
         referent: CheckedType,
@@ -170,7 +186,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.nominals.push(CheckedNominal {
             id,
             name,
-            kind: CheckedNominalKind::Box { referent },
+            kind: CheckedNominalKind::Box {
+                referent,
+                region: None,
+                release: super::super::model::CheckedReleaseClass::General,
+            },
             linear: false,
         });
         self.nominal_nodes.push(None);
@@ -178,6 +198,49 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.source_nominal_instances.push(None);
         self.prelude_types.push(None);
         if self.box_nominals.insert(referent, id).is_some() {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        }
+        Ok(id)
+    }
+
+    /// [S39] one `Box<'s, T>` instance, interned per (store region, referent).
+    ///
+    /// The region is a component of the type's name exactly as a run's is
+    /// [PROV-1], so two stores give two nominals, and the release class the
+    /// walk selects is read off that region alone [PROV-6].
+    pub(super) fn intern_store_box_nominal(
+        &mut self,
+        region: crate::DeclarationId,
+        referent: CheckedType,
+    ) -> Result<NominalId, CheckStop> {
+        if let Some(id) = self.store_box_nominals.get(&(region, referent)) {
+            return Ok(*id);
+        }
+        let release = self.vector_release_class(region)?;
+        let id = NominalId(
+            u32::try_from(self.nominals.len())
+                .map_err(|_| SemanticCompilerFailure::CounterOverflow)?,
+        );
+        let name = format!("Box<{}>", self.checked_type_name(referent)?);
+        self.nominals.push(CheckedNominal {
+            id,
+            name,
+            kind: CheckedNominalKind::Box {
+                referent,
+                region: Some(region),
+                release,
+            },
+            linear: false,
+        });
+        self.nominal_nodes.push(None);
+        self.nominal_states.push(2);
+        self.source_nominal_instances.push(None);
+        self.prelude_types.push(None);
+        if self
+            .store_box_nominals
+            .insert((region, referent), id)
+            .is_some()
+        {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         }
         Ok(id)

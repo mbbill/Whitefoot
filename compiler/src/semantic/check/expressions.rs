@@ -1991,6 +1991,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 crate::ContainerShape::Heap | crate::ContainerShape::Arena => {
                     "receive the provider as a parameter"
                 }
+                crate::ContainerShape::Box => "form the cell with heap_box or arena_box",
             };
             return self.issue_node(
                 SemanticRule::Blk1,

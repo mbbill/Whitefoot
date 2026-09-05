@@ -352,6 +352,8 @@ struct ConstructorShape {
 enum PendingNominal {
     /// [STOR-2] a box over this referent.
     Box(CheckedType),
+    /// [S39] a `Box<'s, T>` over this store region and referent.
+    StoreBox(DeclarationId, CheckedType),
     /// The compiler-owned result-list nominal of a [BLK-0] row that declares
     /// an ordered result list [CALL-4]. A row's list is fixed by its own
     /// instance and has no written form for the interning pass to find.
@@ -664,6 +666,8 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
+    /// [S39] one `Box<'s, T>` nominal per (store region, referent).
+    store_box_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
     /// `arena<'r, T>` instances by (region declaration, content type): the
     /// region is part of the type's identity [OWN-3, STOR-4].
     arena_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
@@ -1186,6 +1190,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             nominal_states: Vec::new(),
             source_nominal_instances: Vec::new(),
             box_nominals: HashMap::new(),
+            store_box_nominals: HashMap::new(),
             arena_nominals: HashMap::new(),
             result_list_nominals: HashMap::new(),
             arena_storage_nominal: None,
@@ -1736,6 +1741,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         match nominal {
                             PendingNominal::Box(referent) => {
                                 self.intern_box_nominal(referent)?;
+                            }
+                            PendingNominal::StoreBox(region, referent) => {
+                                self.intern_store_box_nominal(region, referent)?;
                             }
                             PendingNominal::ResultList(results) => {
                                 self.intern_result_list_nominal(&results)?;

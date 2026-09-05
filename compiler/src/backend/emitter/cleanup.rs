@@ -245,7 +245,7 @@ fn program_types(program: &IrProgram<'_, '_, '_>) -> Vec<IrType> {
                         .map(|field| field.ty()),
                 );
             }
-            IrNominalKind::Box { referent } => types.push(*referent),
+            IrNominalKind::Box { referent, .. } => types.push(*referent),
             IrNominalKind::Arena { content } => types.push(*content),
             IrNominalKind::ArenaStorage | IrNominalKind::SystemResource(_) => {}
         }
@@ -310,13 +310,32 @@ pub(super) fn type_requires_cleanup(
                 pending.push(element.ty());
             }
             IrType::Provider => {}
+            // [S39] a cell needs a release exactly when its own storage or
+            // its referent does: a bump extent's cell whose referent derives
+            // nothing needs no walk at all.
+            IrType::Nominal(id)
+                if matches!(
+                    program.nominal(id).map(|nominal| nominal.kind()),
+                    Some(IrNominalKind::Box {
+                        release: IrReleaseClass::General,
+                        ..
+                    })
+                ) =>
+            {
+                return Ok(true);
+            }
             IrType::Nominal(id)
                 if matches!(
                     program.nominal(id).map(|nominal| nominal.kind()),
                     Some(IrNominalKind::Box { .. })
                 ) =>
             {
-                return Ok(true);
+                let Some(IrNominalKind::Box { referent, .. }) =
+                    program.nominal(id).map(|nominal| nominal.kind())
+                else {
+                    return Err(BackendFailure::InvalidIr);
+                };
+                pending.push(*referent);
             }
             IrType::Nominal(id) if visited.insert(id) => {
                 let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
@@ -494,7 +513,11 @@ fn emit_cleanup_jobs(
                                 &operand,
                             )?;
                         }
-                        IrNominalKind::Box { referent } => {
+                        // [PROV-6, S39] the referent is released first and
+                        // the cell's own storage after it: a general store's
+                        // cell frees, and a bump extent's is reclaimed by its
+                        // region's own reset and has no action of its own.
+                        IrNominalKind::Box { referent, release } => {
                             let loaded = next_temporary(temporary)?;
                             writeln!(
                                 output,
@@ -502,7 +525,9 @@ fn emit_cleanup_jobs(
                                 llvm_type(program, *referent)?
                             )
                             .map_err(|_| BackendFailure::TextEmission)?;
-                            jobs.push(CleanupJob::FreePointer(operand));
+                            if *release == IrReleaseClass::General {
+                                jobs.push(CleanupJob::FreePointer(operand));
+                            }
                             jobs.push(CleanupJob::Value {
                                 ty: *referent,
                                 operand: format!("%{loaded}"),

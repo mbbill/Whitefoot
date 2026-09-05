@@ -332,6 +332,9 @@ impl Analyzer<'_, '_> {
                         &goal_arguments,
                         ordinal,
                     ),
+                    KernelOffset::AdvanceCell => {
+                        super::super::super::kernel::kernel_cell_advance(&instance)
+                    }
                 };
                 let Some(bounds) = relation.bounds(displacement) else {
                     continue;

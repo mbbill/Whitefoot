@@ -1326,7 +1326,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     StableCheckedType::System(system)
                 } else {
                     match kind {
-                        CheckedNominalKind::Box { referent } => {
+                        CheckedNominalKind::Box { referent, .. } => {
                             let Some(referent) = self.stabilize_type(
                                 referent,
                                 nominal_checkpoint,

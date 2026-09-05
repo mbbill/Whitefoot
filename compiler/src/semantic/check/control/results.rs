@@ -167,12 +167,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<StatementResult, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let written = usage.spelling().to_owned();
-        let ResolvedTarget::Source {
-            declaration: nominal_declaration,
-            ..
-        } = usage.target()
-        else {
-            return self.destructuring_shape_rejection(node, &written);
+        // [S39] the one compiler-owned nominal this statement takes apart is
+        // the cell, whose one field is its referent: the destructuring is
+        // what takes the value out and releases the cell, and it is the
+        // existing statement rather than a new operation.
+        let cell = matches!(usage.target(), ResolvedTarget::Container(id)
+            if crate::container_nominal(id)
+                .is_some_and(|entry| entry.shape == crate::ContainerShape::Box));
+        let source_declaration = match usage.target() {
+            ResolvedTarget::Source { declaration, .. } => Some(declaration),
+            _ if cell => None,
+            _ => return self.destructuring_shape_rejection(node, &written),
         };
         let value =
             self.check_consumed_place(function, node, place, bindings, scope.loops.len(), true)?;
@@ -188,13 +193,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let CheckedType::Nominal(nominal) = value.expression.ty() else {
             return self.destructuring_shape_rejection(node, &written);
         };
-        if !self.nominal_instantiates(nominal, nominal_declaration)? {
+        if let Some(nominal_declaration) = source_declaration
+            && !self.nominal_instantiates(nominal, nominal_declaration)?
+        {
             return self.destructuring_shape_rejection(node, &written);
         }
-        let CheckedNominalKind::Struct { fields } = &self.nominal(nominal)?.kind else {
-            return self.destructuring_shape_rejection(node, &written);
+        let fields = match &self.nominal(nominal)?.kind {
+            CheckedNominalKind::Struct { fields } if !cell => fields.clone(),
+            CheckedNominalKind::Box {
+                referent,
+                region: Some(_),
+                ..
+            } if cell => vec![super::super::super::model::CheckedField {
+                name: "value".to_owned(),
+                ty: *referent,
+            }],
+            _ => return self.destructuring_shape_rejection(node, &written),
         };
-        let fields = fields.clone();
         let binders = match self
             .tree
             .first_child_with(node, Production::FieldbindList)?
@@ -525,7 +540,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let referent = if local.mode != CheckedMode::Own {
             Some(local.ty)
         } else if let CheckedType::Nominal(nominal) = local.ty
-            && let CheckedNominalKind::Box { referent } = self.nominal(nominal)?.kind
+            && let CheckedNominalKind::Box { referent, .. } = self.nominal(nominal)?.kind
         {
             Some(referent)
         } else {

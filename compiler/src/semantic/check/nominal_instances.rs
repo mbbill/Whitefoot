@@ -1251,7 +1251,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(CheckedType::Nominal(existing));
         }
         match &self.nominal(id)?.kind {
-            CheckedNominalKind::Box { referent } => {
+            CheckedNominalKind::Box { referent, .. } => {
                 let substituted = self.substitute_type_regions(*referent, regions)?;
                 if substituted == *referent {
                     return Ok(CheckedType::Nominal(id));
@@ -1333,8 +1333,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // to read for them.
         match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
             (
-                CheckedNominalKind::Box { referent: left },
-                CheckedNominalKind::Box { referent: right },
+                CheckedNominalKind::Box { referent: left, .. },
+                CheckedNominalKind::Box { referent: right, .. },
             )
             | (
                 CheckedNominalKind::Arena { content: left, .. },

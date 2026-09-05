@@ -60,7 +60,7 @@ pub struct ContainerNominal {
     pub shape: ContainerShape,
 }
 
-/// The four compiler-owned nominal shapes [TYPE-2].
+/// The five compiler-owned nominal shapes [TYPE-2].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum ContainerShape {
     /// `Vector<'s, T>`: a store-resident run [BLK-1].
@@ -71,10 +71,14 @@ pub enum ContainerShape {
     Heap,
     /// `Arena<'s, bytes, align>`: a bump extent's provider [PROV-1].
     Arena,
+    /// `Box<'s, T>`: one store-resident value [S39]. It is store-branded
+    /// exactly as `Vector<'s, T>` is and carries no measure at all, a cell
+    /// being never empty.
+    Box,
 }
 
-/// The four container and provider nominals, in [TYPE-2] order.
-pub const CONTAINER_NOMINALS: [ContainerNominal; 4] = [
+/// The five container and provider nominals, in [TYPE-2] order.
+pub const CONTAINER_NOMINALS: [ContainerNominal; 5] = [
     ContainerNominal {
         spelling: "Vector",
         shape: ContainerShape::Vector,
@@ -90,6 +94,10 @@ pub const CONTAINER_NOMINALS: [ContainerNominal; 4] = [
     ContainerNominal {
         spelling: "Arena",
         shape: ContainerShape::Arena,
+    },
+    ContainerNominal {
+        spelling: "Box",
+        shape: ContainerShape::Box,
     },
 ];
 
@@ -108,6 +116,10 @@ pub enum KernelRow {
     ArenaVectorProved,
     /// `heap_vector<T>['s](store, count)` [BLK-2].
     HeapVector,
+    /// `arena_box<T, const bytes, const align>['s](store, value)` [BLK-2, S39].
+    ArenaBox,
+    /// `heap_box<T>['s](store, value)` [BLK-2, S39].
+    HeapBox,
     /// `arena_frame<const bytes, const align>['s]()` [BLK-2].
     ArenaFrame,
     /// `place_back(vector, value)` [BLK-3].
@@ -140,8 +152,8 @@ pub struct KernelOperation {
     pub results: &'static [&'static str],
 }
 
-/// The nine operations of the inventory, in [BLK-2] then [BLK-3] order.
-pub const KERNEL_OPERATIONS: [KernelOperation; 9] = [
+/// The eleven operations of the inventory, in [BLK-2] then [BLK-3] order.
+pub const KERNEL_OPERATIONS: [KernelOperation; 11] = [
     KernelOperation {
         spelling: "fixed_vector",
         row: KernelRow::FixedVector,
@@ -164,6 +176,18 @@ pub const KERNEL_OPERATIONS: [KernelOperation; 9] = [
         spelling: "heap_vector",
         row: KernelRow::HeapVector,
         parameters: &["store", "count"],
+        results: &["made"],
+    },
+    KernelOperation {
+        spelling: "arena_box",
+        row: KernelRow::ArenaBox,
+        parameters: &["store", "value"],
+        results: &["made"],
+    },
+    KernelOperation {
+        spelling: "heap_box",
+        row: KernelRow::HeapBox,
+        parameters: &["store", "value"],
         results: &["made"],
     },
     KernelOperation {

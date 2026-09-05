@@ -41,6 +41,11 @@ pub(crate) enum KernelShape {
     Vector,
     /// `Option<Vector<'s, T>>`.
     OptionVector,
+    /// `Box<'s, T>` [S39]: one store-resident cell, carrying no measure.
+    Box,
+    /// `Result<Box<'s, T>, T>` [S39]: the outcome of a cell formation, whose
+    /// refusal arm hands the value back because the row consumed it.
+    ResultBox,
     /// `Arena<'s, bytes, align>`.
     Extent,
     /// `Heap<'s>`.
@@ -176,6 +181,10 @@ pub(crate) enum KernelOffset {
     Constant(i64),
     /// `advance<T>(count)` over the named value parameter [BLK-0].
     Advance(u32),
+    /// `advance<T>(1)`: the bytes one cell occupies [S39]. A cell row has no
+    /// count operand, so its advance names no parameter; the quantity is the
+    /// same stride rounded up to the store's own alignment constant.
+    AdvanceCell,
 }
 
 /// One operand displaced by a written constant: every relation of the
@@ -225,6 +234,22 @@ impl KernelTerm {
             offset: KernelOffset::Advance(count),
         }
     }
+
+    /// `<operand> + advance<T>(1)` [S39].
+    pub(crate) const fn advanced_by_a_cell(operand: KernelOperand) -> Self {
+        Self {
+            operand,
+            offset: KernelOffset::AdvanceCell,
+        }
+    }
+
+    /// The bare `advance<T>(1)` term [S39].
+    pub(crate) const fn advance_cell() -> Self {
+        Self {
+            operand: KernelOperand::Zero,
+            offset: KernelOffset::AdvanceCell,
+        }
+    }
 }
 
 /// The comparison one declared requirement or relation writes [GRAM-5].
@@ -245,6 +270,10 @@ pub(crate) enum KernelRoute {
     Some,
     /// `when made is None():`.
     None,
+    /// `when made is Ok(value: b):` [S39].
+    Ok,
+    /// `when made is Err(error: back):` [S39].
+    Err,
 }
 
 /// One declared requirement or relation of a row.
@@ -744,6 +773,132 @@ const SEQ_HEAP: KernelSignature = KernelSignature {
     fits: Some(1),
 };
 
+/// `arena_box<T, const bytes, const align>['s](store: &uniq Arena<'s, bytes,
+/// align>, value: own T) -> made: own Result<Box<'s, T>, T>` [S39].
+///
+/// The refusal hands `value` back, because unlike every run formation this
+/// row **consumes** an affine input: a take of a run has nothing to return on
+/// its refusal arm and an `Option` is enough there, while a cell formation
+/// that dropped the value it was given would destroy it [L3]. That is why the
+/// outcome is a `Result` and not an `Option`.
+const ARENA_BOX: KernelSignature = KernelSignature {
+    row: KernelRow::ArenaBox,
+    spelling: "arena_box",
+    generics: &[
+        TYPE_SUPPLIED,
+        BYTES_SUPPLIED,
+        ALIGN_SUPPLIED,
+        REGION_SUPPLIED,
+    ],
+    parameters: &BOX_PARAMETERS_ARENA,
+    results: &[KernelResult {
+        name: "made",
+        shape: KernelShape::ResultBox,
+    }],
+    effects: KernelEffects::over(0, true),
+    requires: &[KernelRelation::plain(
+        KernelTerm::new(KernelOperand::Const(KernelConst::Align)),
+        KernelComparison::GreaterOrEqual,
+        KernelTerm::new(KernelOperand::AlignCeiling),
+    )],
+    ensures: &[
+        // `len_of(store) == len_of(store at the call) + advance<T>(1)`.
+        KernelRelation::routed(
+            KernelRoute::Ok,
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Length,
+                KernelPlace::Parameter(0),
+            )),
+            KernelComparison::Equal,
+            KernelTerm::advanced_by_a_cell(KernelOperand::Measure(
+                CheckedMeasure::Length,
+                KernelPlace::ParameterAtCall(0),
+            )),
+        ),
+        KernelRelation::routed(
+            KernelRoute::Err,
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Length,
+                KernelPlace::Parameter(0),
+            )),
+            KernelComparison::Equal,
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Length,
+                KernelPlace::ParameterAtCall(0),
+            )),
+        ),
+        KernelRelation::routed(
+            KernelRoute::Err,
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Room,
+                KernelPlace::Parameter(0),
+            )),
+            KernelComparison::Less,
+            KernelTerm::advance_cell(),
+        ),
+        KernelRelation::plain(
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Capacity,
+                KernelPlace::Parameter(0),
+            )),
+            KernelComparison::Equal,
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Capacity,
+                KernelPlace::ParameterAtCall(0),
+            )),
+        ),
+    ],
+    fits: None,
+};
+
+/// `heap_box<T>['s](store: &uniq Heap<'s>, value: own T) -> made: own
+/// Result<Box<'s, T>, T>` [S39].
+///
+/// `Heap<'s>` carries no measure, so this row publishes nothing: what it
+/// hands back is decided by its own outcome and not by a store's state.
+const HEAP_BOX: KernelSignature = KernelSignature {
+    row: KernelRow::HeapBox,
+    spelling: "heap_box",
+    generics: &[TYPE_SUPPLIED, REGION_SUPPLIED],
+    parameters: &BOX_PARAMETERS_HEAP,
+    results: &[KernelResult {
+        name: "made",
+        shape: KernelShape::ResultBox,
+    }],
+    effects: KernelEffects::over(0, true),
+    requires: &[],
+    ensures: &[],
+    fits: None,
+};
+
+/// The two value parameters each cell formation writes: the store's provider
+/// and the value the cell takes [S39, BLK-0].
+const BOX_PARAMETERS_ARENA: [KernelParameter; 2] = [
+    KernelParameter {
+        name: "store",
+        mode: KernelMode::Unique,
+        shape: KernelShape::Extent,
+    },
+    KernelParameter {
+        name: "value",
+        mode: KernelMode::Own,
+        shape: KernelShape::Element,
+    },
+];
+
+const BOX_PARAMETERS_HEAP: [KernelParameter; 2] = [
+    KernelParameter {
+        name: "store",
+        mode: KernelMode::Unique,
+        shape: KernelShape::Heap,
+    },
+    KernelParameter {
+        name: "value",
+        mode: KernelMode::Own,
+        shape: KernelShape::Element,
+    },
+];
+
 /// `arena_frame<const bytes, const align>['s]() -> result: own Arena<'s,
 /// bytes, align> pure`.
 const ARENA_FRAME: KernelSignature = KernelSignature {
@@ -1173,11 +1328,13 @@ const MUT_SLICE_OF: KernelSignature = KernelSignature {
 /// retire with [S34]. Two domains may not claim one spelling [TYPE-6], so the
 /// spelling passes to the kernel IDENT domain in the same change that retires
 /// them, and until then these two rows carry no resolver entry.
-pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 11] = [
+pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 13] = [
     SEQ_FIXED,
     SEQ_ARENA,
     SEQ_ARENA_PROVED,
     SEQ_HEAP,
+    ARENA_BOX,
+    HEAP_BOX,
     ARENA_FRAME,
     SEQ_PLACE,
     SEQ_PLACE_FRONT,
@@ -1215,6 +1372,27 @@ pub(crate) fn kernel_signature_at(ordinal: u8) -> Option<&'static KernelSignatur
 /// opaque term otherwise; this reader answers for the first case and hands
 /// back `None` for the second, where a relation over it is simply unavailable
 /// and a requirement over it cannot be built.
+/// `advance<T>(1)` [S39]: the bytes one cell occupies, which is the stride
+/// rounded up to the store's own alignment constant exactly as a take of one
+/// slot would be.
+pub(in crate::semantic) fn kernel_cell_advance(
+    instance: &super::model::CheckedKernelInstance,
+) -> Option<i128> {
+    let super::model::CheckedLayoutMagnitude::Finite(stride) = instance.element_ceiling.stride
+    else {
+        return None;
+    };
+    let align = match instance.align {
+        Some(super::model::CheckedConst::Value(align)) => align,
+        // The general store has no alignment constant of its own; a cell it
+        // hands out is one stride.
+        None => return Some(i128::from(stride)),
+        Some(_) => return None,
+    };
+    let rounded = stride.checked_add(align.checked_sub(1)?)? / align * align;
+    Some(i128::from(rounded))
+}
+
 pub(in crate::semantic) fn kernel_advance(
     instance: &super::model::CheckedKernelInstance,
     goal_arguments: &[super::goal::GoalExpression],

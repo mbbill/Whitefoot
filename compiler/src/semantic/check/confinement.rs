@@ -169,7 +169,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 }),
                             );
                         }
-                        CheckedNominalKind::Box { referent } => pending.push(*referent),
+                        // [S39] a cell branded to the entry heap is the same
+                        // position a run branded to it is.
+                        CheckedNominalKind::Box {
+                            referent,
+                            region: Some(region),
+                            ..
+                        } => {
+                            if region.is_entry_heap_region() {
+                                return Ok(true);
+                            }
+                            pending.push(*referent);
+                        }
+                        CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
                         CheckedNominalKind::Arena { content, .. } => pending.push(*content),
                         CheckedNominalKind::ArenaStorage
                         | CheckedNominalKind::SystemResource { .. } => {}
@@ -217,7 +229,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 }),
                             );
                         }
-                        CheckedNominalKind::Box { referent } => pending.push(*referent),
+                        CheckedNominalKind::Box { referent, .. } => pending.push(*referent),
                         CheckedNominalKind::Arena { content, .. } => pending.push(*content),
                         CheckedNominalKind::ArenaStorage
                         | CheckedNominalKind::SystemResource { .. } => {}

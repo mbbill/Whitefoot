@@ -361,7 +361,94 @@ impl IrBuilder<'_> {
             | crate::KernelRow::HeapVector => {
                 self.lower_store_take(row, instance, arguments, result)
             }
+            crate::KernelRow::ArenaBox | crate::KernelRow::HeapBox => {
+                self.lower_store_box(row, instance, arguments, result)
+            }
         }
+    }
+
+    /// [S39] one of the two cell formations.
+    ///
+    /// The store hands out one cell's worth of storage and the row moves
+    /// `value` into it; the outcome is a `Result<Box<'s, T>, T>` whose
+    /// refusal arm hands `value` back, because this row consumed it.
+    fn lower_store_box(
+        &mut self,
+        row: crate::KernelRow,
+        instance: &CheckedKernelInstance,
+        arguments: &[CheckedExpression],
+        result: CheckedType,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let [store, value] = arguments else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let store = self.expression(store)?;
+        if self.value_type(store)? != IrType::Address(crate::IrAddressed::Provider) {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let value = self.expression(value)?;
+        let crate::semantic::CheckedLayoutMagnitude::Finite(stride) =
+            instance.element_ceiling.stride
+        else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let extent = match row {
+            crate::KernelRow::HeapBox => None,
+            _ => {
+                let (bytes, align) = extent_constants(instance)?;
+                Some(crate::IrExtentConstants { bytes, align })
+            }
+        };
+        // The take is one stride, rounded up to the store's own alignment
+        // where it has one, so a bump cursor stays a multiple of it [BLK-2].
+        let bytes = match extent {
+            Some(crate::IrExtentConstants { align, .. }) if align > 0 => stride
+                .checked_add(align - 1)
+                .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                / align
+                * align,
+            _ => stride,
+        };
+        let outcome = self.outcome_of(result)?;
+        self.define(
+            lower_type(self.erasure, result)?,
+            IrOperation::StoreBox(crate::IrStoreBox {
+                store,
+                value,
+                bytes,
+                extent,
+                outcome,
+            }),
+        )
+    }
+
+    /// The `Result<Box<'s, T>, T>` a cell formation hands back, by the tags
+    /// [PRE-1] gives its two variants: both carry one field, so the arms are
+    /// told apart by the prelude's own variant order rather than by shape.
+    fn outcome_of(&self, result: CheckedType) -> Result<crate::IrRefusal, LoweringFailure> {
+        let CheckedType::Nominal(id) = result else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let nominal = self.erased(id);
+        let IrNominalKind::Enum { variants } = &self
+            .nominals
+            .get(nominal.index())
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .kind
+        else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let [made, refused] = variants.as_slice() else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        if made.fields().len() != 1 || refused.fields().len() != 1 {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        Ok(crate::IrRefusal {
+            nominal,
+            made: made.tag(),
+            refused: refused.tag(),
+        })
     }
 
     /// One of [BLK-2]'s three acquiring rows.

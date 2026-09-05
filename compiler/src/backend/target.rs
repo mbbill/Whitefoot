@@ -535,7 +535,7 @@ pub(super) fn validate_program(
         layouts.layout(IrType::Nominal(nominal.id()))?;
     }
     for nominal in program.nominals() {
-        if let IrNominalKind::Box { referent } = nominal.kind() {
+        if let IrNominalKind::Box { referent, .. } = nominal.kind() {
             layouts.layout(*referent)?;
         }
     }
@@ -685,7 +685,7 @@ fn validate_target_obligation(
                 .ok_or(TargetLayoutFailure::InvalidIr)?
                 .kind()
             {
-                IrNominalKind::Box { referent } => *referent,
+                IrNominalKind::Box { referent, .. } => *referent,
                 _ => return Err(TargetLayoutFailure::InvalidIr),
             };
             if function.value_type(*value) != Some(referent) {

@@ -1669,6 +1669,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 self.emit_arena_frame(result, ty, *bytes, *align)
             }
             IrOperation::StoreTake(take) => self.emit_store_take(result, ty, *take),
+            IrOperation::StoreBox(cell) => self.emit_store_box(result, ty, *cell),
             IrOperation::ContainerMeasure { measure, container } => {
                 self.emit_container_measure(result, ty, *measure, *container)
             }
@@ -1711,6 +1712,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => self.emit_slice_index(result, ty, *slice, *offset, *target_domain),
             IrOperation::BoxNew { nominal, value } => {
                 self.emit_box_new(result, ty, *nominal, *value)
+            }
+            IrOperation::BoxTake { nominal, value } => {
+                self.emit_box_take(result, ty, *nominal, *value)
             }
             IrOperation::BoxDeref { nominal, value } => {
                 self.emit_box_deref(result, ty, *nominal, *value)
@@ -2441,6 +2445,11 @@ fn drain_all_completions_except(
 
 /// The label one ordinary instruction's own emission leaves the block at, for
 /// the operations whose lowering opens a further LLVM block.
+/// The block one cell formation joins at [S39].
+pub(super) fn store_box_join_label(result: IrValueId) -> String {
+    format!("box.join.v{}", result.ordinal())
+}
+
 fn definition_exit_label(
     _block_id: IrBlockId,
     _index: usize,
@@ -2468,6 +2477,13 @@ fn definition_exit_label(
             operation: IrOperation::BoxNew { .. },
             ..
         } => *label = box_new_ready_label(*result),
+        // [S39] a cell formation branches on the store's answer and joins,
+        // so the block a successor's phi names is that join.
+        IrInstruction::Define {
+            result,
+            operation: IrOperation::StoreBox { .. },
+            ..
+        } => *label = store_box_join_label(*result),
         IrInstruction::Define {
             result,
             operation: IrOperation::ArenaNew { .. },

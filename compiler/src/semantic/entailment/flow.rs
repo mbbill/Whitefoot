@@ -5080,7 +5080,7 @@ impl Analyzer<'_, '_> {
             GoalProjection::Deref => match input {
                 CheckedType::Nominal(nominal) => {
                     match self.context.nominals.get(nominal.0 as usize)?.kind {
-                        CheckedNominalKind::Box { referent } => Some(referent),
+                        CheckedNominalKind::Box { referent, .. } => Some(referent),
                         _ => Some(input),
                     }
                 }
@@ -13803,7 +13803,7 @@ impl Analyzer<'_, '_> {
         };
         let nominal = self.context.nominals.get(id.0 as usize)?;
         match nominal.kind {
-            CheckedNominalKind::Box { referent } => Some(referent),
+            CheckedNominalKind::Box { referent, .. } => Some(referent),
             _ => Some(ty),
         }
     }

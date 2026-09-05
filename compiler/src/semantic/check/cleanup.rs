@@ -77,7 +77,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .flat_map(|variant| variant.fields.iter().map(|field| field.ty))
                 .collect(),
-            CheckedNominalKind::Box { referent } => vec![*referent],
+            CheckedNominalKind::Box { referent, .. } => vec![*referent],
             // The region release walks the arena content exactly as an owner
             // drop walks a box referent, so a contained resource row still
             // reaches [EFF-2]'s release contribution.
