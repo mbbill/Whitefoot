@@ -15,17 +15,40 @@
 //! [ENT-1].
 
 use super::super::super::kernel::{
-    KernelOffset, KernelOperand, KernelPlace, KernelSignature, kernel_signature,
+    KernelOffset, KernelOperand, KernelPlace, KernelRoute, KernelSignature, kernel_signature,
 };
 use super::super::super::model::CheckedConst;
 use super::super::super::model::{
-    BindingId, CheckedExpression, CheckedKernelInstance, CheckedMeasure, CheckedType,
+    BindingId, CheckedConstructor, CheckedEnumType, CheckedExpression, CheckedKernelInstance,
+    CheckedMatchArm, CheckedMeasure, CheckedNominalKind, CheckedType,
 };
 use super::super::RelationProvenance;
 use super::super::state::{FactState, PostconditionCallDetail, Relation};
 use super::super::term::{PlaceRoot, TermId, TermKind};
 use super::super::{DerivationRootKind, VerifiedPostconditionSummaryRef};
 use super::{Analyzer, GoalProjection, PreparedCall, PreparedCallee};
+
+/// The prelude ordinal of `Option`'s `None` variant.
+const NONE_VARIANT: u8 = 5;
+
+/// The prelude ordinal of `Option`'s `Some` variant.
+const SOME_VARIANT: u8 = 6;
+
+/// One declared exit of a row, as the caller reaches it [CALL-6].
+///
+/// An exit is either the destination list a binder or target list gives an
+/// unrouted result, or one arm of a `match` over a routed one. The two carry
+/// the same relation list filtered two ways, which is why they share one
+/// establishment path: an unrouted relation is a member of every exit's set,
+/// and a routed one only of the arm its route names.
+struct KernelExit<'a> {
+    /// The route this exit selects, absent where the exit enters no arm.
+    route: Option<KernelRoute>,
+    /// The payload binder the route's variant carries, and its type.
+    payload: Option<(BindingId, CheckedType)>,
+    /// Destination i takes declared result ordinal i [CALL-4].
+    destinations: &'a [Option<(BindingId, Vec<GoalProjection>, CheckedType)>],
+}
 
 /// One kernel-domain call, read off the checked tree.
 struct KernelCallSite<'a> {
@@ -150,21 +173,129 @@ impl Analyzer<'_, '_> {
     /// [CALL-6] establishes one row's declared relations at the destinations
     /// [CALL-4] fixes: ordinal i lands at destination i.
     ///
-    /// [BLK-0] carries the [CALL-6] consistency judgment onto a
-    /// compiler-owned row: the set a row publishes may narrow what its caller
-    /// derives and may never make everything derivable. That judgment is
-    /// checked here, at the one point a row's relations become facts, because
-    /// a row's set is fixed by this specification and its instantiation is
-    /// fixed by the call. Every requirement of the row is discharged before
-    /// this point — a call whose requirement is undischarged prepares nothing
-    /// and publishes nothing — so a caller state that turns contradictory
-    /// across this establishment turned so on the row's own relations.
+    /// A binder or target list enters no arm, so this exit carries the row's
+    /// unrouted relations and none of its routed ones.
     pub(super) fn establish_kernel_relations(
         &mut self,
         statement: &crate::NodePath,
         destinations: &[Option<(BindingId, Vec<GoalProjection>, CheckedType)>],
         value: &CheckedExpression,
         prepared: &PreparedCall,
+        state: &mut FactState,
+    ) {
+        self.establish_kernel_exit(
+            statement,
+            value,
+            prepared,
+            &KernelExit {
+                route: None,
+                payload: None,
+                destinations,
+            },
+            state,
+        );
+    }
+
+    /// [CALL-6, ENT-3.S13] establishes, on one arm of a `match` over a
+    /// kernel-domain call, the relations that arm's route selects.
+    ///
+    /// A row whose declared result is an enum states part of its relation
+    /// list per variant [BLK-0], and publication restricts each routed
+    /// relation to the arm its route names while an unrouted one is a member
+    /// of every arm's set. The payload binder is what the route's own binder
+    /// spelling denotes — `when made is Some(value: r)` names `r`, and the
+    /// arm binds it — so a measure of the payload is a measure of that
+    /// binding's place.
+    pub(super) fn establish_kernel_match_relations(
+        &mut self,
+        scrutinee: &CheckedExpression,
+        enum_type: CheckedEnumType,
+        arm: &CheckedMatchArm,
+        prepared: &PreparedCall,
+        state: &mut FactState,
+    ) {
+        let Some(site) = kernel_call_site(scrutinee) else {
+            return;
+        };
+        let Some(route) = self.kernel_arm_route(enum_type, arm.tag) else {
+            return;
+        };
+        let payload = arm
+            .binders
+            .iter()
+            .find(|binder| binder.field == 0)
+            .map(|binder| (binder.binding, binder.ty));
+        let call = site.call.clone();
+        self.establish_kernel_exit(
+            &call,
+            scrutinee,
+            prepared,
+            &KernelExit {
+                route: Some(route),
+                payload,
+                destinations: &[],
+            },
+            state,
+        );
+    }
+
+    /// The route one arm of a `match` over an `Option`-shaped kernel result
+    /// selects, read off the arm's own variant rather than off its tag.
+    fn kernel_arm_route(&self, enum_type: CheckedEnumType, tag: u32) -> Option<KernelRoute> {
+        let CheckedEnumType::Nominal(nominal) = enum_type else {
+            return None;
+        };
+        let CheckedNominalKind::Enum { variants } =
+            &self.context.nominals.get(nominal.0 as usize)?.kind
+        else {
+            return None;
+        };
+        let variant = variants.iter().find(|variant| variant.tag == tag)?;
+        let CheckedConstructor::Prelude(declaration) = variant.constructor else {
+            return None;
+        };
+        // The two variants of the prelude `Option` a routed row writes its
+        // clauses over [BLK-0].
+        if declaration == crate::PreludeDeclarationId::new(SOME_VARIANT) {
+            Some(KernelRoute::Some)
+        } else if declaration == crate::PreludeDeclarationId::new(NONE_VARIANT) {
+            Some(KernelRoute::None)
+        } else {
+            None
+        }
+    }
+
+    /// One row's relations at one declared exit.
+    ///
+    /// The exit's relations are established in two passes because [BLK-0]
+    /// judges them in two. The **unrouted** relations are a member of every
+    /// exit's set, so they hold wherever the call's continuation is reached
+    /// at all: a caller state that turns contradictory across them turned so
+    /// on the row's own relations, and that is the judgment [BLK-0] carries
+    /// from [CALL-6] onto a compiler-owned row — the set a row publishes may
+    /// narrow what its caller derives and may never make everything
+    /// derivable. Every requirement of the row is discharged before this
+    /// point, a call whose requirement is undischarged preparing and
+    /// publishing nothing, so nothing else can be the cause.
+    ///
+    /// The **routed** relations are the arm's own, and a contradiction across
+    /// them is not a defect: it is the ordinary [ENT-3] statement that this
+    /// arm is not reached, which a written `if` guard the caller can refute
+    /// produces in exactly the same way. `arena_vector` asked for more bytes
+    /// than the extent holds publishes `len_of(store) = len_of(store at the
+    /// call) + advance<T>(count)` on its `Some` arm against a `cap_of(store)`
+    /// that cannot hold it, and the arm it makes underivable is the arm that
+    /// never runs. The exits of one call partition its outcomes, so at most
+    /// one of them can be refuted this way.
+    ///
+    /// What is checked on every exit instead is the denotation [MSR-3] fixes,
+    /// asserted below over the terms this instantiation actually formed.
+    fn establish_kernel_exit(
+        &mut self,
+        statement: &crate::NodePath,
+        value: &CheckedExpression,
+        prepared: &PreparedCall,
+        exit: &KernelExit<'_>,
         state: &mut FactState,
     ) {
         let Some(site) = kernel_call_site(value) else {
@@ -179,76 +310,170 @@ impl Analyzer<'_, '_> {
         let instance = site.instance.clone();
         let call = site.call.clone();
         let goal_arguments = site.goal_arguments.to_vec();
-        let destinations = destinations.to_vec();
-        let mut anchor = None;
-        for (binding, _, _) in destinations.iter().flatten() {
-            anchor.get_or_insert(*binding);
-        }
-        let Some(anchor) = anchor else {
+        let destinations = exit.destinations.to_vec();
+        let Some(anchor) = self.kernel_exit_anchor(exit, &destinations, &goal_arguments) else {
             return;
         };
+        self.assert_kernel_denotations(signature, exit, &call, &goal_arguments);
         let already_contradictory = self.state_is_contradictory(state);
-        for (ordinal, relation) in signature.ensures.iter().enumerate() {
-            // A routed relation is restricted to its own arm [CALL-6]; the
-            // destinations here enter no arm.
-            if relation.route.is_some() {
-                continue;
-            }
-            let displacement = |offset: KernelOffset| match offset {
-                KernelOffset::Constant(value) => Some(i128::from(value)),
-                KernelOffset::Advance(ordinal) => {
-                    super::super::super::kernel::kernel_advance(&instance, &goal_arguments, ordinal)
+        for shared in [true, false] {
+            for (ordinal, relation) in signature.ensures.iter().enumerate() {
+                // A routed relation is restricted to its own arm and an
+                // unrouted one is a member of every arm's set [CALL-6].
+                if relation.route.is_none() != shared
+                    || (relation.route.is_some() && relation.route != exit.route)
+                {
+                    continue;
                 }
-            };
-            let Some(bounds) = relation.bounds(displacement) else {
-                continue;
-            };
-            for bound in bounds {
-                let Some(left) = self.kernel_relation_term(
-                    bound.left,
-                    &instance,
-                    signature,
-                    &call,
-                    &goal_arguments,
-                    &destinations,
-                ) else {
+                let displacement = |offset: KernelOffset| match offset {
+                    KernelOffset::Constant(value) => Some(i128::from(value)),
+                    KernelOffset::Advance(ordinal) => super::super::super::kernel::kernel_advance(
+                        &instance,
+                        &goal_arguments,
+                        ordinal,
+                    ),
+                };
+                let Some(bounds) = relation.bounds(displacement) else {
                     continue;
                 };
-                let Some(right) = self.kernel_relation_term(
-                    bound.right,
-                    &instance,
-                    signature,
-                    &call,
-                    &goal_arguments,
-                    &destinations,
-                ) else {
-                    continue;
-                };
-                let established = Relation::Bound {
-                    left,
-                    right,
-                    bound: bound.bound,
-                };
-                self.retain_kernel_relation(
-                    statement,
-                    anchor,
-                    operation,
-                    u32::try_from(ordinal).unwrap_or(u32::MAX),
-                    &call,
-                    &established,
-                    prepared,
-                    state,
+                for bound in bounds {
+                    let Some(left) = self.kernel_relation_term(
+                        bound.left,
+                        &instance,
+                        signature,
+                        &call,
+                        &goal_arguments,
+                        &destinations,
+                        exit.payload,
+                    ) else {
+                        continue;
+                    };
+                    let Some(right) = self.kernel_relation_term(
+                        bound.right,
+                        &instance,
+                        signature,
+                        &call,
+                        &goal_arguments,
+                        &destinations,
+                        exit.payload,
+                    ) else {
+                        continue;
+                    };
+                    let established = Relation::Bound {
+                        left,
+                        right,
+                        bound: bound.bound,
+                    };
+                    self.retain_kernel_relation(
+                        statement,
+                        anchor,
+                        operation,
+                        u32::try_from(ordinal).unwrap_or(u32::MAX),
+                        &call,
+                        &established,
+                        prepared,
+                        state,
+                    );
+                }
+            }
+            if shared {
+                assert!(
+                    already_contradictory || !self.state_is_contradictory(state),
+                    "[BLK-0, CALL-6] the relations kernel row {operation} publishes on every \
+                     exit at {call:?} make the caller's fact state contradictory, so every \
+                     relation and both signs of every goal become derivable there and every \
+                     obligation the caller submits after it is discharged; a row's declared \
+                     relation set may narrow what a caller derives and may never introduce a \
+                     contradiction"
                 );
             }
         }
-        assert!(
-            already_contradictory || !self.state_is_contradictory(state),
-            "[BLK-0, CALL-6] the relations kernel row {operation} publishes at {call:?} make \
-             the caller's fact state contradictory, so every relation and both signs of every \
-             goal become derivable there and every obligation the caller submits after it is \
-             discharged; a row's declared relation set may narrow what a caller derives and may \
-             never introduce a contradiction"
-        );
+    }
+
+    /// [MSR-3, BLK-0] a measure's `at the call` form and its post-state
+    /// occurrence are two terms wherever both occur.
+    ///
+    /// This is asserted over the terms the instantiation formed rather than
+    /// over the record, because the record already keys the two apart and the
+    /// defect this closes was the caller reading one term for both: the row's
+    /// own `len_of(store) = len_of(store at the call) + advance<T>(count)`
+    /// then becomes `t = t + advance<T>(count)` over one term, which is the
+    /// bound pair `advance<T>(count) <= 0` and `advance<T>(count) >= 0` and,
+    /// at any nonzero take, a contradiction the row introduces into every
+    /// caller.
+    fn assert_kernel_denotations(
+        &mut self,
+        signature: &KernelSignature,
+        exit: &KernelExit<'_>,
+        call: &crate::NodePath,
+        goal_arguments: &[super::super::super::goal::GoalExpression],
+    ) {
+        let carried = |relation: &&super::super::super::kernel::KernelRelation| {
+            relation.route.is_none() || relation.route == exit.route
+        };
+        let mut pairs: Vec<(CheckedMeasure, u32)> = Vec::new();
+        for relation in signature.ensures.iter().filter(carried) {
+            for term in [relation.left, relation.right] {
+                if let KernelOperand::Measure(measure, KernelPlace::ParameterAtCall(ordinal)) =
+                    term.operand
+                {
+                    pairs.push((measure, ordinal));
+                }
+            }
+        }
+        pairs.dedup();
+        for (measure, ordinal) in pairs {
+            let Some(actual) = goal_arguments.get(ordinal as usize) else {
+                continue;
+            };
+            let ty = actual.ty();
+            let Some(datum) = self.interned_call_datum(call, ordinal, &[], Some(measure), ty) else {
+                continue;
+            };
+            let Some(live) = self.kernel_operand_term(actual, ty, Some(measure)) else {
+                continue;
+            };
+            assert_ne!(
+                datum, live,
+                "[MSR-3, BLK-0] kernel row {:?} names {measure:?} of formal {ordinal} at {call:?} \
+                 both at the call and in its post-state, and the two denote one term",
+                signature.row
+            );
+        }
+    }
+
+    /// The binding one exit's retained relations are anchored at.
+    ///
+    /// The anchor is derivation identity and nothing else: a retained
+    /// relation records where in the caller it landed [DIAG-2]. A destination
+    /// list lands at its first destination; an arm lands at its payload
+    /// binder where the route carries one, and otherwise at the root of the
+    /// first operand place the call names, which is the store whose measures
+    /// a payload-free arm relates.
+    fn kernel_exit_anchor(
+        &self,
+        exit: &KernelExit<'_>,
+        destinations: &[Option<(BindingId, Vec<GoalProjection>, CheckedType)>],
+        goal_arguments: &[super::super::super::goal::GoalExpression],
+    ) -> Option<BindingId> {
+        if let Some((binding, _)) = exit.payload {
+            return Some(binding);
+        }
+        if let Some((binding, _, _)) = destinations.iter().flatten().next() {
+            return Some(*binding);
+        }
+        if exit.route.is_none() {
+            return None;
+        }
+        goal_arguments.iter().find_map(|argument| {
+            let super::super::super::goal::GoalExpression::Datum(
+                super::super::super::goal::GoalDatum::Place { root, .. },
+            ) = argument
+            else {
+                return None;
+            };
+            Some(*root)
+        })
     }
 
     /// Whether the caller's fact state discharges everything at this point,
@@ -310,6 +535,7 @@ impl Analyzer<'_, '_> {
     }
 
     /// One record operand as an [ENT-2] term at this call.
+    #[allow(clippy::too_many_arguments)]
     fn kernel_relation_term(
         &mut self,
         operand: KernelOperand,
@@ -318,6 +544,7 @@ impl Analyzer<'_, '_> {
         call: &crate::NodePath,
         goal_arguments: &[super::super::super::goal::GoalExpression],
         destinations: &[Option<(BindingId, Vec<GoalProjection>, CheckedType)>],
+        payload: Option<(BindingId, CheckedType)>,
     ) -> Option<TermId> {
         match operand {
             KernelOperand::Zero => Some(super::super::term::ZERO),
@@ -360,8 +587,12 @@ impl Analyzer<'_, '_> {
                         *ty,
                     )
                 }
-                // A routed payload has no unrouted destination.
-                KernelPlace::Payload => None,
+                // The payload binder the route's variant carries; a
+                // destination list enters no arm and binds none.
+                KernelPlace::Payload => {
+                    let (binding, ty) = payload?;
+                    self.postcondition_measure_term(measure, PlaceRoot::Binding(binding), &[], ty)
+                }
             },
         }
     }

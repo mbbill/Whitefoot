@@ -12560,6 +12560,20 @@ impl Analyzer<'_, '_> {
                     .map(|binder| self.proof_event(kind, Some(&binder.node_path)))
             });
         self.establish_arm_entry(arm, facts, &mut state.facts, s1_event, outcome_event);
+        // [CALL-6] a kernel-domain row publishes on the arm its route names
+        // from its own declared relation list [BLK-0]; a source callee takes
+        // the direct-match route below, which is what [FN-9] gives it.
+        if let Some((scrutinee, enum_type, prepared)) = direct_call
+            && matches!(prepared.callee, PreparedCallee::Kernel(_))
+        {
+            self.establish_kernel_match_relations(
+                scrutinee,
+                enum_type,
+                arm,
+                prepared,
+                &mut state.facts,
+            );
+        }
         let direct_matches =
             direct_call.map_or_else(Vec::new, |(scrutinee, enum_type, prepared)| {
                 self.establish_direct_match(scrutinee, enum_type, arm, prepared, &mut state)
