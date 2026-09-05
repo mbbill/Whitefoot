@@ -29,6 +29,24 @@ extern "C" {
 
 #define WF_COMPLETION_RESULT_CAPACITY 256u
 
+/* The opaque per-operation record block.
+ *
+ * An emitted frame reserves one block of exactly WF_COMPLETION_RECORD_BYTES
+ * bytes, at WF_COMPLETION_RECORD_ALIGN alignment, for every operation that
+ * frame can have outstanding, and hands the block's address to submit and to
+ * join.  The runtime owns the block's contents between those two calls and
+ * never reads it outside that interval.  The emitted module never learns the
+ * layout: it holds one opaque pointer and nothing else.
+ *
+ * The size and the alignment are therefore ABI constants of this contract
+ * rather than a property of whatever record a runtime happens to keep there.
+ * The emitter reserves by these numbers, and every C unit that stores its own
+ * record in the block asserts with a _Static_assert that its record fits and
+ * does not out-align it, so a record that outgrew the reservation is a build
+ * failure instead of a kernel write past it. */
+#define WF_COMPLETION_RECORD_BYTES 16u
+#define WF_COMPLETION_RECORD_ALIGN 8u
+
 /* These facts are independent even when a simple adapter publishes all four
  * in one terminal transition.  Future split-milestone operations must not turn
  * this product back into one DONE bit. */

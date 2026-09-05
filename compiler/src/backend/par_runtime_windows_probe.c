@@ -28,12 +28,12 @@ unsigned long wf__par_worker_execution_count(void);
 #if defined(WF_PAR_MIXED_PROBE)
 void wf__mixed_observed_par_publish(void *frame, void (*fn)(void *));
 void wf__mixed_observed_file_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 );
 void wf__mixed_observed_file_open_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     unsigned *open_outcome
@@ -83,22 +83,22 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
 }
 
 void wf__completion_file_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 ) {
-    wf__mixed_observed_file_join(token_storage, value, error_code);
+    wf__mixed_observed_file_join(record, value, error_code);
     (void)InterlockedIncrement64(&wf_par_mixed_consumes);
 }
 
 void wf__completion_file_open_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     unsigned *open_outcome
 ) {
     wf__mixed_observed_file_open_join(
-        token_storage,
+        record,
         value,
         error_code,
         open_outcome

@@ -32,7 +32,6 @@ mod resource_enums;
 mod sched;
 mod slices;
 mod stack_ledger;
-mod stackless;
 mod system;
 mod system_io;
 mod target_frame;
@@ -52,14 +51,13 @@ use crate::{
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome,
-    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE, ParseLimits, ParseOutcome,
-    ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput, SourceLimits, TerminalLimits,
-    TerminalOutcome, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
+    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE,
+    ParseLimits, ParseOutcome, ResolutionOutcome, SemanticOutcome, SourceBundle, SourceInput,
+    SourceLimits, TerminalLimits, TerminalOutcome, WRITER_SCHEDULER_HEADER,
+    WRITER_SCHEDULER_SOURCE, audit_canonical, check_semantics,
+    check_semantics_arithmetic_obligations, check_semantics_division_obligations,
     classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
-    module_requires_writer_scheduler, parse, resolve,
+    module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -445,12 +443,7 @@ fn build_linked_executable(
     // nothing is linked here with nothing extra at all.
     let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
         let path = directory.join("par_runtime.c");
-        let source = if module_requires_writer_scheduler(llvm) {
-            PARALLEL_COMPLETION_RUNTIME_SOURCE
-        } else {
-            PARALLEL_RUNTIME_SOURCE
-        };
-        std::fs::write(&path, source).expect("write the parallel runtime");
+        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
         command.arg("-x").arg("c").arg(&path);
         path
     });

@@ -44,7 +44,7 @@ int wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
-    void *token_storage
+    void *record
 );
 
 int wf__completion_file_pread_submit(
@@ -52,14 +52,14 @@ int wf__completion_file_pread_submit(
     void *buffer,
     uint64_t count,
     uint64_t file_offset,
-    void *token_storage
+    void *record
 );
 
 int wf__completion_file_write_submit(
     int descriptor,
     const void *buffer,
     uint64_t count,
-    void *token_storage
+    void *record
 );
 
 int wf__completion_file_open_at_submit(
@@ -72,17 +72,17 @@ int wf__completion_file_open_at_submit(
 #if defined(_WIN32)
     unsigned descriptor_class,
 #endif
-    void *token_storage
+    void *record
 );
 
 int wf__completion_file_status_submit(
     int descriptor,
-    void *token_storage
+    void *record
 );
 
 int wf__completion_file_close_submit(
     int descriptor,
-    void *token_storage
+    void *record
 );
 
 int wf__completion_directory_next_submit(
@@ -90,26 +90,7 @@ int wf__completion_directory_next_submit(
     void *buffer,
     uint64_t count,
     int64_t *position,
-    void *token_storage
-);
-
-/* Stackless writer-continuation variants. `frame` is opaque scheduler state;
- * target code may only make it ready through the completion dependency. */
-int wf__completion_file_pread_submit_writer(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    uint64_t file_offset,
-    void *token_storage,
-    void *frame
-);
-
-int wf__completion_file_write_submit_writer(
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage,
-    void *frame
+    void *record
 );
 
 int64_t wf__completion_file_pread_direct(
@@ -140,7 +121,7 @@ int wf__completion_file_open_at_direct(
 );
 
 void wf__completion_file_open_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     unsigned *open_outcome
@@ -170,13 +151,13 @@ int64_t wf__completion_directory_next_direct(
 );
 
 void wf__completion_file_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 );
 
 void wf__completion_file_status_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     void *status,
@@ -185,13 +166,13 @@ void wf__completion_file_status_join(
 );
 
 int wf__completion_file_take(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 );
 
 int wf__completion_file_take_status(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     void *status,

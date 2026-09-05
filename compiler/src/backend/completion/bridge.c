@@ -56,6 +56,14 @@ _Static_assert(
     WF_BRIDGE_SLOT_COUNT == WF_WRITER_READY_CAPACITY,
     "one writer-ready cell is required for each completion slot"
 );
+_Static_assert(
+    sizeof(wf_completion_token) <= WF_COMPLETION_RECORD_BYTES,
+    "this unit's operation record must fit the block an emitted frame reserves"
+);
+_Static_assert(
+    _Alignof(wf_completion_token) <= WF_COMPLETION_RECORD_ALIGN,
+    "this unit's operation record must not out-align the reserved block"
+);
 
 static wf_completion_runtime wf_bridge_runtime;
 static wf_completion_slot wf_bridge_slots[WF_BRIDGE_SLOT_COUNT];
@@ -410,11 +418,11 @@ static int wf_bridge_spin_for_completion(void) {
 
 /* Harvests the completion event of the operation this thread is waiting on,
  * without sweeping the slots every other operation lives in. */
-static void wf_bridge_drain_token(const void *token_storage) {
+static void wf_bridge_drain_token(const void *record) {
     wf_completion_event event;
     (void)wf_completion_drain_token(
         &wf_bridge_runtime,
-        *(const wf_completion_token *)token_storage,
+        *(const wf_completion_token *)record,
         &event
     );
 }
@@ -870,10 +878,10 @@ int wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
-    void *token_storage
+    void *record
 ) {
     wf_file_request request;
-    if (token_storage == NULL || (buffer == NULL && count != 0)) {
+    if (record == NULL || (buffer == NULL && count != 0)) {
         return 0;
     }
     memset(&request, 0, sizeof(request));
@@ -886,7 +894,7 @@ int wf__completion_file_read_submit(
     }
     return wf_bridge_submit_file(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
@@ -933,10 +941,10 @@ int wf__completion_file_pread_submit(
     void *buffer,
     uint64_t count,
     uint64_t file_offset,
-    void *token_storage
+    void *record
 ) {
     wf_file_request request;
-    if (token_storage == NULL || (buffer == NULL && count != 0)
+    if (record == NULL || (buffer == NULL && count != 0)
         || file_offset > (uint64_t)INT64_MAX) {
         return 0;
     }
@@ -947,7 +955,7 @@ int wf__completion_file_pread_submit(
             buffer,
             count,
             file_offset,
-            (wf_completion_token *)token_storage,
+            (wf_completion_token *)record,
             NULL
         );
         if (native >= 0) {
@@ -969,7 +977,7 @@ int wf__completion_file_pread_submit(
     }
     return wf_bridge_submit_file(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
@@ -978,10 +986,10 @@ int wf__completion_file_write_submit(
     int descriptor,
     const void *buffer,
     uint64_t count,
-    void *token_storage
+    void *record
 ) {
     wf_file_request request;
-    if (token_storage == NULL || (buffer == NULL && count != 0)) {
+    if (record == NULL || (buffer == NULL && count != 0)) {
         return 0;
     }
     memset(&request, 0, sizeof(request));
@@ -999,7 +1007,7 @@ int wf__completion_file_write_submit(
      * append/stream behavior, keep this on the bounded typed fallback. */
     return wf_bridge_submit_file(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
@@ -1011,10 +1019,10 @@ int wf__completion_file_open_at_submit(
     unsigned mode,
     unsigned has_mode,
     unsigned expected_kind,
-    void *token_storage
+    void *record
 ) {
     wf_file_request request;
-    if (token_storage == NULL || has_mode > 1u
+    if (record == NULL || has_mode > 1u
         || expected_kind > WF_FILE_EXPECT_DIRECTORY) {
         return 0;
     }
@@ -1047,7 +1055,7 @@ int wf__completion_file_open_at_submit(
             mode,
             has_mode,
             expected_kind,
-            (wf_completion_token *)token_storage,
+            (wf_completion_token *)record,
             NULL
         );
         if (native >= 0) {
@@ -1066,17 +1074,17 @@ int wf__completion_file_open_at_submit(
         (enum wf_file_expected_kind)expected_kind;
     return wf_bridge_submit_file(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
 
 int wf__completion_file_status_submit(
     int descriptor,
-    void *token_storage
+    void *record
 ) {
     wf_file_request request;
-    if (token_storage == NULL) {
+    if (record == NULL) {
         return 0;
     }
     memset(&request, 0, sizeof(request));
@@ -1084,24 +1092,24 @@ int wf__completion_file_status_submit(
     request.operation.status.descriptor = descriptor;
     return wf_bridge_submit_file(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
 
 int wf__completion_file_close_submit(
     int descriptor,
-    void *token_storage
+    void *record
 ) {
     wf_file_request request;
-    if (token_storage == NULL) {
+    if (record == NULL) {
         return 0;
     }
 #if defined(__linux__)
     {
         int native = wf_bridge_submit_linux_close(
             descriptor,
-            (wf_completion_token *)token_storage,
+            (wf_completion_token *)record,
             NULL
         );
         if (native >= 0) {
@@ -1114,7 +1122,7 @@ int wf__completion_file_close_submit(
     request.operation.close.descriptor = descriptor;
     return wf_bridge_submit_file(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
@@ -1124,11 +1132,11 @@ int wf__completion_directory_next_submit(
     void *buffer,
     uint64_t count,
     int64_t *position,
-    void *token_storage
+    void *record
 ) {
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     wf_file_request request;
-    if (token_storage == NULL || position == NULL
+    if (record == NULL || position == NULL
         || (buffer == NULL && count != 0)
         || (uint64_t)(size_t)count != count) {
         return 0;
@@ -1141,7 +1149,7 @@ int wf__completion_directory_next_submit(
     request.operation.directory_next.position = position;
     return wf_bridge_submit_file(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 #else
@@ -1149,83 +1157,10 @@ int wf__completion_directory_next_submit(
     (void)buffer;
     (void)count;
     (void)position;
-    (void)token_storage;
+    (void)record;
     return 0;
 #endif
 }
-
-int wf__completion_file_pread_submit_writer(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    uint64_t file_offset,
-    void *token_storage,
-    void *frame
-) {
-    wf_file_request request;
-    if (token_storage == NULL || frame == NULL
-        || (buffer == NULL && count != 0)
-        || file_offset > (uint64_t)INT64_MAX) {
-        return 0;
-    }
-#if defined(__linux__)
-    {
-        int native = wf_bridge_submit_linux_pread(
-            descriptor,
-            buffer,
-            count,
-            file_offset,
-            (wf_completion_token *)token_storage,
-            frame
-        );
-        if (native >= 0) {
-            return native;
-        }
-    }
-#endif
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PREAD;
-    request.operation.pread.descriptor = descriptor;
-    request.operation.pread.buffer = buffer;
-    request.operation.pread.count = (size_t)count;
-    request.operation.pread.offset = (int64_t)file_offset;
-    if ((uint64_t)request.operation.pread.count != count) {
-        return 0;
-    }
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        frame
-    );
-}
-
-int wf__completion_file_write_submit_writer(
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage,
-    void *frame
-) {
-    wf_file_request request;
-    if (token_storage == NULL || frame == NULL
-        || (buffer == NULL && count != 0)) {
-        return 0;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = (size_t)count;
-    if ((uint64_t)request.operation.write.count != count) {
-        return 0;
-    }
-    return wf_bridge_submit_file(
-        &request,
-        (wf_completion_token *)token_storage,
-        frame
-    );
-}
-
 
 /* One blocking direct host call.  A refusal the host gives it, including an
  * open that found no descriptor, is the outcome the program sees: the
@@ -1419,7 +1354,7 @@ int64_t wf__completion_directory_next_direct(
 }
 
 static int wf_bridge_take_file_result(
-    const void *token_storage,
+    const void *record,
     wf_file_result *file_result
 ) {
     wf_completion_token token;
@@ -1438,10 +1373,10 @@ static int wf_bridge_take_file_result(
     } result;
     wf_completion_outcome outcome;
     enum wf_completion_consume_result consumed;
-    if (token_storage == NULL || file_result == NULL) {
+    if (record == NULL || file_result == NULL) {
         abort();
     }
-    token = *(const wf_completion_token *)token_storage;
+    token = *(const wf_completion_token *)record;
     (void)wf_bridge_drain();
     consumed = wf_completion_consume(
         &wf_bridge_runtime,
@@ -1496,7 +1431,7 @@ static int wf_bridge_take_file_result(
 }
 
 int wf__completion_file_take(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 ) {
@@ -1504,7 +1439,7 @@ int wf__completion_file_take(
     if (value == NULL || error_code == NULL) {
         abort();
     }
-    if (!wf_bridge_take_file_result(token_storage, &result)) {
+    if (!wf_bridge_take_file_result(record, &result)) {
         return 0;
     }
     *value = result.value;
@@ -1513,7 +1448,7 @@ int wf__completion_file_take(
 }
 
 int wf__completion_file_take_status(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     void *status,
@@ -1526,7 +1461,7 @@ int wf__completion_file_take_status(
         || (uint64_t)(size_t)status_capacity != status_capacity) {
         abort();
     }
-    if (!wf_bridge_take_file_result(token_storage, &result)) {
+    if (!wf_bridge_take_file_result(record, &result)) {
         return 0;
     }
     if (result.kind != WF_FILE_STATUS
@@ -1543,7 +1478,7 @@ int wf__completion_file_take_status(
 }
 
 static int wf_bridge_take_open(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     unsigned *open_outcome
@@ -1552,7 +1487,7 @@ static int wf_bridge_take_open(
     if (value == NULL || error_code == NULL || open_outcome == NULL) {
         abort();
     }
-    if (!wf_bridge_take_file_result(token_storage, &result)) {
+    if (!wf_bridge_take_file_result(record, &result)) {
         return 0;
     }
     if (result.kind != WF_FILE_OPEN_AT) {
@@ -1565,14 +1500,14 @@ static int wf_bridge_take_open(
 }
 
 void wf__completion_file_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        wf_bridge_drain_token(token_storage);
-        if (wf__completion_file_take(token_storage, value, error_code)) {
+        wf_bridge_drain_token(record);
+        if (wf__completion_file_take(record, value, error_code)) {
             return;
         }
         if (!wf_bridge_progress()) {
@@ -1585,7 +1520,7 @@ void wf__completion_file_join(
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
-                        *(const wf_completion_token *)token_storage
+                        *(const wf_completion_token *)record
                     );
                 if (wait == WF_COMPLETION_CONSUME_READY) {
                     continue;
@@ -1600,16 +1535,16 @@ void wf__completion_file_join(
 }
 
 void wf__completion_file_open_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     unsigned *open_outcome
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        wf_bridge_drain_token(token_storage);
+        wf_bridge_drain_token(record);
         if (wf_bridge_take_open(
-                token_storage,
+                record,
                 value,
                 error_code,
                 open_outcome
@@ -1626,7 +1561,7 @@ void wf__completion_file_open_join(
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
-                        *(const wf_completion_token *)token_storage
+                        *(const wf_completion_token *)record
                     );
                 if (wait == WF_COMPLETION_CONSUME_READY) {
                     continue;
@@ -1641,7 +1576,7 @@ void wf__completion_file_open_join(
 }
 
 void wf__completion_file_status_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     void *status,
@@ -1650,9 +1585,9 @@ void wf__completion_file_status_join(
 ) {
     for (;;) {
         uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        wf_bridge_drain_token(token_storage);
+        wf_bridge_drain_token(record);
         if (wf__completion_file_take_status(
-                token_storage,
+                record,
                 value,
                 error_code,
                 status,
@@ -1671,7 +1606,7 @@ void wf__completion_file_status_join(
                 enum wf_completion_consume_wait_result wait =
                     wf_completion_wait_to_consume(
                         &wf_bridge_runtime,
-                        *(const wf_completion_token *)token_storage
+                        *(const wf_completion_token *)record
                     );
                 if (wait == WF_COMPLETION_CONSUME_READY) {
                     continue;

@@ -29,7 +29,7 @@ wf__capacity_observed_completion_claim(
 );
 
 void wf__capacity_observed_file_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 );
@@ -50,11 +50,11 @@ enum wf_completion_claim_result wf_completion_claim(
 }
 
 void wf__completion_file_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 ) {
-    wf__capacity_observed_file_join(token_storage, value, error_code);
+    wf__capacity_observed_file_join(record, value, error_code);
     (void)InterlockedIncrement64(&wf_capacity_consumes);
 }
 

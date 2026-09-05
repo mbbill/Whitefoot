@@ -18,7 +18,7 @@ pub const COMPLETION_CONTRACT_HEADER: &str = include_str!("../completion/contrac
 pub const COMPLETION_FILE_ADAPTER_HEADER: &str = include_str!("../completion/file_adapter.h");
 /// The compiler-owned file-completion bridge contract embedded in the compiler.
 pub const COMPLETION_BRIDGE_HEADER: &str = include_str!("../completion/bridge.h");
-/// The stackless writer scheduler ABI embedded in the compiler.
+/// The bounded ready-frame writer scheduler ABI embedded in the compiler.
 pub const WRITER_SCHEDULER_HEADER: &str = include_str!("../completion/writer_scheduler.h");
 /// The target-guarded Linux io_uring adapter contract embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/linux_io_uring.h");
@@ -54,6 +54,30 @@ pub const COMPLETION_WINDOWS_BRIDGE_SOURCE: &str = include_str!("../completion/w
 /// The Windows bounded ready-frame scheduler embedded in the compiler.
 pub const WRITER_SCHEDULER_WINDOWS_SOURCE: &str =
     include_str!("../completion/writer_scheduler_windows.c");
+
+/// Size in bytes of the opaque record block an emitted frame reserves for one
+/// outstanding completion operation.
+///
+/// This is the emitter's half of `WF_COMPLETION_RECORD_BYTES`: the frame
+/// reserves the block and passes its address to submit and to join, and the
+/// runtime owns whatever it keeps there. Neither side may state the number
+/// alone, so `the_record_block_abi_constants_agree_with_the_contract_header`
+/// below reads the header's own text and refuses a compilation in which the
+/// two have drifted apart.
+pub(crate) const COMPLETION_RECORD_BYTES: u64 = 16;
+
+/// Alignment of that same block, the emitter's half of
+/// `WF_COMPLETION_RECORD_ALIGN`. A byte block's natural alignment is one, so
+/// the reservation states this one explicitly.
+pub(crate) const COMPLETION_RECORD_ALIGN: u64 = 8;
+
+/// The element type an emitted frame reserves per outstanding operation.
+///
+/// It is a byte block and not a typed record on purpose: the emitted module
+/// holds one opaque pointer into it and never learns the layout.
+pub(crate) fn completion_record_element_type() -> String {
+    format!("[{COMPLETION_RECORD_BYTES} x i8]")
+}
 
 /// The marker definition carried only by a module that actualizes a typed
 /// target operation through completion.
@@ -113,26 +137,12 @@ pub(crate) const COMPLETION_WINDOW_FALLBACK: &str = "define weak i64 @wf__comple
 pub fn module_requires_completion_runtime(module: &str) -> bool {
     module.contains(COMPLETION_MARKER)
         || module.contains(COMPLETION_WINDOWS_MARKER)
-        || module.contains("@wf__completion_file_pread_submit_writer")
-        || module.contains("@wf__completion_file_write_submit_writer")
         || module.contains("@wf__completion_file_pread_direct")
         || module.contains("@wf__completion_file_write_direct")
         || module.contains("@wf__completion_file_open_at_direct")
         || module.contains("@wf__completion_file_status_direct")
         || module.contains("@wf__completion_file_close_direct")
         || module.contains("@wf__completion_directory_next_direct")
-}
-
-/// True exactly when this emitted module can publish a stackless writer frame.
-///
-/// Direct completion calls still need the completion runtime, but they never
-/// enqueue a continuation for a compute worker to resume.  Testing the actual
-/// submit calls, rather than any completion symbol or the weak definitions a
-/// stackless module carries, keeps the parallel runtime's hot steal loop free
-/// of an empty writer-queue probe for an ordinary direct I/O module.
-pub fn module_requires_writer_scheduler(module: &str) -> bool {
-    module.contains("call i32 @wf__completion_file_pread_submit_writer(")
-        || module.contains("call i32 @wf__completion_file_write_submit_writer(")
 }
 
 #[derive(Clone, Debug)]
@@ -662,7 +672,11 @@ impl FunctionEmitter<'_, '_> {
             return Err(BackendFailure::InvalidIr);
         }
 
-        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
+        let token = self.completion_entry_slot(
+            result,
+            CompletionSlot::Record,
+            &completion_record_element_type(),
+        )?;
         let result_slot = self.completion_entry_slot(
             result,
             CompletionSlot::Result,
@@ -826,7 +840,11 @@ impl FunctionEmitter<'_, '_> {
         // A component path may branch directly to the inline fallback before
         // reaching `request_label`. Ring element pointers used by both paths
         // must therefore be defined before path preparation opens that branch.
-        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
+        let token = self.completion_entry_slot(
+            result,
+            CompletionSlot::Record,
+            &completion_record_element_type(),
+        )?;
         let result_slot =
             self.completion_entry_slot(result, CompletionSlot::Result, &rendered_type)?;
         let raw_value = self.completion_entry_slot(result, CompletionSlot::RawValue, "i64")?;
@@ -1132,7 +1150,11 @@ impl FunctionEmitter<'_, '_> {
             .value_type(*destination)
             .ok_or(BackendFailure::InvalidIr)?;
         let destination_llvm = llvm_type(self.program, destination_ty)?;
-        let token = self.completion_entry_slot(result, CompletionSlot::Token, "[2 x i64]")?;
+        let token = self.completion_entry_slot(
+            result,
+            CompletionSlot::Record,
+            &completion_record_element_type(),
+        )?;
         let result_slot = self.completion_entry_slot(
             result,
             CompletionSlot::Result,
@@ -1392,4 +1414,68 @@ fn completion_join_inline_label(value: IrValueId) -> String {
 
 fn completion_wait_label(value: IrValueId) -> String {
     format!("completion.wait.v{}", value.ordinal())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        COMPLETION_CONTRACT_HEADER, COMPLETION_RECORD_ALIGN, COMPLETION_RECORD_BYTES,
+        COMPLETION_WINDOWS_NATIVE_API_HEADER,
+    };
+
+    /// The value of one `#define NAME <digits>u` in an embedded C header.
+    fn defined_unsigned(header: &str, name: &str) -> u64 {
+        let definition = format!("#define {name} ");
+        let mut matches = header.match_indices(&definition);
+        let (start, _) = matches.next().unwrap_or_else(|| {
+            panic!("the embedded header does not define {name}");
+        });
+        assert!(
+            matches.next().is_none(),
+            "{name} must be defined exactly once so the two sides cannot disagree"
+        );
+        let rest = &header[start + definition.len()..];
+        let line = rest.lines().next().unwrap_or_default().trim();
+        line.trim_end_matches('u')
+            .parse()
+            .unwrap_or_else(|_| panic!("{name} is not a plain unsigned literal: {line}"))
+    }
+
+    /// The emitter's half of the two-sided record-block assertion.
+    ///
+    /// The C side asserts that the record it stores fits the block and does
+    /// not out-align it. That assertion is only as good as the numbers the
+    /// emitter actually reserved by, and those live in Rust, so the header's
+    /// own text is read here and compared with them. A block reserved by one
+    /// number and written by another is a kernel write past the reservation,
+    /// which this turns into a failing build.
+    #[test]
+    fn the_record_block_abi_constants_agree_with_the_contract_header() {
+        assert_eq!(
+            defined_unsigned(COMPLETION_CONTRACT_HEADER, "WF_COMPLETION_RECORD_BYTES"),
+            COMPLETION_RECORD_BYTES
+        );
+        assert_eq!(
+            defined_unsigned(COMPLETION_CONTRACT_HEADER, "WF_COMPLETION_RECORD_ALIGN"),
+            COMPLETION_RECORD_ALIGN
+        );
+        // A Windows translation unit reaches the same two constants through
+        // the native mirror of this contract instead, which imports no POSIX
+        // threading API. The mirror is a second spelling of one ABI, so it is
+        // held to the same numbers.
+        assert_eq!(
+            defined_unsigned(
+                COMPLETION_WINDOWS_NATIVE_API_HEADER,
+                "WF_COMPLETION_RECORD_BYTES"
+            ),
+            COMPLETION_RECORD_BYTES
+        );
+        assert_eq!(
+            defined_unsigned(
+                COMPLETION_WINDOWS_NATIVE_API_HEADER,
+                "WF_COMPLETION_RECORD_ALIGN"
+            ),
+            COMPLETION_RECORD_ALIGN
+        );
+    }
 }

@@ -18,7 +18,6 @@ mod operations;
 mod parallel;
 mod reinterpret;
 mod slice;
-mod stackless;
 mod system;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -51,7 +50,6 @@ pub use completion::{
     COMPLETION_WINDOWS_IOCP_SOURCE, COMPLETION_WINDOWS_NATIVE_API_HEADER,
     COMPLETION_WINDOWS_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
     WRITER_SCHEDULER_WINDOWS_SOURCE, module_requires_completion_runtime,
-    module_requires_writer_scheduler,
 };
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
@@ -63,9 +61,7 @@ use parallel::{
     sequential_clone_set, sequential_clone_symbol,
 };
 pub use parallel::{
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
-    PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE, PARALLEL_WINDOWS_RUNTIME_SOURCE,
-    module_requires_parallel_runtime,
+    PARALLEL_RUNTIME_SOURCE, PARALLEL_WINDOWS_RUNTIME_SOURCE, module_requires_parallel_runtime,
 };
 pub use system::{WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE};
 
@@ -150,8 +146,7 @@ fn emit_llvm_for(
     let mut thunks = ParallelThunks::default();
     let mut completion_used = false;
     let mut functions = String::new();
-    let stackless = stackless::StacklessPlan::build(program, &qualification);
-    for (ordinal, function) in program.functions().iter().enumerate() {
+    for function in program.functions() {
         let emitter = FunctionEmitter::new(
             program,
             &qualification,
@@ -164,18 +159,7 @@ fn emit_llvm_for(
                 sequential_clones: None,
             },
         )?;
-        let emitted = if stackless
-            .as_ref()
-            .is_some_and(|plan| u32::try_from(ordinal).ok() == Some(plan.root_ordinal()))
-        {
-            emitter.emit_stackless_root(stackless.as_ref().expect("checked above"))?
-        } else {
-            emitter.emit()?
-        };
-        functions.push_str(&emitted);
-    }
-    if let Some(plan) = &stackless {
-        functions.push_str(&plan.emit_tail_definitions(program, &qualification)?);
+        functions.push_str(&emitter.emit()?);
     }
     // The second world. It exists only where the first one actualizes
     // something, so a build that hands nothing out — every default build among
@@ -296,10 +280,7 @@ fn emit_llvm_for(
             system_declarations.remove("declare i64 @write(i32, ptr, i64)");
         }
     }
-    if writes_a_record
-        || has_matches
-        || (system_target.is_windows() && (completion_used || stackless.is_some()))
-    {
+    if writes_a_record || has_matches || (system_target.is_windows() && completion_used) {
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
@@ -372,7 +353,7 @@ fn emit_llvm_for(
     }
     // Emitted only where a permitted overlap group is actually handed out, so
     // a module that overlaps nothing names no runtime symbol at all.
-    if thunks.requires_runtime() {
+    if thunks.is_used() {
         text.push('\n');
         text.push_str(if system_target.is_windows() {
             PARALLEL_RUNTIME_DECLARATIONS
@@ -412,14 +393,6 @@ fn emit_llvm_for(
                 completion::COMPLETION_WINDOW_FALLBACK
             });
         }
-    }
-    if stackless.is_some() {
-        text.push('\n');
-        text.push_str(if system_target.is_windows() {
-            stackless::STACKLESS_WINDOWS_RUNTIME_DECLARATIONS
-        } else {
-            stackless::STACKLESS_RUNTIME_FALLBACK
-        });
     }
     if !functions.is_empty() {
         text.push('\n');
@@ -679,7 +652,7 @@ enum FunctionSlot {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum CompletionSlot {
-    Token,
+    Record,
     Result,
     RawValue,
     RawError,
@@ -739,12 +712,14 @@ impl FunctionFramePlan {
                             &mut ordered,
                             FunctionSlot::ArrayFillValue(*result),
                             TargetStorageType::source(*ty),
+                            None,
                         )?;
                         push_function_slot(
                             &mut specifications,
                             &mut ordered,
                             FunctionSlot::ArrayFillIndex(*result),
                             TargetStorageType::integer(64),
+                            None,
                         )?;
                     }
                     IrOperation::ArrayIndex {
@@ -759,6 +734,7 @@ impl FunctionFramePlan {
                             &mut ordered,
                             FunctionSlot::ArrayRoot(*result),
                             TargetStorageType::source(root_type),
+                            None,
                         )?;
                     }
                     IrOperation::InsertArray { .. } => push_function_slot(
@@ -766,6 +742,7 @@ impl FunctionFramePlan {
                         &mut ordered,
                         FunctionSlot::InsertArray(*result),
                         TargetStorageType::source(*ty),
+                        None,
                     )?,
                     IrOperation::SliceFromArray {
                         array: IrArrayRoot::Value(value),
@@ -778,6 +755,7 @@ impl FunctionFramePlan {
                             &mut ordered,
                             FunctionSlot::SliceRoot(*result),
                             TargetStorageType::source(array_type),
+                            None,
                         )?;
                     }
                     IrOperation::AddressOf { referent, .. } => push_function_slot(
@@ -785,12 +763,14 @@ impl FunctionFramePlan {
                         &mut ordered,
                         FunctionSlot::Address(*result),
                         TargetStorageType::source(referent.ty()),
+                        None,
                     )?,
                     IrOperation::ArenaListNew => push_function_slot(
                         &mut specifications,
                         &mut ordered,
                         FunctionSlot::ArenaList(*result),
                         TargetStorageType::pointer(),
+                        None,
                     )?,
                     IrOperation::SystemCall {
                         operation,
@@ -891,16 +871,26 @@ impl FunctionFramePlan {
     }
 }
 
+/// Reserves one logical frame slot under its semantic key.
+///
+/// `alignment` is `None` for the ordinary case, where the storage type's own
+/// natural alignment is the slot's. It is `Some` only where an external
+/// contract states the alignment the reservation must have, which a byte
+/// block's natural alignment of one would otherwise understate.
 fn push_function_slot(
     specifications: &mut Vec<TargetFrameSlot>,
     ordered: &mut Vec<FunctionSlot>,
     key: FunctionSlot,
     ty: TargetStorageType,
+    alignment: Option<u64>,
 ) -> Result<(), BackendFailure> {
     if ordered.contains(&key) {
         return Err(BackendFailure::InvalidIr);
     }
-    specifications.push(TargetFrameSlot::natural(ty));
+    specifications.push(match alignment {
+        Some(alignment) => TargetFrameSlot::aligned(ty, alignment),
+        None => TargetFrameSlot::natural(ty),
+    });
     ordered.push(key);
     Ok(())
 }
@@ -927,31 +917,51 @@ fn plan_completion_slots(
     } else {
         1
     };
-    let mut add = |role, element| {
+    let mut add = |role, element, alignment| {
         push_function_slot(
             specifications,
             ordered,
             FunctionSlot::Completion(result, role),
             TargetStorageType::array(element, slot_count),
+            alignment,
         )
     };
+    // The opaque record block, reserved by the two ABI constants the
+    // completion contract states rather than by any layout this compiler
+    // knows. A byte block's natural alignment is one, so the contract's
+    // alignment is the reservation's; the C side asserts its own record
+    // against the same two numbers.
     add(
-        CompletionSlot::Token,
-        TargetStorageType::array(TargetStorageType::integer(64), 2),
+        CompletionSlot::Record,
+        TargetStorageType::bytes(completion::COMPLETION_RECORD_BYTES),
+        Some(completion::COMPLETION_RECORD_ALIGN),
     )?;
     add(
         CompletionSlot::Result,
         TargetStorageType::source(result_type),
+        None,
     )?;
-    add(CompletionSlot::RawValue, TargetStorageType::integer(64))?;
-    add(CompletionSlot::RawError, TargetStorageType::integer(32))?;
+    add(
+        CompletionSlot::RawValue,
+        TargetStorageType::integer(64),
+        None,
+    )?;
+    add(
+        CompletionSlot::RawError,
+        TargetStorageType::integer(32),
+        None,
+    )?;
 
     match operation {
         system::CompletionFileOperation::OpenRead
         | system::CompletionFileOperation::OpenDirectory
         | system::CompletionFileOperation::OpenDirectorySource
         | system::CompletionFileOperation::OpenFile => {
-            add(CompletionSlot::OpenOutcome, TargetStorageType::integer(32))?;
+            add(
+                CompletionSlot::OpenOutcome,
+                TargetStorageType::integer(32),
+                None,
+            )?;
         }
         system::CompletionFileOperation::Read
         | system::CompletionFileOperation::Write
@@ -970,23 +980,31 @@ fn plan_completion_slots(
                 1
             })
             .ok_or(BackendFailure::CounterOverflow)?;
-        add(CompletionSlot::Component, TargetStorageType::bytes(bytes))?;
+        add(
+            CompletionSlot::Component,
+            TargetStorageType::bytes(bytes),
+            None,
+        )?;
     }
     if operation == system::CompletionFileOperation::DirectoryNext {
-        add(CompletionSlot::Cursor, TargetStorageType::integer(64))?;
+        add(CompletionSlot::Cursor, TargetStorageType::integer(64), None)?;
     }
     if !uses_ring && !qualification.target().is_windows() {
         return Ok(());
     }
 
-    add(CompletionSlot::Submitted, TargetStorageType::integer(1))?;
+    add(
+        CompletionSlot::Submitted,
+        TargetStorageType::integer(1),
+        None,
+    )?;
     if !uses_ring {
         return Ok(());
     }
     match operation {
         system::CompletionFileOperation::Read | system::CompletionFileOperation::Write => {
-            add(CompletionSlot::Start, TargetStorageType::integer(64))?;
-            add(CompletionSlot::Extent, TargetStorageType::integer(64))?;
+            add(CompletionSlot::Start, TargetStorageType::integer(64), None)?;
+            add(CompletionSlot::Extent, TargetStorageType::integer(64), None)?;
         }
         system::CompletionFileOperation::DirectoryNext => {
             let [_, destination, _, _] = arguments else {
@@ -998,9 +1016,10 @@ fn plan_completion_slots(
             add(
                 CompletionSlot::Destination,
                 TargetStorageType::source(destination_type),
+                None,
             )?;
-            add(CompletionSlot::Start, TargetStorageType::integer(64))?;
-            add(CompletionSlot::Extent, TargetStorageType::integer(64))?;
+            add(CompletionSlot::Start, TargetStorageType::integer(64), None)?;
+            add(CompletionSlot::Extent, TargetStorageType::integer(64), None)?;
         }
         system::CompletionFileOperation::OpenRead
         | system::CompletionFileOperation::OpenDirectory
@@ -1985,10 +2004,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 /// Selected-target lane layouts for every member which would leave the
 /// calling thread, or `None` when the permission remains sequential.
 ///
-/// A possibly-suspending Whitefoot wrapper is intentionally declined until
-/// selective stackless frames exist; only its direct compiler-owned file
-/// operation can enter completion. An ordinary call additionally has to fit
-/// the runtime lane slot as one complete `{ arguments..., result }` aggregate.
+/// A possibly-suspending Whitefoot wrapper is declined here; only its direct
+/// compiler-owned file operation can enter completion, and such a function
+/// keeps the synchronous ABI of the sequential world (design section 8). An
+/// ordinary call additionally has to fit the runtime lane slot as one
+/// complete `{ arguments..., result }` aggregate.
 fn ordinary_overlap_lane_frames(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,

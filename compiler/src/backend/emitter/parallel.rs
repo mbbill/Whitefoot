@@ -81,29 +81,8 @@ pub(super) struct LoopSplitSite<'ir> {
 /// links a Whitefoot executable links the same bytes.
 pub const PARALLEL_RUNTIME_SOURCE: &str = include_str!("../par_runtime.c");
 
-/// The same runtime with stackless writer-frame stealing compiled in. Link
-/// paths select these bytes only when the emitted module can publish a writer
-/// frame, so pure compute and ordinary direct completion pay no empty queue
-/// probe.
-pub const PARALLEL_COMPLETION_RUNTIME_SOURCE: &str = concat!(
-    "#define WF_PAR_WITH_WRITER_SCHEDULER 1\n",
-    include_str!("../par_runtime.c")
-);
-
-/// The native Windows worker-pool runtime for a pure-compute module.
-///
-/// Although the Windows driver currently links the completion units in every
-/// executable, this form does not probe their empty writer queue in the hot
-/// steal loop.
+/// The native Windows worker-pool runtime.
 pub const PARALLEL_WINDOWS_RUNTIME_SOURCE: &str = include_str!("../par_runtime_windows.c");
-
-/// The native Windows worker-pool runtime with writer-frame helping enabled.
-/// A module that actualizes compute work and can suspend a stackless writer
-/// selects these bytes so ready writers run on the same scheduler lanes.
-pub const PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE: &str = concat!(
-    "#define WF_PAR_WITH_WRITER_SCHEDULER 1\n",
-    include_str!("../par_runtime_windows.c")
-);
 
 /// The Windows parallel ABI as external obligations.
 ///
@@ -352,7 +331,6 @@ pub(crate) struct ParallelThunks {
     /// Whether any emitted function asked the runtime for a split allowance, so
     /// a module that splits no loop names that symbol nowhere.
     queries_split_budget: bool,
-    stackless_runtime: bool,
 }
 
 impl ParallelThunks {
@@ -364,14 +342,6 @@ impl ParallelThunks {
 
     pub(crate) const fn is_used(&self) -> bool {
         self.count != 0
-    }
-
-    pub(crate) const fn requires_runtime(&self) -> bool {
-        self.is_used() || self.stackless_runtime
-    }
-
-    pub(crate) fn request_stackless_runtime(&mut self) {
-        self.stackless_runtime = true;
     }
 
     pub(crate) const fn queries_split_budget(&self) -> bool {

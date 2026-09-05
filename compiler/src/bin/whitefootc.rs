@@ -15,9 +15,8 @@ use whitefoot::{
     COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER,
     COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
     COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, FLOOR_RUNTIME_SOURCE,
-    HOST_LINK_LIBRARIES, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
-    WRITER_SCHEDULER_SOURCE, module_requires_completion_runtime, module_requires_parallel_runtime,
-    module_requires_writer_scheduler,
+    HOST_LINK_LIBRARIES, PARALLEL_RUNTIME_SOURCE, WRITER_SCHEDULER_SOURCE,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
 };
 
 #[cfg(any(target_os = "windows", test))]
@@ -30,10 +29,10 @@ use whitefoot::{
 };
 
 #[cfg(any(target_os = "windows", test))]
-use whitefoot::{PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE, PARALLEL_WINDOWS_RUNTIME_SOURCE};
+use whitefoot::PARALLEL_WINDOWS_RUNTIME_SOURCE;
 
 #[cfg(target_os = "windows")]
-use whitefoot::{module_requires_parallel_runtime, module_requires_writer_scheduler};
+use whitefoot::module_requires_parallel_runtime;
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
@@ -327,12 +326,7 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     // gets.
     let runtime = if module_requires_parallel_runtime(llvm) {
         let path = std::env::temp_dir().join(format!("whitefootc-par-{}.c", std::process::id()));
-        let source = if module_requires_writer_scheduler(llvm) {
-            PARALLEL_COMPLETION_RUNTIME_SOURCE
-        } else {
-            PARALLEL_RUNTIME_SOURCE
-        };
-        std::fs::write(&path, source)
+        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE)
             .map_err(|error| format!("cannot write the parallel runtime: {error}"))?;
         Some(path)
     } else {
@@ -499,14 +493,8 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
 /// stale runtime instead.
 #[cfg(any(target_os = "windows", test))]
 fn windows_parallel_runtime_unit(llvm: &str) -> Option<(&'static str, &'static str)> {
-    module_requires_parallel_runtime(llvm).then(|| {
-        let source = if module_requires_writer_scheduler(llvm) {
-            PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE
-        } else {
-            PARALLEL_WINDOWS_RUNTIME_SOURCE
-        };
-        ("par_runtime_windows.c", source)
-    })
+    module_requires_parallel_runtime(llvm)
+        .then_some(("par_runtime_windows.c", PARALLEL_WINDOWS_RUNTIME_SOURCE))
 }
 
 #[cfg(target_os = "windows")]
@@ -747,41 +735,12 @@ mod tests {
     use super::{
         CompilerLimits, Options, OverlapLowering, SourceInput, WINDOWS_RUNTIME_COMPILE_UNITS,
         WINDOWS_RUNTIME_UNITS, compile_with_io_notices, compile_with_permission_ledger,
-        io_notice_report, module_requires_parallel_runtime, module_requires_writer_scheduler,
-        source_names, windows_parallel_runtime_unit,
+        io_notice_report, module_requires_parallel_runtime, source_names,
+        windows_parallel_runtime_unit,
     };
     use whitefoot::module_requires_completion_runtime;
 
     const PAR_LAYOUT: &[u8] = include_bytes!("../../../tests/programs/par_layout.wf");
-
-    const STACKLESS_AND_COMPUTE: &[u8] = br#"fn identity(value: own u8) -> result: own u8 pure {
-  return value;
-}
-
-fn paired(value: own u8) -> result: own u8 pure {
-  let left = identity(value: value);
-  let right = identity(value: value);
-  return left +wrap right;
-}
-
-fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
-  define ordered = start <= end;
-  define capacity = len(deref(source));
-  requires ordered;
-  requires end <= capacity;
-} {
-  return write_once(output: move output, source: source, start: start, end: end);
-}
-
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
-  let fill = paired(value: 32_u8);
-  let bytes = buffer_new(1_u64, fill);
-  region {
-    let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
 
     fn compile_parallel_fixture(name: &str, source: &[u8]) -> String {
         whitefoot::compile_with_overlap(
@@ -798,11 +757,18 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     }
 
     /// The Windows link adds the embedded native pool on exactly the same
-    /// marker that the emitter leaves unresolved, and adds writer helping only
-    /// for an actual stackless writer frame. Ordinary direct completion still
-    /// links its own runtime, but leaves the compute steal loop alone.
+    /// marker that the emitter leaves unresolved, and adds nothing at all to a
+    /// module that hands out no work.
+    ///
+    /// Retired with the stackless plan (design section 8): this test also
+    /// asserted that a module publishing a writer frame selected the
+    /// `WF_PAR_WITH_WRITER_SCHEDULER` runtime variant. There is no writer-frame
+    /// submit ABI and no such variant any more, so those assertions and the
+    /// stackless fixture they compiled went with them. What the Windows link
+    /// still decides -- pool unit or no pool unit, and which strong symbols
+    /// that unit must define -- is what remains asserted here.
     #[test]
-    fn windows_parallel_link_selects_writer_help_only_for_stackless_frames() {
+    fn windows_parallel_link_adds_the_native_pool_on_the_hand_out_marker() {
         assert!(
             windows_parallel_runtime_unit("define i32 @main() { ret i32 0 }").is_none(),
             "a module with no hand-out must add no worker-pool unit"
@@ -814,17 +780,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
             module_requires_completion_runtime(&layout),
             "par_layout's real write_once must still require completion"
         );
-        assert!(
-            !module_requires_writer_scheduler(&layout),
-            "par_layout has no stackless writer frame to resume"
-        );
         let (name, source) = windows_parallel_runtime_unit(&layout)
             .expect("par_layout hand-outs must require the native unit");
         assert_eq!(name, "par_runtime_windows.c");
-        assert!(
-            !source.starts_with("#define WF_PAR_WITH_WRITER_SCHEDULER 1\n"),
-            "direct write_once must not put an empty writer probe in the compute steal loop"
-        );
         for strong_definition in [
             "void *wf__par_acquire_lane(uint64_t bytes) {",
             "void wf__par_publish(void *frame, void (*fn)(void *)) {",
@@ -838,20 +796,6 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
                 "the embedded Windows runtime omits `{strong_definition}`"
             );
         }
-
-        let stackless = compile_parallel_fixture("stackless-and-compute.wf", STACKLESS_AND_COMPUTE);
-        assert!(module_requires_parallel_runtime(&stackless));
-        assert!(module_requires_completion_runtime(&stackless));
-        assert!(
-            module_requires_writer_scheduler(&stackless),
-            "the emitted submit_writer call must select writer helping"
-        );
-        let (_, source) = windows_parallel_runtime_unit(&stackless)
-            .expect("the stackless compute module still requires the native unit");
-        assert!(
-            source.starts_with("#define WF_PAR_WITH_WRITER_SCHEDULER 1\n"),
-            "a stackless Windows pool must help the writer scheduler"
-        );
     }
 
     /// The driver stages the embedded Windows sources with the same relative

@@ -113,13 +113,6 @@ _Alignas(WF_PAR_CACHE_LINE) static volatile LONG wf__par_ready_workers;
 static WF_PAR_THREAD_LOCAL struct wf__par_lane *wf__par_self;
 static WF_PAR_THREAD_LOCAL int wf__par_attached;
 
-#if defined(WF_PAR_WITH_WRITER_SCHEDULER)
-extern int wf__writer_scheduler_help_once(void);
-#define WF_PAR_WRITER_HELP_ONCE() wf__writer_scheduler_help_once()
-#else
-#define WF_PAR_WRITER_HELP_ONCE() 0
-#endif
-
 extern size_t wf__floor_stack_bytes(void);
 extern void wf__floor_attach_thread(void);
 
@@ -622,10 +615,6 @@ static void wf__par_wait(
         if (wf__par_load32_acquire(&target->state) == WF_PAR_SLOT_DONE) {
             return;
         }
-        if (WF_PAR_WRITER_HELP_ONCE()) {
-            rounds = 0;
-            continue;
-        }
         slot = wf__par_pop(lane);
         if (slot == NULL) {
             slot = wf__par_find(lane);
@@ -673,10 +662,6 @@ static unsigned __stdcall wf__par_worker_main(void *opaque) {
         struct wf__par_slot *slot;
         uint64_t bit;
         LONG observed_generation;
-        if (WF_PAR_WRITER_HELP_ONCE()) {
-            rounds = 0;
-            continue;
-        }
         slot = wf__par_find(lane);
         if (slot != NULL) {
             wf__par_execute(slot);
@@ -709,14 +694,6 @@ static unsigned __stdcall wf__par_worker_main(void *opaque) {
                 (LONG64)~bit
             );
             wf__par_execute(slot);
-            rounds = 0;
-            continue;
-        }
-        if (WF_PAR_WRITER_HELP_ONCE()) {
-            (void)wf__par_fetch_and64_seq(
-                &wf__par_idle,
-                (LONG64)~bit
-            );
             rounds = 0;
             continue;
         }
@@ -874,20 +851,6 @@ static struct wf__par_lane *wf__par_attach(void) {
     return wf__par_self;
 }
 
-#if defined(WF_PAR_WITH_WRITER_SCHEDULER)
-void wf__writer_scheduler_prepare_lanes(void) {
-    if (wf__par_self == NULL && !wf__par_attached) {
-        (void)wf__par_attach();
-    }
-}
-
-void wf__writer_scheduler_wake_lane(void) {
-    if (wf__par_load64_seq(&wf__par_idle) != 0) {
-        wf__par_wake_one();
-    }
-}
-#endif
-
 /* -------------------------------------------------------- emitted-module ABI */
 
 void *wf__par_acquire_lane(uint64_t bytes) {
@@ -926,9 +889,6 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
 int wf__par_help_once(void) {
     struct wf__par_lane *lane = wf__par_self;
     struct wf__par_slot *slot;
-    if (WF_PAR_WRITER_HELP_ONCE()) {
-        return 1;
-    }
     if (lane == NULL) {
         return 0;
     }

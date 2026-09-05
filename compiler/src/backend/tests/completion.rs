@@ -775,9 +775,9 @@ fn only_an_actualized_target_operation_selects_the_completion_runtime() {
     assert!(crate::module_requires_completion_runtime(&sequential));
     assert!(crate::module_requires_completion_runtime(&completion));
     assert!(!crate::module_requires_completion_runtime(&pure));
-    assert!(!crate::module_requires_writer_scheduler(&sequential));
-    assert!(!crate::module_requires_writer_scheduler(&completion));
-    assert!(!crate::module_requires_writer_scheduler(&pure));
+    // Three writer-scheduler assertions retired here with the stackless plan
+    // (design section 8): no module can publish a writer frame any more, so
+    // there is no predicate left to ask.
     assert!(sequential.contains("@wf__completion_file_write_direct"));
     assert!(!sequential.contains("call i32 @wf__completion_file_write_submit"));
     assert!(!pure.contains("wf__completion_"));
@@ -1233,10 +1233,7 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
         ("writer_scheduler.c", crate::WRITER_SCHEDULER_SOURCE),
         ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
         ("floor.c", crate::FLOOR_RUNTIME_SOURCE),
-        (
-            "par_completion.c",
-            crate::PARALLEL_COMPLETION_RUNTIME_SOURCE,
-        ),
+        ("par_runtime.c", crate::PARALLEL_RUNTIME_SOURCE),
     ];
     for (name, source) in units {
         std::fs::write(directory.join(name), source).expect("write compiler-owned C unit");

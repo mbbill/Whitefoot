@@ -26,10 +26,9 @@ use crate::backend::target::{
 
 use super::system::{with_ir, with_parallel_ir};
 use super::{
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
-    append_completion_runtime, build_executable, compile_and_run, emit, emit_with_overlap,
-    emitted_function, module_requires_parallel_runtime, module_requires_writer_scheduler,
-    test_directory,
+    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, append_completion_runtime,
+    build_executable, compile_and_run, emit, emit_with_overlap, emitted_function,
+    module_requires_parallel_runtime, test_directory,
 };
 
 /// A pure recursive fold over a heap tree, the smallest shape that has
@@ -1834,12 +1833,7 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
-    let parallel_source = if module_requires_writer_scheduler(module) {
-        PARALLEL_COMPLETION_RUNTIME_SOURCE
-    } else {
-        PARALLEL_RUNTIME_SOURCE
-    };
-    std::fs::write(&runtime, parallel_source).expect("write the runtime");
+    std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the runtime");
     // The floor joins every link the driver makes, and a lane's per-thread arm
     // lives in it, so this harness links what a shipped program links.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");

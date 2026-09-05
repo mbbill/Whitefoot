@@ -279,17 +279,6 @@ static _Thread_local struct wf__par_lane *wf__par_self;
  * reaches the pool's initialization again. */
 static _Thread_local int wf__par_attached;
 
-/* Stackless writer frames share these same scheduler lanes only in a link
- * which actually contains the completion scheduler.  A pure-compute runtime
- * compiles the call away entirely: no weak call, queue probe, or completion
- * branch remains on its worker loop. */
-#if defined(WF_PAR_WITH_WRITER_SCHEDULER)
-extern int wf__writer_scheduler_help_once(void);
-#define WF_PAR_WRITER_HELP_ONCE() wf__writer_scheduler_help_once()
-#else
-#define WF_PAR_WRITER_HELP_ONCE() 0
-#endif
-
 /* Set once the pool's threads are all in their steal loops, so the first offer
  * of a program meets a pool that can take it rather than one still starting. */
 static int wf__par_ready;
@@ -533,10 +522,6 @@ static void *wf__par_worker_main(void *opaque) {
 
     for (;;) {
         struct wf__par_slot *slot;
-        if (WF_PAR_WRITER_HELP_ONCE()) {
-            rounds = 0;
-            continue;
-        }
         slot = wf__par_find(lane);
         if (slot != NULL) {
             wf__par_execute(slot);
@@ -560,12 +545,6 @@ static void *wf__par_worker_main(void *opaque) {
             __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)),
                                __ATOMIC_ACQ_REL);
             wf__par_execute(slot);
-            rounds = 0;
-            continue;
-        }
-        if (WF_PAR_WRITER_HELP_ONCE()) {
-            __atomic_fetch_and(&wf__par_idle, ~(1ull << (lane - wf__par_lanes)),
-                               __ATOMIC_ACQ_REL);
             rounds = 0;
             continue;
         }
@@ -738,20 +717,6 @@ static struct wf__par_lane *wf__par_attach(void) {
     return wf__par_self;
 }
 
-#if defined(WF_PAR_WITH_WRITER_SCHEDULER)
-void wf__writer_scheduler_prepare_lanes(void) {
-    if (wf__par_self == NULL && !wf__par_attached) {
-        (void)wf__par_attach();
-    }
-}
-
-void wf__writer_scheduler_wake_lane(void) {
-    if (__atomic_load_n(&wf__par_idle, __ATOMIC_SEQ_CST) != 0) {
-        wf__par_wake_one();
-    }
-}
-#endif
-
 /* --------------------------------------------------------- the module's ABI */
 
 void *wf__par_acquire_lane(unsigned long bytes) {
@@ -799,9 +764,6 @@ void wf__par_publish(void *frame, void (*fn)(void *)) {
 int wf__par_help_once(void) {
     struct wf__par_lane *lane = wf__par_self;
     struct wf__par_slot *slot;
-    if (WF_PAR_WRITER_HELP_ONCE()) {
-        return 1;
-    }
     if (lane == NULL) {
         return 0;
     }

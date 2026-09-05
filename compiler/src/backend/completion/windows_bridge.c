@@ -36,6 +36,15 @@ _Static_assert(
 );
 #endif
 
+_Static_assert(
+    sizeof(wf_completion_token) <= WF_COMPLETION_RECORD_BYTES,
+    "this unit's operation record must fit the block an emitted frame reserves"
+);
+_Static_assert(
+    _Alignof(wf_completion_token) <= WF_COMPLETION_RECORD_ALIGN,
+    "this unit's operation record must not out-align the reserved block"
+);
+
 /* writer_scheduler_windows.c supplies a completion-only default; the native
  * compute runtime overrides it with its unified work-first helper. */
 extern int wf__par_help_once(void);
@@ -591,14 +600,14 @@ static size_t wf_windows_bridge_drain(void) {
 
 /* Harvests only the event owned by this join instead of sweeping all 64 core
  * slots on every turn. */
-static void wf_windows_bridge_drain_token(const void *token_storage) {
+static void wf_windows_bridge_drain_token(const void *record) {
     wf_completion_event event;
-    if (token_storage == NULL) {
+    if (record == NULL) {
         abort();
     }
     (void)wf_completion_drain_token(
         &wf_windows_bridge_runtime,
-        *(const wf_completion_token *)token_storage,
+        *(const wf_completion_token *)record,
         &event
     );
 }
@@ -883,33 +892,15 @@ int wf__completion_file_pread_submit(
     void *buffer,
     uint64_t count,
     uint64_t file_offset,
-    void *token_storage
+    void *record
 ) {
     return wf_windows_bridge_submit_pread(
         descriptor,
         buffer,
         count,
         file_offset,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
-    );
-}
-
-int wf__completion_file_pread_submit_writer(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    uint64_t file_offset,
-    void *token_storage,
-    void *frame
-) {
-    return wf_windows_bridge_submit_pread(
-        descriptor,
-        buffer,
-        count,
-        file_offset,
-        (wf_completion_token *)token_storage,
-        frame
     );
 }
 
@@ -920,11 +911,11 @@ int wf__completion_file_write_submit(
     int descriptor,
     const void *buffer,
     uint64_t count,
-    void *token_storage
+    void *record
 ) {
     wf_windows_blocking_request request;
     if (descriptor < 0 || (buffer == NULL && count != 0)
-        || token_storage == NULL) {
+        || record == NULL) {
         abort();
     }
     if (count == 0) {
@@ -937,35 +928,8 @@ int wf__completion_file_write_submit(
     request.operation.write.count = count;
     return wf_windows_bridge_submit_blocking(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
-    );
-}
-
-int wf__completion_file_write_submit_writer(
-    int descriptor,
-    const void *buffer,
-    uint64_t count,
-    void *token_storage,
-    void *frame
-) {
-    wf_windows_blocking_request request;
-    if (descriptor < 0 || (buffer == NULL && count != 0)
-        || token_storage == NULL || frame == NULL) {
-        abort();
-    }
-    if (count == 0) {
-        return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_WINDOWS_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = count;
-    return wf_windows_bridge_submit_blocking(
-        &request,
-        (wf_completion_token *)token_storage,
-        frame
     );
 }
 
@@ -973,12 +937,12 @@ int wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
-    void *token_storage
+    void *record
 ) {
     (void)descriptor;
     (void)buffer;
     (void)count;
-    (void)token_storage;
+    (void)record;
     /* The language's file read operation is positioned. Reaching this ABI is
      * compiler/runtime drift, not a permitted synchronous backend choice. */
     abort();
@@ -992,11 +956,11 @@ int wf__completion_file_open_at_submit(
     unsigned has_mode,
     unsigned expected_kind,
     unsigned descriptor_class,
-    void *token_storage
+    void *record
 ) {
     wf_windows_blocking_request request;
     size_t path_units;
-    if (directory < 0 || path == NULL || token_storage == NULL) {
+    if (directory < 0 || path == NULL || record == NULL) {
         abort();
     }
     /* An overlong path is outside the bounded job representation. The direct
@@ -1016,20 +980,20 @@ int wf__completion_file_open_at_submit(
     request.operation.open_at.descriptor_class = descriptor_class;
     return wf_windows_bridge_submit_blocking(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
 
-int wf__completion_file_status_submit(int descriptor, void *token_storage) {
+int wf__completion_file_status_submit(int descriptor, void *record) {
     (void)descriptor;
-    (void)token_storage;
+    (void)record;
     return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
-int wf__completion_file_close_submit(int descriptor, void *token_storage) {
+int wf__completion_file_close_submit(int descriptor, void *record) {
     (void)descriptor;
-    (void)token_storage;
+    (void)record;
     return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
 
@@ -1038,11 +1002,11 @@ int wf__completion_directory_next_submit(
     void *buffer,
     uint64_t count,
     int64_t *position,
-    void *token_storage
+    void *record
 ) {
     wf_windows_blocking_request request;
     if (descriptor < 0 || position == NULL
-        || (buffer == NULL && count != 0) || token_storage == NULL) {
+        || (buffer == NULL && count != 0) || record == NULL) {
         abort();
     }
     if (count == 0) {
@@ -1056,24 +1020,24 @@ int wf__completion_directory_next_submit(
     request.operation.directory_next.position = position;
     return wf_windows_bridge_submit_blocking(
         &request,
-        (wf_completion_token *)token_storage,
+        (wf_completion_token *)record,
         NULL
     );
 }
 
 static int wf_windows_bridge_take_result(
-    const void *token_storage,
+    const void *record,
     wf_windows_file_result *result
 ) {
     wf_completion_outcome outcome;
     enum wf_completion_consume_result consumed;
-    if (token_storage == NULL || result == NULL) {
+    if (record == NULL || result == NULL) {
         abort();
     }
     memset(&outcome, 0, sizeof(outcome));
     consumed = wf_completion_consume(
         &wf_windows_bridge_runtime,
-        *(const wf_completion_token *)token_storage,
+        *(const wf_completion_token *)record,
         result,
         sizeof(*result),
         &outcome
@@ -1092,7 +1056,7 @@ static int wf_windows_bridge_take_result(
 }
 
 int wf__completion_file_take(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 ) {
@@ -1100,7 +1064,7 @@ int wf__completion_file_take(
     if (value == NULL || error_code == NULL) {
         abort();
     }
-    if (!wf_windows_bridge_take_result(token_storage, &result)) {
+    if (!wf_windows_bridge_take_result(record, &result)) {
         return 0;
     }
     if (result.kind != WF_WINDOWS_FILE_READ_AT
@@ -1114,7 +1078,7 @@ int wf__completion_file_take(
 }
 
 void wf__completion_file_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code
 ) {
@@ -1122,8 +1086,8 @@ void wf__completion_file_join(
         uint64_t observed = wf_completion_wake_epoch(
             &wf_windows_bridge_runtime
         );
-        wf_windows_bridge_drain_token(token_storage);
-        if (wf__completion_file_take(token_storage, value, error_code)) {
+        wf_windows_bridge_drain_token(record);
+        if (wf__completion_file_take(record, value, error_code)) {
             return;
         }
         (void)wf_windows_bridge_progress(observed, INFINITE);
@@ -1131,7 +1095,7 @@ void wf__completion_file_join(
 }
 
 void wf__completion_file_open_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     unsigned *open_outcome
@@ -1141,8 +1105,8 @@ void wf__completion_file_open_join(
         uint64_t observed = wf_completion_wake_epoch(
             &wf_windows_bridge_runtime
         );
-        wf_windows_bridge_drain_token(token_storage);
-        if (wf_windows_bridge_take_result(token_storage, &result)) {
+        wf_windows_bridge_drain_token(record);
+        if (wf_windows_bridge_take_result(record, &result)) {
             if (result.kind != WF_WINDOWS_FILE_OPEN_AT
                 || value == NULL || error_code == NULL
                 || open_outcome == NULL) {
@@ -1158,14 +1122,14 @@ void wf__completion_file_open_join(
 }
 
 void wf__completion_file_status_join(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     void *status,
     uint64_t status_capacity,
     uint64_t *status_size
 ) {
-    (void)token_storage;
+    (void)record;
     (void)value;
     (void)error_code;
     (void)status;
@@ -1175,14 +1139,14 @@ void wf__completion_file_status_join(
 }
 
 int wf__completion_file_take_status(
-    const void *token_storage,
+    const void *record,
     int64_t *value,
     int *error_code,
     void *status,
     uint64_t status_capacity,
     uint64_t *status_size
 ) {
-    (void)token_storage;
+    (void)record;
     (void)value;
     (void)error_code;
     (void)status;

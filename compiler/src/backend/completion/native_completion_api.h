@@ -19,6 +19,12 @@
 
 #define WF_COMPLETION_RESULT_CAPACITY 256u
 
+/* The opaque per-operation record block, mirrored from contract.h so a
+ * Windows translation unit reserves and asserts against the same two ABI
+ * constants. See that header for what the block is and who owns it. */
+#define WF_COMPLETION_RECORD_BYTES 16u
+#define WF_COMPLETION_RECORD_ALIGN 8u
+
 enum wf_completion_milestone {
     WF_COMPLETION_RESULT_READY = 1u << 0,
     WF_COMPLETION_PAYLOAD_RELEASED = 1u << 1,

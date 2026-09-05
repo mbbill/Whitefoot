@@ -1072,8 +1072,8 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
             .into_string();
         assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
         assert!(llvm.contains("%wf.frame = alloca {"));
-        assert!(llvm.contains("[2 x [2 x i64]]"));
-        assert!(llvm.contains("getelementptr inbounds [2 x [2 x i64]]"));
+        assert!(llvm.contains("[2 x [16 x i8]]"));
+        assert!(llvm.contains("getelementptr inbounds [2 x [16 x i8]]"));
         assert!(llvm.contains("call i32 @wf__completion_file_open_at_submit("));
         assert!(llvm.contains("call void @wf__completion_file_open_join("));
     });

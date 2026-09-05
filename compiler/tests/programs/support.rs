@@ -10,11 +10,10 @@ use whitefoot::{
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CompilationFailure, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
-    PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
-    compile, compile_with_overlap, compile_with_permission_ledger,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
-    module_requires_writer_scheduler,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE, SourceInput,
+    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile, compile_with_overlap,
+    compile_with_permission_ledger, module_requires_completion_runtime,
+    module_requires_parallel_runtime,
 };
 // Read by the superseded-inventory rejection in the directory-walking cases.
 use whitefoot::{Inventory, compile_with_inventory};
@@ -39,12 +38,7 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let completion_required = module_requires_completion_runtime(llvm);
     let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
         let path = directory.join("par_runtime.c");
-        let source = if module_requires_writer_scheduler(llvm) {
-            PARALLEL_COMPLETION_RUNTIME_SOURCE
-        } else {
-            PARALLEL_RUNTIME_SOURCE
-        };
-        std::fs::write(&path, source).expect("write the parallel runtime");
+        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
         command.arg("-x").arg("c").arg(&path);
         path
     });
@@ -304,12 +298,7 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&module, llvm).expect("write the module");
-    let parallel_source = if module_requires_writer_scheduler(llvm) {
-        PARALLEL_COMPLETION_RUNTIME_SOURCE
-    } else {
-        PARALLEL_RUNTIME_SOURCE
-    };
-    std::fs::write(&runtime, parallel_source).expect("write the parallel runtime");
+    std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
     std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(
         &observer,

@@ -46,8 +46,7 @@ NO_CORE_DUMPS := ulimit -c 0;
 SAMPLING_MODULES := \
 	backend::tests::exhaustion:: \
 	backend::tests::loop_split:: \
-	backend::tests::parallel:: \
-	backend::tests::stackless::
+	backend::tests::parallel::
 SAMPLING_SKIPS := $(patsubst %,--skip %,$(SAMPLING_MODULES))
 
 # The integration targets cargo discovers in `tests/`. `test-corpus` names them
