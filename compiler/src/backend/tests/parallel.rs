@@ -1425,10 +1425,14 @@ fn the_bootstrap_selects_one_world_once() {
     );
 }
 
-/// A Windows `--par` module carries unresolved native-pool obligations instead
-/// of the sequential weak definitions used by the POSIX optional-runtime
-/// path.  Consequently, omitting `par_runtime_windows.c` is a link error and
-/// can never turn a requested Windows backend into the sequential world.
+/// A Windows `--par` module carries unresolved lane-protocol obligations
+/// instead of the sequential weak definitions used by the POSIX
+/// optional-runtime path.  Consequently, omitting the scheduler core is a link
+/// error and can never turn a requested Windows backend into the sequential
+/// world.  The runtime that resolves them is now `sched/entry.c` over
+/// `sched/core.c`, the same one every other target links; what this fail-closed
+/// choice selects is a staging predicate rather than a second implementation
+/// (design section 7).
 #[test]
 fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
     let windows = SystemTarget::for_triple("x86_64-pc-windows-msvc")
@@ -1768,9 +1772,15 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 /// The opt-outs are pinned in the same case against the same executable, so a
 /// change that turned the default on by making *every* setting start a pool
 /// fails here rather than passing as a stronger version of the same news.
-/// `abc` stands for the unparsable settings: a value that is not a number is
-/// not a request for lanes, and reading it as one would be the runtime
-/// inventing a count the caller did not ask for.
+///
+/// `abc` used to stand here for the unparsable settings and to be a *third
+/// opt-out*: a value that is not a number was read as the sequential world.
+/// Step (iv) made every startup setting of this runtime follow one rule on
+/// every platform, and under it a value the setting cannot mean is a
+/// configuration error rather than a value to repair -- it ends the run before
+/// the program body, with one line on the diagnostic channel and nothing on
+/// the output channel. So it is checked here as that, beside the two opt-outs
+/// it is no longer one of.
 #[test]
 fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
@@ -1798,7 +1808,7 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     );
 
     let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
-    for setting in ["0", "1", "abc"] {
+    for setting in ["0", "1"] {
         let (granted, output) = counted.run(Some(setting));
         assert_eq!(output.status.code(), Some(0), "WF_WORKERS={setting}");
         assert_eq!(
@@ -1808,6 +1818,32 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
         runs.push((format!("WF_WORKERS={setting}"), output.stdout));
     }
     identical(&runs).expect("the default must not move one byte of the result");
+
+    // A setting this runtime cannot mean, on both ends of the rule: text that
+    // is not a number, and a number above the ceiling. Each ends the run
+    // before the program body, so no byte of the program's own output can
+    // appear, and the one line it writes names the setting and the ceiling.
+    for setting in ["abc", "-1", "65"] {
+        let (_, refused) = counted.run(Some(setting));
+        assert_ne!(
+            refused.status.code(),
+            Some(0),
+            "WF_WORKERS={setting} is a configuration error and must not run"
+        );
+        assert!(
+            refused.stdout.is_empty(),
+            "a refused configuration must reach no program output"
+        );
+        // The observer this fixture links reports the grant count from an
+        // exit handler, so it writes a line of its own after the refusal's.
+        // The refusal is the first line and the whole of what the runtime
+        // wrote before it stopped.
+        assert_eq!(
+            String::from_utf8_lossy(&refused.stderr).lines().next(),
+            Some("whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64"),
+            "the refusal must name the setting and its ceiling"
+        );
+    }
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -2088,7 +2124,7 @@ pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
 /// `unsigned long` the parallel runtime incremented; the core keeps its
 /// counters per thread so that no two threads ever write one word, so the
 /// observer calls rather than reads.
-pub(super) const GRANT_OBSERVER: &str = "#include <stdio.h>\nextern unsigned long wf__par_grants(void);\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants());\n}\n";
+pub(super) const GRANT_OBSERVER: &str = include_str!("../sched/grant_observer.c");
 
 /// One linked build of a module against the scheduler core and the grant
 /// observer, so a case that wants several runs of one module pays for the link

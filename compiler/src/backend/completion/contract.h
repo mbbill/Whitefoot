@@ -19,7 +19,6 @@
 
 #include "../sched/core.h"
 
-#include <pthread.h>
 #include <stdalign.h>
 #include <stdatomic.h>
 #include <stddef.h>
@@ -33,11 +32,12 @@ extern "C" {
 
 /* Whether this build's family has the [QUAL-2] directory-enumeration
  * facility: one host call that reports a bounded batch of an open directory's
- * entries and advances that descriptor's own position.  Darwin and Linux both
- * do, through different calls writing different records; a family that has
- * neither compiles no enumeration request kind at all, which is the C side of
- * the same refusal `backend/qualification.rs` makes for such a target. */
-#if defined(__APPLE__) || defined(__linux__)
+ * entries and advances that descriptor's own position.  Darwin, Linux and
+ * Windows all do, through different calls writing different records; a family
+ * that has none compiles no enumeration request kind at all, which is the C
+ * side of the same refusal `backend/qualification.rs` makes for such a
+ * target. */
+#if defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
 #define WF_FILE_HAS_DIRECTORY_NEXT 1
 #endif
 
@@ -93,6 +93,14 @@ typedef struct wf_file_request {
             unsigned mode;
             unsigned has_mode;
             enum wf_file_expected_kind expected_kind;
+            /* Which resource this descriptor will become, on a target whose
+             * open needs to know before it opens.  It is the one place an ABI
+             * the emitter emits per target reaches this record: the Windows
+             * `wf__completion_file_open_at_submit` carries the extra argument
+             * and fills this, every other target fills zero and no leaf reads
+             * it (`emitter/completion.rs`,
+             * COMPLETION_WINDOWS_RUNTIME_DECLARATIONS). */
+            unsigned descriptor_class;
         } open_at;
         struct {
             int descriptor;
@@ -162,8 +170,34 @@ enum wf_completion_route {
     WF_COMPLETION_ROUTE_NONE = 0,
     WF_COMPLETION_ROUTE_FILE_ADAPTER = 1,
     WF_COMPLETION_ROUTE_LINUX_IO_URING = 2,
-    WF_COMPLETION_ROUTE_INLINE = 3
+    WF_COMPLETION_ROUTE_INLINE = 3,
+    WF_COMPLETION_ROUTE_WINDOWS_IOCP = 4
 };
+
+/* The ring's own state inside the record, one platform's at a time.
+ *
+ * A kernel completion ring keeps something per operation, and the record is
+ * where it goes now that there is no entry pool to keep it in (design §7,
+ * "What survives, and the one change inside it").  The two rings keep
+ * different things, so this is a union rather than a sum of both.
+ *
+ * The Windows arm is opaque bytes for the same reason the wait below is:
+ * `<windows.h>` does not belong in a header both platforms include, and the
+ * unit that owns the state -- `windows_iocp.c` -- asserts that its own types
+ * fit.  What it holds is the record's own `OVERLAPPED`, first, so that a
+ * completion packet's `OVERLAPPED` address recovers the record by subtraction
+ * exactly as a CQE's `user_data` names it on Linux; and the handle the
+ * operation was issued on. */
+#define WF_COMPLETION_RING_WORDS 5u
+
+typedef union wf_completion_ring_state {
+    /* The io_uring resubmission state.  A readiness refusal re-arms the same
+     * operation as a poll and publishes nothing, so several CQEs may name one
+     * record while exactly one is terminal (design §7). */
+    unsigned waiting_readiness;
+    /* The IOCP arm's `OVERLAPPED` and the handle it was issued on. */
+    uint64_t native[WF_COMPLETION_RING_WORDS];
+} wf_completion_ring_state;
 
 /* The one record type.
  *
@@ -187,26 +221,27 @@ typedef struct wf_completion_record {
     wf_file_request request;
     /* The result the one publication stores, read by the join. */
     wf_file_result_head result;
+    /* Whichever ring owns the operation keeps its own state here. */
+    wf_completion_ring_state ring;
     /* Which route owns the operation. */
     unsigned route;
     /* Set with release by the ring's submit after every other word of the
-     * record is written, and read with acquire by the CQE reaper before it
-     * reads any of them.  The kernel carries the record's address from the
-     * SQE to the CQE, but a mapped ring is not a C11 synchronization, so this
-     * pair is what orders the submitter's writes before the reaper's reads;
-     * the thread sanitizer reported exactly that gap without it.  A CQE
+     * record is written, and read with acquire by the reaper before it reads
+     * any of them.  The kernel carries the record's address from the SQE to
+     * the CQE, or from the request to the completion packet, but neither a
+     * mapped ring nor a completion port is a C11 synchronization, so this pair
+     * is what orders the submitter's writes before the reaper's reads; the
+     * thread sanitizer reported exactly that gap without it.  A completion
      * naming a record that was never issued is a protocol failure. */
     _Atomic unsigned issued;
-    /* The io_uring resubmission state.  A readiness refusal re-arms the same
-     * operation as a poll and publishes nothing, so several CQEs may name one
-     * record while exactly one is terminal (design §7). */
-    unsigned waiting_readiness;
     int opened_descriptor;
     unsigned open_outcome;
     int open_error;
     /* How many bytes a submitted status wrote into the destination it named.
-     * A size, never the bytes. */
-    size_t status_written;
+     * A size, never the bytes, and 32 bits because the destination's capacity
+     * is a target's status record and the record pays for this field on every
+     * operation. */
+    uint32_t status_written;
     /* The intrusive link of the file adapter's pending list.  The queue is
      * threaded through the records themselves, so it has no capacity of its
      * own and cannot refuse an operation (design §7). */
@@ -216,7 +251,12 @@ typedef struct wf_completion_record {
 /* The ABI constants, and the two assertions that keep them true.  A record
  * that outgrew the reservation is a build failure instead of a kernel write
  * past it. */
-#define WF_COMPLETION_RECORD_BYTES 128u
+/* 160 is the smallest multiple of sixteen that holds this record on every
+ * platform: 128 bytes of it are the same everywhere, and the ring state adds
+ * 32 more on Windows, where an `OVERLAPPED` and its handle live in the record
+ * rather than in the entry pool this design deleted (design §7, §12's
+ * per-frame record growth). */
+#define WF_COMPLETION_RECORD_BYTES 160u
 #define WF_COMPLETION_RECORD_ALIGN 8u
 
 _Static_assert(
@@ -239,6 +279,50 @@ _Static_assert(
  *
  * It is defined by the bridge, which owns the one `wf_sched_core`. */
 void wf_completion_record_complete(wf_completion_record *record);
+
+/* ------------------------------------------------------------- the wait */
+
+/* The one host wait set this runtime sleeps on, and the only part of it that
+ * differs by platform: a mutex and a condition variable on POSIX, an SRWLOCK
+ * and a CONDITION_VARIABLE on Windows.
+ *
+ * Its storage is opaque here on purpose.  `<pthread.h>` does not belong in a
+ * header both platforms include, and neither does `<windows.h>`; the platform
+ * unit that implements the six calls below (`wait_host.c`, `wait_windows.c`)
+ * asserts that its own types fit this block.  Everything above the block --
+ * the epoch, the announcement, the statistics, the park protocol in
+ * `runtime.c` -- is one implementation for both.
+ *
+ * The block is a fixed number of 64-bit words rather than a `max_align_t`
+ * array because that is what makes its size and alignment the same fact on
+ * both sides of the assertion. */
+#define WF_COMPLETION_WAIT_WORDS 24u
+
+typedef struct wf_completion_wait {
+    uint64_t storage[WF_COMPLETION_WAIT_WORDS];
+} wf_completion_wait;
+
+enum wf_completion_wait_result {
+    WF_COMPLETION_WAIT_WOKEN = 0,
+    WF_COMPLETION_WAIT_TIMED_OUT = 1,
+    WF_COMPLETION_WAIT_FAILED = 2
+};
+
+/* Returns zero on success and a platform error code otherwise. */
+int wf_completion_wait_init(wf_completion_wait *wait);
+int wf_completion_wait_destroy(wf_completion_wait *wait);
+void wf_completion_wait_lock(wf_completion_wait *wait);
+void wf_completion_wait_unlock(wf_completion_wait *wait);
+/* Sleeps with the lock held and returns with it held.  UINT32_MAX asks for no
+ * deadline.  A spurious wake is the caller's to tolerate, which every caller
+ * does by rechecking its own predicate. */
+enum wf_completion_wait_result wf_completion_wait_sleep(
+    wf_completion_wait *wait,
+    uint32_t timeout_milliseconds
+);
+/* Wakes one sleeper, or every one when `all` is nonzero.  Called with the lock
+ * held. */
+void wf_completion_wait_wake(wf_completion_wait *wait, int all);
 
 /* ---------------------------------------------------------- the wake epoch */
 
@@ -266,8 +350,7 @@ typedef struct wf_completion_statistics {
  * epoch, the sleepers announced against it, and the host endpoint a target
  * adapter joins to it. */
 typedef struct wf_completion_runtime {
-    pthread_mutex_t wake_lock;
-    pthread_cond_t wake_condition;
+    wf_completion_wait wait;
     _Atomic uint64_t wake_epoch;
     _Atomic unsigned parked_schedulers;
 

@@ -18,24 +18,56 @@ extern "C" {
 #define WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE 3u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT 4u
 
-#define WF_WINDOWS_DESCRIPTOR_LEASE_SHARED 1u
-#define WF_WINDOWS_DESCRIPTOR_LEASE_SERIAL 2u
+/* What the runtime remembers about one descriptor it produced.
+ *
+ * All that is left of the descriptor ledger the deleted bounded pool needed.
+ * Two facts, and each has exactly one reader that cannot do without it:
+ *
+ *   the resource class, because the ring is offered only a descriptor this
+ *   runtime opened as a regular file for reading, and a directory handle would
+ *   otherwise pass the port's own "is it a disk file" test;
+ *
+ *   whether the completion port has already taken this handle, because
+ *   `CreateIoCompletionPort` associates a handle exactly once and there is no
+ *   host call that asks whether it already has.
+ *
+ * The generation, the shared and serial lease modes, the active-lease count,
+ * the close ticket and the condition variable a close waited on are all gone
+ * with the pool they protected: the record is the submitting frame's block,
+ * the emitter joins every outstanding operation before any terminator, and a
+ * close is itself a submitted operation the program orders against its reads
+ * -- which is the same argument the POSIX bridge has always run on, with no
+ * ledger at all (design section 7). */
 
-typedef struct wf_windows_descriptor_lease {
-    int descriptor;
-    uint64_t generation;
-    HANDLE handle;
-    void *completion_owner;
-    unsigned descriptor_class;
-    unsigned mode;
-} wf_windows_descriptor_lease;
+/* Registers a descriptor this runtime produced.  Returns 0, or a Win32 error
+ * for a descriptor with no native handle. */
+int wf__windows_completion_register_descriptor(
+    int descriptor,
+    unsigned descriptor_class
+);
 
-typedef struct wf_windows_descriptor_close_ticket {
-    int descriptor;
-    uint64_t generation;
-    HANDLE handle;
-    unsigned active;
-} wf_windows_descriptor_close_ticket;
+/* What this runtime remembers about `descriptor`: answers 1 when it is one
+ * this runtime produced, writing the class it was registered under and whether
+ * the completion port has taken its handle. */
+int wf__windows_completion_descriptor_state(
+    int descriptor,
+    unsigned *descriptor_class,
+    unsigned *port_associated
+);
+
+/* Records that the completion port has taken this descriptor's handle,
+ * registering it under `descriptor_class` if it was not registered. */
+void wf__windows_completion_note_port_association(
+    int descriptor,
+    unsigned descriptor_class
+);
+
+/* Forgets a descriptor whose close has been made, so the next descriptor to
+ * reuse the number starts with no association and no class. */
+void wf__windows_completion_forget_descriptor(int descriptor);
+
+/* The native handle behind a descriptor, or INVALID_HANDLE_VALUE. */
+HANDLE wf__windows_completion_descriptor_handle(int descriptor);
 
 uint64_t wf__windows_wcslen(const uint16_t *text);
 int wf__windows_utf8_measure(
@@ -71,27 +103,6 @@ int wf__windows_completion_file_open_at_worker(
     int *error_code,
     unsigned *open_outcome
 );
-int wf__windows_completion_register_descriptor(
-    int descriptor,
-    unsigned descriptor_class
-);
-int wf__windows_completion_descriptor_lease_acquire(
-    int descriptor,
-    unsigned required_class,
-    unsigned mode,
-    wf_windows_descriptor_lease *lease
-);
-void wf__windows_completion_descriptor_lease_release(
-    wf_windows_descriptor_lease *lease
-);
-int wf__windows_completion_descriptor_close_begin(
-    int descriptor,
-    wf_windows_descriptor_close_ticket *ticket
-);
-void wf__windows_completion_descriptor_close_finish(
-    wf_windows_descriptor_close_ticket *ticket
-);
-size_t wf__windows_completion_active_descriptor_leases(void);
 int64_t wf__windows_completion_file_write_worker(
     HANDLE handle,
     const void *buffer,

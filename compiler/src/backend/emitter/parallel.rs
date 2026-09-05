@@ -77,15 +77,15 @@ pub(super) struct LoopSplitSite<'ir> {
     pub(super) weight: u64,
 }
 
-/// The native Windows worker-pool runtime.
-pub const PARALLEL_WINDOWS_RUNTIME_SOURCE: &str = include_str!("../par_runtime_windows.c");
-
 /// The Windows parallel ABI as external obligations.
 ///
 /// COFF modules do not carry the sequential weak definitions below.  A
-/// Windows module that hands out work therefore cannot link unless the native
+/// Windows module that hands out work therefore cannot link unless the
 /// runtime supplies the strong protocol; this is the compile-time half of the
-/// fail-closed backend contract.
+/// fail-closed backend contract.  That runtime is now the same
+/// `sched/entry.c` every other target links -- Windows is done as shared code
+/// (design section 7) -- so what this fail-closed choice selects is a staging
+/// predicate rather than a second implementation.
 pub(crate) const PARALLEL_RUNTIME_DECLARATIONS: &str = "declare ptr @wf__par_acquire_lane(i64)\ndeclare void @wf__par_publish(ptr, ptr)\ndeclare void @wf__par_join(ptr)\ndeclare void @wf__par_release(ptr)\n";
 
 /// The fail-closed Windows declaration of the once-per-process backend query.
@@ -105,7 +105,7 @@ pub(crate) const PARALLEL_SPLIT_BUDGET_DECLARATION: &str =
 /// its own fallback edge — exactly today's schedule. Linking the runtime
 /// replaces all four with its strong definitions, and only then can a lane be
 /// granted. Windows deliberately takes the external declarations above and
-/// cannot link without its native pool.
+/// cannot link without the scheduler core.
 ///
 /// On the optional-runtime targets, the alternative — plain declarations —
 /// would make the runtime a link obligation of every path that ever builds a

@@ -1,7 +1,3 @@
-#if !defined(_POSIX_C_SOURCE)
-#define _POSIX_C_SOURCE 200809L
-#endif
-
 /*
  * The wake epoch, and nothing else.
  *
@@ -21,16 +17,20 @@
  * park announces itself against this epoch under this lock
  * (`linux_io_uring.c`, `wf_linux_io_uring_park`), and the native adapter probe
  * links that ring without the bridge.
+ *
+ * One implementation for every platform.  The lock and the condition this unit
+ * announces and sleeps on are the platform's one wait set, behind the six
+ * calls `contract.h` declares and `wait_host.c` and `wait_windows.c` answer,
+ * so nothing here is `#if`-forked and no host header reaches this file.
  */
 
 #include "contract.h"
 
 #include <errno.h>
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
-#include <time.h>
 
 static void wf_completion_notify_scheduler(wf_completion_runtime *runtime);
 
@@ -51,13 +51,8 @@ int wf_completion_runtime_init(wf_completion_runtime *runtime) {
     runtime->wake_callback = NULL;
     runtime->wake_context = NULL;
 
-    error = pthread_mutex_init(&runtime->wake_lock, NULL);
+    error = wf_completion_wait_init(&runtime->wait);
     if (error != 0) {
-        return error;
-    }
-    error = pthread_cond_init(&runtime->wake_condition, NULL);
-    if (error != 0) {
-        (void)pthread_mutex_destroy(&runtime->wake_lock);
         return error;
     }
     runtime->initialized = 1;
@@ -81,7 +76,7 @@ int wf_completion_set_wake_callback(
 }
 
 int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
-    int first_error = 0;
+    int first_error;
 
     if (runtime == NULL || runtime->initialized == 0) {
         return EINVAL;
@@ -90,18 +85,7 @@ int wf_completion_runtime_destroy(wf_completion_runtime *runtime) {
         != 0) {
         return EBUSY;
     }
-    {
-        int error = pthread_cond_destroy(&runtime->wake_condition);
-        if (error != 0) {
-            first_error = error;
-        }
-    }
-    {
-        int error = pthread_mutex_destroy(&runtime->wake_lock);
-        if (first_error == 0 && error != 0) {
-            first_error = error;
-        }
-    }
+    first_error = wf_completion_wait_destroy(&runtime->wait);
     if (first_error == 0) {
         runtime->initialized = 0;
     }
@@ -124,7 +108,7 @@ static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
         == 0) {
         return;
     }
-    (void)pthread_mutex_lock(&runtime->wake_lock);
+    wf_completion_wait_lock(&runtime->wait);
     {
         unsigned parked = atomic_load_explicit(
             &runtime->parked_schedulers,
@@ -140,11 +124,7 @@ static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
             }
             /* One waiter needs one signal. Two or more captured the same old
              * global epoch, so all of them must recheck after this transition. */
-            if (parked == 1) {
-                (void)pthread_cond_signal(&runtime->wake_condition);
-            } else {
-                (void)pthread_cond_broadcast(&runtime->wake_condition);
-            }
+            wf_completion_wait_wake(&runtime->wait, parked != 1);
             atomic_fetch_add_explicit(
                 &runtime->stat_wake_signals,
                 1,
@@ -152,7 +132,7 @@ static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {
             );
         }
     }
-    (void)pthread_mutex_unlock(&runtime->wake_lock);
+    wf_completion_wait_unlock(&runtime->wait);
 }
 
 uint64_t wf_completion_wake_epoch(const wf_completion_runtime *runtime) {
@@ -186,40 +166,21 @@ void wf_completion_notify_target(wf_completion_runtime *runtime) {
     wf_completion_notify_scheduler(runtime);
 }
 
-static struct timespec wf_completion_deadline(uint32_t milliseconds) {
-    struct timespec deadline;
-    uint64_t nanoseconds;
-    (void)clock_gettime(CLOCK_REALTIME, &deadline);
-    nanoseconds = (uint64_t)deadline.tv_nsec
-        + (uint64_t)(milliseconds % 1000u) * 1000000u;
-    deadline.tv_sec += (time_t)(milliseconds / 1000u)
-        + (time_t)(nanoseconds / 1000000000u);
-    deadline.tv_nsec = (long)(nanoseconds % 1000000000u);
-    return deadline;
-}
-
 enum wf_completion_park_result wf_completion_park_if_unchanged(
     wf_completion_runtime *runtime,
     uint64_t observed_epoch,
     uint32_t timeout_milliseconds
 ) {
-    int error = 0;
-    struct timespec deadline = {0, 0};
+    enum wf_completion_wait_result slept = WF_COMPLETION_WAIT_WOKEN;
 
     if (runtime == NULL || runtime->initialized == 0) {
         return WF_COMPLETION_PARK_FAILED;
     }
-    if (timeout_milliseconds != UINT32_MAX) {
-        deadline = wf_completion_deadline(timeout_milliseconds);
-    }
 
-    error = pthread_mutex_lock(&runtime->wake_lock);
-    if (error != 0) {
-        return WF_COMPLETION_PARK_FAILED;
-    }
+    wf_completion_wait_lock(&runtime->wait);
     if (atomic_load_explicit(&runtime->wake_epoch, memory_order_acquire)
         != observed_epoch) {
-        (void)pthread_mutex_unlock(&runtime->wake_lock);
+        wf_completion_wait_unlock(&runtime->wait);
         return WF_COMPLETION_PARK_EPOCH_CHANGED;
     }
 
@@ -242,25 +203,14 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
             1,
             memory_order_relaxed
         );
-        (void)pthread_mutex_unlock(&runtime->wake_lock);
+        wf_completion_wait_unlock(&runtime->wait);
         return WF_COMPLETION_PARK_EPOCH_CHANGED;
     }
 
     while (atomic_load_explicit(&runtime->wake_epoch, memory_order_acquire)
            == observed_epoch) {
-        if (timeout_milliseconds == UINT32_MAX) {
-            error = pthread_cond_wait(
-                &runtime->wake_condition,
-                &runtime->wake_lock
-            );
-        } else {
-            error = pthread_cond_timedwait(
-                &runtime->wake_condition,
-                &runtime->wake_lock,
-                &deadline
-            );
-        }
-        if (error == ETIMEDOUT || error != 0) {
+        slept = wf_completion_wait_sleep(&runtime->wait, timeout_milliseconds);
+        if (slept != WF_COMPLETION_WAIT_WOKEN) {
             break;
         }
     }
@@ -269,12 +219,12 @@ enum wf_completion_park_result wf_completion_park_if_unchanged(
         1,
         memory_order_relaxed
     );
-    (void)pthread_mutex_unlock(&runtime->wake_lock);
+    wf_completion_wait_unlock(&runtime->wait);
 
-    if (error == ETIMEDOUT) {
+    if (slept == WF_COMPLETION_WAIT_TIMED_OUT) {
         return WF_COMPLETION_PARK_TIMED_OUT;
     }
-    if (error != 0) {
+    if (slept != WF_COMPLETION_WAIT_WOKEN) {
         return WF_COMPLETION_PARK_FAILED;
     }
     return WF_COMPLETION_PARK_WOKEN;

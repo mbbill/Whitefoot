@@ -41,8 +41,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
+    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
     CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
     HOST_OPTIMIZATION_ARGUMENTS, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
     SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER,
@@ -252,12 +253,15 @@ fn link(module: &str, directory: &Path) -> PathBuf {
             ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
             ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
             ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
             (
                 "completion/linux_io_uring.h",
                 COMPLETION_LINUX_IO_URING_HEADER,
             ),
             ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
             ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
             ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
             (
                 "completion/linux_io_uring.c",
@@ -276,7 +280,13 @@ fn link(module: &str, directory: &Path) -> PathBuf {
             .arg(directory.join("completion/completion_runtime.c"))
             .arg("-x")
             .arg("c")
+            .arg(directory.join("completion/wait_host.c"))
+            .arg("-x")
+            .arg("c")
             .arg(directory.join("completion/file_adapter.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/file_posix.c"))
             .arg("-x")
             .arg("c")
             .arg(directory.join("completion/completion_bridge.c"))

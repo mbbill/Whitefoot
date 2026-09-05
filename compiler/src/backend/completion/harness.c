@@ -10,6 +10,7 @@
 #include "contract.h"
 #include "bridge.h"
 #include "file_adapter.h"
+#include "file_posix.h"
 #include "native_contract.h"
 #include "../sched/core.h"
 #include "../sched/entry.h"
@@ -570,7 +571,7 @@ static int test_linux_independent_operations_use_available_target(
     descriptor = open(path, O_CREAT | O_EXCL | O_RDWR, 0600);
     CHECK(descriptor >= 0);
     CHECK(write(descriptor, "xy", 2) == 2);
-    native_before = wf__completion_linux_io_uring_submissions();
+    native_before = wf__completion_native_ring_submissions();
     fallback_before = wf__completion_file_fallback_submissions();
 
     wf__completion_file_pread_submit(
@@ -593,7 +594,7 @@ static int test_linux_independent_operations_use_available_target(
     CHECK(value == 1 && error_code == 0);
     CHECK(bytes[0] == 'x' && bytes[1] == 'y');
 
-    native_after = wf__completion_linux_io_uring_submissions();
+    native_after = wf__completion_native_ring_submissions();
     fallback_after = wf__completion_file_fallback_submissions();
     if (native_after == native_before + 2) {
         CHECK(fallback_after == fallback_before);
@@ -644,7 +645,7 @@ static int test_single_thread_file_progress(const char *scratch_directory) {
     (void)unlinkat(root, name, 0);
 
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, NULL, 0, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
 
     harness_record_init(&open_record, WF_FILE_OPEN_AT);
     open_record.request.operation.open_at.directory = root;
@@ -786,7 +787,7 @@ static int test_bridge_independent_positioned_reads(
     CHECK(wf__completion_file_submissions() >= 2);
 #if defined(__linux__)
     if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
-        CHECK(wf__completion_linux_io_uring_submissions() >= 2);
+        CHECK(wf__completion_native_ring_submissions() >= 2);
     }
 #endif
 
@@ -840,7 +841,7 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
     char path[256];
     int descriptor;
-    uint64_t native_before = wf__completion_linux_io_uring_submissions();
+    uint64_t native_before = wf__completion_native_ring_submissions();
 
     CHECK(scratch_directory != NULL);
     CHECK(
@@ -909,7 +910,7 @@ static int test_bridge_open_status_and_close_are_typed_operations(
      * silent fallback to the bounded POSIX adapter, which is exactly the
      * regression the ring path exists to prevent. */
     if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
-        CHECK(wf__completion_linux_io_uring_submissions() >= native_before + 3);
+        CHECK(wf__completion_native_ring_submissions() >= native_before + 3);
     }
 #endif
     (void)native_before;
@@ -986,7 +987,7 @@ static int test_submitted_open_resolves_the_submitters_bytes(
     int root;
     int descriptor;
     int marker_descriptor;
-    uint64_t native_before = wf__completion_linux_io_uring_submissions();
+    uint64_t native_before = wf__completion_native_ring_submissions();
 
     CHECK(scratch_directory != NULL);
     root = open(scratch_directory, O_RDONLY | O_DIRECTORY);
@@ -1005,7 +1006,7 @@ static int test_submitted_open_resolves_the_submitters_bytes(
     /* The bounded POSIX adapter, driven by this thread alone, so the host call
      * demonstrably runs after the submission returned. */
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, NULL, 0, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
     harness_record_init(&record, WF_FILE_OPEN_AT);
     record.request.operation.open_at.directory = root;
     record.request.operation.open_at.path = first;
@@ -1132,7 +1133,7 @@ static int test_submitted_open_resolves_the_submitters_bytes(
      * to the bounded adapter, which is the other half of what this test is
      * about. */
     if (getenv("WF_REQUIRE_LINUX_IO_URING") != NULL) {
-        CHECK(wf__completion_linux_io_uring_submissions() >= native_before + 3);
+        CHECK(wf__completion_native_ring_submissions() >= native_before + 3);
     }
 #endif
     (void)native_before;
@@ -1933,7 +1934,6 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
 ) {
     wf_completion_runtime runtime;
     wf_file_adapter adapter;
-    pthread_t helpers[4];
     char path[512];
     int descriptor;
 
@@ -1952,7 +1952,7 @@ static int test_pool_stays_empty_when_operations_do_not_wait(
     CHECK(write(descriptor, "wf", 2) == 2);
 
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, helpers, 4, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
     /* Nothing measured yet is not evidence of anything, and neither policy
@@ -2099,13 +2099,12 @@ static int grow_pool_against_a_blocked_queue(
 static int test_pool_grows_when_operations_wait(void) {
     wf_completion_runtime runtime;
     wf_file_adapter adapter;
-    pthread_t helpers[4];
     int descriptors[2];
     size_t held = 0;
 
     CHECK(pipe(descriptors) == 0);
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, helpers, 4, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
 
     /* Nothing measured yet is not evidence of anything, and neither policy
@@ -2135,30 +2134,27 @@ static int test_pool_grows_when_operations_wait(void) {
     return 0;
 }
 
-/* The ceiling a policy asks for is a wish; the storage the caller handed to
- * `wf_file_adapter_init` is the fact.  The growth rule writes `helpers[held]`,
- * so a cap above that storage is a `pthread_create` past its end -- which is
- * why `wf_file_adapter_set_helper_cap` clamps the cap to the storage rather
- * than trusting it.  A cap of eight against storage of two leaves the clamp as
- * the only thing keeping the pool inside the caller's array.
+/* The ceiling a policy asks for is a wish; the bound the caller gave
+ * `wf_file_adapter_init` is the fact, and `wf_file_adapter_set_helper_cap`
+ * clamps the cap to it rather than trusting it.  A cap of eight against a bound
+ * of two leaves the clamp as the only thing keeping the pool at the number of
+ * helpers this adapter was told it may ever hold.
  *
- * The array below is deliberately longer than the two entries init is told
- * about.  The bound under test is the declared capacity, and the slack decides
- * only whether a violation of it is *reported* -- a pool larger than the
- * storage it was given -- or executed as a write past the end of this frame,
- * which ends the run before any check is reached.  With the clamp in place
- * nothing beyond `helpers[1]` is ever written, so the slack is unreachable in
- * a passing run. */
-static int test_helper_growth_stops_at_the_helper_storage(void) {
+ * The bound used to be the length of an array of thread handles the caller
+ * owned, and this case was named for that array.  The helpers are the
+ * runtime's own detached threads now (`wf_prim_thread_start`), so the caller
+ * hands over no storage and the bound is a plain number -- which is the same
+ * property to hold and the same clamp that holds it, with the write past the
+ * end of a frame no longer among the ways to break it. */
+static int test_helper_growth_stops_at_the_declared_bound(void) {
     wf_completion_runtime runtime;
     wf_file_adapter adapter;
-    pthread_t helpers[WF_POOL_GROWTH_DEPTH];
     int descriptors[2];
     size_t held = 0;
 
     CHECK(pipe(descriptors) == 0);
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, helpers, 2, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 2, 0) == 0);
     /* Accepted, and silently reduced to the two helpers init was given. */
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 8) == 0);
 
@@ -2174,7 +2170,7 @@ static int test_helper_growth_stops_at_the_helper_storage(void) {
     wf_script_clock(0);
     /* Two, not the eight that were asked for: the queue stayed deeper than
      * the pool for every one of the twenty submissions, so the cap is the
-     * only thing that stopped it, and the cap is the storage. */
+     * only thing that stopped it, and the cap is the declared bound. */
     CHECK(held == 2);
 
     CHECK(wf_file_adapter_shutdown(&adapter) == 0);
@@ -2184,15 +2180,14 @@ static int test_helper_growth_stops_at_the_helper_storage(void) {
     return 0;
 }
 
-/* An initial count the storage cannot hold is refused outright: unlike the
+/* An initial count above the declared bound is refused outright: unlike the
  * cap, it is not a ceiling to grow towards but threads to start right now. */
-static int test_helper_count_above_its_storage_is_refused(void) {
+static int test_helper_count_above_its_bound_is_refused(void) {
     wf_completion_runtime runtime;
     wf_file_adapter adapter;
-    pthread_t helpers[1];
 
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, helpers, 1, 2) == EINVAL);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 1, 2) == EINVAL);
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
     return 0;
 }
@@ -2214,13 +2209,12 @@ static int test_helper_count_above_its_storage_is_refused(void) {
 static int test_shutdown_refuses_every_later_entry(void) {
     wf_completion_runtime runtime;
     wf_file_adapter adapter;
-    pthread_t helpers[4];
     int descriptors[2];
     size_t held = 0;
 
     CHECK(pipe(descriptors) == 0);
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, helpers, 4, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 4, 0) == 0);
     CHECK(wf_file_adapter_set_helper_cap(&adapter, 4) == 0);
     wf_script_clock(1000000u);
     CHECK(
@@ -2450,7 +2444,7 @@ static int test_readiness_refusal_is_not_a_terminal_outcome(void) {
     CHECK(flags >= 0);
     CHECK(fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) == 0);
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, NULL, 0, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
     harness_record_init(&record, WF_FILE_READ);
     record.request.operation.read.descriptor = descriptors[0];
     record.request.operation.read.buffer = &byte;
@@ -2581,7 +2575,7 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     CHECK(write(writer, "doorbell", 8) == 8);
     CHECK(close(writer) == 0);
 
-    submissions_before = wf__completion_linux_io_uring_submissions();
+    submissions_before = wf__completion_native_ring_submissions();
     wf__completion_file_open_at_submit(
         AT_FDCWD,
         path,
@@ -2601,7 +2595,7 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
     descriptor = (int)value;
     ring_route =
-        wf__completion_linux_io_uring_submissions() > submissions_before;
+        wf__completion_native_ring_submissions() > submissions_before;
 
     /* A submission alone rings nothing, and the join that follows it rings it
      * first.  The blocking direct host call this leg used to make between the
@@ -2609,7 +2603,7 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
      * reaches a host call now only by running its own queued record, and that
      * path rings the doorbell for the same reason before the same kind of
      * call. */
-    enters = wf__completion_linux_io_uring_submission_enters();
+    enters = wf__completion_native_ring_submission_enters();
     memset(first, 0, sizeof(first));
     wf__completion_file_pread_submit(
         descriptor,
@@ -2619,11 +2613,11 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
         read_record.bytes
     );
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+        CHECK(wf__completion_native_ring_submission_enters() == enters);
     }
     wf__completion_file_join(read_record.bytes, &value, &error_code);
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+        CHECK(wf__completion_native_ring_submission_enters() == enters + 1u);
     }
     CHECK(value == 8 && error_code == 0);
     CHECK(memcmp(first, "doorbell", 8) == 0);
@@ -2631,7 +2625,7 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     /* Two submissions, one doorbell: the first join carries both, and the
      * second join needs no further call. This is the whole of what deferring
      * buys, stated as a count. */
-    enters = wf__completion_linux_io_uring_submission_enters();
+    enters = wf__completion_native_ring_submission_enters();
     memset(first, 0, sizeof(first));
     memset(second, 0, sizeof(second));
     wf__completion_file_pread_submit(
@@ -2649,17 +2643,17 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
         other_record.bytes
     );
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
+        CHECK(wf__completion_native_ring_submission_enters() == enters);
     }
     wf__completion_file_join(read_record.bytes, &value, &error_code);
     CHECK(value == 4 && error_code == 0);
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+        CHECK(wf__completion_native_ring_submission_enters() == enters + 1u);
     }
     wf__completion_file_join(other_record.bytes, &value, &error_code);
     CHECK(value == 4 && error_code == 0);
     if (ring_route) {
-        CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
+        CHECK(wf__completion_native_ring_submission_enters() == enters + 1u);
     }
     CHECK(memcmp(first, "door", 4) == 0);
     CHECK(memcmp(second, "bell", 4) == 0);
@@ -2892,8 +2886,8 @@ int main(int argc, char **argv) {
     RUN_TEST(test_process_wide_target_helper_budget());
     RUN_TEST(test_pool_stays_empty_when_operations_do_not_wait(argv[1]));
     RUN_TEST(test_pool_grows_when_operations_wait());
-    RUN_TEST(test_helper_growth_stops_at_the_helper_storage());
-    RUN_TEST(test_helper_count_above_its_storage_is_refused());
+    RUN_TEST(test_helper_growth_stops_at_the_declared_bound());
+    RUN_TEST(test_helper_count_above_its_bound_is_refused());
     RUN_TEST(test_shutdown_refuses_every_later_entry());
     RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
     RUN_TEST(test_an_io_join_on_a_pool_stack_parks_and_is_resumed());

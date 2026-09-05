@@ -640,7 +640,9 @@ int wf_sched_init(
         stack->low = low;
         stack->high = high;
         stack->index = index;
-        stack->saved_sp = wf_prim_prepare_stack(top, wf_sched_scheduler_loop, core);
+        stack->saved_sp = wf_prim_prepare_stack(
+            top, core->stack_bytes, wf_sched_scheduler_loop, core
+        );
         stack->next = core->free_head;
         core->free_head = stack;
         core->stacks[index] = stack;

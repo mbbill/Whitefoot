@@ -20,36 +20,28 @@ pub const COMPLETION_FILE_ADAPTER_HEADER: &str = include_str!("../completion/fil
 pub const COMPLETION_BRIDGE_HEADER: &str = include_str!("../completion/bridge.h");
 /// The target-guarded Linux io_uring adapter contract embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/linux_io_uring.h");
-/// The target-private completion ABI shared by the Windows core and IOCP adapter.
-pub const COMPLETION_WINDOWS_NATIVE_API_HEADER: &str =
-    include_str!("../completion/native_completion_api.h");
-/// The Windows completion core contract embedded in the compiler.
-pub const COMPLETION_WINDOWS_HEADER: &str = include_str!("../completion/windows_completion.h");
-/// The Windows IOCP adapter contract embedded in the compiler.
+/// The Windows IOCP ring's contract embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_HEADER: &str = include_str!("../completion/windows_iocp.h");
-/// The Windows bounded blocking-worker contract embedded in the compiler.
-pub const COMPLETION_WINDOWS_BLOCKING_HEADER: &str =
-    include_str!("../completion/windows_blocking.h");
+/// The typed file-adapter's POSIX leaf contract embedded in the compiler.
+pub const COMPLETION_FILE_POSIX_HEADER: &str = include_str!("../completion/file_posix.h");
 /// The finite completion core implementation embedded in the compiler.
 pub const COMPLETION_RUNTIME_SOURCE: &str = include_str!("../completion/runtime.c");
+/// The host's one wait set, which `runtime.c` and the file adapter sleep on.
+pub const COMPLETION_WAIT_HOST_SOURCE: &str = include_str!("../completion/wait_host.c");
+/// Windows's one wait set, the twin of the above.
+pub const COMPLETION_WAIT_WINDOWS_SOURCE: &str = include_str!("../completion/wait_windows.c");
 /// The typed file-adapter implementation embedded in the compiler.
 pub const COMPLETION_FILE_ADAPTER_SOURCE: &str = include_str!("../completion/file_adapter.c");
+/// The file adapter's POSIX host leaf: one host call per request kind.
+pub const COMPLETION_FILE_POSIX_SOURCE: &str = include_str!("../completion/file_posix.c");
+/// The file adapter's Windows host leaf, the twin of the above.
+pub const COMPLETION_FILE_WINDOWS_SOURCE: &str = include_str!("../completion/file_windows.c");
 /// The compiler-owned file-completion bridge embedded in the compiler.
 pub const COMPLETION_BRIDGE_SOURCE: &str = include_str!("../completion/bridge.c");
 /// The target-guarded Linux io_uring adapter embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_SOURCE: &str = include_str!("../completion/linux_io_uring.c");
-/// The Windows completion core embedded in the compiler.
-pub const COMPLETION_WINDOWS_SOURCE: &str = include_str!("../completion/windows_completion.c");
-/// The Windows IOCP adapter embedded in the compiler.
+/// The target-guarded Windows IOCP ring embedded in the compiler.
 pub const COMPLETION_WINDOWS_IOCP_SOURCE: &str = include_str!("../completion/windows_iocp.c");
-/// The Windows bounded blocking-worker adapter embedded in the compiler.
-pub const COMPLETION_WINDOWS_BLOCKING_SOURCE: &str =
-    include_str!("../completion/windows_blocking.c");
-/// The compiler-owned Windows completion bridge embedded in the compiler.
-pub const COMPLETION_WINDOWS_BRIDGE_SOURCE: &str = include_str!("../completion/windows_bridge.c");
-/// The Windows bounded ready-frame scheduler embedded in the compiler.
-pub const WRITER_SCHEDULER_WINDOWS_SOURCE: &str =
-    include_str!("../completion/writer_scheduler_windows.c");
 
 /// The scheduler core's contract embedded in the compiler.
 ///
@@ -64,6 +56,8 @@ pub const SCHED_CORE_SOURCE: &str = include_str!("../sched/core.c");
 pub const SCHED_PRIM_HEADER: &str = include_str!("../sched/prim.h");
 /// The host's implementation of those primitives.
 pub const SCHED_PRIM_HOST_SOURCE: &str = include_str!("../sched/prim_host.c");
+/// Windows's implementation of the same set, the twin of the above.
+pub const SCHED_PRIM_WINDOWS_SOURCE: &str = include_str!("../sched/prim_windows.c");
 /// The one stack switch, shared by the host primitives and the enumerator.
 pub const SCHED_SWITCH_HEADER: &str = include_str!("../sched/switch.h");
 /// The platform layer over the core: its one instance, the startup policy and
@@ -81,7 +75,7 @@ pub const SCHED_ENTRY_SOURCE: &str = include_str!("../sched/entry.c");
 /// alone, so `the_record_block_abi_constants_agree_with_the_contract_header`
 /// below reads the header's own text and refuses a compilation in which the
 /// two have drifted apart.
-pub(crate) const COMPLETION_RECORD_BYTES: u64 = 128;
+pub(crate) const COMPLETION_RECORD_BYTES: u64 = 160;
 
 /// Alignment of that same block, the emitter's half of
 /// `WF_COMPLETION_RECORD_ALIGN`. A byte block's natural alignment is one, so
@@ -1301,10 +1295,7 @@ fn completion_wait_label(value: IrValueId) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        COMPLETION_CONTRACT_HEADER, COMPLETION_RECORD_ALIGN, COMPLETION_RECORD_BYTES,
-        COMPLETION_WINDOWS_NATIVE_API_HEADER,
-    };
+    use super::{COMPLETION_CONTRACT_HEADER, COMPLETION_RECORD_ALIGN, COMPLETION_RECORD_BYTES};
 
     /// The value of one `#define NAME <digits>u` in an embedded C header.
     fn defined_unsigned(header: &str, name: &str) -> u64 {
@@ -1342,23 +1333,12 @@ mod tests {
             defined_unsigned(COMPLETION_CONTRACT_HEADER, "WF_COMPLETION_RECORD_ALIGN"),
             COMPLETION_RECORD_ALIGN
         );
-        // A Windows translation unit reaches the same two constants through
-        // the native mirror of this contract instead, which imports no POSIX
-        // threading API. The mirror is a second spelling of one ABI, so it is
-        // held to the same numbers.
-        assert_eq!(
-            defined_unsigned(
-                COMPLETION_WINDOWS_NATIVE_API_HEADER,
-                "WF_COMPLETION_RECORD_BYTES"
-            ),
-            COMPLETION_RECORD_BYTES
-        );
-        assert_eq!(
-            defined_unsigned(
-                COMPLETION_WINDOWS_NATIVE_API_HEADER,
-                "WF_COMPLETION_RECORD_ALIGN"
-            ),
-            COMPLETION_RECORD_ALIGN
-        );
+        // Both constants are read from `contract.h` and from nowhere else.
+        // A Windows translation unit used to reach them through a second
+        // header that mirrored this one because it could not include a
+        // contract naming `<pthread.h>`; that mirror went with the record
+        // pool it belonged to, and the shared contract names no host threading
+        // API at all now (design section 7), so there is one spelling of the
+        // ABI and one place this test can read it.
     }
 }

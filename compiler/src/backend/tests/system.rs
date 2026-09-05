@@ -1258,9 +1258,9 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             // The kind decision moved into the one shared rule every target
             // answers with, so the check that a provisional descriptor is
             // classified from its own mode now reads the shared header.
-            assert!(crate::COMPLETION_FILE_ADAPTER_HEADER.contains("S_ISREG(file_mode)"));
+            assert!(crate::COMPLETION_FILE_POSIX_HEADER.contains("S_ISREG(file_mode)"));
             assert_eq!(
-                crate::COMPLETION_FILE_ADAPTER_SOURCE
+                crate::COMPLETION_FILE_POSIX_SOURCE
                     .matches("(void)close(descriptor);")
                     .count(),
                 2,

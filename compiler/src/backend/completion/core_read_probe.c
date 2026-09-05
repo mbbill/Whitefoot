@@ -181,7 +181,7 @@ static int test_positioned_read_result_boundaries(
 
     CHECK(descriptor >= 0);
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, NULL, 0, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
 
     host_calls_before = atomic_load_explicit(
         &positioned_read_host_calls,
@@ -344,7 +344,7 @@ static int test_independent_reads_complete_in_reverse_order(
 
     CHECK(descriptor >= 0);
     CHECK(wf_completion_runtime_init(&runtime) == 0);
-    CHECK(wf_file_adapter_init(&adapter, &runtime, NULL, 0, 0) == 0);
+    CHECK(wf_file_adapter_init(&adapter, &runtime, 0, 0) == 0);
 
     memset(&first, 0, sizeof(first));
     wf_sched_record_init(&first.sched);

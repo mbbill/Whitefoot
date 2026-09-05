@@ -1309,11 +1309,15 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     // The staged tree keeps the repository's own two directories, because the
     // completion header reaches the scheduler core by the relative path it
     // uses in the tree: the completion record begins with a `wf_sched_record`.
-    let units: [(&str, &str); 16] = [
+    let units: [(&str, &str); 19] = [
         ("completion/contract.h", crate::COMPLETION_CONTRACT_HEADER),
         (
             "completion/file_adapter.h",
             crate::COMPLETION_FILE_ADAPTER_HEADER,
+        ),
+        (
+            "completion/file_posix.h",
+            crate::COMPLETION_FILE_POSIX_HEADER,
         ),
         ("completion/bridge.h", crate::COMPLETION_BRIDGE_HEADER),
         (
@@ -1325,9 +1329,14 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
         ("sched/switch.h", crate::SCHED_SWITCH_HEADER),
         ("sched/entry.h", crate::SCHED_ENTRY_HEADER),
         ("completion/runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
+        ("completion/wait_host.c", crate::COMPLETION_WAIT_HOST_SOURCE),
         (
             "completion/file_adapter.c",
             crate::COMPLETION_FILE_ADAPTER_SOURCE,
+        ),
+        (
+            "completion/file_posix.c",
+            crate::COMPLETION_FILE_POSIX_SOURCE,
         ),
         ("completion/bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
         (
@@ -1468,15 +1477,18 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
         .expect("announced native sleeper receives the unified wake");
     assert!(parked < callback);
 
+    // The ring's own bounded pass, which is the Linux arm of the bridge's one
+    // ring seam. A failed pass is a fail-stop rather than a value the routing
+    // could interpret, so the abort is what is pinned here.
     let progress = bridge
-        .split_once("static int wf_bridge_progress(void) {")
-        .expect("bridge has bounded progress")
+        .split_once("static int wf_bridge_ring_progress(void) {")
+        .expect("the Linux ring arm has a bounded progress pass")
         .1
-        .split_once("static void wf_bridge_park(uint64_t observed_epoch) {")
-        .expect("progress precedes the park")
+        .split_once("\nstatic void wf_bridge_ring_flush(void) {")
+        .expect("progress precedes the flush")
         .0;
-    assert!(progress.contains("int error = wf_linux_io_uring_progress"));
-    assert!(progress.contains("if (error != 0)"));
+    assert!(progress.contains("wf_linux_io_uring_progress("));
+    assert!(progress.contains("!= 0) {"));
     assert!(progress.contains("abort();"));
     assert!(!progress.contains("(void)wf_linux_io_uring_progress"));
     assert!(!bridge.contains("wf_completion_park_if_unchanged(\n                    &wf_bridge_runtime,\n                    epoch,\n                    1u"));
@@ -1895,9 +1907,9 @@ fn regular_file_open_maps_status_and_release_after_completion() {
     // The kind decision reads the mode of the descriptor the open produced.
     // It moved out of this adapter into the one shared rule every target
     // answers with, so the adapter now calls that rule with its own fstat.
-    assert!(crate::COMPLETION_FILE_ADAPTER_HEADER.contains("S_ISREG(file_mode)"));
-    assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("fstat(descriptor, &status)"));
-    assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains(
+    assert!(crate::COMPLETION_FILE_POSIX_HEADER.contains("S_ISREG(file_mode)"));
+    assert!(crate::COMPLETION_FILE_POSIX_SOURCE.contains("fstat(descriptor, &status)"));
+    assert!(crate::COMPLETION_FILE_POSIX_SOURCE.contains(
         "wf_file_kind_outcome(\n                request->operation.open_at.expected_kind,"
     ));
     let directory = test_directory();
@@ -2124,11 +2136,11 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_runs_there() {
         .0;
     assert!(
         pread.find("wf_bridge_positioned_read_runs_on_caller(count)")
-            < pread.find("wf_bridge_dispatch(held);\n}"),
+            < pread.find("wf_bridge_submit_file(held);\n}"),
         "the decision comes before the record reaches an engine: {pread}"
     );
     assert!(
-        pread.find("wf_linux_io_uring_carries(held)")
+        pread.find("wf_bridge_ring_offer(held)")
             < pread.find("wf_bridge_positioned_read_runs_on_caller(count)"),
         "a native completion path is tried before the bounded adapter's rule"
     );
@@ -2226,9 +2238,11 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         .split_once("\nstatic ")
         .expect("the policy ends before the next definition")
         .0;
-    // A written value pins both ends, so growth cannot move it.
-    assert!(policy.contains("*initial = (size_t)parsed;"));
-    assert!(policy.contains("*cap = (size_t)parsed;"));
+    // A written value pins both ends, so growth cannot move it, and it is read
+    // under the one rule every startup setting of this runtime follows.
+    assert!(policy.contains("wf__sched_setting(\"WF_IO_HELPERS\""));
+    assert!(policy.contains("*initial = (size_t)written;"));
+    assert!(policy.contains("*cap = (size_t)written;"));
     // Unset starts with no helper and lets the operation bound, not the core
     // count, be the ceiling.
     assert!(
@@ -2285,7 +2299,7 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         "the enqueue decides the wake under the lock: {enqueue}"
     );
     assert!(
-        !enqueue.contains("pthread_cond_signal"),
+        !enqueue.contains("wf_completion_wait_wake"),
         "the enqueue must not issue the wake while it holds the lock: {enqueue}"
     );
     let submit = adapter
@@ -2296,14 +2310,14 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         .expect("the submission ends with the function")
         .0;
     let unlock = submit
-        .find("(void)pthread_mutex_unlock(&adapter->queue_lock);\n    if (wake != 0) {")
+        .find("wf_completion_wait_unlock(&adapter->queue_wait);\n    if (wake != 0) {")
         .expect("the wake follows the unlock");
     let signal = submit
-        .find("pthread_cond_signal(&adapter->queue_available)")
+        .find("wf_completion_wait_wake(&adapter->queue_wait, 0)")
         .expect("a submission announces to exactly one helper");
     assert!(unlock < signal, "the wake is issued outside the queue lock");
     assert!(
-        !submit.contains("pthread_cond_broadcast(&adapter->queue_available)"),
+        !submit.contains("wf_completion_wait_wake(&adapter->queue_wait, 1)"),
         "a submission must not wake every helper"
     );
     // The bridge owns no second helper pool layered over this one.
@@ -2338,7 +2352,7 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
 fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
     let ring = crate::COMPLETION_LINUX_IO_URING_SOURCE;
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let adapter_header = crate::COMPLETION_FILE_ADAPTER_HEADER;
+    let posix_header = crate::COMPLETION_FILE_POSIX_HEADER;
 
     for opcode in ["IORING_OP_OPENAT", "IORING_OP_CLOSE"] {
         assert!(
@@ -2346,17 +2360,20 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
             "the ring adapter must submit {opcode}"
         );
     }
-    // The kind decision is one rule, stated once, called by both adapters.
+    // The kind decision is one rule, stated once, called by both POSIX
+    // engines. It moved out of the adapter's own header when that header
+    // became shared with a platform that has no `struct stat`, and into the
+    // POSIX leaf both engines include (design section 7).
     assert!(
-        adapter_header.contains("wf_file_kind_outcome("),
-        "the open-kind rule belongs to the shared typed file contract"
+        posix_header.contains("wf_file_kind_outcome("),
+        "the open-kind rule belongs to the POSIX file leaf's contract"
     );
     assert!(
         ring.contains("wf_file_kind_outcome("),
         "the ring adapter must answer with the shared open-kind rule"
     );
     assert!(
-        crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("wf_file_kind_outcome("),
+        crate::COMPLETION_FILE_POSIX_SOURCE.contains("wf_file_kind_outcome("),
         "the bounded POSIX adapter must answer with the shared open-kind rule"
     );
     // The part of an open that can wait is the path resolution, and no
@@ -2394,7 +2411,7 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
         .expect("the dispatcher ends with the function")
         .0;
     let native = dispatch
-        .find("wf_linux_io_uring_carries(record)")
+        .find("wf_bridge_ring_offer(record)")
         .expect("the dispatcher asks the ring first");
     let fallback = dispatch
         .find("wf_bridge_submit_file(record);")
@@ -2423,15 +2440,23 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
     for (name, source) in [
         ("bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
         ("runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
+        ("wait_host.c", crate::COMPLETION_WAIT_HOST_SOURCE),
+        ("wait_windows.c", crate::COMPLETION_WAIT_WINDOWS_SOURCE),
         ("file_adapter.c", crate::COMPLETION_FILE_ADAPTER_SOURCE),
+        ("file_posix.c", crate::COMPLETION_FILE_POSIX_SOURCE),
+        ("file_windows.c", crate::COMPLETION_FILE_WINDOWS_SOURCE),
         ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
+        ("windows_iocp.c", crate::COMPLETION_WINDOWS_IOCP_SOURCE),
         ("sched/core.c", crate::SCHED_CORE_SOURCE),
         ("sched/prim_host.c", crate::SCHED_PRIM_HOST_SOURCE),
+        ("sched/prim_windows.c", crate::SCHED_PRIM_WINDOWS_SOURCE),
         ("sched/entry.c", crate::SCHED_ENTRY_SOURCE),
         ("contract.h", crate::COMPLETION_CONTRACT_HEADER),
         ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
         ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
+        ("file_posix.h", crate::COMPLETION_FILE_POSIX_HEADER),
         ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
+        ("windows_iocp.h", crate::COMPLETION_WINDOWS_IOCP_HEADER),
         ("sched/core.h", crate::SCHED_CORE_HEADER),
         ("sched/prim.h", crate::SCHED_PRIM_HEADER),
         ("sched/entry.h", crate::SCHED_ENTRY_HEADER),

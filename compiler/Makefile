@@ -1,13 +1,10 @@
 CARGO := cargo
 CC ?= cc
 NM ?= nm
-WINDOWS_CC ?= zig cc
+WINDOWS_CC ?= x86_64-w64-mingw32-gcc
+WINE ?= /usr/lib/wine/wine64
+WINEPREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/wineprefix
 WINDOWS_OBJDUMP ?= objdump
-WINDOWS_IOCP_PROBE_DEFINES := \
-	-DWF_WINDOWS_IOCP_READ_CALL=wf_windows_iocp_probe_read \
-	-DWF_WINDOWS_IOCP_WRITE_CALL=wf_windows_iocp_probe_write \
-	-DWF_WINDOWS_IOCP_RESULT_CALL=wf_windows_iocp_probe_result \
-	-DWF_WINDOWS_IOCP_NOTIFICATION_CALL=wf_windows_iocp_probe_notification
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
@@ -104,7 +101,9 @@ COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) $(COMPLETION_HARNESS_DEFINES)
 COMPLETION_SOURCES := \
 	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
+	$(COMPLETION_DIR)/wait_host.c \
 	$(COMPLETION_DIR)/file_adapter.c \
+	$(COMPLETION_DIR)/file_posix.c \
 	$(COMPLETION_DIR)/bridge.c \
 	$(COMPLETION_DIR)/linux_io_uring.c \
 	$(COMPLETION_DIR)/native_contract.c \
@@ -122,12 +121,16 @@ COMPLETION_DEFAULT_ROUTE_SOURCES := \
 COMPLETION_CORE_READ_SOURCES := \
 	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
+	$(COMPLETION_DIR)/wait_host.c \
 	$(COMPLETION_DIR)/file_adapter.c \
+	$(COMPLETION_DIR)/file_posix.c \
 	$(COMPLETION_DIR)/core_read_probe.c
 COMPLETION_CORE_READ_ALLOWED_SOURCES := \
 	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
+	$(COMPLETION_DIR)/wait_host.c \
 	$(COMPLETION_DIR)/file_adapter.c \
+	$(COMPLETION_DIR)/file_posix.c \
 	$(COMPLETION_DIR)/core_read_probe.c
 COMPLETION_CORE_READ_UNEXPECTED_SOURCES := $(filter-out \
 	$(COMPLETION_CORE_READ_ALLOWED_SOURCES),$(COMPLETION_CORE_READ_SOURCES))
@@ -262,6 +265,7 @@ completion-test: completion-core-read-test completion-default-route-test sched-s
 		$(CC) $(COMPLETION_CFLAGS) \
 			$(SCHED_SOURCES) \
 			$(COMPLETION_DIR)/runtime.c \
+			$(COMPLETION_DIR)/wait_host.c \
 			$(COMPLETION_DIR)/linux_io_uring.c \
 			$(COMPLETION_DIR)/native_adapter_probe.c \
 			-o "$(COMPLETION_TMP)/linux-native-probe"; \
@@ -447,100 +451,97 @@ completion-core-read-tsan: completion-core-read-source-boundary
 	TSAN_OPTIONS=halt_on_error=1 \
 		"$(COMPLETION_TMP)/core-read-probe-tsan" "$(COMPLETION_TMP)"
 
-# This is deliberately an explicit qualification-development target rather
-# than part of `check`: it needs a Windows cross toolchain, and a successful
-# cross-link is not a substitute for execution on Windows.  It keeps the
-# target-only core and the opaque adapter ABI independently linkable, then
-# proves that the full PE imports real IOCP and overlapped file facilities.
+# The Windows link set, in the same three groups the driver stages: the
+# scheduler core with its Windows leaf, the completion runtime with its Windows
+# wait, host leaf and ring, and the Windows host runtime beside them. It is the
+# same list as the POSIX one with the leaves swapped, which is the whole point
+# of step (iv).
+WINDOWS_LINK_SOURCES := \
+	$(SCHED_DIR)/core.c \
+	$(SCHED_DIR)/prim_windows.c \
+	$(SCHED_DIR)/entry.c \
+	$(COMPLETION_DIR)/runtime.c \
+	$(COMPLETION_DIR)/wait_windows.c \
+	$(COMPLETION_DIR)/file_adapter.c \
+	$(COMPLETION_DIR)/file_windows.c \
+	$(COMPLETION_DIR)/bridge.c \
+	$(COMPLETION_DIR)/windows_iocp.c \
+	src/backend/windows_runtime.c
+WINDOWS_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+	-I$(COMPLETION_DIR) -Isrc/backend
+
+# These two are deliberately explicit qualification-development targets rather
+# than part of `check`, and they are two rather than one because they prove
+# different things and neither is the thing the gate needs.
+#
+# A Windows cross build is not execution on Windows: it proves that these units
+# compile and link into a PE importing the real IOCP, fiber and condition
+# facilities, and nothing about what they do when they run. And wine is not
+# Windows: it runs the PE well enough to exercise the port, the fibers and the
+# adapter route, which makes it a useful early signal and never a substitute
+# for `.github/workflows/io-hosts.yml`'s `completion-windows` job on a real
+# host. The floor's classification of a stack overflow, in particular, is a
+# kernel behaviour wine only approximates.
 completion-windows-cross:
-	@mkdir -p "$(COMPLETION_TMP)/windows-zig-global" \
-		"$(COMPLETION_TMP)/windows-zig-local"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-		$(WINDOWS_CC) -target x86_64-windows-gnu \
-			-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-			$(WINDOWS_IOCP_PROBE_DEFINES) \
-			-I$(COMPLETION_DIR) -Isrc/backend \
-		$(COMPLETION_DIR)/windows_completion.c \
-		$(COMPLETION_DIR)/windows_iocp.c \
-		$(COMPLETION_DIR)/windows_completion_probe.c \
-		-o "$(COMPLETION_TMP)/windows-completion-probe.exe"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-I$(COMPLETION_DIR) -Isrc/backend \
+	@mkdir -p "$(COMPLETION_TMP)"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
+		$(WINDOWS_LINK_SOURCES) \
+		$(COMPLETION_DIR)/bridge_default_probe.c \
+		-o "$(COMPLETION_TMP)/windows-default-route-probe.exe"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
+		$(SCHED_DIR)/core.c \
+		$(SCHED_DIR)/prim_windows.c \
+		$(COMPLETION_DIR)/runtime.c \
+		$(COMPLETION_DIR)/wait_windows.c \
 		$(COMPLETION_DIR)/native_contract.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
 		$(COMPLETION_DIR)/native_adapter_probe.c \
 		-o "$(COMPLETION_TMP)/windows-adapter-probe.exe"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-I$(COMPLETION_DIR) -Isrc/backend \
-		$(COMPLETION_DIR)/windows_completion.c \
-		$(COMPLETION_DIR)/windows_iocp.c \
-		$(COMPLETION_DIR)/windows_blocking.c \
-		$(COMPLETION_DIR)/windows_blocking_probe.c \
-		-o "$(COMPLETION_TMP)/windows-blocking-probe.exe"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-I$(COMPLETION_DIR) -Isrc/backend \
-		src/backend/windows_runtime.c \
-		$(COMPLETION_DIR)/windows_completion.c \
-		$(COMPLETION_DIR)/windows_iocp.c \
-		$(COMPLETION_DIR)/windows_blocking.c \
-		$(COMPLETION_DIR)/windows_bridge.c \
-		$(COMPLETION_DIR)/writer_scheduler_windows.c \
-		-shared -o "$(COMPLETION_TMP)/windows-runtime.dll"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
-		-I$(COMPLETION_DIR) -Isrc/backend \
-		src/backend/windows_runtime.c \
-		$(COMPLETION_DIR)/windows_completion.c \
-		$(COMPLETION_DIR)/windows_iocp.c \
-		$(COMPLETION_DIR)/windows_blocking.c \
-		$(COMPLETION_DIR)/windows_bridge.c \
-		$(COMPLETION_DIR)/writer_scheduler_windows.c \
-		$(COMPLETION_DIR)/windows_bridge_capacity_probe.c \
-		-o "$(COMPLETION_TMP)/windows-bridge-capacity-probe.exe"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		-c src/backend/wf_floor_windows.c \
 		-o "$(COMPLETION_TMP)/wf-floor-windows.o"
-	ZIG_GLOBAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-global" \
-	ZIG_LOCAL_CACHE_DIR="$(COMPLETION_TMP)/windows-zig-local" \
-	$(WINDOWS_CC) -target x86_64-windows-gnu \
-		-std=c11 -O2 -Wall -Wextra -Werror -Wpedantic \
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		src/backend/windows_namespace_probe.c \
 		-o "$(COMPLETION_TMP)/windows-namespace-probe.exe"
 	@imports="$$($(WINDOWS_OBJDUMP) -p \
-		"$(COMPLETION_TMP)/windows-completion-probe.exe")"; \
+		"$(COMPLETION_TMP)/windows-default-route-probe.exe")"; \
 	for symbol in CreateIoCompletionPort GetQueuedCompletionStatus \
 		PostQueuedCompletionStatus ReadFile WriteFile \
-		AcquireSRWLockExclusive SleepConditionVariableSRW; do \
+		CreateFiberEx SwitchToFiber ConvertThreadToFiberEx \
+		AcquireSRWLockExclusive SleepConditionVariableSRW \
+		VirtualAlloc _beginthreadex; do \
 		if ! printf '%s\n' "$$imports" | grep -q "  $$symbol$$"; then \
-			echo "Windows completion probe does not import $$symbol" >&2; \
-			exit 1; \
-		fi; \
-	done
-	@imports="$$($(WINDOWS_OBJDUMP) -p \
-		"$(COMPLETION_TMP)/windows-blocking-probe.exe")"; \
-	for symbol in _beginthreadex CreateIoCompletionPort \
-		GetQueuedCompletionStatus PostQueuedCompletionStatus; do \
-		if ! printf '%s\n' "$$imports" | grep -q "  $$symbol$$"; then \
-			echo "Windows blocking probe does not import $$symbol" >&2; \
+			echo "Windows default-route probe does not import $$symbol" >&2; \
 			exit 1; \
 		fi; \
 	done
 	@echo "completion Windows x86-64 cross-link: PASS (not runtime-qualified)"
+
+# Runs what the cross build produced, under wine, when a wine is installed.
+# A missing wine is not a failure of this target: it is a development aid, not
+# evidence, and the evidence is the native job.
+completion-windows-wine: completion-windows-cross
+	@if [ ! -x "$(WINE)" ]; then \
+		echo "completion Windows wine run: SKIP ($(WINE) is not installed)"; \
+		exit 0; \
+	fi; \
+	mkdir -p "$(WINEPREFIX)"; \
+	set -e; \
+	echo "== native adapter probe =="; \
+	WINEDEBUG=-all WINEPREFIX="$(WINEPREFIX)" "$(WINE)" \
+		"$(COMPLETION_TMP)/windows-adapter-probe.exe" \
+		"$(COMPLETION_TMP)/windows-adapter-probe.data"; \
+	echo "== default route, native ring =="; \
+	WINEDEBUG=-all WINEPREFIX="$(WINEPREFIX)" "$(WINE)" \
+		"$(COMPLETION_TMP)/windows-default-route-probe.exe" \
+		"$(COMPLETION_TMP)" 2>&1 | tee "$(COMPLETION_TMP)/windows-ring.txt"; \
+	grep -q 'route=native-ring' "$(COMPLETION_TMP)/windows-ring.txt"; \
+	echo "== default route, bounded adapter =="; \
+	WF_IO_NO_NATIVE_RING=1 WINEDEBUG=-all WINEPREFIX="$(WINEPREFIX)" "$(WINE)" \
+		"$(COMPLETION_TMP)/windows-default-route-probe.exe" \
+		"$(COMPLETION_TMP)" 2>&1 | tee "$(COMPLETION_TMP)/windows-adapter.txt"; \
+	grep -q 'route=posix-adapter' "$(COMPLETION_TMP)/windows-adapter.txt"; \
+	echo "completion Windows wine run: PASS (wine is not Windows)"
 
 .PHONY: check static format lint test test-unit test-sampling test-corpus \
 	test-partition docs spec completion-test \
@@ -549,4 +550,4 @@ completion-windows-cross:
 	completion-sanitize \
 	completion-core-read-sanitize completion-default-route-test \
 	completion-default-route-sanitize completion-default-route-tsan sched-smoke \
-	sched-enumerate completion-windows-cross
+	sched-enumerate completion-windows-cross completion-windows-wine

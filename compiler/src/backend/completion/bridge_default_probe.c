@@ -1,4 +1,4 @@
-#if !defined(_POSIX_C_SOURCE)
+#if !defined(_WIN32) && !defined(_POSIX_C_SOURCE)
 #define _POSIX_C_SOURCE 200809L
 #endif
 #if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
@@ -10,17 +10,118 @@
  * by.  This probe stands in for emitted code and learns no more of the
  * record's layout than emitted code does. */
 #include "contract.h"
+/* The threads this probe's lanes run on are the runtime's own, so that one
+ * probe runs on every platform the runtime does. */
+#include "../sched/prim.h"
 
-#include <errno.h>
-#include <fcntl.h>
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* ------------------------------------------------- the probe's host leaf */
+
+/* The four host calls this scaffold makes, and the only place it names a
+ * platform.  Everything below is one implementation: the lanes, the rounds,
+ * the assertions and the route check are the same source on every host, and
+ * the threads they run on come from the runtime's own thread primitive.
+ *
+ * The fixture is made with the platform's own file calls because no operation
+ * of the completion ABI creates a file: an open there resolves a name that
+ * already exists. */
+#if defined(_WIN32)
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
+#include <fcntl.h>
+#include <io.h>
+
+static unsigned long probe_process_id(void) {
+    return (unsigned long)GetCurrentProcessId();
+}
+
+static void probe_sleep_tick(void) {
+    Sleep(100u);
+}
+
+/* The fixture is opened for overlapped I/O, which is what this target's own
+ * opens produce and therefore what its ring is given. */
+static int probe_open_fixture(const char *path, const unsigned char *bytes, unsigned length) {
+    HANDLE writer;
+    HANDLE reader;
+    DWORD written = 0;
+    writer = CreateFileA(
+        path,
+        GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL,
+        CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL,
+        NULL
+    );
+    if (writer == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    if (WriteFile(writer, bytes, (DWORD)length, &written, NULL) == FALSE
+        || written != (DWORD)length
+        || FlushFileBuffers(writer) == FALSE
+        || CloseHandle(writer) == FALSE) {
+        return -1;
+    }
+    reader = CreateFileA(
+        path,
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        NULL,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+        NULL
+    );
+    if (reader == INVALID_HANDLE_VALUE) {
+        return -1;
+    }
+    return _open_osfhandle((intptr_t)reader, _O_RDONLY | _O_BINARY);
+}
+
+static void probe_close_fixture(int descriptor, const char *path) {
+    (void)_close(descriptor);
+    (void)DeleteFileA(path);
+}
+
+#else
+
+#include <fcntl.h>
 #include <time.h>
 #include <unistd.h>
+
+static unsigned long probe_process_id(void) {
+    return (unsigned long)getpid();
+}
+
+static void probe_sleep_tick(void) {
+    struct timespec tick = {.tv_sec = 0, .tv_nsec = 100000000};
+    (void)nanosleep(&tick, NULL);
+}
+
+static int probe_open_fixture(const char *path, const unsigned char *bytes, unsigned length) {
+    int descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
+    if (descriptor < 0
+        || write(descriptor, bytes, (size_t)length) != (ssize_t)length) {
+        return -1;
+    }
+    return descriptor;
+}
+
+static void probe_close_fixture(int descriptor, const char *path) {
+    (void)close(descriptor);
+    (void)unlink(path);
+}
+
+#endif
 
 /*
  * The bridge on its shipped default helper policy, which nothing else runs.
@@ -65,32 +166,43 @@
 static _Atomic int probe_finished;
 static _Atomic unsigned submitted_route;
 static _Atomic unsigned nonpositioned_route;
+/* Non-positioned reads that transferred, and those the target published as a
+ * refusal because its qualified row has no stream read.  A target either has
+ * the shape or does not, so a run in which both counts are nonzero is the
+ * defect this pair is here to catch. */
+static _Atomic unsigned nonpositioned_transferred;
+static _Atomic unsigned nonpositioned_refused;
+static _Atomic unsigned lanes_finished;
+/* The entry records the lanes and the watchdog are started with. They are the
+ * probe's own storage because `wf_prim_thread_start` takes the pair from the
+ * caller and reads it after the creating call has returned (`../sched/prim.h`,
+ * P1); statics are the simplest thing here that outlives every thread. */
+static wf_prim_thread watchdog_thread;
+static wf_prim_thread lane_threads[LANES];
 
 /* A stuck run is the failure this probe most needs to report, and a test that
  * hangs reports nothing.  The bound is far above any honest run of this size;
  * the tick is short so that joining this thread costs the finished run almost
  * nothing. */
-static void *watchdog_main(void *context) {
+static void watchdog_main(void *context) {
     unsigned ticks = *(unsigned *)context * 10u;
     unsigned elapsed = 0;
-    struct timespec tick = {.tv_sec = 0, .tv_nsec = 100000000};
     while (elapsed < ticks) {
         if (atomic_load_explicit(&probe_finished, memory_order_acquire) != 0) {
-            return NULL;
+            return;
         }
-        (void)nanosleep(&tick, NULL);
+        probe_sleep_tick();
         elapsed += 1;
     }
     if (atomic_load_explicit(&probe_finished, memory_order_acquire) == 0) {
-        fprintf(
+        (void)fprintf(
             stderr,
             "bridge default probe: STUCK after %u s\n",
             ticks / 10u
         );
-        fflush(stderr);
-        _exit(9);
+        (void)fflush(stderr);
+        _Exit(9);
     }
-    return NULL;
 }
 
 typedef struct {
@@ -104,7 +216,7 @@ static unsigned char expected_byte(uint64_t offset) {
     return (unsigned char)(offset % 251u);
 }
 
-static void *lane_main(void *context) {
+static void lane_main(void *context) {
     lane_context *self = context;
     unsigned round;
     for (round = 0; round < ROUNDS; ++round) {
@@ -138,7 +250,7 @@ static void *lane_main(void *context) {
                 (unsigned)expected_byte(offset)
             );
             self->failed = 1;
-            return NULL;
+            break;
         }
         /* One non-positioned read every so often.  It is never run inside
          * submit, so it puts work in the queue and takes away the inline
@@ -159,8 +271,25 @@ static void *lane_main(void *context) {
                 memory_order_relaxed
             );
             wf__completion_file_join(other_record, &value, &error);
-            if (value < 0) {
-                fprintf(
+            /* Either the target has this shape and transferred, or it has none
+             * and published the refusal as an outcome.  What is never right is
+             * a shape the runtime answers by ending the process, which is the
+             * property this arm exists to hold, so both answers are accepted
+             * here and the run is failed below if it produced both. */
+            if (value >= 0 && error == 0) {
+                atomic_fetch_add_explicit(
+                    &nonpositioned_transferred,
+                    1,
+                    memory_order_relaxed
+                );
+            } else if (value < 0 && error != 0) {
+                atomic_fetch_add_explicit(
+                    &nonpositioned_refused,
+                    1,
+                    memory_order_relaxed
+                );
+            } else {
+                (void)fprintf(
                     stderr,
                     "bridge default probe: non-positioned read %lld "
                     "error %d\n",
@@ -168,19 +297,17 @@ static void *lane_main(void *context) {
                     error
                 );
                 self->failed = 1;
-                return NULL;
+                break;
             }
         }
     }
-    return NULL;
+    atomic_fetch_add_explicit(&lanes_finished, 1, memory_order_release);
 }
 
 int main(int argc, char **argv) {
     char path[512];
     unsigned char fixture[FILE_BYTES];
     int descriptor;
-    pthread_t watchdog;
-    pthread_t threads[LANES];
     lane_context lanes[LANES];
     unsigned seconds = WATCHDOG_SECONDS;
     size_t index;
@@ -209,40 +336,45 @@ int main(int argc, char **argv) {
     if (snprintf(
             path,
             sizeof(path),
-            "%s/wf-bridge-default-%ld",
+            "%s/wf-bridge-default-%lu",
             argv[1],
-            (long)getpid()
+            probe_process_id()
         ) <= 0) {
         return 2;
     }
-    descriptor = open(path, O_RDWR | O_CREAT | O_TRUNC, 0600);
-    if (descriptor < 0
-        || write(descriptor, fixture, FILE_BYTES) != (ssize_t)FILE_BYTES) {
-        fprintf(stderr, "bridge default probe: fixture failed\n");
+    descriptor = probe_open_fixture(path, fixture, (unsigned)FILE_BYTES);
+    if (descriptor < 0) {
+        (void)fprintf(stderr, "bridge default probe: fixture failed\n");
         return 2;
     }
-    if (pthread_create(&watchdog, NULL, watchdog_main, &seconds) != 0) {
+    if (wf_prim_thread_start(&watchdog_thread, watchdog_main, &seconds, 0)
+        != 0) {
         return 2;
     }
     for (index = 0; index < LANES; ++index) {
         lanes[index].descriptor = descriptor;
         lanes[index].lane = (unsigned)index;
         lanes[index].failed = 0;
-        if (pthread_create(&threads[index], NULL, lane_main, &lanes[index])
-            != 0) {
+        if (wf_prim_thread_start(
+                &lane_threads[index],
+                lane_main,
+                &lanes[index],
+                0
+            ) != 0) {
             return 2;
         }
     }
-    for (index = 0; index < LANES; ++index) {
-        (void)pthread_join(threads[index], NULL);
+    /* The lanes are detached, as every thread this runtime starts is, so the
+     * rendezvous is the count they publish rather than a join by handle. */
+    while (atomic_load_explicit(&lanes_finished, memory_order_acquire)
+           < (unsigned)LANES) {
+        wf_prim_yield();
     }
     atomic_store_explicit(&probe_finished, 1, memory_order_release);
-    (void)pthread_join(watchdog, NULL);
     for (index = 0; index < LANES; ++index) {
         failed |= lanes[index].failed;
     }
-    (void)close(descriptor);
-    (void)unlink(path);
+    probe_close_fixture(descriptor, path);
 
     /* Which route this host's bridge actually took, and whether the counters
      * agree that the decision this probe exists for was taken at all.
@@ -273,7 +405,7 @@ int main(int argc, char **argv) {
      * idle, which is not a property of the runtime.  Requiring *either* is a
      * real requirement: if neither happened, the policy took no branch in
      * sixteen thousand reads and this run covered none of it. */
-    ring_submissions = wf__completion_linux_io_uring_submissions();
+    ring_submissions = wf__completion_native_ring_submissions();
     adapter_submissions = wf__completion_file_fallback_submissions();
     submitted = atomic_load_explicit(&submitted_route, memory_order_relaxed);
     inline_executions = wf__completion_inline_executions();
@@ -296,9 +428,23 @@ int main(int argc, char **argv) {
         }
     }
     if (submitted == 0) {
-        fprintf(
+        (void)fprintf(
             stderr,
             "bridge default probe: no positioned read was submitted\n"
+        );
+        failed = 1;
+    }
+    /* A target either has a stream read or has none, and either answer is a
+     * published outcome.  A run that produced both took two different arms for
+     * one shape, which is the drift this pair catches. */
+    if (atomic_load_explicit(&nonpositioned_transferred, memory_order_relaxed)
+            != 0
+        && atomic_load_explicit(&nonpositioned_refused, memory_order_relaxed)
+            != 0) {
+        (void)fprintf(
+            stderr,
+            "bridge default probe: the non-positioned read was both "
+            "transferred and refused in one run\n"
         );
         failed = 1;
     }

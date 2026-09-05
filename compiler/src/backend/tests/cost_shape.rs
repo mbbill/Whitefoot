@@ -630,7 +630,7 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
         // record, submits, joins and maps
         // (`research/investigations/io-model/PARK-ON-MISS.md` §8).
         assert!(
-            row.contains("%record = alloca [128 x i8], align 8"),
+            row.contains("%record = alloca [160 x i8], align 8"),
             "{operation} reserves its record in its own frame:\n{row}"
         );
         assert!(

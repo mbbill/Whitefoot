@@ -59,6 +59,7 @@ jobs:
             compiler/src/backend/sched/prim_host.c \
             compiler/src/backend/sched/entry.c \
             compiler/src/backend/completion/runtime.c \
+            compiler/src/backend/completion/wait_host.c \
             compiler/src/backend/completion/linux_io_uring.c \
             compiler/src/backend/completion/native_adapter_probe.c \
             -o "$RUNNER_TEMP/completion/linux-native-probe"
@@ -121,34 +122,71 @@ jobs:
           clang --version
           systeminfo | grep -E '^(OS Name|OS Version|System Type|Total Physical Memory)' || true
 
-      # The cross target proves that these units link into a PE importing the
-      # IOCP entries. This native probe additionally proves that the adapter
-      # drives a real completion port.
-      - name: Build the Windows completion probe
+      # The runtime the driver stages on this target, in the three groups it
+      # stages: the scheduler core with its Windows leaf, the completion
+      # runtime with its Windows wait, host leaf and ring, and the Windows host
+      # runtime beside them. It is the POSIX list with the leaves swapped,
+      # which is what step (iv) is.
+      - name: Record the Windows runtime link set
+        run: |
+          {
+            echo "WINDOWS_UNITS<<EOF"
+            echo "compiler/src/backend/sched/core.c"
+            echo "compiler/src/backend/sched/prim_windows.c"
+            echo "compiler/src/backend/sched/entry.c"
+            echo "compiler/src/backend/completion/runtime.c"
+            echo "compiler/src/backend/completion/wait_windows.c"
+            echo "compiler/src/backend/completion/file_adapter.c"
+            echo "compiler/src/backend/completion/file_windows.c"
+            echo "compiler/src/backend/completion/bridge.c"
+            echo "compiler/src/backend/completion/windows_iocp.c"
+            echo "compiler/src/backend/windows_runtime.c"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+
+      # The shipped default helper policy and the shipped routing, on the real
+      # host, through the same probe the POSIX gate runs: this is the same
+      # source, the same assertions and the same PASS line on both platforms,
+      # which is the property step (iv) is about. It is run twice, because the
+      # two routes are two different engines for one writer-visible operation:
+      # once with the completion port (route=native-ring) and once with the
+      # port refused (route=posix-adapter), which is the negative control the
+      # POSIX `completion-default-route-test` also runs.
+      - name: Build the Windows default-route probe
         run: |
           mkdir -p "$RUNNER_TEMP/completion"
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
-            -DWF_WINDOWS_IOCP_READ_CALL=wf_windows_iocp_probe_read \
-            -DWF_WINDOWS_IOCP_WRITE_CALL=wf_windows_iocp_probe_write \
-            -DWF_WINDOWS_IOCP_RESULT_CALL=wf_windows_iocp_probe_result \
-            -DWF_WINDOWS_IOCP_NOTIFICATION_CALL=wf_windows_iocp_probe_notification \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
-            compiler/src/backend/completion/windows_completion.c \
-            compiler/src/backend/completion/windows_iocp.c \
-            compiler/src/backend/completion/windows_completion_probe.c \
-            -o "$RUNNER_TEMP/completion/windows-completion-probe.exe"
+            $WINDOWS_UNITS \
+            compiler/src/backend/completion/bridge_default_probe.c \
+            -o "$RUNNER_TEMP/completion/windows-default-route-probe.exe"
 
-      - name: Run the Windows completion probe
+      - name: Run the Windows default-route probe on both routes
         run: |
-          "$RUNNER_TEMP/completion/windows-completion-probe.exe" \
-            "$RUNNER_TEMP/completion/probe.data"
+          record="$RUNNER_TEMP/completion/windows-default-route"
+          "$RUNNER_TEMP/completion/windows-default-route-probe.exe" \
+            "$RUNNER_TEMP/completion" 2> "$record-ring.txt"
+          cat "$record-ring.txt"
+          tr -d $'\r' < "$record-ring.txt" | grep -F 'route=native-ring' > /dev/null
+          WF_IO_NO_NATIVE_RING=1 \
+            "$RUNNER_TEMP/completion/windows-default-route-probe.exe" \
+            "$RUNNER_TEMP/completion" 2> "$record-adapter.txt"
+          cat "$record-adapter.txt"
+          tr -d $'\r' < "$record-adapter.txt" | grep -F 'route=posix-adapter' > /dev/null
 
+      # The ring alone, with no bridge at all: a real positioned transfer found
+      # by the record's own address, published through the scheduler core, and
+      # waited for on the ring's own park.
       - name: Build the Windows native adapter probe
         run: |
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
+            compiler/src/backend/sched/core.c \
+            compiler/src/backend/sched/prim_windows.c \
+            compiler/src/backend/completion/runtime.c \
+            compiler/src/backend/completion/wait_windows.c \
             compiler/src/backend/completion/native_contract.c \
             compiler/src/backend/completion/windows_iocp.c \
             compiler/src/backend/completion/native_adapter_probe.c \
@@ -158,33 +196,6 @@ jobs:
         run: |
           "$RUNNER_TEMP/completion/windows-adapter-probe.exe" \
             "$RUNNER_TEMP/completion/adapter.data"
-
-      # The IOCP adapter does not cover the operations whose Windows APIs have
-      # no overlapped form. Link the production bounded worker pool unchanged,
-      # inject only deterministic host-call outcomes, and prove that every
-      # submission is executed and published exactly once and that each copied
-      # descriptor lease is validated and cleared once. The refused-open retry
-      # and the open-order gate this probe once scripted went with the
-      # descriptor retirement ledger (docs/done/0106-backed-file-permit.md).
-      - name: Build the Windows blocking adapter probe
-        run: |
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            compiler/src/backend/completion/windows_completion.c \
-            compiler/src/backend/completion/windows_iocp.c \
-            compiler/src/backend/completion/windows_blocking.c \
-            compiler/src/backend/completion/windows_blocking_probe.c \
-            -o "$RUNNER_TEMP/completion/windows-blocking-probe.exe"
-
-      - name: Run the Windows blocking adapter probe
-        run: |
-          record="$RUNNER_TEMP/completion/windows-blocking-probe.txt"
-          "$RUNNER_TEMP/completion/windows-blocking-probe.exe" | tee "$record"
-          tr -d $'\r' < "$record" > "$record.normalized"
-          grep -Fx \
-            'windows-blocking-probe status=pass workers=2 submissions=3 executions=3 publications=3 consumes=3 leases=3' \
-            "$record.normalized" > /dev/null
 
       # This probe proves the namespace facilities the Windows target row
       # uses. It moves the ambient cwd away after taking its directory
@@ -210,25 +221,26 @@ jobs:
           fi
           exit "$status"
 
+      # The whole staged runtime plus the floor, under the warning set the
+      # repository gate uses. There is deliberately no second pass under
+      # `-DWF_SCHED_ENUMERATE`: the enumerator (`sched/enumerate.c`) is a POSIX
+      # test harness that reserves its own coroutine stacks with `mmap`, it is
+      # not staged into any link on this target, and it is not meant to compile
+      # here.
       - name: Strict-check the complete Windows runtime
         run: |
           clang -std=c11 -O2 -Wall -Wextra -Werror -Wpedantic -fsyntax-only \
-            -DWF_PAR_WITH_WRITER_SCHEDULER=1 \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
-            compiler/src/backend/par_runtime_windows.c \
-            compiler/src/backend/windows_runtime.c \
-            compiler/src/backend/wf_floor_windows.c \
-            compiler/src/backend/completion/windows_completion.c \
-            compiler/src/backend/completion/windows_iocp.c \
-            compiler/src/backend/completion/windows_blocking.c \
-            compiler/src/backend/completion/windows_bridge.c \
-            compiler/src/backend/completion/writer_scheduler_windows.c
+            $WINDOWS_UNITS \
+            compiler/src/backend/wf_floor_windows.c
 
-      # The bridge is not allowed to turn an IOCP initialization failure into
-      # a smaller execution mode. Rename that dependency in the bridge object
-      # only, inject ERROR_NOT_ENOUGH_MEMORY, and require the production
-      # fail-stop path to terminate before the completion window can return.
+      # A bridge with no engine at all is a trusted-computing-base failure and
+      # terminates where the floor does. Rename the bridge's two initializers
+      # in the bridge object only, leave every other unit on its production
+      # implementation, and require the production fail-stop path to terminate
+      # before a submit can return. A *refused ring* is not that case and must
+      # not be: the default-route step above runs exactly that configuration.
       - name: Build the Windows bridge initialization fail-stop probe
         run: |
           fault_dir="$RUNNER_TEMP/completion/windows-bridge-init-fault"
@@ -238,18 +250,22 @@ jobs:
             -include compiler/src/backend/completion/windows_bridge_init_fail_stop_probe.c \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
-            -c compiler/src/backend/completion/windows_bridge.c \
-            -o "$fault_dir/windows-bridge.o"
+            -c compiler/src/backend/completion/bridge.c \
+            -o "$fault_dir/bridge.o"
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
-            compiler/src/backend/windows_runtime.c \
-            compiler/src/backend/completion/windows_completion.c \
+            compiler/src/backend/sched/core.c \
+            compiler/src/backend/sched/prim_windows.c \
+            compiler/src/backend/sched/entry.c \
+            compiler/src/backend/completion/runtime.c \
+            compiler/src/backend/completion/wait_windows.c \
+            compiler/src/backend/completion/file_adapter.c \
+            compiler/src/backend/completion/file_windows.c \
             compiler/src/backend/completion/windows_iocp.c \
-            compiler/src/backend/completion/windows_blocking.c \
-            compiler/src/backend/completion/writer_scheduler_windows.c \
+            compiler/src/backend/windows_runtime.c \
             compiler/src/backend/completion/windows_bridge_init_fail_stop_probe.c \
-            "$fault_dir/windows-bridge.o" \
+            "$fault_dir/bridge.o" \
             -o "$fault_dir/windows-bridge-init-fail-stop-probe.exe"
 
       - name: Require Windows bridge initialization to fail stop
@@ -268,30 +284,6 @@ jobs:
             echo "bridge initialization fault wrote unexpected output" >&2
             exit 1
           fi
-
-      # Terminal IOCP packets do not free compiler core slots; source joins do.
-      # Fill all 64 slots without joining, require the 65th submit to return
-      # WAIT with its token untouched, consume one older token, then require an
-      # exact retry to be accepted with no eligible direct fallback.
-      - name: Build the Windows bridge capacity probe
-        run: |
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            compiler/src/backend/windows_runtime.c \
-            compiler/src/backend/completion/windows_completion.c \
-            compiler/src/backend/completion/windows_iocp.c \
-            compiler/src/backend/completion/windows_blocking.c \
-            compiler/src/backend/completion/windows_bridge.c \
-            compiler/src/backend/completion/writer_scheduler_windows.c \
-            compiler/src/backend/completion/windows_bridge_capacity_probe.c \
-            -o "$RUNNER_TEMP/completion/windows-bridge-capacity-probe.exe"
-
-      - name: Run the Windows bridge capacity probe
-        run: |
-          WF_REQUIRE_WINDOWS_IOCP=1 \
-            "$RUNNER_TEMP/completion/windows-bridge-capacity-probe.exe" \
-            "$RUNNER_TEMP/completion/windows-bridge-capacity.data"
 
       # A native adapter probe can pass while the compiler still emits a Unix
       # bootstrap or the shipped driver forgets one Windows runtime unit. This
@@ -340,114 +332,6 @@ jobs:
             fail_e2e "the compiled program produced the wrong bytes" "$?"
           test ! -s "$RUNNER_TEMP/whitefoot-e2e/diagnostics.txt" || \
             fail_e2e "the compiled program wrote diagnostics" "$?"
-
-      # The bridge-only capacity probe above establishes the C ABI. This is
-      # the production compiler boundary: four source-level independent
-      # read_at calls leave three eligible requests before the source-last
-      # direct read. The test-only two-slot bridge makes the third admission
-      # return status 2 without widening the production runtime's 64-slot
-      # capacity.
-      # The link-only observer wraps the core claim and successful join ABI;
-      # it proves an executed capacity verdict, no eligible direct fallback,
-      # and that each accepted request was published and consumed. It is not
-      # linked into the normal whitefootc output.
-      - name: Exercise compiler-emitted Windows core-capacity recovery
-        run: |
-          fail_capacity() {
-            local stage="$1"
-            local status="${2:-1}"
-            echo "::error title=Windows compiler completion capacity::${stage}"
-            exit "$status"
-          }
-          capacity_dir="$RUNNER_TEMP/whitefoot-e2e/windows-capacity"
-          mkdir -p "$capacity_dir"
-          compiler/target/debug/whitefootc.exe --emit-llvm \
-            tests/programs/completion_windows_capacity.wf \
-            -o "$capacity_dir/completion-windows-capacity.ll" || \
-            fail_capacity "the capacity program did not emit" "$?"
-
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            -c compiler/src/backend/windows_runtime.c \
-            -o "$capacity_dir/windows-runtime.o" || \
-            fail_capacity "the Windows runtime did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -I compiler/src/backend \
-            -c compiler/src/backend/wf_floor_windows.c \
-            -o "$capacity_dir/wf-floor-windows.o" || \
-            fail_capacity "the Windows floor runtime did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -Dwf_completion_claim=wf__capacity_observed_completion_claim \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            -c compiler/src/backend/completion/windows_completion.c \
-            -o "$capacity_dir/windows-completion.o" || \
-            fail_capacity "the renamed completion core did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            -c compiler/src/backend/completion/windows_iocp.c \
-            -o "$capacity_dir/windows-iocp.o" || \
-            fail_capacity "the Windows IOCP adapter did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            -c compiler/src/backend/completion/windows_blocking.c \
-            -o "$capacity_dir/windows-blocking.o" || \
-            fail_capacity "the Windows blocking adapter did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -DWF_WINDOWS_COMPILER_CAPACITY_PROBE=1 \
-            -Dwf__completion_file_join=wf__capacity_observed_file_join \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            -c compiler/src/backend/completion/windows_bridge.c \
-            -o "$capacity_dir/windows-bridge.o" || \
-            fail_capacity "the renamed Windows bridge did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            -c compiler/src/backend/completion/writer_scheduler_windows.c \
-            -o "$capacity_dir/writer-scheduler.o" || \
-            fail_capacity "the Windows writer scheduler did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            -c compiler/src/backend/completion/windows_compiler_capacity_observer.c \
-            -o "$capacity_dir/capacity-observer.o" || \
-            fail_capacity "the capacity observer did not compile" "$?"
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -x ir "$capacity_dir/completion-windows-capacity.ll" \
-            -x none \
-            "$capacity_dir/windows-runtime.o" \
-            "$capacity_dir/wf-floor-windows.o" \
-            "$capacity_dir/windows-completion.o" \
-            "$capacity_dir/windows-iocp.o" \
-            "$capacity_dir/windows-blocking.o" \
-            "$capacity_dir/windows-bridge.o" \
-            "$capacity_dir/writer-scheduler.o" \
-            "$capacity_dir/capacity-observer.o" \
-            -Wno-override-module \
-            -o "$capacity_dir/completion-windows-capacity.exe" || \
-            fail_capacity "the observed capacity program did not link" "$?"
-
-          printf 'Q' > "$capacity_dir/capacity.bin"
-          printf 'Q%.0s' {1..4} > "$capacity_dir/expected.txt"
-          (
-            cd "$capacity_dir"
-            WF_REQUIRE_WINDOWS_IOCP=1 ./completion-windows-capacity.exe \
-              capacity.bin > actual.txt 2> diagnostics.txt
-          ) || fail_capacity "the observed capacity program failed" "$?"
-          cmp "$capacity_dir/expected.txt" "$capacity_dir/actual.txt" || \
-            fail_capacity "the observed capacity program produced wrong bytes" "$?"
-          tr -d $'\r' < "$capacity_dir/diagnostics.txt" \
-            > "$capacity_dir/diagnostics.normalized"
-          test "$(wc -l < "$capacity_dir/diagnostics.normalized")" -eq 1 || \
-            fail_capacity "the capacity run wrote unexpected diagnostics"
-          grep -E \
-            '^windows-native-completion-capacity status=pass accepted=3 publications=3 consumes=3 capacity_waits=[1-9][0-9]* fallback=0$' \
-            "$capacity_dir/diagnostics.normalized" > /dev/null || \
-            fail_capacity "the capacity observer did not close the native completion ledger"
 
       # U+4241 is one native UTF-16 code unit whose little-endian memory bytes
       # are 0x41, 0x42. The program measures the HostString, copies its complete
@@ -589,40 +473,125 @@ jobs:
             fail_par "malformed WF_WORKERS silently selected a fallback"
           test ! -s "$par_dir/invalid.txt" || \
             fail_par "the rejected configuration entered the Whitefoot program"
+          tr -d $'\r' < "$par_dir/invalid.err" > "$par_dir/invalid.normalized"
           grep -Fx \
-            'whitefoot parallel runtime: WF_WORKERS must be an integer from 2 through 64' \
-            "$par_dir/invalid.err" > /dev/null || \
+            'whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64' \
+            "$par_dir/invalid.normalized" > /dev/null || \
             fail_par "the configuration failure did not identify the runtime cause"
 
+          # Correct bytes and a rejected configuration would both also be
+          # produced by a pool that started and never granted a lane. The same
+          # module is therefore linked once more with the observer POSIX uses
+          # for exactly this proof -- `sched/grant_observer.c`, which reports
+          # the core's own steal count at process exit and is linked into no
+          # shipped program -- against the runtime the driver stages here.
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
-            -DWF_PAR_IDENTITY_PROBE=1 \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
-            compiler/src/backend/par_runtime_windows.c \
-            compiler/src/backend/windows_runtime.c \
+            $WINDOWS_UNITS \
             compiler/src/backend/wf_floor_windows.c \
-            compiler/src/backend/completion/windows_completion.c \
-            compiler/src/backend/completion/windows_iocp.c \
-            compiler/src/backend/completion/windows_blocking.c \
-            compiler/src/backend/completion/windows_bridge.c \
-            compiler/src/backend/completion/writer_scheduler_windows.c \
-            compiler/src/backend/par_runtime_windows_probe.c \
+            compiler/src/backend/sched/grant_observer.c \
             -x ir "$par_dir/par-layout.ll" \
             -Wno-override-module \
             -o "$par_dir/par-layout-observed.exe" || \
-            fail_par "the native identity executable did not link" "$?"
+            fail_par "the observed executable did not link" "$?"
           WF_WORKERS=4 "$par_dir/par-layout-observed.exe" \
             > "$par_dir/observed.txt" 2> "$par_dir/observed.err" || {
               status="$?"
               sed 's/^/native parallel observer: /' "$par_dir/observed.err" >&2
-              fail_par "no non-owner worker executed source work" "$status"
+              fail_par "the observed --par run failed" "$status"
             }
           cmp "$par_dir/reference.txt" "$par_dir/observed.txt" || \
             fail_par "the observed native run changed the program bytes" "$?"
           tr -d $'\r' < "$par_dir/observed.err" > "$par_dir/observed.normalized"
           test "$(wc -l < "$par_dir/observed.normalized")" -eq 1 || \
-            fail_par "the identity run wrote unexpected diagnostics"
-          grep -E \
-            '^windows-native-par-probe status=pass started=[1-9][0-9]* executed=[1-9][0-9]* grants=[1-9][0-9]*$' \
+            fail_par "the observed run wrote unexpected diagnostics"
+          grep -E '^grants=[1-9][0-9]*$' \
             "$par_dir/observed.normalized" > /dev/null || \
-            fail_par "the identity record did not prove native worker execution"
+            fail_par "no non-owner worker executed source work"
+
+      # The floor, on a pool stack that is a fiber.
+      #
+      # Every other step here would pass with the floor off: this is the one
+      # that says an overflow *on a stack the scheduler core made* is still the
+      # one classified abnormal end a correct program can reach. It matters
+      # more on this platform than on the other, because the two halves it
+      # exercises are both Windows's own -- a fiber's stack is the kernel's and
+      # not a mapping of ours, and the classification is by exception code with
+      # `SetThreadStackGuarantee`'s emergency stack under it, where POSIX
+      # classifies by address against bounds the switch writes.
+      #
+      # Twice, because the two runs reach the guard on different stacks: at the
+      # shipped default the recursion is carried by whichever thread the pool
+      # gives it, and at `WF_WORKERS=4` the deep half is handed out, so the
+      # descent runs on a worker's pool fiber rather than the entry's.
+      - name: Require the floor to classify an overflow on a pool fiber
+        run: |
+          fail_floor() {
+            local stage="$1"
+            local status="${2:-1}"
+            echo "::error title=Windows floor on a pool fiber::${stage}"
+            exit "$status"
+          }
+          floor_dir="$RUNNER_TEMP/whitefoot-e2e/windows-floor"
+          mkdir -p "$floor_dir"
+          # The same shape `backend/tests/exhaustion.rs` drives on POSIX: a
+          # recursion the host optimizer cannot turn back into a loop, whose
+          # two callees are an eligible overlap pair, at a depth past every
+          # thread's ceiling.
+          cat > "$floor_dir/runaway.wf" <<'WF'
+          fn leafval(v: own f64) -> result: own f64 pure {
+            return fmul.strict(v, 0.5_f64);
+          }
+
+          fn spine(depth: own u64, v: own f64) -> result: own f64 pure {
+            let done = depth == 0_u64;
+            if done {
+              return v;
+            }
+            let next = depth -wrap 1_u64;
+            let a = spine(depth: next, v: v);
+            let b = leafval(v: v);
+            return fadd.strict(a, b);
+          }
+
+          command fn main() -> status: own ExitStatus pure {
+            let total = spine(depth: 100000000_u64, v: 1.0009765625_f64);
+            let bits = reinterpret::<f64, u64>(total);
+            let low = iand(bits, 1_u64);
+            match cvt::<u64, u8>(low) {
+              Ok(value: byte) => {
+                return exit_status(code: byte);
+              }
+              Err(error: wide) => {
+                return exit_status(code: 9_u8);
+              }
+            }
+          }
+          WF
+          compiler/target/debug/whitefootc.exe --par \
+            "$floor_dir/runaway.wf" -o "$floor_dir/runaway.exe" || \
+            fail_floor "the runaway recursion did not link" "$?"
+          for workers in default 4; do
+            set +e
+            if [ "$workers" = default ]; then
+              "$floor_dir/runaway.exe" \
+                > "$floor_dir/out.txt" 2> "$floor_dir/err.txt"
+            else
+              WF_WORKERS="$workers" "$floor_dir/runaway.exe" \
+                > "$floor_dir/out.txt" 2> "$floor_dir/err.txt"
+            fi
+            status=$?
+            set -e
+            if [ "$status" -eq 0 ]; then
+              fail_floor "WF_WORKERS=${workers}: the runaway recursion returned a status"
+            fi
+            if [ -s "$floor_dir/out.txt" ]; then
+              fail_floor "WF_WORKERS=${workers}: an exhausted execution wrote program output"
+            fi
+            tr -d $'\r' < "$floor_dir/err.txt" > "$floor_dir/err.normalized"
+            grep -Fx '{"resource":"stack"}' "$floor_dir/err.normalized" > /dev/null || \
+              fail_floor "WF_WORKERS=${workers}: the exhaustion record is not the one record"
+            test "$(wc -l < "$floor_dir/err.normalized")" -eq 1 || \
+              fail_floor "WF_WORKERS=${workers}: more than one record reached the channel"
+          done

@@ -9,16 +9,22 @@
  *   6. the yield the exhausted compute arm keeps;
  *   7. target progress and the drain.
  *
- * Two implementations, selected at compile time and never at run time. The
- * host implementation below is the runtime's: C11 atomics inline, a
- * hand-written switch, an epoch park on a mutex and condition variable, an
- * `mmap` reservation with guard pages. The enumerator's replacement
- * (`enumerate.c`, compiled with `WF_SCHED_ENUMERATE`) supplies every one of
- * these names as a call into a controlled scheduler, so the same `core.c`
- * runs under every interleaving of primitive steps (§11).
+ * Three implementations, selected at compile time and never at run time. The
+ * host implementation (`prim_host.c`) is the POSIX runtime's: C11 atomics
+ * inline, a hand-written switch, an epoch park on a mutex and condition
+ * variable, an `mmap` reservation with guard pages. `prim_windows.c` is the
+ * same set on fibers, an SRWLOCK and a condition variable, and a `VirtualAlloc`
+ * reservation. The enumerator's replacement (`enumerate.c`, compiled with
+ * `WF_SCHED_ENUMERATE`) supplies every one of these names as a call into a
+ * controlled scheduler, so the same `core.c` runs under every interleaving of
+ * primitive steps (§11).
  *
  * Thread identity is not shared state, so it is not one of the seven; it is
- * the platform's, supplied here beside them. */
+ * the platform's, supplied here beside them -- and so are the three platform
+ * facts at the end of this header, which the platform layer over the core
+ * (`entry.c`) needs and which no unit above it may ask the host for directly.
+ * That is what lets `entry.c` carry one startup policy for every platform with
+ * no `#if` of its own. */
 
 #ifndef WHITEFOOT_SCHED_PRIM_H
 #define WHITEFOOT_SCHED_PRIM_H
@@ -248,9 +254,21 @@ static inline int wf_prim_cas_p(
  * stack prepared by `wf_prim_prepare_stack` runs `entry(argument)` at its
  * first switch and must never return from it. `wf_prim_set_bounds` is the
  * floor's per-stack half, written by the core before every switch from the
- * reservation record. */
+ * reservation record.
+ *
+ * `top` and `bytes` are the slot's own top address and its size, both from
+ * the reservation record. The host prepares a frame at `top` and ignores the
+ * size, because the slot *is* the stack; Windows makes a fiber, which owns a
+ * stack of its own, and needs the size to ask for one (design §7, platform
+ * item 3). What the core stores is opaque either way: a stack pointer on the
+ * host, a fiber handle on Windows. */
 void wf_prim_switch(void **save, void *load);
-void *wf_prim_prepare_stack(void *top, void (*entry)(void *), void *argument);
+void *wf_prim_prepare_stack(
+    void *top,
+    size_t bytes,
+    void (*entry)(void *),
+    void *argument
+);
 void wf_prim_set_bounds(unsigned char *low, unsigned char *high);
 
 /* 3. The one sleep. `wf_prim_epoch` reads the wake epoch; `wf_prim_park`
@@ -288,6 +306,63 @@ void wf_prim_yield(void);
  * bounded target pass, and deliver every ready completion through
  * `wf_sched_complete`. Returns nonzero when it made progress. May block. */
 int wf_prim_progress(struct wf_sched_core *core);
+
+/* ------------------------------------- the platform layer's own three */
+
+/* Not primitives: the core reaches no shared state through any of these and
+ * the enumerator never calls one. They are the parts of design §7's platform
+ * layer that the layer *over* the core needs -- thread creation with a
+ * reserved host stack (item 1), the thread's attach and detach for the switch
+ * (item 3), and the machine's own core count -- stated here so `entry.c`
+ * carries one startup policy on every platform.
+ *
+ * P1. Creates one detached thread running `entry(argument)` on a host stack of
+ * `stack_bytes`, or the platform's own default when that is zero. Returns 0
+ * on success.
+ *
+ * `thread` is the caller's record, and it holds the only two words the new
+ * thread reads before it runs anything: the entry and its argument. It is the
+ * caller's rather than this primitive's for one reason, and it is the rule
+ * this runtime is built on -- nothing allocates at run time, and a pool starts
+ * at the first hand-out, which is run time. So the pair cannot come from an
+ * allocation here; and it cannot live on the creating frame either, which may
+ * return before the new thread has read it. The caller keeps the record alive
+ * for the whole life of the thread, and every caller has somewhere that
+ * already lives that long: the core's own per-thread storage, the adapter's
+ * own record, a probe's own static.
+ *
+ * The stack this reserves is the thread's *host* stack and is not a Whitefoot
+ * stack: the thread switches to a pool stack before it runs anything, and its
+ * scheduler loop lives there (§5). POSIX reserves it with
+ * `pthread_attr_setstacksize`; Windows with `_beginthreadex` and
+ * STACK_SIZE_PARAM_IS_A_RESERVATION. A refused reservation is a failure here
+ * rather than a silent downgrade to the platform default. */
+typedef struct wf_prim_thread {
+    void (*entry)(void *);
+    void *argument;
+} wf_prim_thread;
+
+int wf_prim_thread_start(
+    wf_prim_thread *thread,
+    void (*entry)(void *),
+    void *argument,
+    size_t stack_bytes
+);
+
+/* P2. The other half of item 3. `wf_prim_thread_attach` runs on a thread
+ * before its first switch and `wf_prim_thread_detach` at the entry thread's
+ * second and last entry to its host stack (§5). Windows is
+ * `ConvertThreadToFiber` and `ConvertFiberToThread`, because a Windows
+ * thread's host stack has to become a fiber before anything can switch back
+ * to it; the host's hand-written switch needs neither and both do nothing
+ * there. */
+void wf_prim_thread_attach(void);
+void wf_prim_thread_detach(void);
+
+/* P3. How many CPUs this process may be scheduled on right now, or 0 when the
+ * platform will not say. `sysctlbyname`/`sysconf` on the host,
+ * `GetActiveProcessorCount` on Windows. */
+unsigned wf_prim_online_cpus(void);
 
 #if defined(__cplusplus)
 }

@@ -1,7 +1,9 @@
-/* The host's primitives for the scheduler core (`prim.h`, items 2 to 7 and
- * thread identity; item 1 is inline in the header).
+/* The host's primitives for the scheduler core (`prim.h`, items 2 to 7,
+ * thread identity, and the platform layer's own three; item 1 is inline in
+ * the header).
  *
- * POSIX only. The switch is the hand-written one
+ * POSIX only, and `prim_windows.c` is its twin. The switch is the hand-written
+ * one
  * `research/experiments/park-on-miss-switch-cost/` measured; the park is an
  * epoch on one mutex and condition variable, which is the shape the completion
  * runtime's own park has and will be the one primitive the bridge supplies
@@ -22,6 +24,9 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <sys/sysctl.h>
+#endif
 
 void wf_prim_fail(const char *reason) {
     (void)fprintf(stderr, "whitefoot scheduler: %s\n", reason);
@@ -30,14 +35,14 @@ void wf_prim_fail(const char *reason) {
 
 /* ---------------------------------------------------------- thread index */
 
-static _Thread_local unsigned wf_prim_thread;
+static _Thread_local unsigned wf_prim_thread_ordinal;
 
 unsigned wf_prim_thread_index(void) {
-    return wf_prim_thread;
+    return wf_prim_thread_ordinal;
 }
 
 void wf_prim_set_thread_index(unsigned index) {
-    wf_prim_thread = index;
+    wf_prim_thread_ordinal = index;
 }
 
 /* ------------------------------------------------------------ 2. switch */
@@ -48,7 +53,16 @@ void wf_prim_switch(void **save, void *load) {
     wf_switch_raw(save, load);
 }
 
-void *wf_prim_prepare_stack(void *top, void (*entry)(void *), void *argument) {
+void *wf_prim_prepare_stack(
+    void *top,
+    size_t bytes,
+    void (*entry)(void *),
+    void *argument
+) {
+    /* The slot *is* the stack here, so the frame goes at its top and the size
+     * is the reservation's business rather than the switch's. Windows needs
+     * the size because a fiber owns a stack of its own (`prim_windows.c`). */
+    (void)bytes;
     return wf_switch_prepare(top, entry, argument);
 }
 
@@ -205,4 +219,74 @@ __attribute__((weak)) int wf__sched_target_progress(struct wf_sched_core *core) 
 
 int wf_prim_progress(struct wf_sched_core *core) {
     return wf__sched_target_progress(core);
+}
+
+/* ------------------------------------- the platform layer's own three */
+
+/* P1. One detached thread on a host stack this call reserves.
+ *
+ * A refused reservation is reported rather than silently downgraded to the
+ * pthread default: no lane at all is better than a lane whose stack is a
+ * fraction of the one the program's depth was sized against.
+ *
+ * The entry pair is the caller's record and nothing is allocated here; see
+ * `prim.h` for why the runtime cannot take that pair from anywhere else. */
+static void *wf_prim_thread_main(void *opaque) {
+    wf_prim_thread *thread = opaque;
+    thread->entry(thread->argument);
+    return NULL;
+}
+
+int wf_prim_thread_start(
+    wf_prim_thread *thread,
+    void (*entry)(void *),
+    void *argument,
+    size_t stack_bytes
+) {
+    pthread_attr_t attributes;
+    pthread_t created;
+    int error;
+    if (thread == NULL || entry == NULL) {
+        return 1;
+    }
+    thread->entry = entry;
+    thread->argument = argument;
+    if (pthread_attr_init(&attributes) != 0) {
+        return 1;
+    }
+    if (stack_bytes != 0
+        && pthread_attr_setstacksize(&attributes, stack_bytes) != 0) {
+        (void)pthread_attr_destroy(&attributes);
+        return 1;
+    }
+    (void)pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
+    error = pthread_create(&created, &attributes, wf_prim_thread_main, thread);
+    (void)pthread_attr_destroy(&attributes);
+    return error != 0 ? 1 : 0;
+}
+
+/* P2. The host's switch needs no conversion of the thread's own stack, so
+ * both halves are nothing here. Windows converts to a fiber and back. */
+void wf_prim_thread_attach(void) {}
+
+void wf_prim_thread_detach(void) {}
+
+/* P3. The CPUs this process may be scheduled on right now.
+ *
+ * `hw.logicalcpu` is the Darwin spelling and reports exactly that; the
+ * portable `_SC_NPROCESSORS_ONLN` answers on a host that has no such name.
+ * Zero means the platform would not say, and the caller's own policy decides
+ * what to do with that. */
+unsigned wf_prim_online_cpus(void) {
+    long online;
+#if defined(__APPLE__)
+    int logical = 0;
+    size_t width = sizeof(logical);
+    if (sysctlbyname("hw.logicalcpu", &logical, &width, NULL, 0) == 0
+        && logical > 0) {
+        return (unsigned)logical;
+    }
+#endif
+    online = sysconf(_SC_NPROCESSORS_ONLN);
+    return online > 0 ? (unsigned)online : 0u;
 }

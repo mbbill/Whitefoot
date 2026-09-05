@@ -2,14 +2,20 @@
 #define WHITEFOOT_COMPLETION_FILE_ADAPTER_H
 
 /*
- * Bounded POSIX file fallback adapter.
+ * The bounded file adapter, one implementation for every platform.
  *
  * A queue entry is a completion record: the typed request it carries is a
  * closed, typed descriptor and there is no callback or writer thunk in this
- * interface.  Helper threads execute only the switch in file_adapter.c,
- * complete the record, and return to the queue.  A configuration with zero
- * helpers is valid: the joining thread advances the same queue with
+ * interface.  Helper threads execute only `wf_file_execute_direct`, complete
+ * the record, and return to the queue.  A configuration with zero helpers is
+ * valid: the joining thread advances the same queue with
  * wf_file_adapter_progress.
+ *
+ * The queue, the helpers, the claim of one's own queued record and the
+ * in-place progress are written once here.  The one thing that is not shared
+ * is the host call each request kind makes, which is `wf_file_execute_direct`
+ * below and lives in one leaf per platform (`file_posix.c`,
+ * `file_windows.c`).
  *
  * The queue is intrusive and threaded through the records themselves
  * (`wf_completion_record::next`), so it has no capacity of its own: an
@@ -18,15 +24,16 @@
  */
 
 #include "contract.h"
+/* For `wf_prim_thread`, the caller-owned record one helper's start needs: this
+ * adapter's helpers are the runtime's own threads, and this adapter is where
+ * their entry records live (`../sched/prim.h`, P1). */
+#include "../sched/prim.h"
 
-#include <fcntl.h>
-#include <pthread.h>
 #include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #if defined(__cplusplus)
 extern "C" {
@@ -34,96 +41,15 @@ extern "C" {
 
 #define WF_FILE_STATUS_CAPACITY 192u
 
-/* The one rule deciding whether an opened descriptor is the kind the
- * operation asked for.  Every target adapter answers with this function, so a
- * FIFO is refused identically whether the open ran on a helper thread, on the
- * joining thread itself, or on a kernel completion ring.  `file_mode` is the
- * host mode word of the descriptor that was actually opened, never of a path
- * inspected a second time. */
-static inline enum wf_file_open_outcome wf_file_kind_outcome(
-    enum wf_file_expected_kind expected,
-    unsigned int file_mode
-) {
-    if (expected == WF_FILE_EXPECT_ANY
-        || (expected == WF_FILE_EXPECT_REGULAR && S_ISREG(file_mode))
-        || (expected == WF_FILE_EXPECT_DIRECTORY && S_ISDIR(file_mode))) {
-        return WF_FILE_OPEN_SUCCEEDED;
-    }
-    return S_ISDIR(file_mode) ? WF_FILE_OPEN_IS_DIRECTORY
-                              : WF_FILE_OPEN_OTHER_KIND;
-}
-
-/* The extra open flag a kind-checked open needs so that opening a waiting
- * facility such as a FIFO cannot block before the kind is known. */
-static inline int wf_file_open_kind_flags(enum wf_file_expected_kind expected) {
-    return expected == WF_FILE_EXPECT_REGULAR ? O_NONBLOCK : 0;
-}
-
-/* WF_IO_NOCACHE: a target policy that makes a program's reads genuinely wait.
+/* The most helpers one adapter may ever hold.
  *
- * This is runtime policy of the same class as WF_IO_HELPERS and WF_WORKERS,
- * not a language surface. No Whitefoot source names it, no accepted program
- * changes meaning under it, and no byte any read produces differs with it
- * set: it asks the host to keep this file's pages out of its cache, which
- * changes only how long a read takes. Absent — and any value other than the
- * exact text "1" — is today's behaviour exactly, with no host call made at
- * all.
- *
- * It exists because every file measurement in docs/done/0084 and 0086 ran
- * against a warm page cache, where a read is a memory copy and a completion
- * model that overlaps waits has nothing to overlap. Measuring the completion
- * framework needs reads that wait on a device.
- *
- * Darwin gets F_NOCACHE, which is a mode of the descriptor: every read
- * through it bypasses the unified buffer cache for the whole life of the
- * open. Linux has no such per-descriptor mode, so it gets one
- * POSIX_FADV_DONTNEED of the whole file, which evicts what is cached at the
- * moment of the open. O_DIRECT is deliberately not used: it constrains
- * buffer address, offset, and length alignment, which would change the
- * program's own buffers and so change what is being measured.
- *
- * The setting is read once per process and cached. Two threads that race here
- * compute the same answer from the same environment, so the race is benign. */
-static inline int wf_file_uncached_reads_requested(void) {
-    /* 0 not yet decided, 1 asked for, 2 not asked for. */
-    static _Atomic int decided;
-    int state = atomic_load_explicit(&decided, memory_order_relaxed);
-    if (state == 0) {
-        const char *text = getenv("WF_IO_NOCACHE");
-        state = (text != NULL && text[0] == '1' && text[1] == 0) ? 1 : 2;
-        atomic_store_explicit(&decided, state, memory_order_relaxed);
-    }
-    return state == 1;
-}
-
-/* The one host call the policy makes, in one place so both adapters make the
- * same one. A build may name a different function here to observe it; the
- * observing build is expected to perform the same host call. */
-#if !defined(WF_FILE_UNCACHED_APPLY)
-#define WF_FILE_UNCACHED_APPLY wf_file_uncached_apply_host
-#else
-extern void WF_FILE_UNCACHED_APPLY(int);
-#endif
-
-static inline void wf_file_uncached_apply_host(int descriptor) {
-#if defined(__APPLE__)
-    (void)fcntl(descriptor, F_NOCACHE, 1);
-#elif defined(__linux__)
-    (void)posix_fadvise(descriptor, 0, 0, POSIX_FADV_DONTNEED);
-#else
-    (void)descriptor;
-#endif
-}
-
-/* Applied exactly once to each descriptor an open hands back, by whichever
- * adapter produced it. A descriptor the kind check refuses never reaches
- * here, so the count of applications equals the count of successful opens. */
-static inline void wf_file_apply_uncached_reads(int descriptor) {
-    if (descriptor < 0 || !wf_file_uncached_reads_requested()) {
-        return;
-    }
-    WF_FILE_UNCACHED_APPLY(descriptor);
-}
+ * It is here rather than at the caller because it sizes storage this record
+ * carries: one `wf_prim_thread` per helper, which is where a helper's entry
+ * pair lives for the life of that helper (`../sched/prim.h`, P1). The caller
+ * still states its own bound at `wf_file_adapter_init`, and a bound above this
+ * one is refused rather than clamped, because a caller asking for more helpers
+ * than this adapter can hold is asking for a pool it will not get. */
+#define WF_FILE_MAX_HELPERS 8u
 
 /* What one execution of a typed request produced.
  *
@@ -151,6 +77,9 @@ typedef struct wf_file_adapter_statistics {
 
 typedef struct wf_file_adapter {
     wf_completion_runtime *runtime;
+    /* The queue's lock and the condition a waiting helper sleeps on: the
+     * platform's one wait set, exactly as the completion runtime's is. */
+    wf_completion_wait queue_wait;
     /* The pending list, oldest at `queue_head`, newest at `queue_tail`,
      * threaded through each record's own `next`.  Mutated only under
      * queue_lock. */
@@ -159,19 +88,25 @@ typedef struct wf_file_adapter {
     /* Mutated only under queue_lock, and atomic so the decline check can read
      * it without taking the lock. */
     _Atomic size_t queue_count;
-    pthread_t *helpers;
-    /* Grown under queue_lock by a submitting thread and read without it by a
-     * thread deciding whether it is itself this queue's engine. */
+    /* Grown under the queue lock by a submitting thread and read without it by
+     * a thread deciding whether it is itself this queue's engine. */
     _Atomic size_t helper_count;
     size_t helper_cap;
-    pthread_mutex_t queue_lock;
-    pthread_cond_t queue_available;
-    /* Helpers currently inside pthread_cond_wait, maintained under queue_lock
-     * by the waiter itself.  An enqueue holds that same lock, so it knows
-     * exactly whether a signal has anyone to reach: a helper still spinning
-     * for work needs no host wake, and issuing one for it was a system call
-     * per operation that woke a thread which was already awake. */
+    /* Helpers currently asleep on the queue condition, maintained under the
+     * queue lock by the sleeper itself.  An enqueue holds that same lock, so it
+     * knows exactly whether a signal has anyone to reach: a helper still
+     * spinning for work needs no host wake, and issuing one for it was a system
+     * call per operation that woke a thread which was already awake. */
     size_t blocked_helpers;
+    /* One entry record per helper, written by the starting thread under the
+     * queue lock before the helper exists and never written again. */
+    wf_prim_thread helper_threads[WF_FILE_MAX_HELPERS];
+    /* Helpers that have started and not yet returned, maintained under the
+     * queue lock.  Shutdown waits for this to reach zero rather than joining
+     * threads by handle: the helpers are detached, as every thread this
+     * runtime starts is, and a helper's last act under the lock is to drop
+     * this count and wake whoever is waiting for it. */
+    size_t live_helpers;
     /* What one host call on this adapter has recently cost, in nanoseconds, as
      * a smoothed average over sampled executions.  It is policy input only —
      * no operation's outcome depends on it — and it answers the one question
@@ -180,9 +115,9 @@ typedef struct wf_file_adapter {
     _Atomic uint64_t mean_execute_ns;
     _Atomic uint64_t execute_ticks;
     unsigned stopping;
-    /* How many helpers `helper_storage` can hold.  The growth rule writes
-     * `helpers[held]`, so this, and not the policy's wish, is what bounds the
-     * ceiling `wf_file_adapter_set_helper_cap` may install. */
+    /* How many helpers this adapter may ever hold.  It is the caller's stated
+     * bound on the pool rather than the policy's wish, so it, and not the wish,
+     * is what bounds the ceiling `wf_file_adapter_set_helper_cap` installs. */
     size_t helper_capacity;
     /* Whether every field above has been published.  It is atomic because the
      * direct execution route reads it on a thread that has run no
@@ -198,18 +133,18 @@ typedef struct wf_file_adapter {
     _Atomic uint64_t stat_scheduler_executions;
 } wf_file_adapter;
 
-/* The caller owns helper_storage until shutdown completes.  helper_count is
- * policy, not a fixed architecture constant; zero selects joiner-driven
- * single-thread progress.
+/* helper_count is policy, not a fixed architecture constant; zero selects
+ * joiner-driven single-thread progress.
  *
- * helper_capacity is how many helpers `helper_storage` holds, which is a fact
- * about the caller's storage rather than a policy: the pool may later be told
- * to grow, and the only thing that can say how far is the array it grows
- * into.  It is refused below helper_count. */
+ * helper_capacity is how many helpers this adapter may ever hold: the pool may
+ * later be told to grow, and this is the bound that says how far.  It is
+ * refused below helper_count and above WF_FILE_MAX_HELPERS, which is the
+ * number of entry records this record carries.  The helper threads themselves are the
+ * platform's, started through `wf_prim_thread_start` and detached, so no
+ * caller owns storage for them. */
 int wf_file_adapter_init(
     wf_file_adapter *adapter,
     wf_completion_runtime *runtime,
-    pthread_t *helper_storage,
     size_t helper_capacity,
     size_t helper_count
 );
@@ -267,11 +202,32 @@ wf_file_result wf_file_execute_timed(
     const wf_file_request *request
 );
 
-/* Executes one typed request to its first terminal host answer. EINTR and
- * read/write/directory readiness refusal are adapter progress; close is never
- * retried because one ambiguous close attempt has already consumed authority.
- * Other non-transfer operations remain exactly one host attempt. */
+/* The one platform leaf of this adapter: executes one typed request against
+ * the host and reports its first terminal answer.
+ *
+ * `file_posix.c` and `file_windows.c` are the two implementations, and each is
+ * exactly the switch of host calls its platform makes.  Interruption and
+ * readiness refusal are adapter progress and are absorbed there; close is never
+ * retried because one ambiguous close attempt has already consumed authority;
+ * other non-transfer operations remain exactly one host attempt.  A request
+ * kind a platform's qualified target row does not admit is reported as a failed
+ * outcome with the host's own refusal code, never as a terminated process: the
+ * emitter can produce a shape a target refuses, and refusing it is an outcome
+ * the program sees. */
 wf_file_result wf_file_execute_direct(const wf_file_request *request);
+
+/* Whether one typed request's shape is one this ABI can mean at all.  It is
+ * the adapter's own check rather than a host's, so it is shared; the leaf runs
+ * it before it makes any host call. */
+int wf_file_request_valid(const wf_file_request *request);
+
+/* The monotonic clock in nanoseconds, or zero when the host would not answer.
+ *
+ * It is a host call, so it is the platform leaf's like the execution switch
+ * above.  Its two readers are both shared: the helper policy's measurement of
+ * what this program's operations cost, and the bridge's bounded look at its own
+ * record before it announces sleep. */
+uint64_t wf_file_monotonic_ns(void);
 
 /* Stores one execution's answer into the record and publishes it: the status
  * bytes go to the destination the request named, the head goes into the
@@ -309,22 +265,23 @@ size_t wf_file_adapter_queued(const wf_file_adapter *adapter);
  * for.
  *
  * A cap above the `helper_capacity` given to init is clamped to it rather than
- * refused: the caller is stating a policy, and the storage it handed over is
- * the fact that bounds it.  The clamp is the difference between a pool that
- * stops growing and a `pthread_create` past the end of the caller's array. */
+ * refused: the caller is stating a policy, and the bound it gave at init is the
+ * fact that limits it.  The clamp is the difference between a pool that stops
+ * growing and one that grows past the number of helpers this adapter was told
+ * it may ever hold. */
 int wf_file_adapter_set_helper_cap(wf_file_adapter *adapter, size_t cap);
 
 /* Read without the queue lock. Zero means the calling thread is itself the
  * only engine this queue has. */
 size_t wf_file_adapter_helper_count(const wf_file_adapter *adapter);
 
-/* Stops admission and drains accepted queue entries before joining helpers.
- * With zero helpers, the calling thread performs the bounded typed work one
- * entry at a time until the accepted queue is empty.
+/* Stops admission and drains accepted queue entries before waiting for the
+ * helpers to leave.  With zero helpers, the calling thread performs the bounded
+ * typed work one entry at a time until the accepted queue is empty.
  *
  * Precondition: no thread is inside any entry point of this adapter, and none
  * will enter one, when this is called.  That is not a caution, it is the
- * design.  The entry points that take `queue_lock` behind the record's
+ * design.  The entry points that take the queue lock behind the record's
  * `initialized` flag -- submission, the queue readers, the cap setter, the
  * decline check -- touch storage this call tears down.
  *

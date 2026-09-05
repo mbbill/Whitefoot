@@ -5,10 +5,11 @@
 
 #include "contract.h"
 /* The typed file vocabulary — expected kind, open outcome, and the one rule
- * that decides them — is shared with the bounded POSIX adapter so that one
- * open states one contract on every target.  Only the header is used: this
- * adapter calls no function defined in file_adapter.c. */
-#include "file_adapter.h"
+ * that decides them — is shared with the POSIX host leaf of the bounded
+ * adapter so that one open states one contract whichever POSIX engine ran it.
+ * Only the header is used: this adapter calls no function defined in
+ * `file_posix.c`. */
+#include "file_posix.h"
 
 #include <linux/io_uring.h>
 #include <pthread.h>

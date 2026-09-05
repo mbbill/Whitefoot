@@ -453,7 +453,7 @@ static void wf_linux_stage_entry_locked(
     struct io_uring_sqe *submission =
         &adapter->submission_entries[ring_index];
     memset(submission, 0, sizeof(*submission));
-    if (record->waiting_readiness != 0) {
+    if (record->ring.waiting_readiness != 0) {
         submission->opcode = IORING_OP_POLL_ADD;
         submission->fd = wf_linux_record_descriptor(record);
         submission->poll_events = record->request.kind == WF_FILE_PREAD
@@ -576,7 +576,7 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     }
 
     record->route = WF_COMPLETION_ROUTE_LINUX_IO_URING;
-    record->waiting_readiness = 0;
+    record->ring.waiting_readiness = 0;
     record->opened_descriptor = -1;
     record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
     record->open_error = 0;
@@ -638,7 +638,7 @@ static int wf_linux_resubmit_record(
     unsigned waiting_readiness
 ) {
     int result;
-    record->waiting_readiness = waiting_readiness;
+    record->ring.waiting_readiness = waiting_readiness;
     (void)pthread_mutex_lock(&adapter->submission_lock);
     result = wf_linux_make_room_locked(adapter);
     if (result == 0) {
@@ -765,7 +765,7 @@ static int wf_linux_publish_completion(
         /* Interruption and readiness refusal are adapter progress on a
          * transfer, exactly as on the bounded POSIX adapter, and never a
          * writer-visible outcome. */
-        if (record->waiting_readiness != 0) {
+        if (record->ring.waiting_readiness != 0) {
             if (completion->res >= 0) {
                 return wf_linux_resubmit_record(adapter, record, 0);
             }
@@ -947,21 +947,16 @@ int wf_linux_io_uring_park(
      * publisher before this point leaves only an epoch/CQ fact and performs
      * no host wake. A publisher after the second recheck sees the announced
      * sleeper and leaves a level-readable eventfd. */
-    error = pthread_mutex_lock(&adapter->runtime->wake_lock);
-    if (error != 0) {
-        /* A broken compiler-owned wake mutex cannot be reported through that
-         * same mutex without risking a silent recursive stall. */
-        abort();
-    }
+    wf_completion_wait_lock(&adapter->runtime->wait);
     if (wf_completion_wake_epoch(adapter->runtime) != observed_epoch
         || wf_linux_load_acquire(adapter->completion_head)
             != wf_linux_load_acquire(adapter->completion_tail)) {
-        (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
+        wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
     /* Sequentially consistent, and paired with the sequentially consistent
      * epoch load below: a core publisher raises the epoch and then reads this
-     * count without taking wake_lock, so this announcement and that read are
+     * count without taking the wait's lock, so this announcement and that read are
      * what keeps an eventfd wake from being lost. */
     atomic_fetch_add_explicit(
         &adapter->runtime->parked_schedulers,
@@ -985,10 +980,10 @@ int wf_linux_io_uring_park(
             1,
             memory_order_relaxed
         );
-        (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
+        wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
-    (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
+    wf_completion_wait_unlock(&adapter->runtime->wait);
     timeout = timeout_milliseconds == UINT32_MAX
         ? -1
         : timeout_milliseconds > (uint32_t)INT_MAX
@@ -1036,34 +1031,31 @@ int wf_linux_io_uring_park(
     }
 
     /* Stop advertising this lane before removing the persistent wake record.
-     * Both happen while publishers are excluded by wake_lock, so no eventfd
+     * Both happen while publishers are excluded by the wait's lock, so no eventfd
      * write can land after the drain for a lane that is already active. */
     if (announced != 0) {
-        int lock_error = pthread_mutex_lock(&adapter->runtime->wake_lock);
-        if (lock_error != 0) {
+        unsigned previous;
+        wf_completion_wait_lock(&adapter->runtime->wait);
+        previous = atomic_fetch_sub_explicit(
+            &adapter->runtime->parked_schedulers,
+            1,
+            memory_order_relaxed
+        );
+        if (previous == 0) {
             abort();
-        } else {
-            unsigned previous = atomic_fetch_sub_explicit(
-                &adapter->runtime->parked_schedulers,
-                1,
-                memory_order_relaxed
-            );
-            if (previous == 0) {
-                abort();
-            }
-            /* The eventfd is one broadcast level fact, not a consumable wake
-             * for whichever lane happens to run first. Keep it readable until
-             * every scheduler that was announced has left epoll; otherwise a
-             * lane waiting for unrelated capacity can steal the only wake
-             * from the lane that owns a completed token. */
-            if (previous == 1) {
-                int drain_error = wf_linux_drain_wake_descriptor(adapter);
-                if (error == 0 && drain_error != 0) {
-                    error = drain_error;
-                }
-            }
-            (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
         }
+        /* The eventfd is one broadcast level fact, not a consumable wake for
+         * whichever lane happens to run first. Keep it readable until every
+         * scheduler that was announced has left epoll; otherwise a lane
+         * waiting for unrelated capacity can steal the only wake from the lane
+         * that owns a completed token. */
+        if (previous == 1) {
+            int drain_error = wf_linux_drain_wake_descriptor(adapter);
+            if (error == 0 && drain_error != 0) {
+                error = drain_error;
+            }
+        }
+        wf_completion_wait_unlock(&adapter->runtime->wait);
     }
     if (error != 0 && error != ETIMEDOUT) {
         wf_linux_record_progress_error(adapter, error);

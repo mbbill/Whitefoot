@@ -5,35 +5,28 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use whitefoot::{
-    Architecture, COMPLETION_BRIDGE_HEADER, CompilerLimits, FLOOR_STACK_BYTES,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SourceInput, compile_with_io_notices,
-    compile_with_permission_ledger, stack_ledger,
+    Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, CompilerLimits,
+    FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, compile_with_io_notices,
+    compile_with_permission_ledger, module_requires_completion_runtime,
+    module_requires_parallel_runtime, stack_ledger,
 };
 
 #[cfg(not(target_os = "windows"))]
 use whitefoot::{
-    COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER,
-    COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, FLOOR_RUNTIME_SOURCE,
-    HOST_LINK_LIBRARIES, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
-    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
+    COMPLETION_FILE_POSIX_HEADER, COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
+    FLOOR_RUNTIME_SOURCE, SCHED_PRIM_HOST_SOURCE,
 };
-
-#[cfg(any(target_os = "windows", test))]
-use whitefoot::{
-    COMPLETION_WINDOWS_BLOCKING_HEADER, COMPLETION_WINDOWS_BLOCKING_SOURCE,
-    COMPLETION_WINDOWS_BRIDGE_SOURCE, COMPLETION_WINDOWS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER,
-    COMPLETION_WINDOWS_IOCP_SOURCE, COMPLETION_WINDOWS_NATIVE_API_HEADER,
-    COMPLETION_WINDOWS_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE, WINDOWS_RUNTIME_HEADER,
-    WINDOWS_RUNTIME_SOURCE, WRITER_SCHEDULER_WINDOWS_SOURCE,
-};
-
-#[cfg(any(target_os = "windows", test))]
-use whitefoot::PARALLEL_WINDOWS_RUNTIME_SOURCE;
 
 #[cfg(target_os = "windows")]
-use whitefoot::module_requires_parallel_runtime;
+use whitefoot::{
+    COMPLETION_FILE_WINDOWS_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_WINDOWS_SOURCE,
+    COMPLETION_WINDOWS_IOCP_HEADER, COMPLETION_WINDOWS_IOCP_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE,
+    SCHED_PRIM_WINDOWS_SOURCE, WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE,
+};
 
 const USAGE: &str = "usage: whitefootc [--emit-llvm] [--par] [--no-overlap] [--par-ledger] \
 [--stack-ledger] [-o OUTPUT] SOURCE...";
@@ -53,90 +46,132 @@ fn clang_executable() -> &'static str {
     }
 }
 
-/// One compiler-owned Windows runtime file and the path its quoted includes
-/// expect it to have below the driver's private staging root.
+/// One compiler-owned runtime file and the path its quoted includes expect it
+/// to have below the driver's private staging root.
 ///
 /// The sources deliberately keep the repository's `backend/` topology:
-/// `windows_runtime.c` includes `completion/windows_completion.h`, while the
-/// completion bridge reaches back to `../windows_runtime.h`. Flattening these
-/// bytes into one temporary directory therefore changes the meaning of both
-/// includes even though every required file was written.
-#[cfg(any(target_os = "windows", test))]
+/// `completion/bridge.c` reaches the scheduler core as `../sched/core.h` and
+/// the Windows host runtime as `../windows_runtime.h`, so flattening these
+/// bytes into one directory would change the meaning of those includes even
+/// though every required file was written.
 #[derive(Clone, Copy)]
-struct WindowsRuntimeUnit {
+struct RuntimeUnit {
     relative_path: &'static str,
     source: &'static str,
 }
 
-#[cfg(any(target_os = "windows", test))]
-const WINDOWS_RUNTIME_UNITS: &[WindowsRuntimeUnit] = &[
-    WindowsRuntimeUnit {
-        relative_path: "windows_runtime.h",
-        source: WINDOWS_RUNTIME_HEADER,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/native_completion_api.h",
-        source: COMPLETION_WINDOWS_NATIVE_API_HEADER,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/windows_completion.h",
-        source: COMPLETION_WINDOWS_HEADER,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/windows_iocp.h",
-        source: COMPLETION_WINDOWS_IOCP_HEADER,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/windows_blocking.h",
-        source: COMPLETION_WINDOWS_BLOCKING_HEADER,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/bridge.h",
-        source: COMPLETION_BRIDGE_HEADER,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "windows_runtime.c",
-        source: WINDOWS_RUNTIME_SOURCE,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "wf_floor_windows.c",
-        source: FLOOR_WINDOWS_RUNTIME_SOURCE,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/windows_completion.c",
-        source: COMPLETION_WINDOWS_SOURCE,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/windows_iocp.c",
-        source: COMPLETION_WINDOWS_IOCP_SOURCE,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/windows_blocking.c",
-        source: COMPLETION_WINDOWS_BLOCKING_SOURCE,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/windows_bridge.c",
-        source: COMPLETION_WINDOWS_BRIDGE_SOURCE,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/writer_scheduler_windows.c",
-        source: WRITER_SCHEDULER_WINDOWS_SOURCE,
-    },
+const fn unit(relative_path: &'static str, source: &'static str) -> RuntimeUnit {
+    RuntimeUnit {
+        relative_path,
+        source,
+    }
+}
+
+/// The units every program links, whatever it does: the resource-exhaustion
+/// floor, and on Windows the host runtime whose bootstrap the emitted module
+/// names.
+#[cfg(not(target_os = "windows"))]
+const FLOOR_UNITS: &[RuntimeUnit] = &[unit("wf_floor.c", FLOOR_RUNTIME_SOURCE)];
+#[cfg(not(target_os = "windows"))]
+const FLOOR_COMPILE_UNITS: &[&str] = &["wf_floor.c"];
+
+#[cfg(target_os = "windows")]
+const FLOOR_UNITS: &[RuntimeUnit] = &[
+    unit("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+    unit("wf_floor_windows.c", FLOOR_WINDOWS_RUNTIME_SOURCE),
+    unit("windows_runtime.c", WINDOWS_RUNTIME_SOURCE),
+];
+#[cfg(target_os = "windows")]
+const FLOOR_COMPILE_UNITS: &[&str] = &["wf_floor_windows.c", "windows_runtime.c"];
+
+/// The scheduler core and the platform layer over it. One core, one entry, and
+/// one leaf per platform holding the seven primitives
+/// (`research/investigations/io-model/PARK-ON-MISS.md` section 7.1).
+const CORE_SHARED_UNITS: &[RuntimeUnit] = &[
+    unit("sched/core.h", SCHED_CORE_HEADER),
+    unit("sched/prim.h", SCHED_PRIM_HEADER),
+    unit("sched/switch.h", SCHED_SWITCH_HEADER),
+    unit("sched/entry.h", SCHED_ENTRY_HEADER),
+    unit("sched/core.c", SCHED_CORE_SOURCE),
+    unit("sched/entry.c", SCHED_ENTRY_SOURCE),
 ];
 
-/// Translation units passed to clang, in their stable link order. Headers
-/// live in [`WINDOWS_RUNTIME_UNITS`] beside them but are never compiled as
-/// standalone inputs.
-#[cfg(any(target_os = "windows", test))]
-const WINDOWS_RUNTIME_COMPILE_UNITS: &[&str] = &[
-    "windows_runtime.c",
-    "wf_floor_windows.c",
-    "completion/windows_completion.c",
-    "completion/windows_iocp.c",
-    "completion/windows_blocking.c",
-    "completion/windows_bridge.c",
-    "completion/writer_scheduler_windows.c",
+#[cfg(not(target_os = "windows"))]
+const CORE_PLATFORM_UNITS: &[RuntimeUnit] = &[unit("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE)];
+#[cfg(not(target_os = "windows"))]
+const CORE_COMPILE_UNITS: &[&str] = &["sched/core.c", "sched/prim_host.c", "sched/entry.c"];
+
+#[cfg(target_os = "windows")]
+const CORE_PLATFORM_UNITS: &[RuntimeUnit] =
+    &[unit("sched/prim_windows.c", SCHED_PRIM_WINDOWS_SOURCE)];
+#[cfg(target_os = "windows")]
+const CORE_COMPILE_UNITS: &[&str] = &["sched/core.c", "sched/prim_windows.c", "sched/entry.c"];
+
+/// The completion runtime: one wake epoch, one bridge, one file adapter, and
+/// per platform the wait set, the host leaf of the adapter, and the kernel
+/// completion ring.
+const COMPLETION_SHARED_UNITS: &[RuntimeUnit] = &[
+    unit("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+    unit("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+    unit("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+    unit("completion/runtime.c", COMPLETION_RUNTIME_SOURCE),
+    unit("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+    unit("completion/bridge.c", COMPLETION_BRIDGE_SOURCE),
 ];
+
+#[cfg(not(target_os = "windows"))]
+const COMPLETION_PLATFORM_UNITS: &[RuntimeUnit] = &[
+    unit("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+    unit(
+        "completion/linux_io_uring.h",
+        COMPLETION_LINUX_IO_URING_HEADER,
+    ),
+    unit("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
+    unit("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
+    unit(
+        "completion/linux_io_uring.c",
+        COMPLETION_LINUX_IO_URING_SOURCE,
+    ),
+];
+#[cfg(not(target_os = "windows"))]
+const COMPLETION_COMPILE_UNITS: &[&str] = &[
+    "completion/runtime.c",
+    "completion/wait_host.c",
+    "completion/file_adapter.c",
+    "completion/file_posix.c",
+    "completion/bridge.c",
+    "completion/linux_io_uring.c",
+];
+
+#[cfg(target_os = "windows")]
+const COMPLETION_PLATFORM_UNITS: &[RuntimeUnit] = &[
+    unit("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+    unit("completion/wait_windows.c", COMPLETION_WAIT_WINDOWS_SOURCE),
+    unit("completion/file_windows.c", COMPLETION_FILE_WINDOWS_SOURCE),
+    unit("completion/windows_iocp.c", COMPLETION_WINDOWS_IOCP_SOURCE),
+];
+#[cfg(target_os = "windows")]
+const COMPLETION_COMPILE_UNITS: &[&str] = &[
+    "completion/runtime.c",
+    "completion/wait_windows.c",
+    "completion/file_adapter.c",
+    "completion/file_windows.c",
+    "completion/bridge.c",
+    "completion/windows_iocp.c",
+];
+
+/// The arguments this host's link needs beside the dialect and the inputs.
+#[cfg(not(target_os = "windows"))]
+const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-pthread"];
+#[cfg(target_os = "windows")]
+const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-municode"];
+
+/// The libraries this host's link needs. Windows names none: every facility
+/// the runtime uses is in the import libraries clang links by default.
+#[cfg(not(target_os = "windows"))]
+const TARGET_LINK_LIBRARIES: &[&str] = HOST_LINK_LIBRARIES;
+#[cfg(target_os = "windows")]
+const TARGET_LINK_LIBRARIES: &[&str] = &[];
 
 fn main() {
     let driver = match std::thread::Builder::new()
@@ -314,122 +349,90 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
     result
 }
 
-#[cfg(not(target_os = "windows"))]
-fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
-    let completion_required = module_requires_completion_runtime(llvm);
-    // The scheduler core joins the link on the union of the two predicates
-    // (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Where the core
-    // is linked"): it is one scheduler for compute hand-outs and I/O
-    // completions, so a module that hands work out needs it and so does a
-    // module that submits an operation, and a completion-only program parks
-    // its stack at every join. Its bytes travel inside this executable, so no
-    // installed path, no build directory, and no environment decides which
-    // runtime a program gets.
-    let core_required = module_requires_parallel_runtime(llvm) || completion_required;
-    // The floor joins unconditionally, because every program can exhaust its
-    // stack. It travels the same way and for the same reason: its bytes are
-    // the compiler's, so what a program does when it runs out is decided here
-    // and not by anything installed on the machine.
-    let floor = std::env::temp_dir().join(format!("whitefootc-floor-{}.c", std::process::id()));
-    std::fs::write(&floor, FLOOR_RUNTIME_SOURCE)
-        .map_err(|error| format!("cannot write the floor runtime: {error}"))?;
-    let mut command = Command::new(clang_executable());
-    // The compiler-owned C units are written to C11 and the repository gate
-    // compiles them as `-std=c11`. Naming the dialect here too is what makes
-    // that gate a statement about this link: clang's default is a GNU dialect,
-    // which predefines object-like macros such as `linux` that a C11 source
-    // may legitimately use as an identifier.
-    command
-        .arg("-std=c11")
-        .arg("-pthread")
-        .arg("-x")
-        .arg("c")
-        .arg(&floor);
-    let staged = if core_required {
-        let directory =
-            std::env::temp_dir().join(format!("whitefootc-completion-{}", std::process::id()));
-        std::fs::create_dir_all(&directory)
-            .map_err(|error| format!("cannot create completion runtime directory: {error}"))?;
-        // The staged tree keeps the repository's own two directories, because
-        // the completion header reaches the scheduler core by the relative
-        // path it uses in the tree: the completion record begins with a
-        // `wf_sched_record` and every publication goes through
-        // `wf_sched_complete` (design §5, §7).
-        for directory_name in ["completion", "sched"] {
-            std::fs::create_dir_all(directory.join(directory_name))
-                .map_err(|error| format!("cannot create completion runtime directory: {error}"))?;
-        }
-        for (name, source) in [
-            ("sched/core.h", SCHED_CORE_HEADER),
-            ("sched/prim.h", SCHED_PRIM_HEADER),
-            ("sched/switch.h", SCHED_SWITCH_HEADER),
-            ("sched/entry.h", SCHED_ENTRY_HEADER),
-            ("sched/core.c", SCHED_CORE_SOURCE),
-            ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
-            ("sched/entry.c", SCHED_ENTRY_SOURCE),
-        ] {
-            std::fs::write(directory.join(name), source)
-                .map_err(|error| format!("cannot write scheduler core {name}: {error}"))?;
-        }
-        command
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("sched/core.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("sched/prim_host.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("sched/entry.c"));
-        if completion_required {
-            for (name, source) in [
-                ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
-                ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-                ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
-                (
-                    "completion/linux_io_uring.h",
-                    COMPLETION_LINUX_IO_URING_HEADER,
-                ),
-                ("completion/runtime.c", COMPLETION_RUNTIME_SOURCE),
-                ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-                ("completion/bridge.c", COMPLETION_BRIDGE_SOURCE),
-                (
-                    "completion/linux_io_uring.c",
-                    COMPLETION_LINUX_IO_URING_SOURCE,
-                ),
-            ] {
-                std::fs::write(directory.join(name), source)
-                    .map_err(|error| format!("cannot write completion runtime {name}: {error}"))?;
-            }
-            command
-                .arg("-I")
-                .arg(directory.join("completion"))
-                .arg("-x")
-                .arg("c")
-                .arg(directory.join("completion/runtime.c"))
-                .arg("-x")
-                .arg("c")
-                .arg(directory.join("completion/file_adapter.c"))
-                .arg("-x")
-                .arg("c")
-                .arg(directory.join("completion/bridge.c"))
-                .arg("-x")
-                .arg("c")
-                .arg(directory.join("completion/linux_io_uring.c"));
-        }
-        Some(directory)
-    } else {
-        None
-    };
-    let outcome = link(&mut command, llvm, output);
-    let _ = std::fs::remove_file(floor);
-    if let Some(directory) = staged {
-        let _ = std::fs::remove_dir_all(directory);
+/// The runtime units this link stages and the subset clang compiles.
+///
+/// One list-building rule for every platform: the floor always, the scheduler
+/// core under the union of the two predicates, the completion units under the
+/// second, and each of the three groups a shared part plus this platform's
+/// leaves.
+fn runtime_units(core: bool, completion: bool) -> (Vec<RuntimeUnit>, Vec<&'static str>) {
+    let mut staged: Vec<RuntimeUnit> = FLOOR_UNITS.to_vec();
+    let mut compiled: Vec<&'static str> = FLOOR_COMPILE_UNITS.to_vec();
+    if core {
+        staged.extend_from_slice(CORE_SHARED_UNITS);
+        staged.extend_from_slice(CORE_PLATFORM_UNITS);
+        compiled.extend_from_slice(CORE_COMPILE_UNITS);
     }
-    outcome
+    if completion {
+        staged.extend_from_slice(COMPLETION_SHARED_UNITS);
+        staged.extend_from_slice(COMPLETION_PLATFORM_UNITS);
+        compiled.extend_from_slice(COMPLETION_COMPILE_UNITS);
+    }
+    (staged, compiled)
 }
 
-#[cfg(not(target_os = "windows"))]
+/// Stages the compiler-owned runtime beside the emitted module and links them
+/// into one executable.
+///
+/// One staging for every platform, and the lists above are the only thing that
+/// differs. The floor joins unconditionally, because every program can exhaust
+/// its stack. The scheduler core joins on the union of the two predicates
+/// (`research/investigations/io-model/PARK-ON-MISS.md` section 7, "Where the
+/// core is linked"): it is one scheduler for compute hand-outs and I/O
+/// completions, so a module that hands work out needs it and so does a module
+/// that submits an operation, and a completion-only program parks its stack at
+/// every join. The completion units join on the second predicate alone.
+///
+/// Every one of those bytes travels inside this executable, so no installed
+/// path, no build directory, and no environment decides which runtime a
+/// program gets.
+fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
+    let completion_required = module_requires_completion_runtime(llvm);
+    let core_required = module_requires_parallel_runtime(llvm) || completion_required;
+    let directory = std::env::temp_dir().join(format!("whitefootc-{}", std::process::id()));
+    let result = (|| {
+        let (staged, compiled) = runtime_units(core_required, completion_required);
+        std::fs::create_dir_all(&directory)
+            .map_err(|error| format!("cannot create the runtime directory: {error}"))?;
+        for unit in &staged {
+            let path = directory.join(unit.relative_path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| {
+                    format!(
+                        "cannot create the runtime directory for {}: {error}",
+                        unit.relative_path
+                    )
+                })?;
+            }
+            std::fs::write(&path, unit.source)
+                .map_err(|error| format!("cannot write runtime {}: {error}", unit.relative_path))?;
+        }
+        let mut command = Command::new(clang_executable());
+        // The compiler-owned C units are written to C11 and the repository
+        // gate compiles them as `-std=c11`. Naming the dialect here too is
+        // what makes that gate a statement about this link: clang's default is
+        // a GNU dialect, which predefines object-like macros such as `linux`
+        // that a C11 source may legitimately use as an identifier.
+        command
+            .arg("-std=c11")
+            .args(TARGET_COMPILE_ARGUMENTS)
+            .arg("-I")
+            .arg(&directory);
+        if completion_required {
+            command.arg("-I").arg(directory.join("completion"));
+        }
+        for relative_path in &compiled {
+            command
+                .arg("-x")
+                .arg("c")
+                .arg(directory.join(relative_path));
+        }
+        link(&mut command, llvm, output)
+    })();
+    let _ = std::fs::remove_dir_all(&directory);
+    result
+}
+
 fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
     let mut child = command
         .arg("-x")
@@ -437,96 +440,7 @@ fn link(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> 
         .arg("-")
         .arg("-Wno-override-module")
         .args(HOST_OPTIMIZATION_ARGUMENTS)
-        .args(HOST_LINK_LIBRARIES)
-        .arg("-o")
-        .arg(output)
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(|error| format!("cannot start {}: {error}", clang_executable()))?;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| "clang stdin was not available".to_owned())?
-        .write_all(llvm.as_bytes())
-        .map_err(|error| format!("cannot send LLVM to clang: {error}"))?;
-    let status = child
-        .wait()
-        .map_err(|error| format!("cannot wait for clang: {error}"))?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(format!("clang exited with {status}"))
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
-    let directory = std::env::temp_dir().join(format!("whitefootc-windows-{}", std::process::id()));
-    std::fs::create_dir_all(&directory)
-        .map_err(|error| format!("cannot create Windows runtime directory: {error}"))?;
-    let result = (|| {
-        for unit in WINDOWS_RUNTIME_UNITS {
-            let path = directory.join(unit.relative_path);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).map_err(|error| {
-                    format!(
-                        "cannot create Windows runtime parent for {}: {error}",
-                        unit.relative_path
-                    )
-                })?;
-            }
-            std::fs::write(&path, unit.source).map_err(|error| {
-                format!(
-                    "cannot write Windows runtime {}: {error}",
-                    unit.relative_path
-                )
-            })?;
-        }
-        let parallel_runtime = windows_parallel_runtime_unit(llvm);
-        if let Some((name, source)) = parallel_runtime {
-            std::fs::write(directory.join(name), source)
-                .map_err(|error| format!("cannot write Windows runtime {name}: {error}"))?;
-        }
-
-        let mut command = Command::new(clang_executable());
-        command
-            .arg("-std=c11")
-            .arg("-municode")
-            .arg("-I")
-            .arg(&directory);
-        for relative_path in WINDOWS_RUNTIME_COMPILE_UNITS {
-            command.arg(directory.join(relative_path));
-        }
-        if let Some((name, _)) = parallel_runtime {
-            command.arg(directory.join(name));
-        }
-        link_windows(&mut command, llvm, output)
-    })();
-    let _ = std::fs::remove_dir_all(&directory);
-    result
-}
-
-/// The native worker-pool unit a Windows module must add to its link.
-///
-/// The emitted declaration is an unresolved obligation on this target, not a
-/// request that may fall back to the module's sequential weak definitions.
-/// Keeping the predicate and embedded bytes together here makes it impossible
-/// for the driver to recognize a parallel module but select some installed or
-/// stale runtime instead.
-#[cfg(any(target_os = "windows", test))]
-fn windows_parallel_runtime_unit(llvm: &str) -> Option<(&'static str, &'static str)> {
-    module_requires_parallel_runtime(llvm)
-        .then_some(("par_runtime_windows.c", PARALLEL_WINDOWS_RUNTIME_SOURCE))
-}
-
-#[cfg(target_os = "windows")]
-fn link_windows(command: &mut Command, llvm: &str, output: &Path) -> Result<(), String> {
-    let mut child = command
-        .arg("-x")
-        .arg("ir")
-        .arg("-")
-        .arg("-Wno-override-module")
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
+        .args(TARGET_LINK_LIBRARIES)
         .arg("-o")
         .arg(output)
         .stdin(Stdio::piped())
@@ -755,10 +669,9 @@ mod tests {
     use std::path::{Component, Path, PathBuf};
 
     use super::{
-        CompilerLimits, Options, OverlapLowering, SourceInput, WINDOWS_RUNTIME_COMPILE_UNITS,
-        WINDOWS_RUNTIME_UNITS, compile_with_io_notices, compile_with_permission_ledger,
-        io_notice_report, module_requires_parallel_runtime, source_names,
-        windows_parallel_runtime_unit,
+        CompilerLimits, Options, OverlapLowering, SourceInput, compile_with_io_notices,
+        compile_with_permission_ledger, io_notice_report, module_requires_parallel_runtime,
+        runtime_units, source_names,
     };
     use whitefoot::module_requires_completion_runtime;
 
@@ -778,23 +691,23 @@ mod tests {
         Options::parse(&owned)
     }
 
-    /// The Windows link adds the embedded native pool on exactly the same
-    /// marker that the emitter leaves unresolved, and adds nothing at all to a
-    /// module that hands out no work.
+    /// The link stages the scheduler core on exactly the marker the emitter
+    /// leaves, and stages nothing beyond the floor for a module that neither
+    /// hands out work nor submits an operation.
     ///
-    /// Retired with the stackless plan (design section 8): this test also
-    /// asserted that a module publishing a writer frame selected the
-    /// `WF_PAR_WITH_WRITER_SCHEDULER` runtime variant. There is no writer-frame
-    /// submit ABI and no such variant any more, so those assertions and the
-    /// stackless fixture they compiled went with them. What the Windows link
-    /// still decides -- pool unit or no pool unit, and which strong symbols
-    /// that unit must define -- is what remains asserted here.
+    /// This case used to be about the Windows link alone, and about a second
+    /// worker-pool unit only that platform had. Step (iv) deleted that unit:
+    /// Windows takes the same `sched/entry.c` over the same `core.c` as every
+    /// other target, so what the link still decides is which staging group a
+    /// module needs, and that is what is asserted here.
     #[test]
-    fn windows_parallel_link_adds_the_native_pool_on_the_hand_out_marker() {
-        assert!(
-            windows_parallel_runtime_unit("define i32 @main() { ret i32 0 }").is_none(),
-            "a module with no hand-out must add no worker-pool unit"
-        );
+    fn the_link_stages_the_core_on_the_hand_out_marker() {
+        let plain = "define i32 @main() { ret i32 0 }";
+        assert!(!module_requires_parallel_runtime(plain));
+        assert!(!module_requires_completion_runtime(plain));
+        let (staged, compiled) = runtime_units(false, false);
+        assert_eq!(staged.len(), super::FLOOR_UNITS.len());
+        assert_eq!(compiled, super::FLOOR_COMPILE_UNITS.to_vec());
 
         let layout = compile_parallel_fixture("tests/programs/par_layout.wf", PAR_LAYOUT);
         assert!(module_requires_parallel_runtime(&layout));
@@ -802,34 +715,27 @@ mod tests {
             module_requires_completion_runtime(&layout),
             "par_layout's real write_once must still require completion"
         );
-        let (name, source) = windows_parallel_runtime_unit(&layout)
-            .expect("par_layout hand-outs must require the native unit");
-        assert_eq!(name, "par_runtime_windows.c");
-        for strong_definition in [
-            "void *wf__par_acquire_lane(uint64_t bytes) {",
-            "void wf__par_publish(void *frame, void (*fn)(void *)) {",
-            "void wf__par_join(void *frame) {",
-            "void wf__par_release(void *frame) {",
-            "int wf__par_pool_active(void) {",
-            "uint64_t wf__par_split_budget(uint64_t span, uint64_t weight) {",
-        ] {
+        let (_, compiled) = runtime_units(true, true);
+        for required in ["sched/core.c", "sched/entry.c", "completion/bridge.c"] {
             assert!(
-                source.contains(strong_definition),
-                "the embedded Windows runtime omits `{strong_definition}`"
+                compiled.contains(&required),
+                "a module that hands out work and submits must compile `{required}`"
             );
         }
     }
 
-    /// The driver stages the embedded Windows sources with the same relative
-    /// topology they have under `backend/`. Every quoted compiler-owned
-    /// include must therefore resolve either beside the including file or
-    /// from the one `-I` root passed to clang.
+    /// The driver stages the embedded sources with the same relative topology
+    /// they have under `backend/`. Every quoted compiler-owned include must
+    /// therefore resolve either beside the including file or from the one `-I`
+    /// root passed to clang.
     ///
-    /// This is stronger than naming the two paths that exposed the original
+    /// This is stronger than naming the paths that exposed the original
     /// flattening bug: adding a new compiler-owned quoted include without its
-    /// staged target makes this test fail before native CI reaches clang.
+    /// staged target makes this test fail before CI reaches clang. It runs on
+    /// whichever host builds the compiler and so covers that host's own leaf
+    /// selection.
     #[test]
-    fn windows_runtime_staging_closes_every_quoted_include() {
+    fn runtime_staging_closes_every_quoted_include() {
         fn normalized(path: &Path) -> Option<PathBuf> {
             let mut result = PathBuf::new();
             for component in path.components() {
@@ -847,31 +753,31 @@ mod tests {
             Some(result)
         }
 
-        let staged: HashSet<PathBuf> = WINDOWS_RUNTIME_UNITS
+        let (units, compiled) = runtime_units(true, true);
+        let staged: HashSet<PathBuf> = units
             .iter()
             .map(|unit| PathBuf::from(unit.relative_path))
             .collect();
         assert_eq!(
             staged.len(),
-            WINDOWS_RUNTIME_UNITS.len(),
-            "a staged Windows runtime path is duplicated"
+            units.len(),
+            "a staged runtime path is duplicated"
         );
-        assert!(staged.contains(Path::new("windows_runtime.c")));
-        assert!(staged.contains(Path::new("completion/windows_completion.h")));
-        assert!(staged.contains(Path::new("completion/windows_bridge.c")));
+        assert!(staged.contains(Path::new("sched/core.c")));
+        assert!(staged.contains(Path::new("completion/bridge.c")));
         assert!(
-            !staged.contains(Path::new("windows_completion.h")),
+            !staged.contains(Path::new("bridge.c")),
             "completion files must not be flattened into the staging root"
         );
 
-        for relative_path in WINDOWS_RUNTIME_COMPILE_UNITS {
+        for relative_path in &compiled {
             assert!(
                 staged.contains(Path::new(relative_path)),
                 "clang input `{relative_path}` is not staged"
             );
         }
 
-        for unit in WINDOWS_RUNTIME_UNITS {
+        for unit in &units {
             let parent = Path::new(unit.relative_path)
                 .parent()
                 .unwrap_or_else(|| Path::new(""));

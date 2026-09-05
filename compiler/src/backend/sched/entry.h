@@ -62,6 +62,40 @@ int wf__sched_entry_stack(
  * exposed so a test can start the same policy the shipped entry starts. */
 int wf__sched_start(void);
 
+/* Runs `body` exactly once for this `state` word, which must start at zero.
+ *
+ * The runtime's own once-control, over the core's atomics and its yield, so
+ * that one implementation serves every platform where `pthread_once` and
+ * `InitOnceExecuteOnce` would be two.  A caller that arrives while another
+ * thread is inside the body yields until that thread publishes completion:
+ * there is no deadline in it and no budget.  The fast path after the first
+ * call is one acquire load. */
+void wf__sched_once(unsigned *state, void (*body)(void));
+
+/* The one rule every startup setting of this runtime follows, exported so that
+ * every unit that reads one reads it the same way.
+ *
+ * Unset or empty means "this setting places no instruction", and each caller
+ * reads its own default from that. A written value is an integer from 0 through
+ * the setting's own ceiling and nothing else. Anything else is a configuration
+ * error: it ends the run with one line on the diagnostic channel, nothing on
+ * the output channel, and a nonzero status, rather than being repaired into a
+ * different run from the one the caller asked for.
+ *
+ * Answers 1 and writes `*value` when the setting named a number, 0 when it is
+ * unset or empty, and does not return otherwise. */
+int wf__sched_setting(const char *name, unsigned long ceiling, unsigned long *value);
+
+/* The ceiling of the completion runtime's own WF_IO_HELPERS setting, or 0 in a
+ * link that has no completion runtime.
+ *
+ * The bridge owns the number, and the rule above says a bad setting ends the
+ * run before the program body -- which the bridge's own initializer, running at
+ * the body's first operation, is too late for. So the bridge answers this
+ * weakly-declared question strongly and `wf__sched_start` checks the setting
+ * where it checks every other one. */
+unsigned long wf__sched_helper_ceiling(void);
+
 /* Enters the core on the calling thread: the one place `wf_sched_run` is
  * called, and what makes "this thread is running the core's loop" a fact a
  * join can read. Thread 0 returns here with the posted status; a worker never

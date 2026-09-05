@@ -6,22 +6,21 @@
  * the startup policy and the module ABI that `par_runtime.c` used to carry
  * over a second scheduler of its own.
  *
- * POSIX only. Windows takes the same core behind `prim_windows.c` and its own
- * floor, which is a later step; nothing here is `#if`-forked for it. */
-
-#define _DARWIN_C_SOURCE 1
+ * One implementation for every platform, with no `#if` of its own. Everything
+ * that differs by host -- thread creation with a reserved host stack, the
+ * thread's attach and detach for the switch, the machine's core count, the
+ * atomics, the yield -- is behind `prim.h`, answered by `prim_host.c` on POSIX
+ * and `prim_windows.c` on Windows. `getenv` and `strtol` are the C standard
+ * library on both and are used directly. */
 
 #include "entry.h"
 #include "prim.h"
 
-#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#if defined(__APPLE__)
-#include <sys/sysctl.h>
-#endif
+#include <string.h>
 
 /* ---------------------------------------------------------- the floor */
 
@@ -46,11 +45,18 @@ __attribute__((weak)) size_t wf__floor_stack_bytes(void) {
  * those the switch writes. */
 __attribute__((weak)) void wf__floor_attach_thread(void) {}
 
-/* The per-stack half, called here for one case the switch does not cover: the
- * entry thread's return to its own host stack, after which the bounds the last
- * switch wrote name a pool stack this thread is no longer on. A null pair
- * means "this thread's host stack", whose bounds the attach above captured. */
-extern void wf__floor_set_stack_bounds(unsigned char *low, unsigned char *high);
+/* The per-stack half is the bounds, and this unit reaches them through
+ * `wf_prim_set_bounds` -- primitive 2's third name -- rather than through the
+ * floor's own symbol.
+ *
+ * Two reasons, and the second is what settles it. The primitive is where the
+ * bounds belong: the switch owns them and writes them from the reservation
+ * record, so a caller outside the switch should be asking the same primitive
+ * and not the floor. And a weak definition satisfies a reference from its own
+ * translation unit on both platforms, but a PE weak external does not satisfy
+ * an undefined reference from another object at all -- so a link without the
+ * floor, which is every probe, does not link if this unit names the floor's
+ * symbol directly. */
 
 /* --------------------------------------------------------- the policy */
 
@@ -110,14 +116,71 @@ extern void wf__floor_set_stack_bounds(unsigned char *low, unsigned char *high);
 #define WF_PAR_SPLIT_OVERSUBSCRIBE 16
 #define WF_PAR_SPLIT_WORK_PER_CHUNK 1200000
 
+/* The one rule every startup setting of this runtime follows.
+ *
+ * Unset or empty means "this setting places no instruction", and each caller
+ * reads its own default from that. A written value is an integer from 0
+ * through the setting's own ceiling and nothing else: not a negative number,
+ * not a number above the ceiling, and not text that is not a number. Anything
+ * else is a configuration error rather than a value to repair, because
+ * repairing it silently runs a different program from the one the caller asked
+ * for -- a clamp turns "give me 4096 workers" into a pool the caller never
+ * chose, and treating unparseable text as the sequential world turns a typo
+ * into a measurement of the wrong thing.
+ *
+ * A configuration error ends the run here, before the program body starts,
+ * with one line on the diagnostic channel, nothing on the output channel, and
+ * a nonzero status. The ceiling in that line is spelled from the constant, so
+ * a changed ceiling changes the message with it.
+ *
+ * Answers 1 and writes `*value` when the setting named a number, 0 when it is
+ * unset or empty, and does not return otherwise. */
+int wf__sched_setting(
+    const char *name,
+    unsigned long ceiling,
+    unsigned long *value
+) {
+    const char *text = getenv(name);
+    char *end = NULL;
+    long written;
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
+    written = strtol(text, &end, 10);
+    if (end != text && *end == '\0' && written >= 0
+        && (unsigned long)written <= ceiling) {
+        *value = (unsigned long)written;
+        return 1;
+    }
+    (void)fprintf(
+        stderr,
+        "whitefoot scheduler: %s must be an integer from 0 through %lu\n",
+        name,
+        ceiling
+    );
+    exit(1);
+}
+
+/* The ceiling of the completion runtime's own helper setting.
+ *
+ * WF_IO_HELPERS is the bridge's, and the bridge is the only unit that knows
+ * how many helpers its storage holds; but the rule above says a bad setting
+ * ends the run *before the program body*, and the bridge does not initialize
+ * until the body's first operation. So the bridge answers this weakly-declared
+ * question strongly, and the check below runs where every other one runs. A
+ * link with no completion runtime has no such setting and answers zero. */
+__attribute__((weak)) unsigned long wf__sched_helper_ceiling(void) {
+    return 0;
+}
+
 /* What an unset WF_WORKERS asks for: this machine's logical CPUs, clamped to
  * the lane ceiling above.
  *
- * `hw.logicalcpu` is the Darwin spelling and reports the cores this process may
- * be scheduled on right now, which is the number the pool wants; the portable
- * `_SC_NPROCESSORS_ONLN` answers on a host that has no such name. A machine
- * that reports fewer than two gets 0, which is what an explicit opt-out gets,
- * because one thread of execution is the sequential world either way.
+ * The count is `wf_prim_online_cpus`, which reports the cores this process may
+ * be scheduled on right now -- `hw.logicalcpu` on Darwin, `_SC_NPROCESSORS_ONLN`
+ * elsewhere, `GetActiveProcessorCount` on Windows. A machine that reports
+ * fewer than two gets 0, which is what an explicit opt-out gets, because one
+ * thread of execution is the sequential world either way.
  *
  * Naming every core rather than only the performance ones is a measured
  * choice, not an assumption: on the 4P+6E machine this was built on, the coarse
@@ -127,61 +190,33 @@ extern void wf__floor_set_stack_bounds(unsigned char *low, unsigned char *high);
  * a fraction of a performance core's rate still finishes it sooner than not
  * starting it. */
 static int wf__sched_default_lanes(void) {
-    long online;
-#if defined(__APPLE__)
-    int logical = 0;
-    size_t width = sizeof(logical);
-    if (sysctlbyname("hw.logicalcpu", &logical, &width, NULL, 0) == 0 && logical >= 2) {
-        return (logical > WF_PAR_MAX_LANES) ? WF_PAR_MAX_LANES : logical;
-    }
-#endif
-    online = sysconf(_SC_NPROCESSORS_ONLN);
-    if (online < 2) {
+    unsigned online = wf_prim_online_cpus();
+    if (online < 2u) {
         return 0;
     }
-    return (online > WF_PAR_MAX_LANES) ? WF_PAR_MAX_LANES : (int)online;
+    return online > (unsigned)WF_PAR_MAX_LANES ? WF_PAR_MAX_LANES : (int)online;
 }
 
 /* The lane count this run asked for: 0 for the sequential world, or at least
- * two. A value below two is the explicit opt-out. */
+ * two. A written 0 or 1 is the explicit opt-out, which is what the corpus and
+ * every sequential reference build use. */
 static int wf__sched_requested_lanes(void) {
-    const char *setting = getenv("WF_WORKERS");
-    char *end = NULL;
-    long requested;
-    if (setting == NULL || setting[0] == '\0') {
+    unsigned long requested = 0;
+    if (!wf__sched_setting("WF_WORKERS", (unsigned long)WF_PAR_MAX_LANES, &requested)) {
         return wf__sched_default_lanes();
     }
-    requested = strtol(setting, &end, 10);
-    if (end == setting || *end != '\0' || requested < 2) {
-        return 0;
-    }
-    if (requested > WF_PAR_MAX_LANES) {
-        requested = WF_PAR_MAX_LANES;
-    }
-    return (int)requested;
+    return requested < 2u ? 0 : (int)requested;
 }
 
-/* The stack count: WF_STACKS when it is written and readable, otherwise the
- * thread count plus the spare above. Either way the core raises it to its own
- * floor of the thread count plus one and refuses a count past its ceiling, so
- * this only has to state a number and clamp it. */
+/* The stack count: WF_STACKS when it is written, otherwise the thread count
+ * plus the spare above. The core raises it to its own floor of the thread
+ * count plus one, so this only has to state a number. */
 static unsigned wf__sched_stack_count(unsigned threads) {
-    const char *setting = getenv("WF_STACKS");
-    char *end = NULL;
-    long written;
-    unsigned count = threads + WF_SCHED_SPARE_STACKS;
-    if (setting != NULL && setting[0] != '\0') {
-        written = strtol(setting, &end, 10);
-        if (end != setting && *end == '\0' && written > 0) {
-            count = (unsigned long)written > (unsigned long)WF_SCHED_MAX_STACKS
-                ? WF_SCHED_MAX_STACKS
-                : (unsigned)written;
-        }
+    unsigned long written = 0;
+    if (wf__sched_setting("WF_STACKS", (unsigned long)WF_SCHED_MAX_STACKS, &written)) {
+        return (unsigned)written;
     }
-    if (count > WF_SCHED_MAX_STACKS) {
-        count = WF_SCHED_MAX_STACKS;
-    }
-    return count;
+    return threads + WF_SCHED_SPARE_STACKS;
 }
 
 /* ----------------------------------------------------------- the core */
@@ -199,16 +234,93 @@ static _Thread_local int wf__sched_on_core;
  * whose pool is still running from one that never started a thread. */
 static unsigned wf__sched_workers;
 
+/* One entry record per worker, indexed by the worker's own thread index.
+ *
+ * `wf_prim_thread_start` reads the entry and its argument from storage the
+ * caller keeps alive for the life of the thread (`prim.h`, P1), and a worker's
+ * life is the process's, so this is the storage: it is written once by the
+ * creating thread before the worker exists and is never written again. Index 0
+ * is the entry thread's and stays unused, which keeps the index the worker's
+ * own rather than a second numbering to keep in step. */
+static wf_prim_thread wf__sched_worker_threads[WF_SCHED_MAX_THREADS];
+
 /* The rendezvous `par_runtime.c` made and this keeps: "the pool started" means
  * "the pool can take work". A pool whose threads are still being created
  * cannot take the first offers a program makes, and for a short program those
- * are all the offers there are; this costs one rendezvous per process. */
-static pthread_mutex_t wf__sched_ready_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t wf__sched_ready_signal = PTHREAD_COND_INITIALIZER;
+ * are all the offers there are; this costs one rendezvous per process.
+ *
+ * It is a counter and the yield, which are primitives 1 and 6, rather than a
+ * condition variable of this unit's own. Two reasons, and the second is the
+ * one that decides it: the wait is bounded by the creation of at most
+ * WF_SCHED_MAX_THREADS threads and is taken once per process, so what it costs
+ * is a few passes of a starting thread's scheduler; and a condition variable
+ * here would be a second sleep mechanism in a design whose whole shape is one
+ * (§6), owned by neither the platform nor the core. There is no deadline in it
+ * and no budget: it yields until the count it is waiting for is published. */
 static unsigned wf__sched_ready;
+
+static void wf__sched_ready_report(void) {
+    for (;;) {
+        unsigned seen = wf_prim_load_u(&wf__sched_ready, WF_PRIM_ACQUIRE);
+        if (wf_prim_cas_u(
+                &wf__sched_ready,
+                &seen,
+                seen + 1u,
+                WF_PRIM_ACQ_REL,
+                WF_PRIM_ACQUIRE
+            )) {
+            return;
+        }
+    }
+}
+
+static void wf__sched_ready_await(unsigned started) {
+    while (wf_prim_load_u(&wf__sched_ready, WF_PRIM_ACQUIRE) < started) {
+        wf_prim_yield();
+    }
+}
+
+/* The once every start in this unit runs under, over primitives 1 and 6.
+ *
+ * `pthread_once` was what this unit used and Windows has `InitOnceExecuteOnce`,
+ * which is two implementations of one thing; the compare-exchange below is one.
+ * The fast path a hand-out pays for is the acquire load at the top, which is
+ * what a hot lane acquisition sees on every call after the first. A thread that
+ * finds the body running yields until the body's thread publishes DONE: no
+ * deadline, no budget, and no second sleep mechanism. */
+#define WF_SCHED_ONCE_IDLE 0u
+#define WF_SCHED_ONCE_RUNNING 1u
+#define WF_SCHED_ONCE_DONE 2u
+
+void wf__sched_once(unsigned *state, void (*body)(void)) {
+    if (wf_prim_load_u(state, WF_PRIM_ACQUIRE) == WF_SCHED_ONCE_DONE) {
+        return;
+    }
+    for (;;) {
+        unsigned seen = WF_SCHED_ONCE_IDLE;
+        if (wf_prim_cas_u(
+                state,
+                &seen,
+                WF_SCHED_ONCE_RUNNING,
+                WF_PRIM_ACQ_REL,
+                WF_PRIM_ACQUIRE
+            )) {
+            body();
+            wf_prim_store_u(state, WF_SCHED_ONCE_DONE, WF_PRIM_RELEASE);
+            return;
+        }
+        if (seen == WF_SCHED_ONCE_DONE) {
+            return;
+        }
+        wf_prim_yield();
+    }
+}
 
 int wf__sched_enter(unsigned thread, void (*entry)(void *), void *argument) {
     int status;
+    /* A thread's host stack has to be switchable-to before its first switch
+     * away from it (§7's platform item 3); on the host this is nothing. */
+    wf_prim_thread_attach();
     wf__sched_on_core = 1;
     status = wf_sched_run(&wf__sched_core, thread, entry, argument);
     /* Only thread 0 arrives here, on its host stack (§5). The last switch
@@ -216,7 +328,8 @@ int wf__sched_enter(unsigned thread, void (*entry)(void *), void *argument) {
      * thread is no longer on that stack, so the host stack's own bounds go
      * back before anything runs here. */
     wf__sched_on_core = 0;
-    wf__floor_set_stack_bounds(NULL, NULL);
+    wf_prim_set_bounds(NULL, NULL);
+    wf_prim_thread_detach();
     return status;
 }
 
@@ -228,7 +341,7 @@ wf_sched_stack *wf__sched_current_stack(void) {
 }
 
 unsigned wf__sched_pool_running(void) {
-    return __atomic_load_n(&wf__sched_workers, __ATOMIC_ACQUIRE);
+    return wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE);
 }
 
 static wf_sched_lane *wf__sched_current_lane(void) {
@@ -240,7 +353,7 @@ static wf_sched_lane *wf__sched_current_lane(void) {
 
 /* ------------------------------------------------------- the workers */
 
-static void *wf__sched_worker_main(void *argument) {
+static void wf__sched_worker_main(void *argument) {
     unsigned index = (unsigned)(uintptr_t)argument;
     /* The floor's per-thread half, before anything else: a worker runs
      * ordinary Whitefoot calls on a pool stack and can recurse exactly as deep
@@ -249,14 +362,10 @@ static void *wf__sched_worker_main(void *argument) {
      * is where the handler runs until the first switch and where nothing
      * Whitefoot ever runs (§5). */
     wf__floor_attach_thread();
-    pthread_mutex_lock(&wf__sched_ready_lock);
-    wf__sched_ready += 1u;
-    pthread_cond_signal(&wf__sched_ready_signal);
-    pthread_mutex_unlock(&wf__sched_ready_lock);
+    wf__sched_ready_report();
     /* Never returns: a worker's scheduler loop is the program's, and the
      * thread is detached. */
     (void)wf__sched_enter(index, NULL, NULL);
-    return NULL;
 }
 
 /* Starts the pool at the first hand-out, once per process (§5).
@@ -268,30 +377,20 @@ static void *wf__sched_worker_main(void *argument) {
  * core's entry instead was measured on the io bench at the shipped default:
  * 0.2851 s eager against 0.1083 s for this lazy start and 0.1063 s before the
  * core became the runtime. The threads a short program never uses were the
- * whole difference, so the pool starts under a `pthread_once` inside the first
+ * whole difference, so the pool starts under the once above, inside the first
  * lane acquisition, as `par_runtime.c` started it. `wf__par_pool_active` still
  * answers from the setting, so the module's choice between its two lowerings
  * does not depend on whether the pool has started yet.
  *
- * A refused stack request is a silent downgrade to the pthread default, which
- * is exactly the hazard this call exists to close, so it stops the pool
- * instead: no lane is better than a lane that overflows. A thread that cannot
- * be created stops the loop at the count that did start; the lanes past it
- * stay empty, which costs a steal pass and nothing else. */
+ * A refused stack reservation is a silent downgrade to the platform default,
+ * which is exactly the hazard the thread primitive exists to close, so it
+ * reports the failure instead: no lane is better than a lane that overflows.
+ * A thread that cannot be created stops the loop at the count that did start;
+ * the lanes past it stay empty, which costs a steal pass and nothing else. */
 static void wf__sched_start_workers(unsigned threads) {
-    pthread_attr_t attributes;
     unsigned index;
     unsigned started = 0;
-    if (pthread_attr_init(&attributes) != 0) {
-        return;
-    }
-    if (pthread_attr_setstacksize(&attributes, wf__floor_stack_bytes()) != 0) {
-        (void)pthread_attr_destroy(&attributes);
-        return;
-    }
-    (void)pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
     for (index = 1u; index < threads; index += 1u) {
-        pthread_t thread;
         /* The worker's pool stack is taken here, on the thread that creates
          * it: its own start may come arbitrarily late, after the entry thread
          * has parked every free stack, and a thread's first act is not a join
@@ -299,20 +398,18 @@ static void wf__sched_start_workers(unsigned threads) {
         if (wf_sched_start_thread(&wf__sched_core, index) != 0) {
             break;
         }
-        if (pthread_create(
-                &thread, &attributes, wf__sched_worker_main, (void *)(uintptr_t)index
+        if (wf_prim_thread_start(
+                &wf__sched_worker_threads[index],
+                wf__sched_worker_main,
+                (void *)(uintptr_t)index,
+                wf__floor_stack_bytes()
             ) != 0) {
             break;
         }
         started += 1u;
     }
-    (void)pthread_attr_destroy(&attributes);
-    __atomic_store_n(&wf__sched_workers, started, __ATOMIC_RELEASE);
-    pthread_mutex_lock(&wf__sched_ready_lock);
-    while (wf__sched_ready < started) {
-        pthread_cond_wait(&wf__sched_ready_signal, &wf__sched_ready_lock);
-    }
-    pthread_mutex_unlock(&wf__sched_ready_lock);
+    wf_prim_store_u(&wf__sched_workers, started, WF_PRIM_RELEASE);
+    wf__sched_ready_await(started);
 }
 
 /* The thread count the core was initialized with, which is what the first
@@ -320,7 +417,7 @@ static void wf__sched_start_workers(unsigned threads) {
  * link whose core never started (there is none: every such link refuses the
  * hand-out first, above) would start nothing. */
 static unsigned wf__sched_threads = 1u;
-static pthread_once_t wf__sched_workers_once = PTHREAD_ONCE_INIT;
+static unsigned wf__sched_workers_once;
 
 static void wf__sched_start_workers_once(void) {
     if (wf__sched_threads >= 2u) {
@@ -331,8 +428,20 @@ static void wf__sched_start_workers_once(void) {
 /* --------------------------------------------------------- the entry */
 
 int wf__sched_start(void) {
-    int requested = wf__sched_requested_lanes();
-    unsigned threads = requested >= 2 ? (unsigned)requested : 1u;
+    int requested;
+    unsigned threads;
+    unsigned long helpers = 0;
+    unsigned long ceiling = wf__sched_helper_ceiling();
+    /* Every startup setting this process reads is checked here, at the core's
+     * entry, so a configuration error ends the run before the program body
+     * starts whichever unit the setting belongs to. The completion runtime's
+     * own helper setting is checked through the ceiling it answers, and its
+     * value is read again where it is used. */
+    if (ceiling != 0u) {
+        (void)wf__sched_setting("WF_IO_HELPERS", ceiling, &helpers);
+    }
+    requested = wf__sched_requested_lanes();
+    threads = requested >= 2 ? (unsigned)requested : 1u;
     /* The stack reservation is made here, at the core's entry, before the
      * program's body runs and in every core link (§5). It is one mapping with
      * a guard page per slot and its pages committed on touch, so a run that
@@ -398,7 +507,7 @@ void *wf__par_acquire_lane(unsigned long bytes) {
          * under -- the refused edge is the same call the granted edge makes. */
         return NULL;
     }
-    (void)pthread_once(&wf__sched_workers_once, wf__sched_start_workers_once);
+    wf__sched_once(&wf__sched_workers_once, wf__sched_start_workers_once);
     return wf_sched_acquire(&wf__sched_core, bytes);
 }
 
@@ -449,15 +558,17 @@ int wf__par_pool_active(void) {
  * is often enough for a microsecond to be a disaster, so it reads this
  * instead: 2.5-4.1 ns. Two threads that settle it at once compute the same
  * number, so the race is benign and needs no lock. */
-static int wf__sched_cached_lanes = -1;
+#define WF_SCHED_LANES_UNSETTLED (~0u)
+
+static unsigned wf__sched_cached_lanes = WF_SCHED_LANES_UNSETTLED;
 
 static int wf__sched_lanes_once(void) {
-    int lanes = __atomic_load_n(&wf__sched_cached_lanes, __ATOMIC_RELAXED);
-    if (lanes < 0) {
-        lanes = wf__sched_requested_lanes();
-        __atomic_store_n(&wf__sched_cached_lanes, lanes, __ATOMIC_RELAXED);
+    unsigned lanes = wf_prim_load_u(&wf__sched_cached_lanes, WF_PRIM_RELAXED);
+    if (lanes == WF_SCHED_LANES_UNSETTLED) {
+        lanes = (unsigned)wf__sched_requested_lanes();
+        wf_prim_store_u(&wf__sched_cached_lanes, lanes, WF_PRIM_RELAXED);
     }
-    return lanes;
+    return (int)lanes;
 }
 
 /* How many times a permitted counted loop's range may be halved [PAR-2].

@@ -439,9 +439,9 @@ before the code lands.
    `par_runtime.c`, `completion/writer_scheduler.c` and
    `completion/writer_scheduler.h` are deleted, the core is staged under
    `module_requires_parallel_runtime || module_requires_completion_runtime` at
-   every link site, and the Windows units keep the retired writer ABI behind
-   `#if defined(_WIN32)` in `completion/bridge.h` until step (iv) deletes them
-   with the twins that use them.
+   every link site, and the Windows units kept the retired writer ABI behind
+   `#if defined(_WIN32)` in `completion/bridge.h` until step (iv) deleted them
+   with the twins that used them.
 
    Two defects the step exposed and fixed, both of them consequences of the
    scheduler loop being the thing that sleeps. The bridge's wake seam
@@ -474,6 +474,96 @@ before the code lands.
    this misses it; the design's stated fallback is nested runs of
    never-suspends jobs at a miss, which needs the target-action bit at the
    hand-out. Slice 4 measures that against the park before either is chosen.
+   **Status 2026-09-05, step (iv) landed.** Windows takes the same runtime
+   every other target takes. What is shared is every piece of logic:
+   `sched/core.c` and `sched/entry.c`, `completion/runtime.c`,
+   `completion/file_adapter.c`, `completion/bridge.c` and
+   `completion/contract.h`. What stays a platform leaf is only what calls the
+   host: `sched/prim_windows.c` beside `sched/prim_host.c`,
+   `completion/windows_iocp.c` beside `completion/linux_io_uring.c`,
+   `completion/file_windows.c` beside `completion/file_posix.c`,
+   `completion/wait_windows.c` beside `completion/wait_host.c`, and
+   `wf_floor_windows.c` beside `wf_floor.c`. `windows_runtime.c` keeps the
+   UTF-16 bootstrap, the NtCreateFile relative opens, the directory batch and
+   the host calls the Windows file leaf makes; of its descriptor ledger only
+   two facts survive, the resource class and whether the completion port has
+   taken the handle, because those are the two the ring and the leaf cannot
+   do without. Deleted: `par_runtime_windows.c` and its probe,
+   `completion/writer_scheduler_windows.c`, `completion/windows_completion.c`
+   and its header and probe, `completion/windows_bridge.c`,
+   `completion/windows_blocking.c` with its header and probe,
+   `completion/windows_bridge_capacity_probe.c`,
+   `completion/windows_compiler_capacity_observer.c`,
+   `completion/native_completion_api.h`, and
+   `tests/programs/completion_windows_capacity.wf`, which exercised a slot
+   capacity that no longer exists.
+
+   `entry.c` carries one startup policy with no `#if` of its own: thread
+   creation with a reserved host stack, the thread's attach and detach for the
+   switch, the machine's core count, the once and the rendezvous are all
+   behind `prim.h` now, the last two written over the core's own atomics and
+   yield rather than over a second sleep mechanism. The switch on Windows is
+   fibers, the reservation is address space with one committed page per slot
+   for the core's state header, and `wf__floor_set_stack_bounds` is defined
+   strongly in the Windows floor and does nothing, because that floor
+   classifies an overflow by exception code. One rule now covers WF_WORKERS,
+   WF_STACKS and WF_IO_HELPERS on both platforms: unset or empty is the
+   caller's own default, an integer from 0 through the setting's ceiling is
+   that number, and anything else is a configuration error that ends the run
+   before the program body with one line on the diagnostic channel
+   (`whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64`),
+   nothing on the output channel and a nonzero status. WF_WORKERS 0 or 1 is
+   still the sequential opt-out the corpus and every reference build use.
+   That rule replaces two: POSIX read a malformed value as the opt-out and
+   clamped an oversized one, and Windows accepted only 2 through 64. It is a
+   decision the owner can reverse. `WF_WINDOWS_BLOCKING_WORKERS` is gone;
+   WF_IO_HELPERS is the one helper setting on both.
+
+   The wake on Windows is the completion port and nothing else: the bridge
+   answers the `wf__sched_host_epoch`, `_park` and `_wake` seam, its park is
+   `GetQueuedCompletionStatus` on that port, and a wake is a
+   `PostQueuedCompletionStatus` packet posted once per announced sleeper, so a
+   ready stack and an I/O completion arrive on one queue. A reaping thread
+   that finds a wake packet puts it back while a sleeper is announced, because
+   a posted packet is consumable where the Linux eventfd is a level fact.
+
+   The record grew from 128 bytes to 160, and 160 is the smallest multiple of
+   sixteen that holds it on every platform: 48 of those bytes are the typed
+   request, which gains the `descriptor_class` a Windows open needs, and 40
+   are the ring's own state, which on Windows is the record's `OVERLAPPED` and
+   the handle the request was issued on. That is 32 bytes per outstanding
+   operation per frame, and it is §12's per-frame record growth item.
+   `contract.h` names no host threading API at all now: the wait set the epoch
+   sleeps on is an opaque block the platform's own unit fills.
+
+   The `completion-windows` job proves, on the real host: the shipped default
+   helper policy and the shipped routing through the same
+   `bridge_default_probe.c` the POSIX gate runs, once on the port
+   (`route=native-ring`) and once with the port refused
+   (`route=posix-adapter`); the ring alone, through `native_adapter_probe.c`;
+   the namespace facilities; that the whole staged runtime compiles under the
+   gate's warning set; that a bridge with no engine terminates before a submit
+   returns; the three compiler boundaries that were already there; that a real
+   `--par` program grants lanes, read through `sched/grant_observer.c`, which
+   is now one file both platforms link for that proof; and that an overflow on
+   a pool stack that is a fiber writes exactly `{"resource":"stack"}` and
+   nothing else, at the default worker count and at four.
+
+   Verified here, with the mingw-w64 cross compiler and wine: that every
+   Windows unit compiles clean under a second compiler's `-Werror`, that the
+   link imports the real fiber, port, SRWLOCK and reservation entries, that
+   the IOCP ring carries a real positioned read found by the record's own
+   address, and that the default-route probe passes on both routes. Only the
+   real host can settle the floor on a pool fiber, because wine approximates
+   the overflow classification `SetThreadStackGuarantee` and the vectored
+   handler give a fiber stack; the compiler-emitted end-to-end steps are the
+   host's for the same reason. The POSIX numbers did not move: the same
+   `--emit-llvm` module linked against the previous commit's runtime and
+   against this one reads io-completion-bench `many_files_wide` at 0.1088 s
+   and 0.1095 s best of seven, and `par_layout.wf` best of nine at W=1
+   1.5235 s and 1.5232 s, W=2 0.8218 s and 0.8205 s, W=4 0.5789 s and
+   0.5821 s, W=8 0.8464 s and 0.8348 s.
+
 4. **Replay, the remaining measurements, docs, record** (design §11 item 24,
    §12): the enumerator's recorder replays a run's data and completion order;
    park cost and per-frame record growth measured; `LOOP-PIPELINE.md` §3.4

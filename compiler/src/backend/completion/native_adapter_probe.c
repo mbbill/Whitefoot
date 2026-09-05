@@ -1,10 +1,11 @@
 /*
  * Standalone target-contract probe.
  *
- * Linux links this file with contract runtime.c and linux_io_uring.c and runs
- * real positioned reads/writes.  Windows links it with windows_iocp.c; its
- * tiny publication sink isolates the target adapter so a PE executable can
- * be compile- and link-checked before a Windows runner is available.
+ * Linux links this file with `runtime.c` and `linux_io_uring.c`; Windows with
+ * `runtime.c`, `wait_windows.c` and `windows_iocp.c`.  Both arms link the
+ * scheduler core and no bridge, so what they prove is the ring alone: a real
+ * positioned transfer, found by the record's own address, published through
+ * `wf_sched_complete`, and waited for on the ring's own park.
  */
 #if defined(__linux__)
 
@@ -752,149 +753,195 @@ int main(int argc, char **argv) {
 
 #elif defined(_WIN32)
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0602
+#endif
+
 #include "native_contract.h"
 #include "windows_iocp.h"
+#include "../sched/core.h"
 
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
-struct wf_completion_runtime {
-    unsigned publications;
-};
+#define PROBE_CHECK(condition)                                                \
+    do {                                                                      \
+        if (!(condition)) {                                                   \
+            (void)fprintf(                                                    \
+                stderr,                                                       \
+                "native adapter probe failed: %s:%d: %s\n",                   \
+                __FILE__,                                                     \
+                __LINE__,                                                     \
+                #condition                                                    \
+            );                                                                \
+            return 1;                                                         \
+        }                                                                     \
+    } while (0)
 
-static unsigned probe_descriptor_lease_releases;
+/* The bridge's three parts of the runtime, supplied here because this probe
+ * links no bridge on purpose, exactly as the Linux arm above supplies them:
+ * `wf_completion_record_complete` is the one publication, and the three
+ * `wf__sched_host_*` hooks are design section 7's platform item 2 -- one wait
+ * and wake primitive -- bound to this probe's own runtime and port. */
+static wf_sched_core probe_core;
+static wf_completion_runtime *probe_runtime;
+static wf_windows_iocp_adapter *probe_adapter;
 
-void wf__windows_completion_descriptor_lease_release(
-    wf_windows_descriptor_lease *lease
-) {
-    if (lease == NULL || lease->descriptor != 17 || lease->generation != 1
-        || lease->handle == NULL || lease->handle == INVALID_HANDLE_VALUE
-        || lease->completion_owner == NULL
-        || lease->descriptor_class != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
-        || lease->mode != WF_WINDOWS_DESCRIPTOR_LEASE_SHARED) {
-        abort();
+void wf_completion_record_complete(wf_completion_record *record) {
+    wf_sched_complete(&probe_core, &record->sched);
+}
+
+int wf__sched_host_epoch(uint64_t *epoch) {
+    if (probe_runtime == NULL) {
+        return 0;
     }
-    probe_descriptor_lease_releases += 1;
-    memset(lease, 0, sizeof(*lease));
+    *epoch = wf_completion_wake_epoch(probe_runtime);
+    return 1;
 }
 
-enum wf_completion_transition_result wf_completion_begin_submit(
-    wf_completion_runtime *runtime,
-    wf_completion_token token
-) {
-    (void)runtime;
-    (void)token;
-    return WF_COMPLETION_TRANSITIONED;
-}
-
-enum wf_completion_transition_result wf_completion_mark_wait_capacity(
-    wf_completion_runtime *runtime,
-    wf_completion_token token
-) {
-    (void)runtime;
-    (void)token;
-    return WF_COMPLETION_TRANSITIONED;
-}
-
-enum wf_completion_transition_result wf_completion_target_accepted(
-    wf_completion_runtime *runtime,
-    wf_completion_token token
-) {
-    (void)runtime;
-    (void)token;
-    return WF_COMPLETION_TRANSITIONED;
-}
-
-enum wf_completion_publish_result wf_completion_publish_terminal(
-    wf_completion_runtime *runtime,
-    wf_completion_token token,
-    const wf_completion_publication *publication
-) {
-    (void)token;
-    if (publication == NULL
-        || publication->milestones != WF_COMPLETION_OWNERSHIP_COMPLETE) {
-        return WF_COMPLETION_PUBLISH_INVALID_ARGUMENT;
+int wf__sched_host_park(uint64_t observed) {
+    if (probe_runtime == NULL || probe_adapter == NULL) {
+        return 0;
     }
-    runtime->publications += 1;
-    return WF_COMPLETION_PUBLISHED;
+    (void)wf_windows_iocp_park(probe_adapter, observed, UINT32_MAX);
+    return 1;
 }
 
-void wf_completion_notify_capacity(wf_completion_runtime *runtime) {
-    (void)runtime;
+int wf__sched_host_wake(void) {
+    if (probe_runtime == NULL) {
+        return 0;
+    }
+    wf_completion_notify_target(probe_runtime);
+    return 1;
+}
+
+static unsigned probe_state(const wf_completion_record *record) {
+    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE);
 }
 
 int main(int argc, char **argv) {
-    wf_completion_runtime runtime = {0};
+    wf_completion_runtime runtime;
+    wf_windows_iocp_adapter adapter;
+    wf_completion_record record;
     wf_completion_target_contract contract = wf_completion_target_contract_for(
         WF_TARGET_WINDOWS_IOCP
     );
-    wf_windows_iocp_adapter adapter;
-    wf_windows_iocp_entry entries[2];
-    wf_windows_iocp_file file;
-    wf_windows_file_request request;
-    wf_completion_token token = {.slot = 0, .generation = 1};
-    const unsigned char bytes[4] = {'i', 'o', 'c', 'p'};
-    size_t published = 0;
+    const unsigned char written[4] = {'i', 'o', 'c', 'p'};
+    unsigned char read_back[4];
     HANDLE handle;
+    DWORD transferred = 0;
+    WCHAR path[MAX_PATH];
+    int index;
 
     if (argc != 2) {
         return 2;
     }
-    if (contract.implemented != 1
-        || contract.native_completion != 1
-        || contract.may_use_blocking_helpers != 0
-        || contract.supports_scheduler_progress != 1) {
-        return 8;
+    PROBE_CHECK(contract.implemented == 1);
+    PROBE_CHECK(contract.native_completion == 1);
+    PROBE_CHECK(contract.may_use_blocking_helpers == 0);
+    PROBE_CHECK(contract.supports_scheduler_progress == 1);
+
+    for (index = 0; index < MAX_PATH && argv[1][index] != 0; ++index) {
+        path[index] = (WCHAR)(unsigned char)argv[1][index];
     }
-    memset(entries, 0xa5, sizeof(entries));
-    if (wf_windows_iocp_init(&adapter, &runtime, entries, 2, 0, 0) != 0) {
-        return 3;
+    PROBE_CHECK(index < MAX_PATH);
+    path[index] = 0;
+
+    PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
+    probe_runtime = &runtime;
+    PROBE_CHECK(wf_windows_iocp_init(&adapter, &runtime, 0) == 0);
+    probe_adapter = &adapter;
+    PROBE_CHECK(
+        wf_completion_set_wake_callback(
+            &runtime,
+            wf_windows_iocp_notify,
+            &adapter
+        ) == 0
+    );
+
+    /* The fixture is written first, through a synchronous handle of its own,
+     * and only then opened for overlapped reading: the handle the port takes
+     * is the one this probe submits on. */
+    {
+        HANDLE writer = CreateFileW(
+            path,
+            GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            NULL,
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        PROBE_CHECK(writer != INVALID_HANDLE_VALUE);
+        PROBE_CHECK(
+            WriteFile(writer, written, sizeof(written), &transferred, NULL)
+                != FALSE
+            && transferred == (DWORD)sizeof(written)
+        );
+        PROBE_CHECK(FlushFileBuffers(writer) != FALSE);
+        PROBE_CHECK(CloseHandle(writer) != FALSE);
     }
-    handle = CreateFileA(
-        argv[1],
-        GENERIC_READ | GENERIC_WRITE,
-        0,
+    handle = CreateFileW(
+        path,
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         NULL,
-        CREATE_ALWAYS,
+        OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
         NULL
     );
-    if (handle == INVALID_HANDLE_VALUE
-        || wf_windows_iocp_associate_file(&adapter, handle, &file) != 0) {
-        return 4;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_WINDOWS_FILE_WRITE_AT;
-    request.file = file;
-    request.lease.descriptor = 17;
-    request.lease.generation = 1;
-    request.lease.handle = handle;
-    request.lease.completion_owner = &adapter;
-    request.lease.descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE;
-    request.lease.mode = WF_WINDOWS_DESCRIPTOR_LEASE_SHARED;
-    request.buffer.write_buffer = bytes;
-    request.count = sizeof(bytes);
-    request.offset = 0;
-    if (wf_windows_iocp_submit(&adapter, token, &request)
-        != WF_WINDOWS_IOCP_TARGET_OWNS) {
-        return 5;
-    }
-    while (published == 0) {
-        if (wf_windows_iocp_progress(&adapter, 1, INFINITE, &published) != 0) {
-            return 6;
+    PROBE_CHECK(handle != INVALID_HANDLE_VALUE);
+    PROBE_CHECK(wf_windows_iocp_associate(&adapter, handle) == 0);
+
+    memset(&record, 0, sizeof(record));
+    memset(read_back, 0, sizeof(read_back));
+    wf_sched_record_init(&record.sched);
+    record.request.kind = WF_FILE_PREAD;
+    record.request.operation.pread.descriptor = 0;
+    record.request.operation.pread.buffer = read_back;
+    record.request.operation.pread.count = sizeof(read_back);
+    record.request.operation.pread.offset = 0;
+    record.opened_descriptor = -1;
+    PROBE_CHECK(wf_windows_iocp_carries(&record) != 0);
+    PROBE_CHECK(
+        wf_windows_iocp_submit(&adapter, &record, handle)
+            == WF_WINDOWS_IOCP_TARGET_OWNS
+    );
+
+    /* The in-place wait: read the record, make one non-blocking pass, and only
+     * then sleep on the port.  A read the kernel answered synchronously is
+     * already published by the submit above and never reaches the park. */
+    for (;;) {
+        uint64_t epoch;
+        size_t published = 0;
+        if (probe_state(&record) == WF_SCHED_DONE) {
+            break;
         }
+        epoch = wf_completion_wake_epoch(&runtime);
+        PROBE_CHECK(wf_windows_iocp_progress(&adapter, 4u, &published) == 0);
+        if (published != 0 || probe_state(&record) == WF_SCHED_DONE) {
+            continue;
+        }
+        PROBE_CHECK(wf_windows_iocp_park(&adapter, epoch, UINT32_MAX) == 0);
     }
-    if (runtime.publications != 1
-        || probe_descriptor_lease_releases != 1
-        || entries[0].lease.generation != 0
-        || entries[1].lease.generation != 0
-        || wf_windows_iocp_destroy(&adapter) != 0
-        || CloseHandle(handle) == FALSE) {
-        return 7;
-    }
-    printf("native-adapter-probe target=windows-iocp status=pass\n");
+
+    PROBE_CHECK(record.result.kind == WF_FILE_PREAD);
+    PROBE_CHECK(record.result.error_code == 0);
+    PROBE_CHECK(record.result.value == (int64_t)sizeof(written));
+    PROBE_CHECK(memcmp(read_back, written, sizeof(written)) == 0);
+    PROBE_CHECK(wf_windows_iocp_in_flight(&adapter) == 0);
+    PROBE_CHECK(wf_windows_iocp_progress_error(&adapter) == 0);
+    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0);
+    probe_adapter = NULL;
+    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    probe_runtime = NULL;
+    PROBE_CHECK(CloseHandle(handle) != FALSE);
+    (void)printf("native-adapter-probe target=windows-iocp status=pass\n");
     return 0;
 }
 

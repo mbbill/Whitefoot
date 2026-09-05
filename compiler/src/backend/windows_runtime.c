@@ -12,7 +12,6 @@
 #endif
 
 #include "windows_runtime.h"
-#include "completion/windows_completion.h"
 
 #include <windows.h>
 #include <winternl.h>
@@ -193,6 +192,153 @@ static int wf_windows_nt_success(NTSTATUS status) {
 
 static int wf_windows_handle_valid(HANDLE handle) {
     return handle != NULL && handle != INVALID_HANDLE_VALUE;
+}
+
+/* ------------------------------------------------ the descriptor registry */
+
+/* What this runtime remembers about the descriptors it produced: the resource
+ * class each one became, and whether the completion port has taken its handle.
+ *
+ * This is all that is left of the descriptor ledger the deleted bounded pool
+ * needed, and `windows_runtime.h` says beside the declarations why each of the
+ * two facts has a reader that cannot do without it and why nothing else does.
+ * The table is indexed by descriptor and grows; it is never shrunk, because a
+ * descriptor number the host reuses reuses its row.
+ *
+ * The lock is exclusive for every operation.  These are startup-rate calls --
+ * one per open, one per close, one per first submission on a descriptor -- and
+ * a reader-writer split would buy nothing measurable at that rate. */
+typedef struct wf_windows_descriptor_row {
+    unsigned descriptor_class;
+    unsigned port_associated;
+    unsigned present;
+} wf_windows_descriptor_row;
+
+static SRWLOCK wf_windows_registry_lock = SRWLOCK_INIT;
+static wf_windows_descriptor_row *wf_windows_registry;
+static size_t wf_windows_registry_capacity;
+
+static int wf_windows_registry_grow(size_t required) {
+    wf_windows_descriptor_row *grown;
+    size_t capacity;
+    if (required <= wf_windows_registry_capacity) {
+        return 1;
+    }
+    capacity = wf_windows_registry_capacity == 0 ? 64u : wf_windows_registry_capacity;
+    while (capacity < required && capacity <= SIZE_MAX / 2u) {
+        capacity *= 2u;
+    }
+    if (capacity < required
+        || capacity > SIZE_MAX / sizeof(*wf_windows_registry)) {
+        return 0;
+    }
+    grown = wf_windows_registry == NULL
+        ? (wf_windows_descriptor_row *)HeapAlloc(
+              GetProcessHeap(),
+              HEAP_ZERO_MEMORY,
+              capacity * sizeof(*wf_windows_registry)
+          )
+        : (wf_windows_descriptor_row *)HeapReAlloc(
+              GetProcessHeap(),
+              HEAP_ZERO_MEMORY,
+              wf_windows_registry,
+              capacity * sizeof(*wf_windows_registry)
+          );
+    if (grown == NULL) {
+        return 0;
+    }
+    wf_windows_registry = grown;
+    wf_windows_registry_capacity = capacity;
+    return 1;
+}
+
+HANDLE wf__windows_completion_descriptor_handle(int descriptor) {
+    intptr_t native = descriptor < 0 ? -1 : _get_osfhandle(descriptor);
+    return native == -1 ? INVALID_HANDLE_VALUE : (HANDLE)native;
+}
+
+int wf__windows_completion_register_descriptor(
+    int descriptor,
+    unsigned descriptor_class
+) {
+    if (descriptor < 0
+        || !wf_windows_handle_valid(
+               wf__windows_completion_descriptor_handle(descriptor)
+           )) {
+        return ERROR_INVALID_HANDLE;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if (!wf_windows_registry_grow((size_t)descriptor + 1u)) {
+        ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+    wf_windows_registry[descriptor].descriptor_class = descriptor_class;
+    wf_windows_registry[descriptor].port_associated = 0u;
+    wf_windows_registry[descriptor].present = 1u;
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+    return 0;
+}
+
+int wf__windows_completion_descriptor_state(
+    int descriptor,
+    unsigned *descriptor_class,
+    unsigned *port_associated
+) {
+    int present = 0;
+    if (descriptor_class != NULL) {
+        *descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+    }
+    if (port_associated != NULL) {
+        *port_associated = 0u;
+    }
+    if (descriptor < 0) {
+        return 0;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if ((size_t)descriptor < wf_windows_registry_capacity
+        && wf_windows_registry[descriptor].present != 0u) {
+        present = 1;
+        if (descriptor_class != NULL) {
+            *descriptor_class = wf_windows_registry[descriptor].descriptor_class;
+        }
+        if (port_associated != NULL) {
+            *port_associated = wf_windows_registry[descriptor].port_associated;
+        }
+    }
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+    return present;
+}
+
+void wf__windows_completion_note_port_association(
+    int descriptor,
+    unsigned descriptor_class
+) {
+    if (descriptor < 0) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if (wf_windows_registry_grow((size_t)descriptor + 1u)) {
+        if (wf_windows_registry[descriptor].present == 0u) {
+            wf_windows_registry[descriptor].descriptor_class = descriptor_class;
+            wf_windows_registry[descriptor].present = 1u;
+        }
+        wf_windows_registry[descriptor].port_associated = 1u;
+    }
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+}
+
+void wf__windows_completion_forget_descriptor(int descriptor) {
+    if (descriptor < 0) {
+        return;
+    }
+    AcquireSRWLockExclusive(&wf_windows_registry_lock);
+    if ((size_t)descriptor < wf_windows_registry_capacity) {
+        wf_windows_registry[descriptor].descriptor_class =
+            WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+        wf_windows_registry[descriptor].port_associated = 0u;
+        wf_windows_registry[descriptor].present = 0u;
+    }
+    ReleaseSRWLockExclusive(&wf_windows_registry_lock);
 }
 
 static int wf_windows_close_provisional_handle(HANDLE *handle) {
@@ -1014,26 +1160,26 @@ int64_t wf__windows_directory_batch(
     uint64_t count,
     int64_t *position
 ) {
-    wf_windows_descriptor_lease lease;
-    int64_t result;
+    unsigned descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+    HANDLE handle;
     if (count == 0) {
         return 0;
     }
-    if (!wf__windows_completion_descriptor_lease_acquire(
-            descriptor,
-            WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE,
-            WF_WINDOWS_DESCRIPTOR_LEASE_SERIAL,
-            &lease
-        )) {
+    handle = wf__windows_completion_descriptor_handle(descriptor);
+    if (!wf_windows_handle_valid(handle)
+        || !wf__windows_completion_descriptor_state(
+               descriptor,
+               &descriptor_class,
+               NULL
+           )
+        || descriptor_class != WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE) {
         wf_windows_record_error(ERROR_INVALID_HANDLE);
         return -1;
     }
-    result = wf__windows_completion_directory_next_worker(
-        lease.handle,
+    return wf__windows_completion_directory_next_worker(
+        handle,
         buffer,
         count,
         position
     );
-    wf__windows_completion_descriptor_lease_release(&lease);
-    return result;
 }

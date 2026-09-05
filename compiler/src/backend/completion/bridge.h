@@ -7,36 +7,6 @@
 extern "C" {
 #endif
 
-#if defined(_WIN32)
-/* The writer-frame ready queue, which POSIX retires here and Windows has not
- * yet (`research/investigations/io-model/PARK-ON-MISS.md` §7: its handshake
- * moves to the scheduler core's stack park, and both writer schedulers go with
- * both parallel runtimes).  The Windows twins -- `windows_bridge.c` and
- * `writer_scheduler_windows.c` -- are ported as shared code in a later step
- * and still name this ABI, so its declarations stay here, behind the platform
- * test, rather than in a header of their own that no POSIX link would have a
- * use for.  Nothing outside `#if defined(_WIN32)` may name any of it. */
-typedef void (*wf__writer_resume_fn)(void *frame);
-
-#define WF_WRITER_HEADER_STORAGE_BYTES 64u
-#define WF_WRITER_HEADER_STORAGE_ALIGNMENT 8u
-#define WF_COMPLETION_SLOT_CAPACITY 64u
-#define WF_WRITER_READY_CAPACITY WF_COMPLETION_SLOT_CAPACITY
-
-void wf__writer_frame_init(void *frame);
-void wf__writer_begin_suspend(void *frame, wf__writer_resume_fn resume);
-int wf__writer_commit_suspend(void *frame);
-void wf__writer_cancel_suspend(void *frame);
-void wf__writer_complete(void *frame);
-void wf__writer_scheduler_ready(void *frame);
-int wf__writer_scheduler_help_once(void);
-void wf__writer_scheduler_prepare_lanes(void);
-int wf__writer_is_done(const void *frame);
-uint64_t wf__writer_resume_migrations(void);
-uint64_t wf__writer_resume_count(void);
-void wf__writer_run_root(void *frame);
-#endif
-
 /* How many iterations of one loop the runtime will carry in flight at once,
  * asked once per loop entry and never per iteration.  `span` is the loop's
  * statically known trip count, `slot_bytes` the private storage one in-flight
@@ -171,11 +141,15 @@ uint64_t wf__completion_publications(void);
  * host call this thread was about to make (design §7.1, primitive 7).  It is
  * a throughput fact and never an outcome: the record is published either way. */
 uint64_t wf__completion_inline_executions(void);
-uint64_t wf__completion_linux_io_uring_submissions(void);
-/* `io_uring_enter` calls that carried staged submissions to the kernel.  The
- * doorbell is deferred, so this is far below the submission count and the
- * distance between them is what deferring bought. */
-uint64_t wf__completion_linux_io_uring_submission_enters(void);
+/* Operations the platform's kernel completion ring carried: io_uring on
+ * Linux, the completion port on Windows, and none on a target with neither.
+ * One name, because a link has one ring. */
+uint64_t wf__completion_native_ring_submissions(void);
+/* Calls that carried staged submissions to the kernel, where the ring defers
+ * its doorbell.  `io_uring` does, so this is far below the submission count and
+ * the distance between them is what deferring bought; a ring that carries each
+ * request inside the call that issues it answers zero. */
+uint64_t wf__completion_native_ring_submission_enters(void);
 
 #if defined(__cplusplus)
 }

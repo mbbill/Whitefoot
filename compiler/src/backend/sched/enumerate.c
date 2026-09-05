@@ -937,7 +937,15 @@ void wf_prim_switch(void **save, void *load) {
     wf_switch_raw(save, load);
 }
 
-void *wf_prim_prepare_stack(void *top, void (*entry)(void *), void *argument) {
+void *wf_prim_prepare_stack(
+    void *top,
+    size_t bytes,
+    void (*entry)(void *),
+    void *argument
+) {
+    /* The enumerator's stacks are the host's, so the slot *is* the stack and
+     * its size is not needed to prepare a frame at its top. */
+    (void)bytes;
     return wf_switch_prepare(top, entry, argument);
 }
 
