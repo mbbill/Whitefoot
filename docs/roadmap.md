@@ -94,6 +94,23 @@ certificate, and a domain discharged by the finite L0 or affine-clause route
 publishes nothing. The evidence that selected it is in
 `research/investigations/binary-arithmetic/`.
 
+v0.46 adds and retires no rule (136 remain) and amends [FN-8], [ENT-3] and
+[ENT-6] in place. Three sentences move together because none is useful alone.
+[FN-8] admits exact addition, subtraction and multiplication in a clause and
+reads them over the mathematical integers, the carve-out [INV-1] already gives
+an `affine_expr`; a clause is erased before lowering and evaluates nothing, so
+a row total over the mathematical integers states a relation where it would
+otherwise request an operation. Division, remainder, negation, absolute value
+and the shifts stay inadmissible. [ENT-3] makes a measure term an affine atom,
+one per measured place, identified by its root binding and tightened by the
+L0-to-affine index, which is the admission v0.44 recorded as deferred. And
+[ENT-6]'s affine route discharges a comparison goal whose normalization is
+affine whether or not it also projects to L0, the projection being what the
+evidence names rather than what the route requires. Together they make
+`requires len(out) >= 2 * len(src)` — the precondition of every expansion
+codec — writable and dischargeable; each alone leaves it refused. The evidence
+is in `research/investigations/binary-arithmetic/`.
+
 ## How to read this outline
 
 This file is the owner-facing map of Whitefoot's live directions. It answers:

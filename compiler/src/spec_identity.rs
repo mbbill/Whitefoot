@@ -10,14 +10,14 @@
 //! scalar here or at a consumer.
 
 /// Version token on the embedded specification's title line.
-pub const SPEC_VERSION: &str = "v0.45";
+pub const SPEC_VERSION: &str = "v0.46";
 
 /// Lowercase SHA-256 hex of the embedded specification bytes.
 pub const SPEC_SHA256_HEX: &str =
-    "07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd";
+    "b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65";
 
 /// Number of `ACTIVE-SPEC:` records in the embedded activation chain.
-pub const ACTIVATION_CHAIN_LENGTH: usize = 37;
+pub const ACTIVATION_CHAIN_LENGTH: usize = 38;
 
 /// Number of bracketed rule definitions in the embedded specification.
 pub const RULE_COUNT: usize = 136;

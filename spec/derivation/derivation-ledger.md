@@ -4,7 +4,7 @@ The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
 are the chain tail in `governance/APPROVALS.md`; each superseded version is
-archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.45 amendments
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.46 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -14,7 +14,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 through v0.45 amendments below and the active
+the v0.40 through v0.46 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -23,6 +23,11 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
+**v0.46 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.46 adds and retires no rule and moves no row's status. It
+amends [FN-8], [ENT-3] and [ENT-6] in place, so every derivation status
+carries over from v0.45 and the v0.46 amendment below binds the changed
+sentences.)
 **v0.45 statistics: 81 derived · 55 existence-only · 0 underived**
 (136 rules: v0.45 adds and retires no rule and moves no row's status. It
 amends [ENT-3] and [ENT-6] in place, so every derivation status carries over
@@ -1917,3 +1922,23 @@ statistics line above is v0.44's unchanged.
 | Amendment | Statement | Status | Derivation | Open |
 | --- | --- | --- | --- | --- |
 | ENT-6 / ENT-3.S14 | The fixed interval-product rule publishes the constant interval its four endpoint products bound, established by S14 on the value the admitted multiplication binds | 🟢 derived | Derived from ENT-1's own fact-source sentence read against what the rule already computes. ENT-6 proves an inclusive interval for each operand and forms the four endpoint products, and the multiplication is admitted exactly when all four lie in the result type; the least and greatest of those same four products therefore bound the value the operation produced, on the same premises, at the same point, with no further derivation. Withholding them was not a soundness boundary but a publication choice, and it is the choice R4 forbids: the shift-left ladder ranks a static rejection above a runtime check, and a writer whose admitted product carries no bound must hand the checker back the identical interval as an executed guard, which is a runtime branch standing in for a fact the compiler had already proved. P0 reads the same way — that guard is an emitted comparison and an unreachable arm on the hottest index path there is. Soundness is the ordinary ENT-5 rule rather than a new one: the published relations name only the bound value and the distinguished zero term, so their support is the bound value alone, which is what they mean — they describe a value already produced, so a write to an operand leaves them true and a write to the bound place kills them. The bound value never aliases an operand because a `let` binder is fresh and a commit value is compiler-owned [ENT-2]. Monotonicity is preserved in the permitted direction: the amendment only establishes facts, and no admission condition anywhere reads whether this source fired. | Registered: S14 states a constant interval, so it reaches an operand bounded by constants and not a bound relative to another runtime value — `p * n <= (k - 1) * n` with runtime `k` stays outside it, because the interval of `p < k` is the type range. That family is what a written non-literal `use` multiplier would reach, and no rule in this version admits one. |
+
+## v0.46 amendment — a stated relation and the atom that discharges it (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.46, at
+SHA-256 `b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65`,
+superseding v0.45
+(`07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd`), whose
+bytes are archived at `spec/kernel-spec-v0.45.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [FN-8], [ENT-3] and
+[ENT-6] in place. No row's status moves, so the statistics line above is
+v0.45's unchanged.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| FN-8 clause rows | Exact addition, subtraction and multiplication are admitted in a clause and read over the mathematical integers; every other exact row stays inadmissible | 🟢 derived | Derived from what a clause is. FN-9 erases every clause before lowering, so a clause evaluates nothing and requests no operation; the ban existed because a clause is runtime-typed while an `affine_expr` is not, and [INV-1] already carries the carve-out that difference calls for. The three admitted rows are exactly those total over the mathematical integers, so reading them mathematically is a statement about values rather than a partial operation with no obligation to discharge. Division, remainder, negation, absolute value and the shifts are excluded by the same criterion, each having an input its own relation cannot state its way out of. R1 supplies the necessity: without this a size precondition is unwritable, so an expansion function's caller cannot be held to anything the function actually needs. | Registered: the arity of `clause_expr` is unchanged, so a relation still carries one operator and a second is written through a `contract_define`. |
+| ENT-3 measure atom | A measure term is an affine atom: one atom per measured place, identified by that place's root binding, minted at its full u64 range, with the L0-to-affine index ranging over measure terms | 🟢 derived | This is the admission v0.44 recorded as DEFERRED, taken on the evidence that named it. Soundness is [ENT-5]'s own support rule rather than a new one: a measure is fixed at its object's creation and an element write never moves it, so the atom is stable exactly while the object is, and the write that removes it is the write to the root binding. The join keeps the atom only where every input agrees; a measure is not arithmetic-updated, so there is no spread for a join delta to stand for, and disagreement means a branch replaced the object. Identity by root binding rather than by an interned measure term is what lets a proof read the atom without interning, which keeps the read path free of the mutation the mint needs. | Registered: a measure of a projected place is not this atom and stays an ordinary clause operand; the projected case awaits a program that needs it. |
+| ENT-6 affine route | The affine route discharges a comparison goal whose normalization is affine, whether or not that goal also projects to L0 | 🟢 derived | Derived from what the route proves. The affine target is the goal's own comparison normalized by [ENT-6], so proving the target proves the goal; the L0 projection was a property of the evidence record, not a premise of the proof. Requiring it was sound but incomplete, and the incompleteness was invisible while every affine-provable call goal also had a unit-coefficient projection — which is every such goal a version before this one could state. Without a projection the retained derivation is the affine consequence alone, the shape [ENT-6]'s interval-product rule already uses for its endpoint proofs, so no new evidence kind is introduced. Monotonicity moves in the permitted direction: the change only admits. | Registered: the route now reaches goals no corpus program wrote before this version, so the diagnostic for an unproved affine goal without a projection has no field evidence yet. |

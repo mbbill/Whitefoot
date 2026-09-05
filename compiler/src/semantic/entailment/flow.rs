@@ -201,6 +201,18 @@ struct ProofFlowState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
     values: HashMap<BindingId, AffineForm>,
+    /// The affine atom standing for the measure of each unprojected place
+    /// live at this point, keyed by that place's root binding.
+    ///
+    /// A measure is fixed at its object's creation and an element write never
+    /// moves it [ENT-5], so the atom is stable while the object is: it is
+    /// minted once on first use and re-minted only when a write to that root
+    /// binding removes the entry, exactly as the binding's own image is.
+    /// Facts name the immutable atom and never this map, so a replacement
+    /// value cannot match an image published before the write. Keying on the
+    /// root binding rather than on an interned measure term is what lets a
+    /// read resolve the atom without interning anything.
+    length_values: HashMap<BindingId, AffineForm>,
     /// Every published affine conclusion at this control-flow point. Fact
     /// identity is only the canonical inequality over immutable value images;
     /// evidence is retained solely to explain a selected derivation.
@@ -1378,6 +1390,12 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty: CheckedType::Integer(_),
             }) if projections.is_empty() => state.values.get(root).cloned(),
+            GoalExpression::Operation { row, arguments, .. }
+                if Self::measure_place_root(row, arguments).is_some() =>
+            {
+                let root = Self::measure_place_root(row, arguments)?;
+                state.length_values.get(&root).cloned()
+            }
             GoalExpression::Operation {
                 row:
                     GoalOperation::NumericConversion {
@@ -3379,7 +3397,7 @@ impl Analyzer<'_, '_> {
         }
         self.promote_flow_contradiction(states);
         self.apply_kills_one(&mut states.facts, events);
-        Self::apply_affine_kills(&mut states.affine, events);
+        self.apply_affine_kills(&mut states.affine, events);
         self.invalidate_entry_images(states, events, None);
     }
 
@@ -3477,6 +3495,9 @@ impl Analyzer<'_, '_> {
             .copied()
             .collect::<HashSet<_>>();
         state.values.retain(|binding, _| !exited.contains(binding));
+        state
+            .length_values
+            .retain(|binding, _| !exited.contains(binding));
     }
 
     fn exit_scopes_to(&mut self, states: &mut ProofFlowState, depth: usize) {
@@ -5117,6 +5138,7 @@ impl Analyzer<'_, '_> {
                                     .expect("reached actuals have admitted argument slots"),
                             ),
                         );
+                        self.install_measure_atoms(&goal.root, &mut states.affine);
                         let (disposition, derivation) = self.judge_call_goal(
                             *function,
                             call,
@@ -5328,6 +5350,57 @@ impl Analyzer<'_, '_> {
                     reached,
                 }
             }
+        }
+    }
+
+    /// The root binding of the place one measure operation measures, when
+    /// that place is the whole object rather than a part of it.
+    ///
+    /// A holder is named through `deref` and a value directly, and
+    /// `length_term` already derives which from the binding itself, so both
+    /// spellings key the same measure. A field projection names a different
+    /// object and is not this measure.
+    fn measure_place_root(row: &GoalOperation, arguments: &[GoalExpression]) -> Option<BindingId> {
+        if !matches!(
+            row,
+            GoalOperation::BufferLength { .. } | GoalOperation::SliceLength { .. }
+        ) {
+            return None;
+        }
+        let [GoalExpression::Datum(GoalDatum::Place {
+            root, projections, ..
+        })] = arguments
+        else {
+            return None;
+        };
+        match projections.as_slice() {
+            [] | [GoalProjection::Deref] => Some(*root),
+            _ => None,
+        }
+    }
+
+    /// Mints the stable affine atom for every measure this goal names, so the
+    /// read path can image it without interning anything.
+    ///
+    /// A measure of an unprojected place is one unknown u64 fixed at the
+    /// object's creation [ENT-5]. Installing it here rather than at the read
+    /// is what keeps `affine_goal_value` a pure read: the atom exists before
+    /// the proof runs, and the kill rule removes it when the root binding is
+    /// written, which is what re-mints it.
+    fn install_measure_atoms(&mut self, expression: &GoalExpression, state: &mut AffineFlowState) {
+        match expression {
+            GoalExpression::Operation { row, arguments, .. } => {
+                if let Some(root) = Self::measure_place_root(row, arguments)
+                    && !state.length_values.contains_key(&root)
+                {
+                    let atom = self.new_affine_atom(IntegerType::U64);
+                    state.length_values.insert(root, atom);
+                }
+                for argument in arguments {
+                    self.install_measure_atoms(argument, state);
+                }
+            }
+            GoalExpression::Datum(_) => {}
         }
     }
 
@@ -5596,24 +5669,30 @@ impl Analyzer<'_, '_> {
             };
         }
 
-        if let Some(target) = affine_target
-            && let Some(relation) = self.goals.projection(goal).cloned()
-        {
+        // The affine target is this goal's own comparison, normalized. Proving
+        // it proves the goal, so the L0 projection is what the evidence names,
+        // not what the route needs: a goal that carries a coefficient has no
+        // two-term projection to name and is proved by the consequence alone.
+        if let Some(target) = affine_target {
+            let projection = self.goals.projection(goal).cloned();
             let assumptions = Self::affine_facts(context.affine);
             if let Some(proof) =
                 self.affine_target_proof(target, &assumptions, context.affine, context.facts)
             {
                 let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
-                    relation: Some(Box::new(relation.clone())),
+                    relation: projection.clone().map(Box::new),
                     premises: proof.premises.into_boxed_slice(),
                     parents: proof.parents,
                 });
-                let derivation = self.derivations.intern(DerivationNode::GoalProjection {
-                    goal,
-                    sign: GoalSign::Positive,
-                    relation,
-                    parent: consequence,
-                });
+                let derivation = match projection {
+                    Some(relation) => self.derivations.intern(DerivationNode::GoalProjection {
+                        goal,
+                        sign: GoalSign::Positive,
+                        relation,
+                        parent: consequence,
+                    }),
+                    None => consequence,
+                };
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
                     route: Some(ProofRoute::Affine),
@@ -8238,8 +8317,35 @@ impl Analyzer<'_, '_> {
             };
             values.insert(binding, value);
         }
+        let mut length_values = HashMap::new();
+        // A measure is not arithmetic-updated, so there is no spread for a
+        // join delta to stand for: inputs that disagree disagree because some
+        // branch replaced the object, and the next read mints a new unknown.
+        let mut measures = first
+            .affine
+            .length_values
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        measures.sort_by_key(|binding| binding.0);
+        for binding in measures {
+            let Some(first_value) = first.affine.length_values.get(&binding) else {
+                continue;
+            };
+            if states.iter().skip(1).all(|state| {
+                state
+                    .affine
+                    .length_values
+                    .get(&binding)
+                    .is_some_and(|value| value == first_value)
+            }) {
+                length_values.insert(binding, first_value.clone());
+            }
+        }
+
         AffineFlowState {
             values,
+            length_values,
             facts: self.join_affine_facts(states),
             published_invariants: first
                 .affine
@@ -9440,6 +9546,26 @@ impl Analyzer<'_, '_> {
                 value: values.values[&binding].clone(),
             });
         }
+        // The same bridge for a measure: the L0 state carries the bounds a
+        // creation or a verified contract established on `len(P)`, and this
+        // pairs them with the atom that images it, so an atom minted as an
+        // unknown u64 tightens to what is actually known about the object.
+        let mut measures = values.length_values.keys().copied().collect::<Vec<_>>();
+        measures.sort_by_key(|binding| binding.0);
+        for binding in measures {
+            let term = self.length_term(
+                PlaceTerm {
+                    root: PlaceRoot::Binding(binding),
+                    deref: self.is_holder(binding),
+                    fields: Vec::new(),
+                },
+                None,
+            );
+            candidates.push(AffineL0Candidate {
+                term,
+                value: values.length_values[&binding].clone(),
+            });
+        }
         candidates
     }
 
@@ -9844,8 +9970,17 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn apply_affine_kills(state: &mut AffineFlowState, events: &[KillEvent]) {
+    fn apply_affine_kills(&self, state: &mut AffineFlowState, events: &[KillEvent]) {
         state.values.retain(|binding, _| {
+            !events
+                .iter()
+                .any(|event| Self::affine_event_kills_binding(*binding, event))
+        });
+        // A measure survives every write to the measured object's elements and
+        // dies with a write to its root binding [ENT-5]. Dropping the entry is
+        // what re-mints the atom, so a length read after a replacement is a
+        // new unknown rather than the old one.
+        state.length_values.retain(|binding, _| {
             !events
                 .iter()
                 .any(|event| Self::affine_event_kills_binding(*binding, event))
@@ -9879,7 +10014,7 @@ impl Analyzer<'_, '_> {
                 };
                 let proof_event = self.proof_event(kind, Some(event.source()));
                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
                 prepared.transfer_events.push(proof_event);
             }
@@ -10002,7 +10137,7 @@ impl Analyzer<'_, '_> {
             }
             for event in &target_kills {
                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(
                     state,
                     std::slice::from_ref(event),
@@ -11352,7 +11487,7 @@ impl Analyzer<'_, '_> {
     ) {
         self.promote_flow_contradiction(states);
         self.apply_loop_kills_one(&mut states.facts, kills);
-        Self::apply_affine_kills(&mut states.affine, &kills.events);
+        self.apply_affine_kills(&mut states.affine, &kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {

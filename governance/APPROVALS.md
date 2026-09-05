@@ -2780,3 +2780,58 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   inventories that enumerate [ENT-3]'s sources; those are ordinary compiler
   tests, not conformance content.
 ACTIVE-SPEC: v0.45 07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+
+## 2026-09-05 — merge-time approval content: activate v0.46 (a clause states an affine relation, a measure is an affine atom, and the affine route needs no L0 projection; no rule id added or retired, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.46 at exact SHA-256
+  `b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65`.
+  It supersedes active v0.45 at SHA-256
+  `07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.45.md`. Three sentences move together because none is
+  useful alone. [FN-8] admits exact addition, subtraction, and multiplication
+  in a clause and reads them over the mathematical integers, the carve-out
+  [INV-1] already gives an `affine_expr`; division, remainder, negation,
+  absolute value, and the shifts stay inadmissible. [ENT-3] makes a measure
+  term an affine atom — one atom per measured place, identified by its root
+  binding, with the L0-to-affine index ranging over measure terms — which is
+  the admission v0.44 recorded as DEFERRED and did not take. [ENT-6]'s affine
+  route discharges a comparison goal whose normalization is affine whether or
+  not it also projects to L0, the projection being what the retained evidence
+  names rather than what the route requires. No numbered rule is added or
+  retired, no grammar production or atom changes, and [ENT-3] gains no source.
+- SELECTION GROUND: evidence-selected, recorded in
+  `research/investigations/binary-arithmetic/`. The measured case is
+  `requires len(out) >= 2 * len(src)`, the precondition of every expansion
+  codec, which v0.45 refuses at formation. Each part was built and run alone
+  first: the exact rows alone make the clause form and leave it unprovable at
+  every caller, measured at a call site where the goal reads `8 >= 4 * 2`,
+  because L0 carries no coefficient and the affine layer had no measure atom;
+  the atom alone leaves the route unreachable, because the affine target is
+  built and never consulted for a goal with no L0 projection. With all three
+  the case compiles and discharges. Across 186 constructed probes the accepted
+  set moves by four programs, each a contract the previous version could not
+  state.
+- CONFORMANCE BOUNDARY: this merge modifies one conformance case and adds one;
+  it deletes and renames none, and changes no manifest schema, adapter,
+  runner, or collection wiring.
+  MODIFIED `tests/conformance/cases/fn8-neg-requires-partial-op.wf` and its
+  manifest doc. Before: the case rejected `define incremented = x + 1_i32;`
+  citing FN-8, on the ground that a proof-required exact addition is partial
+  in a clause. After: the case rejects `define halved = x / 2_u64;` citing
+  FN-8, on the ground that exact division is proof-required on an input no
+  relation states its way out of. The case id, its rule list, and its
+  `expect` verdict are unchanged; what moved is the operation that still
+  exercises the rule, because the amendment deliberately admits the row the
+  case previously used. The manifest doc now states which rows the rule keeps
+  and which it releases.
+  ADDED `tests/conformance/cases/fn8-pos-requires-affine-row.wf`, manifest id
+  `fn8-pos-requires-affine-row`, rules FN-8, MSR-5, ENT-3, expect run exit 0:
+  an expansion function states its own size precondition over a measure and a
+  literal factor and the caller discharges it. Rule coverage is 136/136 before
+  and after.
+ACTIVE-SPEC: v0.46 b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65 07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd

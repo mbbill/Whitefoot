@@ -213,7 +213,20 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // domain obligation before emission. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.44 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.45";
+// v0.46 clause-and-measure review (2026-09-05): all three amendments are
+// front-end. FN-8 admits three exact rows in a clause and reads them over the
+// mathematical integers; FN-9 already erases every clause before lowering, so
+// no clause reaches emission whatever row it names. The measure atom lives in
+// the affine proof domain, which ENT-1 erases with the rest of the proof
+// syntax and which owns no storage, address, or runtime read. Widening which
+// goals the affine route may discharge changes acceptance and nothing after
+// it: every emitted partial operation still passes its static domain
+// obligation before emission, and the amendment only admits programs
+// previously refused, whose operations are shapes this mapping already
+// qualifies. No system operation, resource representation, release row,
+// result shape, entry form, or host ABI mapping changes, so the v0.45
+// mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.46";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

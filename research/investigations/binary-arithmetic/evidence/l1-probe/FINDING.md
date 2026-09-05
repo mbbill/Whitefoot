@@ -140,3 +140,52 @@ the L0 bridge — is a place where the atom's identity has to mean the same
 thing. The eight pieces above are a plausible design and they are not
 evidence that the design is right; the case that would be evidence is still
 refused.
+
+---
+
+# Resolved: the gate was the projection, not the substitution
+
+The hypothesis above was wrong and one instrumented run refuted it. Recorded
+here because the wrong guess cost eight speculative edits and the right
+question cost one run.
+
+`admitted_call_goal_expression` leaves the measured operand exactly as
+assumed. Dumping the instantiated goal shows
+
+```
+Operation { Integer{GreaterEqual}, [
+  Operation { BufferLength, [Datum(Place{root: BindingId(1), projections: []})] },
+  Operation { Integer{MultiplyExact}, [
+    Operation { BufferLength, [Datum(Place{root: BindingId(0), projections: []})] },
+    Datum(Literal(2_u64)) ] } ] }
+```
+
+— `projections: []`, so the mint fires and both atoms install
+(`MEASURES [BindingId(0), BindingId(1)]`), and the affine target is built
+correctly as `-1*atom_out + 2*atom_src <= 0`.
+
+The route was never run. `prove_signed` gated it on
+
+```rust
+if let Some(target) = affine_target
+    && let Some(relation) = self.goals.projection(goal).cloned()
+```
+
+so the affine route required the goal to also project to an L0 two-term
+relation. A goal carrying a coefficient has no such projection, so the target
+was built and discarded. Instrumenting `affine_l0_candidates` made this
+visible at once: it was entered four times, all before the goal, all with
+`measures=0`, and never again after the target existed.
+
+The projection is what the retained evidence names, not what the route needs.
+The affine target is the goal's own comparison normalized, so proving it
+proves the goal; without a projection the honest record is the affine
+consequence alone, which is the shape `[ENT-6]`'s interval-product rule
+already uses for its endpoint proofs. Relaxing the gate to record
+`relation: None` when there is no projection is the third part of the
+amendment, and with it the case compiles.
+
+Reading, for next time: three parts were needed and each was independently
+inert. Building one and testing it says nothing, because the failure looks the
+same whichever of the three is missing. What distinguished them was one dump
+of the object in the middle, not another plausible edit at either end.
