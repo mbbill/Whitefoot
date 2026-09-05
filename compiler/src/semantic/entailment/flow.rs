@@ -6049,7 +6049,9 @@ impl Analyzer<'_, '_> {
             // judged under [MSR-4] exactly as every other consumer's is.
             CheckedExpression::KernelCall {
                 operation,
+                row,
                 call,
+                instance,
                 arguments,
                 requirements,
                 ..
@@ -6065,6 +6067,27 @@ impl Analyzer<'_, '_> {
                     .collect::<Option<Vec<_>>>();
                 let mut goal_parents = Vec::with_capacity(requirements.len());
                 let mut goals_ok = actuals_reached;
+                // [BLK-0, OP-9] the acquiring rows carry the allocation-fit
+                // obligation their record notation spells `fits::<T>(count)`.
+                // It is not a term and therefore not a member of the row's
+                // declared requirement list; it is the same object
+                // `buffer_fits::<T>(n)` is, judged by [OP-9]'s own judgment
+                // under [MSR-4], so an undischarged one is the ordinary
+                // static OP-9 rejection.
+                let fits_start = self.obligations.len();
+                if actuals_reached
+                    && let Some(ordinal) = crate::semantic::kernel::kernel_signature(*row).fits
+                    && let Some(count) = arguments.get(ordinal as usize)
+                {
+                    self.judge_allocation_fit(
+                        instance.element,
+                        instance.element_ceiling.stride.allocation_limit(),
+                        count,
+                        call.clone(),
+                        states,
+                    );
+                    goals_ok &= self.obligations_since_discharged(fits_start);
+                }
                 if actuals_reached {
                     for (ordinal, requirement) in requirements.iter().enumerate() {
                         let derivation = self.judge_kernel_requirement(

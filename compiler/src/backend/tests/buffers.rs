@@ -465,15 +465,24 @@ fn compiler_independent_borrowed_pool_tree_executes() {
     assert!(output.stderr.is_empty());
 }
 
+/// The case counts lines, words and bytes over two chunks and combines the
+/// two summaries. It was migrated from `buffer<u8>` to `FixedVector<u8, n>`,
+/// which makes `summarize` a const generic over its chunk length: the two
+/// chunk lengths therefore reach the backend as two monomorphized instances,
+/// each taking its own inline run by value instead of one heap descriptor,
+/// and the whole program allocates nothing. The assertions are those facts.
 #[test]
 fn compiler_independent_wc_chunk_summary_executes() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/x-wc-chunk-summary-run.wf"
     ));
-    let summarize = emitted_function(&llvm, "summarize");
+    let four_bytes = emitted_function(&llvm, "summarize$instance$2");
+    let one_byte = emitted_function(&llvm, "summarize$instance$3");
     let combine = emitted_function(&llvm, "combine");
-    assert!(summarize.starts_with("define internal i8 @wf_summarize(ptr "));
-    assert!(summarize.contains(", { ptr, i64 } "));
+    assert!(four_bytes.starts_with("define internal i8 @wf_summarize$instance$2(ptr "));
+    assert!(four_bytes.contains(", { [4 x i8], i64, i64 } "));
+    assert!(one_byte.starts_with("define internal i8 @wf_summarize$instance$3(ptr "));
+    assert!(one_byte.contains(", { [1 x i8], i64, i64 } "));
     assert!(combine.starts_with("define internal i8 @wf_combine(ptr "));
     assert_eq!(
         combine
@@ -484,8 +493,8 @@ fn compiler_independent_wc_chunk_summary_executes() {
             .count(),
         3
     );
-    assert_eq!(summarize.matches("call void @free").count(), 1);
-    assert!(!combine.contains("call void @free"));
+    assert!(!llvm.contains("call ptr @malloc"));
+    assert!(!llvm.contains("call void @free"));
 
     let output = compile_and_run(&llvm);
     assert!(output.status.success());

@@ -69,18 +69,36 @@ fn arena_node_emission_uses_the_validated_complete_llvm_type() {
     assert!(output.stderr.is_empty());
 }
 
-/// [STOR-2, STOR-3, STOR-4] the stor4-pos-arena-confined conformance case:
-/// an `arena<'r, i32>` stays within its region, its content reads through
-/// `deref`, and its storage is released at the block exit. Runs to exit 0.
+/// [STOR-2, STOR-3, STOR-4, BLK-2] the stor4-pos-arena-confined conformance
+/// case: a bump extent stays within its region `'r`, a cell taken at it
+/// reads through `deref`, and nothing of it outlives the block. Runs to
+/// exit 0.
+///
+/// The case was migrated from `arena_new::<'r, i32>` to the
+/// `arena_frame`/`arena_box` pair, and that changes what the region exit
+/// carries rather than merely how it is spelled: [BLK-2] lays a reservation
+/// out in the reserving activation's own frame, so the extent contributes no
+/// row to [STOR-3]'s release table and the exit has no release work at all.
+/// The assertion is therefore the reservation itself — one frame slot for the
+/// extent's bytes — together with the absence of any acquisition or release
+/// call. `arena_release_covers_loop_reentry_early_return_and_nested_regions`
+/// below still covers the released store-resident form.
 #[test]
 fn a_confined_arena_allocation_reads_and_releases_with_its_region() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/stor4-pos-arena-confined.wf"
     ));
+    let main = emitted_function(&llvm, "main");
     assert!(
-        llvm.contains("@wf_arena_release"),
-        "the region exit must carry the storage release"
+        main.contains("%wf.frame = alloca { [8 x i8], { ptr, i64 } }, align 8"),
+        "the reservation must lay the extent out in the reserving frame"
     );
+    assert!(
+        !llvm.contains("@wf_arena_release"),
+        "a frame-resident extent has no release action of its own"
+    );
+    assert!(!main.contains("call ptr @malloc"));
+    assert!(!main.contains("call void @free"));
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
