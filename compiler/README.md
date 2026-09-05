@@ -273,10 +273,20 @@ runs. Two stops remain. A proved take whose count is not a closed expression
 stops, because `advance<T>(count)` is then an opaque term with no source
 spelling and its requirement has no difference-bound form a caller could
 discharge; the refusing row is the one for that position. And a run whose
-element type is itself a run stops, explicitly: the element domain is a
-non-recursive flat one, so an element carrying its own descriptor needs a
-representation lift in the checked type, the IR type, the layout ceilings and
-the lowering. A run's element type is otherwise every type [BLK-1] states —
+element type is itself a run of runs stops, explicitly: the element domain
+carries **one** level of lift, so `FixedVector<Vector<'s, u8>, 8>` and
+`FixedVector<FixedVector<u8, 4>, 4>` are represented and a third level is not.
+That one level is real all the way down: `CheckedElement` and `IrElement` are
+the lifted domain, a slot holding a run has that run's own layout in A.1's
+ceilings, the element read and the element store move the whole descriptor, and
+[PROV-6]'s release walk visits the window in ascending logical order before the
+run's own backing is released — a per-run helper the emitter derives, so a run
+of heap-owning elements frees each of them once
+(`tests/programs/block_pool.wf`, `prov6-pos-a-run-visits-its-window-before-its-backing`).
+A formal region a parameter names one level down, in a run's element type, is
+determined by its actual exactly as a top-level one is, which is what makes a
+helper generic over the store of the runs a run holds. A run's element type is
+otherwise every type [BLK-1] states —
 every copy element, one region-free affine nominal stored by value, and a type
 parameter under any of its three bounds, which [FN-2] resolves at every
 concrete instance. Element-position writes into
@@ -305,6 +315,19 @@ that resolves to no binding becomes an ordinary `let` declaration there.
 `tests/programs/arena_workspace.wf` is the store-backed companion: it reserves
 an extent, reads the store's own cursor across each take, fills a taken run and
 observes that a refused take leaves the cursor where it was.
+`tests/programs/block_pool.wf` is 3.L.4's block pool over the lift: eight
+arena-backed runs carved into one frame-resident run of runs, a block leased off
+the back boundary and returned to a free list the callee proved had room, with
+both pool operations generic over the store. It is the pool **without its two
+nominals**, which is what this compiler cannot spell: a source nominal's region
+parameter is a fixed formal region that no call instantiates, so
+`struct BlockPool['s]` declares but no value of it can be built at a caller's
+store, and `linear struct Lease['s]` waits with it. That is the container gap
+this batch leaves, and it is a nominal-generics gap rather than a container one.
+A measure over a subscripted place — `len_of(table[i])`, which [MSR-1] admits
+and [MSR-2] gives its own storage granularity — also stops as an unsupported
+capability, because a measured place is a binding plus field selections here and
+carries no subscript.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 

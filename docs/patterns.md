@@ -1377,6 +1377,44 @@ in.
 Replaces: two functions with two signatures where one body would do, and
 `let limit = ...;`-style workarounds for a bound a declaration could not state.
 
+## P28. Take a run out of a run before you read it
+
+A run's element type may itself be a run — `FixedVector<Vector<'s, u8>, 8>` is
+a free list of eight store-backed blocks, and `FixedVector<FixedVector<u8, 4>,
+4>` is a fixed grid — and the slot holds the element run's complete
+representation, its descriptor words included.
+
+An element that is a run is **affine**, and that decides how you read one:
+
+```whitefoot
+let (rest, block) = take_back(vector: move free);   // the element comes out
+let width = cap_of(block);                          // and is read there
+let back = place_back(vector: move rest, value: move block);
+```
+
+A bare `free[0_u64]` is [OWN-1]'s ordinary refusal at an affine element, exactly
+as it is for any other affine element type, so the two routes are the boundary
+rows [BLK-3] and the element-position exchange `let old = replace free[i] = e;`
+[SET-2]. Reach for `take_back` and `place_back` first: a free list is used at
+one end, and the pair is total under `room_of > 0` and `len_of > 0`.
+
+A helper over such a run is generic over the store the *elements* live in, and
+[FORM-8] writes that region nowhere at the call: the parameter type names it one
+level down, in the element position, and the actual determines it.
+
+```whitefoot
+fn pool_take['s: affine](free: own FixedVector<Vector<'s, u8>, 8>)
+    -> (rest: own FixedVector<Vector<'s, u8>, 8>, leased: own Option<Vector<'s, u8>>)
+```
+
+Two limits are worth knowing before you design around them. One level is what
+exists: a run of runs of runs is an unsupported capability. And a measure of an
+element — `len_of(free[i])` — is not writable yet, so a figure you need about
+an element is read after you have taken it out, or carried beside the run.
+
+Replaces: an `Option<T>` slot array standing in for a run of runs, and a
+parallel array of lengths beside a run of buffers.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph

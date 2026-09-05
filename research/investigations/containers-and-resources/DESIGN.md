@@ -856,6 +856,20 @@ change — `len_of(table[i])` is a term, so a run of runs has provable operation
 why [MSR-2]'s granularity and [CALL-3]'s classification are stated over **storage**
 rather than over the word *element*.
 
+> **Correction, decided 2026-09-05, from B7a6's implementation: the subscript admission is
+> still unexercised, and now for one reason and not two.** 6.0k recorded `len_of(P[i])` as
+> waiting on the representation of a run of runs. That representation landed [BLK-1], and
+> the term still does not: a measured place is a **binding plus field selections** in the
+> compiler — `CheckedContainerRoot` is a `BindingId` and a `Vec<u32>` — and the same shape
+> is what [MSR-2]'s support, [OWN-7]'s overlap and [ENT-5]'s kill are all keyed on, so
+> admitting a subscript there is a change to the place model of the proof engine and not to
+> the container half. `len_of(table[i])` is an explicit unsupported capability today, at the
+> measure former's own operand. **The two are independent** and this is the batch that
+> proved it: the lift made a run of runs representable, and every one of [MSR-1]'s
+> subscript admission, [MSR-2]'s element-position granularity at that depth, [LIV-2]
+> condition 2 over `grid[i][j]`, and B4's affine element read-out is the *other* change,
+> which is one change and not four.
+
 *Judgment:* the [OP-4] admission above at every subscripted measure place; the
 injectivity sentence is a definition proved by `len_of <= cap_of`, which [MSR-2] publishes as a
 standing fact. *Publishes:* the four terms, the logical coordinate system, the
@@ -1643,6 +1657,23 @@ release on a full container needs no emptiness premise.
 > which is also what the compiler now emits, in place of the explicit worklist that
 > existed only to keep that depth off the machine stack.
 
+> **Correction, decided 2026-09-05, from B7a6's implementation: the run half of the walk
+> is emitted, and the run's own backing action is where this sentence says it is.** Until
+> this batch a run whose element derived any release action was an internal
+> `InvalidIr` — the emitter checked for one and refused rather than walking. It walks now:
+> one helper per run type whose window can hold such an element, over the window and not
+> over the capacity (a slot outside the window is raw [BLK-1] and reading it would be an
+> uninitialized read), in ascending **logical** order at `(head_of + i) mod cap_of`, and
+> the run's own backing release is emitted **after** the loop, which is what this
+> sentence's ordering means at the instruction level. Both backings are empty in this
+> version — a frame-resident run reclaims none of its own storage and a bump extent's run
+> is reclaimed by the region reset — so `heap_vector`'s free lands in a place that already
+> exists rather than one a later batch has to find. The predicate that decides whether a
+> run needs a release at all is its **release class** and no longer the bare fact of being
+> store-resident: an extent-backed `Vector<'s, u8>` derives nothing, which is what lets
+> 3.L.4's pool hold eight of them in one frame-resident run and emit no release code at
+> all.
+
 **`dispose p;` is the early release, and it names no capability.** **[S12]** One added
 statement form, admitted exactly where the value is affine in this scope, running the
 same walk the scope exit would run:
@@ -1953,6 +1984,24 @@ elements, so it is linear there too and the release walk visits its window.
 > unbounded. The admission is over the parameter, not over its bound — a run's element type
 > is any nameable type under any of the three bounds — and nothing else changes, because a
 > symbolic element is erased at every concrete instance [FN-2] and reaches no layout.
+
+> **Correction, decided 2026-09-05, from B7a6's implementation: a slot holding a run, at
+> one level.** The rule says *any nameable type* and 6.0k recorded that a run of runs was
+> the one such type the compiler could not represent. It can now, one level up: a slot may
+> hold a `FixedVector<T, n>` or a `Vector<'s, T>` whose own element is flat, which is
+> exactly the two shapes this design needs — `FixedVector<Vector<'s, u8>, 8>` for 3.L.4's
+> pool and `FixedVector<FixedVector<u8, 4>, 4>` for a fixed grid. Nothing about the rule
+> changes; what changes is that the element domain is a lift rather than the flat one, so
+> the slot carries the element run's **complete representation** — a `FixedVector`'s slots
+> and two descriptor words inline, a `Vector`'s four-word descriptor — and A.1's ceiling for
+> such a slot is that type's own. **The third level is not represented**: a run of runs of
+> runs is an explicit unsupported capability, because an arbitrarily deep element needs
+> either an interned element table travelling with the checked program or a boxed element
+> that costs every checked type its `Copy`, and no program this design writes asks for one.
+> One consequence is worth stating where a writer meets it: **an element that is a run is
+> affine**, so a bare `v[i]` read of one is [OWN-1]'s ordinary refusal and the element
+> leaves the window through a boundary row [BLK-3] or an element-position `replace`
+> [SET-2].
 
 *Judgment:* the ordinary nominal-resolution and construction judgments; a `construct`
 naming a container nominal is a hard error citing BLK-1; [OP-4] at every subscript against
@@ -2424,6 +2473,17 @@ undefined at the two shapes its own repairs created:
 > condition 3 fixes the new binding's type. `rebase<T: affine, const n>` is what needed
 > it: at an affine element type, `let one = ...;` before the loop makes `one` a live
 > affine target the right-hand side does not read out, which is [STOR-1]'s refusal.
+
+> **Correction, decided 2026-09-05, from B7a6's implementation: condition 2's nested
+> subscript is still unexercised, and its blocker is the place model rather than the
+> container.** `grid[k]` against `grid[i][j]` is condition 2's own example and a run of
+> runs is now representable [BLK-1], so the example is spellable as a *type*. It is not
+> spellable as a *target*: a target place carrying a subscript below its first one, and the
+> [OWN-7] overlap that decides it, are the same subscripted-place model [MSR-1]'s
+> `len_of(P[i])` needs, and the compiler's resolved place is a binding plus field
+> selections. B4's affine element read-out — `move v[i]` in the right-hand side of a
+> statement whose target is `v[i]` — waits on the same thing at the same place. One change
+> lands all four, and it is a change to the proof engine's place representation.
 
 Deriving a field-precise footprint from a callee's row would be wrong, because the value
 written back is a whole new value of the target's type.
@@ -4816,6 +4876,32 @@ outside [CALL-7]'s population — neither constructed by this function nor recei
 per lease. That is the honest price of the pool being library data, and 4.1 pays it in
 the open.
 
+> **Correction, decided 2026-09-05, from B7a6's implementation: the pool's mechanism runs,
+> and its two nominals are what wait.** `tests/programs/block_pool.wf` is this section
+> executing over the one-level lift [BLK-1] — eight arena-backed runs carved into one
+> `FixedVector<Vector<'s, u8>, 8>`, a block leased off the back boundary, a block returned
+> to a free list `pool_release` proved had room, and both pool operations generic over the
+> store — with two differences that are not the containers half.
+>
+> **`BlockPool['s]` and `Lease['s]` are not declarable at a caller's store.** [S20] gave a
+> nominal `region_params` and nothing ever instantiated them: a nominal instance is keyed
+> on its type and const arguments alone, so a nominal's region parameter is a fixed formal
+> region and `Chunk(page: move page)` at an actual region `'a` is a [TYPE-5] mismatch
+> against the formal `'s`. The landed program therefore threads the bare
+> `FixedVector<Vector<'s, u8>, 8>` the struct would have held, and the `linear` wrapper —
+> which is the whole of 3.L.7's must-return argument — waits with the struct. **This is a
+> nominal-generics gap and not a container one**, and it is the same region axis B7a5
+> landed for a function's parameter types.
+>
+> **The proved requirement is discharged by a branch and not by the routed relation.** The
+> paragraph above discharges `requires room_of(pool.free) > 0_u64` from `pool_take`'s
+> `when leased is Some(value: got): room_of(rest.free) >= 1_u64`. That route is [CALL-4]'s
+> DEFERRED per-variant form over a returned enum, so the landed program reads `room_of` and
+> branches at the call site instead — the same dominating branch this paragraph already
+> prices for the block's *capacity*, paid once more for its room. The argument that the
+> proved spelling makes the return unavoidable is unchanged; what is deferred is the
+> premise that makes the branch unnecessary.
+
 ```wf-design
 fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own T)
     -> (rest: own FixedVector<T, n>, unplaced: own Option<T>)
@@ -6740,7 +6826,10 @@ doc says what it now demonstrates. No other corpus verdict moved.
 
 **What this batch did not reach, and what it costs.**
 
-- **Runs of runs did not land, and the block pool depends on them.** A run whose element
+- **Runs of runs did not land, and the block pool depends on them.** *(Superseded by
+  6.0l: the one-level lift this entry priced is what B7a6 landed, and it carried the
+  pool's mechanism; the pool's two nominals turned out to wait on the nominal-generics
+  region axis instead.)* A run whose element
   type is itself a run is still `CompositeValues`. The obstacle is representation and not
   judgment: `CheckedFlatElement` is a non-recursive `Copy` element domain embedded in
   `CheckedType`, so an element that carries a full type — a descriptor included — needs
@@ -6759,6 +6848,97 @@ doc says what it now demonstrates. No other corpus verdict moved.
 - **[S22] and `seq_heap` are unchanged.** Both keep the two blockers 6.0j named, and the
   release class this batch landed removes the second of them for the version that retires
   the `heap` atom.
+
+### 6.0l B7a6 landed (v0.45)
+
+**One naming scheme, one level of lift, and the block pool without its two nominals.**
+This batch had two halves that share no code: the owner's S38 rename, which moves ten
+spellings and nothing else, and the representation lift 6.0k priced, which makes a slot
+able to hold a run.
+
+- **[S38] is in the design, the specification, the compiler and both corpora.** A
+  non-consuming derivation is `X_of(v)` and a consuming transformation is `verb_object`,
+  named after the type it produces or the boundary it moves. `fixed_vector`,
+  `arena_vector`, `arena_vector_proved`, `heap_vector`, `place_back`, `place_front`,
+  `take_back`, `take_front`, and A.2's two view rows `slice_of` and `mut_slice_of` are the
+  new spellings; `arena_frame`, `arena_extent` and the four readers do not move. The nine
+  kernel spellings are declaration records rather than [OP-1] rows, so none enters
+  `ReservedLowerNames` and **no corpus declaration collided with a new one** — the repair
+  B2 and B7a3 each had to make was not needed here. Twenty-five corpus files are respelled
+  and every verdict is unchanged. **One thing the scheme decides that B8 must act on** is
+  recorded in 3.S: `slice_of` is already a live [OP-1] row, so the view half puts two
+  [TYPE-6] domains on one spelling and B8 chooses which keeps it.
+
+- **The one-level lift landed, and it is real through the whole path.** `CheckedElement`
+  and `IrElement` are the element domain: a flat element, or one run of flat elements with
+  its descriptor in the slot. `CheckedType::FixedVector`, `CheckedType::Vector` and both
+  `IrType` twins carry it; A.1's ceiling for such a slot is the element type's own layout,
+  so a `FixedVector<Vector<'s, u8>, 8>` is eight four-word descriptors followed by its own
+  two; the element read and the element store move the whole aggregate; and the release
+  walk is emitted rather than refused. **A third level is not represented** and is an
+  explicit unsupported capability: an arbitrarily deep element needs an interned element
+  table or a boxed element that costs `CheckedType` its `Copy`, and no program in this
+  design asks for one.
+
+- **[PROV-6]'s release walk is emitted, in the order the rule states.** One helper per run
+  type whose window can hold a value deriving a release action, over the window and not the
+  capacity, in ascending logical order at `(head_of + i) mod cap_of`, with the run's own
+  backing released after the loop. Both backings are empty in this version, so
+  `heap_vector`'s free lands in a place that already exists. The predicate that decides
+  whether a run derives anything is now its **release class**: an extent-backed run of flat
+  elements derives nothing, which is what lets the pool hold eight of them and emit no
+  release code at all. `prov6-pos-a-run-visits-its-window-before-its-backing` is the case
+  that runs the walk, over a wrapped window whose origin a front removal moved.
+
+- **A formal region one level down is determined by its actual.** [FORM-8] already said
+  *at any depth of its `type`*; the compiler read only the top level, so a parameter of type
+  `FixedVector<Vector<'s, u8>, 8>` determined nothing and its caller was told to write a
+  region [FORM-8] forbids writing. It reads the element position too now, which is what
+  makes `pool_take` and `pool_release` generic over the store. Where **both** levels name a
+  region — `Vector<'s, Vector<'t, u8>>` — the outer one alone is substituted and the
+  position is the ordinary [TYPE-5] mismatch: fail-closed, and stated as a gap.
+
+- **Two resolver defects the design's own pool exposed.** A nominal's `region_params` [S20]
+  reached no owning declaration, so every nominal in a unit shared one region scope and
+  `Lease['s]` beside `BlockPool['s]` — 3.L.4's own two nominals — was refused twice over,
+  once as an [OWN-3] repeated region and once as a [TYPE-6] redeclaration. A nominal is its
+  own region scope, exactly as a function is; [OWN-3] now says so in one sentence and
+  `own3-pos-two-nominals-name-one-region` holds it.
+
+**The block pool runs, and what it is missing is not the lift.**
+`tests/programs/block_pool.wf` carves eight 256-byte arena-backed runs into one
+`FixedVector<Vector<'a, u8>, 8>`, leases one off the back boundary, and returns it to a
+free list `pool_release` **proved** had room, with both operations generic over the store.
+That is 3.L.4's mechanism entire. What it is missing is 3.L.4's two nominals, and the
+reason is not the containers half at all:
+
+- **A source nominal is not generic over its store.** `struct BlockPool['s]` declares, and
+  its region parameter is a fixed formal region that no call instantiates: a nominal
+  instance is keyed on type and const arguments alone, so `Chunk(page: move page)` at an
+  actual region `'a` is a [TYPE-5] mismatch against the formal `'s`. `linear struct
+  Lease['s]` waits with it. This is the nominal-generics region axis, and it is the same
+  shape B7a5 landed for a function's parameter types; **S20 declared it and nothing ever
+  instantiated it**, which no earlier batch could notice because no program used such a
+  nominal as a type.
+- **The proved release cannot discharge from the checked take.** 3.L.4 discharges
+  `pool_release`'s `requires room_of(pool.free) > 0` from `pool_take`'s own
+  `when leased is Some(value: got): room_of(rest.free) >= 1_u64`. That route is
+  [CALL-4]'s DEFERRED per-variant form over a returned enum, so the program branches on
+  `room_of` at the call site instead — one dominating branch per lease, which is the price
+  the design already names for the block's capacity and now pays for its room as well.
+
+**What did not land, and it is one change and not four.** [MSR-1]'s `len_of(P[i])`,
+[MSR-2]'s element-position kill at that granularity, [LIV-2] condition 2's `grid[k]`
+against `grid[i][j]`, and B4's affine element read-out all wait on the *same* thing, and
+this batch is what proved they are one item rather than four: a measured or targeted place
+is a binding plus field selections in this compiler — and the same shape is what [MSR-2]'s
+support, [OWN-7]'s overlap and [ENT-5]'s kill are keyed on — so admitting a subscript there
+is a change to the proof engine's place representation. The lift removed the container
+half of the blocker and left that one standing, visible on its own.
+
+**Verdicts.** The adapter moves from Pass=605 over 607 cases to Pass=610 over 612, with
+the one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491,
+Flip=0. No corpus verdict moved in either half of the batch.
 
 ### 6.1 What the compiler did in this session
 
@@ -7570,6 +7750,13 @@ publishes `head_of(result) = head_of(vector)` exactly, and only `place_front` an
 
 A `const` of `FixedVector<T, n>` type is element storage only [S34], because its `len_of`
 and `head_of` are standing facts; the descriptor is materialized at each use.
+
+**`T`'s pair is read from this same table when `T` is itself a run** [BLK-1], which is
+what the one-level lift means for layout and needs no row of its own: a slot holding a
+`Vector<'s, u8>` is that type's `(32, 16)`, so `FixedVector<Vector<'s, u8>, 8>` is eight
+descriptors followed by its own two words, and a slot holding a `FixedVector<u8, 4>` is
+that type's own pair. The recursion is one level deep by construction, so the table stays
+finite without a termination argument.
 
 **A `FixedVector`'s descriptor carries `len_of` and `head_of` and not `cap_of`**: `n` is the type
 constant and [MSR-2] already makes it a standing fact with empty support.

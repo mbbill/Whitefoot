@@ -172,12 +172,24 @@ states its own bound. B7a5 lands the owner's S37 ruling on generic bounds, makes
 the template the spelling authority so the fixed-run library is generic in its
 element type again, mints [LIV-2]'s declaring `set` target in the resolver,
 puts a run's release class on its type, and substitutes a region argument into
-a call's container types. **The general store is what remains of the store
+a call's container types. B7a6 carries the owner's S38 naming ruling through the
+whole vocabulary -- a derivation is `X_of(v)`, a transformation is
+`verb_object`, and the `seq_` prefix is gone -- and lands the one-level element
+lift: a slot may hold a run, so `FixedVector<Vector<'s, u8>, 8>` is a free list
+of store-backed blocks, [PROV-6]'s release walk over a window is emitted rather
+than refused, and a formal region a parameter names one level down is
+determined by its actual. 3.L.4's block pool runs on that.
+**The general store is what remains of the store
 half:** [FN-7]'s `command.heap` row is still unwritable, because `heap` is the
 atom [EFF-1] fixes for `allocates(heap)` and [FORM-3] therefore excludes it
-from IDENT. Beside it stand the confinement rule, a run of runs -- which the
-block pool waits on, and which needs an element domain that can carry a
-descriptor -- and the retirement of the old container types.
+from IDENT. Beside it stand the confinement rule, the retirement of the old
+container types, and two items B7a6 separated from each other: a **source
+nominal generic over its store region**, which [S20] declares and nothing
+instantiates, so the pool's `BlockPool['s]` and `Lease['s]` are undeclarable at
+a caller's store; and a **subscripted measured place**, which [MSR-1] admits and
+which [MSR-2]'s support, [OWN-7]'s overlap and [ENT-5]'s kill all key on, so
+`len_of(table[i])`, [LIV-2] condition 2 over `grid[i][j]` and the affine element
+read-out are one change to the proof engine's place model rather than three.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

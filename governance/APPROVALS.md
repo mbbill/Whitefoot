@@ -3327,4 +3327,89 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no other verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 1579930afd8bdf7c76730c045c39a6660d45ef3a08ed4a629df5ab69dd2b130e 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B7a6, one naming scheme and the one-level element lift): the owner's
+  2026-09-05 ruling S38 gives the container vocabulary one naming rule, and it
+  respells and adds nothing. A non-consuming derivation from a value is spelled
+  `X_of(v)`, which the four measure readers already were [S36]; a consuming
+  transformation that hands a new value back is spelled `verb_object`, whose
+  object follows the TYPE names [S1, S2]. Numbered rules +0/-0 (148 remain);
+  grammar productions +0/-0 (88 remain); unique fixed lowercase grammar atoms
+  +0/-0 (59 remain); kernel declaration records +0/-0 (44 remain), the nine
+  operations keeping their parameters, results, effect rows, requirements and
+  relations exactly. Writer operation spellings +0/-0 with nine respelled:
+  `seq_fixed` to `fixed_vector`, `seq_arena` to `arena_vector`,
+  `seq_arena_proved` to `arena_vector_proved`, `seq_heap` to `heap_vector`,
+  `seq_place` to `place_back`, `seq_place_front` to `place_front`, `seq_take`
+  to `take_back` and `seq_take_front` to `take_front`, with `arena_frame`, the
+  DEFERRED `arena_extent` and the four readers unchanged. These nine are
+  declaration records rather than [OP-1] table rows, so `ReservedLowerNames` is
+  unchanged and no corpus declaration collided with a new spelling. [OWN-3] is
+  amended by one sentence: a nominal's `region_params` [S20] are unique within
+  that nominal, exactly as a function's are within it, so two nominals of one
+  unit may each write `'s`. That is the whole specification delta; it brings
+  the amended-rule list of the v0.45 META-5 declaration to include [OWN-3] and
+  changes no count.
+- CONSEQUENCE (B7a6, the design and the compiler beneath the rename): 3.S
+  records S38 with the owner's ground verbatim and marks S7, S8 and S10 "see
+  S38"; A.2's two view rows are respelled `slice_of` and `mut_slice_of` for B8
+  to land, and the design records that `slice_of` is already a live [OP-1] row,
+  so B8 must choose which [TYPE-6] domain keeps the spelling. In the compiler
+  the nine spellings are the `resolution::kernel` table's own data and the
+  `KernelRow` discriminants named after them; no grammar production or atom is
+  touched and the generated syntax tables are not regenerated. Beside the
+  rename this batch lands the one-level element lift 6.0k priced: a run's slot
+  may hold a run, descriptor included, so `CheckedElement` and `IrElement` are
+  the element domain, a slot's layout ceiling is the element type's own,
+  [PROV-6]'s release walk over a window is emitted rather than refused as
+  invalid IR, and a formal region a parameter names one level down is
+  determined by its actual [FORM-8]. A third level is an explicit unsupported
+  capability. The two resolver defects the design's own block pool exposed are
+  fixed with the [OWN-3] sentence above: a nominal is its own region scope, in
+  the region-uniqueness check and in the scope tree alike.
+- CONFORMANCE BOUNDARY (B7a6): this batch ADDS five conformance cases and
+  their five manifest rows, MODIFIES the source of twenty-one existing cases
+  and deletes and renames none; it changes no adapter, runner, or collection
+  wiring, and no existing case's id, expectation, rule citation, status or doc.
+  The added ids are `blk1-pos-a-run-element-is-a-run`,
+  `blk1-pos-a-store-backed-run-is-a-run-element`,
+  `prov6-pos-a-run-visits-its-window-before-its-backing` and
+  `form8-pos-a-run-element-region-is-determined-by-the-actual` (each
+  `{"kind": "run", "exit": 0}`, status runnable) and
+  `own3-pos-two-nominals-name-one-region` (`{"kind": "accept"}`, status
+  runnable). The thirty-one MODIFIED cases are modified in exactly one way and
+  for exactly one reason: each writes one or more of the nine kernel-domain
+  operation spellings, and each occurrence is respelled to S38's name. Their
+  before/after boundary is that substitution and nothing else -- no
+  declaration, call shape, argument, contract clause, control flow or doc
+  string changes in any of them -- and every one reaches the same verdict
+  through the same rule as before. The respelled ids are
+  `blk0-neg-a-proved-take-without-the-room-it-requires`,
+  `blk0-neg-a-row-requirement-is-not-discharged`,
+  `blk0-neg-a-source-function-collides-with-a-kernel-row`,
+  `blk0-neg-a-written-argument-the-row-does-not-declare`,
+  `blk1-pos-a-run-element-type-is-a-type-parameter`,
+  `blk1-pos-a-wrapped-window-subscripts-against-len`,
+  `blk2-pos-a-bump-take-hands-out-a-run`,
+  `blk2-pos-a-formation-row-builds-an-empty-run`,
+  `blk2-pos-a-refused-take-leaves-the-store-unmoved`,
+  `blk3-pos-a-boundary-row-moves-the-back-boundary`,
+  `blk3-pos-a-deque-moves-both-boundaries`,
+  `blk3-pos-a-queue-preserves-its-order`,
+  `call6-pos-a-row-relation-establishes-at-a-caller`,
+  `msr2-pos-an-element-write-kills-no-measure-of-the-run`,
+  `msr3-pos-a-parameter-written-back-keeps-its-entry-measure`,
+  `msr6-neg-a-const-generic-affine-atom-is-unproved`,
+  `msr6-pos-a-const-generic-is-an-affine-atom`,
+  `prov6-pos-a-region-argument-names-a-bump-extent`,
+  `set1-neg-a-run-element-target-needs-its-subscript-bound`,
+  `set1-pos-a-run-element-is-a-set-target` and
+  `set2-pos-a-run-element-is-a-replace-target` -- twenty-one cases -- together
+  with the six manifest `doc` strings that quote a respelled spelling, which
+  are the same substitution in the manifest row rather than in the case source.
+  Before this batch the corpus holds 607 cases with the native adapter
+  reporting Pass=605, Xfail=1, Skip=1; after it the corpus holds 612 with the
+  adapter reporting Pass=610, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, and the recorded-verdict snapshot
+  corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 6bacc8cb1b40fc8081749a866196ddef9a3262bcaf5ff4907491b1b79c46ac92 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
