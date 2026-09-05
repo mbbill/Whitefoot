@@ -1,4 +1,4 @@
-fn wrap_then_index(table: own buffer<u8>, i: own u64) -> value: own u8 reads(table) contract {
+fn wrap_then_index<const n: u64>(table: own FixedVector<u8, n>, i: own u64) -> value: own u8 reads(table) contract {
   define spare = len_of(table);
   requires i < spare;
 } {
@@ -8,7 +8,13 @@ fn wrap_then_index(table: own buffer<u8>, i: own u64) -> value: own u8 reads(tab
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(6_u64, 5_u8);
-  let value = wrap_then_index(table: move table, i: 2_u64);
+  let table = fixed_vector::<u8, 6>();
+  set table = place_back(vector: move table, value: 5_u8);
+  set table = place_back(vector: move table, value: 5_u8);
+  set table = place_back(vector: move table, value: 5_u8);
+  set table = place_back(vector: move table, value: 5_u8);
+  set table = place_back(vector: move table, value: 5_u8);
+  set table = place_back(vector: move table, value: 5_u8);
+  let value = wrap_then_index::<6>(table: move table, i: 2_u64);
   return exit_status(code: value);
 }

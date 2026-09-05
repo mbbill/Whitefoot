@@ -1,4 +1,4 @@
-fn touch_then_read(buf: own buffer<u8>, i: own u64) -> value: own u8 reads(buf), writes(buf) contract {
+fn touch_then_read<const n: u64>(buf: own FixedVector<u8, n>, i: own u64) -> value: own u8 reads(buf), writes(buf) contract {
   define spare = len_of(buf);
   requires i < spare;
   requires 0_u64 < spare;
@@ -9,7 +9,12 @@ fn touch_then_read(buf: own buffer<u8>, i: own u64) -> value: own u8 reads(buf),
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(5_u64, 1_u8);
-  let value = touch_then_read(buf: move buf, i: 2_u64);
+  let buf = fixed_vector::<u8, 5>();
+  set buf = place_back(vector: move buf, value: 1_u8);
+  set buf = place_back(vector: move buf, value: 1_u8);
+  set buf = place_back(vector: move buf, value: 1_u8);
+  set buf = place_back(vector: move buf, value: 1_u8);
+  set buf = place_back(vector: move buf, value: 1_u8);
+  let value = touch_then_read::<5>(buf: move buf, i: 2_u64);
   return exit_status(code: value);
 }
