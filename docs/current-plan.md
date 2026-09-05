@@ -724,6 +724,23 @@ before the code lands.
    702 ms, because its loop split hands out large chunks and almost never
    misses.
 
+   The owner's reading of it, 2026-09-05: the fallback is the colouring
+   question (a function that may suspend against one that never does), and
+   if that is what recovers the performance it is accepted, with the cost
+   that the language's standard puts such a colour on the declaration; it is
+   a larger change and needs research, and it is sequenced after the first
+   API that waits. One fact for that research, from the specification as it
+   stands: [FN-1] already gives every concrete function a compiler-derived
+   target summary, `never-suspends` or `may-suspend`, "derived from exact
+   system contracts and the finite concrete call graph, never written,
+   inferred from a spelling, or weakened by a declaration", and [EFF-3]
+   already consumes it. So the colour exists today as a derived fact the
+   declaration must not carry, and the fallback's target-action bit would be
+   that summary read at the hand-out, not a new spelling; what the research
+   has to settle is whether a bit that is never written is enough for the
+   writer to predict which joins park, and what the enumerator needs to
+   check a miss that nests a never-suspends job under a may-suspend one.
+
 ### Decided 2026-09-05: measured before chosen
 
 The owner ruled that the locked form and the lock-free form of §6 are both
