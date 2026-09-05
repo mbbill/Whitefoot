@@ -555,10 +555,10 @@ a: i8; b: i16; c: i32; d: i64; e: u8; f: u16; g: u32; h: u64;
 i: f32; j: f64; k: unit; l: Name<T, 'r, n>; m: array<u8, n>;
 n: slice<'r, u8>; o: box<u8>; p: arena<'r, u8>; q: buffer<u8>;
 }
-enum Choice<T> { doc "choice"; None(); Some(value: T); }
+enum Choice<T: copy> { doc "choice"; None(); Some(value: T); }
 linear struct Lease { doc "lease"; slot: u8; }
 linear enum Ticket { doc "ticket"; Open(value: u8); }
-contract Contract<T> {
+contract Contract<T: affine> {
 doc "contract";
 fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(heap arena 'r);
 law associative(member);

@@ -178,6 +178,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         // alternatives, and the early-release statement.
         ("linear", "Linear"),
         ("affine", "Affine"),
+        ("copy", "Copy"),
         ("dispose", "Dispose"),
     ];
     if spelling == "[0-9]+" {

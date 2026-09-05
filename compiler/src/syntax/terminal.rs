@@ -222,12 +222,14 @@ pub enum FixedTerminal {
     Linear,
     /// `affine`.
     Affine,
+    /// `copy`.
+    Copy,
     /// `dispose`.
     Dispose,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 102] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
@@ -256,6 +258,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 102] = [
     FixedTerminal::RightAngle,
     FixedTerminal::LeftBracket,
     FixedTerminal::RightBracket,
+    FixedTerminal::Copy,
     FixedTerminal::Affine,
     FixedTerminal::Dot,
     FixedTerminal::As,
@@ -443,6 +446,7 @@ impl FixedTerminal {
             Self::ColonColon => "::",
             Self::Linear => "linear",
             Self::Affine => "affine",
+            Self::Copy => "copy",
             Self::Dispose => "dispose",
         }
     }
@@ -529,21 +533,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 110] = {
-    let mut predicates = [TerminalPredicate::Identifier; 110];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 111] = {
+    let mut predicates = [TerminalPredicate::Identifier; 111];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[102] = TerminalPredicate::Identifier;
-    predicates[103] = TerminalPredicate::TypeIdentifier;
-    predicates[104] = TerminalPredicate::RegionIdentifier;
-    predicates[105] = TerminalPredicate::Label;
-    predicates[106] = TerminalPredicate::OperationName;
-    predicates[107] = TerminalPredicate::Literal;
-    predicates[108] = TerminalPredicate::String;
-    predicates[109] = TerminalPredicate::Digits;
+    predicates[103] = TerminalPredicate::Identifier;
+    predicates[104] = TerminalPredicate::TypeIdentifier;
+    predicates[105] = TerminalPredicate::RegionIdentifier;
+    predicates[106] = TerminalPredicate::Label;
+    predicates[107] = TerminalPredicate::OperationName;
+    predicates[108] = TerminalPredicate::Literal;
+    predicates[109] = TerminalPredicate::String;
+    predicates[110] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -551,14 +555,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 102,
-            Self::TypeIdentifier => 103,
-            Self::RegionIdentifier => 104,
-            Self::Label => 105,
-            Self::OperationName => 106,
-            Self::Literal => 107,
-            Self::String => 108,
-            Self::Digits => 109,
+            Self::Identifier => 103,
+            Self::TypeIdentifier => 104,
+            Self::RegionIdentifier => 105,
+            Self::Label => 106,
+            Self::OperationName => 107,
+            Self::Literal => 108,
+            Self::String => 109,
+            Self::Digits => 110,
         }
     }
 
@@ -814,13 +818,14 @@ mod tests {
         assert_eq!(FixedTerminal::Invariant as u8, 91);
         assert_eq!(FixedTerminal::Use as u8, 92);
         assert_eq!(FixedTerminal::Is as u8, 98);
-        // [PROV-6] the three added atoms take the enum's last three
-        // discriminants, so the external predicates start three places later.
+        // [PROV-6, S37] the four added atoms take the enum's last four
+        // discriminants, so the external predicates start four places later.
         assert_eq!(FixedTerminal::Linear as u8, 99);
         assert_eq!(FixedTerminal::Affine as u8, 100);
-        assert_eq!(FixedTerminal::Dispose as u8, 101);
-        assert_eq!(TerminalPredicate::Identifier.index(), 102);
-        assert_eq!(TerminalPredicate::Digits.index(), 109);
+        assert_eq!(FixedTerminal::Copy as u8, 101);
+        assert_eq!(FixedTerminal::Dispose as u8, 102);
+        assert_eq!(TerminalPredicate::Identifier.index(), 103);
+        assert_eq!(TerminalPredicate::Digits.index(), 110);
     }
 
     #[test]
