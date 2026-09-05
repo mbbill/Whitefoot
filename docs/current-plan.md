@@ -777,10 +777,17 @@ API passes the same T4 question the permit passed: the resource is a value in
 the signature, and every dependency between it and an existing resource is
 one the checker can see.
 
-3. **The first API that waits: `command.stdin` read.** One operation, one
-   resource, the same completion path. It is the first workload on which the
-   park-on-miss scheduler faces a real wait, so the first one whose numbers
-   say anything about the scheduler. Pipes and sockets are its kin and follow.
+3. **The first API that waits: the network, with `command.stdin` as the
+   first stream.** Revised by the owner on 2026-09-05: concurrency's real
+   demand is the network, so the first waiting API is TCP over a loopback
+   rather than standard input alone; a loopback is a controlled peer, which
+   makes the control test easy. Standard input comes along as the first
+   instance of the same stream design, and the standard streams are renamed
+   `InputStream` and `OutputStream`. The proposal, the T4 accounting of
+   every socket resource, the operations, the runtime routes, the control
+   test and the owner decisions it needs are
+   `research/investigations/io-model/NETWORK.md`; the compute-miss colouring
+   question stays sequenced after it.
 4. **File write and create.** The threshold for writing real programs (the
    compiler itself has to write files) and the second examination of the
    resource accounting: write handles, the namespace effect of a create, and
