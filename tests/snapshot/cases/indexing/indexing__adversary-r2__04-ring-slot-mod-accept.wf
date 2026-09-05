@@ -1,4 +1,4 @@
-fn ring_slot(buf: own buffer<u8>, front: own u64, used: own u64) -> found: own u8 reads(buf) contract {
+fn ring_slot<const n: u64>(buf: own FixedVector<u8, n>, front: own u64, used: own u64) -> found: own u8 reads(buf) contract {
   define limit = len_of(buf);
   requires limit > 0_u64;
   requires front < limit;
@@ -13,7 +13,15 @@ fn ring_slot(buf: own buffer<u8>, front: own u64, used: own u64) -> found: own u
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(8_u64, 0_u8);
-  let found = ring_slot(buf: move buf, front: 5_u64, used: 6_u64);
+  let buf = fixed_vector::<u8, 8>();
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  let found = ring_slot::<8>(buf: move buf, front: 5_u64, used: 6_u64);
   return exit_status(code: found);
 }

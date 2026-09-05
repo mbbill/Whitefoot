@@ -1,4 +1,4 @@
-fn bsearch(table: own buffer<u32>, spare: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
+fn bsearch(table: own FixedVector<u32, 8>, spare: own u64, target: own u32, lo: own u64, hi: own u64) -> found: own Option<u64> reads(table) contract {
   define length = len_of(table);
   requires spare == length;
   requires lo <= hi;
@@ -30,7 +30,15 @@ fn bsearch(table: own buffer<u32>, spare: own u64, target: own u32, lo: own u64,
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(8_u64, 0_u32);
+  let table = fixed_vector::<u32, 8>();
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
   set table[0_u64] = 2_u32;
   set table[1_u64] = 4_u32;
   set table[2_u64] = 6_u32;

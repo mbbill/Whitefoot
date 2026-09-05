@@ -1,5 +1,5 @@
-fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own u32 reads(data) contract {
-  define spare = len_of(deref(data));
+fn window_sum(data: own Slice<u32>, start: own u64, width: own u64) -> total: own u32 reads(data) contract {
+  define spare = len_of(data);
   requires start <= spare;
   requires width <= spare;
 } {
@@ -8,14 +8,14 @@ fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own 
     return 0_u32;
   }
   let end = start + width;
-  let spare = len_of(deref(data));
+  let spare = len_of(data);
   if end <= spare {
   } else {
     return 0_u32;
   }
   let sum = 0_u32;
   for (i in start..end) {
-    let value = deref(data)[i];
+    let value = data[i];
     set sum = sum +wrap value;
   }
   return sum;
@@ -23,7 +23,13 @@ fn window_sum(data: &buffer<u32>, start: own u64, width: own u64) -> total: own 
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: the dominating branch establishes end <= spare, then the for-loop's automatic i < end fact composes with it under [OP-4]'s two-premise automatic rule, so the window subscript needs no written invariant.";
-  let data = buffer_new(6_u64, 0_u32);
+  let data = fixed_vector::<u32, 6>();
+  set data = place_back(vector: move data, value: 0_u32);
+  set data = place_back(vector: move data, value: 0_u32);
+  set data = place_back(vector: move data, value: 0_u32);
+  set data = place_back(vector: move data, value: 0_u32);
+  set data = place_back(vector: move data, value: 0_u32);
+  set data = place_back(vector: move data, value: 0_u32);
   set data[0_u64] = 1_u32;
   set data[1_u64] = 2_u32;
   set data[2_u64] = 3_u32;
@@ -31,7 +37,8 @@ command fn main() -> status: own ExitStatus pure {
   set data[4_u64] = 5_u32;
   set data[5_u64] = 6_u32;
   region {
-    let total = window_sum(data: &data, start: 2_u64, width: 3_u64);
+    let data_view = slice_of(&data);
+    let total = window_sum(data: data_view, start: 2_u64, width: 3_u64);
     if total == 12_u32 {
     } else {
       return exit_status(code: 1_u8);

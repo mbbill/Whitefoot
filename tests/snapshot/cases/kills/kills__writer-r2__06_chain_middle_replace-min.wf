@@ -1,12 +1,20 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "expected: ACCEPT -- len_of(arr) = 4 is an implicit fact of arr's array type and holds at every program point; 0_u64 < len_of(arr) must discharge after the replace.";
-  let arr = array_new::<u32, 4>(1_u32);
+  doc "expected: ACCEPT -- len_of(arr) = 4 is published by the four commits that fill the run and holds at every program point; 0_u64 < len_of(arr) must discharge after the replace.";
+  let arr = fixed_vector::<u32, 4>();
+  set arr = place_back(vector: move arr, value: 1_u32);
+  set arr = place_back(vector: move arr, value: 1_u32);
+  set arr = place_back(vector: move arr, value: 1_u32);
+  set arr = place_back(vector: move arr, value: 1_u32);
   let before = arr[0_u64];
   let ok = before == 1_u32;
   if ok {
     return exit_status(code: 1_u8);
   }
-  let fresh = array_new::<u32, 4>(9_u32);
+  let fresh = fixed_vector::<u32, 4>();
+  set fresh = place_back(vector: move fresh, value: 9_u32);
+  set fresh = place_back(vector: move fresh, value: 9_u32);
+  set fresh = place_back(vector: move fresh, value: 9_u32);
+  set fresh = place_back(vector: move fresh, value: 9_u32);
   let old = replace arr = move fresh;
   let after = arr[0_u64];
   return exit_status(code: 0_u8);

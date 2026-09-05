@@ -1,13 +1,23 @@
 struct MovingWindow {
-  history: array<u32, 4>;
+  history: FixedVector<u32, 4>;
   cursor: u64;
 }
 
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- maintains a 4-slot fixed-point moving-average window over a struct field with a proved cursor bound";
-  let history = array_new::<u32, 4>(0_u32);
+  let history = fixed_vector::<u32, 4>();
+  set history = place_back(vector: move history, value: 0_u32);
+  set history = place_back(vector: move history, value: 0_u32);
+  set history = place_back(vector: move history, value: 0_u32);
+  set history = place_back(vector: move history, value: 0_u32);
   let window = MovingWindow(history: move history, cursor: 0_u64);
-  let inputs = array_new::<u32, 6>(400_u32);
+  let inputs = fixed_vector::<u32, 6>();
+  set inputs = place_back(vector: move inputs, value: 400_u32);
+  set inputs = place_back(vector: move inputs, value: 400_u32);
+  set inputs = place_back(vector: move inputs, value: 400_u32);
+  set inputs = place_back(vector: move inputs, value: 400_u32);
+  set inputs = place_back(vector: move inputs, value: 400_u32);
+  set inputs = place_back(vector: move inputs, value: 400_u32);
   let last_average = 0_u32;
   for (frame in 0_u64..6_u64) {
     let sample = inputs[frame];

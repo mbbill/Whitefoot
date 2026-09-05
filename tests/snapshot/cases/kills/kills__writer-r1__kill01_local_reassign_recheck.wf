@@ -1,4 +1,6 @@
-fn second_or_zero(values: own array<u32, 6>, idx: own u64) -> result: own u32 pure {
+fn second_or_zero(values: own FixedVector<u32, 6>, idx: own u64) -> result: own u32 reads(values) contract {
+  requires len_of(values) >= 6_u64;
+} {
   doc "expect ACCEPT: set kills the old bound on idx, but a fresh branch re-establishes the new value's bound before the index, so OP-4 is discharged from the live fact.";
   let in_range = idx < 6_u64;
   if in_range {
@@ -18,7 +20,13 @@ fn second_or_zero(values: own array<u32, 6>, idx: own u64) -> result: own u32 pu
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u32, 6>(9_u32);
+  let values = fixed_vector::<u32, 6>();
+  set values = place_back(vector: move values, value: 9_u32);
+  set values = place_back(vector: move values, value: 9_u32);
+  set values = place_back(vector: move values, value: 9_u32);
+  set values = place_back(vector: move values, value: 9_u32);
+  set values = place_back(vector: move values, value: 9_u32);
+  set values = place_back(vector: move values, value: 9_u32);
   let picked = second_or_zero(values: move values, idx: 2_u64);
   if picked == 9_u32 {
   } else {

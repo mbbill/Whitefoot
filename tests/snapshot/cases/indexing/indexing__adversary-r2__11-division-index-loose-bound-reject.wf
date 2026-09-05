@@ -1,4 +1,4 @@
-fn bucket_of(values: own buffer<u8>, n: own u64) -> found: own u8 reads(values) contract {
+fn bucket_of<const n_values: u64>(values: own FixedVector<u8, n_values>, n: own u64) -> found: own u8 reads(values) contract {
   define spare = len_of(values);
   requires spare == 10_u64;
   requires n < 101_u64;
@@ -10,7 +10,17 @@ fn bucket_of(values: own buffer<u8>, n: own u64) -> found: own u8 reads(values) 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = buffer_new(10_u64, 4_u8);
-  let found = bucket_of(values: move values, n: 100_u64);
+  let values = fixed_vector::<u8, 10>();
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  set values = place_back(vector: move values, value: 4_u8);
+  let found = bucket_of::<10>(values: move values, n: 100_u64);
   return exit_status(code: found);
 }

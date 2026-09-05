@@ -1,6 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- a write to buf[at] kills the earlier read fact about that same index [ENT-5]; the program rereads it instead of reusing the stale value.";
-  let buf = buffer_new(3_u64, 1_u8);
+  let buf = fixed_vector::<u8, 3>();
+  set buf = place_back(vector: move buf, value: 1_u8);
+  set buf = place_back(vector: move buf, value: 1_u8);
+  set buf = place_back(vector: move buf, value: 1_u8);
   let at = 1_u64;
   let spare = len_of(buf);
   let ok = at < spare;

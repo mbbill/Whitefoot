@@ -1,6 +1,8 @@
-fn ring_write(buf: own array<u8, 8>, front: own u64, used: own u64, value: own u8) -> updated: own array<u8, 8> pure contract {
+fn ring_write(buf: own FixedVector<u8, 8>, front: own u64, used: own u64, value: own u8) -> updated: own FixedVector<u8, 8> writes(buf) contract {
+  requires len_of(buf) >= 8_u64;
   requires front < 8_u64;
   requires used < 8_u64;
+  ensures len_of(updated) >= 8_u64;
 } {
   doc "ACCEPT: ring-buffer write slot; front+used is proved representable from the fixed 8-slot bound, and mod 8 keeps the slot inside the array without a written certificate.";
   let sum = front + used;
@@ -11,7 +13,15 @@ fn ring_write(buf: own array<u8, 8>, front: own u64, used: own u64, value: own u
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = array_new::<u8, 8>(0_u8);
+  let buf = fixed_vector::<u8, 8>();
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
   let written = ring_write(buf: move buf, front: 6_u64, used: 3_u64, value: 42_u8);
   let byte = written[1_u64];
   if byte == 42_u8 {

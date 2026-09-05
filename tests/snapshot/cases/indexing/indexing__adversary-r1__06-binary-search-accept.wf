@@ -1,4 +1,4 @@
-fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+fn probe<const n: u64>(table: own FixedVector<u8, n>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
   define spare = len_of(table);
   requires lo < hi;
   requires hi <= spare;
@@ -13,7 +13,15 @@ fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(8_u64, 0_u8);
+  let table = fixed_vector::<u8, 8>();
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
   set table[0_u64] = 1_u8;
   set table[1_u64] = 3_u8;
   set table[2_u64] = 5_u8;
@@ -22,12 +30,20 @@ command fn main() -> status: own ExitStatus pure {
   set table[5_u64] = 11_u8;
   set table[6_u64] = 13_u8;
   set table[7_u64] = 15_u8;
-  let first_mid = probe(table: move table, lo: 0_u64, hi: 8_u64);
+  let first_mid = probe::<8>(table: move table, lo: 0_u64, hi: 8_u64);
   if first_mid == 9_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  let table2 = buffer_new(8_u64, 0_u8);
+  let table2 = fixed_vector::<u8, 8>();
+  set table2 = place_back(vector: move table2, value: 0_u8);
+  set table2 = place_back(vector: move table2, value: 0_u8);
+  set table2 = place_back(vector: move table2, value: 0_u8);
+  set table2 = place_back(vector: move table2, value: 0_u8);
+  set table2 = place_back(vector: move table2, value: 0_u8);
+  set table2 = place_back(vector: move table2, value: 0_u8);
+  set table2 = place_back(vector: move table2, value: 0_u8);
+  set table2 = place_back(vector: move table2, value: 0_u8);
   set table2[0_u64] = 1_u8;
   set table2[1_u64] = 3_u8;
   set table2[2_u64] = 5_u8;
@@ -36,7 +52,7 @@ command fn main() -> status: own ExitStatus pure {
   set table2[5_u64] = 11_u8;
   set table2[6_u64] = 13_u8;
   set table2[7_u64] = 15_u8;
-  let second_mid = probe(table: move table2, lo: 4_u64, hi: 8_u64);
+  let second_mid = probe::<8>(table: move table2, lo: 4_u64, hi: 8_u64);
   if second_mid == 13_u8 {
   } else {
     return exit_status(code: 1_u8);

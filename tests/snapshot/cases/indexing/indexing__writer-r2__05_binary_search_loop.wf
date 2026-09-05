@@ -1,5 +1,5 @@
-fn binary_search(table: &buffer<u32>, target: own u32) -> found: own Bool reads(table) {
-  let spare = len_of(deref(table));
+fn binary_search(table: own Slice<u32>, target: own u32) -> found: own Bool reads(table) {
+  let spare = len_of(table);
   let lo = 0_u64;
   let hi = spare;
   loop (
@@ -18,7 +18,7 @@ fn binary_search(table: &buffer<u32>, target: own u32) -> found: own Bool reads(
       } else {
         return False();
       }
-      let candidate = deref(table)[mid];
+      let candidate = table[mid];
       if candidate == target {
         return True();
       } else if candidate < target {
@@ -35,21 +35,28 @@ fn binary_search(table: &buffer<u32>, target: own u32) -> found: own Bool reads(
 
 command fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [INV-1]: the finder expected ACCEPT for the certified halving, but the narrowing branch that lowers hi joins the branch that does not, so the backedge target hi <= spare is unprovable [ENT-6]; the reported header failure also masks the body probe the finder read as a proof.";
-  let table = buffer_new(5_u64, 0_u32);
+  let table = fixed_vector::<u32, 5>();
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
   set table[0_u64] = 1_u32;
   set table[1_u64] = 3_u32;
   set table[2_u64] = 5_u32;
   set table[3_u64] = 7_u32;
   set table[4_u64] = 9_u32;
   region {
-    let found = binary_search(table: &table, target: 7_u32);
+    let table_view = slice_of(&table);
+    let found = binary_search(table: table_view, target: 7_u32);
     if found {
     } else {
       return exit_status(code: 1_u8);
     }
   }
   region {
-    let missing = binary_search(table: &table, target: 4_u32);
+    let table_view = slice_of(&table);
+    let missing = binary_search(table: table_view, target: 4_u32);
     if missing {
       return exit_status(code: 1_u8);
     }

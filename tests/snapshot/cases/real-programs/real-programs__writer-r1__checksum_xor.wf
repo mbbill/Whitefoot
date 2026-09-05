@@ -1,6 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- computes a running XOR checksum over a byte buffer, wraparound is the intended group operation";
-  let message = buffer_new(5_u64, 0_u8);
+  let message = fixed_vector::<u8, 5>();
+  set message = place_back(vector: move message, value: 0_u8);
+  set message = place_back(vector: move message, value: 0_u8);
+  set message = place_back(vector: move message, value: 0_u8);
+  set message = place_back(vector: move message, value: 0_u8);
+  set message = place_back(vector: move message, value: 0_u8);
   set message[0_u64] = 0_u8;
   set message[1_u64] = 15_u8;
   set message[2_u64] = 240_u8;

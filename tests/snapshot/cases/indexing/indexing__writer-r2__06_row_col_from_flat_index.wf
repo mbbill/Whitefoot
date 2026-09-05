@@ -1,5 +1,5 @@
-fn pixel_at(grid: &buffer<u8>, width: own u64, height: own u64, row: own u64, col: own u64) -> value: own u8 reads(grid) {
-  let area = len_of(deref(grid));
+fn pixel_at(grid: own Slice<u8>, width: own u64, height: own u64, row: own u64, col: own u64) -> value: own u8 reads(grid) {
+  let area = len_of(grid);
   if width *defined height {
   } else {
     return 0_u8;
@@ -31,16 +31,29 @@ fn pixel_at(grid: &buffer<u8>, width: own u64, height: own u64, row: own u64, co
   } else {
     return 0_u8;
   }
-  let byte = deref(grid)[flat];
+  let byte = grid[flat];
   return byte;
 }
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: every partial arithmetic step (width*height, row*width, the +col) is guarded by its own dominating .defined branch, and the flattened row*width+col subscript is guarded by its own direct flat < area branch [OP-2, OP-4].";
-  let grid = buffer_new(12_u64, 0_u8);
+  let grid = fixed_vector::<u8, 12>();
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
+  set grid = place_back(vector: move grid, value: 0_u8);
   set grid[7_u64] = 42_u8;
   region {
-    let value = pixel_at(grid: &grid, width: 4_u64, height: 3_u64, row: 1_u64, col: 3_u64);
+    let grid_view = slice_of(&grid);
+    let value = pixel_at(grid: grid_view, width: 4_u64, height: 3_u64, row: 1_u64, col: 3_u64);
     if value == 42_u8 {
     } else {
       return exit_status(code: 1_u8);

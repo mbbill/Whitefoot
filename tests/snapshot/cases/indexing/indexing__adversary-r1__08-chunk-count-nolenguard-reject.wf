@@ -1,4 +1,4 @@
-fn last_chunk_status(buf: own buffer<u8>, status: own buffer<u8>) -> value: own u8 reads(buf, status) contract {
+fn last_chunk_status<const n_buf: u64, const n_status: u64>(buf: own FixedVector<u8, n_buf>, status: own FixedVector<u8, n_status>) -> value: own u8 reads(buf, status) contract {
   define status_len = len_of(status);
   requires status_len > 0_u64;
 } {
@@ -11,9 +11,10 @@ fn last_chunk_status(buf: own buffer<u8>, status: own buffer<u8>) -> value: own 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(0_u64, 0_u8);
-  let stat = buffer_new(1_u64, 3_u8);
-  let value = last_chunk_status(buf: move buf, status: move stat);
+  let buf = fixed_vector::<u8, 0>();
+  let stat = fixed_vector::<u8, 1>();
+  set stat = place_back(vector: move stat, value: 3_u8);
+  let value = last_chunk_status::<0, 1>(buf: move buf, status: move stat);
   if value == 3_u8 {
   } else {
     return exit_status(code: 1_u8);
