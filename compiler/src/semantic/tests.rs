@@ -168,7 +168,9 @@ fn with_semantics_inputs<ResultValue>(
 /// and [DIAG-1] cites the production's own rule there. This is the assertion
 /// for a source whose defect the grammar itself decides.
 fn assert_parse_rule(source: &[u8], rule: crate::SyntaxRule) {
-    let Ok(bundle) = SourceBundle::with_limits(&[SourceInput::new("parse.wf", source)], SOURCE_LIMITS) else {
+    let Ok(bundle) =
+        SourceBundle::with_limits(&[SourceInput::new("parse.wf", source)], SOURCE_LIMITS)
+    else {
         panic!("parse test bundle must be valid");
     };
     let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {

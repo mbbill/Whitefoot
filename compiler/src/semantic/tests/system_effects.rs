@@ -362,8 +362,7 @@ fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> r
 
 #[test]
 fn a_control_flow_result_projects_to_every_possible_formal() {
-    let accepted =
-        choose_output_program("reads(out, err), writes(out, err)", false);
+    let accepted = choose_output_program("reads(out, err), writes(out, err)", false);
     assert_complete(&accepted);
     let narrowed = choose_output_program("reads(out), writes(out)", false);
     assert_rule_kind(&narrowed, SemanticRule::Eff2, |kind| {

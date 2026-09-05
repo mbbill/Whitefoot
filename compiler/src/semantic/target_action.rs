@@ -65,12 +65,10 @@ pub(crate) fn derive_target_actions(functions: &mut [CheckedFunction]) {
             if reaches[index] {
                 continue;
             }
-            if edges[index].iter().any(|callee| {
-                reaches
-                    .get(callee.0 as usize)
-                    .copied()
-                    .unwrap_or_default()
-            }) {
+            if edges[index]
+                .iter()
+                .any(|callee| reaches.get(callee.0 as usize).copied().unwrap_or_default())
+            {
                 reaches[index] = true;
                 changed = true;
             }

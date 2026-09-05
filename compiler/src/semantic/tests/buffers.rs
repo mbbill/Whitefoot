@@ -219,8 +219,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_local_invariant_allocation_ceiling_is_installed_in_the_target_domain() {
-    let source =
-        br#"fn allocate(n: own u64, middle: own u64) -> result: own unit pure contract {
+    let source = br#"fn allocate(n: own u64, middle: own u64) -> result: own unit pure contract {
   requires n <= middle;
   requires middle <= 1000_u64;
 } {
@@ -266,8 +265,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_affine_invariant_supplies_the_only_tight_allocation_ceiling() {
-    let source =
-        br#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {
+    let source = br#"fn allocate(n: own u64, half: own u64) -> result: own unit pure contract {
   requires half <= 500_u64;
 } {
   let doubled = half * 2_u64;
@@ -1036,8 +1034,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_indexed_buffer_fits_guard_discharges_the_same_allocation_goal() {
-    let source =
-        br#"fn make_buffer(lengths: own array<u64, 1>) -> result: own buffer<u8> pure {
+    let source = br#"fn make_buffer(lengths: own array<u64, 1>) -> result: own buffer<u8> pure {
   if buffer_fits::<u8>(lengths[0_u64]) {
     return buffer_new(lengths[0_u64], 0_u8);
   } else {

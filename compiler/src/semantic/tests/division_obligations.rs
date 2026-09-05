@@ -366,7 +366,8 @@ fn a_checked_division_attaches_no_obligation() {
 /// EFF-2 before the undischarged exact-division obligation is reported.
 #[test]
 fn effect_mismatch_precedes_static_division_rejection() {
-    let source = br#"fn ratio(heap: &uniq Heap, n: own u64, d: own u64) -> result: own u64 allocates(heap) {
+    let source =
+        br#"fn ratio(heap: &uniq Heap, n: own u64, d: own u64) -> result: own u64 allocates(heap) {
   let q = n / d;
   let r = n % d;
   return q;

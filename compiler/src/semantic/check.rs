@@ -912,7 +912,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             allocations.push(format!("arena {}", self.region_phrase(*region)?));
         }
         if !allocations.is_empty() {
-            let separator = if effects.allocates.is_empty() { " " } else { ", " };
+            let separator = if effects.allocates.is_empty() {
+                " "
+            } else {
+                ", "
+            };
             categories.push(format!("allocates({})", allocations.join(separator)));
         }
         Ok(if categories.is_empty() {

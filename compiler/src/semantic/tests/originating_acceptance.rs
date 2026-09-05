@@ -173,7 +173,8 @@ command fn main(command.stdout as output: own Output) -> status: own ExitStatus 
 
 #[test]
 fn an_external_index_needs_a_real_control_flow_fact() {
-    let direct = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+    let direct =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);
@@ -186,7 +187,8 @@ fn an_external_index_needs_a_real_control_flow_fact() {
         matches!(kind, SemanticIssueKind::UndischargedBoundsObligation { .. })
     });
 
-    let guarded = br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+    let guarded =
+        br#"command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
     let bytes = buffer_new(4_u64, 0_u8);

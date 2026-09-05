@@ -1500,8 +1500,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn exhaustion_fact_proves_filled_and_vacant_buffer_allocation_fit() {
-    let source =
-        br#"fn allocate_prefix(count: own u64) -> result: own unit pure contract {
+    let source = br#"fn allocate_prefix(count: own u64) -> result: own unit pure contract {
   requires count <= 1000_u64;
 } {
   let length = 0_u64;

@@ -22,8 +22,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-const U64_BUFFER_ALLOCATION: &[u8] =
-    br#"command fn main() -> status: own ExitStatus pure {
+const U64_BUFFER_ALLOCATION: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
   let values = buffer_new(1_u64, 0_u64);
   return exit_status(code: 0_u8);
 }

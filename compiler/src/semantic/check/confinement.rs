@@ -116,9 +116,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         CheckedNominalKind::Enum { variants } => {
                             pending.extend(
-                                variants
-                                    .iter()
-                                    .flat_map(|variant| variant.fields.iter().map(|field| field.ty)),
+                                variants.iter().flat_map(|variant| {
+                                    variant.fields.iter().map(|field| field.ty)
+                                }),
                             );
                         }
                         CheckedNominalKind::Box { referent } => pending.push(*referent),

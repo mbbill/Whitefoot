@@ -1429,7 +1429,11 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         for (access, declared, allocation) in [
             (AccessKind::Read, &signature.declared_effects.reads, false),
             (AccessKind::Write, &signature.declared_effects.writes, false),
-            (AccessKind::Write, &signature.declared_effects.allocates, true),
+            (
+                AccessKind::Write,
+                &signature.declared_effects.allocates,
+                true,
+            ),
         ] {
             for formal in declared {
                 let index = signature

@@ -681,11 +681,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
         let mut writes = Vec::new();
         for store in self.capability_released_stores(ty)? {
-            if let Some(parameter) = function
-                .parameters
-                .iter()
-                .find(|parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store))
-            {
+            if let Some(parameter) = function.parameters.iter().find(
+                |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
+            ) {
                 writes.push(super::super::model::CheckedStatePath {
                     root: parameter.declaration,
                     fields: Vec::new(),
@@ -704,11 +702,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
     ) -> Result<(), CheckStop> {
         for store in self.capability_released_stores(ty)? {
-            if function
-                .parameters
-                .iter()
-                .any(|parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store))
-            {
+            if function.parameters.iter().any(
+                |parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store),
+            ) {
                 continue;
             }
             let phrase = if store.is_entry_heap_region() {

@@ -1457,7 +1457,11 @@ impl CheckStop {
 impl From<SemanticCompilerFailure> for CheckStop {
     fn from(value: SemanticCompilerFailure) -> Self {
         if std::env::var_os("WF_TRACE_COMPILER_FAILURE").is_some() {
-            eprintln!("{:?}\n{}", value, std::backtrace::Backtrace::force_capture());
+            eprintln!(
+                "{:?}\n{}",
+                value,
+                std::backtrace::Backtrace::force_capture()
+            );
         }
         Self::Compiler(value)
     }

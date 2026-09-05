@@ -111,12 +111,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // It quantifies over a source-declared `fn` and not over a
             // contract member's `fn_sig`.
             if self.tree.production(function)? == Production::FnDecl {
-                self.check_unique_parameter_confinement(
-                    mode,
-                    ty,
-                    declaration.spelling(),
-                    node,
-                )?;
+                self.check_unique_parameter_confinement(mode, ty, declaration.spelling(), node)?;
             }
             if mode != CheckedMode::Own && !self.borrowable_type(ty)? {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
