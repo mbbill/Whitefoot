@@ -385,6 +385,29 @@ before the code lands.
    the stack; the floor's entry runs `wf__main_body` on a pool stack selected
    at link time; the Windows twins in `wf_floor_windows.c` and
    `windows_bridge.c`.
+
+   **Order and the Windows decision, 2026-09-05.** (i) The records-by-address
+   step is in (`3acc3e9`, with the one lowering at `effe2e2`). (ii) An
+   emitter defect found on the way, a mixed overlap group handing out none
+   of its compute members, is fixed as its own commit. (iii) The core becomes
+   the runtime on POSIX: `sched/entry.c` carries the `wf__par_*` ABI and the
+   pool policy over `core.c`, the floor runs the entry on a pool stack when
+   the core is linked, every I/O join parks through `wf_sched_join`, and
+   `par_runtime.c` with both writer schedulers retire. (iv) Windows is done
+   as shared code, not as a second copy, which the owner ruled on 2026-09-05
+   and which the design's core-and-platform-layer shape already implies:
+   one core, one bridge over one record (`windows_bridge.c` folds into
+   `bridge.c` with the adapter chosen per platform), the adapters behind one
+   interface (io_uring, IOCP, the bounded pool), a `sched/prim_windows.c`
+   beside `prim_host.c` (fibers for the switch, the completion port for the
+   park and wake, `_beginthreadex` for threads), and `wf_floor_windows.c`
+   reduced to what only Windows has (the exception-code classification, the
+   fiber entry); `par_runtime_windows.c`, `writer_scheduler_windows.c` and
+   `windows_completion.c` (its own record pool) go. The real Windows host
+   in `.github/workflows/io-hosts.yml` (`completion-windows`) is the gate
+   for that step; it had been red on this branch since `554f1d9` for a
+   stale expectation line and is repaired at `7b9d41f`, so the steps it
+   had been skipping since then run again from the next push.
 4. **Replay, the remaining measurements, docs, record** (design §11 item 24,
    §12): the enumerator's recorder replays a run's data and completion order;
    park cost and per-frame record growth measured; `LOOP-PIPELINE.md` §3.4
