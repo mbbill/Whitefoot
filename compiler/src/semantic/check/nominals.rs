@@ -2,7 +2,7 @@ use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFe
 
 use super::super::model::{
     CheckedConstructor, CheckedField, CheckedFlatElement, CheckedNominal, CheckedNominalKind,
-    CheckedType, CheckedVariant, IntegerType, NominalId,
+    CheckedType, CheckedVariant, IntegerType, LoanStrength, NominalId,
 };
 use super::{CheckStop, Checker, PendingNominal, PreludeType};
 
@@ -118,8 +118,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Generic(declaration) => {
                 self.generic_parameter_class(declaration)? == super::linearity::LinearityClass::Copy
             }
+            // [VIEW-1, S27] the shared view is copy and the writable one is
+            // affine. Affinity on the shared view buys no safety — a second
+            // copy is a second *shared* loan, which [OWN-5] admits without
+            // limit, and a loan-bearing value owns nothing [PROV-3], so it
+            // has nothing to release twice. The exclusive view stays affine
+            // because [OWN-5] refuses two exclusive loans on one range.
+            CheckedType::Slice { strength, .. } => strength == LoanStrength::Shared,
             CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
             | CheckedType::Buffer { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }

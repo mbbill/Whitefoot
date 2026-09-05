@@ -661,6 +661,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let borrow = self.borrow_for_destination(mode, &value, node)?;
         let state_origins = self.state_origins_of_value(&value, bindings)?;
+        // [PROV-3] a loan's extent is its holding value's own liveness, and
+        // this `let` is where that value becomes a binding with uses. Every
+        // origin place this value reaches — formed here, copied, passed
+        // through a call, or returned — names the loans this binding now
+        // holds.
+        Self::hold_slice_loans_of(declaration_id, value.slice.as_ref(), bindings);
         if bindings
             .insert(
                 declaration_id,

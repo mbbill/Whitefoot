@@ -415,9 +415,34 @@ struct LocalBinding {
 }
 
 impl LocalBinding {
+    /// One loan per (region, place, strength); a second formation of the same
+    /// loan adds its own holder rather than a second entry [PROV-3].
     fn push_slice_loan(&mut self, loan: SliceLoan) {
-        if !self.slice_loans.contains(&loan) {
-            self.slice_loans.push(loan);
+        if let Some(existing) = self.slice_loans.iter_mut().find(|existing| {
+            existing.region == loan.region
+                && existing.place == loan.place
+                && existing.strength == loan.strength
+        }) {
+            for descriptor in loan.descriptors {
+                if !existing.descriptors.contains(&descriptor) {
+                    existing.descriptors.push(descriptor);
+                }
+            }
+            return;
+        }
+        self.slice_loans.push(loan);
+    }
+
+    /// [PROV-3] one binding takes the loans its own origin set names: a `let`
+    /// that binds a formed, copied, passed or returned view is where that
+    /// value's liveness — and therefore its loan's extent — begins.
+    fn hold_slice_loans(&mut self, holder: DeclarationId, places: &[ResolvedPlace]) {
+        for loan in &mut self.slice_loans {
+            if places.iter().any(|place| *place == loan.place)
+                && !loan.descriptors.contains(&holder)
+            {
+                loan.descriptors.push(holder);
+            }
         }
     }
 
@@ -992,6 +1017,39 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// judgment of those rules — consume-once, dead roots, exclusivity, the
     /// region-free demand on a replacement target — is re-judged here, because
     /// each is a property of the concrete instance and not of the spelling.
+    /// [PROV-3] register one new binding as a holder of every loan its value's
+    /// origin set names.
+    ///
+    /// The origins are the value's own [PROV-3] set, so this covers the four
+    /// events the rule enumerates — formation, copy, pass and return — with
+    /// one judgment over the set rather than one per event. `immutable-const`
+    /// and a formal origin name no loan of this function and match nothing.
+    pub(in crate::semantic::check) fn hold_slice_loans_of(
+        holder: DeclarationId,
+        slice: Option<&borrows::SliceInfo>,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+    ) {
+        let Some(slice) = slice else {
+            return;
+        };
+        let mut wanted: HashMap<DeclarationId, Vec<ResolvedPlace>> = HashMap::new();
+        for origin in &slice.origins {
+            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, fields, .. } =
+                origin
+            {
+                wanted.entry(*root).or_default().push(ResolvedPlace {
+                    root: *root,
+                    fields: fields.clone(),
+                });
+            }
+        }
+        for (root, places) in wanted {
+            if let Some(local) = bindings.get_mut(&root) {
+                local.hold_slice_loans(holder, &places);
+            }
+        }
+    }
+
     pub(in crate::semantic::check) fn judges_class_spelling(&self) -> bool {
         !self.template_spelling_authority.get()
     }

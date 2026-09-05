@@ -21,6 +21,14 @@ use super::super::expressions::MutationTarget;
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::{ControlScope, StatementResult};
 
+/// [VIEW-4]'s exact restructuring: the rule's own mechanical fix.
+///
+/// A view is never repaired in place, because the repair the rule names is a
+/// second value: the loan the commit would displace belongs to the view that
+/// holds it, so a new view is formed and bound rather than written over the
+/// old one's place.
+const VIEW4_NEW_BINDING: &str = "bind a new view under a new `let` rather than committing at this one";
+
 /// One target of the commit being checked, with the state the three admission
 /// conditions read at the commit.
 struct FormedTarget {
@@ -447,6 +455,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let ty = target.mutation.target.ty();
+        // [VIEW-4] a commit may not displace a live loan. A commit that
+        // displaces a value of loan-bearing type is admitted exactly when the
+        // displaced value is consumed by that same statement's right-hand
+        // side: otherwise the displaced view survives — as the `replace`
+        // binding, or simply as the loan state of a copy target [VIEW-1] that
+        // [LIV-2] condition 1 makes dead at the commit with nothing consumed —
+        // and its loan would outlive the descriptor whose place it was held
+        // from. This is asked before the copy admission below, because the
+        // copy view is exactly the target the third disjunct would admit.
+        if Self::checked_type_is_loan_bearing(ty) && !target.read_out {
+            return self.issue_node(
+                SemanticRule::View4,
+                target.node,
+                SemanticIssueKind::LoanBearingCommitTarget {
+                    target_type: self.checked_type_name(ty)?,
+                    mechanical_fix: VIEW4_NEW_BINDING,
+                },
+            );
+        }
         if self.is_copy_type(ty)? || target.read_out || target.revives {
             return Ok(());
         }

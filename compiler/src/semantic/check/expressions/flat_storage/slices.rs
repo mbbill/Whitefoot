@@ -248,6 +248,9 @@ inside the `region` block whose region it takes",
                     region,
                     place: resolved.clone(),
                     strength,
+                    // [PROV-3] the formed value holds the loan; the binding
+                    // that takes that value is registered at its own `let`.
+                    descriptors: Vec::new(),
                 });
             vec![PlaceAccess {
                 place: resolved,
@@ -415,6 +418,7 @@ take the view in a region it outlives"
                 region,
                 place: resolved.clone(),
                 strength,
+                descriptors: Vec::new(),
             });
         // The origin is the complete resolved place reached in arena content
         // [OWN-5]; reads through the formed view stay reads of storage this

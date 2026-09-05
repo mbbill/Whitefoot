@@ -156,6 +156,18 @@ pub(super) struct SliceLoan {
     /// [OWN-5] 606 refuses, and because a target path through a view is
     /// admitted at exclusive strength and at no other [SET-1].
     pub(super) strength: LoanStrength,
+    /// [PROV-3] the bindings that hold this loan: every view binding whose
+    /// origin set names the loan's place.
+    ///
+    /// A loan begins where its value is formed or copied and ends where that
+    /// value's own liveness ends. For a **copy** view that end is its last
+    /// use, and a use is a property of a binding, so the extent this list
+    /// carries is the union of its holders' remaining uses. An empty list is
+    /// a loan no binding took — the formation's value was consumed inside
+    /// its own statement — and such a loan keeps the conservative
+    /// region-scoped extent [OWN-4], because this checker has no program
+    /// point between two operands of one statement.
+    pub(super) descriptors: Vec<DeclarationId>,
 }
 
 impl SliceLoan {
@@ -1838,7 +1850,10 @@ and name it on the returned reborrow"
                 }
             }
             for loan in &local.slice_loans {
-                if places_overlap(&loan.place, place) && loan.refuses(access) {
+                if places_overlap(&loan.place, place)
+                    && loan.refuses(access)
+                    && self.slice_loan_is_live(loan, bindings, node)?
+                {
                     return self.issue_node(
                         SemanticRule::Own5,
                         node,
@@ -1848,6 +1863,89 @@ and name it on the returned reborrow"
             }
         }
         Ok(())
+    }
+
+    /// [PROV-3] whether one loan is still live at this access.
+    ///
+    /// A loan begins where its value is formed or copied and ends where that
+    /// value's own liveness ends: for an **affine** view its consume or
+    /// release, and for a **copy** view its last use. The affine case keeps
+    /// [OWN-4]'s named-region extent, which is the conservative reading of a
+    /// consume this checker has no separate program point for; the copy case
+    /// is decided here, and is what admits an append to a run after the view
+    /// of it went dead.
+    ///
+    /// A loan no binding holds is live for its region, because the value that
+    /// held it was consumed inside its own statement and this checker states
+    /// no program point between two operands of one statement.
+    fn slice_loan_is_live(
+        &self,
+        loan: &SliceLoan,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        node: NodeId,
+    ) -> Result<bool, CheckStop> {
+        if loan.strength != LoanStrength::Shared || loan.descriptors.is_empty() {
+            return Ok(true);
+        }
+        for holder in &loan.descriptors {
+            let live = bindings.get(holder).is_none_or(|binding| binding.live);
+            if live && self.declaration_is_used_at_or_after(*holder, node)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    /// Whether one value binding has a use at or after this node [ENT-5].
+    ///
+    /// Document order is the canonical tree's own child-ordinal path order,
+    /// so a use at a later statement — in either arm of a later branch
+    /// included — compares greater. The one place where document order is
+    /// not execution order is a loop body: a use textually before this node
+    /// but inside the innermost loop body containing it follows the node on
+    /// the next iteration, so such a use keeps the loan live.
+    fn declaration_is_used_at_or_after(
+        &self,
+        declaration: DeclarationId,
+        node: NodeId,
+    ) -> Result<bool, CheckStop> {
+        let here = self.tree.path(node)?.components().to_vec();
+        let mut repeated: Option<Vec<u32>> = None;
+        let mut current = self.tree.parent(node)?;
+        while let Some(ancestor) = current {
+            match self.tree.production(ancestor)? {
+                Production::LoopStmt | Production::ForStmt => {
+                    repeated = Some(self.tree.path(ancestor)?.components().to_vec());
+                    break;
+                }
+                Production::FnDecl => break,
+                _ => {}
+            }
+            current = self.tree.parent(ancestor)?;
+        }
+        for usage in self.resolved.lexical_uses() {
+            let ResolvedTarget::Source {
+                declaration: target,
+                class: DeclarationClass::Value,
+            } = usage.target()
+            else {
+                continue;
+            };
+            if target != declaration {
+                continue;
+            }
+            let path = usage.origin().node().components();
+            if path >= here.as_slice() {
+                return Ok(true);
+            }
+            if repeated
+                .as_ref()
+                .is_some_and(|body| path.starts_with(body.as_slice()))
+            {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 
     fn region_declaration(

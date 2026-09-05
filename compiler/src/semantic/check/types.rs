@@ -426,6 +426,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// arena instance, and any array, buffer, box, struct field, or enum
     /// payload that reaches one. The `visited` set keeps the walk finite
     /// because box content may close a nominal cycle [STOR-2].
+    /// [PROV-3] the loan-bearing predicate: a value of one of the two view
+    /// types carries a finite set of origins and a loan on each, and no
+    /// other type does.
+    ///
+    /// It is the type itself and never a component of one, because [STOR-5]
+    /// keeps a view out of every stored position: a view is never a field, a
+    /// payload, a slot, or a generic argument, so a loan-bearing type is
+    /// reached at the top or not at all.
+    pub(in crate::semantic::check) const fn checked_type_is_loan_bearing(ty: CheckedType) -> bool {
+        matches!(ty, CheckedType::Slice { .. })
+    }
+
     pub(in crate::semantic::check) fn checked_type_is_region_bearing(
         &self,
         ty: CheckedType,

@@ -123,6 +123,10 @@ pub enum SemanticRule {
     Blk1,
     /// Formation and reservation: where a reserving occurrence may stand.
     Blk2,
+    /// A commit may not displace a live loan.
+    View4,
+    /// Views are never stored, and a view result declares its origin.
+    View6,
     /// Explicit dereference of a borrow holder.
     Type7,
     /// Storage-class and affine replacement restrictions.
@@ -232,6 +236,8 @@ impl SemanticRule {
             Self::Blk0 => "BLK-0",
             Self::Blk1 => "BLK-1",
             Self::Blk2 => "BLK-2",
+            Self::View4 => "VIEW-4",
+            Self::View6 => "VIEW-6",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
             Self::Stor4 => "STOR-4",
@@ -319,7 +325,9 @@ impl SemanticRule {
             Self::Prov6 => Self::Blk0,
             Self::Blk0 => Self::Blk1,
             Self::Blk1 => Self::Blk2,
-            Self::Blk2 => Self::Stor1,
+            Self::Blk2 => Self::View4,
+            Self::View4 => Self::View6,
+            Self::View6 => Self::Stor1,
             Self::Stor1 => Self::Stor4,
             Self::Stor4 => Self::Stor5,
             Self::Stor5 => Self::Op1,
@@ -394,35 +402,37 @@ impl SemanticRule {
             Self::Blk0 => 28,
             Self::Blk1 => 29,
             Self::Blk2 => 30,
-            Self::Stor1 => 31,
-            Self::Stor4 => 32,
-            Self::Stor5 => 33,
-            Self::Op1 => 34,
-            Self::Op2 => 35,
-            Self::Op4 => 36,
-            Self::Op5 => 37,
-            Self::Op6 => 38,
-            Self::Op9 => 39,
-            Self::Fn1 => 40,
-            Self::Fn2 => 41,
-            Self::Fn3 => 42,
-            Self::Fn4 => 43,
-            Self::Fn6 => 44,
-            Self::Fn7 => 45,
-            Self::Fn8 => 46,
-            Self::Fn9 => 47,
-            Self::Call4 => 48,
-            Self::Eff1 => 49,
-            Self::Eff2 => 50,
-            Self::Err2 => 51,
-            Self::Err3 => 52,
-            Self::Sys2 => 53,
-            Self::Sys8 => 54,
-            Self::Ent2 => 55,
-            Self::Msr3 => 56,
-            Self::Call6 => 57,
-            Self::Inv1 => 58,
-            Self::Prf1 => 59,
+            Self::View4 => 31,
+            Self::View6 => 32,
+            Self::Stor1 => 33,
+            Self::Stor4 => 34,
+            Self::Stor5 => 35,
+            Self::Op1 => 36,
+            Self::Op2 => 37,
+            Self::Op4 => 38,
+            Self::Op5 => 39,
+            Self::Op6 => 40,
+            Self::Op9 => 41,
+            Self::Fn1 => 42,
+            Self::Fn2 => 43,
+            Self::Fn3 => 44,
+            Self::Fn4 => 45,
+            Self::Fn6 => 46,
+            Self::Fn7 => 47,
+            Self::Fn8 => 48,
+            Self::Fn9 => 49,
+            Self::Call4 => 50,
+            Self::Eff1 => 51,
+            Self::Eff2 => 52,
+            Self::Err2 => 53,
+            Self::Err3 => 54,
+            Self::Sys2 => 55,
+            Self::Sys8 => 56,
+            Self::Ent2 => 57,
+            Self::Msr3 => 58,
+            Self::Call6 => 59,
+            Self::Inv1 => 60,
+            Self::Prf1 => 61,
         }
     }
 }
@@ -599,6 +609,25 @@ pub enum SemanticIssueKind {
         /// Exact selected affine type.
         target_type: String,
         /// Required STOR-1 restructuring.
+        mechanical_fix: &'static str,
+    },
+    /// [VIEW-4] a commit would displace a live loan: the target's type is
+    /// loan-bearing and the right-hand side does not consume the displaced
+    /// view, so its loan would outlive the descriptor whose place it was
+    /// held from.
+    LoanBearingCommitTarget {
+        /// Exact selected loan-bearing type.
+        target_type: String,
+        /// Required VIEW-4 restructuring.
+        mechanical_fix: &'static str,
+    },
+    /// [VIEW-6] an ordered result list declares two results of the same view
+    /// type at the same formal region, so each would alias every input the
+    /// other reaches.
+    SameRegionViewResults {
+        /// The view type both results write.
+        result_type: String,
+        /// Required VIEW-6 restructuring.
         mechanical_fix: &'static str,
     },
     /// [PROV-6] a value linear in this scope is live on an edge leaving it,
