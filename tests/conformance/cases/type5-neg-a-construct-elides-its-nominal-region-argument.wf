@@ -1,0 +1,19 @@
+struct Chunk['s] {
+  page: Vector<'s, u8>;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "TYPE-5: a construct of a nominal carrying region_params writes its region arguments as the leading members of its targs, on exactly the ground its type and const arguments are written on: construction consults no expected nominal type, so the written arguments are the only supply there is.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let page = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
+      let held = Chunk(page: move page);
+      let width = room_of(held.page);
+      if width == 256_u64 {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

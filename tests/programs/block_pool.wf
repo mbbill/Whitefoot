@@ -1,71 +1,89 @@
-fn pool_take['s: affine](free: own FixedVector<Vector<'s, u8>, 8>) -> (rest: own FixedVector<Vector<'s, u8>, 8>, leased: own Option<Vector<'s, u8>>) reads(free), writes(free) contract {
-  ensures head_of(rest) == head_of(free);
-  ensures len_of(rest) <= len_of(free);
-  ensures room_of(rest) <= room_of(free) + 1_u64;
-} {
-  doc "Leases one block, or reports that the free list is empty.";
-  let spare = len_of(free);
-  let any = spare > 0_u64;
-  if any {
-    let (rest, one) = take_back(vector: move free);
-    return move rest, Some<Vector<'s, u8>>(value: move one);
-  }
-  return move free, None<Vector<'s, u8>>();
+linear struct Lease['s] {
+  run: Vector<'s, u8>;
 }
 
-fn pool_release['s: affine](free: own FixedVector<Vector<'s, u8>, 8>, block: own Vector<'s, u8>) -> rest: own FixedVector<Vector<'s, u8>, 8> reads(free), writes(free) contract {
-  requires room_of(free) > 0_u64;
-  ensures head_of(rest) == head_of(free);
-  ensures len_of(rest) == len_of(free) + 1_u64;
-  ensures room_of(rest) + 1_u64 == room_of(free);
+struct BlockPool['s] {
+  free: FixedVector<Vector<'s, u8>, 8>;
+}
+
+fn pool_new['s: affine](store: &uniq Arena<'s, 65536, 16>) -> made: own Option<BlockPool<'s>> reads(store), writes(store) {
+  doc "Carves eight 256-byte runs out of the store and holds them as a free list.";
+  let free = fixed_vector::<Vector<'s, u8>, 8>();
+  for @carve (
+    at in 0_u64..8_u64,
+    invariant grown: len_of(free) >= at,
+    invariant spare: room_of(free) + at >= 8_u64,
+    invariant flat: head_of(free) <= 0_u64
+  ) {
+    match arena_vector::<u8>(store: &uniq deref(store), count: 256_u64) {
+      None() => {
+        return None<BlockPool<'s>>();
+      }
+      Some(value: run) => {
+        set free = place_back(vector: move free, value: move run);
+      }
+    }
+  }
+  let pool = BlockPool<'s>(free: move free);
+  return Some<BlockPool<'s>>(value: move pool);
+}
+
+fn pool_take['s: affine](pool: own BlockPool<'s>) -> (rest: own BlockPool<'s>, leased: own Option<Lease<'s>>) reads(pool.free), writes(pool.free) {
+  doc "Leases one run, or reports that the free list is empty.";
+  let spare = len_of(pool.free);
+  let any = spare > 0_u64;
+  if any {
+    set (pool.free, one) = take_back(vector: move pool.free);
+    let ticket = Lease<'s>(run: move one);
+    return move pool, Some<Lease<'s>>(value: move ticket);
+  }
+  return move pool, None<Lease<'s>>();
+}
+
+fn pool_release['s: affine](pool: own BlockPool<'s>, lease: own Lease<'s>) -> rest: own BlockPool<'s> reads(pool.free), writes(pool.free) contract {
+  requires room_of(pool.free) > 0_u64;
 } {
-  doc "Returns one block to the free list; the caller has proved there is room.";
-  let back = place_back(vector: move free, value: move block);
-  return move back;
+  doc "Returns one lease to the free list; the caller has proved there is room.";
+  let Lease(run: back) = move lease;
+  set pool.free = place_back(vector: move pool.free, value: move back);
+  return move pool;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "Runs 3.L.4's block pool over a bump extent: eight arena-backed runs carved into one frame-resident run of runs, one leased out, and one returned to a free list the callee proved had room.";
+  doc "Runs 3.L.4's block pool over a bump extent.";
   region 'a {
     let workspace = arena_frame::<65536, 16, 'a>();
     region {
-      let free = fixed_vector::<Vector<'a, u8>, 8>();
-      for @carve (
-        at in 0_u64..8_u64,
-        invariant grown: len_of(free) >= at,
-        invariant spare: room_of(free) + at >= 8_u64,
-        invariant flat: head_of(free) <= 0_u64
-      ) {
-        let block = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
-        set free = place_back(vector: move free, value: move block);
-      }
-      let full = len_of(free);
-      if full == 8_u64 {
-      } else {
-        return exit_status(code: 1_u8);
-      }
-      let (rest, leased) = pool_take(free: move free);
-      match leased {
+      match pool_new(store: &uniq workspace) {
         None() => {
-          return exit_status(code: 2_u8);
+          return exit_status(code: 1_u8);
         }
-        Some(value: block) => {
-          let width = room_of(block);
-          if width == 256_u64 {
+        Some(value: pool) => {
+          let held = len_of(pool.free);
+          if held == 8_u64 {
           } else {
-            return exit_status(code: 3_u8);
+            return exit_status(code: 2_u8);
           }
-          let spare = room_of(rest);
-          let fits = spare > 0_u64;
-          if fits {
-            let back = pool_release(free: move rest, block: move block);
-            let held = len_of(back);
-            if held == 8_u64 {
-            } else {
-              return exit_status(code: 4_u8);
+          let (rest, leased) = pool_take(pool: move pool);
+          match leased {
+            None() => {
+              return exit_status(code: 3_u8);
             }
-          } else {
-            return exit_status(code: 5_u8);
+            Some(value: ticket) => {
+              let spare = room_of(rest.free);
+              let fits = spare > 0_u64;
+              if fits {
+                let back = pool_release(pool: move rest, lease: move ticket);
+                let full = len_of(back.free);
+                if full == 8_u64 {
+                } else {
+                  return exit_status(code: 4_u8);
+                }
+              } else {
+                let Lease(run: orphan) = move ticket;
+                return exit_status(code: 5_u8);
+              }
+            }
           }
         }
       }

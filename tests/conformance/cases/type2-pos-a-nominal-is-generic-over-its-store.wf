@@ -1,0 +1,25 @@
+struct Chunk['s] {
+  page: Vector<'s, u8>;
+}
+
+fn chunk_room['s: affine](held: own Chunk<'s>) -> (rest: own Chunk<'s>, width: own u64) reads(held.page) {
+  doc "Reads one chunk's own capacity and hands the chunk back.";
+  let spare = room_of(held.page);
+  return move held, spare;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "TYPE-2, PROV-1: a nominal's region parameter is a component of its type name, so an instance is fixed by its region argument and a value of it may be built at a caller's own store. The helper is generic over that store: its parameter type names the region, so the actual determines it and no region argument is written at the call.";
+  region 'a {
+    let workspace = arena_frame::<4096, 16, 'a>();
+    region {
+      let page = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
+      let held = Chunk<'a>(page: move page);
+      let (rest, width) = chunk_room(held: move held);
+      if width == 256_u64 {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

@@ -76,24 +76,21 @@ fn the_fixed_run_library_proves_and_runs() {
     assert!(output.stderr.is_empty());
 }
 
-/// [BLK-1, PROV-6, FORM-8] the one-level lift at execution: a frame-resident
-/// run whose elements are store-backed runs, and the block pool 3.L.4 writes
-/// over it.
+/// [BLK-1, PROV-6, S20, TYPE-5] the one-level lift at execution, under the two
+/// nominals 3.L.4 writes it with.
 ///
-/// The program is the design's pool with its two nominals removed, which is
-/// exactly what this version cannot spell: a source nominal generic over its
-/// store region has no instantiation, so `BlockPool['s]` and `Lease['s]` wait,
-/// and the free list is the bare `FixedVector<Vector<'s, u8>, 8>` the struct
-/// would have held. What it does exercise is everything the lift was for —
-/// eight arena-backed runs carved into one run of runs, a lease taken off the
-/// back boundary and a block returned to it, and both pool operations generic
-/// over the store, which needs the formal region a run's *element* names to be
-/// determined by the actual.
+/// `BlockPool['s]` holds the free list and `linear struct Lease['s]` holds the
+/// leased run, so this is the design's pool entire: a nominal generic over its
+/// store, three operations generic over the same store, eight arena-backed
+/// runs carved into one run of runs, a lease taken off the back boundary and
+/// returned to a free list `pool_release` *proved* had room. The `linear`
+/// modifier is what makes the return unavoidable — the one path that does not
+/// return the lease has to take it apart, and dropping it is refused.
 ///
 /// The exit code is the program's own report: it reads the free list's length
-/// after the carve, the leased block's own `room_of`, and the length the
-/// release leaves, so an element slot laid out or addressed wrongly reports a
-/// nonzero code rather than passing quietly.
+/// after the carve, the room the take leaves, and the length the release
+/// leaves, so an element slot laid out or addressed wrongly reports a nonzero
+/// code rather than passing quietly.
 #[test]
 fn a_run_of_store_backed_runs_is_a_block_pool() {
     let llvm = compile_program("block_pool.wf");

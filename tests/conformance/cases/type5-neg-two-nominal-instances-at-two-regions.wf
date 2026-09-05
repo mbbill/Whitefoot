@@ -1,0 +1,35 @@
+struct Chunk['s] {
+  page: Vector<'s, u8>;
+}
+
+fn chunk_take['s: affine](held: own Chunk<'s>, other: own Chunk<'s>) -> width: own u64 reads(held.page, other.page) {
+  doc "Takes two chunks of one store.";
+  let left = room_of(held.page);
+  let right = room_of(other.page);
+  let same = left == right;
+  if same {
+    return left;
+  }
+  return right;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "TYPE-5, PROV-1: two instances of one nominal at two regions are two types. Both stores are bump extents, both chunks are well formed, and the call relates the two parameters to one region, so passing a `Chunk<'a>` and a `Chunk<'b>` to it is the ordinary exact-identity mismatch and not an outlives question.";
+  region 'a {
+    let first = arena_frame::<4096, 16, 'a>();
+    region 'b {
+      let second = arena_frame::<4096, 16, 'b>();
+      region {
+        let one = arena_vector_proved::<u8>(store: &uniq first, count: 256_u64);
+        let two = arena_vector_proved::<u8>(store: &uniq second, count: 256_u64);
+        let held = Chunk<'a>(page: move one);
+        let other = Chunk<'b>(page: move two);
+        let width = chunk_take(held: move held, other: move other);
+        if width == 256_u64 {
+          return exit_status(code: 0_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}
