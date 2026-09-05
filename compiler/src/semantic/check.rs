@@ -438,8 +438,7 @@ impl LocalBinding {
     /// value's liveness — and therefore its loan's extent — begins.
     fn hold_slice_loans(&mut self, holder: DeclarationId, places: &[ResolvedPlace]) {
         for loan in &mut self.slice_loans {
-            if places.contains(&loan.place) && !loan.descriptors.contains(&holder)
-            {
+            if places.contains(&loan.place) && !loan.descriptors.contains(&holder) {
                 loan.descriptors.push(holder);
             }
         }
@@ -1033,8 +1032,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
         let mut wanted: HashMap<DeclarationId, Vec<ResolvedPlace>> = HashMap::new();
         for origin in &slice.origins {
-            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace { root, fields, .. } =
-                origin
+            if let crate::semantic::model::CheckedSliceOrigin::SourcePlace {
+                root, fields, ..
+            } = origin
             {
                 wanted.entry(*root).or_default().push(ResolvedPlace {
                     root: *root,

@@ -1875,7 +1875,9 @@ and name it on the returned reborrow"
         for local in bindings.values() {
             for loan in &local.slice_loans {
                 if loan.strength == LoanStrength::Shared
-                    && origins.iter().any(|origin| places_overlap(&loan.place, origin))
+                    && origins
+                        .iter()
+                        .any(|origin| places_overlap(&loan.place, origin))
                     && self.slice_loan_is_live(loan, bindings, node)?
                 {
                     return self.issue_node(

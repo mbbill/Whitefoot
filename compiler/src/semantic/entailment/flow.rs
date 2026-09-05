@@ -6391,10 +6391,7 @@ impl Analyzer<'_, '_> {
             type_arguments: Vec::new(),
             const_arguments: Vec::new(),
             result: CheckedType::Bool,
-            arguments: vec![
-                measure(CheckedMeasure::Head),
-                measure(CheckedMeasure::Room),
-            ],
+            arguments: vec![measure(CheckedMeasure::Head), measure(CheckedMeasure::Room)],
         }))
     }
 

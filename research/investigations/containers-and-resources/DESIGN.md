@@ -2262,11 +2262,18 @@ which is [OWN-5]'s ordinary conflict (probe `s6`) and which Q19 records as the c
 > Both are right and neither is what stopped it. Three `move`s of shared views stand in
 > one *accepted* conformance program — `fn1-pos-returned-slice-inputs-run` — and a `move`
 > of a copy value is [OWN-1]'s `MoveOfCopy`, so landing the classification moves that
-> program from accept to reject. The classification is therefore DEFERRED in v0.45 with a
+> program from accept to reject. The classification was therefore DEFERRED at B8e with a
 > stated delta, together with the loan's last-use end condition and [VIEW-4], and the
-> decision the owner actually faces is whether those three `move`s are rewritten. What
-> **did** land needs neither: the exclusive view is affine for its own reason [OWN-5] 606,
-> and every sentence of [VIEW-2] holds at both strengths.
+> decision the owner actually faced is whether those three `move`s are rewritten.
+>
+> **Answered 2026-09-05 by the owner's delegate: the `move`s are respelled and the
+> classification lands (B8f).** All three are written bare,
+> `fn1-pos-returned-slice-inputs-run` keeps `run`, exit 0, and every other `move` of a
+> shared view in the corpus is respelled the same way; 6.0r records the boundary. Landing
+> it found a *third* price this entry did not name: [EFF-1] says that merely moving,
+> returning or repacking a view observes nothing of what it views, and this compiler was
+> attributing a read at every place use of a loan-bearing type — which only the `move`
+> spelling had hidden, because a consume exhibits no read.
 
 *Judgment:* the [OWN-1] classification of the two view types, which [PROV-3] use 1,
 [LIV-2] condition 1, [VIEW-4] and [CALL-3] read. *Publishes:* the two types, their loan
@@ -2312,6 +2319,15 @@ publishes it and 3.L.3's `flat` invariant establishes it.
 > [BLK-0] needs two things this entry does not mention — a *shared* borrow mode, which
 > the kernel record's mode enumeration does not have, and an operand *class* rather than
 > the single run parameter `V`, because the transitional domain is four types.
+>
+> **Landed 2026-09-05 in B8f, in the restated form.** The record notation gained a
+> viewable operand class and a shared-borrow operand mode, the premise is written as the
+> difference bound, and it is submitted at every formation and judged under [MSR-4]. It had
+> to be: widening the domain without it admitted a descriptor over storage the run does not
+> own, which 6.0r records as that batch's own soundness hole. What did **not** move is the
+> *spelling*: two domains may not claim one [TYPE-6], so `slice_of` and `mut_slice_of` stay
+> [OP-1] family entries until [S34] retires `array<T, N>` and `buffer<T>`, and the row data
+> alone lives in [BLK-0].
 
 *Judgment:* [OWN-5] at the formation borrow, [MSR-4] discharge of the non-wrap
 requirement, and the ordinary [BLK-0] relation establishment through [CALL-6].
@@ -4647,8 +4663,15 @@ is exactly the [TYPE-6] collision [BLK-0]'s own disjointness sentence forbids. T
 does not choose between the two repairs and B8 must: either the run becomes a third
 admitted source of the existing [OP-1] `slice_of` family, which is what a family is for and
 costs A.2 its Views block, or the [OP-1] row retires with `array` and `buffer` [S34] and
-the spelling passes to the kernel domain. **This is recorded as an open item and not as a
-decision**; nothing in this batch lands either row. **What it does not settle:** nothing
+the spelling passes to the kernel domain. **This was an open item and is now decided
+(owner's delegate, 2026-09-05): both, in that order.** B8f took the first repair for the
+*spelling* — one `slice_of` family whose viewable operand class contains the runs — and
+moved the *row data* into [BLK-0] at the same time, so the requirement and the four
+published relations are the record's own. The spelling's move into the kernel IDENT domain
+lands with [S34]'s retirement, because until then two domains would claim one. Taking both
+steps at once was measured and declined: [BLK-0]'s named-argument form would respell about
+a hundred and twenty live call sites and make fourteen recorded conformance cases MODIFIED
+for no test §7's B8 states. **What it does not settle:** nothing
 about the readers, which S36 decided and this scheme confirms rather than moves.
 
 ### 3.L The library, written in wf

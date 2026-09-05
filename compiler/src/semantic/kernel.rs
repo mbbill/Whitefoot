@@ -1532,19 +1532,19 @@ mod tests {
                         (
                             KernelGenericKind::Type,
                             KernelShape::Element | KernelShape::Run
-                        ) | (
-                            KernelGenericKind::Type,
-                            KernelShape::Viewable
-                        ) | (
-                            KernelGenericKind::Region,
-                            KernelShape::Extent | KernelShape::Heap | KernelShape::Vector,
-                        ) | (
-                            // [VIEW-2] the operand's own borrow takes the
-                            // view's region [FORM-8], so no argument is
-                            // written for it.
-                            KernelGenericKind::Region,
-                            KernelShape::Viewable
-                        ) | (KernelGenericKind::Const(_), KernelShape::Extent)
+                        ) | (KernelGenericKind::Type, KernelShape::Viewable)
+                            | (
+                                KernelGenericKind::Region,
+                                KernelShape::Extent | KernelShape::Heap | KernelShape::Vector,
+                            )
+                            | (
+                                // [VIEW-2] the operand's own borrow takes the
+                                // view's region [FORM-8], so no argument is
+                                // written for it.
+                                KernelGenericKind::Region,
+                                KernelShape::Viewable
+                            )
+                            | (KernelGenericKind::Const(_), KernelShape::Extent)
                     )
                 });
                 assert_eq!(

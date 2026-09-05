@@ -27,7 +27,8 @@ use super::{ControlScope, StatementResult};
 /// second value: the loan the commit would displace belongs to the view that
 /// holds it, so a new view is formed and bound rather than written over the
 /// old one's place.
-const VIEW4_NEW_BINDING: &str = "bind a new view under a new `let` rather than committing at this one";
+const VIEW4_NEW_BINDING: &str =
+    "bind a new view under a new `let` rather than committing at this one";
 
 /// One target of the commit being checked, with the state the three admission
 /// conditions read at the commit.
