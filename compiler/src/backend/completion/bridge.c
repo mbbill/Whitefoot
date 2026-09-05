@@ -573,25 +573,6 @@ static int wf_bridge_windows_port_handle(int descriptor, HANDLE *handle) {
     return 1;
 }
 
-/* The bridge owns this symbol in every ordinary Windows link: a successfully
- * classified regular read descriptor is registered, and associated with the
- * port where this run has one, before it becomes writer-visible. */
-int wf__windows_completion_associate_descriptor(int descriptor) {
-    HANDLE handle;
-    int error = wf__windows_completion_register_descriptor(
-        descriptor,
-        WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
-    );
-    if (error != 0) {
-        return error;
-    }
-    if (!wf_bridge_ring_ready()) {
-        return 0;
-    }
-    return wf_bridge_windows_port_handle(descriptor, &handle) ? 0
-                                                              : (int)GetLastError();
-}
-
 static int wf_bridge_ring_offer(wf_completion_record *record) {
     HANDLE handle;
     if (!wf_bridge_ring_ready() || !wf_windows_iocp_carries(record)) {

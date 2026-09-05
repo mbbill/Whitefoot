@@ -5,6 +5,7 @@ WINDOWS_CC ?= x86_64-w64-mingw32-gcc
 WINE ?= /usr/lib/wine/wine64
 WINEPREFIX ?= $(WHITEFOOT_SCRATCH_ROOT)/wineprefix
 WINDOWS_OBJDUMP ?= objdump
+WINDOWS_NM ?= x86_64-w64-mingw32-nm
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 STAGE_DIR := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-gate-stages
 
@@ -501,6 +502,9 @@ completion-windows-cross:
 		-c src/backend/wf_floor_windows.c \
 		-o "$(COMPLETION_TMP)/wf-floor-windows.o"
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
+		-c src/backend/windows_runtime.c \
+		-o "$(COMPLETION_TMP)/windows-runtime.o"
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		src/backend/windows_namespace_probe.c \
 		-o "$(COMPLETION_TMP)/windows-namespace-probe.exe"
 	@imports="$$($(WINDOWS_OBJDUMP) -p \
@@ -515,6 +519,54 @@ completion-windows-cross:
 			exit 1; \
 		fi; \
 	done
+	@# The Windows host runtime does not depend on the completion runtime or
+	@# the scheduler core; the dependency runs the other way. A program that
+	@# submits nothing and hands out nothing stages the floor group alone, so
+	@# a single call from `windows_runtime.c` into either of the other groups
+	@# is an unresolved external in every such link -- and that link is on the
+	@# real host and nowhere else, which is how one crossed the gate. This is
+	@# the same fact stated where it can be checked in seconds: the symbols
+	@# the floor group leaves undefined, minus what it answers itself, may not
+	@# include anything the other two groups define.
+	@#
+	@# "Answers itself" includes its weak defaults. `wf__sched_entry_stack` is
+	@# the core's own seam (design section 5): the floor declares it weakly in
+	@# its own translation unit, a link that carries the core overrides it, and
+	@# a link that does not takes the default beside the reference. A COFF weak
+	@# external is reported undefined (`w`) as well as defined, so the `w` and
+	@# `V` classes join the defined set or the seam would read as a crossing.
+	@$(WINDOWS_NM) -u \
+		"$(COMPLETION_TMP)/wf-floor-windows.o" \
+		"$(COMPLETION_TMP)/windows-runtime.o" \
+		| awk '{print $$2}' | sort -u > "$(COMPLETION_TMP)/floor-group.undef"
+	@$(WINDOWS_NM) \
+		"$(COMPLETION_TMP)/wf-floor-windows.o" \
+		"$(COMPLETION_TMP)/windows-runtime.o" \
+		| awk 'NF >= 2 && $$(NF - 1) ~ /^[TDBRtwWVv]$$/ {print $$NF}' | sort -u \
+		> "$(COMPLETION_TMP)/floor-group.def"
+	@rm -rf "$(COMPLETION_TMP)/group-objects"
+	@mkdir -p "$(COMPLETION_TMP)/group-objects"
+	@for source in $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_windows.c \
+		$(SCHED_DIR)/entry.c $(COMPLETION_DIR)/runtime.c \
+		$(COMPLETION_DIR)/wait_windows.c $(COMPLETION_DIR)/file_adapter.c \
+		$(COMPLETION_DIR)/file_windows.c $(COMPLETION_DIR)/bridge.c \
+		$(COMPLETION_DIR)/windows_iocp.c; do \
+		$(WINDOWS_CC) $(WINDOWS_CFLAGS) -c "$$source" \
+			-o "$(COMPLETION_TMP)/group-objects/$$(basename "$$source" .c).o" \
+			|| exit 1; \
+	done
+	@$(WINDOWS_NM) --defined-only "$(COMPLETION_TMP)/group-objects"/*.o \
+		| awk '$$2 ~ /^[TDBRt]$$/ {print $$3}' | sort -u \
+		> "$(COMPLETION_TMP)/other-groups.def"
+	@crossed="$$(comm -23 \
+		"$(COMPLETION_TMP)/floor-group.undef" \
+		"$(COMPLETION_TMP)/floor-group.def" \
+		| comm -12 - "$(COMPLETION_TMP)/other-groups.def")"; \
+	if [ -n "$$crossed" ]; then \
+		echo "the Windows host runtime reaches the completion runtime or the scheduler core:" >&2; \
+		printf '%s\n' "$$crossed" >&2; \
+		exit 1; \
+	fi
 	@echo "completion Windows x86-64 cross-link: PASS (not runtime-qualified)"
 
 # Runs what the cross build produced, under wine, when a wine is installed.

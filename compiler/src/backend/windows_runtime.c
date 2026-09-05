@@ -906,17 +906,25 @@ int wf__windows_completion_file_open_at_worker(
         return -1;
     }
     {
-        int registration_error = expected_kind == WF_WINDOWS_EXPECT_REGULAR
-            ? wf__windows_completion_associate_descriptor(descriptor)
-            : wf__windows_completion_register_descriptor(
-                  descriptor,
-                  descriptor_class
-              );
+        /* An open records the descriptor's class in this runtime's own table
+         * and stops there.  It does not reach the completion port, and this
+         * layering is not a detail: a program that submits nothing links this
+         * unit and the floor and no completion runtime at all, so a call from
+         * here into the bridge would be an unresolved symbol in every such
+         * link.  The port association is the ring's own and happens where the
+         * ring already does it -- lazily, at the first offer of a record on
+         * this descriptor, in `completion/bridge.c`'s
+         * `wf_bridge_windows_port_handle`, which is also the only place that
+         * knows whether this run has a ring to associate with. */
+        int registration_error = wf__windows_completion_register_descriptor(
+            descriptor,
+            descriptor_class
+        );
         if (registration_error != 0) {
             (void)_close(descriptor);
-            /* Association and registry storage are execution resources
-             * introduced by this backend. They cannot become a source-level
-             * open failure, and there is no permitted synchronous fallback. */
+            /* Registry storage is an execution resource introduced by this
+             * backend. It cannot become a source-level open failure, and there
+             * is no permitted synchronous fallback. */
             wf_windows_fail(
                 "an opened descriptor could not be registered, and an open has no permitted synchronous fallback"
             );

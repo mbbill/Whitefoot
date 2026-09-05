@@ -8,17 +8,21 @@ use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER,
-    CompilerLimits, FLOOR_STACK_BYTES, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
     compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime, stack_ledger,
 };
 
+// `HOST_LINK_LIBRARIES` is here rather than above because its one reader is
+// this platform's `TARGET_LINK_LIBRARIES`: Windows names no library of its
+// own, so an unconditional import of it is an unused import there, and that
+// is a clippy error on the host that would find it last.
 #[cfg(not(target_os = "windows"))]
 use whitefoot::{
     COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
-    FLOOR_RUNTIME_SOURCE, SCHED_PRIM_HOST_SOURCE,
+    FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, SCHED_PRIM_HOST_SOURCE,
 };
 
 #[cfg(target_os = "windows")]

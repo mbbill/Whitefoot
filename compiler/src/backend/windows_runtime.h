@@ -40,7 +40,13 @@ extern "C" {
  * ledger at all (design section 7). */
 
 /* Registers a descriptor this runtime produced.  Returns 0, or a Win32 error
- * for a descriptor with no native handle. */
+ * for a descriptor with no native handle.
+ *
+ * This is all an open does about the port: it records the class and stops.
+ * Nothing in this unit calls into the completion runtime, and the dependency
+ * runs one way only -- the bridge reads this table, this table never reaches
+ * the bridge -- because a program that submits nothing links this unit and the
+ * floor and no completion runtime at all. */
 int wf__windows_completion_register_descriptor(
     int descriptor,
     unsigned descriptor_class
@@ -120,11 +126,6 @@ int64_t wf__windows_directory_batch(
     uint64_t count,
     int64_t *position
 );
-
-/* The Windows completion bridge owns this symbol in every ordinary Windows
- * link. A successfully classified regular read descriptor is associated before
- * it becomes writer-visible. The return is zero or a Win32 error code. */
-int wf__windows_completion_associate_descriptor(int descriptor);
 
 
 #if defined(__cplusplus)
