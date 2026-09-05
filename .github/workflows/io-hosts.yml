@@ -731,10 +731,20 @@ jobs:
       # `SetThreadStackGuarantee`'s emergency stack under it, where POSIX
       # classifies by address against bounds the switch writes.
       #
-      # Twice, because the two runs reach the guard on different stacks: at the
-      # shipped default the recursion is carried by whichever thread the pool
-      # gives it, and at `WF_WORKERS=4` the deep half is handed out, so the
-      # descent runs on a worker's pool fiber rather than the entry's.
+      # Two configurations, because they reach the guard on different stacks:
+      # at the shipped default the recursion is carried by whichever thread
+      # the pool gives it, and at `WF_WORKERS=4` the deep half is handed out,
+      # so the descent runs on a worker's pool fiber rather than the entry's.
+      #
+      # Several rounds of each, because the one defect this step has found so
+      # far was intermittent: a guarantee belongs to the calling thread or
+      # fiber, the floor had set it on the threads' host stacks only, and a
+      # pool fiber overflowed with nothing under the handler but what was left
+      # of the page the guard had been. How much that was depended on where in
+      # the page the descent stopped, which the steals decide, so the same
+      # bytes passed on one push and segfaulted on the next
+      # (`sched/prim_windows.c`, `wf_prim_fiber_main`). One draw is not
+      # evidence against that class of defect; a handful on each stack is.
       - name: Require the floor to classify an overflow on a pool fiber
         run: |
           fail_floor() {
@@ -783,30 +793,33 @@ jobs:
             "$floor_dir/runaway.wf" -o "$floor_dir/runaway.exe" || \
             fail_floor "the runaway recursion did not link" "$?"
           for workers in default 4; do
-            set +e
-            if [ "$workers" = default ]; then
-              "$floor_dir/runaway.exe" \
-                > "$floor_dir/out.txt" 2> "$floor_dir/err.txt"
-            else
-              WF_WORKERS="$workers" "$floor_dir/runaway.exe" \
-                > "$floor_dir/out.txt" 2> "$floor_dir/err.txt"
-            fi
-            status=$?
-            set -e
-            echo "--- runaway recursion, WF_WORKERS=${workers}: stdout ---"
-            tr -d $'\r' < "$floor_dir/out.txt" || true
-            echo "--- runaway recursion, WF_WORKERS=${workers}: stderr ---"
-            tr -d $'\r' < "$floor_dir/err.txt" || true
-            echo "--- runaway recursion, WF_WORKERS=${workers}: exit status: ${status} ---"
-            if [ "$status" -eq 0 ]; then
-              fail_floor "WF_WORKERS=${workers}: the runaway recursion returned a status"
-            fi
-            if [ -s "$floor_dir/out.txt" ]; then
-              fail_floor "WF_WORKERS=${workers}: an exhausted execution wrote program output"
-            fi
-            tr -d $'\r' < "$floor_dir/err.txt" > "$floor_dir/err.normalized"
-            grep -Fx '{"resource":"stack"}' "$floor_dir/err.normalized" > /dev/null || \
-              fail_floor "WF_WORKERS=${workers}: the exhaustion record is not the one record"
-            test "$(wc -l < "$floor_dir/err.normalized")" -eq 1 || \
-              fail_floor "WF_WORKERS=${workers}: more than one record reached the channel"
+            for round in 1 2 3 4 5; do
+              set +e
+              if [ "$workers" = default ]; then
+                "$floor_dir/runaway.exe" \
+                  > "$floor_dir/out.txt" 2> "$floor_dir/err.txt"
+              else
+                WF_WORKERS="$workers" "$floor_dir/runaway.exe" \
+                  > "$floor_dir/out.txt" 2> "$floor_dir/err.txt"
+              fi
+              status=$?
+              set -e
+              run="WF_WORKERS=${workers}, round ${round}"
+              echo "--- runaway recursion, ${run}: stdout ---"
+              tr -d $'\r' < "$floor_dir/out.txt" || true
+              echo "--- runaway recursion, ${run}: stderr ---"
+              tr -d $'\r' < "$floor_dir/err.txt" || true
+              echo "--- runaway recursion, ${run}: exit status: ${status} ---"
+              if [ "$status" -eq 0 ]; then
+                fail_floor "${run}: the runaway recursion returned a status"
+              fi
+              if [ -s "$floor_dir/out.txt" ]; then
+                fail_floor "${run}: an exhausted execution wrote program output"
+              fi
+              tr -d $'\r' < "$floor_dir/err.txt" > "$floor_dir/err.normalized"
+              grep -Fx '{"resource":"stack"}' "$floor_dir/err.normalized" > /dev/null || \
+                fail_floor "${run}: the exhaustion record is not the one record"
+              test "$(wc -l < "$floor_dir/err.normalized")" -eq 1 || \
+                fail_floor "${run}: more than one record reached the channel"
+            done
           done

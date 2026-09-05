@@ -14,7 +14,11 @@
  *   `wf__floor_run` tests the weak `wf__sched_entry_stack` and returns the
  *   status the core answers with (design section 5);
  *   `wf__floor_attach_thread` is the per-thread half, which here is the
- *   emergency stack `SetThreadStackGuarantee` reserves;
+ *   emergency stack `SetThreadStackGuarantee` reserves -- for the calling
+ *   thread *or fiber*, so beside every runtime thread's host stack it runs
+ *   once at the first frame of every pool fiber (`sched/prim_windows.c`,
+ *   `wf_prim_fiber_main`), because a guarantee set on a thread's own stack
+ *   does not carry to a fiber that thread runs;
  *   `wf__floor_set_stack_bounds` is the per-stack half, which here does
  *   nothing at all -- Windows classifies an overflow by exception code and
  *   never by address, so this floor has no bounds to write (design section 7,
@@ -223,8 +227,12 @@ static BOOL CALLBACK wf__floor_install_handler(
     return wf__floor_handler != NULL;
 }
 
-/* The handler is process-wide. The guarantee is per-thread, so every runtime
- * thread that can execute Whitefoot code calls this function on itself. */
+/* The handler is process-wide. The guarantee is per stack -- Windows keeps it
+ * for the calling thread or fiber, and a fiber takes it only when it is set
+ * from inside that fiber -- so every runtime thread calls this function on its
+ * host stack at its start, and every pool fiber calls it at its first frame
+ * before any frame of the program is on it (`sched/prim_windows.c`). The
+ * install is once per process and the guarantee is what each call is for. */
 void wf__floor_attach_thread(void) {
     ULONG stack_guarantee = WF_FLOOR_EXCEPTION_STACK_BYTES;
     if (InitOnceExecuteOnce(

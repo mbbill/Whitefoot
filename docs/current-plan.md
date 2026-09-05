@@ -550,7 +550,15 @@ before the code lands.
    fibers, the reservation is address space with one committed page per slot
    for the core's state header, and `wf__floor_set_stack_bounds` is defined
    strongly in the Windows floor and does nothing, because that floor
-   classifies an overflow by exception code. One rule now covers WF_WORKERS,
+   classifies an overflow by exception code. What that floor does need per
+   stack, found on the real host on 2026-09-05 after the port landed, is its
+   emergency stack on each pool fiber: Windows keeps a stack guarantee for the
+   calling thread or fiber and a fiber takes it only when set from inside, so
+   `wf_prim_fiber_main` calls `wf__floor_attach_thread` as every pool fiber's
+   first frame. Before it did, the io-hosts overflow proof passed on one push
+   and segfaulted on the next with the same bytes, because a pool fiber
+   overflowed with only what was left of the guard page under the handler;
+   the job now runs each configuration five times. One rule now covers WF_WORKERS,
    WF_STACKS and WF_IO_HELPERS on both platforms: unset or empty is the
    caller's own default, an integer from 0 through the setting's ceiling is
    that number, and anything else is a configuration error that ends the run

@@ -87,6 +87,24 @@ void wf_prim_switch(void **save, void *load) {
     SwitchToFiber(load);
 }
 
+/* The floor's two halves, as this platform's core sees them. The Windows
+ * floor defines both strongly: the per-stack half does nothing there, because
+ * that floor classifies an overflow by exception code and never by address,
+ * and the attach is the emergency stack `SetThreadStackGuarantee` reserves for
+ * the calling thread or fiber, which is why `wf_prim_fiber_main` below calls
+ * it. The weak answers here are for a core linked without the floor -- the
+ * adapter probe -- exactly as on the host, where `entry.c` carries the
+ * attach's weak answer and `prim_host.c` the bounds'. */
+__attribute__((weak)) void wf__floor_attach_thread(void) {}
+
+__attribute__((weak)) void wf__floor_set_stack_bounds(
+    unsigned char *low,
+    unsigned char *high
+) {
+    (void)low;
+    (void)high;
+}
+
 /* What a prepared stack runs, and where its two words live.
  *
  * `CreateFiberEx` carries one `void *` to the fiber, and the core's entry is a
@@ -107,6 +125,19 @@ _Static_assert(
 
 static VOID WINAPI wf_prim_fiber_main(LPVOID opaque) {
     wf_prim_fiber_entry *call = (wf_prim_fiber_entry *)opaque;
+    /* The floor's attach, on this fiber's own stack and before any frame of
+     * the program is on it. A stack guarantee belongs to the calling thread
+     * *or fiber*: "to set the stack guarantee for a fiber, you must first call
+     * the SwitchToFiber function to execute the fiber", and the guarantee the
+     * thread set on its host stack does not carry to a fiber it runs. Without
+     * this call a pool stack overflows with no emergency stack under the
+     * handler, which then has whatever is left of the page the guard was,
+     * and whether that is enough depends on where in the page the descent
+     * stopped -- the io-hosts overflow proof passed and failed on the same
+     * bytes. This is the first frame of every pool stack, so it runs once per
+     * fiber, and the guarantee then follows the fiber to whichever thread
+     * runs it. */
+    wf__floor_attach_thread();
     call->entry(call->argument);
     /* A prepared stack's entry is the scheduler loop and never returns; a
      * fiber that returned would end its thread with no scheduler on it. */
@@ -137,18 +168,6 @@ void *wf_prim_prepare_stack(
         wf_prim_fail("a pool stack's fiber could not be created");
     }
     return fiber;
-}
-
-/* The floor's per-stack half. The Windows floor defines this strongly and
- * does nothing in it, because that floor classifies an overflow by exception
- * code and never by address; the weak answer here is for a core linked
- * without the floor, exactly as on the host. */
-__attribute__((weak)) void wf__floor_set_stack_bounds(
-    unsigned char *low,
-    unsigned char *high
-) {
-    (void)low;
-    (void)high;
 }
 
 void wf_prim_set_bounds(unsigned char *low, unsigned char *high) {

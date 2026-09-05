@@ -830,7 +830,15 @@ vectored
 exception handler that classifies `EXCEPTION_STACK_OVERFLOW` by its code
 (`wf_floor_windows.c:5,73,104`) and reserves the guarantee with
 `SetThreadStackGuarantee` (`wf_floor_windows.c:121`), so a switch there
-carries no per-stack bounds at all.
+carries no per-stack bounds at all. What Windows does need, found on the real
+host after the port landed, is the guarantee *on each pool fiber*: Windows
+keeps it for the calling thread or fiber, a fiber takes it only when it is set
+from inside that fiber, and a thread's guarantee does not carry to a fiber it
+runs. So the floor's attach runs once at every pool fiber's first frame
+(`sched/prim_windows.c`, `wf_prim_fiber_main`) beside every thread's start;
+before it did, an overflow on a pool fiber had only what was left of the guard
+page under the handler and was classified or not by where in the page the
+descent stopped.
 
 The parallel runtime holds two more thread-locals, `wf__par_self` and
 `wf__par_attached` (`par_runtime.c:276,280`); those stay per thread and must
@@ -1267,7 +1275,9 @@ The platform layer supplies exactly four things and nothing else:
 Two platform facts fall out of that split rather than being decided by it.
 POSIX sets the floor's three bounds at every switch; Windows sets none,
 because its floor classifies by exception code rather than by address
-(section 5). And POSIX keeps the sequential world while Windows has none
+(section 5), and instead arms each pool fiber's own emergency stack once, at
+the fiber's first frame, because a stack guarantee there is per thread or
+fiber (section 7's floor bullet). And POSIX keeps the sequential world while Windows has none
 (`par_runtime_windows.c:8-13`), so a defect in this design is escapable on one
 platform and not the other. That difference is operational and not a fork in
 the design: no join has a pool-off behaviour and none can exist (the last
