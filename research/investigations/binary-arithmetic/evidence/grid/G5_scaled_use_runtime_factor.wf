@@ -4,7 +4,7 @@ fn probe(p: own u64, k: own u64, n: own u64, bcap: own u64) -> ok: own u64 pure 
   doc "ATTEMPT: scale a premise by the runtime stride n. [PRF-1] admits only an integer-literal factor.";
   let step = 0_u64;
   invariant reach: step <= bcap {
-    use n * (p < k);
+    use n times (p < k);
   }
   return step;
 }

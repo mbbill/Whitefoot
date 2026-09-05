@@ -39,7 +39,7 @@ fn matmul(a: &buffer<u32>, b: &buffer<u32>, out: &uniq buffer<u64>, m: own u64, 
       for (
         p in 0_u64..k,
         invariant b_bound: b_at < bcap {
-          use p < k;
+          use (p < k);
         }
       ) {
         invariant a_slot: a_row + p < acap;

@@ -1,9 +1,9 @@
 fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {
   requires value <= limit;
 } {
-  doc "EXPECT REJECT under Prf1: AUTO already discharges upper_bound directly from the single contract premise, so the written use block adds nothing; the correct repair is to remove the use block, not to keep restating the same premise.";
+  doc "EXPECT REJECT under Prf1: AUTO already discharges upper_bound directly from the single contract premise, so the written use (block adds nothing); the correct repair is to remove the use block, not to keep restating the same premise.";
   invariant upper_bound: value <= limit {
-    use value <= limit;
+    use (value <= limit);
   }
   return unit;
 }

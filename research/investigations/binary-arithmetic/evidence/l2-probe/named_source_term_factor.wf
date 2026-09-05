@@ -5,7 +5,7 @@ fn probe(p: own u64, k: own u64, n: own u64) -> ok: own u64 pure contract {
   let step = 0_u64;
   invariant lt: p < k;
   invariant reach: step <= n {
-    use n * lt;
+    use n times lt;
   }
   return step;
 }

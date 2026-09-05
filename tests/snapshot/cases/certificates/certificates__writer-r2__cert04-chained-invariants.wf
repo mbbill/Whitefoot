@@ -7,13 +7,13 @@ fn chained_bound(x: own u32, lim_x: own u32, y: own u32, lim_y: own u32, z: own 
   invariant base_x: x <= lim_x;
   invariant base_y: y <= lim_y;
   invariant weighted_xy: 2_u32 * x + 3_u32 * y <= 2_u32 * lim_x + 3_u32 * lim_y {
-    use 2 * base_x;
-    use 3 * base_y;
+    use 2 times base_x;
+    use 3 times base_y;
   }
   invariant base_z: z <= lim_z;
   invariant chained_total: 2_u32 * x + 3_u32 * y + 5_u32 * z <= 2_u32 * lim_x + 3_u32 * lim_y + 5_u32 * lim_z {
     use weighted_xy;
-    use 5 * base_z;
+    use 5 times base_z;
   }
   return unit;
 }

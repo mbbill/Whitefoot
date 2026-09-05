@@ -216,10 +216,12 @@ pub enum FixedTerminal {
     GreaterEqual,
     /// `::`.
     ColonColon,
+    /// `times`, the multiplicity of one cited proof premise [PRF-1].
+    Times,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -280,6 +282,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
     FixedTerminal::DotDot,
     FixedTerminal::Invariant,
     FixedTerminal::Use,
+    FixedTerminal::Times,
     FixedTerminal::Star,
     FixedTerminal::Plus,
     FixedTerminal::Minus,
@@ -423,6 +426,7 @@ impl FixedTerminal {
             Self::PercentDefined => "%defined",
             Self::Invariant => "invariant",
             Self::Use => "use",
+            Self::Times => "times",
             Self::EqualEqual => "==",
             Self::BangEqual => "!=",
             Self::LessEqual => "<=",
@@ -535,14 +539,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 98,
-            Self::TypeIdentifier => 99,
-            Self::RegionIdentifier => 100,
-            Self::Label => 101,
-            Self::OperationName => 102,
-            Self::Literal => 103,
-            Self::String => 104,
-            Self::Digits => 105,
+            Self::Identifier => 99,
+            Self::TypeIdentifier => 100,
+            Self::RegionIdentifier => 101,
+            Self::Label => 102,
+            Self::OperationName => 103,
+            Self::Literal => 104,
+            Self::String => 105,
+            Self::Digits => 106,
         }
     }
 
@@ -797,8 +801,9 @@ mod tests {
         assert_eq!(FixedTerminal::Replace as u8, 84);
         assert_eq!(FixedTerminal::Invariant as u8, 91);
         assert_eq!(FixedTerminal::Use as u8, 92);
-        assert_eq!(TerminalPredicate::Identifier.index(), 98);
-        assert_eq!(TerminalPredicate::Digits.index(), 105);
+        assert_eq!(FixedTerminal::Times as u8, 98);
+        assert_eq!(TerminalPredicate::Identifier.index(), 99);
+        assert_eq!(TerminalPredicate::Digits.index(), 106);
     }
 
     #[test]

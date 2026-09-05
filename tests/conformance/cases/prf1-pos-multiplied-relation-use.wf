@@ -3,7 +3,7 @@ fn scale_pair(first: own u64, first_limit: own u64, second: own u64, second_limi
   requires second <= second_limit;
 } {
   invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
-    use 3 * (first + second <= first_limit + second_limit);
+    use 3 times (first + second <= first_limit + second_limit);
   }
   return unit;
 }

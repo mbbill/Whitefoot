@@ -272,9 +272,9 @@ where all ingredients exist:
 
 ```wf
 invariant combined_limit: first + second + third <= first_limit + second_limit + third_limit {
-  use first <= first_limit;
-  use second <= second_limit;
-  use third <= third_limit;
+  use (first <= first_limit);
+  use (second <= second_limit);
+  use (third <= third_limit);
 }
 ```
 
@@ -296,7 +296,7 @@ or a finite explicit certificate:
 ```wf
 invariant pair_bound: first + second <= first_limit + second_limit;
 invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
-  use 3 * pair_bound;
+  use 3 times pair_bound;
 }
 ```
 

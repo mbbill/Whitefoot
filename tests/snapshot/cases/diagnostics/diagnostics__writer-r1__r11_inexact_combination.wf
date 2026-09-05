@@ -4,8 +4,8 @@ fn bounded(x: own u8, middle: own u8) -> result: own u8 pure contract {
 } {
   doc "expect REJECT: [PRF-1] the weighted sum of the use premises leaves a residual one tighter than the true bound";
   invariant upper_bound: x <= 253_u8 {
-    use x <= middle;
-    use middle <= 254_u8;
+    use (x <= middle);
+    use (middle <= 254_u8);
   }
   return x;
 }

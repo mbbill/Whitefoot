@@ -14,8 +14,8 @@ fn base64_encode(src: own buffer<u8>) -> out: own buffer<u8> reads(src), allocat
     let source_at = g * 3_u64;
     let dest_at = g * 4_u64;
     invariant group_start: 3_u64 * g < count {
-      use 3 * (g < groups);
-      use 3_u64 * groups <= padded;
+      use 3 times (g < groups);
+      use (3_u64 * groups <= padded);
     }
     let byte0 = src[source_at];
     let shifted0 = ishr(byte0, 2_u32);
@@ -23,7 +23,7 @@ fn base64_encode(src: own buffer<u8>) -> out: own buffer<u8> reads(src), allocat
     let high = cvt::<u8, u64>(sextet0);
     let high_digit = b64_alphabet[high];
     invariant dest_slot: 4_u64 * g < out_length {
-      use 4 * (g < groups);
+      use 4 times (g < groups);
     }
     set out[dest_at] = high_digit;
   }

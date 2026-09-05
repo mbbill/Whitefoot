@@ -5,9 +5,9 @@ fn triple_use(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8,
 } {
   doc "expect REJECT PRF-1 RepeatedUse: the same named premise is used three times instead of one combined factor of 3.";
   invariant sum_bound: a + b + c <= a_limit + b_limit + c_limit {
-    use a <= a_limit;
-    use b <= b_limit;
-    use c <= c_limit;
+    use (a <= a_limit);
+    use (b <= b_limit);
+    use (c <= c_limit);
   }
   invariant scaled_bound: 3_u8 * a + 3_u8 * b + 3_u8 * c <= 3_u8 * a_limit + 3_u8 * b_limit + 3_u8 * c_limit {
     use sum_bound;

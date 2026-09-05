@@ -7,7 +7,7 @@ fn refresh_then_bound(x: own u8, limit: own u8, replacement: own u8, y: own u8, 
   set x = replacement;
   invariant still_bound: x + y <= limit + y_limit {
     use original_bound;
-    use y <= y_limit;
+    use (y <= y_limit);
   }
   return x;
 }

@@ -81,7 +81,7 @@ An `invariant_stmt` ending in `;` renders completely on one line.
 An `invariant_stmt` carrying a proof block renders its introducer through `{` on one line, each `proof_use` on a following line at depth plus one, and `}` on its own line at the original depth.
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
-A `proof_use` whose multiplied source is a parenthesized relation renders exactly one space between its `*` and that `(`, `use 3 * (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, while the relation's own affine parentheses keep the generic attachment.
+A `proof_use` whose `use_premise` is a delimited relation renders exactly one space before that premise's `(`, `use (a <= b);` and `use 3 times (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, exactly as the `for_stmt` space above does, while the relation's own affine parentheses keep the generic attachment.
 A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
 A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 An ordinary `loop_stmt` without a parenthesized invariant header keeps the one-line introducer `loop` plus optional label through `{`.
@@ -286,8 +286,8 @@ for_binding := IDENT "in" atom ".." atom
 header_invariant := "invariant" IDENT ":" affine_expr compare_op affine_expr
 invariant_stmt := "invariant" IDENT ":" affine_expr compare_op affine_expr
                   (";" | "{" proof_use+ "}")
-proof_use   := "use" ( "[0-9]+" "*" (IDENT | "(" affine_expr compare_op affine_expr ")")
-             | IDENT | affine_expr compare_op affine_expr ) ";"
+proof_use   := "use" (("[0-9]+" | IDENT) "times")? use_premise ";"
+use_premise := IDENT | "(" affine_expr compare_op affine_expr ")"
 affine_expr := affine_term (affine_add_op affine_term)*
 affine_term := affine_factor ("*" affine_factor)?
 affine_factor := literal | IDENT | "(" affine_expr ")"
@@ -3329,14 +3329,14 @@ The second uses one explicit non-unit factor, which `AUTO` never guesses:
 
 ```wf
 invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
-  use first <= first_limit;
-  use second <= second_limit;
-  use third <= third_limit;
+  use (first <= first_limit);
+  use (second <= second_limit);
+  use (third <= third_limit);
 }
 
 invariant pair_bound: first + second <= first_limit + second_limit;
 invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
-  use 3 * pair_bound;
+  use 3 times pair_bound;
 }
 ```
 

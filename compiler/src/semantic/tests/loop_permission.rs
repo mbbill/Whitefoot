@@ -342,7 +342,7 @@ fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
     let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   invariant scaled_limit_fits: 4_u64 * limit <= 4_u64 * room {
-    use 4 * (limit <= room);
+    use 4 times (limit <= room);
   }
   let total = 0_u64;
   for @sum (i in 0_u64..limit) {
@@ -980,7 +980,7 @@ fn an_unproved_source_premise_is_rejected_before_affine_map_permission() {
     let source = br#"fn fill(output: own buffer<u64>, limit: own u64) -> result: own buffer<u64> reads(output), writes(output) {
   let room = len(output);
   invariant limit_fits: limit <= room {
-    use limit <= room;
+    use (limit <= room);
   }
   for @fill (i in 0_u64..limit) {
     set output[i] = i;

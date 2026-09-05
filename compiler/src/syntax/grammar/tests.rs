@@ -10,15 +10,15 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 
 /// The committed inventory's own shape. That this data belongs to the active
 /// specification is checked by regenerating it from the active grammar, in
-/// `committed_tables_are_derived_from_the_active_grammar`. The 5,646 select
-/// rows are the complete two-position derivation of the current 84
+/// `committed_tables_are_derived_from_the_active_grammar`. The 5,622 select
+/// rows are the complete two-position derivation of the current 85
 /// productions, not a separately chosen test allowance.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 84);
-    assert_eq!(DECISIONS.len(), 120);
-    assert_eq!(SELECT_ROWS.len(), 5_646);
-    assert_eq!(diagnostic_terminal_order().len(), 106);
+    assert_eq!(productions().len(), 85);
+    assert_eq!(DECISIONS.len(), 121);
+    assert_eq!(SELECT_ROWS.len(), 5_622);
+    assert_eq!(diagnostic_terminal_order().len(), 107);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
     assert_eq!(productions()[13], Production::RequiresClause);
@@ -29,14 +29,16 @@ fn complete_inventory_is_pinned() {
     assert_eq!(productions()[48], Production::HeaderInvariant);
     assert_eq!(productions()[49], Production::InvariantStmt);
     assert_eq!(productions()[50], Production::ProofUse);
-    // `compare_op` sits between `infix_op` and `atom` in [GRAM-5], so every
-    // later production moves one place down the specification order; v0.44's
-    // `clause_expr` sits between `atom_list` and `place` and moves the seven
-    // after it one place further.
-    assert_eq!(productions()[66], Production::CompareOp);
-    assert_eq!(productions()[75], Production::ClauseExpr);
-    assert_eq!(productions()[82], Production::Effect);
-    assert_eq!(productions()[83], Production::EffectPath);
+    // `use_premise` follows `proof_use` in [GRAM-4], so every later production
+    // moves one place down the specification order; `compare_op` sits between
+    // `infix_op` and `atom` in [GRAM-5] and v0.44's `clause_expr` between
+    // `atom_list` and `place`, each moving the productions after it one place
+    // further again.
+    assert_eq!(productions()[51], Production::UsePremise);
+    assert_eq!(productions()[67], Production::CompareOp);
+    assert_eq!(productions()[76], Production::ClauseExpr);
+    assert_eq!(productions()[83], Production::Effect);
+    assert_eq!(productions()[84], Production::EffectPath);
     assert_eq!(Production::ForStmt.index(), 68);
     assert_eq!(Production::ForBinding.index(), 69);
     assert_eq!(Production::HeaderInvariant.index(), 70);
@@ -52,6 +54,7 @@ fn complete_inventory_is_pinned() {
     assert_eq!(Production::AffineAddOp.index(), 80);
     assert_eq!(Production::ProofUse.index(), 81);
     assert_eq!(Production::ClauseExpr.index(), 83);
+    assert_eq!(Production::UsePremise.index(), 84);
     assert_eq!(DECISIONS[57].production(), Production::LoopStmt);
     assert_eq!(DECISIONS[57].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[58].production(), Production::LoopStmt);
@@ -66,8 +69,12 @@ fn complete_inventory_is_pinned() {
     assert_eq!(DECISIONS[64].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[65].production(), Production::InvariantStmt);
     assert_eq!(DECISIONS[65].kind(), DecisionKind::Repeat1);
-    assert_eq!(DECISIONS[72].production(), Production::BreakStmt);
-    assert_eq!(DECISIONS[72].kind(), DecisionKind::Optional);
+    // `use_premise`'s own Choice is a new decision between `invariant_stmt`
+    // and `break_stmt`, so every decision after `proof_use` moves one place.
+    assert_eq!(DECISIONS[68].production(), Production::UsePremise);
+    assert_eq!(DECISIONS[68].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[73].production(), Production::BreakStmt);
+    assert_eq!(DECISIONS[73].kind(), DecisionKind::Optional);
     // [FORM-8] optional region spellings: the `slice` and `arena` type arms,
     // the two `mode` borrow arms, `region_stmt`, and the two `borrow_expr` arms.
     assert_eq!(DECISIONS[41].production(), Production::Type);
@@ -78,12 +85,12 @@ fn complete_inventory_is_pinned() {
     assert_eq!(DECISIONS[44].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[45].production(), Production::Mode);
     assert_eq!(DECISIONS[45].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[73].production(), Production::RegionStmt);
-    assert_eq!(DECISIONS[73].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[94].production(), Production::BorrowExpr);
-    assert_eq!(DECISIONS[94].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[74].production(), Production::RegionStmt);
+    assert_eq!(DECISIONS[74].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[95].production(), Production::BorrowExpr);
     assert_eq!(DECISIONS[95].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[96].production(), Production::BorrowExpr);
+    assert_eq!(DECISIONS[96].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[17].production(), Production::ContractBlock);
     assert_eq!(DECISIONS[17].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[18].production(), Production::ContractBlock);
@@ -136,7 +143,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 120);
+    assert_eq!(decisions, 121);
 }
 
 #[test]
@@ -204,7 +211,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 120);
+    assert_eq!(DECISIONS.len(), 121);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -249,6 +256,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 5_646);
+    assert_eq!(total_rows, 5_622);
     assert!(saw_atom_only);
 }

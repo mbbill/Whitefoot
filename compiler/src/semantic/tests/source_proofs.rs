@@ -142,9 +142,9 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
   let right = c;
   let right_limit = c_limit;
   invariant total: left + middle + right <= left_limit + middle_limit + right_limit {{
-    use left <= left_limit;
-    use middle <= middle_limit;
-    use right <= right_limit;
+    use (left <= left_limit);
+    use (middle <= middle_limit);
+    use (right <= right_limit);
   }}
   set a = replacement;
   set a_limit = replacement;
@@ -153,7 +153,7 @@ fn an_explicit_three_premise_invariant_survives_source_writes() {
   set c = replacement;
   set c_limit = replacement;
   invariant retained_scaled: 3_u64 * left + 3_u64 * middle + 3_u64 * right <= 3_u64 * left_limit + 3_u64 * middle_limit + 3_u64 * right_limit {{
-    use 3 * total;
+    use 3 times total;
   }}
   for (
     seed in 0_u64..0_u64,
@@ -207,8 +207,8 @@ fn the_first_unproved_use_is_reported_in_source_order() {
   requires middle <= 254_u8;
 }} {{
   invariant upper_bound: x <= 254_u8 {{
-    use x <= middle;
-    use middle <= 254_u8;
+    use (x <= middle);
+    use (middle <= 254_u8);
   }}
   return x;
 }}
@@ -219,7 +219,7 @@ fn the_first_unproved_use_is_reported_in_source_order() {
         source.as_bytes(),
         SourceProofObligation::Premise(0),
         ExpectedProofIssueNode::Use {
-            source: "use x <= middle;",
+            source: "use (x <= middle);",
             occurrence: 0,
         },
     );
@@ -232,8 +232,8 @@ fn the_second_unproved_use_is_reported_in_source_order() {
   requires x <= middle;
 }} {{
   invariant upper_bound: x <= 254_u8 {{
-    use x <= middle;
-    use middle <= 254_u8;
+    use (x <= middle);
+    use (middle <= 254_u8);
   }}
   return x;
 }}
@@ -244,7 +244,7 @@ fn the_second_unproved_use_is_reported_in_source_order() {
         source.as_bytes(),
         SourceProofObligation::Premise(1),
         ExpectedProofIssueNode::Use {
-            source: "use middle <= 254_u8;",
+            source: "use (middle <= 254_u8);",
             occurrence: 0,
         },
     );
@@ -258,8 +258,8 @@ fn proved_premises_cannot_strengthen_their_written_sum() {
   requires middle <= 254_u8;
 }} {{
   invariant upper_bound: x <= 253_u8 {{
-    use x <= middle;
-    use middle <= 254_u8;
+    use (x <= middle);
+    use (middle <= 254_u8);
   }}
   return x;
 }}
@@ -282,9 +282,9 @@ fn proved_premises_may_weaken_their_written_sum_deterministically() {
   requires c <= c_limit;
 }} {{
   invariant upper_bound: a + b + c <= a_limit + b_limit + c_limit + 1_u64 {{
-    use a <= a_limit;
-    use b <= b_limit;
-    use c <= c_limit;
+    use (a <= a_limit);
+    use (b <= b_limit);
+    use (c <= c_limit);
   }}
   return unit;
 }}
@@ -340,15 +340,15 @@ fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u
   let total_limit = first_limit_sum + right_limit;
   if flag {{
     invariant expression_form: left + middle + right <= left_limit + middle_limit + right_limit {{
-      use left <= left_limit;
-      use middle <= middle_limit;
-      use right <= right_limit;
+      use (left <= left_limit);
+      use (middle <= middle_limit);
+      use (right <= right_limit);
     }}
   }} else {{
     invariant binder_form: total <= total_limit {{
-      use left <= left_limit;
-      use middle <= middle_limit;
-      use right <= right_limit;
+      use (left <= left_limit);
+      use (middle <= middle_limit);
+      use (right <= right_limit);
     }}
   }}
   need(value: total, limit: total_limit);
@@ -423,9 +423,9 @@ fn combine(flag: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own u
   let first_limit_sum = left_limit + middle_limit;
   let total_limit = first_limit_sum + right_limit;
   invariant common_bound: total <= total_limit {{
-    use left <= left_limit;
-    use middle <= middle_limit;
-    use right <= right_limit;
+    use (left <= left_limit);
+    use (middle <= middle_limit);
+    use (right <= right_limit);
   }}
   if flag {{
     let marker = 0_u32;
@@ -483,15 +483,15 @@ fn different_canonical_inequalities_do_not_merge_at_a_branch_join() {
       if third_holds {{
         if flag {{
           invariant exact: a_wide + b_wide + c_wide <= 255_u16 {{
-            use a_wide + x_wide <= p_wide;
-            use b_wide + p_wide <= q_wide;
-            use c_wide + q_wide <= 255_u16 + x_wide;
+            use (a_wide + x_wide <= p_wide);
+            use (b_wide + p_wide <= q_wide);
+            use (c_wide + q_wide <= 255_u16 + x_wide);
           }}
         }} else {{
           invariant weaker: a_wide + b_wide + c_wide <= 256_u16 {{
-            use a_wide + x_wide <= p_wide;
-            use b_wide + p_wide <= q_wide;
-            use c_wide + q_wide <= 255_u16 + x_wide;
+            use (a_wide + x_wide <= p_wide);
+            use (b_wide + p_wide <= q_wide);
+            use (c_wide + q_wide <= 255_u16 + x_wide);
           }}
         }}
         let first = a + b;
@@ -569,7 +569,7 @@ fn an_earlier_weaker_fact_does_not_hide_a_later_automatic_pair() {
 
     // The old two-use certificate is retained as negative evidence: AUTO now
     // owns this exact pair, so spelling the same selection is a PRF-1 error.
-    const REDUNDANT: &str = "  invariant exact_parts: left + right <= left_limit + right_limit {\n    use left <= left_limit;\n    use right <= right_limit;\n  }\n";
+    const REDUNDANT: &str = "  invariant exact_parts: left + right <= left_limit + right_limit {\n    use (left <= left_limit);\n    use (right <= right_limit);\n  }\n";
     let with_redundant = source.replacen(
         "  for (\n    check_seed",
         &format!("{REDUNDANT}  for (\n    check_seed"),
@@ -625,9 +625,9 @@ fn read(values: own array<u8, 255>, first: own u8, first_limit: own u8, second: 
   requires third_limit <= 93_u8;
 }} {{
   invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }}
   invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
   invariant in_range: first + second + third <= 254_u8;
@@ -666,9 +666,9 @@ fn a_source_proof_fact_discharges_the_selected_return_postcondition() {
   ensures result <= 254_u8;
 }} {{
   invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }}
   invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
   invariant total_bound: first + second + third <= 254_u8;
@@ -699,9 +699,9 @@ fn assignment_does_not_rebind_a_source_proof_to_the_new_value() {
   requires third_limit <= 93_u8;
 }} {{
   invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {{
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }}
   invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
   invariant total_bound: first + second + third <= 254_u8;
@@ -806,9 +806,9 @@ fn three_written_uses_follow_the_certificate_when_auto_stops_at_two() {
   requires c <= c_limit;
 }} {{
   invariant total: a + b + c <= a_limit + b_limit + c_limit {{
-    use a <= a_limit;
-    use b <= b_limit;
-    use c <= c_limit;
+    use (a <= a_limit);
+    use (b <= b_limit);
+    use (c <= c_limit);
   }}
   return unit;
 }}
@@ -850,8 +850,8 @@ fn a_midpoint_certificate_halves_its_doubled_sum_and_discharges_the_subscript() 
   let half = span / 2_u64;
   let mid = lo + half;
   invariant inside: mid < hi {{
-    use lo < hi;
-    use 2_u64 * half <= span;
+    use (lo < hi);
+    use (2_u64 * half <= span);
   }}
   let byte = deref(table)[mid];
   return byte;
@@ -901,8 +901,8 @@ fn a_signed_certificate_floors_its_halved_bound_toward_negative_infinity() {
   invariant doubled: 2_i32 * a + 1_i32 <= 2_i32 * b;
   invariant total: a + c + e + {slack}_i32 <= b + d + f {{
     use doubled;
-    use 2 * (c < d);
-    use 2 * (e < f);
+    use 2 times (c < d);
+    use 2 times (e < f);
   }}
   return unit;
 }}
@@ -946,7 +946,7 @@ fn an_auto_provable_target_rejects_its_whole_use_block_as_redundant() {
   requires value <= limit;
 }} {{
   invariant upper_bound: value <= limit {{
-    use value <= limit;
+    use (value <= limit);
   }}
   return unit;
 }}
@@ -967,9 +967,9 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
   requires value <= limit;
 }} {{
   invariant upper_bound: 3_u64 * value <= 3_u64 * limit {{
-    use value <= limit;
-    use value <= limit;
-    use value <= limit;
+    use (value <= limit);
+    use (value <= limit);
+    use (value <= limit);
   }}
   return unit;
 }}
@@ -983,7 +983,7 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
             repeated: 1,
         },
         ExpectedProofIssueNode::Use {
-            source: "use value <= limit;",
+            source: "use (value <= limit);",
             occurrence: 1,
         },
     );
@@ -991,7 +991,7 @@ fn repeated_normalized_uses_require_one_explicit_multiplier() {
 
 #[test]
 fn use_capacity_cites_the_first_entry_beyond_the_admitted_prefix() {
-    let written_use = "    use value <= limit;\n";
+    let written_use = "    use (value <= limit);\n";
     let uses = written_use.repeat(MAX_CERTIFICATE_PREMISES + 1);
     let source = format!(
         "fn combine(value: own u64, limit: own u64, other: own u64, other_limit: own u64, final_value: own u64, final_limit: own u64) -> result: own unit pure {{\n  invariant upper_bound: value + other + final_value <= limit + other_limit + final_limit {{\n{uses}  }}\n  return unit;\n}}\n\n{COMMAND_MAIN}"
@@ -1033,7 +1033,7 @@ fn explicit_factors_apply_to_relation_and_named_uses() {
   requires value <= limit;
 }} {{
   invariant scaled: 4_u64 * value <= 4_u64 * limit {{
-    use 4 * (value <= limit);
+    use 4 times (value <= limit);
   }}
   return unit;
 }}
@@ -1043,7 +1043,7 @@ fn named_scale(value: own u64, limit: own u64) -> result: own unit pure contract
 }} {{
   invariant unit_bound: value <= limit;
   invariant scaled: 4_u64 * value <= 4_u64 * limit {{
-    use 4 * unit_bound;
+    use 4 times unit_bound;
   }}
   return unit;
 }}
@@ -1082,7 +1082,7 @@ fn a_named_use_keeps_the_published_value_image_across_set() {
   invariant before: value <= limit;
   set value = replacement;
   invariant after: 4_u64 * value <= 4_u64 * limit {{
-    use 4 * before;
+    use 4 times before;
   }}
   return unit;
 }}
@@ -1151,7 +1151,7 @@ fn an_explicit_factor_one_is_not_canonical_source() {
   requires value <= limit;
 }} {{
   invariant scaled: 4_u64 * value <= 4_u64 * limit {{
-    use 1 * (value <= limit);
+    use 1 times (value <= limit);
   }}
   return unit;
 }}
@@ -1201,9 +1201,9 @@ fn caller(enabled: own Bool, a: own u8, a_limit: own u8, b: own u8, b_limit: own
   let first_limit_sum = left_limit + middle_limit;
   let limit = first_limit_sum + right_limit;
   invariant total: value <= limit {{
-    use left <= left_limit;
-    use middle <= middle_limit;
-    use right <= right_limit;
+    use (left <= left_limit);
+    use (middle <= middle_limit);
+    use (right <= right_limit);
   }}
   let called = need(value: value, limit: limit, enabled: enabled);
   return unit;
@@ -1273,9 +1273,9 @@ fn retain(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8, c_l
     set value = 0_u32;
   }} else {{
     invariant total: value <= limit {{
-      use left <= left_limit;
-      use middle <= middle_limit;
-      use right <= right_limit;
+      use (left <= left_limit);
+      use (middle <= middle_limit);
+      use (right <= right_limit);
     }}
   }}
   need(value: value, limit: limit);
@@ -1312,7 +1312,7 @@ fn an_unpublished_named_header_source_is_not_reproved_by_a_later_guard() {
   ) {{
     if value <= limit {{
       invariant scaled_named: 3_u64 * value <= 3_u64 * limit {{
-        use 3 * header_bound;
+        use 3 times header_bound;
       }}
     }}
     break;
@@ -1323,7 +1323,7 @@ fn an_unpublished_named_header_source_is_not_reproved_by_a_later_guard() {
 fn relation_source(value: own u64, limit: own u64) -> result: own unit pure {{
   if value <= limit {{
     invariant scaled_relation: 3_u64 * value <= 3_u64 * limit {{
-      use 3 * (value <= limit);
+      use 3 times (value <= limit);
     }}
   }}
   return unit;
@@ -1383,7 +1383,7 @@ fn repeated_unpublished_named_uses_retain_the_structural_failure() {
   ) {{
     invariant scaled: 3_u64 * value <= 3_u64 * limit {{
       use header_bound;
-      use 2 * header_bound;
+      use 2 times header_bound;
     }}
     break;
   }}
@@ -1427,7 +1427,7 @@ fn an_unpublished_named_use_does_not_hide_scaled_sum_overflow() {
     invariant doubled: 2_u64 * value <= 2_u64 * limit
   ) {{
     invariant scaled: 2_u64 * value <= 2_u64 * limit {{
-      use 170141183460469231731687303715884105727 * doubled;
+      use 170141183460469231731687303715884105727 times doubled;
     }}
     break;
   }}
@@ -1469,9 +1469,9 @@ fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
   requires c <= c_limit;
 }} {{
   invariant upper_bound: a + b + c <= a_limit + b_limit + c_limit {{
-    use a <= a_limit;
-    use 170141183460469231731687303715884105727 * (2_u64 * b <= 2_u64 * b_limit);
-    use c <= c_limit;
+    use (a <= a_limit);
+    use 170141183460469231731687303715884105727 times (2_u64 * b <= 2_u64 * b_limit);
+    use (c <= c_limit);
   }}
   return unit;
 }}
@@ -1482,7 +1482,7 @@ fn source_order_sum_overflow_cites_the_use_that_triggers_it() {
         source.as_bytes(),
         SourceProofObligation::CertificateArithmeticOverflow,
         ExpectedProofIssueNode::Use {
-            source: "use 170141183460469231731687303715884105727 * (2_u64 * b <= 2_u64 * b_limit);",
+            source: "use 170141183460469231731687303715884105727 times (2_u64 * b <= 2_u64 * b_limit);",
             occurrence: 0,
         },
     );
@@ -1517,8 +1517,8 @@ fn an_unpublished_named_use_does_not_stop_later_duplicate_detection() {
   ) {{
     invariant combined: value + 2_u64 * part <= limit + 2_u64 * part_limit {{
       use header_bound;
-      use part <= part_limit;
-      use part <= part_limit;
+      use (part <= part_limit);
+      use (part <= part_limit);
     }}
     break;
   }}
@@ -1562,7 +1562,7 @@ fn current_value_image_overflow_precedes_redundant_block_detection() {
 }} {{
   let scaled = 18446744073709551615_u64 * value;
   invariant unchanged: scaled <= scaled {{
-    use 18446744073709551615_u64 * scaled <= 0_u64;
+    use (18446744073709551615_u64 * scaled <= 0_u64);
   }}
   return unit;
 }}
@@ -1574,7 +1574,7 @@ fn current_value_image_overflow_precedes_redundant_block_detection() {
         SourceProofObligation::CertificateArithmeticOverflow,
         "unchanged",
         ExpectedProofIssueNode::Use {
-            source: "use 18446744073709551615_u64 * scaled <= 0_u64;",
+            source: "use (18446744073709551615_u64 * scaled <= 0_u64);",
             occurrence: 0,
         },
     );

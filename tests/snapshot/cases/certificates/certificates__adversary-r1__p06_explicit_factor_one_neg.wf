@@ -4,7 +4,7 @@ fn identity_scale(x: own u64, limit: own u64) -> result: own unit pure contract 
   doc "expect REJECT PRF-1 InvalidSourceProof: explicit 1 * multiplier on a use is not canonical.";
   invariant bound_a: x <= limit;
   invariant bound_b: x <= limit {
-    use 1 * bound_a;
+    use 1 times bound_a;
   }
   return unit;
 }

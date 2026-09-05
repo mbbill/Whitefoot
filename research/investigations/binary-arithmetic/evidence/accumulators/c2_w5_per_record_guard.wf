@@ -31,8 +31,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     ) {
       invariant in_room: written + 1_u64 <= room {
         use cell;
-        use start <= limit;
-        use c + 1_u64 <= width;
+        use (start <= limit);
+        use (c + 1_u64 <= width);
       }
       set out[written] = 7_u8;
       set written = written + 1_u64;

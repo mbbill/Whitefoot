@@ -71,22 +71,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut uses = Vec::with_capacity(premise_nodes.len());
         for premise_node in premise_nodes {
             let factor = self.invariant_use_factor(premise_node)?;
-            // [GRAM-4] a relation-form use carries its relation as two affine
-            // expressions around a `compare_op` and has no direct IDENT; a
-            // named use has exactly the one IDENT it cites.
+            // [GRAM-4] the premise the use cites is a `use_premise` node: a
+            // relation premise delimits its relation with parentheses and
+            // carries two affine expressions around a `compare_op`; a named
+            // premise is exactly the one IDENT it cites.
+            let premise_children = self
+                .tree
+                .children_with(premise_node, Production::UsePremise)?;
+            let [premise] = premise_children.as_slice() else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            let premise = *premise;
             let relation_form = !self
                 .tree
-                .children_with(premise_node, Production::AffineExpr)?
+                .children_with(premise, Production::AffineExpr)?
                 .is_empty();
             let source = if relation_form {
                 CheckedProofUseSource::Relation(self.check_ordered_affine_relation(
-                    premise_node,
+                    premise,
                     bindings,
                     &allowed_values,
                     AffineProofOwner::ProofUse,
                 )?)
             } else {
-                let usage = self.use_at(premise_node, LexicalUseRole::InvariantFact)?;
+                let usage = self.use_at(premise, LexicalUseRole::InvariantFact)?;
                 let ResolvedTarget::Source {
                     declaration,
                     class: DeclarationClass::Invariant,

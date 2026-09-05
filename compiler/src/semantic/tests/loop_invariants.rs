@@ -2009,9 +2009,9 @@ fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
       set right = third;
       set right_limit = third_limit;
       invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {
-        use left <= left_limit;
-        use middle <= middle_limit;
-        use right <= right_limit;
+        use (left <= left_limit);
+        use (middle <= middle_limit);
+        use (right <= right_limit);
       }
     }
   }
@@ -2044,7 +2044,7 @@ command fn main() -> status: own ExitStatus pure {
 
     let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
     let without_proof = source.replacen(
-        "      invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {\n        use left <= left_limit;\n        use middle <= middle_limit;\n        use right <= right_limit;\n      }\n",
+        "      invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {\n        use (left <= left_limit);\n        use (middle <= middle_limit);\n        use (right <= right_limit);\n      }\n",
         "",
         1,
     );

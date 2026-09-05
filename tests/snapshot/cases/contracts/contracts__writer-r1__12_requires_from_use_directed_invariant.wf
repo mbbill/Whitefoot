@@ -9,9 +9,9 @@ fn combined_probe(table: own buffer<u8>, first: own u64, first_limit: own u64, s
   requires room >= 10_u64;
 } {
   invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }
   invariant limit_sum: first_limit + second_limit + third_limit <= 9_u64;
   invariant total_bound: first + second + third <= 9_u64;
