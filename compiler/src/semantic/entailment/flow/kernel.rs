@@ -149,6 +149,16 @@ impl Analyzer<'_, '_> {
 
     /// [CALL-6] establishes one row's declared relations at the destinations
     /// [CALL-4] fixes: ordinal i lands at destination i.
+    ///
+    /// [BLK-0] carries the [CALL-6] consistency judgment onto a
+    /// compiler-owned row: the set a row publishes may narrow what its caller
+    /// derives and may never make everything derivable. That judgment is
+    /// checked here, at the one point a row's relations become facts, because
+    /// a row's set is fixed by this specification and its instantiation is
+    /// fixed by the call. Every requirement of the row is discharged before
+    /// this point — a call whose requirement is undischarged prepares nothing
+    /// and publishes nothing — so a caller state that turns contradictory
+    /// across this establishment turned so on the row's own relations.
     pub(super) fn establish_kernel_relations(
         &mut self,
         statement: &crate::NodePath,
@@ -177,6 +187,7 @@ impl Analyzer<'_, '_> {
         let Some(anchor) = anchor else {
             return;
         };
+        let already_contradictory = self.state_is_contradictory(state);
         for (ordinal, relation) in signature.ensures.iter().enumerate() {
             // A routed relation is restricted to its own arm [CALL-6]; the
             // destinations here enter no arm.
@@ -230,6 +241,21 @@ impl Analyzer<'_, '_> {
                 );
             }
         }
+        assert!(
+            already_contradictory || !self.state_is_contradictory(state),
+            "[BLK-0, CALL-6] the relations kernel row {operation} publishes at {call:?} make \
+             the caller's fact state contradictory, so every relation and both signs of every \
+             goal become derivable there and every obligation the caller submits after it is \
+             discharged; a row's declared relation set may narrow what a caller derives and may \
+             never introduce a contradiction"
+        );
+    }
+
+    /// Whether the caller's fact state discharges everything at this point,
+    /// under [ENT-4]'s least closure and without building a derivation.
+    fn state_is_contradictory(&self, state: &FactState) -> bool {
+        state.all_derivable
+            || super::super::state::contradiction_without_proofs(state, &self.terms, &self.goals)
     }
 
     /// One published relation, retained with its own provenance and
@@ -309,12 +335,20 @@ impl Analyzer<'_, '_> {
             },
             KernelOperand::Value(ordinal) => {
                 let actual = goal_arguments.get(ordinal as usize)?;
-                self.kernel_call_operand_term(call, ordinal, None, actual, signature)
+                self.kernel_call_operand_term(call, ordinal, None, false, actual, signature)
             }
             KernelOperand::Measure(measure, place) => match place {
                 KernelPlace::Parameter(ordinal) | KernelPlace::ParameterAtCall(ordinal) => {
                     let actual = goal_arguments.get(ordinal as usize)?;
-                    self.kernel_call_operand_term(call, ordinal, Some(measure), actual, signature)
+                    let at_call = matches!(place, KernelPlace::ParameterAtCall(_));
+                    self.kernel_call_operand_term(
+                        call,
+                        ordinal,
+                        Some(measure),
+                        at_call,
+                        actual,
+                        signature,
+                    )
                 }
                 KernelPlace::Result(ordinal) => {
                     let (binding, projections, ty) =
@@ -332,21 +366,44 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    /// One operand's term at the caller: this call's call datum where
-    /// [ENT-3.S13] minted one, and the operand's live term otherwise.
+    /// One operand's term at the caller, at the denotation [MSR-3]'s table
+    /// gives the operand position.
+    ///
+    /// A call datum and a post-state occurrence of one measure of one place
+    /// are two different terms, and [ENT-2] clause (h) keys a call datum on
+    /// the call, the ordinal, the projections and the measure and on nothing
+    /// else — so the position decides which of the two this operand is
+    /// before the datum table is consulted, and never after. An `own`
+    /// operand and the `at the call` form both denote this call's call datum
+    /// [BLK-0]; the plain occurrence of a `&uniq` state operand denotes the
+    /// live term after the call's own kills, which is a different term even
+    /// though its place, its measure and its ordinal are the same. Reading
+    /// the datum for that position would make a row's own `len_of(store) =
+    /// len_of(store at the call) + advance<T>(count)` the bound
+    /// `0 <= -advance<T>(count)` over one term, which is a contradiction the
+    /// row would introduce into the caller's state.
     fn kernel_call_operand_term(
         &mut self,
         call: &crate::NodePath,
         ordinal: u32,
         measure: Option<CheckedMeasure>,
+        at_call: bool,
         actual: &super::super::super::goal::GoalExpression,
         signature: &KernelSignature,
     ) -> Option<TermId> {
         let ty = actual.ty();
-        if let Some(datum) = self.interned_call_datum(call, ordinal, &[], measure, ty) {
+        let denotes_datum = at_call
+            || signature
+                .parameters
+                .get(ordinal as usize)
+                .is_some_and(|parameter| {
+                    parameter.mode == super::super::super::kernel::KernelMode::Own
+                });
+        if denotes_datum
+            && let Some(datum) = self.interned_call_datum(call, ordinal, &[], measure, ty)
+        {
             return Some(datum);
         }
-        let _ = signature;
         self.kernel_operand_term(actual, ty, measure)
     }
 

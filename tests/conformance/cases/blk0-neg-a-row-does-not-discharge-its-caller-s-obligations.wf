@@ -1,0 +1,15 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0, CALL-6: a row's published relations may narrow what its caller derives and may never make everything derivable. The take below writes the store, so the store's own pre-call measures die at the call boundary and what the caller holds afterwards is exactly what the row published; the array read is judged against its own length and is refused.";
+  region 'a {
+    let workspace = arena_frame::<8192, 16, 'a>();
+    let table = array_new::<u8, 4>(0_u8);
+    region {
+      let first = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      let seen = table[9_u64];
+      if seen == 0_u8 {
+        return exit_status(code: 0_u8);
+      }
+      return exit_status(code: 2_u8);
+    }
+  }
+}

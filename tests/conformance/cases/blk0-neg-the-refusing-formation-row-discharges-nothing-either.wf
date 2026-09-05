@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0, CALL-6: the same judgment over the refusing formation row, whose result is an Option and whose store relations are routed to its two exits. Its unrouted store relation is instantiated by the one path every row's is, so a defect there would reach every caller of it; the array read is judged against its own length and is refused.";
+  region 'a {
+    let workspace = arena_frame::<8192, 16, 'a>();
+    let table = array_new::<u8, 4>(0_u8);
+    region {
+      let made = arena_vector::<u8>(store: &uniq workspace, count: 8_u64);
+      let seen = table[9_u64];
+      match made {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: run) => {
+          if seen == 0_u8 {
+            return exit_status(code: 0_u8);
+          }
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
+}

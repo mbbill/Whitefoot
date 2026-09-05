@@ -1222,6 +1222,54 @@ mod tests {
         }
     }
 
+    /// [BLK-0, CALL-6]: no row's own declared set is contradictory.
+    ///
+    /// A caller closes every relation it receives together [ENT-4], so a
+    /// contradictory published set does not state one wrong fact — it
+    /// discharges *every* obligation the caller submits after it, the
+    /// subscript bounds among them. [CALL-6] refuses such a set at a source
+    /// declaration; a row's set is fixed by this specification instead, so
+    /// this test is where the same judgment is made over it, and a row that
+    /// fails it is a defect in this repository's own data rather than in a
+    /// program.
+    ///
+    /// The judgment is made once per declared exit — an unrouted clause is a
+    /// member of every exit's set and a routed one of its own — over the
+    /// requirements, which a caller has discharged before any relation of the
+    /// row is established, together with the relations that exit carries.
+    ///
+    /// `advance<T>(count)` is the one operand of the record notation that is
+    /// not a constant of the declaration [BLK-0], and a difference-bound
+    /// closure carries a constant displacement rather than a symbolic one, so
+    /// the set is judged at each of three resolutions of it: zero, one, and a
+    /// take far larger than any written extent.
+    #[test]
+    fn no_row_publishes_a_contradictory_relation_set() {
+        for signature in KERNEL_SIGNATURES {
+            let mut exits: Vec<Option<super::KernelRoute>> = signature
+                .ensures
+                .iter()
+                .filter_map(|relation| relation.route)
+                .map(Some)
+                .collect();
+            exits.dedup();
+            if exits.is_empty() {
+                exits.push(None);
+            }
+            for exit in exits {
+                for advance in [0, 1, 1 << 20] {
+                    assert!(
+                        !crate::semantic::check::publication::kernel_row_is_contradictory(
+                            &signature, exit, advance
+                        ),
+                        "{:?} publishes a contradictory set on {exit:?} at advance {advance}",
+                        signature.row
+                    );
+                }
+            }
+        }
+    }
+
     /// [BLK-0]: every displaced requirement side is the zero term.
     ///
     /// A requirement is one obligation the caller discharges, so its written

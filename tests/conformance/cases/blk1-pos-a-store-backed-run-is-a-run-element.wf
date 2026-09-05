@@ -1,5 +1,5 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "BLK-1, PROV-1: a slot may hold a store-backed run, descriptor included, so one frame-resident run holds several arena-backed ones. The outer run reclaims no storage of its own and each element run's backing is the extent's, which its region reset reclaims, so the window walk PROV-6 states is present and its every action is empty.";
+  doc "BLK-1, PROV-1: a slot may hold a store-backed run, descriptor included, so one frame-resident run holds several arena-backed ones. The outer run reclaims no storage of its own and each element run's backing is the extent's, which its region reset reclaims, so the window walk PROV-6 states is present and its every action is empty. A run put into a slot and taken back out carries no measure of its own, because MSR-3's element placements are deferred, so the place_back below reads room_of and branches: that is the ordinary MSR-4 discharge and not an assumption about what the slot held.";
   region 'a {
     let workspace = arena_frame::<4096, 16, 'a>();
     region {
@@ -19,11 +19,16 @@ command fn main() -> status: own ExitStatus pure {
       } else {
         return exit_status(code: 2_u8);
       }
-      let filled = place_back(vector: move last, value: 5_u8);
-      let byte = filled[0_u64];
-      if byte == 5_u8 {
+      let spare = room_of(last);
+      if spare > 0_u64 {
+        let filled = place_back(vector: move last, value: 5_u8);
+        let byte = filled[0_u64];
+        if byte == 5_u8 {
+        } else {
+          return exit_status(code: 3_u8);
+        }
       } else {
-        return exit_status(code: 3_u8);
+        return exit_status(code: 5_u8);
       }
       let left = len_of(rest);
       if left == 1_u64 {

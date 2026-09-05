@@ -5736,6 +5736,62 @@ impl Analyzer<'_, '_> {
                     }
                 }
             }
+            // [BLK-0, EFF-1] a row's declared effect row is a callee effect
+            // like any other: the place its `writes` names is written by the
+            // call, so [ENT-5] kills every fact whose support that place
+            // reaches. Without this the store's pre-call measure facts and
+            // the pre-transfer call-datum equality survive beside the row's
+            // own post-state relations, and the two together are a
+            // contradiction the row introduces.
+            CheckedExpression::KernelCall {
+                row,
+                call,
+                arguments,
+                ..
+            } => {
+                for argument in arguments {
+                    self.collect_expression_kills(argument, events);
+                }
+                let signature = super::super::kernel::kernel_signature(*row);
+                let Some(written) = signature.effects.writes else {
+                    return;
+                };
+                // An `own` operand is consumed rather than written back, and
+                // its consume is already collected above; only a `&uniq`
+                // state operand is a place the callee writes.
+                if signature
+                    .parameters
+                    .get(written as usize)
+                    .is_none_or(|parameter| {
+                        parameter.mode != super::super::kernel::KernelMode::Unique
+                    })
+                {
+                    return;
+                }
+                let Some(argument) = arguments.get(written as usize) else {
+                    return;
+                };
+                if let Some((place, element, entry_image_only)) = self.argument_referent(argument) {
+                    let place = if element {
+                        element_write_place(place, PlaceOffset::Opaque)
+                    } else {
+                        place
+                    };
+                    if entry_image_only {
+                        events.push(KillEvent::EntryImageHolderWrite {
+                            place,
+                            element,
+                            source: call.clone(),
+                        });
+                    } else {
+                        events.push(KillEvent::Write {
+                            place,
+                            element,
+                            source: call.clone(),
+                        });
+                    }
+                }
+            }
             CheckedExpression::SystemCall {
                 operation,
                 call,

@@ -10,7 +10,7 @@ mod generics;
 mod linearity;
 mod nominal_instances;
 mod nominals;
-mod publication;
+pub(crate) mod publication;
 mod requires;
 mod result_state_origin;
 mod support;
