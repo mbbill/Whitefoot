@@ -1412,6 +1412,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
             }
+            // [MSR-1, CALL-4] a measure of a run or a bump extent, in the
+            // same return position the three flat measures already occupy. A
+            // measured place is not a field path, so a path carrying a
+            // subscript names no return place here and falls through to the
+            // ordinary rejection.
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                let mut fields = Vec::with_capacity(root.path.len());
+                for step in &root.path {
+                    match step {
+                        super::super::model::CheckedPlaceStep::Field(field) => fields.push(*field),
+                        super::super::model::CheckedPlaceStep::Subscript(_) => return Ok(None),
+                    }
+                }
+                let Some(place) = self.postcondition_binding_place(
+                    root.binding,
+                    &fields,
+                    statement,
+                    binding_info,
+                )?
+                else {
+                    return Ok(None);
+                };
+                if place.ty != root.ty {
+                    return Err(SemanticCompilerFailure::InvalidResolution.into());
+                }
+                Ok(Some(PostconditionReturnDatum::Measure(*measure, place)))
+            }
             CheckedExpression::SliceMeasure { measure, root } => {
                 let Some(
                     place @ PostconditionReturnPlace {
