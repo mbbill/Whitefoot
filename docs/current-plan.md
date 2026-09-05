@@ -304,6 +304,26 @@ before the code lands.
    both sides; one lowering for every I/O operation, submit then join; the
    direct family, the inline arm, `stackless.rs` and the Windows verdict fork
    removed; compute join order reversed through one `compute_join_order`.
+
+   **Sequencing decided 2026-09-05, after reading the bridge.** The one
+   lowering (no inline arm, no direct family) is sound only once the
+   runtime accepts every submission, and today's bridge refuses for
+   throughput reasons (`wf_bridge_positioned_read_runs_on_caller`, a path
+   that does not fit the pool's record, a target with no ring), answers
+   pool exhaustion with a capacity park, and finds an operation by a token
+   into a pool of 256 slots. Dropping the inline arm before the record is
+   the frame's would turn every refusal into an abort or a capacity wait,
+   which the owner's rule forbids. So the slice lands in three steps, each
+   with the gate green: (a) `compute_join_order`; (b) the record block ABI
+   (the token slot becomes an opaque block of the size and alignment the
+   completion header states, asserted on both sides) together with the
+   removal of `stackless.rs`, the writer-frame submit ABI and the
+   `WF_PAR_WITH_WRITER_SCHEDULER` runtime variant, the runtime otherwise
+   unchanged; (c) the one lowering, taken together with the first runtime
+   step of slice 3, in which the bridge finds the record by address, loses
+   its pools, capacity waits and refusals, and executes an operation with no
+   kernel completion form inside its engine, publishing a completion like
+   any other. Step (c) therefore opens slice 3 rather than closing slice 2.
 3. **Runtime** (design §7): the core replaces both parallel runtimes and both
    writer schedulers; the bridge, adapters and rings find the record by
    address and lose their pools, capacity waits and tokens; the I/O joins park
