@@ -1109,6 +1109,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
+                // [CALL-4] a destructuring `let` binds one fresh own value per
+                // declared result ordinal, and each is a place a return can
+                // name exactly as an ordinary `let` binding is.
+                CheckedStatement::DestructuringLet {
+                    bindings: binders, ..
+                } => {
+                    for (binding, ty) in binders {
+                        bindings.insert(
+                            *binding,
+                            PostconditionBindingInfo {
+                                ty: *ty,
+                                implicit_deref: false,
+                            },
+                        );
+                    }
+                }
                 CheckedStatement::PropagateLet {
                     binding, ok_type, ..
                 } => {

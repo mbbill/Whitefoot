@@ -93,6 +93,18 @@ pub(crate) enum TermKind {
         projections: Vec<CallDatumProjection>,
         measure: CheckedMeasure,
     },
+    /// One immutable compiler-owned rebind datum [MSR-3]: the value one
+    /// [MSR-1] measure of a measured place had immediately before one `let`
+    /// or one [LIV-2] `set` transferred that place to a new name. The
+    /// statement's finalized NodePath, the ordinal within its target list and
+    /// the measure are its complete function-local identity. No place occurs
+    /// in it, so the consume the same statement performs cannot kill it,
+    /// which is what carries a measured value's measures across the rename.
+    RebindDatum {
+        statement: Vec<u32>,
+        ordinal: u32,
+        measure: CheckedMeasure,
+    },
 }
 
 /// Ordered projection identity inside one call datum's operand place.

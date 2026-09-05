@@ -13,9 +13,10 @@
 
 use super::super::super::goal::CheckedRequirement;
 use super::super::super::model::{
-    BindingId, CheckedArrayRoot, CheckedEnumType, CheckedExpression, CheckedIntegerArgumentSource,
-    CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure, CheckedNominalKind, CheckedSetTarget,
-    CheckedSliceSource, CheckedType, CheckedValue, IntegerType, MeasuredKind,
+    BindingId, CheckedArrayRoot, CheckedConst, CheckedEnumType, CheckedExpression,
+    CheckedIntegerArgumentSource, CheckedIntegerOperation, CheckedMatchArm, CheckedMeasure,
+    CheckedNominalKind, CheckedSetTarget, CheckedSliceSource, CheckedType, CheckedValue,
+    IntegerType, MeasuredKind,
 };
 use super::super::fragment_type;
 use super::super::state::{
@@ -495,6 +496,87 @@ impl Analyzer<'_, '_> {
     /// `let x: own T = p;` with p a term establishes x = p; and
     /// `let y: own Dst = cvt::<Src, Dst>(p);` over a total [OP-6] pair
     /// establishes y = p, the conversion being exactly value-preserving.
+    /// [MSR-3] the rebind placement, first half: at the pre-transfer point of
+    /// one `let` or one [LIV-2] `set` whose right-hand side is a measured
+    /// place, one immutable datum per [MSR-1] measure, established equal to
+    /// that measure.
+    ///
+    /// The datum contains no place, so the consume the same statement
+    /// performs cannot kill it. `let built = move spare;` is what needs it:
+    /// without the datum a fresh name for a measured value starts with no
+    /// measures at all, because the equality to the source dies with the
+    /// source.
+    pub(super) fn mint_rebind_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        ordinal: u32,
+        value: &CheckedExpression,
+        state: &mut FactState,
+    ) -> Option<MeasureRebind> {
+        let CheckedExpression::Binding { binding, ty, .. } = value else {
+            return None;
+        };
+        let measured = super::measured_kind(*ty)?;
+        let constant = super::type_constant(*ty);
+        let source = PlaceTerm {
+            root: PlaceRoot::Binding(*binding),
+            deref: self.is_holder(*binding),
+            fields: Vec::new(),
+        };
+        let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+        let mut datums = Vec::with_capacity(4);
+        for measure in MEASURES {
+            let live = self.place_measure_term(measure, source.clone(), measured, constant);
+            let datum = self.terms.intern(TermKind::RebindDatum {
+                statement: node_path.components().to_vec(),
+                ordinal,
+                measure,
+            });
+            self.adopt_measure_atom(datum, live);
+            state.establish(
+                &Relation::Equal {
+                    left: datum,
+                    right: live,
+                    difference: 0,
+                },
+                &mut self.derivations,
+                event,
+            );
+            datums.push(datum);
+        }
+        Some(MeasureRebind {
+            measured,
+            constant,
+            datums,
+        })
+    }
+
+    /// [MSR-3] the rebind placement, second half: after the transfer, the
+    /// destination's own measures equal the datums minted before it.
+    pub(super) fn establish_rebind_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        binding: BindingId,
+        rebind: &MeasureRebind,
+        state: &mut FactState,
+    ) {
+        let target = self.bound_place(binding);
+        let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+        for (measure, datum) in MEASURES.into_iter().zip(&rebind.datums) {
+            let left =
+                self.place_measure_term(measure, target.clone(), rebind.measured, rebind.constant);
+            state.establish(
+                &Relation::Equal {
+                    left,
+                    right: *datum,
+                    difference: 0,
+                },
+                &mut self.derivations,
+                event,
+            );
+        }
+    }
+
     fn establish_copy_fact(
         &mut self,
         node_path: &crate::NodePath,
@@ -700,6 +782,19 @@ impl Analyzer<'_, '_> {
                 },
                 MeasuredKind::Slice,
                 None,
+            ),
+            // [MSR-1] a run's or a bump extent's measure reader names the
+            // same [ENT-2] term the clause and the invariant name, so a `let`
+            // over one is the ordinary [ENT-3.S6] equality a buffer's is.
+            CheckedExpression::ContainerMeasure { measure, root } => (
+                *measure,
+                PlaceTerm {
+                    root: PlaceRoot::Binding(root.binding),
+                    deref: self.is_holder(root.binding),
+                    fields: root.fields.clone(),
+                },
+                root.measured()?,
+                root.type_constant(),
             ),
             _ => return None,
         };
@@ -1442,4 +1537,20 @@ pub(super) fn comparison_relation(
         },
         _ => return None,
     })
+}
+
+/// The four [MSR-1] measures, in the order every former reads them.
+const MEASURES: [CheckedMeasure; 4] = [
+    CheckedMeasure::Length,
+    CheckedMeasure::Capacity,
+    CheckedMeasure::Room,
+    CheckedMeasure::Head,
+];
+
+/// [MSR-3] one rebind placement's datums, held between the pre-transfer mint
+/// and the post-transfer establishment.
+pub(super) struct MeasureRebind {
+    measured: MeasuredKind,
+    constant: Option<CheckedConst>,
+    datums: Vec<TermId>,
 }

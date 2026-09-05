@@ -3119,4 +3119,63 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   the one skip are unchanged in id, expectation and status, and the
   recorded-verdict snapshot corpus reports Pass=491, Flip=0: no verdict of
   either corpus moved.
-ACTIVE-SPEC: v0.45 84bed37bb192cf1edf8ebe1498dfe21c84aa93c78c2a02c9ee3b83bbf961efcd 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B7a3b, the clause side, the entry and rebind datums, the element
+  store and the element domain): no numbered rule is added or retired (148
+  remain). One grammar production is added and none is retired (88 remain):
+  `clause_op`, the clause tail's Bool-valued operator set, which is `compare_op`
+  together with the [OP-1] rows whose result is `Bool` — over this version's
+  table exactly the five `.defined` predicates. Two productions change.
+  [GRAM-5]'s `clause_expr` becomes `affine_expr (clause_op affine_expr)?`, so a
+  contract clause side is the affine expression a `header_invariant` already
+  writes and `+`, `-` and `*` are consumed inside the side; this is the ruling
+  of 2026-09-04 within [S17], and `clause_op` is what makes that union
+  unambiguous, since `a + b` in clause position then derives one way and
+  `requires total /defined steps;` keeps its recorded accept. [GRAM-4]'s
+  `affine_factor` additionally admits an `atom` and a parenthesized
+  `affine_expr` beside the `call` and `construct` B7a3 gave it, one production
+  now serving both placements, and each rule states its own admitted factors:
+  [INV-1] admits one bare IDENT `place` with no `psuffix` or one integer
+  literal, and refuses any other factor at the factor. [GRAM-4], [GRAM-5],
+  [GRAM-6], [INV-1], [MSR-5], [FN-8], [FN-9], [MSR-3] and [BLK-1] are amended in
+  place. [FN-8] states that a requirement side carries the whole affine
+  expression, and [FN-9] that a published relation stays one difference bound
+  between two operands displaced by a written constant, a side with two datums
+  being an FN-9 rejection naming the fragment. [MSR-3] gains the entry
+  placement's paragraphs — a parameter's measure named in an `ensures` denotes
+  that parameter's entry datum, so a body that writes its own parameter back
+  leaves every clause meaning what it read as at entry — and the rebind
+  placement at its `let` half, a binder whose right-hand side is a bare use of a
+  measured place minting one datum per measure before the statement's kills and
+  reading it back after them. That rule's DEFERRED clause narrows from four
+  placements to four with different members: the construct, [LIV-2] `set`-target,
+  enum-payload-binder and destructuring-binder placements, the `set`-target half
+  replacing the `let` rebind that landed. The whole-version DEFERRED count is
+  unchanged at seven. [BLK-1] states that a subscript in the target of a
+  [SET-1] `set` or a [SET-2] `replace` is the same logical offset, carries the
+  same [OP-4] obligation, and reaches the same slot of the window, and that an
+  element enters and leaves a slot through a boundary operation or through an
+  element-position commit of either rule. META-5 is updated for the added
+  production, the two changed productions, the amended-rule list and [MSR-3]'s
+  narrowed DEFERRED clause; no other META-5 count moves.
+- CONFORMANCE BOUNDARY (B7a3b): this batch ADDS eleven conformance cases and
+  their eleven manifest rows, and modifies, deletes and renames none; it changes
+  no adapter, runner, or collection wiring, and no existing case's source, id,
+  expectation, rule citation or status. The eleven added ids are
+  `msr5-pos-a-clause-side-is-an-affine-expression` (run, exit 0),
+  `msr5-pos-a-requirement-side-is-an-affine-expression` (run, exit 0),
+  `msr5-neg-a-clause-side-is-not-a-difference-bound` (reject, FN-9),
+  `inv1-neg-an-affine-atom-is-not-a-bare-local` (reject, INV-1),
+  `msr3-pos-a-parameter-written-back-keeps-its-entry-measure` (run, exit 0),
+  `msr3-neg-a-parameter-value-written-back-loses-its-entry-image` (reject,
+  FN-9), `set1-pos-a-run-element-is-a-set-target` (run, exit 0),
+  `set2-pos-a-run-element-is-a-replace-target` (run, exit 0),
+  `set1-neg-a-run-element-target-needs-its-subscript-bound` (reject, OP-4),
+  `msr2-pos-an-element-write-kills-no-measure-of-the-run` (run, exit 0) and
+  `blk1-pos-a-run-element-type-is-a-type-parameter` (run, exit 0). Before this
+  batch the corpus holds 578 cases with the native adapter reporting Pass=576,
+  Xfail=1, Skip=1; after it the corpus holds 589 with the adapter reporting
+  Pass=587, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, and the recorded-verdict snapshot
+  corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 b5f5046a0b1638bf86b6e801dc05a89db59753303e8ed1d745f78e2087364960 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

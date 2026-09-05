@@ -134,6 +134,7 @@ impl Analyzer<'_, '_> {
                 continue;
             }
             let datum = self.terms.intern(kind);
+            self.adopt_measure_atom(datum, term);
             state.establish(
                 &Relation::Equal {
                     left: datum,

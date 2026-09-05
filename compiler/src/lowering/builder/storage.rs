@@ -44,6 +44,9 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         CheckedSetTarget::BufferIndex(target) => {
                             collect_expression(&target.offset, bindings);
                         }
+                        CheckedSetTarget::RunIndex(target) => {
+                            collect_expression(&target.offset, bindings);
+                        }
                     }
                 }
                 for value in values.expressions() {
@@ -58,6 +61,9 @@ fn collect_statements(statements: &[CheckedStatement], bindings: &mut HashSet<Bi
                         collect_expression(&target.offset, bindings);
                     }
                     CheckedSetTarget::BufferIndex(target) => {
+                        collect_expression(&target.offset, bindings);
+                    }
+                    CheckedSetTarget::RunIndex(target) => {
                         collect_expression(&target.offset, bindings);
                     }
                 }

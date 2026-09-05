@@ -8,8 +8,8 @@
 //! over those words plus at most one element store or load.
 
 use crate::semantic::{
-    CheckedContainerRoot, CheckedExpression, CheckedKernelInstance, CheckedMeasure, CheckedType,
-    MeasureCell,
+    CheckedContainerRoot, CheckedExpression, CheckedKernelInstance, CheckedMeasure,
+    CheckedRunSetTarget, CheckedType, MeasureCell,
 };
 use crate::{IrBoundary, IrMeasure};
 
@@ -98,6 +98,119 @@ impl IrBuilder<'_> {
                 target_domain: target_domain.into(),
             },
         )
+    }
+
+    /// The run-element half of one [LIV-2] commit, over an ordinal value the
+    /// caller has already evaluated.
+    ///
+    /// The offset's [OP-4] obligation was discharged at the source level, so
+    /// it is consumed directly and no runtime branch remains; the value
+    /// handed back is the run with that one slot replaced.
+    pub(super) fn lower_run_element_commit(
+        &mut self,
+        root: IrValueId,
+        target: &CheckedRunSetTarget,
+        value: IrValueId,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let run = self.project_container_root(root, &target.root)?;
+        let index = self.expression(&target.offset)?;
+        let stored = self.run_store(run, index, value, target)?;
+        self.reinsert_container_root(root, &target.root, stored)
+    }
+
+    /// [SET-2] the run-element exchange: the previous element is read out of
+    /// the slot, then the replacement is stored into the same slot.
+    ///
+    /// The target's components are evaluated exactly once — one projected run
+    /// and one offset feed both the read and the write — so the shared `set`
+    /// path, which would re-lower the offset, is not reused here.
+    pub(super) fn lower_run_replace(
+        &mut self,
+        root: IrValueId,
+        target: &CheckedRunSetTarget,
+        value: &CheckedExpression,
+    ) -> Result<(IrValueId, IrValueId), LoweringFailure> {
+        let element = target
+            .root
+            .element()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let run = self.project_container_root(root, &target.root)?;
+        let index = self.expression(&target.offset)?;
+        let previous = self.define(
+            lower_flat_element(element)?.ty(),
+            IrOperation::RunIndex {
+                run,
+                offset: index,
+                target_domain: target.target_domain.into(),
+            },
+        )?;
+        let value = self.expression(value)?;
+        let stored = self.run_store(run, index, value, target)?;
+        let replacement = self.reinsert_container_root(root, &target.root, stored)?;
+        Ok((previous, replacement))
+    }
+
+    /// One element store's new root value: a run reached through field
+    /// selections is written back into the aggregate that holds it, because
+    /// a frame-resident run's slots are part of its own value.
+    fn reinsert_container_root(
+        &mut self,
+        root: IrValueId,
+        container: &CheckedContainerRoot,
+        stored: IrValueId,
+    ) -> Result<IrValueId, LoweringFailure> {
+        if container.fields.is_empty() {
+            return Ok(stored);
+        }
+        self.replace_struct_path(root, &container.fields, stored)
+    }
+
+    fn run_store(
+        &mut self,
+        run: IrValueId,
+        offset: IrValueId,
+        value: IrValueId,
+        target: &CheckedRunSetTarget,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let element = target
+            .root
+            .element()
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        if self.value_type(offset)?
+            != (IrType::Integer {
+                width: 64,
+                signed: false,
+            })
+            || self.value_type(value)? != lower_flat_element(element)?.ty()
+        {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let run_type = self.value_type(run)?;
+        self.define(
+            run_type,
+            IrOperation::RunStore {
+                run,
+                offset,
+                value,
+                target_domain: target.target_domain.into(),
+            },
+        )
+    }
+
+    fn project_container_root(
+        &mut self,
+        root: IrValueId,
+        container: &CheckedContainerRoot,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let value = if container.fields.is_empty() {
+            root
+        } else {
+            self.project_struct_path(root, &container.fields, false)?
+        };
+        if self.value_type(value)? != lower_type(container.ty)? {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        Ok(value)
     }
 
     /// One call to a [BLK-0] kernel-domain row.

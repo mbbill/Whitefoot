@@ -200,7 +200,9 @@ const fn lower_flat_element(value: CheckedFlatElement) -> Result<IrFlatElement, 
         CheckedFlatElement::Float(float) => IrFlatElement::Float {
             width: float.width(),
         },
-        CheckedFlatElement::GenericInt(_) => {
+        // [FN-2] a symbolic element belongs to the pre-IR pass alone: every
+        // lowered instance is concrete.
+        CheckedFlatElement::GenericInt(_) | CheckedFlatElement::Generic(_) => {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
         CheckedFlatElement::GenericFloat(_) => {
@@ -873,6 +875,16 @@ pub enum IrOperation {
     RunIndex {
         run: IrValueId,
         offset: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    },
+    /// One discharged element-position store into a run [SET-1, SET-2,
+    /// BLK-1]: the offset is a logical one and the storage written is slot
+    /// `(head + i) mod cap`. The value is the run with that slot replaced;
+    /// the two descriptor words are untouched.
+    RunStore {
+        run: IrValueId,
+        offset: IrValueId,
+        value: IrValueId,
         target_domain: IrTargetDomainObligation,
     },
     /// [BLK-3] the run one boundary operation hands back: one store at the

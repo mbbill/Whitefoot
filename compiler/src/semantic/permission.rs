@@ -1639,6 +1639,10 @@ pub(super) fn set_target_place(
             collect_operand_reads(places, &target.offset, node, footprint);
             rooted_place(places, target.root.binding, &target.root.fields)
         }
+        CheckedSetTarget::RunIndex(target) => {
+            collect_operand_reads(places, &target.offset, node, footprint);
+            rooted_place(places, target.root.binding, &target.root.fields)
+        }
     };
     if reads_target {
         footprint.reads.push(Access::Place {
@@ -1664,6 +1668,7 @@ fn collect_set_target_bindings(target: &CheckedSetTarget, out: &mut Vec<BindingI
         CheckedSetTarget::Place(_) => {}
         CheckedSetTarget::ArrayIndex(target) => collect_used_bindings(&target.offset, out),
         CheckedSetTarget::BufferIndex(target) => collect_used_bindings(&target.offset, out),
+        CheckedSetTarget::RunIndex(target) => collect_used_bindings(&target.offset, out),
     }
 }
 

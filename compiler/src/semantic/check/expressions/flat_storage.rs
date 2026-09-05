@@ -14,7 +14,7 @@ use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
     CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedFlatElement,
     CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
+    CheckedRunSetTarget, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
     CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell, NominalId,
 };
 use super::super::borrows::{
@@ -1021,11 +1021,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             // [BLK-3] element access over a run is the ordinary surface and
             // needs no row: `set v[i] = e;` writes a copy element and
-            // `replace v[i] = e;` exchanges an affine one. Neither is a
-            // source rejection; the element-position window store is the
-            // capability this version does not lower.
-            CheckedIndexedPlace::Container(_) => {
-                return self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, node);
+            // `replace v[i] = e;` exchanges an affine one.
+            CheckedIndexedPlace::Container(container) => {
+                self.check_loan_access(
+                    bindings,
+                    container.holder,
+                    &container.resolved,
+                    AccessKind::Write,
+                    node,
+                )?;
             }
         }
         let offset_node = self
@@ -1054,7 +1058,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let element_type = match &indexed {
             CheckedIndexedPlace::Array(array) => array.element_type,
             CheckedIndexedPlace::Buffer(buffer) => buffer.root.element.ty(),
-            CheckedIndexedPlace::Slice(_) | CheckedIndexedPlace::Container(_) => {
+            // [OP-4] a bump extent is no indexable base, so a `Container`
+            // place reaching a subscript target is one of the two runs.
+            CheckedIndexedPlace::Container(container) => match container.root.element() {
+                Some(element) => element.ty(),
+                None => {
+                    return self.issue_node(
+                        SemanticRule::Op4,
+                        node,
+                        SemanticIssueKind::type_mismatch(
+                            "an indexable base, which a run is",
+                            "a bump extent, which has no element",
+                        ),
+                    );
+                }
+            },
+            CheckedIndexedPlace::Slice(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };
@@ -1114,7 +1133,29 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     })),
                 )
             }
-            CheckedIndexedPlace::Slice(_) | CheckedIndexedPlace::Container(_) => {
+            // [BLK-1, MSR-2] one element-position store into a run. The
+            // effect row is the run's own storage, exactly as a buffer's is,
+            // and the [SET-2] read-out adds the read the exchange performs.
+            CheckedIndexedPlace::Container(container) => {
+                for path in self.effect_paths_for_place(&container.resolved, bindings)? {
+                    effects.add_write(path.clone());
+                    if form.is_replace() {
+                        effects.add_read(path);
+                    }
+                }
+                (
+                    container.resolved.root,
+                    container.resolved.clone(),
+                    CheckedSetTarget::RunIndex(Box::new(CheckedRunSetTarget {
+                        root: container.root,
+                        element_type,
+                        offset: offset.expression,
+                        obligation,
+                        target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    })),
+                )
+            }
+            CheckedIndexedPlace::Slice(_) => {
                 return Err(SemanticCompilerFailure::InvalidResolution.into());
             }
         };

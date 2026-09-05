@@ -249,7 +249,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                         }
                         CheckedSetTarget::Place(_)
                         | CheckedSetTarget::ArrayIndex(_)
-                        | CheckedSetTarget::BufferIndex(_) => current,
+                        | CheckedSetTarget::BufferIndex(_)
+                        | CheckedSetTarget::RunIndex(_) => current,
                     };
                     environment.insert(binding, updated);
                 }
@@ -299,7 +300,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     }
                     CheckedSetTarget::Place(_)
                     | CheckedSetTarget::ArrayIndex(_)
-                    | CheckedSetTarget::BufferIndex(_) => current,
+                    | CheckedSetTarget::BufferIndex(_)
+                    | CheckedSetTarget::RunIndex(_) => current,
                 };
                 environment.insert(binding, updated);
                 Ok(OriginFlow::continuing(environment))
@@ -334,7 +336,8 @@ impl<'a, 'b, 'unit, 'classified, 'lexed, 'source>
                     }
                     CheckedSetTarget::Place(_)
                     | CheckedSetTarget::ArrayIndex(_)
-                    | CheckedSetTarget::BufferIndex(_) => previous,
+                    | CheckedSetTarget::BufferIndex(_)
+                    | CheckedSetTarget::RunIndex(_) => previous,
                 };
                 environment.insert(target_binding, updated);
                 Ok(OriginFlow::continuing(environment))

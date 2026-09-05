@@ -128,6 +128,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             CheckedSetTarget::BufferIndex(target) => {
                                 self.collect_expression_release_sites(&target.offset, sites)?;
                             }
+                            CheckedSetTarget::RunIndex(target) => {
+                                self.collect_expression_release_sites(&target.offset, sites)?;
+                            }
                         }
                     }
                     for value in values.expressions() {
@@ -153,6 +156,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             self.collect_expression_release_sites(&target.offset, sites)?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
+                            self.collect_expression_release_sites(&target.offset, sites)?;
+                        }
+                        CheckedSetTarget::RunIndex(target) => {
                             self.collect_expression_release_sites(&target.offset, sites)?;
                         }
                     }

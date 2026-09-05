@@ -130,6 +130,9 @@ enum StableFlatElement {
     GenericFloat(DeclarationId),
     TagOnlyNominal(Box<StableCheckedType>),
     Nominal(Box<StableCheckedType>),
+    /// [BLK-1] one unbounded type parameter in a run element position, which
+    /// only a symbolic instance carries [FN-2].
+    Generic(DeclarationId),
 }
 
 /// One symbolic generic requirement while its scratch nominal suffix is
@@ -1415,6 +1418,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedFlatElement::GenericFloat(declaration) => {
                 allow_symbolic.then_some(StableFlatElement::GenericFloat(declaration))
             }
+            CheckedFlatElement::Generic(declaration) => {
+                allow_symbolic.then_some(StableFlatElement::Generic(declaration))
+            }
             CheckedFlatElement::TagOnlyNominal(id) => self
                 .stabilize_type(
                     CheckedType::Nominal(id),
@@ -1564,6 +1570,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             StableFlatElement::GenericFloat(declaration) => {
                 CheckedFlatElement::GenericFloat(*declaration)
             }
+            StableFlatElement::Generic(declaration) => CheckedFlatElement::Generic(*declaration),
             StableFlatElement::TagOnlyNominal(ty) => {
                 let CheckedType::Nominal(id) = self.reify_concrete_type(ty)? else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
@@ -2313,7 +2320,8 @@ fn collect_flat_element_nominals(element: CheckedFlatElement, output: &mut Vec<N
         | CheckedFlatElement::Integer(_)
         | CheckedFlatElement::Float(_)
         | CheckedFlatElement::GenericInt(_)
-        | CheckedFlatElement::GenericFloat(_) => {}
+        | CheckedFlatElement::GenericFloat(_)
+        | CheckedFlatElement::Generic(_) => {}
     }
 }
 
@@ -2465,7 +2473,8 @@ fn rewrite_flat_element_nominals(
         | CheckedFlatElement::GenericInt(_)
         | CheckedFlatElement::GenericFloat(_)
         | CheckedFlatElement::TagOnlyNominal(_)
-        | CheckedFlatElement::Nominal(_) => {}
+        | CheckedFlatElement::Nominal(_)
+        | CheckedFlatElement::Generic(_) => {}
     }
     Ok(())
 }

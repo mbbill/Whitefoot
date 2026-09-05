@@ -1139,9 +1139,19 @@ impl Analyzer<'_, '_> {
             else {
                 continue;
             };
-            let affine_target = affine_result.and_then(|result| {
-                self.postcondition_affine_target(postcondition, result, &states.affine)
-            });
+            // [MSR-4] the affine route over the relation's own instantiated
+            // terms, which is what carries a measure operand: a measure has
+            // an affine atom [MSR-4] and no result value image, so the datum
+            // route below reaches it nowhere. The datum route stays for a
+            // fragment result whose returned expression has a richer image
+            // than its place.
+            let affine_target = self
+                .affine_relation_target(&relation, &states.affine)
+                .or_else(|| {
+                    affine_result.and_then(|result| {
+                        self.postcondition_affine_target(postcondition, result, &states.affine)
+                    })
+                });
             let residual = self.render_relation(&relation);
             let entry_images = self.postcondition_entry_images[index]
                 .iter()
@@ -1239,6 +1249,27 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// [MSR-4] the affine target of one already-instantiated ordering
+    /// relation, read through the affine image of each of its two terms.
+    ///
+    /// A measure term, a measure datum and an integer binding each have an
+    /// image, so this reaches every relation whose operands the affine domain
+    /// carries — which is what a clause over a run's measures is.
+    fn affine_relation_target(
+        &mut self,
+        relation: &Relation,
+        state: &AffineFlowState,
+    ) -> Option<AffineInequality> {
+        let Relation::Bound { left, right, bound } = relation else {
+            return None;
+        };
+        let left = self.affine_term_value(*left, state)?;
+        let right = self.affine_term_value(*right, state)?;
+        let mut check = AffineCheckState::new();
+        let right = right.add(&AffineForm::constant(*bound), &mut check).ok()?;
+        AffineInequality::from_forms(&left, &right, &mut check).ok()
+    }
+
     fn postcondition_affine_target(
         &self,
         postcondition: &CheckedPostcondition,
@@ -1329,7 +1360,7 @@ impl Analyzer<'_, '_> {
     /// to its unique affine inequality. Unsupported goal shapes simply retain
     /// the ordinary L0 result; no alternate formula is guessed.
     fn affine_goal_ordering_target(
-        &self,
+        &mut self,
         expression: &GoalExpression,
         state: &AffineFlowState,
     ) -> Option<AffineInequality> {
@@ -1340,7 +1371,7 @@ impl Analyzer<'_, '_> {
     /// its unique affine inequality. Boolean composition uses this same leaf
     /// normalization instead of adding a call-specific affine fallback.
     fn affine_signed_goal_ordering_target(
-        &self,
+        &mut self,
         expression: &GoalExpression,
         state: &AffineFlowState,
         sign: GoalSign,
@@ -1389,7 +1420,7 @@ impl Analyzer<'_, '_> {
     /// concrete call goal. Every place must be an unprojected current integer
     /// binding, and multiplication must have a literal/constant side.
     fn affine_goal_value(
-        &self,
+        &mut self,
         expression: &GoalExpression,
         state: &AffineFlowState,
     ) -> Option<AffineForm> {
@@ -1453,6 +1484,23 @@ impl Analyzer<'_, '_> {
                     }
                     _ => None,
                 }
+            }
+            // [MSR-4] a measure term's image in the affine domain is its own
+            // compiler-owned atom, exactly as it is for a term the flow
+            // already carries. Without this a goal over a measure reaches
+            // only the L0 route, and every filling loop's row requirement —
+            // `room_of(built) > 0_u64` under `room_of(built) + at >= n` — is
+            // unproved for want of the domain the rule names.
+            GoalExpression::Operation {
+                row:
+                    GoalOperation::ArrayMeasure { .. }
+                    | GoalOperation::BufferMeasure { .. }
+                    | GoalOperation::SliceMeasure { .. }
+                    | GoalOperation::ContainerMeasure { .. },
+                ..
+            } => {
+                let term = self.goal_operand(expression)?;
+                Some(self.measure_atom(term))
             }
             GoalExpression::Datum(
                 GoalDatum::Parameter { .. } | GoalDatum::EvaluatedValue { .. },
@@ -1925,7 +1973,8 @@ impl Analyzer<'_, '_> {
             TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
-            | TermKind::EntryDatum { .. } => {}
+            | TermKind::EntryDatum { .. }
+            | TermKind::RebindDatum { .. } => {}
         }
         holders
     }
@@ -2232,6 +2281,7 @@ impl Analyzer<'_, '_> {
                 continue;
             }
             let datum = self.terms.intern(kind);
+            self.adopt_measure_atom(datum, term);
             state.establish(
                 &Relation::Equal {
                     left: datum,
@@ -3159,6 +3209,11 @@ impl Analyzer<'_, '_> {
                 deref: self.is_holder(target.root.binding),
                 fields: target.root.fields.clone(),
             },
+            CheckedSetTarget::RunIndex(target) => PlaceTerm {
+                root: PlaceRoot::Binding(target.root.binding),
+                deref: self.is_holder(target.root.binding),
+                fields: target.root.fields.clone(),
+            },
         };
         self.resolve(&target).overlaps(place)
     }
@@ -3526,6 +3581,7 @@ impl Analyzer<'_, '_> {
                 &image.projections,
                 measure,
             ));
+            self.adopt_measure_atom(datum, live);
             state.establish(
                 &Relation::Equal {
                     left: datum,
@@ -3592,7 +3648,8 @@ impl Analyzer<'_, '_> {
             TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
-            | TermKind::EntryDatum { .. } => false,
+            | TermKind::EntryDatum { .. }
+            | TermKind::RebindDatum { .. } => false,
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
@@ -3663,7 +3720,8 @@ impl Analyzer<'_, '_> {
             TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
-            | TermKind::EntryDatum { .. } => false,
+            | TermKind::EntryDatum { .. }
+            | TermKind::RebindDatum { .. } => false,
             TermKind::Place(place, _) | TermKind::Measure(_, place) => match place.root {
                 PlaceRoot::Binding(binding) => exited.contains(&binding),
                 PlaceRoot::Constant(_) => false,
@@ -4021,16 +4079,29 @@ impl Analyzer<'_, '_> {
     }
 
     fn affine_fact_uses_only_outer_values(
+        &self,
         inequality: &AffineInequality,
         state: &AffineFlowState,
         binder: BindingId,
     ) -> bool {
-        let live_terms = state
+        let mut live_terms = state
             .values
             .iter()
             .filter(|(binding, _)| **binding != binder)
             .flat_map(|(_, value)| value.terms().iter().map(|coefficient| coefficient.term()))
             .collect::<HashSet<_>>();
+        // [MSR-1, MSR-4] a measure of a place live at the continuation is an
+        // outer value exactly as an integer binding is: it has one atom, that
+        // atom is retargeted only by the events that kill the term [MSR-2],
+        // and a conclusion over it therefore says the same thing after the
+        // loop that it said inside. Without this every filling loop's exit
+        // exports nothing and the `ensures` its body was written for is
+        // unproved at the return.
+        live_terms.extend(
+            self.measure_atoms
+                .values()
+                .flat_map(|value| value.terms().iter().map(|coefficient| coefficient.term())),
+        );
         inequality
             .terms()
             .iter()
@@ -7120,7 +7191,7 @@ impl Analyzer<'_, '_> {
     /// Dynamic buffer and slice lengths remain on the ordinary L0 route until
     /// their length term is connected to an affine value by a fixed rule.
     fn affine_fixed_array_index_target(
-        &self,
+        &mut self,
         offset: &CheckedExpression,
         array_length: Option<CheckedConst>,
         state: &AffineFlowState,
@@ -7585,15 +7656,22 @@ impl Analyzer<'_, '_> {
                 },
                 _,
             ) if fields.is_empty() => state.values.get(&binding).cloned(),
-            // [MSR-4] a measure term's image is its own compiler-owned atom.
-            TermKind::Measure(..) | TermKind::ProjectedMeasure(..) => Some(self.measure_atom(term)),
+            // [MSR-4] a measure term's image is its own compiler-owned atom,
+            // and [MSR-3] a measure datum inherits the atom of the term it
+            // denotes.
+            TermKind::Measure(..)
+            | TermKind::ProjectedMeasure(..)
+            | TermKind::EntryDatum { .. }
+            | TermKind::RebindDatum { .. }
+            | TermKind::CallDatum {
+                measure: Some(_), ..
+            } => Some(self.measure_atom(term)),
             TermKind::ConstParameter(_)
             | TermKind::Place(_, _)
             | TermKind::ProjectedPlace(_, _)
             | TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
-            | TermKind::CallDatum { .. }
-            | TermKind::EntryDatum { .. } => None,
+            | TermKind::CallDatum { .. } => None,
         }
     }
 
@@ -8672,6 +8750,31 @@ impl Analyzer<'_, '_> {
                         base,
                         MeasuredKind::Buffer,
                         None,
+                        &target.offset,
+                        target.obligation.clone(),
+                        states,
+                    );
+                }
+                reaches_target && self.obligations_since_discharged(obligation_start)
+            }
+            // [OP-4, BLK-1] the run's own obligation is `i < len_of(v)`: the
+            // offset is a logical one and the window's length bounds it, so
+            // the measured kind is the run's and the written capacity is not
+            // the bound.
+            CheckedSetTarget::RunIndex(target) => {
+                let reaches_target =
+                    self.judge_children_reach_parent(std::iter::once(&target.offset), states);
+                let obligation_start = self.obligations.len();
+                if reaches_target && let Some(measured) = target.root.measured() {
+                    let base = PlaceTerm {
+                        root: PlaceRoot::Binding(target.root.binding),
+                        deref: self.is_holder(target.root.binding),
+                        fields: target.root.fields.clone(),
+                    };
+                    self.judge_obligation(
+                        base,
+                        measured,
+                        target.root.type_constant(),
                         &target.offset,
                         target.obligation.clone(),
                         states,
@@ -10301,6 +10404,25 @@ impl Analyzer<'_, '_> {
         atom
     }
 
+    /// [MSR-3] one measure datum inherits the atom the term it is established
+    /// equal to holds at that point.
+    ///
+    /// The datum denotes that value, so it is that value in the affine domain
+    /// too. Because nothing kills a datum, its atom outlives the write that
+    /// retargets the term's: a header conclusion published over the old atom
+    /// stays anchored to a live term, which is what lets one published
+    /// relation preserve an invariant across a [LIV-2] commit.
+    fn adopt_measure_atom(&mut self, datum: TermId, live: TermId) {
+        if self.measure_atoms.contains_key(&datum) {
+            return;
+        }
+        let atom = self.measure_atom(live);
+        if atom.terms().is_empty() {
+            return;
+        }
+        self.measure_atoms.insert(datum, atom);
+    }
+
     /// Every registered measure term, in term order.
     ///
     /// The registry only grows during the forward walk, so this scans just
@@ -10313,9 +10435,22 @@ impl Analyzer<'_, '_> {
             let id = TermId(
                 u32::try_from(index).expect("ENT term inventory exceeds the u32 identity space"),
             );
+            // [MSR-3] a measure datum is a measure of the affine domain's
+            // kind: it denotes one measure's value at a point, it is of
+            // fragment type u64, and nothing kills it. It participates in
+            // step 6's bridge exactly as a live measure term does, which is
+            // what carries a header conclusion across the write that kills
+            // the term the conclusion was published over.
             if matches!(
                 self.terms.kind(id),
-                TermKind::Measure(..) | TermKind::ProjectedMeasure(..)
+                TermKind::Measure(..)
+                    | TermKind::ProjectedMeasure(..)
+                    | TermKind::CallDatum {
+                        measure: Some(_),
+                        ..
+                    }
+                    | TermKind::EntryDatum { .. }
+                    | TermKind::RebindDatum { .. }
             ) {
                 self.measure_terms_seen.push(id);
             }
@@ -10934,6 +11069,21 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
+            // [MSR-2] an element store into a run overlaps the descriptor
+            // storage of `v[i]` and none of `v`'s own, so it kills the
+            // measures of the element and none of the run's.
+            CheckedSetTarget::RunIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.root.binding),
+                    deref: self.is_holder(target.root.binding),
+                    fields: target.root.fields.clone(),
+                };
+                target_kills.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
         }
     }
 
@@ -11007,7 +11157,9 @@ impl Analyzer<'_, '_> {
                     .collect::<Vec<_>>(),
                 place.ty,
             )),
-            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+            CheckedSetTarget::ArrayIndex(_)
+            | CheckedSetTarget::BufferIndex(_)
+            | CheckedSetTarget::RunIndex(_) => None,
         };
         match values {
             CheckedCommitValues::ResultList { value, .. } => {
@@ -11210,6 +11362,10 @@ impl Analyzer<'_, '_> {
                 value,
             } => {
                 let affine_value = self.affine_expression_form(value, &mut state.affine);
+                // [MSR-3] the rebind placement is minted before the
+                // initializer's own kills, because the datum it forms is the
+                // value the transferred place had immediately before them.
+                let rebind = self.mint_rebind_datums(node_path, 0, value, &mut state.facts);
                 let judgment = self.expression_effects(value, state);
                 self.declare(*binding);
                 if judgment.reached
@@ -11244,6 +11400,11 @@ impl Analyzer<'_, '_> {
                 } else {
                     None
                 };
+                if judgment.reached
+                    && let Some(rebind) = &rebind
+                {
+                    self.establish_rebind_datums(node_path, *binding, rebind, &mut state.facts);
+                }
                 if let Some(established) = unsigned_division
                     && let Some(quotient) = state.affine.values.get(binding).cloned()
                     && let Some(dividend) =
@@ -12024,7 +12185,7 @@ impl Analyzer<'_, '_> {
                         ) else {
                             continue;
                         };
-                        if !Self::affine_fact_uses_only_outer_values(
+                        if !self.affine_fact_uses_only_outer_values(
                             &inequality,
                             &normalized,
                             *binder,
@@ -12551,6 +12712,18 @@ impl Analyzer<'_, '_> {
                     source: node_path.clone(),
                 });
             }
+            CheckedSetTarget::RunIndex(target) => {
+                let spelled = PlaceTerm {
+                    root: PlaceRoot::Binding(target.root.binding),
+                    deref: self.is_holder(target.root.binding),
+                    fields: target.root.fields.clone(),
+                };
+                events.push(KillEvent::Write {
+                    place: self.resolve(&spelled),
+                    element: true,
+                    source: node_path.clone(),
+                });
+            }
         }
         kills.push_event_group(std::mem::take(events));
     }
@@ -12823,6 +12996,11 @@ impl Analyzer<'_, '_> {
                     }
                 }
                 format!("{}({place})", measure.spelling())
+            }
+            // A rebind datum has no source spelling of its own: it is the
+            // measure the transferred value had where it was renamed.
+            TermKind::RebindDatum { measure, .. } => {
+                format!("<{} at the rebind>", measure.spelling())
             }
         }
     }

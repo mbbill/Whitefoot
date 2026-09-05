@@ -317,6 +317,15 @@ pub(crate) enum CheckedFlatElement {
     /// formation only; arrays and slices keep the flat copy domain, so
     /// their element constructors never produce this variant.
     Nominal(NominalId),
+    /// One unbounded type parameter in a run's element position [BLK-1].
+    ///
+    /// [FN-2] makes generics monomorphization-only, so this variant belongs
+    /// to the symbolic pass alone: every concrete instance re-parses the
+    /// element position with its own substitution and produces a concrete
+    /// element. Only a run's element position forms it — a `buffer`, an
+    /// `array` and a `slice` keep the element domains [TYPE-2] gives them —
+    /// and it reaches no layout, no lowering, and no backend.
+    Generic(DeclarationId),
 }
 
 impl CheckedFlatElement {
@@ -329,6 +338,7 @@ impl CheckedFlatElement {
             Self::GenericInt(declaration) => CheckedType::GenericInt(declaration),
             Self::GenericFloat(declaration) => CheckedType::GenericFloat(declaration),
             Self::TagOnlyNominal(id) | Self::Nominal(id) => CheckedType::Nominal(id),
+            Self::Generic(declaration) => CheckedType::Generic(declaration),
         }
     }
 }
@@ -1984,11 +1994,26 @@ pub(crate) struct CheckedBufferSetTarget {
     pub(crate) target_domain: CheckedTargetDomainObligation,
 }
 
+/// One element-position store into a run [BLK-3, SET-1, SET-2].
+///
+/// The offset is a logical one and its [OP-4] obligation is against `len_of`;
+/// the storage it writes is slot `(head_of + i) mod cap_of`, which the
+/// lowering computes and no source rule mentions [BLK-1].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedRunSetTarget {
+    pub(crate) root: CheckedContainerRoot,
+    pub(crate) element_type: CheckedType,
+    pub(crate) offset: CheckedExpression,
+    pub(crate) obligation: NodePath,
+    pub(crate) target_domain: CheckedTargetDomainObligation,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedSetTarget {
     Place(CheckedWritablePlace),
     ArrayIndex(Box<CheckedArraySetTarget>),
     BufferIndex(Box<CheckedBufferSetTarget>),
+    RunIndex(Box<CheckedRunSetTarget>),
 }
 
 impl CheckedSetTarget {
@@ -1997,6 +2022,7 @@ impl CheckedSetTarget {
             Self::Place(target) => target.binding,
             Self::ArrayIndex(target) => target.binding,
             Self::BufferIndex(target) => target.root.binding,
+            Self::RunIndex(target) => target.root.binding,
         }
     }
 
@@ -2005,6 +2031,7 @@ impl CheckedSetTarget {
             Self::Place(target) => target.ty,
             Self::ArrayIndex(target) => target.element_type,
             Self::BufferIndex(target) => target.root.element.ty(),
+            Self::RunIndex(target) => target.element_type,
         }
     }
 }

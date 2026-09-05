@@ -881,6 +881,7 @@ fn set_target_uses_any(target: &CheckedSetTarget, bindings: &HashSet<BindingId>)
         CheckedSetTarget::Place(_) => false,
         CheckedSetTarget::ArrayIndex(target) => expression_uses_any(&target.offset, bindings),
         CheckedSetTarget::BufferIndex(target) => expression_uses_any(&target.offset, bindings),
+        CheckedSetTarget::RunIndex(target) => expression_uses_any(&target.offset, bindings),
     }
 }
 

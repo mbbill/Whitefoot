@@ -776,6 +776,7 @@ impl FunctionFramePlan {
                     // through storage, because the slot index is computed.
                     IrOperation::RunIndex { run, .. }
                     | IrOperation::RunTaken { run, .. }
+                    | IrOperation::RunStore { run, .. }
                     | IrOperation::RunBoundary { run, .. } => {
                         let run_type =
                             function.value_type(*run).ok_or(BackendFailure::InvalidIr)?;
@@ -1641,6 +1642,12 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 offset,
                 target_domain,
             } => self.emit_run_index(result, ty, *run, *offset, *target_domain),
+            IrOperation::RunStore {
+                run,
+                offset,
+                value,
+                target_domain,
+            } => self.emit_run_store(result, ty, *run, *offset, *value, *target_domain),
             IrOperation::RunTaken { row, run } => self.emit_run_taken(result, ty, *row, *run),
             IrOperation::RunBoundary { row, run, value } => {
                 self.emit_run_boundary(result, ty, *row, *run, *value)

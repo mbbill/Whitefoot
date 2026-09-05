@@ -431,6 +431,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedSetTarget::Place(_) => return None,
             CheckedSetTarget::ArrayIndex(target) => &target.offset,
             CheckedSetTarget::BufferIndex(target) => &target.offset,
+            CheckedSetTarget::RunIndex(target) => &target.offset,
         };
         match offset {
             CheckedExpression::Constant(super::super::super::model::CheckedValue::Integer {

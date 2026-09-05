@@ -563,15 +563,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// The element type of a run at one instance [BLK-1].
     ///
-    /// A run's element domain is the flat-element domain a `buffer`
-    /// formation already has in this version; an element type outside it is
-    /// an explicit unsupported capability and never a source rejection.
+    /// [BLK-1] states what a slot may hold, and a run's element domain is the
+    /// one `buffer` formation already has: every copy element, and one
+    /// region-free affine nominal stored by value. An element type outside
+    /// it — a run of runs, or an unbounded type parameter, which no storage
+    /// element position admits in this version — is an explicit unsupported
+    /// capability and never a source rejection.
     fn kernel_element(
         &self,
         element: CheckedType,
         node: NodeId,
     ) -> Result<super::super::super::super::model::CheckedFlatElement, CheckStop> {
-        match self.flat_element(element)? {
+        if let super::super::super::super::model::CheckedType::Generic(declaration) = element {
+            return Ok(super::super::super::super::model::CheckedFlatElement::Generic(declaration));
+        }
+        match self.buffer_element(element)? {
             Some(element) => Ok(element),
             None => self.unsupported(crate::UnsupportedSemanticFeature::CompositeValues, node),
         }

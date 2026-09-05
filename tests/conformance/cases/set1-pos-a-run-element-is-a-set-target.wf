@@ -1,0 +1,30 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "SET-1, BLK-1: a subscript of a run is a set target, and the slot it commits to is the window's, not the array's.";
+  let empty = seq_fixed::<u8, 4>();
+  let one = seq_place(vector: move empty, value: 1_u8);
+  let two = seq_place(vector: move one, value: 2_u8);
+  let three = seq_place(vector: move two, value: 3_u8);
+  let (rest, taken) = seq_take_front(vector: move three);
+  let four = seq_place(vector: move rest, value: 4_u8);
+  set four[0_u64] = 9_u8;
+  let first = four[0_u64];
+  if first == 9_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let second = four[1_u64];
+  if second == 3_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let third = four[2_u64];
+  if third == 4_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let held = len_of(four);
+  if held == 3_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 4_u8);
+}

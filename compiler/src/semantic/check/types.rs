@@ -634,12 +634,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticIssueKind::type_mismatch(expected, found),
             )
         };
+        // [BLK-1] what a slot may hold: every copy element, one region-free
+        // affine nominal stored by value, and — in a run's element position
+        // alone — one unbounded type parameter, which [FN-2] resolves at
+        // every concrete instance. A run of runs is outside it and is an
+        // explicit unsupported capability rather than a source rejection.
         let element_of = |argument: NodeId| -> Result<CheckedFlatElement, CheckStop> {
             let element_node = self
                 .tree
                 .first_child_with(argument, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let element_type = self.parse_type_with(element_node, substitution)?;
+            if let CheckedType::Generic(declaration) = element_type {
+                return Ok(CheckedFlatElement::Generic(declaration));
+            }
             match self.buffer_element(element_type)? {
                 Some(element) => Ok(element),
                 None => self

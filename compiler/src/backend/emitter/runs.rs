@@ -182,6 +182,82 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// [SET-1, SET-2, BLK-1] one discharged element-position store at logical
+    /// offset `i`.
+    ///
+    /// The slot is the same `(head + i) mod cap` a subscript read computes,
+    /// and the two descriptor words are untouched: an element store changes
+    /// what the window holds and never where the window is [MSR-2].
+    pub(super) fn emit_run_store(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        run: IrValueId,
+        offset: IrValueId,
+        value: IrValueId,
+        target_domain: IrTargetDomainObligation,
+    ) -> Result<(), BackendFailure> {
+        if target_domain != IrTargetDomainObligation::ElementAddress {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let run_type = self.value_type(run).ok_or(BackendFailure::InvalidIr)?;
+        if run_type != ty {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let Some(shape) = RunShape::of(run_type) else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if self.value_type(value) != Some(shape.element().ty())
+            || self.value_type(offset)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let head = self.run_word(run_type, run, shape.head_field())?;
+        let offset = self.value_name(offset);
+        let physical = self.wrap_offset(shape, run_type, run, &head, &offset)?;
+        let element_pointer = self.element_pointer(result, shape, run_type, run, &physical)?;
+        let element_type = llvm_type(self.program, shape.element().ty())?;
+        let llvm = llvm_type(self.program, run_type)?;
+        writeln!(
+            self.output,
+            "  store {element_type} {}, ptr %{element_pointer}",
+            self.value_name(value),
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        // A frame-resident run was written through its own frame slot, so the
+        // value handed back is the reloaded aggregate; a store-resident run's
+        // slots are behind its descriptor pointer and its descriptor is
+        // unchanged, so the same two words are reinserted to name the result.
+        match shape {
+            RunShape::Inline { .. } => {
+                let slot = self.entry_slot(FunctionSlot::RunStorage(result))?;
+                writeln!(
+                    self.output,
+                    "  {} = load {llvm}, ptr {slot}",
+                    self.value_name(result),
+                )
+                .map_err(|_| BackendFailure::TextEmission)
+            }
+            RunShape::Descriptor { .. } => {
+                let length = self.run_word(run_type, run, shape.length_field())?;
+                let with_length = self.next_temporary()?;
+                writeln!(
+                    self.output,
+                    "  %{with_length} = insertvalue {llvm} {}, i64 {length}, {}\n  {} = insertvalue {llvm} %{with_length}, i64 {head}, {}",
+                    self.value_name(run),
+                    shape.length_field(),
+                    self.value_name(result),
+                    shape.head_field(),
+                )
+                .map_err(|_| BackendFailure::TextEmission)
+            }
+        }
+    }
+
     /// [BLK-3] the element a removal row hands back, read before the boundary
     /// moves.
     pub(super) fn emit_run_taken(

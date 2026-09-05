@@ -2028,6 +2028,20 @@ impl<'program> IrBuilder<'program> {
                 self.promote_binding_if_needed(binding)?;
                 return Ok(());
             }
+            // [SET-2] a run-element exchange evaluates its target components
+            // exactly once, exactly as a buffer element does; unlike a
+            // buffer's, a frame-resident run's slots are part of its own
+            // value, so the run the store hands back is committed to the
+            // target's root before the displaced element is bound.
+            CheckedSetTarget::RunIndex(target) => {
+                let (previous, replacement) = self.lower_run_replace(root, target, value)?;
+                self.commit_root_storage(root_binding, storage, replacement)?;
+                if self.bindings.insert(binding, previous).is_some() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.promote_binding_if_needed(binding)?;
+                return Ok(());
+            }
             // An array element is copy [TYPE-2], so the checker never forms
             // an element-position replace target over an array [SET-2].
             CheckedSetTarget::ArrayIndex(_) => {
@@ -2126,7 +2140,20 @@ impl<'program> IrBuilder<'program> {
             CheckedSetTarget::BufferIndex(target) => {
                 self.lower_buffer_element_commit(root, target, value)?
             }
+            CheckedSetTarget::RunIndex(target) => {
+                self.lower_run_element_commit(root, target, value)?
+            }
         };
+        self.commit_root_storage(binding, storage, replacement)
+    }
+
+    /// One target root's new value, written to the storage that holds it.
+    fn commit_root_storage(
+        &mut self,
+        binding: BindingId,
+        storage: IrValueId,
+        replacement: IrValueId,
+    ) -> Result<(), LoweringFailure> {
         let stored = match self.value_type(storage)? {
             IrType::Address(referent) => {
                 if self.value_type(replacement)? != referent.ty() {

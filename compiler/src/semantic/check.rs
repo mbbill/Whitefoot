@@ -2084,6 +2084,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     &mut target.offset,
                                     requirements,
                                 )?,
+                            CheckedSetTarget::RunIndex(target) => self
+                                .install_expression_call_requirements(
+                                    &mut target.offset,
+                                    requirements,
+                                )?,
                         }
                     }
                     for value in values.expressions_mut() {
@@ -2100,6 +2105,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 requirements,
                             )?,
                         CheckedSetTarget::BufferIndex(target) => self
+                            .install_expression_call_requirements(
+                                &mut target.offset,
+                                requirements,
+                            )?,
+                        CheckedSetTarget::RunIndex(target) => self
                             .install_expression_call_requirements(
                                 &mut target.offset,
                                 requirements,
@@ -2298,6 +2308,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                     bounds,
                                 )?;
                             }
+                            CheckedSetTarget::RunIndex(target) => {
+                                Self::install_expression_allocation_bounds(
+                                    &mut target.offset,
+                                    bounds,
+                                )?;
+                            }
                         }
                     }
                     for value in values.expressions_mut() {
@@ -2312,6 +2328,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                         CheckedSetTarget::BufferIndex(target) => {
+                            Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
+                        }
+                        CheckedSetTarget::RunIndex(target) => {
                             Self::install_expression_allocation_bounds(&mut target.offset, bounds)?;
                         }
                     }

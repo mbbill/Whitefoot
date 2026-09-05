@@ -1,0 +1,39 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "SET-2, BLK-1: a subscript of a run is a replace target, so an affine element leaves its slot and its successor arrives in one commit and the slot is never empty.";
+  let empty = seq_fixed::<Option<u8>, 4>();
+  let a = Some<u8>(value: 1_u8);
+  let one = seq_place(vector: move empty, value: move a);
+  let b = Some<u8>(value: 2_u8);
+  let two = seq_place(vector: move one, value: move b);
+  let c = Some<u8>(value: 3_u8);
+  let three = seq_place(vector: move two, value: move c);
+  let (rest, taken) = seq_take_front(vector: move three);
+  let d = Some<u8>(value: 4_u8);
+  let four = seq_place(vector: move rest, value: move d);
+  let fresh = Some<u8>(value: 9_u8);
+  let old = replace four[0_u64] = move fresh;
+  match old {
+    Some(value: was) => {
+      if was == 2_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+  let again = Some<u8>(value: 8_u8);
+  let now = replace four[0_u64] = move again;
+  match now {
+    Some(value: got) => {
+      if got == 9_u8 {
+        return exit_status(code: 0_u8);
+      }
+      return exit_status(code: 3_u8);
+    }
+    None() => {
+      return exit_status(code: 4_u8);
+    }
+  }
+}

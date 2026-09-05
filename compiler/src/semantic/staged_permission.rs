@@ -1675,7 +1675,10 @@ const fn is_copy_element(element: CheckedFlatElement) -> bool {
         | CheckedFlatElement::GenericInt(_)
         | CheckedFlatElement::GenericFloat(_)
         | CheckedFlatElement::TagOnlyNominal(_) => true,
-        CheckedFlatElement::Nominal(_) => false,
+        // An unbounded type parameter has no copy classification of its own;
+        // the concrete instance [FN-2] expands has one, and this arm is the
+        // conservative reading the symbolic pass takes.
+        CheckedFlatElement::Nominal(_) | CheckedFlatElement::Generic(_) => false,
     }
 }
 
