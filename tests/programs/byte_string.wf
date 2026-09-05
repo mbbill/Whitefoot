@@ -29,12 +29,12 @@ fn bs_new() -> result: own ByteString allocates(heap) {
   return ByteString(buf: move empty, fill: 0_u64);
 }
 
-fn bs_len['a](s: &'a ByteString) -> result: own u64 reads(s.fill) {
+fn bs_len(s: &ByteString) -> result: own u64 reads(s.fill) {
   doc "Reports how many bytes the string holds.";
   return deref(s).fill;
 }
 
-fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
+fn bs_byte(s: &ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).fill;
   let within = index < stored;
@@ -49,7 +49,7 @@ fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> read
   return None<u8>();
 }
 
-fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
+fn bs_push(s: &uniq ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
@@ -77,41 +77,39 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   return unit;
 }
 
-fn bs_append_slice['d, 'm](s: &uniq 'd ByteString, text: own slice<'m, u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill), allocates(heap) {
+fn bs_append_slice(s: &uniq ByteString, text: own slice<u8>) -> result: own unit reads(s.buf, s.fill, text), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends every byte of one static message, growing the destination as needed.";
   let count = len(text);
   for @append (at in 0_u64..count) {
     let byte = text[at];
-    region 'push {
-      bs_push::<'push>(s: &uniq 'push deref(s), value: byte);
+    region {
+      bs_push(s: &uniq deref(s), value: byte);
     }
   }
   return unit;
 }
 
-fn bs_concat['d, 's](destination: &uniq 'd ByteString, source: &'s ByteString) -> result: own unit reads(destination.buf, destination.fill, source.buf, source.fill), writes(destination.buf, destination.fill), allocates(heap) {
+fn bs_concat(destination: &uniq ByteString, source: &ByteString) -> result: own unit reads(destination.buf, destination.fill, source.buf, source.fill), writes(destination.buf, destination.fill), allocates(heap) {
   doc "Appends every byte of one byte string to another.";
   let count = 0_u64;
-  region 'measure {
-    set count = bs_len::<'measure>(s: &'measure deref(source));
+  region {
+    set count = bs_len(s: &deref(source));
   }
   for @concat (at in 0_u64..count) {
-    region 'read {
-      match bs_byte::<'read>(s: &'read deref(source), index: at) {
-        Some(value: byte) => {
-          region 'push {
-            bs_push::<'push>(s: &uniq 'push deref(destination), value: byte);
-          }
+    match bs_byte(s: &deref(source), index: at) {
+      Some(value: byte) => {
+        region {
+          bs_push(s: &uniq deref(destination), value: byte);
         }
-        None() => {
-        }
+      }
+      None() => {
       }
     }
   }
   return unit;
 }
 
-fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill) {
+fn bs_find(haystack: &ByteString, needle: &ByteString) -> result: own Option<u64> reads(haystack.buf, haystack.fill, needle.buf, needle.fill) {
   doc "Reports the first position where the needle bytes occur, by the naive left-to-right scan.";
   let hay_length = deref(haystack).fill;
   let needle_length = deref(needle).fill;
@@ -135,11 +133,11 @@ fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: 
       }
       let position = start +wrap offset;
       let equal = False();
-      region 'hay {
-        match bs_byte::<'hay>(s: &'hay deref(haystack), index: position) {
+      region {
+        match bs_byte(s: &deref(haystack), index: position) {
           Some(value: left) => {
-            region 'needle {
-              match bs_byte::<'needle>(s: &'needle deref(needle), index: offset) {
+            region {
+              match bs_byte(s: &deref(needle), index: offset) {
                 Some(value: right) => {
                   set equal = left == right;
                 }
@@ -167,7 +165,7 @@ fn bs_find['h, 'n](haystack: &'h ByteString, needle: &'n ByteString) -> result: 
   return None<u64>();
 }
 
-fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
+fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends the decimal spelling of one unsigned value, least significant digit extracted first.";
   let scratch = buffer_new(20_u64, 48_u8);
   let written = 0_u64;
@@ -206,15 +204,15 @@ fn bs_push_decimal['a](s: &uniq 'a ByteString, value: own u64) -> result: own un
     let inside = index < capacity;
     if inside {
       let glyph = scratch[index];
-      region 'digit {
-        bs_push::<'digit>(s: &uniq 'digit deref(s), value: glyph);
+      region {
+        bs_push(s: &uniq deref(s), value: glyph);
       }
     }
   }
   return unit;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires length <= source_length;
 } {
@@ -226,8 +224,8 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
     } else {
       break @publish;
     }
-    region 'attempt {
-      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+    region {
+      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -243,32 +241,32 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Builds one byte string from literals, concatenates, searches it, and publishes the measured report.";
   let subject = bs_new();
-  region 'head_view {
-    let view = slice_of(&'head_view subject_head);
-    region 'head_append {
-      bs_append_slice::<'head_append, 'head_view>(s: &uniq 'head_append subject, text: move view);
+  region {
+    let view = slice_of(&subject_head);
+    region {
+      bs_append_slice(s: &uniq subject, text: move view);
     }
   }
   let tail = bs_new();
-  region 'tail_view {
-    let view = slice_of(&'tail_view subject_tail);
-    region 'tail_append {
-      bs_append_slice::<'tail_append, 'tail_view>(s: &uniq 'tail_append tail, text: move view);
+  region {
+    let view = slice_of(&subject_tail);
+    region {
+      bs_append_slice(s: &uniq tail, text: move view);
     }
   }
-  region 'join {
-    bs_concat::<'join, 'join>(destination: &uniq 'join subject, source: &'join tail);
+  region {
+    bs_concat(destination: &uniq subject, source: &tail);
   }
   let total = 0_u64;
-  region 'measure {
-    set total = bs_len::<'measure>(s: &'measure subject);
+  region {
+    set total = bs_len(s: &subject);
   }
   if total == 43_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
-  region 'probe_head {
-    match bs_byte::<'probe_head>(s: &'probe_head subject, index: 10_u64) {
+  region {
+    match bs_byte(s: &subject, index: 10_u64) {
       Some(value: observed) => {
         if observed == 98_u8 {
         } else {
@@ -280,8 +278,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
       }
     }
   }
-  region 'probe_past {
-    match bs_byte::<'probe_past>(s: &'probe_past subject, index: 43_u64) {
+  region {
+    match bs_byte(s: &subject, index: 43_u64) {
       Some(value: observed) => {
         return exit_status(code: 1_u8);
       }
@@ -290,23 +288,23 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     }
   }
   let present = bs_new();
-  region 'present_view {
-    let view = slice_of(&'present_view needle_present);
-    region 'present_append {
-      bs_append_slice::<'present_append, 'present_view>(s: &uniq 'present_append present, text: move view);
+  region {
+    let view = slice_of(&needle_present);
+    region {
+      bs_append_slice(s: &uniq present, text: move view);
     }
   }
   let absent = bs_new();
-  region 'absent_view {
-    let view = slice_of(&'absent_view needle_absent);
-    region 'absent_append {
-      bs_append_slice::<'absent_append, 'absent_view>(s: &uniq 'absent_append absent, text: move view);
+  region {
+    let view = slice_of(&needle_absent);
+    region {
+      bs_append_slice(s: &uniq absent, text: move view);
     }
   }
   let present_at = 0_u64;
   let present_found = 0_u8;
-  region 'search_present {
-    match bs_find::<'search_present, 'search_present>(haystack: &'search_present subject, needle: &'search_present present) {
+  region {
+    match bs_find(haystack: &subject, needle: &present) {
       Some(value: at) => {
         set present_at = at;
         set present_found = 1_u8;
@@ -324,8 +322,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     return exit_status(code: 1_u8);
   }
   let absent_found = 0_u8;
-  region 'search_absent {
-    match bs_find::<'search_absent, 'search_absent>(haystack: &'search_absent subject, needle: &'search_absent absent) {
+  region {
+    match bs_find(haystack: &subject, needle: &absent) {
       Some(value: at) => {
         set absent_found = 1_u8;
       }
@@ -338,51 +336,51 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
     return exit_status(code: 1_u8);
   }
   let report = bs_new();
-  region 'length_view {
-    let view = slice_of(&'length_view label_length);
-    region 'length_append {
-      bs_append_slice::<'length_append, 'length_view>(s: &uniq 'length_append report, text: move view);
+  region {
+    let view = slice_of(&label_length);
+    region {
+      bs_append_slice(s: &uniq report, text: move view);
     }
   }
-  region 'length_digits {
-    bs_push_decimal::<'length_digits>(s: &uniq 'length_digits report, value: total);
+  region {
+    bs_push_decimal(s: &uniq report, value: total);
   }
-  region 'present_label {
-    let view = slice_of(&'present_label label_present);
-    region 'present_label_append {
-      bs_append_slice::<'present_label_append, 'present_label>(s: &uniq 'present_label_append report, text: move view);
+  region {
+    let view = slice_of(&label_present);
+    region {
+      bs_append_slice(s: &uniq report, text: move view);
     }
   }
-  region 'present_digits {
-    bs_push_decimal::<'present_digits>(s: &uniq 'present_digits report, value: present_at);
+  region {
+    bs_push_decimal(s: &uniq report, value: present_at);
   }
-  region 'absent_label {
-    let view = slice_of(&'absent_label label_absent);
-    region 'absent_label_append {
-      bs_append_slice::<'absent_label_append, 'absent_label>(s: &uniq 'absent_label_append report, text: move view);
+  region {
+    let view = slice_of(&label_absent);
+    region {
+      bs_append_slice(s: &uniq report, text: move view);
     }
   }
   if absent_found == 0_u8 {
-    region 'none_view {
-      let view = slice_of(&'none_view word_none);
-      region 'none_append {
-        bs_append_slice::<'none_append, 'none_view>(s: &uniq 'none_append report, text: move view);
+    region {
+      let view = slice_of(&word_none);
+      region {
+        bs_append_slice(s: &uniq report, text: move view);
       }
     }
   } else {
-    region 'absent_digits {
-      bs_push_decimal::<'absent_digits>(s: &uniq 'absent_digits report, value: 0_u64);
+    region {
+      bs_push_decimal(s: &uniq report, value: 0_u64);
     }
   }
-  region 'end_view {
-    let view = slice_of(&'end_view line_end);
-    region 'end_append {
-      bs_append_slice::<'end_append, 'end_view>(s: &uniq 'end_append report, text: move view);
+  region {
+    let view = slice_of(&line_end);
+    region {
+      bs_append_slice(s: &uniq report, text: move view);
     }
   }
   let published = 0_u64;
-  region 'report_measure {
-    set published = bs_len::<'report_measure>(s: &'report_measure report);
+  region {
+    set published = bs_len(s: &report);
   }
   if published == 28_u64 {
   } else {
@@ -391,8 +389,8 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let report_capacity = len(report.buf);
   let report_within_capacity = published <= report_capacity;
   if report_within_capacity {
-    region 'publish {
-      match publish_all::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish report.buf, length: published) {
+    region {
+      match publish_all(output: &uniq out, source: &report.buf, length: published) {
         Ok(value: done) => {
         }
         Err(error: problem) => {

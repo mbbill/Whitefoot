@@ -764,20 +764,20 @@ fn paired(value: own u8) -> result: own u8 pure {
   return left +wrap right;
 }
 
-fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
   define capacity = len(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
-  return write_once::<'o, 's>(output: move output, source: source, start: start, end: end);
+  return write_once(output: move output, source: source, start: start, end: end);
 }
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let fill = paired(value: 32_u8);
   let bytes = buffer_new(1_u64, fill);
-  region 'io {
-    let outcome = publish::<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
+  region {
+    let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -1092,9 +1092,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   doc "Writes one line per iteration to standard output.";
   let page = buffer_new(8_u64, 0_u8);
   for @scan (index in 0_u64..4_u64) {
-    region 'say {
-      let written = write_once::<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
-    }
+    let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
   }
   return exit_status(code: 0_u8);
 }

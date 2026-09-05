@@ -9,12 +9,12 @@ fn bs_new() -> result: own ByteString allocates(heap) {
   return ByteString(buf: move empty, fill: 0_u64);
 }
 
-fn bs_len['a](s: &'a ByteString) -> result: own u64 reads(s.fill) {
+fn bs_len(s: &ByteString) -> result: own u64 reads(s.fill) {
   doc "Reports how many bytes the string holds.";
   return deref(s).fill;
 }
 
-fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
+fn bs_byte(s: &ByteString, index: own u64) -> result: own Option<u8> reads(s.buf, s.fill) {
   doc "Reads one stored byte, delivering None for a position the string does not hold.";
   let stored = deref(s).fill;
   let within = index < stored;
@@ -29,7 +29,7 @@ fn bs_byte['a](s: &'a ByteString, index: own u64) -> result: own Option<u8> read
   return None<u8>();
 }
 
-fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
+fn bs_push(s: &uniq ByteString, value: own u8) -> result: own unit reads(s.buf, s.fill), writes(s.buf, s.fill), allocates(heap) {
   doc "Appends one byte, growing the backing buffer by one step when it is full.";
   let count = deref(s).fill;
   let capacity = len(deref(s).buf);
@@ -57,7 +57,7 @@ fn bs_push['a](s: &uniq 'a ByteString, value: own u8) -> result: own unit reads(
   return unit;
 }
 
-fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires length <= source_length;
 } {
@@ -69,8 +69,8 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
     } else {
       break @publish;
     }
-    region 'attempt {
-      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: sent, end: length) {
+    region {
+      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
         Ok(value: next) => {
           set sent = next;
         }
@@ -83,9 +83,9 @@ fn publish_all['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, length: 
   return Ok<unit, IoError>(value: unit);
 }
 
-fn stored_byte['r](records: &'r ByteString, index: own u64) -> result: own u8 reads(records.buf, records.fill) {
+fn stored_byte(records: &ByteString, index: own u64) -> result: own u8 reads(records.buf, records.fill) {
   doc "Reads one record byte, delivering zero for a position the record table does not hold.";
-  match bs_byte::<'r>(s: records, index: index) {
+  match bs_byte(s: records, index: index) {
     Some(value: byte) => {
       return byte;
     }
@@ -95,14 +95,14 @@ fn stored_byte['r](records: &'r ByteString, index: own u64) -> result: own u8 re
   }
 }
 
-fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> result: own Bool reads(records.buf, records.fill) {
+fn record_before(records: &ByteString, left: own u64, right: own u64) -> result: own Bool reads(records.buf, records.fill) {
   doc "Orders two fixed-stride records by their stored path bytes, a shorter prefix first.";
   let left_base = left *wrap 128_u64;
   let right_base = right *wrap 128_u64;
   let left_length_at = left_base +wrap 1_u64;
-  let left_length = stored_byte::<'r>(records: records, index: left_length_at);
+  let left_length = stored_byte(records: records, index: left_length_at);
   let right_length_at = right_base +wrap 1_u64;
-  let right_length = stored_byte::<'r>(records: records, index: right_length_at);
+  let right_length = stored_byte(records: records, index: right_length_at);
   let left_count = cvt::<u8, u64>(left_length);
   let right_count = cvt::<u8, u64>(right_length);
   let shared = if left_count < right_count {
@@ -120,8 +120,8 @@ fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> 
     }
     let left_at = left_start +wrap at;
     let right_at = right_start +wrap at;
-    let left_byte = stored_byte::<'r>(records: records, index: left_at);
-    let right_byte = stored_byte::<'r>(records: records, index: right_at);
+    let left_byte = stored_byte(records: records, index: left_at);
+    let right_byte = stored_byte(records: records, index: right_at);
     if left_byte < right_byte {
       return True();
     }
@@ -133,12 +133,12 @@ fn record_before['r](records: &'r ByteString, left: own u64, right: own u64) -> 
   return left_count < right_count;
 }
 
-fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(records.buf, records.fill, destination), writes(destination) {
+fn record_line(records: &ByteString, index: own u64, destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(records.buf, records.fill, destination), writes(destination) {
   doc "Renders one record as its kind glyph, one space, its relative path, and one newline.";
   let base = index *wrap 128_u64;
-  let kind = stored_byte::<'r>(records: records, index: base);
+  let kind = stored_byte(records: records, index: base);
   let length_at = base +wrap 1_u64;
-  let length = stored_byte::<'r>(records: records, index: length_at);
+  let length = stored_byte(records: records, index: length_at);
   let count = cvt::<u8, u64>(length);
   let room = len(deref(destination));
   let cursor = at;
@@ -161,7 +161,7 @@ fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &un
       break @path;
     }
     let path_at = path_start +wrap taken;
-    let byte = stored_byte::<'r>(records: records, index: path_at);
+    let byte = stored_byte(records: records, index: path_at);
     let body_fits = cursor < room;
     if body_fits {
     } else {
@@ -179,10 +179,10 @@ fn record_line['r, 'd](records: &'r ByteString, index: own u64, destination: &un
   return cursor;
 }
 
-fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, length: own u64, kind: own u8) -> result: own unit reads(records.buf, records.fill, path), writes(records.buf, records.fill), allocates(heap) {
+fn record_entry(records: &uniq ByteString, path: &buffer<u8>, length: own u64, kind: own u8) -> result: own unit reads(records.buf, records.fill, path), writes(records.buf, records.fill), allocates(heap) {
   doc "Appends one fixed-stride record holding an entry kind and its relative path.";
-  region 'kind_push {
-    let pushed = bs_push::<'kind_push>(s: &uniq 'kind_push deref(records), value: kind);
+  region {
+    let pushed = bs_push(s: &uniq deref(records), value: kind);
   }
   let stored = if length <= 126_u64 {
     give length;
@@ -198,8 +198,8 @@ fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, leng
       give 0_u8;
     }
   }
-  region 'length_push {
-    let pushed = bs_push::<'length_push>(s: &uniq 'length_push deref(records), value: byte_length);
+  region {
+    let pushed = bs_push(s: &uniq deref(records), value: byte_length);
   }
   let room = len(deref(path));
   let at = 0_u64;
@@ -216,18 +216,18 @@ fn record_entry['r, 'p](records: &uniq 'r ByteString, path: &'p buffer<u8>, leng
         set byte = deref(path)[at];
       }
     }
-    region 'body_push {
-      let pushed = bs_push::<'body_push>(s: &uniq 'body_push deref(records), value: byte);
+    region {
+      let pushed = bs_push(s: &uniq deref(records), value: byte);
     }
     set at = at +wrap 1_u64;
   }
   return unit;
 }
 
-fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
-  match reserve_file::<'f>(factory: move factory) {
+fn open_source_from_factory(factory: &uniq FileFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
+  match reserve_file(factory: move factory) {
     Ok(value: permit) => {
-      match open_directory_source::<'d>(permit: move permit, directory: directory) {
+      match open_directory_source(permit: move permit, directory: directory) {
         SourceOpened(value: opened) => {
           return Ok<DirectorySource, IoError>(value: move opened);
         }
@@ -242,16 +242,16 @@ fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'
   }
 }
 
-fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: &'d DirectoryRead, name: &'n buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
+fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = start <= end;
   define capacity = len(deref(name));
   define within = end <= capacity;
   requires ordered;
   requires within;
 } {
-  match reserve_file::<'f>(factory: move factory) {
+  match reserve_file(factory: move factory) {
     Ok(value: permit) => {
-      match open_directory::<'d, 'n>(permit: move permit, root: root, name: name, start: start, end: end) {
+      match open_directory(permit: move permit, root: root, name: name, start: start, end: end) {
         DirectoryOpened(value: opened) => {
           return Ok<DirectoryRead, IoError>(value: move opened);
         }
@@ -266,7 +266,7 @@ fn open_directory_from_factory['f, 'd, 'n](factory: &uniq 'f FileFactory, root: 
   }
 }
 
-fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, prefix: &'p buffer<u8>, prefix_length: own u64, records: &uniq 'r ByteString, used: own u64, depth: own u64) -> result: own u64 reads(factory, dir, prefix, records.buf, records.fill), writes(factory, records.buf, records.fill), allocates(heap) {
+fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, prefix_length: own u64, records: &uniq ByteString, used: own u64, depth: own u64) -> result: own u64 reads(factory, dir, prefix, records.buf, records.fill), writes(factory, records.buf, records.fill), allocates(heap) {
   doc "Enumerates one directory, records every entry's relative path, and descends into every subdirectory it names.";
   let count = used;
   let too_deep = depth >= 8_u64;
@@ -278,14 +278,14 @@ fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, p
   let prefix_room = len(deref(prefix));
   let entries_room = len(entries);
   let child_room = len(child);
-  region 'directory_open {
-    match open_source_from_factory::<'directory_open, 'directory_open>(factory: &uniq 'directory_open deref(factory), directory: &'directory_open deref(dir)) {
+  region {
+    match open_source_from_factory(factory: &uniq deref(factory), directory: &deref(dir)) {
       Ok(value: list) => {
         loop @batches {
           let produced = 0_u64;
           let ended = 0_u8;
-          region 'batch {
-            match directory_next::<'batch, 'batch>(source: &uniq 'batch list, destination: &uniq 'batch entries, start: 0_u64, end: 4096_u64) {
+          region {
+            match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 4096_u64) {
               ListBytes(next: endpoint, entries: reported) => {
                 set produced = endpoint;
               }
@@ -445,19 +445,19 @@ fn walk['f, 'c, 'p, 'r](factory: &uniq 'f FileFactory, dir: &'c DirectoryRead, p
                 }
                 let room_left = count < 64_u64;
                 if room_left {
-                  region 'record_push {
-                    let recorded = record_entry::<'record_push, 'record_push>(records: &uniq 'record_push deref(records), path: &'record_push child, length: cursor, kind: kind);
+                  region {
+                    let recorded = record_entry(records: &uniq deref(records), path: &child, length: cursor, kind: kind);
                   }
                   set count = count +wrap 1_u64;
                 }
                 let descending = kind == 2_u8;
                 if descending {
-                  region 'descend {
-                    match open_directory_from_factory::<'descend, 'descend, 'descend>(factory: &uniq 'descend deref(factory), root: &'descend deref(dir), name: &'descend entries, start: name_at, end: name_end) {
+                  region {
+                    match open_directory_from_factory(factory: &uniq deref(factory), root: &deref(dir), name: &entries, start: name_at, end: name_end) {
                       Ok(value: opened) => {
                         let deeper = depth +wrap 1_u64;
-                        region 'child {
-                          set count = walk::<'child, 'child, 'child, 'child>(factory: &uniq 'child deref(factory), dir: &'child opened, prefix: &'child child, prefix_length: cursor, records: &uniq 'child deref(records), used: count, depth: deeper);
+                        region {
+                          set count = walk(factory: &uniq deref(factory), dir: &opened, prefix: &child, prefix_length: cursor, records: &uniq deref(records), used: count, depth: deeper);
                         }
                       }
                       Err(error: problem) => {
@@ -485,8 +485,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let order = buffer_new(64_u64, 0_u64);
   let order_room = len(order);
   let stored = 0_u64;
-  region 'root {
-    set stored = walk::<'root, 'root, 'root, 'root>(factory: &uniq 'root files, dir: &'root cwd, prefix: &'root root_prefix, prefix_length: 0_u64, records: &uniq 'root records, used: 0_u64, depth: 0_u64);
+  region {
+    set stored = walk(factory: &uniq files, dir: &cwd, prefix: &root_prefix, prefix_length: 0_u64, records: &uniq records, used: 0_u64, depth: 0_u64);
   }
   let seed = 0_u64;
   loop @seed_order {
@@ -533,8 +533,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
       let candidate = order[probe];
       let incumbent = order[best];
       let earlier = 0_u8;
-      region 'compare {
-        let closer = record_before::<'compare>(records: &'compare records, left: candidate, right: incumbent);
+      region {
+        let closer = record_before(records: &records, left: candidate, right: incumbent);
         if closer {
           set earlier = 1_u8;
         }
@@ -567,14 +567,14 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     }
     let index = order[emitted];
     let length = 0_u64;
-    region 'render {
-      set length = record_line::<'render, 'render>(records: &'render records, index: index, destination: &uniq 'render line, at: 0_u64);
+    region {
+      set length = record_line(records: &records, index: index, destination: &uniq line, at: 0_u64);
     }
     let line_room = len(line);
     let length_fits = length <= line_room;
     if length_fits {
-      region 'publish {
-        match publish_all::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, length: length) {
+      region {
+        match publish_all(output: &uniq out, source: &line, length: length) {
           Ok(value: published) => {
           }
           Err(error: problem) => {

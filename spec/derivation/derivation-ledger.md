@@ -2,12 +2,10 @@
 
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
-the active v0.41 authority at SHA-256
-`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`.
-v0.41 supersedes v0.40 at
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, whose
-bytes are archived at `spec/kernel-spec-v0.40.md`; the v0.40 and v0.41
-amendments at the end of this file bind their changed derivations.
+the active specification at `spec/kernel-spec.md`, whose version and digest
+are the chain tail in `governance/APPROVALS.md`; each superseded version is
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.44 amendments
+at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
 **derived** (existence and form), **derived_existence_only** (the rule must
@@ -16,21 +14,34 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 and v0.41 amendments below and the active specification define the
-changed rows. The table is not independent live source guidance. In
+the v0.40 through v0.44 amendments below and the active
+specification define the changed rows. The table is not independent live
+source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
 `deny_claims`, strict-partition, runtime-latch, and proof-replay vocabulary does
 not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
-**Active v0.41 statistics: 79 derived · 52 existence-only · 0 underived**
+**v0.44 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.44 adds derived MSR-3 and CALL-6 and existence-only MSR-5 and
+CALL-4, retires no rule, and moves no existing row's status, so every other
+derivation status carries over from v0.43).
+**v0.43 statistics: 79 derived · 53 existence-only · 0 underived**
+(132 rules: v0.43 adds and retires no rule and moves no row's status — it
+amends OWN-3, OWN-11, FORM-8, and ENT-6 in place — so every derivation status
+carries over from v0.42).
+**v0.42 statistics: 79 derived · 53 existence-only · 0 underived**
+(132 rules: v0.42 adds existence-only FORM-8, retires no rule, and respells
+region positions only, so every other derivation status carries over from
+v0.41).
+**v0.41 statistics: 79 derived · 52 existence-only · 0 underived**
 (131 rules: v0.41 respells 21 rules and adds or retires none, so every
 derivation status carries over from v0.40).
-**Superseded v0.40 statistics: 79 derived · 52 existence-only · 0 underived**
+**v0.40 statistics: 79 derived · 52 existence-only · 0 underived**
 (131 rules: remove the nine historical rules named above, add existence-only
 INV-1 and PRF-1, and retain every other rule's derivation status).
-**Superseded v0.39 statistics: 86 derived · 52 existence-only · 0 underived**
+**v0.39 statistics: 86 derived · 52 existence-only · 0 underived**
 (138 rules).
 
 ## Re-grounding priority queue (weakest chains)
@@ -1822,28 +1833,92 @@ contract-clause roots, invariant relations, and diagnostic attributions are
 unchanged under the new spellings. Statistics unchanged: 80 derived · 48
 existence-only · 0 underived.
 
-## v0.42 candidate — the backed file permit (branch `io/t4-resource-relations`, 2026-09-04)
+## v0.42 amendment — [FORM-8] canonical region spelling (activated 2026-09-03)
 
-Specification binding: `spec/kernel-spec.md`, headed v0.42, declares
-`CANDIDATE v0.42 supersedes v0.41` with the active v0.41 authority's digest
-`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`; the
-candidate bytes hash to the value the branch's `compiler/src/spec.rs` and
-`spec_identity.rs` carry at each revision, and the activation record will
-name the final one. The ground is constitution T4 (resource dependencies are
-API relations, owner ruling 2026-09-04) and FIRST-PRINCIPLES §12; the cost of
-the missing relation is measured in `compiler/src/backend/completion/contract.h:409-417`.
+Specification binding: active `spec/kernel-spec.md`, headed v0.42, at
+SHA-256 `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`,
+superseding v0.41
+(`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`), whose
+bytes are archived at `spec/kernel-spec-v0.41.md`. The candidate bytes hashed
+to `8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37` until
+the status line flipped to `ACTIVE v0.42`; no other byte changed at
+activation. The merge-time record is in `governance/APPROVALS.md`.
 
-v0.42 adds and removes no rules. It modifies SYS-10, SYS-11 and SYS-14 and the
+This amendment binds the one row v0.42 adds; every other row's status carries
+over from v0.41, because v0.42 changes which regions a writer spells and no
+rule's judgment.
+
+| Rule | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| FORM-8 | A REGIONID is written exactly where the document does not otherwise fix the region denoted: a declaration relates two of its own positions or names an output-position region no parameter determines; a `borrow_expr` names a region other than the innermost enclosing `region_stmt`'s; a `region_stmt` name survives a reference inside it; a call's `::` application names the callee region parameters no parameter position determines | 🟡 existence-only | Existence derived: FORM-1/R3 require exactly one spelling per semantic construct, and a written region at a position the surrounding text already fixes is a second spelling of one semantics — the same defect FORM-1 removes everywhere else. The derived-fact class is TYPE-5's derived `let` binder mode and OWN-13's derived match-binder mode: a fact the checker determines is not written, and a fact it cannot determine is. The optional-name-resolving-to-the-innermost-enclosing-construct form is TYPE-6's unlabeled `break`, already META-2-clean. Form NOT derived: the exact position partition (input positions determine, output positions are written) is minimality-selected against the 2026-09-03 owner ruling that whether a region is written must be decidable from the declaration text alone, and no weak-writer trial has measured it. | Registered: the writer trial that would select this form against the alternatives — writing every region as today, eliding at every position and inferring the result region from the body, or a per-declaration opt-in — has not run. Corpus evidence only: over `tests/programs`, `tests/conformance/cases`, `tests/snapshot/cases`, and `tests/codegen/cases` the rule takes the corpus's written region tokens down by about nine tenths, and no declaration outside a small set of conformance cases relates two positions at all. |
+
+## v0.43 amendment — loop-body regions and the [ENT-6] join repair (activated 2026-09-04)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.43, at
+SHA-256 `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`,
+superseding v0.42
+(`6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`), whose
+bytes are archived at `spec/kernel-spec-v0.42.md`. The candidate bytes hashed
+to `1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081` until
+the status line flipped to `ACTIVE v0.43`; no other byte changed at
+activation. The merge-time record is in `governance/APPROVALS.md`.
+
+This amendment binds the rows v0.43 touches. No row is added or retired and no
+status moves, so the statistics line above carries over from v0.42.
+
+| Rule | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| OWN-11 / OWN-3 / FORM-8 | Every `loop_stmt` and `for_stmt` body is itself a region block: it introduces one unnamed local region whose block is that body, a `borrow_expr` written directly in the body takes that region and is written bare, and a `region_stmt` that is the body's only statement is a hard error citing FORM-8 | 🟡 existence-only | Existence derived: OWN-11 already fixed the extent — a borrow formed in a loop body ends with the iteration — and a construct that has an extent has a region [OWN-3], so naming that region a region block adds no judgment and removes the ceremony a writer had to write to obtain it. The rejection follows from FORM-1 through the same one-spelling argument v0.42's FORM-8 rows use: a block whose block is the body denotes the region the body already introduces. Form NOT derived: the line between a redundant block and a narrower one is minimality-selected at "the block is the body's only statement", the coarsest place where OWN-6's statement-scope judgment still tells the two extents apart; a stricter line (any block ending where the iteration ends) makes shapes OWN-6 needs unwritable, and a looser one leaves two spellings of the body's own region. | Registered: no writer trial has measured whether writers reach for the bare form or keep opening a block out of habit. Corpus evidence only: across `tests/programs`, `tests/conformance/cases`, `tests/snapshot/cases`, and `tests/codegen/cases` exactly four blocks are the body's only statement, so the rejection is narrow and the accepted-program change is almost entirely the newly admitted bare borrow. |
+| ENT-6 | At a control-flow join every input image is first normalized by folding each delta atom an earlier join minted back into the constant interval it stands for; where the normalized inputs share one nonconstant form the join is that form plus one fresh delta atom over the hull of their constant intervals | 🟢 derived | Derived from ENT-6's own stated guarantee that image formation is source-structural and independent of proof success order. The v0.42 rule was not associative: a delta atom counted as an ordinary nonconstant term at the next join, so two joins in sequence lost an image one join over the same branches kept, and a three-way demux was accepted as a flat `match` and refused as nested `if`/`else` with no semantic difference between them. Folding is the unique normalization that makes the composed join equal the flat join while keeping every image sound: a delta atom stands for exactly its interval, so replacing it by that interval is an over-approximation that adds no fact. | None. The repair only adds images, so no program v0.42 rejected for another reason becomes accepted, and no program v0.42 accepted is refused. |
+
+## v0.44 amendment — the fact machinery (activated 2026-09-04)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.44, at
+SHA-256 `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`,
+superseding v0.43
+(`037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`), whose
+bytes are archived at `spec/kernel-spec-v0.43.md`. The candidate bytes hashed
+to `1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b` until
+the status line flipped to `ACTIVE v0.44`; no other byte changed at
+activation. The merge-time record is in `governance/APPROVALS.md`.
+
+This amendment binds the four rows v0.44 adds; it retires none and moves no
+existing row's status. Two of the four are derived (MSR-3, CALL-6) and two are
+existence-only (MSR-5, CALL-4), which is what the statistics line above
+counts; the candidate-time preamble said one derived and three
+existence-only, which disagreed with its own table, and the table is the
+authority.
+
+| Rule | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| MSR-5 | A `requires_clause` and an `ensures_clause` take a `clause_expr` whose operands are an `atom`, a `call`, or a `construct`, so a measure of a place is a clause operand on either side of the comparison; the measure formers are table data with one row, `len(P)`, admitted exactly where ENT-2 clause (b) admits a length term | 🟡 existence-only | Existence derived: FORM-1/R3 admit one spelling per semantic construct, and before this rule one fact — a relation between two measures — had two spellings, a `contract_define` per measure that was admitted and a direct clause that was a GRAM-5 parse rejection. Removing the parse rejection removes the second spelling and the definition-per-measure cost with it. The judgment is unchanged: OP-5's condition and FN-8's pure-total operand admission already accept every operand this production adds, so the rule adds spellings and no authority. Form NOT derived: that the widened operand grammar is a clause-only production rather than a widening of `atom` or of `expr` is minimality-selected — widening `atom` would admit a nested call in every argument position and contradict GRAM-9's one-operation-over-two-atoms shape — and no writer trial has measured the clause surface. | Registered: no writer trial has measured how often a contract states a relation between two measures, so the size of the win is corpus evidence only. Probe `q7` of the containers-and-resources design session is the one measured rejection. |
+| MSR-3 | One denotation per operand position, keyed on the parameter's mode: an `own` operand read at a caller denotes that call's compiler-owned call datum, a shared-borrow operand the live term, the result binder the result; and a `&uniq` parameter's measure is inadmissible in a source-declared `ensures` | 🟢 derived | Derived from L11 as the constitution's no-guessing premise carries it: the checker's knowledge of a measure comes from the type, an established fact with live support, a compiler-owned measure datum, or a verified contract relation, and a relation about a value a callee received names that value. An `own` parameter is a value the operation received, so its post-state is not a thing a caller can name and the only sound denotation is the value at transfer — which must therefore be a term with empty support, or the consume the same statement performs deletes the relation the contract was written to publish. The `&uniq` inadmissibility is the same sentence read from the other side: a source-declared body is a body, so a caller reading its post-state would be reading a claim about an object at a point the callee cannot name. Both halves were refuted before they were derived — the seventh falsifier round keyed the denotation on `writes` coverage and read `len(P) = len(P) + 1` out of one row, which discharges every goal in every loop from a contradiction. | Registered: the five measure-datum placements this version defers — entry, construct, rebind, enum payload binder, and destructuring binder — carry the same closure sentence and are not yet written, so a measured value still loses its measures at every naming event other than a call. |
+| CALL-6 | Publication stated once: a declared relation is instantiated at the call under MSR-3's substitution, established on the call's normal continuation in ENT-5's order, restricted to its arm when it is routed rather than deferred to it, and supported by the substituted terms; and a contract whose published relations are contradictory at their establishment point is refused at the declaration | 🟢 derived | Derived from ENT-4's own least-closure semantics: at a contradictory point every L0 relation and both signs of every goal are derivable, so an inconsistent published set is not one wrong fact at one caller but every fact at every caller, including the subscript bounds SCOPE-2 exists to keep. Refusing it at the declaration is forced by the same sentence — the set is fixed at the declaration and no caller state repairs it. The instantiate-at-the-call/restrict-to-the-arm shape is derived from ENT-5's own call-boundary order together with the seventh falsifier round's refutation of the alternative: deferring a routed relation's establishment to the arm and killing it from that later point makes every write between the call and the arm precede the establishment and kill nothing, which that round used to hand back a run running past its extent in a program the resource judgment accepts. | Registered: the declaration-domain population of this source is empty in this version, because no compiler-owned row carries a declared relation set until the container declaration domain lands; the rule is written over both callee classes and exercised over one. |
+| CALL-4 | Contract vocabulary over the result: a `fn_decl` declares exactly one `result_binding`, so a route names no ordinal and no ordinal binder is written, and the destinations stay ENT-3.S12's closed list | 🟡 existence-only | Existence derived: L16's one-denotation-per-position sentence requires that the position a route applies to be named exactly once, and with one result there is exactly one naming and no ambiguity to resolve. Form NOT derived: the ordinal binder this rule declines to write is the form a multi-result declaration would need, and no multi-result declaration exists to measure it against; the rule records the criterion rather than selecting a spelling. | Registered: a result of measured type, a measure over a result place, and a route over any variant of any returned enum are DEFERRED in the rule text with their deltas; each is an admission widening of FN-9 and each is what a container-returning helper needs before it can hand a run back with its measures. |
+
+## v0.45 amendment — the backed file permit (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.45, at
+SHA-256 `c07a8ba92b35c23c9d74f96a921750dc30933ebbf05975c52a1e595fe52c887c`,
+superseding v0.44
+(`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`), whose
+bytes are archived at `spec/kernel-spec-v0.44.md`. The amendment landed as one
+change with no candidate state; the merge-time record is in
+`governance/APPROVALS.md`. The ground is constitution T4 (resource
+dependencies are API relations, owner ruling 2026-09-04) and FIRST-PRINCIPLES
+§12; the cost of the missing relation is measured in
+`compiler/src/backend/completion/contract.h:409-417`.
+
+v0.45 adds and removes no rules. It modifies SYS-10, SYS-11 and SYS-14 and the
 operation, target-contract and outcome tables: `reserve_file` answers
 `Result<FilePermit, IoError>` from a factory whose capacity is fixed at
 program start and never larger than what the target provides; the four opens
 answer with `FileOpenOutcome`, `DirectoryOpenOutcome`, and `SourceOpenOutcome`,
 whose failed variant carries the permit back beside the host's error; three
 explicit closes (`close_read`, `close_directory`, `close_directory_source`; writer
-operation spellings +3, system operations and declaration records +3) return
+operation spellings +3, system operations +3 and declaration records +24) return
 the credit as a fresh permit after derived release's one close attempt, and
 the factory's count is never raised; an open holding a permit is refused a
-descriptor only by honest target exhaustion. The
-descriptor retirement ledger is deleted with it. No rule changes derivation
-status: SYS-10's chain gains T4 as its ground; SYS-11 and SYS-14 keep theirs.
-Statistics unchanged: 80 derived · 48 existence-only · 0 underived.
+descriptor only by honest target exhaustion. The descriptor retirement ledger
+is deleted with it. No rule changes derivation status: SYS-10's chain gains T4
+as its ground; SYS-11 and SYS-14 keep theirs. Statistics unchanged from v0.44.

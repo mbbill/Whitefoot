@@ -4,23 +4,23 @@ Status: IN PROGRESS on `io/t4-resource-relations` (PR #13). The previous
 plan, source-carried proof, is IMPLEMENTED AND ACTIVATED as v0.40 and is
 recorded in `docs/done/` and the v0.41 activation.
 
-Active language authority: v0.41,
-`899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`,
-which respells the six integer comparisons as symbols and delimits call-site
-type application with `::`. `spec/kernel-spec.md` carries those exact ACTIVE
-bytes until this branch's candidate is activated; the superseded v0.40 is
-archived at `spec/kernel-spec-v0.40.md` and the merge-time record is in
-`governance/APPROVALS.md`. Activation is branch content: nothing merges to
-`main` until the owner approves the exact revision and canonical `make check`
-passes on that revision. This document records technical direction and
-sequencing; it grants no permission and adds no workflow gate.
+The active language authority is the specification at `spec/kernel-spec.md`;
+its version and digest are the chain tail in `governance/APPROVALS.md`. This
+branch carries the backed-permit amendment as one change: the amended file,
+the archive of the outgoing bytes, the appended approval record, and the
+regenerated identity module, so the branch is merge-ready the moment its gate
+is green and the owner's merge approval of that exact revision is the
+activation. Nothing merges to `main` until the owner approves the exact
+revision and canonical `make check` passes on that revision. This document
+records technical direction and sequencing; it grants no permission and adds
+no workflow gate.
 
 ## Outcome
 
 Two batches, in this order, both on the one branch so the design documents
 can change while the implementation teaches us what they got wrong.
 
-1. **Backed `FilePermit` (specification v0.42).** Constitution T4 says a
+1. **Backed `FilePermit` (specification v0.45).** Constitution T4 says a
    finite resource a system operation consumes is an owned value drawn from a
    factory whose capacity never exceeds what the target provides. Today's
    `FilePermit` is proof-only ([SYS-10]: never returned, promises no
@@ -102,12 +102,15 @@ can change while the implementation teaches us what they got wrong.
 
 ### Activation
 
-- Work-branch mode: `spec/kernel-spec.md` carries
-  `Status: CANDIDATE v0.42 supersedes v0.41 <digest>`; `make
-  spec-candidate-integrity` passes. At merge: archive the v0.41 bytes at
-  `spec/kernel-spec-v0.41.md`, install the ACTIVE v0.42 identity in
-  `governance/APPROVALS.md`, update the digest-sync prose, META-5 delta, the
-  derivation ledger, `compiler/src/spec.rs` and `spec_identity.rs`.
+- Landed as one change under the no-candidate rule after `main` was merged
+  into the branch on 2026-09-05: `spec/kernel-spec.md` declares
+  `Status: ACTIVE v0.45` over v0.44's text (the branch's amendment was
+  written as v0.42 over v0.41 before `main` activated v0.42 to v0.44 for
+  region spelling, loop-body regions and the fact machinery); the v0.44
+  bytes are archived, the `ACTIVE-SPEC:` record is appended in
+  `governance/APPROVALS.md`, the derivation ledger carries the v0.45
+  amendment, and `compiler/src/spec_identity.rs` is regenerated. The owner's
+  merge approval of the exact revision is the activation.
 
 ### Slices
 

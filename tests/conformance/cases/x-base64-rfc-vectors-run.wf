@@ -19,7 +19,7 @@ fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, Inde
   return Err<u64, IndexError>(error: error);
 }
 
-fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values) {
+fn read_index(values: &buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values) {
   let room = len(deref(values));
   match require_index(index: index, limit: room) {
     Ok(value: admitted) => {
@@ -32,7 +32,7 @@ fn read_index['r](values: &'r buffer<u8>, index: own u64) -> result: own Result<
   }
 }
 
-fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads(values), writes(values) {
+fn write_index(values: &uniq buffer<u8>, index: own u64, value: own u8) -> result: own Result<unit, IndexError> reads(values), writes(values) {
   let room = len(deref(values));
   match require_index(index: index, limit: room) {
     Ok(value: admitted) => {
@@ -45,7 +45,7 @@ fn write_index['r](values: &uniq 'r buffer<u8>, index: own u64, value: own u8) -
   }
 }
 
-fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out) contract {
+fn encode(out: &uniq buffer<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out) contract {
   define required_out_length = len(deref(out));
   define required_input_length = len(input);
   define required_out_groups = ishr.wrap(required_out_length, 2_u32);
@@ -70,10 +70,10 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
       let byte_zero = 0_u8;
       let byte_one = 0_u8;
       let byte_two = 0_u8;
-      region 'group_reads {
-        let loaded_zero = propagate read_index::<'group_reads>(values: &'group_reads input, index: input_offset);
-        let loaded_one = propagate read_index::<'group_reads>(values: &'group_reads input, index: input_one);
-        let loaded_two = propagate read_index::<'group_reads>(values: &'group_reads input, index: input_two);
+      region {
+        let loaded_zero = propagate read_index(values: &input, index: input_offset);
+        let loaded_one = propagate read_index(values: &input, index: input_one);
+        let loaded_two = propagate read_index(values: &input, index: input_two);
         set byte_zero = loaded_zero;
         set byte_one = loaded_one;
         set byte_two = loaded_two;
@@ -100,17 +100,17 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
       let encoded_one = b64[alphabet_one];
       let encoded_two = b64[alphabet_two];
       let encoded_three = b64[alphabet_three];
-      region 'group_write_zero {
-        let wrote_zero = propagate write_index::<'group_write_zero>(values: &uniq 'group_write_zero deref(out), index: output_offset, value: encoded_zero);
+      region {
+        let wrote_zero = propagate write_index(values: &uniq deref(out), index: output_offset, value: encoded_zero);
       }
-      region 'group_write_one {
-        let wrote_one = propagate write_index::<'group_write_one>(values: &uniq 'group_write_one deref(out), index: output_one, value: encoded_one);
+      region {
+        let wrote_one = propagate write_index(values: &uniq deref(out), index: output_one, value: encoded_one);
       }
-      region 'group_write_two {
-        let wrote_two = propagate write_index::<'group_write_two>(values: &uniq 'group_write_two deref(out), index: output_two, value: encoded_two);
+      region {
+        let wrote_two = propagate write_index(values: &uniq deref(out), index: output_two, value: encoded_two);
       }
-      region 'group_write_three {
-        let wrote_three = propagate write_index::<'group_write_three>(values: &uniq 'group_write_three deref(out), index: output_three, value: encoded_three);
+      region {
+        let wrote_three = propagate write_index(values: &uniq deref(out), index: output_three, value: encoded_three);
       }
       set input_offset = input_offset +wrap 3_u64;
       set output_offset = output_offset +wrap 4_u64;
@@ -123,8 +123,8 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     let tail_one_output_two = output_offset +wrap 2_u64;
     let tail_one_output_three = output_offset +wrap 3_u64;
     let tail_one_byte = 0_u8;
-    region 'tail_one_read {
-      let loaded = propagate read_index::<'tail_one_read>(values: &'tail_one_read input, index: input_offset);
+    region {
+      let loaded = propagate read_index(values: &input, index: input_offset);
       set tail_one_byte = loaded;
     }
     let tail_one_word = cvt::<u8, u32>(tail_one_byte);
@@ -136,17 +136,17 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     let tail_one_second_index = cvt::<u32, u64>(tail_one_second_sextet);
     let tail_one_first = b64[tail_one_first_index];
     let tail_one_second = b64[tail_one_second_index];
-    region 'tail_one_write_zero {
-      let wrote = propagate write_index::<'tail_one_write_zero>(values: &uniq 'tail_one_write_zero deref(out), index: output_offset, value: tail_one_first);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: output_offset, value: tail_one_first);
     }
-    region 'tail_one_write_one {
-      let wrote = propagate write_index::<'tail_one_write_one>(values: &uniq 'tail_one_write_one deref(out), index: tail_one_output_one, value: tail_one_second);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: tail_one_output_one, value: tail_one_second);
     }
-    region 'tail_one_write_two {
-      let wrote = propagate write_index::<'tail_one_write_two>(values: &uniq 'tail_one_write_two deref(out), index: tail_one_output_two, value: 61_u8);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: tail_one_output_two, value: 61_u8);
     }
-    region 'tail_one_write_three {
-      let wrote = propagate write_index::<'tail_one_write_three>(values: &uniq 'tail_one_write_three deref(out), index: tail_one_output_three, value: 61_u8);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: tail_one_output_three, value: 61_u8);
     }
     set output_offset = output_offset +wrap 4_u64;
   }
@@ -158,9 +158,9 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     let tail_two_output_three = output_offset +wrap 3_u64;
     let tail_two_byte_zero = 0_u8;
     let tail_two_byte_one = 0_u8;
-    region 'tail_two_reads {
-      let loaded_zero = propagate read_index::<'tail_two_reads>(values: &'tail_two_reads input, index: input_offset);
-      let loaded_one = propagate read_index::<'tail_two_reads>(values: &'tail_two_reads input, index: tail_two_input_one);
+    region {
+      let loaded_zero = propagate read_index(values: &input, index: input_offset);
+      let loaded_one = propagate read_index(values: &input, index: tail_two_input_one);
       set tail_two_byte_zero = loaded_zero;
       set tail_two_byte_one = loaded_one;
     }
@@ -180,17 +180,17 @@ fn encode['r](out: &uniq 'r buffer<u8>, input: own buffer<u8>) -> function_resul
     let tail_two_first = b64[tail_two_first_index];
     let tail_two_second = b64[tail_two_second_index];
     let tail_two_third = b64[tail_two_third_index];
-    region 'tail_two_write_zero {
-      let wrote = propagate write_index::<'tail_two_write_zero>(values: &uniq 'tail_two_write_zero deref(out), index: output_offset, value: tail_two_first);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: output_offset, value: tail_two_first);
     }
-    region 'tail_two_write_one {
-      let wrote = propagate write_index::<'tail_two_write_one>(values: &uniq 'tail_two_write_one deref(out), index: tail_two_output_one, value: tail_two_second);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: tail_two_output_one, value: tail_two_second);
     }
-    region 'tail_two_write_two {
-      let wrote = propagate write_index::<'tail_two_write_two>(values: &uniq 'tail_two_write_two deref(out), index: tail_two_output_two, value: tail_two_third);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: tail_two_output_two, value: tail_two_third);
     }
-    region 'tail_two_write_three {
-      let wrote = propagate write_index::<'tail_two_write_three>(values: &uniq 'tail_two_write_three deref(out), index: tail_two_output_three, value: 61_u8);
+    region {
+      let wrote = propagate write_index(values: &uniq deref(out), index: tail_two_output_three, value: 61_u8);
     }
     set output_offset = output_offset +wrap 4_u64;
   }
@@ -204,7 +204,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set man_input[2_u64] = 110_u8;
   let man_output = buffer_new(4_u64, 0_u8);
   let man_length_ok = False();
-  region 'man_region {
+  region {
     let man_required_out_length = len(man_output);
     let man_required_input_length = len(man_input);
     let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
@@ -214,7 +214,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     } else {
       return exit_status(code: 216_u8);
     }
-    match encode::<'man_region>(out: &uniq 'man_region man_output, input: move man_input) {
+    match encode(out: &uniq man_output, input: move man_input) {
       Ok(value: man_length) => {
         set man_length_ok = man_length == 4_u64;
       }
@@ -234,7 +234,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let m_input = buffer_new(1_u64, 77_u8);
   let m_output = buffer_new(4_u64, 0_u8);
   let m_length_ok = False();
-  region 'm_region {
+  region {
     let m_required_out_length = len(m_output);
     let m_required_input_length = len(m_input);
     let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
@@ -244,7 +244,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     } else {
       return exit_status(code: 217_u8);
     }
-    match encode::<'m_region>(out: &uniq 'm_region m_output, input: move m_input) {
+    match encode(out: &uniq m_output, input: move m_input) {
       Ok(value: m_length) => {
         set m_length_ok = m_length == 4_u64;
       }
@@ -266,7 +266,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set ma_input[1_u64] = 97_u8;
   let ma_output = buffer_new(4_u64, 0_u8);
   let ma_length_ok = False();
-  region 'ma_region {
+  region {
     let ma_required_out_length = len(ma_output);
     let ma_required_input_length = len(ma_input);
     let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
@@ -276,7 +276,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     } else {
       return exit_status(code: 218_u8);
     }
-    match encode::<'ma_region>(out: &uniq 'ma_region ma_output, input: move ma_input) {
+    match encode(out: &uniq ma_output, input: move ma_input) {
       Ok(value: ma_length) => {
         set ma_length_ok = ma_length == 4_u64;
       }

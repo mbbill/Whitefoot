@@ -310,8 +310,8 @@ fn counted_range_carries_one_stable_binder_address_for_body_local_shared_borrows
   let total = 0_u64;
   let upper = 2_u64;
   for @items (i in 0_u64..upper) {
-    region 'r {
-      let held = &'r i;
+    region {
+      let held = &i;
       let seen = deref(held);
       set total = total +wrap seen;
     }
@@ -643,10 +643,10 @@ fn an_enum_release_carries_the_union_of_its_components_rows() {
 fn an_unused_state_writing_call_reaches_ir() {
     let source = format!(
         "struct Pair {{\n  left: u64;\n}}\n\n\
-         fn mutate['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.left) {{\n  \
+         fn mutate(pair: &uniq Pair) -> result: own unit writes(pair.left) {{\n  \
          set deref(pair).left = 1_u64;\n  return unit;\n}}\n\n\
-         fn wrapper['r](pair: &uniq 'r Pair) -> result: own unit writes(pair.left) {{\n  \
-         mutate::<'r>(pair: move pair);\n  return unit;\n}}\n\n\
+         fn wrapper(pair: &uniq Pair) -> result: own unit writes(pair.left) {{\n  \
+         mutate(pair: move pair);\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
     );
     with_ir(source.as_bytes(), |program| {
@@ -937,10 +937,10 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      match reserve_file::<'f>(factory: &uniq 'f files) {
+      match reserve_file(factory: &uniq files) {
         Ok(value: permit) => {
-          region 'n {
-            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          region {
+            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
               FileOpened(value: handle) => {
                 set total = total +wrap 1_u64;
               }
@@ -1031,22 +1031,20 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      match reserve_file::<'f>(factory: &uniq 'f files) {
-        Ok(value: permit) => {
-          region 'n {
-            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set opened = opened +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
+    match reserve_file(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
             }
           }
         }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1087,42 +1085,38 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @first (index in 0_u64..3_u64) {
-    region 'f {
-      match reserve_file::<'f>(factory: &uniq 'f files) {
-        Ok(value: permit) => {
-          region 'n {
-            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set opened = opened +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
+    match reserve_file(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
             }
           }
         }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
   for @second (index in 0_u64..3_u64) {
-    region 'g {
-      match reserve_file::<'g>(factory: &uniq 'g files) {
-        Ok(value: permit) => {
-          region 'm {
-            match open_file::<'g, 'm>(permit: move permit, root: &'g cwd, name: &'m name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set opened = opened +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
+    match reserve_file(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
             }
           }
         }
-        Err(error: spent) => {
-          return exit_status(code: 8_u8);
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1296,22 +1290,20 @@ fn a_prologue_gate_leaving_by_break_keeps_the_two_slot_driver() {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      match reserve_file::<'f>(factory: &uniq 'f files) {
-        Ok(value: permit) => {
-          region 'n {
-            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                set opened = opened +wrap 1_u64;
-              }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
+    match reserve_file(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
             }
           }
         }
-        Err(error: spent) => {
-          break;
-        }
+      }
+      Err(error: spent) => {
+        break;
       }
     }
   }

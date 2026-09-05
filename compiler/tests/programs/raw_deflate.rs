@@ -223,10 +223,10 @@ fn boundary_append_preserves_its_clause_stripped_invalid_domain_behavior() {
 command fn main() -> status: own ExitStatus allocates(heap) {{
   let empty_text = buffer_new(0_u64, 1_u8);
   let empty_destination = buffer_new(3_u64, 9_u8);
-  region 'empty_text_view {{
-    let text = slice_of(&'empty_text_view empty_text);
-    region 'empty_destination_view {{
-      let result = append_slice::<'empty_destination_view, 'empty_text_view>(destination: &uniq 'empty_destination_view empty_destination, filled: 4_u64, text: move text);
+  region {{
+    let text = slice_of(&empty_text);
+    region {{
+      let result = append_slice(destination: &uniq empty_destination, capacity: 3_u64, filled: 4_u64, text: move text);
       if result == 4_u64 {{
       }} else {{
         return exit_status(code: 1_u8);
@@ -247,10 +247,10 @@ command fn main() -> status: own ExitStatus allocates(heap) {{
   }}
   let nonempty_text = buffer_new(2_u64, 1_u8);
   let nonempty_destination = buffer_new(3_u64, 9_u8);
-  region 'nonempty_text_view {{
-    let text = slice_of(&'nonempty_text_view nonempty_text);
-    region 'nonempty_destination_view {{
-      let result = append_slice::<'nonempty_destination_view, 'nonempty_text_view>(destination: &uniq 'nonempty_destination_view nonempty_destination, filled: 4_u64, text: move text);
+  region {{
+    let text = slice_of(&nonempty_text);
+    region {{
+      let result = append_slice(destination: &uniq nonempty_destination, capacity: 3_u64, filled: 4_u64, text: move text);
       if result == 4_u64 {{
       }} else {{
         return exit_status(code: 5_u8);

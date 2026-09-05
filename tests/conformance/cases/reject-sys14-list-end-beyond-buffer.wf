@@ -1,13 +1,13 @@
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "`directory_next` carries SYS-8's two static range goals. End 4104 exceeds this 4096-byte destination, so compilation rejects the call before any host enumeration or runtime fallback.";
   let entries = buffer_new(4096_u64, 0_u8);
-  region 'c {
-    match reserve_file::<'c>(factory: &uniq 'c files) {
+  region {
+    match reserve_file(factory: &uniq files) {
       Ok(value: permit) => {
-        match open_directory_source::<'c>(permit: move permit, directory: &'c cwd) {
+        match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: list) => {
-            region 'b {
-              match directory_next::<'b, 'b>(source: &uniq 'b list, destination: &uniq 'b entries, start: 8_u64, end: 4104_u64) {
+            region {
+              match directory_next(source: &uniq list, destination: &uniq entries, start: 8_u64, end: 4104_u64) {
                 ListBytes(next: bytes, entries: reported) => {
                   return exit_status(code: 5_u8);
                 }

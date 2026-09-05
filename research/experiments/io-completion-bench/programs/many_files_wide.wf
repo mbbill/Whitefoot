@@ -1,4 +1,4 @@
-fn name_at['n](name: &uniq 'n buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
+fn name_at(name: &uniq buffer<u8>, index: own u64) -> result: own unit reads(name), writes(name) {
   doc "Renders the fixed ten-byte generated file name for one index as f00000.dat.";
   let room = len(deref(name));
   let sized = room >= 10_u64;
@@ -38,7 +38,7 @@ fn name_at['n](name: &uniq 'n buffer<u8>, index: own u64) -> result: own unit re
   return unit;
 }
 
-fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
   let room = len(deref(destination));
   let remaining = value;
@@ -68,7 +68,7 @@ fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64)
   return at +wrap 20_u64;
 }
 
-fn fold_bytes['b](source: &'b buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+fn fold_bytes(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
   let room = len(deref(source));
   let sum = seed;
@@ -117,32 +117,32 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     let second = index +wrap 1_u64;
     let third = index +wrap 2_u64;
     let fourth = index +wrap 3_u64;
-    region 'name_a {
-      let rendered_a = name_at::<'name_a>(name: &uniq 'name_a name_a, index: index);
+    region {
+      let rendered_a = name_at(name: &uniq name_a, index: index);
     }
-    region 'name_b {
-      let rendered_b = name_at::<'name_b>(name: &uniq 'name_b name_b, index: second);
+    region {
+      let rendered_b = name_at(name: &uniq name_b, index: second);
     }
-    region 'name_c {
-      let rendered_c = name_at::<'name_c>(name: &uniq 'name_c name_c, index: third);
+    region {
+      let rendered_c = name_at(name: &uniq name_c, index: third);
     }
-    region 'name_d {
-      let rendered_d = name_at::<'name_d>(name: &uniq 'name_d name_d, index: fourth);
+    region {
+      let rendered_d = name_at(name: &uniq name_d, index: fourth);
     }
     region 'f {
-      match reserve_file::<'f>(factory: &uniq 'f files) {
+      match reserve_file(factory: &uniq files) {
         Ok(value: permit_a) => {
-          match reserve_file::<'f>(factory: &uniq 'f files) {
+          match reserve_file(factory: &uniq files) {
             Ok(value: permit_b) => {
-              match reserve_file::<'f>(factory: &uniq 'f files) {
+              match reserve_file(factory: &uniq files) {
                 Ok(value: permit_c) => {
-                  match reserve_file::<'f>(factory: &uniq 'f files) {
+                  match reserve_file(factory: &uniq files) {
                     Ok(value: permit_d) => {
-                      region 'n {
-                        let opened_a = open_file::<'f, 'n>(permit: move permit_a, root: &'f cwd, name: &'n name_a, start: 0_u64, end: 10_u64);
-                        let opened_b = open_file::<'f, 'n>(permit: move permit_b, root: &'f cwd, name: &'n name_b, start: 0_u64, end: 10_u64);
-                        let opened_c = open_file::<'f, 'n>(permit: move permit_c, root: &'f cwd, name: &'n name_c, start: 0_u64, end: 10_u64);
-                        let opened_d = open_file::<'f, 'n>(permit: move permit_d, root: &'f cwd, name: &'n name_d, start: 0_u64, end: 10_u64);
+                      region {
+                        let opened_a = open_file(permit: move permit_a, root: &'f cwd, name: &name_a, start: 0_u64, end: 10_u64);
+                        let opened_b = open_file(permit: move permit_b, root: &'f cwd, name: &name_b, start: 0_u64, end: 10_u64);
+                        let opened_c = open_file(permit: move permit_c, root: &'f cwd, name: &name_c, start: 0_u64, end: 10_u64);
+                        let opened_d = open_file(permit: move permit_d, root: &'f cwd, name: &name_d, start: 0_u64, end: 10_u64);
                         match opened_a {
                           FileOpened(value: handle_a) => {
                             match opened_b {
@@ -152,16 +152,16 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
                                     match opened_d {
                                       FileOpened(value: handle_d) => {
                                         region 'h {
-                                          region 'd {
-                                            let read_a = read_at::<'h, 'd>(file: &'h handle_a, destination: &uniq 'd data_a, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
-                                            let read_b = read_at::<'h, 'd>(file: &'h handle_b, destination: &uniq 'd data_b, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
-                                            let read_c = read_at::<'h, 'd>(file: &'h handle_c, destination: &uniq 'd data_c, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
-                                            let read_d = read_at::<'h, 'd>(file: &'h handle_d, destination: &uniq 'd data_d, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                                          region {
+                                            let read_a = read_at(file: &'h handle_a, destination: &uniq data_a, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                                            let read_b = read_at(file: &'h handle_b, destination: &uniq data_b, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                                            let read_c = read_at(file: &'h handle_c, destination: &uniq data_c, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
+                                            let read_d = read_at(file: &'h handle_d, destination: &uniq data_d, file_offset: 0_u64, start: 0_u64, end: 65536_u64);
                                             match read_a {
                                               ReadBytes(next: produced_a) => {
                                                 let digest_a = 0_u64;
-                                                region 'fold_a {
-                                                  set digest_a = fold_bytes::<'fold_a>(source: &'fold_a data_a, produced: produced_a, seed: 0_u64);
+                                                region {
+                                                  set digest_a = fold_bytes(source: &data_a, produced: produced_a, seed: 0_u64);
                                                 }
                                                 let weight_a = index +wrap 1_u64;
                                                 set digest_a = digest_a *wrap weight_a;
@@ -176,8 +176,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
                                             match read_b {
                                               ReadBytes(next: produced_b) => {
                                                 let digest_b = 0_u64;
-                                                region 'fold_b {
-                                                  set digest_b = fold_bytes::<'fold_b>(source: &'fold_b data_b, produced: produced_b, seed: 0_u64);
+                                                region {
+                                                  set digest_b = fold_bytes(source: &data_b, produced: produced_b, seed: 0_u64);
                                                 }
                                                 let weight_b = second +wrap 1_u64;
                                                 set digest_b = digest_b *wrap weight_b;
@@ -192,8 +192,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
                                             match read_c {
                                               ReadBytes(next: produced_c) => {
                                                 let digest_c = 0_u64;
-                                                region 'fold_c {
-                                                  set digest_c = fold_bytes::<'fold_c>(source: &'fold_c data_c, produced: produced_c, seed: 0_u64);
+                                                region {
+                                                  set digest_c = fold_bytes(source: &data_c, produced: produced_c, seed: 0_u64);
                                                 }
                                                 let weight_c = third +wrap 1_u64;
                                                 set digest_c = digest_c *wrap weight_c;
@@ -208,8 +208,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
                                             match read_d {
                                               ReadBytes(next: produced_d) => {
                                                 let digest_d = 0_u64;
-                                                region 'fold_d {
-                                                  set digest_d = fold_bytes::<'fold_d>(source: &'fold_d data_d, produced: produced_d, seed: 0_u64);
+                                                region {
+                                                  set digest_d = fold_bytes(source: &data_d, produced: produced_d, seed: 0_u64);
                                                 }
                                                 let weight_d = fourth +wrap 1_u64;
                                                 set digest_d = digest_d *wrap weight_d;
@@ -273,16 +273,16 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   set sum = sum +wrap sum_d;
   let room = len(line);
   let cursor = 0_u64;
-  region 'render_sum {
-    set cursor = render_u64::<'render_sum>(destination: &uniq 'render_sum line, at: cursor, value: sum);
+  region {
+    set cursor = render_u64(destination: &uniq line, at: cursor, value: sum);
   }
   let space_fits = cursor < room;
   if space_fits {
     set line[cursor] = 32_u8;
     set cursor = cursor +wrap 1_u64;
   }
-  region 'render_bytes {
-    set cursor = render_u64::<'render_bytes>(destination: &uniq 'render_bytes line, at: cursor, value: bytes);
+  region {
+    set cursor = render_u64(destination: &uniq line, at: cursor, value: bytes);
   }
   let end_fits = cursor < room;
   if end_fits {
@@ -292,8 +292,8 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
   let status = 0_u8;
   let publishable = cursor <= room;
   if publishable {
-    region 'publish {
-      match write_once::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, start: 0_u64, end: cursor) {
+    region {
+      match write_once(output: &uniq out, source: &line, start: 0_u64, end: cursor) {
         Ok(value: written) => {
         }
         Err(error: problem) => {

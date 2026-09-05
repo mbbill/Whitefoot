@@ -3,7 +3,7 @@ struct Counter {
   limit: u32;
 }
 
-fn bump['a](c: &uniq 'a Counter) -> result: own Bool reads(c.value, c.limit), writes(c.value) {
+fn bump(c: &uniq Counter) -> result: own Bool reads(c.value, c.limit), writes(c.value) {
   doc "expect ACCEPT: writing deref(c).value kills the old value fact, so the room check after the write reads the freshly written field, not a stale image.";
   let room = deref(c).value < deref(c).limit;
   if room {
@@ -19,14 +19,14 @@ fn bump['a](c: &uniq 'a Counter) -> result: own Bool reads(c.value, c.limit), wr
 command fn main() -> status: own ExitStatus pure {
   let final_counter = Counter(value: 0_u32, limit: 3_u32);
   let has_room = True();
-  region 'r1 {
-    set has_room = bump::<'r1>(c: &uniq 'r1 final_counter);
+  region {
+    set has_room = bump(c: &uniq final_counter);
   }
-  region 'r2 {
-    set has_room = bump::<'r2>(c: &uniq 'r2 final_counter);
+  region {
+    set has_room = bump(c: &uniq final_counter);
   }
-  region 'r3 {
-    set has_room = bump::<'r3>(c: &uniq 'r3 final_counter);
+  region {
+    set has_room = bump(c: &uniq final_counter);
   }
   if final_counter.value == 3_u32 {
   } else {

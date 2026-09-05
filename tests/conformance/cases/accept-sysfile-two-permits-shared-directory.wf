@@ -1,17 +1,17 @@
-fn open_two['directory](first_permit: own FilePermit, second_permit: own FilePermit, directory: &'directory DirectoryRead) -> result: own unit reads(first_permit, second_permit, directory), writes(first_permit, second_permit) {
-  let first = open_directory_source::<'directory>(permit: move first_permit, directory: directory);
-  let second = open_directory_source::<'directory>(permit: move second_permit, directory: directory);
+fn open_two(first_permit: own FilePermit, second_permit: own FilePermit, directory: &DirectoryRead) -> result: own unit reads(first_permit, second_permit, directory), writes(first_permit, second_permit) {
+  let first = open_directory_source(permit: move first_permit, directory: directory);
+  let second = open_directory_source(permit: move second_permit, directory: directory);
   return unit;
 }
 
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "Two short exclusive factory loans produce two independent ordinary permit owners. Once each inline reservation returns, both opens use only their moved permit and shared loans of one DirectoryRead, so no long factory or exclusive directory loan remains.";
-  region 'state {
-    match reserve_file::<'state>(factory: &uniq 'state files) {
+  region {
+    match reserve_file(factory: &uniq files) {
       Ok(value: first_permit) => {
-        match reserve_file::<'state>(factory: &uniq 'state files) {
+        match reserve_file(factory: &uniq files) {
           Ok(value: second_permit) => {
-            open_two::<'state>(first_permit: move first_permit, second_permit: move second_permit, directory: &'state cwd);
+            open_two(first_permit: move first_permit, second_permit: move second_permit, directory: &cwd);
           }
           Err(error: spent) => {
             return exit_status(code: 2_u8);

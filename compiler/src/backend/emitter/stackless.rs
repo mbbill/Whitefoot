@@ -868,19 +868,19 @@ mod root_frame_layout_tests {
         finalize, lower_checked, parse,
     };
 
-    const ROOT_FRAME_SOURCE: &[u8] = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
+    const ROOT_FRAME_SOURCE: &[u8] = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output) contract {
   define ordered = start <= end;
   define capacity = len(deref(source));
   requires ordered;
   requires end <= capacity;
 } {
-  return write_once::<'o, 's>(output: move output, source: source, start: start, end: end);
+  return write_once(output: move output, source: source, start: start, end: end);
 }
 
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
-  region 'io {
-    let outcome = publish::<'io, 'io>(output: &uniq 'io out, source: &'io bytes, start: 0_u64, end: 1_u64);
+  region {
+    let outcome = publish(output: &uniq out, source: &bytes, start: 0_u64, end: 1_u64);
   }
   return exit_status(code: 0_u8);
 }

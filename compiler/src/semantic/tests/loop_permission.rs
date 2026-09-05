@@ -241,7 +241,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_callee_writing_iteration_own_storage_is_permitted() {
     let source =
-        b"fn bump['s](slot: &uniq 's u64, x: own u64) -> result: own u64 reads(slot), writes(slot) {
+        b"fn bump(slot: &uniq u64, x: own u64) -> result: own u64 reads(slot), writes(slot) {
   set deref(slot) = deref(slot) +wrap x;
   return deref(slot);
 }
@@ -250,8 +250,8 @@ command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
     let scratch = 0_u64;
-    region 'acc {
-      let got = bump::<'acc>(slot: &uniq 'acc scratch, x: i);
+    region {
+      let got = bump(slot: &uniq scratch, x: i);
       set total = total +wrap got;
     }
   }
@@ -339,8 +339,7 @@ fn a_nested_map_is_granted_only_to_the_binder_in_its_retained_image() {
 /// source before loop permission can observe the unproved subscript.
 #[test]
 fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
-    let source =
-        br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
+    let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   invariant scaled_limit_fits: 4_u64 * limit <= 4_u64 * room {
     use 4 * (limit <= room);
@@ -355,8 +354,8 @@ fn an_unproved_source_premise_cannot_authorize_a_loop_subscript() {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
-  region 's {
-    let t = tally::<'s>(src: &'s data, limit: 64_u64);
+  region {
+    let t = tally(src: &data, limit: 64_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -378,8 +377,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// not the proof route for its subscript.
 #[test]
 fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
-    let source =
-        br#"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
+    let source = br#"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   let total = 0_u64;
   let fits = limit <= room;
@@ -394,8 +392,8 @@ fn a_dominating_bound_outside_the_loop_leaves_it_eligible() {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
-  region 's {
-    let t = tally::<'s>(src: &'s data, limit: 64_u64);
+  region {
+    let t = tally(src: &data, limit: 64_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -583,8 +581,8 @@ fn a_borrow_of_the_accumulator_is_refused_as_a_borrow_forming_statement() {
     let source = b"command fn main() -> status: own ExitStatus pure {
   let total = 0_u64;
   for @sum (i in 0_u64..16_u64) {
-    region 'look {
-      let view = &'look total;
+    region {
+      let view = &total;
       let seen = deref(view);
       let bumped = seen +wrap i;
     }
@@ -607,8 +605,8 @@ fn a_borrow_of_the_accumulator_is_refused_as_a_borrow_forming_statement() {
   for @sum (i in 0_u64..16_u64) {
     set total = total +wrap i;
   }
-  region 'after {
-    let view = &'after total;
+  region {
+    let view = &total;
     let seen = deref(view);
     let bumped = seen +wrap 1_u64;
   }
@@ -870,7 +868,7 @@ fn a_whole_collection_read_still_denies_a_same_map_update() {
 /// the buffer into the callee.
 #[test]
 fn a_unique_borrowed_output_accepts_a_proved_element_map() {
-    let source = br#"fn fill['r](out: &uniq 'r buffer<u8>, count: own u64) -> result: own unit writes(out) contract {
+    let source = br#"fn fill(out: &uniq buffer<u8>, count: own u64) -> result: own unit writes(out) contract {
   define room = len(deref(out));
   requires count <= room;
 } {
@@ -882,8 +880,8 @@ fn a_unique_borrowed_output_accepts_a_proved_element_map() {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u8);
-  region 'call {
-    let filled = fill::<'call>(out: &uniq 'call out, count: 64_u64);
+  region {
+    let filled = fill(out: &uniq out, count: 64_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -1013,15 +1011,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// explicitly rather than relying on the argument also appearing as a read.
 #[test]
 fn a_shared_call_loan_on_the_mapped_root_is_denied() {
-    let source = b"fn observe['r](value: &'r buffer<u64>) -> result: own unit pure {
+    let source = b"fn observe(value: &buffer<u64>) -> result: own unit pure {
   return unit;
 }
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(64_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
-    region 'look {
-      let seen = observe::<'look>(value: &'look out);
+    region {
+      let seen = observe(value: &out);
     }
     set out[i] = i;
   }
@@ -1100,7 +1098,7 @@ fn a_stencil_is_denied_by_condition_two() {
 #[test]
 fn a_callee_writing_enclosing_storage_is_denied_by_condition_two() {
     let source =
-        b"fn accum['s](slot: &uniq 's f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
+        b"fn accum(slot: &uniq f64, x: own f64) -> result: own u64 reads(slot), writes(slot) {
   set deref(slot) = fadd.strict(deref(slot), x);
   let bits = reinterpret::<f64, u64>(deref(slot));
   return iand(bits, 1_u64);
@@ -1110,10 +1108,8 @@ command fn main() -> status: own ExitStatus pure {
   let total = 0.0_f64;
   let count = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region 'acc {
-      let one = accum::<'acc>(slot: &uniq 'acc total, x: 0.5_f64);
-      set count = count +wrap one;
-    }
+    let one = accum(slot: &uniq total, x: 0.5_f64);
+    set count = count +wrap one;
   }
   return exit_status(code: 0_u8);
 }
@@ -1157,11 +1153,11 @@ command fn main() -> status: own ExitStatus pure {
 /// open API, whose permit and directory inputs are independent.
 #[test]
 fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
-    let source = b"fn probe['f, 'c](factory: &uniq 'f FileFactory, root: &'c DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
-  region 'reserve {
-    match reserve_file::<'f>(factory: move factory) {
+    let source = b"fn probe(factory: &uniq FileFactory, root: &DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
+  region {
+    match reserve_file(factory: move factory) {
       Ok(value: permit) => {
-        match open_directory_source::<'c>(permit: move permit, directory: root) {
+        match open_directory_source(permit: move permit, directory: root) {
           SourceOpened(value: listing) => {
             return 1_u64;
           }
@@ -1180,10 +1176,8 @@ fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
-    region 'probe_call {
-      let seen = probe::<'probe_call, 'probe_call>(factory: &uniq 'probe_call files, root: &'probe_call cwd);
-      set total = total +wrap seen;
-    }
+    let seen = probe(factory: &uniq files, root: &cwd);
+    set total = total +wrap seen;
   }
   return exit_status(code: 0_u8);
 }
@@ -1198,15 +1192,15 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 fn a_direct_directory_state_transition_keeps_its_unique_loan() {
     let source = b"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(1_u64, 0_u8);
-  region 'open {
-    match reserve_file::<'open>(factory: &uniq 'open files) {
+  region {
+    match reserve_file(factory: &uniq files) {
       Ok(value: permit) => {
-        match open_directory_source::<'open>(permit: move permit, directory: &'open cwd) {
+        match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: listing) => {
             let total = 0_u64;
             for @scan (i in 0_u64..4_u64) {
-              region 'attempt {
-                let outcome = directory_next::<'attempt, 'attempt>(source: &uniq 'attempt listing, destination: &uniq 'attempt destination, start: 0_u64, end: 1_u64);
+              region {
+                let outcome = directory_next(source: &uniq listing, destination: &uniq destination, start: 0_u64, end: 1_u64);
               }
               set total = total +wrap 1_u64;
             }
@@ -1357,7 +1351,7 @@ fn a_give_delivering_inside_the_body_is_permitted() {
 #[test]
 fn a_give_in_the_body_is_denied_by_condition_four() {
     let source =
-        b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
+        b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -1380,8 +1374,8 @@ fn a_give_in_the_body_is_denied_by_condition_four() {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
-  region 's {
-    let t = scan_until::<'s>(src: &'s data, needle: 7_u64);
+  region {
+    let t = scan_until(src: &data, needle: 7_u64);
     return exit_status(code: 0_u8);
   }
 }
@@ -1394,7 +1388,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     // The same loop with the give removed is permitted, so the refusal is
     // about the edge and not about the shape.
     let contained =
-        b"fn scan_until['s](src: &'s buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
+        b"fn scan_until(src: &buffer<u64>, needle: own u64) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let acc = 0_u64;
   let always = True();
@@ -1413,8 +1407,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
   set data[10_u64] = 7_u64;
-  region 's {
-    let t = scan_until::<'s>(src: &'s data, needle: 7_u64);
+  region {
+    let t = scan_until(src: &data, needle: 7_u64);
     return exit_status(code: 0_u8);
   }
 }
@@ -1643,7 +1637,7 @@ command fn main() -> status: own ExitStatus pure {
 /// identical.
 #[test]
 fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
-    let structural = b"fn tally['s](src: &'s buffer<u64>) -> result: own u64 reads(src) {
+    let structural = b"fn tally(src: &buffer<u64>) -> result: own u64 reads(src) {
   let count = len(deref(src));
   let total = 0_u64;
   for @sum (i in 0_u64..count) {
@@ -1655,14 +1649,14 @@ fn the_loop_verdict_is_the_same_under_every_route_to_the_same_fact() {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
-  region 's {
-    let t = tally::<'s>(src: &'s data);
+  region {
+    let t = tally(src: &data);
   }
   return exit_status(code: 0_u8);
 }
 ";
     let invariant_source =
-        br#"fn tally['s](src: &'s buffer<u64>, bounded_limit: own u64, limit: own u64) -> result: own u64 reads(src) contract {
+        br#"fn tally(src: &buffer<u64>, bounded_limit: own u64, limit: own u64) -> result: own u64 reads(src) contract {
   define capacity = len(deref(src));
   requires bounded_limit <= limit;
   requires limit <= capacity;
@@ -1679,14 +1673,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
-  region 's {
-    let t = tally::<'s>(src: &'s data, bounded_limit: 64_u64, limit: 64_u64);
+  region {
+    let t = tally(src: &data, bounded_limit: 64_u64, limit: 64_u64);
   }
   return exit_status(code: 0_u8);
 }
 "#;
-    let dominating =
-        b"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
+    let dominating = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   let total = 0_u64;
   if limit <= room {
@@ -1700,14 +1693,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
-  region 's {
-    let t = tally::<'s>(src: &'s data, limit: 64_u64);
+  region {
+    let t = tally(src: &data, limit: 64_u64);
   }
   return exit_status(code: 0_u8);
 }
 ";
-    let branched =
-        b"fn tally['s](src: &'s buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
+    let branched = b"fn tally(src: &buffer<u64>, limit: own u64) -> result: own u64 reads(src) {
   let room = len(deref(src));
   let total = 0_u64;
   for @sum (i in 0_u64..limit) {
@@ -1722,8 +1714,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let data = buffer_new(64_u64, 1_u64);
-  region 's {
-    let t = tally::<'s>(src: &'s data, limit: 64_u64);
+  region {
+    let t = tally(src: &data, limit: 64_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -1765,7 +1757,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
 /// write, is what denies it.
 #[test]
 fn a_read_only_unique_borrow_of_outer_storage_is_denied_by_its_loan() {
-    let source = br#"fn peek_uniq['c](cell: &uniq 'c u64) -> result: own u64 reads(cell) {
+    let source = br#"fn peek_uniq(cell: &uniq u64) -> result: own u64 reads(cell) {
   return deref(cell);
 }
 
@@ -1773,10 +1765,8 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region 'i {
-      let v = peek_uniq::<'i>(cell: &uniq 'i cell);
-      set acc = acc +wrap v;
-    }
+    let v = peek_uniq(cell: &uniq cell);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
@@ -1791,7 +1781,7 @@ command fn main() -> status: own ExitStatus pure {
 /// a reduction.
 #[test]
 fn a_shared_borrow_of_outer_storage_stays_permitted() {
-    let source = br#"fn peek['c](cell: &'c u64) -> result: own u64 reads(cell) {
+    let source = br#"fn peek(cell: &u64) -> result: own u64 reads(cell) {
   return deref(cell);
 }
 
@@ -1799,10 +1789,8 @@ command fn main() -> status: own ExitStatus pure {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region 'i {
-      let v = peek::<'i>(cell: &'i cell);
-      set acc = acc +wrap v;
-    }
+    let v = peek(cell: &cell);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
@@ -1821,11 +1809,9 @@ fn a_body_statement_forming_a_borrow_is_refused() {
   let cell = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region 'i {
-      let g = &uniq 'i cell;
-      let v = deref(g);
-      set acc = acc +wrap v;
-    }
+    let g = &uniq cell;
+    let v = deref(g);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }
@@ -1848,8 +1834,8 @@ fn a_body_borrow_of_iteration_own_storage_stays_permitted() {
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
     let local = buffer_new(4_u64, 7_u8);
-    region 'r {
-      let h = &'r local;
+    region {
+      let h = &local;
       let v = len(deref(h));
       set acc = acc +wrap v;
     }
@@ -1871,11 +1857,9 @@ fn a_body_shared_borrow_of_outer_storage_is_knowingly_denied() {
   let shared = 21_u64;
   let acc = 0_u64;
   for @sum (i in 0_u64..8_u64) {
-    region 'r {
-      let h = &'r shared;
-      let v = deref(h);
-      set acc = acc +wrap v;
-    }
+    let h = &shared;
+    let v = deref(h);
+    set acc = acc +wrap v;
   }
   return exit_status(code: 0_u8);
 }

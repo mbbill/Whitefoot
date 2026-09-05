@@ -4,7 +4,7 @@ enum Sign {
   Pos();
 }
 
-fn twice['r](s: &'r Sign) -> return_value: own i32 reads(s) {
+fn twice(s: &Sign) -> return_value: own i32 reads(s) {
   doc "OWN-13: matching through &'r leaves the scrutinee live; s is matched again after.";
   match deref(s) {
     Neg() => {

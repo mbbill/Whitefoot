@@ -75,7 +75,7 @@ fn buffer_representation_alignment_must_fit_the_selected_allocator_alignment() {
 
 #[test]
 fn weigh_invariant_proves_domains_then_erases_before_llvm() {
-    let source = br#"fn weigh['w](weights: &'w buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
+    let source = br#"fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
   define capacity = len(deref(weights));
   requires count <= capacity;
   requires count <= 1000_u64;
@@ -96,8 +96,8 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
 command fn main() -> status: own ExitStatus allocates(heap) {
   let weights = buffer_new(4_u64, 7_u8);
   let code = 0_u8;
-  region 'read {
-    let total = weigh::<'read>(weights: &'read weights, count: 4_u64);
+  region {
+    let total = weigh(weights: &weights, count: 4_u64);
     if total != 28_u32 {
       set code = 1_u8;
     }
@@ -377,7 +377,7 @@ fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() 
   count: u64;
 }
 
-fn update['r](pool: &uniq 'r Pool) -> result: own unit reads(pool.left), writes(pool.left, pool.count) {
+fn update(pool: &uniq Pool) -> result: own unit reads(pool.left), writes(pool.left, pool.count) {
   let room = len(deref(pool).left);
   let ok = 1_u64 < room;
   if ok {
@@ -387,7 +387,7 @@ fn update['r](pool: &uniq 'r Pool) -> result: own unit reads(pool.left), writes(
   return unit;
 }
 
-fn observe['r](pool: &'r Pool) -> result: own u64 reads(pool.left, pool.count) {
+fn observe(pool: &Pool) -> result: own u64 reads(pool.left, pool.count) {
   let room = len(deref(pool).left);
   let ok = 1_u64 < room;
   let count = deref(pool).count;
@@ -406,12 +406,12 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let code = 0_u8;
   let apply = True();
   if apply {
-    region 'write {
-      update::<'write>(pool: &uniq 'write pool);
+    region {
+      update(pool: &uniq pool);
     }
   }
-  region 'read {
-    let observed = observe::<'read>(pool: &'read pool);
+  region {
+    let observed = observe(pool: &pool);
     if observed != 14_u64 {
       set code = 1_u8;
     }

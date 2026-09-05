@@ -2054,11 +2054,9 @@ mod tests {
     /// rather than a stored row.
     fn render_operation(operation: &super::SystemOperation) -> String {
         let mut rendered = operation.spelling.to_owned();
-        if !operation.regions.is_empty() {
-            rendered.push('[');
-            rendered.push_str(&operation.regions.join(", "));
-            rendered.push(']');
-        }
+        // [FORM-8] every system operation's region occupies exactly one
+        // parameter position and no output position, so the declaration
+        // writes no `region_params` and no parameter writes a region name.
         rendered.push('(');
         let parameters: Vec<_> = operation
             .parameters
@@ -2066,12 +2064,8 @@ mod tests {
             .map(|parameter| {
                 let mode = match parameter.mode {
                     SystemParameterMode::Own => "own ".to_owned(),
-                    SystemParameterMode::Borrow(region) => {
-                        format!("&{} ", operation.regions[usize::from(region)])
-                    }
-                    SystemParameterMode::UniqueBorrow(region) => {
-                        format!("&uniq {} ", operation.regions[usize::from(region)])
-                    }
+                    SystemParameterMode::Borrow(_) => "&".to_owned(),
+                    SystemParameterMode::UniqueBorrow(_) => "&uniq ".to_owned(),
                 };
                 format!("{}: {mode}{}", parameter.name, render_type(parameter.ty))
             })

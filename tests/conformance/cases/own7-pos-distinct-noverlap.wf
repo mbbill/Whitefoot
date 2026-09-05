@@ -2,9 +2,9 @@ command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-7: borrows of distinct roots do not overlap; two uniq borrows coexist.";
   let a = 1_i32;
   let b = 2_i32;
-  region 'r {
-    let ua = &uniq 'r a;
-    let ub = &uniq 'r b;
+  region {
+    let ua = &uniq a;
+    let ub = &uniq b;
     set deref(ua) = 5_i32;
     set deref(ub) = 6_i32;
   }

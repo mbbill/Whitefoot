@@ -3,7 +3,7 @@ struct Cursor {
   limit: u64;
 }
 
-fn shrink['a](c: &uniq 'a Cursor) -> unused: own unit writes(c.limit) {
+fn shrink(c: &uniq Cursor) -> unused: own unit writes(c.limit) {
   set deref(c).limit = 1_u64;
   return unit;
 }
@@ -14,8 +14,8 @@ fn read_after_shrink(table: own buffer<u8>, cursor: own Cursor) -> value: own u8
   requires cursor.limit <= room;
 } {
   doc "expect ACCEPT: shrink writes cursor.limit through the uniq ref, but cursor.idx and room=len(table) are never touched, so the transitively derived cursor.idx < room fact survives the write and table[cursor.idx] with idx=3 into a 4-slot table stays in bounds; sanity check that a kill on one chain member does not over-kill an independent downstream fact.";
-  region 'r {
-    let done = shrink::<'r>(c: &uniq 'r cursor);
+  region {
+    let done = shrink(c: &uniq cursor);
   }
   return table[cursor.idx];
 }

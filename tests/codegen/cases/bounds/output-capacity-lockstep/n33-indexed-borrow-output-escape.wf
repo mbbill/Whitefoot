@@ -1,9 +1,9 @@
-fn put['r](x: &uniq 'r u8) -> result: own unit writes(x) {
+fn put(x: &uniq u8) -> result: own unit writes(x) {
   set deref(x) = 0_u8;
   return unit;
 }
 
-fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 writes(out) {
+fn probe(out: &uniq buffer<u8>, src: own buffer<u8>) -> result: own u64 writes(out) {
   let n = len(src);
   let i = 0_u64;
   let o = 0_u64;
@@ -12,8 +12,8 @@ fn probe['r](out: &uniq 'r buffer<u8>, src: own buffer<u8>) -> result: own u64 w
     if rem < 3_u64 {
       break @groups;
     }
-    region 'slot {
-      put(x: &uniq 'slot deref(out)[o]);
+    region {
+      put(x: &uniq deref(out)[o]);
     }
     set i = i +wrap 3_u64;
     set o = o +wrap 4_u64;

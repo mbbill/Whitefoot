@@ -1168,6 +1168,9 @@ fn a_dotless_operation_name_is_reserved_from_body_invariant_declarations() {
 
 #[test]
 fn region_names_are_unique_across_the_complete_function() {
+    // Both blocks write `'r`, which [FORM-8] would separately reject because
+    // neither body references it. Resolution runs first and owns the repeated
+    // region name, which is the judgment under test.
     let source = br#"fn nested() -> result: own unit pure {
   region 'r {
     give unit;
@@ -1956,7 +1959,7 @@ fn probe() -> result: own unit pure {
 #[test]
 fn complete_role_fixture_materializes_every_d_u_and_x_family() {
     let source = br#"contract Bound {
-  fn member['sig](value: &'sig i32) -> result: own i32 reads(value);
+  fn member(value: &i32) -> result: own i32 reads(value);
   law identity(member, 0_i32);
 }
 
@@ -1991,6 +1994,7 @@ fn user<T: Bound, const n: i32>['call](arg: &'call T) -> result: &'call T reads(
 }
 
 fn viewer['v](values: own slice<'v, i32>, capability: own Args) -> result: own unit reads(values, capability), allocates(arena 'v) {
+  let held = arena_new::<'v, i32>(1_i32);
   return unit;
 }
 
@@ -2003,11 +2007,14 @@ fn probe() -> result: own unit pure {
   let smaller = iabs.checked(ordinary);
   let made = Package<i32, one>(items: ordinary);
   set deref(made).items = ordinary;
-  region 'r {
-    let borrowed = &'r ordinary;
-    let called = user::<i32, 'r, one>(arg: borrowed);
+  region 'outer {
+    let borrowed = &ordinary;
+    let called = user::<i32, one>(arg: borrowed);
     let view = move called;
     let comparison = ordinary == two;
+    region {
+      let outward = &'outer ordinary;
+    }
   }
   loop @done {
     break @done;
@@ -2299,7 +2306,7 @@ fn future() -> result: own unit pure {
 #[test]
 fn sibling_contract_signatures_do_not_share_region_parameters() {
     let source = br#"contract Separate {
-  fn first['r](value: &'r i32) -> result: own unit pure;
+  fn first(value: &i32) -> result: own unit pure;
   fn second() -> result: own slice<'r, i32> pure;
 }
 "#;

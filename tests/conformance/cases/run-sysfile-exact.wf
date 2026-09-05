@@ -1,20 +1,20 @@
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   doc "SYS-8: the sharpest boundary of the family, and the one most likely to be miscoded as `a full buffer implies end of input`. A file whose size equals the requested range extent fills [start, end) exactly and returns next = end, which is a success and not an end, so a further call is required and only that call reports ReadEnd.";
   let page = buffer_new(8_u64, 0_u8);
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         region 'f {
-                          region 'd {
-                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                               ReadBytes(next: n) => {
                                 let filled = n == 8_u64;
                                 if filled {
@@ -32,8 +32,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                           }
                         }
                         region 'g {
-                          region 'e {
-                            match read_at::<'g, 'e>(file: &'g file, destination: &uniq 'e page, file_offset: 8_u64, start: 0_u64, end: 8_u64) {
+                          region {
+                            match read_at(file: &'g file, destination: &uniq page, file_offset: 8_u64, start: 0_u64, end: 8_u64) {
                               ReadBytes(next: more) => {
                                 return exit_status(code: 13_u8);
                               }

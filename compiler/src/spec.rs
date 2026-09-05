@@ -35,8 +35,9 @@ impl fmt::Display for SpecHash {
     }
 }
 
-/// Version label of the active kernel specification.
-pub const ACTIVE_KERNEL_SPEC_VERSION: &str = "v0.42";
+/// Version label of the active kernel specification, from the generated
+/// identity module.
+pub const ACTIVE_KERNEL_SPEC_VERSION: &str = crate::spec_identity::SPEC_VERSION;
 
 /// Repository-relative stable path of the active kernel specification.
 pub const ACTIVE_KERNEL_SPEC_PATH: &str = "spec/kernel-spec.md";
@@ -47,25 +48,46 @@ pub const ACTIVE_KERNEL_SPEC_TEXT: &str = include_str!("../../spec/kernel-spec.m
 /// Exact bytes of the active kernel specification.
 pub const ACTIVE_KERNEL_SPEC_BYTES: &[u8] = ACTIVE_KERNEL_SPEC_TEXT.as_bytes();
 
-/// SHA-256 identity of the active kernel specification.
+/// SHA-256 identity of the active kernel specification, decoded at compile
+/// time from the generated identity module.
 ///
-/// Recorded rather than computed here only because a constant is re-evaluated
+/// Decoded rather than computed here only because a constant is re-evaluated
 /// in every crate that reads it, and hashing the whole specification in the
 /// constant evaluator costs about twelve seconds per crate. It is checked
 /// against the bytes rather than trusted: [`computed_active_spec_hash`] hashes
 /// them at runtime and the `whitefoot-spec` gate rejects any disagreement, so
 /// installing a specification cannot leave this naming the previous one.
-pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash = SpecHash::from_sha256([
-    0xc4, 0x27, 0xd0, 0x7a, 0xc2, 0x3a, 0x1e, 0xf0, 0x14, 0x2b, 0xb8, 0x0c, 0xa0, 0xd9, 0x49, 0x72,
-    0x4a, 0x53, 0x32, 0xed, 0xe0, 0x80, 0x76, 0x86, 0x7f, 0xef, 0xaf, 0x53, 0x56, 0x85, 0x44, 0x08,
-]);
+pub const ACTIVE_KERNEL_SPEC_HASH: SpecHash =
+    SpecHash::from_sha256(sha256_from_hex(crate::spec_identity::SPEC_SHA256_HEX));
+
+/// Decode 64 lowercase hex digits into 32 bytes at compile time. A malformed
+/// digest is a compile-time panic, never a wrong identity.
+const fn sha256_from_hex(hex: &str) -> [u8; 32] {
+    let digits = hex.as_bytes();
+    assert!(digits.len() == 64, "a SHA-256 digest is 64 hex digits");
+    let mut bytes = [0u8; 32];
+    let mut index = 0;
+    while index < 32 {
+        bytes[index] = (hex_value(digits[2 * index]) << 4) | hex_value(digits[2 * index + 1]);
+        index += 1;
+    }
+    bytes
+}
+
+const fn hex_value(digit: u8) -> u8 {
+    match digit {
+        b'0'..=b'9' => digit - b'0',
+        b'a'..=b'f' => digit - b'a' + 10,
+        _ => panic!("a SHA-256 digest is lowercase hex"),
+    }
+}
 
 /// SHA-256 of the embedded active specification, computed from its bytes.
 ///
 /// The one quantity in this module that no one transcribes. Comparing it with
-/// [`ACTIVE_KERNEL_SPEC_HASH`] compares two independently derived values, and
-/// comparing it with the digest recorded in `governance/APPROVALS.md` compares
-/// this implementation against the independently measured `shasum -a 256`.
+/// the digest recorded in `governance/APPROVALS.md`, which the `whitefoot-spec`
+/// gate does, compares this implementation against the independently measured
+/// `shasum -a 256` the record was written from.
 #[must_use]
 pub fn computed_active_spec_hash() -> SpecHash {
     SpecHash::from_sha256(sha256::digest(ACTIVE_KERNEL_SPEC_BYTES))
@@ -78,25 +100,14 @@ mod tests {
         ACTIVE_KERNEL_SPEC_VERSION, computed_active_spec_hash,
     };
 
-    /// The literal is the independently measured `shasum -a 256` value for the
-    /// installed bytes. The activation chain supplies the same independently
-    /// recorded value, so a wrong SHA-256 implementation cannot agree only
-    /// with itself.
-    ///
-    /// It is transcribed from `shasum`, never from what this code computes. The
-    /// approval ledger independently names the same digest; changing this
-    /// literal to follow a computed value would delete the
-    /// external check of the runtime implementation.
-    #[test]
-    fn computed_identity_is_the_independently_measured_digest() {
-        assert_eq!(
-            computed_active_spec_hash().to_string(),
-            "c427d07ac23a1ef0142bb80ca0d949724a5332ede08076867fefaf5356854408"
-        );
-    }
-
-    /// The recorded constant is checked against the bytes, never trusted. The
-    /// `whitefoot-spec` gate makes the same comparison.
+    /// The decoded constant is checked against the bytes, never trusted. The
+    /// independent measurement enters through `governance/APPROVALS.md`: its
+    /// digests were recorded from `shasum -a 256`, the archive gate hashes the
+    /// same file with `shasum`, and `whitefoot-spec` compares this computed
+    /// value against that chain tail, so a wrong SHA-256 implementation cannot
+    /// agree only with itself. The former hand-transcribed literal here said
+    /// the same thing a third time and was retired when the identity module
+    /// became the one decoded source.
     #[test]
     fn recorded_identity_is_the_computed_identity() {
         assert_eq!(ACTIVE_KERNEL_SPEC_HASH, computed_active_spec_hash());

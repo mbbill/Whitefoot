@@ -17,6 +17,27 @@ the ordinary `whitefootc` path from the frozen program bytes; comparator
 Host: Apple M4, 16 GiB, macOS 26.5.2 (25F84), on battery power throughout
 with Low Power Mode off and no mid-phase source change (disclosed below).
 
+## Replay status (2026-09-03)
+
+The run above is complete and closed; this bundle is now its record, not a
+current driver.
+
+- The committed `raw/wfgrep-baseline-1.jsonl` (985 lines) hashes to
+  `1ee5c5a73c3454166bdff746a89faa41bc8bc1132406e3cd6834291636d4fb49`.
+  The digest pinned above names the bytes before commit `c4e82fba`
+  (2026-08-25) rewrote the
+  personal path strings inside four `profile` records; no sample or summary
+  value changed.
+- The subject was the `tests/programs/wfgrep.wf` of 2026-08-06 (digest in
+  `PROTOCOL.md`). Since commit `238ba7ce` (2026-08-18) that file is a
+  recursive search printing `PATH:LINE:TEXT` lines, so `make verify` no
+  longer matches the pinned outputs from HEAD and the timed phases would
+  measure a different program. The Makefile and `runner.rs` stay as the
+  frozen protocol's driver; a replay writes its JSON lines to the scratch
+  root and never appends to the committed raw file. `MANIFEST.txt` remains
+  the pinned corpus and output identity that `../wfgrep-double-walk/`
+  verifies its shape sources against.
+
 ## Result
 
 Ratio = comparator elapsed / wfgrep elapsed; below 1.0 means wfgrep is

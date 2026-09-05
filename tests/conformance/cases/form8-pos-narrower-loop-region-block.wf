@@ -1,0 +1,25 @@
+command fn main() -> return_value: own ExitStatus pure {
+  doc "FORM-8: a named region block the loop body writes another statement beside is narrower than the iteration and stays legal.";
+  let a = 0_i32;
+  let seen = 1_i32;
+  for @scan (step in 0_u64..2_u64) {
+    region 'inner {
+      let p = &a;
+      region {
+        let q = &'inner a;
+        let same = deref(p) == deref(q);
+        if same {
+          set seen = deref(q);
+        } else {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+    set a = seen;
+  }
+  if seen == 0_i32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

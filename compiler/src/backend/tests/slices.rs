@@ -4,7 +4,7 @@ use super::*;
 fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
     let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
-fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads(values) {
+fn sum(values: own slice<u8>) -> result: own u64 reads(values) {
   let total = 0_u64;
   let length = len(values);
   for (offset in 0_u64..length) {
@@ -17,25 +17,25 @@ fn sum['r](values: own slice<'r, u8>) -> result: own u64 reads(values) {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let code = 0_u8;
-  region 'static_view {
-    let view = slice_of(&'static_view bytes);
-    let total = sum::<'static_view>(values: move view);
+  region {
+    let view = slice_of(&bytes);
+    let total = sum(values: move view);
     if total != 10_u64 {
       set code = 1_u8;
     }
   }
   let local = array_new::<u8, 4>(3_u8);
-  region 'local_view {
-    let view = slice_of(&'local_view local);
-    let total = sum::<'local_view>(values: move view);
+  region {
+    let view = slice_of(&local);
+    let total = sum(values: move view);
     if total != 12_u64 {
       set code = 2_u8;
     }
   }
   let runtime = buffer_new(4_u64, 2_u8);
-  region 'runtime_view {
-    let view = slice_of(&'runtime_view runtime);
-    let total = sum::<'runtime_view>(values: move view);
+  region {
+    let view = slice_of(&runtime);
+    let total = sum(values: move view);
     if total != 8_u64 {
       set code = 3_u8;
     }
@@ -65,8 +65,8 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
     // residual [OP-4, ENT-6].
     let source = br#"command fn main() -> status: own ExitStatus pure {
   let bytes = array_new::<u8, 2>(0_u8);
-  region 'view {
-    let window = slice_of(&'view bytes);
+  region {
+    let window = slice_of(&bytes);
     let value = window[2_u64];
   }
   return exit_status(code: 0_u8);
@@ -97,7 +97,7 @@ fn fixed_view['r]() -> result: own slice<'r, u8> pure {
   return slice_of(&'r fixed);
 }
 
-fn borrowed_first['descriptor, 'data](value: &'descriptor slice<'data, u8>) -> result: own u8 reads(value) contract {
+fn borrowed_first(value: &slice<u8>) -> result: own u8 reads(value) contract {
   define room = len(deref(value));
   requires 0_u64 < room;
 } {
@@ -108,15 +108,15 @@ command fn main() -> status: own ExitStatus pure {
   let left = array_new::<u8, 2>(11_u8);
   let right = array_new::<u8, 2>(29_u8);
   region 'view {
-    let borrowed_source = slice_of(&'view left);
-    region 'descriptor {
-      let borrowed_value = borrowed_first::<'descriptor, 'view>(value: &'descriptor borrowed_source);
+    let borrowed_source = slice_of(&left);
+    region {
+      let borrowed_value = borrowed_first(value: &borrowed_source);
       if borrowed_value != 11_u8 {
         return exit_status(code: 1_u8);
       }
     }
-    let initial = slice_of(&'view left);
-    let passed = pass::<'view>(value: move initial);
+    let initial = slice_of(&left);
+    let passed = pass(value: move initial);
     let passed_room = len(passed);
     if 0_u64 < passed_room {
       let pass_value = passed[0_u64];
@@ -126,10 +126,10 @@ command fn main() -> status: own ExitStatus pure {
     } else {
       return exit_status(code: 2_u8);
     }
-    let left_view = slice_of(&'view left);
-    let right_view = slice_of(&'view right);
+    let left_view = slice_of(&left);
+    let right_view = slice_of(&right);
     let take_left = False();
-    let selected = choose::<'view>(take_left: take_left, left: move left_view, right: move right_view);
+    let selected = choose(take_left: take_left, left: move left_view, right: move right_view);
     let selected_room = len(selected);
     if 0_u64 < selected_room {
       let selected_value = selected[0_u64];

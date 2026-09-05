@@ -8,7 +8,7 @@ fn vec_new() -> result: own ByteVec allocates(heap) {
   return ByteVec(buf: move empty, fill: 0_u64);
 }
 
-fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads(v.buf, v.fill), writes(v.buf, v.fill), allocates(heap) {
+fn vec_push(v: &uniq ByteVec, x: own u8) -> result: own Result<unit, Overflow> reads(v.buf, v.fill), writes(v.buf, v.fill), allocates(heap) {
   let count = deref(v).fill;
   let cap = len(deref(v).buf);
   let full = count >= cap;
@@ -47,12 +47,12 @@ fn vec_push['a](v: &uniq 'a ByteVec, x: own u8) -> result: own Result<unit, Over
   return Ok<unit, Overflow>(value: unit);
 }
 
-fn bytes_append['d, 's](dst: &uniq 'd ByteVec, src: &'s buffer<u8>) -> result: own Result<unit, Overflow> reads(dst.buf, dst.fill, src), writes(dst.buf, dst.fill), allocates(heap) {
+fn bytes_append(dst: &uniq ByteVec, src: &buffer<u8>) -> result: own Result<unit, Overflow> reads(dst.buf, dst.fill, src), writes(dst.buf, dst.fill), allocates(heap) {
   let count = len(deref(src));
   for @append (i in 0_u64..count) {
     let byte = deref(src)[i];
-    region 'c {
-      let pushed = propagate vec_push::<'c>(v: &uniq 'c deref(dst), x: byte);
+    region {
+      let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
     }
   }
   return Ok<unit, Overflow>(value: unit);
@@ -62,8 +62,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let v = vec_new();
   let b = 7_u8;
   for @seed (i in 0_u64..20_u64) {
-    region 'push {
-      match vec_push::<'push>(v: &uniq 'push v, x: b) {
+    region {
+      match vec_push(v: &uniq v, x: b) {
         Ok(value: pushed) => {
         }
         Err(error: overflow) => {
@@ -93,8 +93,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     return exit_status(code: 1_u8);
   }
   let s = vec_new();
-  region 'first {
-    match vec_push::<'first>(v: &uniq 'first s, x: 65_u8) {
+  region {
+    match vec_push(v: &uniq s, x: 65_u8) {
       Ok(value: pushed) => {
       }
       Err(error: overflow) => {
@@ -103,8 +103,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let raw = buffer_new(5_u64, 33_u8);
-  region 'grow {
-    match bytes_append::<'grow, 'grow>(dst: &uniq 'grow s, src: &'grow raw) {
+  region {
+    match bytes_append(dst: &uniq s, src: &raw) {
       Ok(value: appended) => {
       }
       Err(error: overflow) => {

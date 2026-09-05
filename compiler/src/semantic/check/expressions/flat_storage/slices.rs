@@ -72,14 +72,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             );
         }
-        // [OP-2] the result region is the one the operand's borrow writes.
-        let borrow_region = self.use_at(borrow, LexicalUseRole::BorrowRegion)?;
-        let ResolvedTarget::Source {
-            declaration: region,
-            class: DeclarationClass::Region,
-        } = borrow_region.target()
-        else {
-            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        // [OP-2] the result region is the one the operand's borrow takes,
+        // written or elided [FORM-8].
+        let Some(region) = self.borrow_expr_region(borrow)? else {
+            return self.issue_node(
+                crate::SemanticRule::Form8,
+                borrow,
+                crate::SemanticIssueKind::RegionSpelling {
+                    mechanical_fix: "write the region this borrow takes, or place the borrow \
+inside the `region` block whose region it takes",
+                },
+            );
         };
         let place_node = self
             .tree
@@ -299,7 +302,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return self.issue_node(
                 SemanticRule::Own10,
                 borrow,
-                SemanticIssueKind::InvalidBorrowLifetime { region: self.declaration_spelling(region)?, binder: self.declaration_spelling(declaration)?, mechanical_fix: format!("arena content outlives its arena's region {}, not the arena binding; name {} on this view, or a region {} outlives", self.declaration_spelling(arena_region)?, self.declaration_spelling(arena_region)?, self.declaration_spelling(arena_region)?) },
+                SemanticIssueKind::InvalidBorrowLifetime {
+                    region: self.region_phrase(region)?,
+                    binder: self.declaration_spelling(declaration)?,
+                    // The arena's own region is what the view must name. A
+                    // region [FORM-8] leaves unwritten has no name to give,
+                    // so the repair is to relate the two positions first.
+                    mechanical_fix: match self.written_region_name(arena_region)? {
+                        Some(name) => format!(
+                            "arena content outlives its arena's region {name}, not the arena \
+binding; name {name} on this view, or a region {name} outlives"
+                        ),
+                        None => "arena content outlives its arena's own region, not the arena \
+binding; that region is unwritten here, so write it on the arena and name it on this view, or \
+take the view in a region it outlives"
+                            .to_owned(),
+                    },
+                },
             );
         }
         // TEMPORARY capability stop, judged after the [OWN-1] and [OWN-10]

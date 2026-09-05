@@ -1,6 +1,6 @@
-fn hold['r0](x: own i32) -> function_result: own unit pure {
+fn hold['r0](x: own i32, anchor: &'r0 i32) -> function_result: &'r0 i32 pure {
   let p = &'r0 x;
-  return unit;
+  return anchor;
 }
 
 command fn main() -> status: own ExitStatus pure {

@@ -2424,3 +2424,357 @@ ACTIVE-SPEC: v0.40 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0
   `compiler/tests/conformance/json.rs`, `tests/conformance/runner.py`, and
   `tests/conformance/test_runner.py` are byte-identical to `main`.
 ACTIVE-SPEC: v0.41 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761 15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168
+
+## 2026-09-03 — merge-time approval content: v0.42 one canonical region spelling ([FORM-8]) (1 rule added; 132 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this record
+  creates no separate approval step, and nothing in it asserts that the
+  approval has been given.
+- SPECIFICATION: activate Whitefoot v0.42 at exact SHA-256
+  `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`.
+  It supersedes active v0.41 at SHA-256
+  `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.41.md`. The candidate that preceded activation declared
+  `CANDIDATE v0.42 supersedes v0.41` and hashed to
+  `8cf0b9142eaee1e48734fd29d572d27f2e6f9faf0a6a6518d011124786bc2e37`;
+  activation flipped that status line to `ACTIVE v0.42` and changed no other
+  byte. Per the specification's own META-5
+  delta declaration: numbered rules are +1/-0 and 132 remain, the added rule
+  being [FORM-8] and no id retired; grammar productions are +0/-0 and 83
+  remain, with `mode`, `borrow_expr`, `region_stmt`, and the `slice` and
+  `arena` alternatives of `type` each gaining one optional REGIONID decision;
+  and fixed lowercase atoms, compound punctuation tokens, token bytes, writer
+  operation spellings, opaque system nominal spellings, runtime-trap families,
+  entry forms, contract block forms, exception clauses, and the 203 system
+  operations and declaration records are unchanged. The changed content makes
+  every region spelling forced. A REGIONID is written exactly where the
+  document does not otherwise fix the region it denotes: a declaration writes a
+  name only to relate two of its own positions or to name an output-position
+  region no parameter position determines, and the region parameter list then
+  holds exactly the written names in order of first written occurrence; a
+  `borrow_expr` writes its region only when it is not the innermost enclosing
+  `region_stmt`'s; a `region_stmt` writes its name only when its body still
+  references it; and a call's `::` type application writes exactly the callee
+  region parameters no parameter position determines, every other one being the
+  least region of the actual arguments at the positions naming it, so a call
+  whose regions are all determined writes no `::` application at all. The
+  seventeen [SYS-2] declaration records are re-rendered in that same form,
+  changing spelling only — no signature identity, parameter name, order, mode,
+  type, effect, or count moves. No liveness, outlives, exclusivity,
+  storage-duration, provenance, effect, or confinement judgment changes, and
+  the accepted-program set is unchanged up to respelling. The selection ground
+  the specification states is minimality under [FORM-1] and the owner ruling
+  of record that one semantics has one spelling, with the rule decidable from
+  the owning declaration's own text at every position.
+- CONFORMANCE BOUNDARY: relative to `main` tip
+  `30602914`, `tests/conformance` content changes as follows. Under
+  `tests/conformance/cases/`, 8 files are added, 123 are modified, and 3 are
+  deleted; git reports no rename. `manifest.jsonl` is modified: the three
+  deleted ids leave it, the eight added ids enter it, and two retained ids get
+  a new `doc` sentence. Added:
+  - `tests/conformance/cases/form8-neg-elided-related-region.wf`
+  - `tests/conformance/cases/form8-neg-elided-result-region.wf`
+  - `tests/conformance/cases/form8-neg-unreferenced-region-block-name.wf`
+  - `tests/conformance/cases/form8-neg-written-determined-region-argument.wf`
+  - `tests/conformance/cases/form8-neg-written-innermost-borrow-region.wf`
+  - `tests/conformance/cases/form8-neg-written-unrelated-parameter-region.wf`
+  - `tests/conformance/cases/form8-pos-elided-regions-run.wf`
+  - `tests/conformance/cases/form8-pos-related-pair-written.wf`
+
+  Deleted, each because the language rule it tested no longer exists:
+  - `tests/conformance/cases/type5-neg-wrong-region-arg-count.wf` — a user call
+    stating two region arguments where the callee declared one. [FORM-8] gives
+    a call exactly one legal region-argument list, so "wrong count" is no
+    longer a distinct fault; `form8-neg-written-determined-region-argument`
+    carries the surviving content, that writing a determined region argument is
+    rejected.
+  - `tests/conformance/cases/sys2-neg-wrong-region-arg-count.wf` — the same
+    fault for a system operation. Every [SYS-2] region occupies one parameter
+    position, so the legal list is empty and the same replacement covers it.
+  - `tests/conformance/cases/reject-sys2-args-count-missing-region.wf` — a
+    system call omitting a required region argument. Under [FORM-8] omitting it
+    is the required spelling, so the program this case declared invalid is now
+    the canonical one; `form8-pos-elided-regions-run` accepts and runs that
+    shape.
+
+  The 123 modified case sources are the mechanical [FORM-8] re-spelling and
+  nothing else, except two whose content is restated because the old spelling
+  became unwritable:
+  - `own3-neg-undeclared-signature-region` — the undeclared region moves from a
+    parameter mode to a body `borrow_expr`. A signature position can no longer
+    carry an undeclared name, because [FORM-8] admits a written name only when
+    the region parameter list holds it; the body borrow is where an undeclared
+    spelling is still reachable, and the case still reaches [OWN-3].
+  - `x-borrow-own-param-escape-no-return` — the caller-supplied region gains a
+    second position (a borrow parameter and the result share it) so that
+    [FORM-8] writes it at all. The escape under test is unchanged: a borrow of
+    an own local into a caller-supplied region, with nothing returning it, and
+    the case still reaches [OWN-10].
+
+  No other case changes its expectation kind, cited rule, or runnable status,
+  and coverage remains complete at 132/132 rules with [FORM-8] covered by case.
+ACTIVE-SPEC: v0.42 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26 899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761
+
+## 2026-09-03 — merge-time approval content: v0.43 loop-body regions and the [ENT-6] join repair (0 rules added; 132 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this record
+  creates no separate approval step, and nothing in it asserts that the
+  approval has been given.
+- SPECIFICATION: install Whitefoot v0.43 as a work-branch CANDIDATE at exact
+  SHA-256
+  `1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`.
+  Its status line declares `CANDIDATE v0.43 supersedes v0.42
+  6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`. A
+  candidate is not an activated identity: this record adds no `ACTIVE-SPEC:`
+  line, writes no `spec/kernel-spec-v0.42.md` archive, and leaves the chain
+  tail at v0.42, so canonical `make check` stops the revision at
+  `spec-archive-integrity` with the candidate message until a later activation
+  archives the outgoing bytes and records the chain line. Per the
+  specification's own META-5 delta declaration: numbered rules are +0/-0 and
+  132 remain, with no id added or retired; grammar productions are +0/-0 and
+  83 remain, with no production added, removed, or given a new decision; and
+  fixed lowercase atoms, compound punctuation tokens, token bytes, writer
+  operation spellings, opaque system nominal spellings, runtime-trap families,
+  entry forms, contract block forms, exception clauses, and the 203 system
+  operations and declaration records are unchanged. [OWN-3], [OWN-11],
+  [FORM-8], and [ENT-6] are amended, and the candidate carries **two
+  independent amendments**.
+
+  The first makes every loop body a region block. The body of a `loop_stmt` or
+  a `for_stmt` introduces one unnamed local region whose block is that body
+  [OWN-3, OWN-11], so a `borrow_expr` written directly in that body takes that
+  region, is written bare [FORM-8], and dies with the iteration — exactly the
+  guarantee [OWN-11] already made, now obtained with no writer ceremony. The
+  region has no REGIONID and no position can name it, so nothing outside the
+  body reaches it. Because that region exists, a `region_stmt` that is a loop
+  body's only statement has exactly the body as its block, is a second
+  spelling of one region, and is a hard error citing [FORM-8]; the mechanical
+  repair is to delete the block, keep its statements as the loop body, and
+  elide every REGIONID that named it. A `region_stmt` the body writes another
+  statement beside is not that second spelling and stays legal: its block is a
+  strict part of the body, and [OWN-6] admits a statement-scoped child
+  reborrow under a region whose block does not extend beyond the enclosing
+  statement, which a one-statement block inside a longer body satisfies and
+  the body's own region does not. The one exception to the rejection is a
+  block some `targ` region argument inside it must write its name at, because
+  no implicit region has a name that position could carry. A writer decides
+  the whole rule by reading the loop body alone, asking only whether the body
+  writes anything beside the block. No liveness, outlives, exclusivity,
+  storage-duration, provenance, effect, or confinement judgment changes; the
+  accepted-program set changes only by removing the redundant spelling and
+  admitting the bare one.
+
+  The second repairs [ENT-6]'s control-flow join, which was not associative. A
+  delta atom minted by an earlier join counted as an ordinary nonconstant term
+  at the next one, so two nested joins lost a binding image that one flat join
+  over the same branches kept, and a three-way demux was accepted written as a
+  `match` and refused written as nested `if`/`else` with no semantic
+  difference between them. At a join every input image is now normalized
+  first: each delta atom an earlier join minted is folded back into the
+  constant interval it stands for, that atom's coefficient times its interval
+  added to the input's constant, leaving one non-delta nonconstant form and
+  one closed constant interval. Where the normalized inputs share one
+  nonconstant form the join is that form plus one fresh delta atom over the
+  hull of their constant intervals; otherwise the binding still receives one
+  fresh full-type atom. Delta atoms remain ordinary shared atoms everywhere
+  except a join, so a relation formed over one after a join still holds at the
+  next. An input carrying no delta atom normalizes to its own constant, so the
+  rule is the v0.42 rule wherever no join has run. The repair only adds
+  images, so no program v0.42 accepted is refused, and acceptance no longer
+  depends on the shape of the control join. The rule stays source-structural
+  and decidable from the rule alone.
+- CONFORMANCE BOUNDARY: relative to this batch's base, the v0.42 activation
+  commit `c168ab2a` on `batch/0118-region-elision`, `tests/conformance`
+  content changes as follows. Under `tests/conformance/cases/`, 6 files are
+  added, 3 are modified, and none is deleted; git reports no rename.
+  `manifest.jsonl` is modified: the six added ids enter it and no existing
+  line changes. Added:
+  - `tests/conformance/cases/own11-pos-loop-body-region.wf`
+  - `tests/conformance/cases/form8-neg-region-block-is-the-loop-body.wf`
+  - `tests/conformance/cases/form8-pos-narrower-loop-region-block.wf`
+  - `tests/conformance/cases/ent6-pos-nested-join-keeps-the-flat-image.wf`
+  - `tests/conformance/cases/ent6-pos-join-shape-independence.wf`
+  - `tests/conformance/cases/ent6-neg-nested-join-does-not-invent-a-bound.wf`
+
+  Modified, with the reason each source moves:
+  - `own11-neg-borrow-outer-region` — the borrow now writes the outer region
+    name. Its old elided spelling denoted the region introduced outside the
+    loop; under [OWN-11] an elided borrow in a loop body takes the body's own
+    region, so the old source is an accepted program and the outer region has
+    to be named for the fault to be written at all. The normative content is
+    unchanged: a borrow inside a loop naming a region introduced outside it is
+    rejected citing OWN-11.
+  - `accept-par3-staged-denied-hoisted-scratch` and
+    `accept-par3-staged-denied-read-before-write` — each had a `region 'f`
+    block as its `for` body's only statement. [FORM-8] now rejects that
+    spelling, so the block is deleted, its statements become the loop body,
+    and `&'f cwd` becomes `&cwd` under the body's own region. Both keep their
+    declared expectation, cited rule, and staged-permission verdict.
+
+  No other case changes its expectation kind, cited rule, or runnable status,
+  and coverage remains complete at 132/132 rules.
+
+## 2026-09-04 — merge-time approval content: activate v0.43 (loop bodies as region blocks and the associative image join; no rule added or retired; 132 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.43 at exact SHA-256
+  `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`.
+  It supersedes active v0.42 at SHA-256
+  `6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.42.md`. The candidate that preceded activation was
+  installed on `main` by the record above of 2026-09-03: it declared
+  `CANDIDATE v0.43 supersedes v0.42` and hashed to
+  `1708dd2b64b93c88d1dfc23acd340c853b03ca240b9b86ac43fbc91e1c0b2081`;
+  activation flipped that status line to `ACTIVE v0.43` and changed no other
+  byte, so the META-5 delta declaration, the two independent amendments
+  ([OWN-3], [OWN-11], [FORM-8], [ENT-6] amended; numbered rules +0/-0, 132
+  remain), and the conformance boundary recorded there are the content
+  activated here. This record adds the `ACTIVE-SPEC:` chain line below and
+  the archive of the outgoing bytes, and nothing else.
+- CONFORMANCE BOUNDARY: this merge adds, modifies, deletes, or renames no
+  conformance case, manifest row, adapter, runner, or collection wiring; the
+  boundary recorded with the candidate on 2026-09-03 is unchanged.
+ACTIVE-SPEC: v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951 6b935d2ea7729876fc96533b5559f6f58598e335b4b5cffad86cc4782c0eed26
+
+## 2026-09-04 — merge-time approval content: kernel specification v0.44 CANDIDATE (the fact machinery: contract vocabulary, operand denotation, and publication; numbered rules +4, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: install the Whitefoot kernel specification v0.44 CANDIDATE at
+  `spec/kernel-spec.md`, whose status line declares
+  `CANDIDATE v0.44 supersedes v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`
+  and whose complete bytes hash to SHA-256
+  `1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`.
+  A candidate is not an activated identity: this record adds no `ACTIVE-SPEC:`
+  line, archives no bytes, and leaves the activation chain tail at v0.43. The
+  bytes above are the exact content approved; activation, if the owner takes
+  it, is its own later record that flips the status line and archives the
+  outgoing v0.43 bytes.
+- CONTENT: four numbered rules are added and none is retired, so 136 remain.
+  [MSR-5] gives a `requires_clause` and an `ensures_clause` a `clause_expr`
+  whose operands are an `atom`, a `call`, or a `construct`, which is what
+  admits a measure of a place as a clause operand on either side of the
+  comparison; the measure formers are table data with one row in this version,
+  `len(P)`, admitted exactly where [ENT-2] clause (b) admits a length term.
+  [MSR-3] states one denotation per operand position keyed on the parameter's
+  mode, adds the compiler-owned **call datum** an `own` operand denotes when a
+  relation is read at a caller, and makes a `&uniq` parameter's measure
+  inadmissible in a source-declared `ensures`. [CALL-4] states the contract
+  vocabulary over the one result a `fn_decl` declares and records the deferred
+  widenings. [CALL-6] states publication once — substitution, instantiation
+  point, establishment point, destination, and support — adds [ENT-3]'s source
+  S13, and refuses at the declaration a contract whose published relations are
+  contradictory at their establishment point. Grammar productions +1
+  (`clause_expr`); `requires_clause` and `ensures_clause` change to take it;
+  no token, no fixed atom, and no system record changes. [GRAM-6], [FN-8],
+  [FN-9], [ENT-2], [ENT-3], and [ENT-5] are amended in place.
+- CONFORMANCE BOUNDARY: relative to this batch's base, the v0.43 activation
+  merge `69771591` on `main`, `tests/conformance` content changes as follows.
+  Under `tests/conformance/cases/`, 6 files are added, none is modified, and
+  none is deleted; git reports no rename. `manifest.jsonl` is modified: the
+  six added ids enter it and no existing line changes. Added:
+  - `tests/conformance/cases/msr5-pos-two-measure-clause.wf`
+  - `tests/conformance/cases/msr3-pos-own-operand-call-datum.wf`
+  - `tests/conformance/cases/msr3-neg-uniq-state-measure-in-ensures.wf`
+  - `tests/conformance/cases/call6-neg-contradictory-published-relations.wf`
+  - `tests/conformance/cases/call6-pos-routed-relation-over-a-call-datum.wf`
+  - `tests/conformance/cases/call4-neg-measured-result-not-admitted.wf`
+
+  No existing case changes its expectation kind, cited rule, or runnable
+  status, and no case flips a verdict. Coverage remains complete over the
+  numbered rules the corpus is required to cover.
+- CORPUS MIGRATION, outside the conformance boundary: [MSR-3] refuses a
+  measure of a `&uniq` state parameter in an `ensures`, and two programs under
+  `tests/programs/` wrote exactly that clause. `wfgrep.wf` and
+  `raw_deflate_boundary.wf` each declared
+  `fn append_slice(destination: &uniq buffer<u8>, ...)` with
+  `define capacity = len(deref(destination)); ensures result <= capacity;`,
+  which publishes a bound on a caller's object through the one parameter mode
+  from which the callee could have replaced it. Both take the capacity as an
+  `own u64` operand instead and state the connection as
+  `requires capacity == len(deref(destination));`, which is the restructuring
+  the diagnostic names; each body keeps binding the destination's own length
+  for its writes, so it proves its own subscript with no help from the
+  contract. Every caller passes the length it already had in scope. Neither
+  program's behaviour, published diagnostics, or exit codes change, and the
+  integration tests that execute both still pass. `docs/patterns.md` carries
+  the writer form as P21 and corrects P16's define-per-measure spelling.
+
+## 2026-09-04 — merge-time approval content: activate v0.44 (the fact machinery: contract vocabulary, operand denotation, and publication; numbered rules +4/-0 relative to v0.43, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.44 at exact SHA-256
+  `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`.
+  It supersedes active v0.43 at SHA-256
+  `037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.43.md`. The candidate that preceded activation was
+  installed on `main` by the record above of 2026-09-04: it declared
+  `CANDIDATE v0.44 supersedes v0.43` and hashed to
+  `1240d9ff604276f96b954f0524c973c8ab7490ef63b91c7f7c6b8c2d57181b3b`;
+  activation flipped that status line to `ACTIVE v0.44` and changed no other
+  byte, so the META-5 delta declaration, the four added rules ([MSR-3],
+  [MSR-5], [CALL-4], [CALL-6]; numbered rules +4/-0, 136 remain; grammar
+  productions +1, `clause_expr`), the amendments in place to [GRAM-6],
+  [FN-8], [FN-9], [ENT-2], [ENT-3], and [ENT-5], and the conformance boundary
+  recorded there are the content activated here. This record adds the
+  `ACTIVE-SPEC:` chain line below and the archive of the outgoing bytes, and
+  nothing else.
+- CONFORMANCE BOUNDARY: this merge adds, modifies, deletes, or renames no
+  conformance case, manifest row, adapter, runner, or collection wiring; the
+  boundary recorded with the candidate on 2026-09-04 is unchanged.
+ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951
+
+## 2026-09-05 — merge-time approval content: activate v0.45 (the backed file permit: `reserve_file` answers `Result<FilePermit, IoError>`, a refused open hands its permit back, three explicit closes return it; numbered rules +0/-0, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.45 at exact SHA-256
+  `c07a8ba92b35c23c9d74f96a921750dc30933ebbf05975c52a1e595fe52c887c`.
+  It supersedes active v0.44 at SHA-256
+  `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.44.md`. The amendment lands as one change with no
+  candidate state: it adds and retires no numbered rule (136 remain) and no
+  grammar production (84 remain); it modifies [SYS-10], [SYS-11] and [SYS-14]
+  and the [SYS-2] operation, target-contract, outcome and release tables.
+  `reserve_file` answers `Result<FilePermit, IoError>` from a factory whose
+  capacity is a count fixed at program start; the four opens answer with
+  `FileOpenOutcome`, `DirectoryOpenOutcome` and `SourceOpenOutcome`, whose
+  failed variant carries the permit back beside the host's `IoError`; three
+  explicit closes (`close_read`, `close_directory`,
+  `close_directory_source`) return the credit as a fresh permit after derived
+  release's one close attempt; writer operation spellings +3, enum system
+  nominal spellings +3 with six constructors, system operations +3 (19
+  remain), declaration records +24 (227 remain). The descriptor retirement
+  ledger, its award order and its retire-and-retry paths are deleted from the
+  runtime on every route and target. Ground: constitution T4 (resource
+  dependencies are API relations, owner ruling 2026-09-04) and
+  FIRST-PRINCIPLES §12.
+- CONFORMANCE BOUNDARY: this merge adds two cases with their manifest rows,
+  `run-sysfile-close-returns-permit` ([SYS-10], [SYS-11]: one credit serves
+  two sequential opens through `close_read`) and
+  `run-sysfile-failed-open-returns-permit` ([SYS-10], [SYS-11]: a refused
+  open hands its permit back and that permit opens an existing name). It
+  modifies the source of the twenty-eight existing cases that reserve a
+  permit, so that each matches `reserve_file`'s `Result` and the opens'
+  outcome enums, without changing any case's rules, expected verdict, exit
+  code, arrangement or status; every modified case is also respelled to the
+  v0.42 canonical region form where the merge brought it together with that
+  respelling. It deletes and renames no case and changes no adapter, runner,
+  or collection wiring.
+ACTIVE-SPEC: v0.45 c07a8ba92b35c23c9d74f96a921750dc30933ebbf05975c52a1e595fe52c887c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

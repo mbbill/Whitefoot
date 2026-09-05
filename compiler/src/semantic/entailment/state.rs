@@ -193,6 +193,8 @@ pub(crate) enum FlowEventKind {
     S9,
     S10,
     S11,
+    /// [ENT-3.S13] one declared relation instantiated at its call.
+    S13,
     Join,
     Snapshot,
     PostconditionEntryImageInvalidation,
@@ -261,6 +263,12 @@ pub(crate) struct PostconditionCallSubstitution {
     /// an ultimate-referent image must not keep a temporary borrow holder
     /// alive after establishment.
     pub(crate) transfer_holders: Vec<BindingId>,
+    /// Whether this operand was substituted by that call's call datum
+    /// [MSR-3]. A datum contains no place, so no event at or after the call
+    /// kills it and M's survival test does not apply; the formal is still
+    /// recorded, because [FN-9]'s narrow receiver routes are stated over
+    /// which formal an actual supplies and not over what the operand denotes.
+    pub(crate) datum: bool,
 }
 
 /// The closed set of proof steps emitted by the existing entailment flow.
@@ -2914,7 +2922,7 @@ fn for_each_implicit_bound(
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
         }
-        TermKind::CommitValue { ty, .. } => {
+        TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => {
             let (minimum, maximum) = type_range(*ty);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);

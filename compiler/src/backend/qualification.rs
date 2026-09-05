@@ -160,13 +160,52 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // erase before lowering as before. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.40 mapping carries forward complete.
-// v0.42 backed-permit review (2026-09-04): `reserve_file` answers
+// v0.42 region-spelling review (2026-09-03): [FORM-8] decides only which of a
+// program's regions the writer spells. A region determined by its own position
+// is elided and one that relates two positions or that a caller chooses is
+// written; the regions themselves, their extents, and every liveness,
+// outlives, exclusivity, storage-duration, provenance, effect, and confinement
+// judgment over them are unchanged, and regions erase before lowering as
+// before. The seventeen [SYS-2] declaration records are re-rendered in that
+// same form without changing one signature identity, parameter name, order,
+// borrow mode, type, effect row, or count. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.41 mapping carries forward complete.
+// v0.43 loop-body-region and join-repair review (2026-09-03): the first
+// amendment makes every loop body a region block, which changes which regions
+// a writer spells and rejects one redundant block form; the regions themselves,
+// their extents, and every liveness, outlives, exclusivity, storage-duration,
+// provenance, effect, and confinement judgment over them are unchanged, and
+// regions still erase before lowering. A loop body's own region introduces no
+// arena allocation list, because no `arena_new` can name it, so no release row
+// or storage representation moves. The second amendment normalizes [ENT-6]'s
+// value-image join, a front-end proof rule over erased images that only adds
+// images an accepted program may use; every emitted partial operation still
+// passes its static domain obligation before emission. No system operation,
+// resource representation, release row, result shape, entry form, or host ABI
+// mapping changes, so the v0.42 mapping carries forward complete.
+// v0.44 fact-machinery review (2026-09-04): all four amendments are front-end
+// proof and contract surface. [MSR-5] widens which operands a contract clause
+// may be written over, and [FN-9] already erases every clause before lowering,
+// so no emitted operation, no result shape, and no ABI field moves. [MSR-3]'s
+// call datum is a compiler-owned proof term with no storage, no address, and
+// no runtime read; it exists inside one function's fact state and never
+// reaches the checked program's value graph. [CALL-4] states the vocabulary
+// over the one result a declaration already has and adds no result shape.
+// [CALL-6] fixes where a declared relation is instantiated and established and
+// refuses an inconsistent set at its declaration; both are acceptance
+// judgments over erased proof syntax, and refusing an inconsistent contract
+// only removes programs. Every emitted partial operation still passes its
+// static domain obligation before emission. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.43 mapping carries forward complete.
+// v0.45 backed-permit review (2026-09-05): `reserve_file` answers
 // `Result<FilePermit, IoError>` from the floor's credit count and three
 // explicit closes (`close_read`, `close_directory`, `close_directory_source`,
 // ordinals 16 to 18) return the credit after the same native close attempt
 // derived release performs. No target row, representation, or release
-// implementation changes, so the v0.41 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.42";
+// implementation changes, so the v0.44 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.45";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

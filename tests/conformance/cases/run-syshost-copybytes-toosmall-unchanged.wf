@@ -1,4 +1,4 @@
-fn sentinel_status['b](bytes: &'b buffer<u8>, failure: own u8) -> result: own u8 reads(bytes) {
+fn sentinel_status(bytes: &buffer<u8>, failure: own u8) -> result: own u8 reads(bytes) {
   let room = len(deref(bytes));
   for (offset in 0_u64..room) {
     let byte = deref(bytes)[offset];
@@ -14,12 +14,12 @@ fn sentinel_status['b](bytes: &'b buffer<u8>, failure: own u8) -> result: own u8
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   doc "SYS-8: on a recoverable failure of a copy operation the whole buffer is unchanged. CopyTooSmall states the exact length the destination range must have for the same call to succeed [SYS-6], and the sentinel prefill witnesses the no-write half, which stays observable because the program keeps running.";
   let bytes = buffer_new(4_u64, 90_u8);
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
-          region 'd {
-            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd bytes, start: 0_u64, end: 4_u64) {
+          region {
+            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 0_u64, end: 4_u64) {
               Ok(value: copied) => {
                 return exit_status(code: 10_u8);
               }
@@ -37,8 +37,8 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
             }
           }
         }
-        region 's {
-          let observed = sentinel_status::<'s>(bytes: &'s bytes, failure: 12_u8);
+        region {
+          let observed = sentinel_status(bytes: &bytes, failure: 12_u8);
           let intact = observed == 0_u8;
           if intact {
           } else {

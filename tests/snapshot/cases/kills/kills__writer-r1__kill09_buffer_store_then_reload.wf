@@ -1,4 +1,4 @@
-fn store_then_double['a](out: &uniq 'a buffer<u32>, at: own u64, value: own u32) -> result: own u32 reads(out), writes(out) {
+fn store_then_double(out: &uniq buffer<u32>, at: own u64, value: own u32) -> result: own u32 reads(out), writes(out) {
   doc "expect ACCEPT: set deref(out)[at] kills the buffer's prior image, so the immediately following read of the same slot must reuse the room fact already proved for the write, not a fresh unproved one.";
   let room = len(deref(out));
   let in_bounds = at < room;
@@ -15,8 +15,8 @@ fn store_then_double['a](out: &uniq 'a buffer<u32>, at: own u64, value: own u32)
 command fn main() -> status: own ExitStatus allocates(heap) {
   let scratch = buffer_new(4_u64, 0_u32);
   let result = 0_u32;
-  region 'w {
-    set result = store_then_double::<'w>(out: &uniq 'w scratch, at: 2_u64, value: 7_u32);
+  region {
+    set result = store_then_double(out: &uniq scratch, at: 2_u64, value: 7_u32);
   }
   if result == 14_u32 {
   } else {

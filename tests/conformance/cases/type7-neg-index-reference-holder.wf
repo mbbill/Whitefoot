@@ -1,8 +1,8 @@
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "TYPE-7 applies to an index base: a reference holder requires explicit deref(.) before indexing its referent.";
   let items = buffer_new(2_u64, 0_u8);
-  region 'r {
-    let holder = &'r items;
+  region {
+    let holder = &items;
     let value = holder[0_u64];
   }
   return exit_status(code: 0_u8);

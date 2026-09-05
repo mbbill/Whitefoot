@@ -1,6 +1,6 @@
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "A box allocated in a region is freed by a compiler-derived drop on the region-exit edge, in reverse declaration order [STOR-3]; surfaced in the elaborated artifact [DIAG-2].";
-  region 'r {
+  region {
     let b = box_new(9_i32);
     let v = deref(b);
     if v == 9_i32 {

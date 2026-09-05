@@ -65,7 +65,7 @@ const fixed_lencode: array<u32, 512> = [
 1771282_u32, 7276544_u32, 3082240_u32, 12519680_u32, 985088_u32, 9373696_u32, 5179392_u32, 16713984_u32
 ];
 
-fn inflate_huffman_literals ['s, 'o] (src: &'s buffer<u8>, out: &uniq 'o buffer<u8>, symbol_count: own u64) -> own u64 reads(src), writes(out), traps requires {
+fn inflate_huffman_literals  (src: &buffer<u8>, out: &uniq buffer<u8>, symbol_count: own u64) -> own u64 reads(src), writes(out), traps requires {
   let required_src_len: own u64 = len<u8>(deref(src));
   let required_out_len: own u64 = len<u8>(deref(out));
   let required_full_eighths: own u64 = ishr.wrap<u64>(symbol_count, 3_u32);

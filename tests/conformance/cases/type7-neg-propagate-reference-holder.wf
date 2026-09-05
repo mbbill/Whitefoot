@@ -2,7 +2,7 @@ enum StepError {
   Failed();
 }
 
-fn forward['r](holder: &'r Result<i32, StepError>) -> function_result: own Result<i32, StepError> pure {
+fn forward(holder: &Result<i32, StepError>) -> function_result: own Result<i32, StepError> pure {
   doc "TYPE-7: propagate cannot implicitly consume a Result through a reference holder; deref remains explicit.";
   let value = propagate holder;
   return Ok<i32, StepError>(value: value);

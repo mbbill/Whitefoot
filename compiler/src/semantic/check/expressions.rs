@@ -22,7 +22,7 @@ use super::{
 };
 
 #[derive(Clone, Copy)]
-enum PlaceUseContext {
+pub(in crate::semantic::check) enum PlaceUseContext {
     Ordinary,
     Consuming,
 }
@@ -351,11 +351,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         mode: CheckedMode,
         ty: CheckedType,
     ) -> Result<String, CheckStop> {
-        Ok(format!(
-            "{} {}",
-            self.checked_mode_name(mode)?,
-            self.checked_type_name(ty)?
-        ))
+        let mode = self.checked_mode_name(mode)?;
+        let ty = self.checked_type_name(ty)?;
+        // [FORM-2] attaches `&` to what follows it, and a mode whose region
+        // [FORM-8] leaves unwritten ends in that `&`, so the rendering must
+        // not insert the separator the written form needs.
+        Ok(if mode.ends_with('&') {
+            format!("{mode}{ty}")
+        } else {
+            format!("{mode} {ty}")
+        })
     }
 
     /// One written mode, with the region spelled as the source spells it.
@@ -365,8 +370,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<String, CheckStop> {
         Ok(match mode {
             CheckedMode::Own => "own".to_owned(),
-            CheckedMode::Shared(region) => format!("&{}", self.region_spelling(region)),
-            CheckedMode::Unique(region) => format!("&uniq {}", self.region_spelling(region)),
+            CheckedMode::Shared(region) => match self.region_spelling(region).as_str() {
+                "" => "&".to_owned(),
+                spelling => format!("&{spelling}"),
+            },
+            CheckedMode::Unique(region) => match self.region_spelling(region).as_str() {
+                "" => "&uniq".to_owned(),
+                spelling => format!("&uniq {spelling}"),
+            },
         })
     }
 
@@ -374,10 +385,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// declaration is not reachable.
     ///
     /// A rendering is presentation: a region a diagnostic cannot name must not
-    /// turn a source rejection into a compiler failure.
+    /// turn a source rejection into a compiler failure. A region [FORM-8]
+    /// leaves unwritten has no source spelling at all: resolution mints it
+    /// under a name no source token can form, and rendering that name would
+    /// name a region the writer cannot write. It renders as the empty string,
+    /// which is exactly how the source spells it, and every caller that
+    /// splices a region into a longer form drops the separator with it.
     pub(in crate::semantic::check) fn region_spelling(&self, region: DeclarationId) -> String {
-        self.declaration_spelling(region)
-            .unwrap_or_else(|_| format!("'region#{}", region.index()))
+        let spelling = self
+            .declaration_spelling(region)
+            .unwrap_or_else(|_| format!("'region#{}", region.index()));
+        if spelling.starts_with("'0_") {
+            return String::new();
+        }
+        spelling
     }
 
     pub(super) fn checked_type_name(&self, ty: CheckedType) -> Result<String, CheckStop> {
@@ -414,11 +435,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let length = self.checked_const_name(length)?;
                 format!("array<{}, {length}>", self.checked_type_name(element.ty())?)
             }
-            CheckedType::Slice { region, element } => format!(
-                "slice<{}, {}>",
-                self.region_spelling(region),
-                self.checked_type_name(element.ty())?
-            ),
+            CheckedType::Slice { region, element } => {
+                let element = self.checked_type_name(element.ty())?;
+                match self.region_spelling(region).as_str() {
+                    "" => format!("slice<{element}>"),
+                    region => format!("slice<{region}, {element}>"),
+                }
+            }
             CheckedType::Buffer { element } => {
                 format!("buffer<{}>", self.checked_type_name(element.ty())?)
             }
@@ -591,23 +614,82 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_depth: usize,
         place_context: PlaceUseContext,
     ) -> Result<TypedExpression, CheckStop> {
+        // [GRAM-5] `clause_expr` is the contract-clause shape: one operand,
+        // or two operands around one operator token. Its operands are the
+        // same three written forms an `expr` selects between, so the two
+        // shapes share every judgment below and differ only in where the
+        // operator and the second operand hang.
+        if self.tree.production(node)? == Production::ClauseExpr {
+            return self.check_clause_expression(
+                function,
+                node,
+                bindings,
+                loop_depth,
+                place_context,
+            );
+        }
         // [GRAM-5] `expr := atom infix_tail? | call | construct`, so the only
         // shape with more than one child is the infix one.
         if let Some(tail) = self.tree.first_child_with(node, Production::InfixTail)? {
             return self.check_infix(function, node, tail, bindings, loop_depth);
         }
         let child = self.tree.only_child(node)?;
-        match self.tree.production(child)? {
+        self.check_written_operand(function, child, bindings, loop_depth, place_context)
+    }
+
+    /// [GRAM-5] one `clause_expr`, whose operands may be a `call` and which
+    /// therefore admits a measure term on either side of its operator
+    /// [MSR-5].
+    fn check_clause_expression(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        place_context: PlaceUseContext,
+    ) -> Result<TypedExpression, CheckStop> {
+        match self.tree.children(node)? {
+            [operand] => {
+                let operand = *operand;
+                self.check_written_operand(function, operand, bindings, loop_depth, place_context)
+            }
+            [left, operator, right] => {
+                let (left, operator, right) = (*left, *operator, *right);
+                let operation = self.infix_operation(operator)?;
+                self.check_integer_operation_row(
+                    node,
+                    operation,
+                    &[left, right],
+                    function,
+                    bindings,
+                    loop_depth,
+                )
+            }
+            _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
+        }
+    }
+
+    /// One written operand of an `expr` or a `clause_expr` [GRAM-5]: the
+    /// `atom`, `call`, or `construct` the grammar selected.
+    pub(in crate::semantic::check) fn check_written_operand(
+        &self,
+        function: &FunctionSignature,
+        node: NodeId,
+        bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+        place_context: PlaceUseContext,
+    ) -> Result<TypedExpression, CheckStop> {
+        match self.tree.production(node)? {
             Production::Atom => self.check_atom_in_context(
                 function,
-                child,
+                node,
                 bindings,
                 loop_depth,
                 place_context,
                 ReborrowPosition::Forbidden,
             ),
-            Production::Call => self.check_call(function, child, bindings, loop_depth),
-            Production::Construct => self.check_construct(function, child, bindings, loop_depth),
+            Production::Call => self.check_call(function, node, bindings, loop_depth),
+            Production::Construct => self.check_construct(function, node, bindings, loop_depth),
             _ => Err(SemanticCompilerFailure::InvalidCanonicalTree.into()),
         }
     }

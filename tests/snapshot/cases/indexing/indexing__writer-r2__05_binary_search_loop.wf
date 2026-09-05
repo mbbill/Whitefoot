@@ -1,4 +1,4 @@
-fn binary_search['r](table: &'r buffer<u32>, target: own u32) -> found: own Bool reads(table) {
+fn binary_search(table: &buffer<u32>, target: own u32) -> found: own Bool reads(table) {
   let room = len(deref(table));
   let lo = 0_u64;
   let hi = room;
@@ -41,15 +41,15 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set table[2_u64] = 5_u32;
   set table[3_u64] = 7_u32;
   set table[4_u64] = 9_u32;
-  region 'r {
-    let found = binary_search::<'r>(table: &'r table, target: 7_u32);
+  region {
+    let found = binary_search(table: &table, target: 7_u32);
     if found {
     } else {
       return exit_status(code: 1_u8);
     }
   }
-  region 'r2 {
-    let missing = binary_search::<'r2>(table: &'r2 table, target: 4_u32);
+  region {
+    let missing = binary_search(table: &table, target: 4_u32);
     if missing {
       return exit_status(code: 1_u8);
     }

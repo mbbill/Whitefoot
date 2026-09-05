@@ -9,7 +9,7 @@ struct Cols {
   h: buffer<u64>;
 }
 
-fn kernel ['r] (s: &uniq 'r Cols) -> own unit reads(s.a, s.b, s.c, s.d, s.e, s.f, s.g, s.h), writes(s.a, s.b), traps {
+fn kernel  (s: &uniq Cols) -> own unit reads(s.a, s.b, s.c, s.d, s.e, s.f, s.g, s.h), writes(s.a, s.b), traps {
   doc "struct-of-arrays update: two written columns, six read columns; the obvious shape.";
   let la: own u64 = len<u64>(deref(s).a);
   let lb: own u64 = len<u64>(deref(s).b);

@@ -607,7 +607,7 @@ invariant parser_proof: ordinary + 1_i32 <= moved + 1_i32 {
 use ordinary <= moved;
 use 0_i32 <= 0_i32;
 }
-region 'inner { give ordinary; }
+region { give ordinary; }
 let named = ordinary;
 match ordinary { Some(value: payload) => { give payload; } }
 if compared { let then_branch = ordinary; } else if chosen { break @again; } else { return unit; }
@@ -639,7 +639,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 83);
+    assert_eq!(productions().len(), 84);
     assert_eq!(
         parsed
             .tree

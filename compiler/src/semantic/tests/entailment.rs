@@ -400,6 +400,7 @@ fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut
             | FlowEventKind::S9
             | FlowEventKind::S10
             | FlowEventKind::S11
+            | FlowEventKind::S13
     ));
 }
 
@@ -464,7 +465,7 @@ fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
         TermKind::Length(_) | TermKind::ProjectedLength(_) | TermKind::CountedCapture { .. } => {
             Some(type_range(IntegerType::U64))
         }
-        TermKind::CommitValue { ty, .. } => Some(type_range(*ty)),
+        TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
         TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
     }
 }
@@ -1283,7 +1284,23 @@ pub(super) fn validate_derivations(summary: &FunctionEntailment) {
                     right: *right,
                     bound: *bound,
                 });
-                assert_eq!(retained_conclusion(&conclusions, *parent), &conclusion);
+                // An equality is its two non-strict bounds [ENT-2], so a
+                // materialization of either direction may name the equality
+                // node itself as its parent. Both readings are the one
+                // retained conclusion; nothing else is admitted here.
+                let parent_conclusion = retained_conclusion(&conclusions, *parent);
+                let equality_parent = DerivationConclusion::Relation(Relation::Equal {
+                    left: *left,
+                    right: *right,
+                }) == *parent_conclusion
+                    || DerivationConclusion::Relation(Relation::Equal {
+                        left: *right,
+                        right: *left,
+                    }) == *parent_conclusion;
+                assert!(
+                    *parent_conclusion == conclusion || (equality_parent && *bound == 0),
+                    "materialized bound {conclusion:?} has parent {parent_conclusion:?}"
+                );
                 conclusion
             }
             DerivationNode::MaterializedDistinct {
@@ -2838,7 +2855,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn projection_does_not_preserve_a_bound_through_a_moved_alias_write_to_its_endpoint() {
-    let source = br#"fn overwrite['w](value: &uniq 'w u8) -> result: own unit writes(value) {
+    let source = br#"fn overwrite(value: &uniq u8) -> result: own unit writes(value) {
   set deref(value) = 255_u8;
   return unit;
 }
@@ -2847,9 +2864,9 @@ fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
   requires x <= middle;
   requires middle <= 254_u8;
 } {
-  region 'w {
-    let holder = &uniq 'w x;
-    overwrite::<'w>(value: move holder);
+  region {
+    let holder = &uniq x;
+    overwrite(value: move holder);
   }
   let result = x + 1_u8;
   return result;
@@ -2910,15 +2927,15 @@ command fn main() -> status: own ExitStatus pure {
 fn a_callee_writing_through_a_unique_borrow_kills_facts_on_that_place() {
     let source = br#"const count: u64 = 4_u64;
 
-fn bump['w](p: &uniq 'w u64) -> result: own unit writes(p) {
+fn bump(p: &uniq u64) -> result: own unit writes(p) {
   set deref(p) = 9_u64;
   return unit;
 }
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
-    region 'w {
-      bump::<'w>(p: &uniq 'w i);
+    region {
+      bump(p: &uniq i);
     }
     return values[i];
   } else {
@@ -2948,14 +2965,14 @@ command fn main() -> status: own ExitStatus pure {
 fn a_callee_with_no_writes_row_kills_nothing() {
     let source = br#"const count: u64 = 4_u64;
 
-fn peek['r](p: &'r u64) -> result: own u64 reads(p) {
+fn peek(p: &u64) -> result: own u64 reads(p) {
   return deref(p);
 }
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
   if i < 4_u64 {
-    region 'r {
-      let seen = peek::<'r>(p: &'r i);
+    region {
+      let seen = peek(p: &i);
     }
     return values[i];
   } else {
@@ -3630,7 +3647,7 @@ fn a_fact_about_an_outer_binding_survives_a_region_exit() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<i32, count>, i: own u64) -> result: own i32 pure {
-  region 'a {
+  region {
     if i < 4_u64 {
     } else {
       return 0_i32;
@@ -5397,7 +5414,7 @@ fn from_buffer(values: own array<u8, count>) -> result: own u8 allocates(heap) {
   return values[b[0_u64]];
 }
 
-fn from_slice['r](values: own array<u8, count>, order: own slice<'r, u64>) -> result: own u8 reads(order) {
+fn from_slice(values: own array<u8, count>, order: own slice<u64>) -> result: own u8 reads(order) {
   return values[order[0_u64]];
 }
 
@@ -5618,8 +5635,8 @@ fn a_slice_of_carries_its_source_length() {
     let source = br#"const count: u64 = 4_u64;
 
 fn read(values: own array<u8, count>) -> result: own u8 reads(values) {
-  region 'view {
-    let window = slice_of(&'view values);
+  region {
+    let window = slice_of(&values);
     return window[3_u64];
   }
 }
@@ -5975,7 +5992,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
     // The RHS value is read before the write. After the target's stale facts
     // are killed, S5 publishes `start = back`; no runtime check is needed.
-    let source = br#"fn tail_byte['d](data: &'d buffer<u8>) -> result: own u8 reads(data) {
+    let source = br#"fn tail_byte(data: &buffer<u8>) -> result: own u8 reads(data) {
   let n = len(deref(data));
   let have_room = n >= 8_u64;
   let start = 0_u64;
@@ -5991,8 +6008,8 @@ fn a_set_commit_from_a_term_publishes_its_post_commit_value() {
 
 command fn main() -> status: own ExitStatus allocates(heap) {
   let input = buffer_new(4096_u64, 7_u8);
-  region 'r {
-    let byte = tail_byte::<'r>(data: &'r input);
+  region {
+    let byte = tail_byte(data: &input);
   }
   return exit_status(code: 0_u8);
 }
@@ -7168,9 +7185,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_failed_system_endpoint_expression_prevents_unreached_range_obligations() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
-  region 'attempt {
-    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
+    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
+  region {
+    let outcome = write_once(output: &uniq deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
   }
   return unit;
 }
@@ -7195,9 +7212,9 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
 
 #[test]
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
-  region 'attempt {
-    match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end) {
+    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
+  region {
+    match write_once(output: &uniq deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
       }
       Err(error: problem) => {
@@ -7236,13 +7253,13 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
 
 #[test]
 fn ordinary_source_relations_discharge_both_system_ranges() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
+    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires start <= end;
   requires end <= capacity;
 } {
-  region 'attempt {
-    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: start, end: end);
+  region {
+    let outcome = write_once(output: &uniq deref(output), source: source, start: start, end: end);
   }
   return unit;
 }
@@ -7296,12 +7313,12 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn indexed_system_guards_discharge_both_structurally_identical_ranges() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 2>) -> result: own unit reads(output, source), writes(output) {
+    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, endpoints: own array<u64, 2>) -> result: own unit reads(output, source), writes(output) {
   let capacity = len(deref(source));
   if endpoints[0_u64] <= endpoints[1_u64] {
     if endpoints[1_u64] <= capacity {
-      region 'attempt {
-        let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);
+      region {
+        let outcome = write_once(output: &uniq deref(output), source: source, start: endpoints[0_u64], end: endpoints[1_u64]);
       }
     }
   }
@@ -7364,9 +7381,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_nonterm_system_endpoint_is_never_replaced_by_the_zero_term() {
-    let source = br#"fn publish['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
-  region 'attempt {
-    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
+    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, endpoints: own array<u64, 1>) -> result: own unit reads(output, source), writes(output) {
+  region {
+    let outcome = write_once(output: &uniq deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
   }
   return unit;
 }
@@ -7399,12 +7416,12 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
     // so an endpoint equal to the table length proves nothing.
     let source = br#"const count: u64 = 4_u64;
 
-fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
+fn under(output: &uniq Output, source: &buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len(deref(source));
   let enough = 3_u64 <= source_length;
   if enough {
-    region 'attempt {
-      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 3_u64) {
+    region {
+      match write_once(output: &uniq deref(output), source: source, start: 0_u64, end: 3_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -7416,12 +7433,12 @@ fn under['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
   return unit;
 }
 
-fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
+fn exact(output: &uniq Output, source: &buffer<u8>, table: own array<u8, count>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len(deref(source));
   let enough = 4_u64 <= source_length;
   if enough {
-    region 'attempt {
-      match write_once::<'attempt, 's>(output: &uniq 'attempt deref(output), source: source, start: 0_u64, end: 4_u64) {
+    region {
+      match write_once(output: &uniq deref(output), source: source, start: 0_u64, end: 4_u64) {
         Ok(value: next) => {
           let sample = table[next];
         }
@@ -7436,8 +7453,8 @@ fn exact['o, 's](output: &uniq 'o Output, source: &'s buffer<u8>, table: own arr
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(4_u64, 0_u8);
   let table = array_new::<u8, count>(0_u8);
-  region 'publication {
-    under::<'publication, 'publication>(output: &uniq 'publication out, source: &'publication batch, table: move table);
+  region {
+    under(output: &uniq out, source: &batch, table: move table);
   }
   return exit_status(code: 0_u8);
 }
@@ -7475,12 +7492,12 @@ fn a_transfer_endpoint_bound_enters_the_observing_arm_only() {
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let table = array_new::<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 0_u64) {
+  region {
+    match arg_get(args: &args, position: 0_u64) {
       Ok(value: text) => {
         region 'v {
-          region 'd {
-            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd sink, start: 0_u64, end: 3_u64) {
+          region {
+            match host_copy_bytes(value: &'v text, destination: &uniq sink, start: 0_u64, end: 3_u64) {
               Ok(value: copied) => {
                 let good = table[copied];
               }
@@ -7522,12 +7539,12 @@ fn a_host_copy_utf8_success_endpoint_is_bounded_by_end() {
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args), allocates(heap) {
   let table = array_new::<u8, count>(0_u8);
   let sink = buffer_new(8_u64, 0_u8);
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 0_u64) {
+  region {
+    match arg_get(args: &args, position: 0_u64) {
       Ok(value: text) => {
         region 'v {
-          region 'd {
-            match host_copy_utf8::<'v, 'd>(value: &'v text, destination: &uniq 'd sink, start: 0_u64, end: 3_u64) {
+          region {
+            match host_copy_utf8(value: &'v text, destination: &uniq sink, start: 0_u64, end: 3_u64) {
               Ok(value: copied) => {
                 let good = table[copied];
               }
@@ -7561,12 +7578,12 @@ fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
     // path discipline as S7's checked-arithmetic origin.
     let source = br#"const count: u64 = 4_u64;
 
-fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+fn deferred(output: own Output, source: &buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires 3_u64 <= capacity;
 } {
-  region 'attempt {
-    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: 3_u64);
+  region {
+    let outcome = write_once(output: &uniq output, source: source, start: 0_u64, end: 3_u64);
     match outcome {
       Ok(value: written) => {
         let sample = table[written];
@@ -7578,12 +7595,12 @@ fn deferred['s](output: own Output, source: &'s buffer<u8>, table: own array<u8,
   return unit;
 }
 
-fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+fn killed(output: own Output, source: &buffer<u8>, table: own array<u8, count>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires limit <= capacity;
 } {
-  region 'attempt {
-    let outcome = write_once::<'attempt, 's>(output: &uniq 'attempt output, source: source, start: 0_u64, end: limit);
+  region {
+    let outcome = write_once(output: &uniq output, source: source, start: 0_u64, end: limit);
     set limit = 9_u64;
     match outcome {
       Ok(value: written) => {
@@ -7599,8 +7616,8 @@ fn killed['s](output: own Output, source: &'s buffer<u8>, table: own array<u8, c
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let batch = buffer_new(3_u64, 0_u8);
   let table = array_new::<u8, count>(0_u8);
-  region 'publication {
-    deferred::<'publication>(output: move out, source: &'publication batch, table: move table, limit: 3_u64);
+  region {
+    deferred(output: move out, source: &batch, table: move table, limit: 3_u64);
   }
   return exit_status(code: 0_u8);
 }
@@ -7632,21 +7649,21 @@ fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
 
 command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   let table = array_new::<u8, count>(0_u8);
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         let bytes = buffer_new(64_u64, 0_u8);
                         region 'f {
-                          region 'd {
-                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
                               ReadBytes(next: n) => {
                                 let sample = table[n];
                               }
@@ -8104,13 +8121,27 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
                     MaskActual::Literal(mask) => {
                         retained_term(summary, term) == &TermKind::Constant(i128::from(mask))
                     }
-                    MaskActual::Binding(binding) => matches!(
-                        retained_term(summary, term),
-                        TermKind::Place(place, IntegerType::U64)
-                            if place.root == PlaceRoot::Binding(binding)
-                                && !place.deref
-                                && place.fields.is_empty()
-                    ),
+                    // [MSR-3] an `own` operand read at a caller denotes that
+                    // call's call datum, which the same call established
+                    // equal to the actual's pre-transfer term. A binding
+                    // actual is mutable, so the relation names the datum and
+                    // the actual's own place term is retained beside it; a
+                    // literal actual is already immutable with empty support
+                    // and the datum is that constant itself.
+                    MaskActual::Binding(binding) => {
+                        matches!(
+                            retained_term(summary, term),
+                            TermKind::CallDatum { measure: false, .. }
+                        ) && summary.inventory.terms.iter().any(|kind| {
+                            matches!(
+                                kind,
+                                TermKind::Place(place, IntegerType::U64)
+                                    if place.root == PlaceRoot::Binding(binding)
+                                        && !place.deref
+                                        && place.fields.is_empty()
+                            )
+                        })
+                    }
                 }),
                 "read_bits row {ordinal} relation must retain its exact mask actual"
             );
@@ -8316,13 +8347,23 @@ fn assert_real_wfgrep_routes(program: &CheckedProgramData) {
     // carries one more term through its pre-kill closure, exactly as the
     // equivalent `let` of the same right-hand side already did.  The shape is
     // unchanged.
+    //
+    // They rose again at v0.44, to 36,760 and 71,153, when [ENT-3.S13] gave
+    // each `own` operand of a published relation its call datum: one equality
+    // per such operand at the call, and one more term through that call's
+    // pre-kill closure. The rise is linear in calls to functions that publish
+    // a relation over an `own` operand, and an operand whose pre-transfer term
+    // is already immutable mints nothing [MSR-3], which is why a literal
+    // actual costs nothing at all. The ceilings keep the same proportional
+    // margin they had, and a return to the former million-node shape still
+    // fails here on every machine.
     assert!(
-        proof_nodes <= 30_000,
-        "wfgrep retained {proof_nodes} proof nodes; expected at most 30,000"
+        proof_nodes <= 40_000,
+        "wfgrep retained {proof_nodes} proof nodes; expected at most 40,000"
     );
     assert!(
-        proof_edges <= 58_000,
-        "wfgrep retained {proof_edges} proof edges; expected at most 58,000"
+        proof_edges <= 75_000,
+        "wfgrep retained {proof_edges} proof edges; expected at most 75,000"
     );
     let shift = program
         .functions
@@ -8504,8 +8545,8 @@ fn need(index: own u64, upper: own u64) -> result: own unit pure contract {
 }
 
 fn probe(limit: own Limit) -> result: own unit reads(limit.upper), writes(limit.upper) {
-  region 'r {
-    let holder = &uniq 'r limit;
+  region {
+    let holder = &uniq limit;
     for @items (i in 0_u64..deref(holder).upper) {
       set deref(holder).upper = 0_u64;
       need(index: i, upper: deref(holder).upper);
@@ -8563,7 +8604,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn counted_range_restores_a_borrow_holder_deref_before_nested_box_derefs() {
-    let source = br#"fn probe['r](holder: &'r box<box<u64>>) -> result: own unit reads(holder) {
+    let source = br#"fn probe(holder: &box<box<u64>>) -> result: own unit reads(holder) {
   for @items (i in deref(deref(deref(holder)))..1_u64) {
   }
   return unit;
@@ -9059,8 +9100,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn a_copy_referent_read_through_an_affine_box_is_an_exact_goal_origin() {
-    let source =
-        br#"fn observe['r](value: &'r box<i32>) -> result: own unit reads(value) contract {
+    let source = br#"fn observe(value: &box<i32>) -> result: own unit reads(value) contract {
   define positive = deref(deref(value)) > 0_i32;
   define small = deref(deref(value)) < 10_i32;
   define complete = band(positive, small);
@@ -9076,8 +9116,8 @@ fn caller() -> result: own unit allocates(heap) {
   let small = deref(owner) < 10_i32;
   let complete = band(positive, small);
   if complete {
-    region 'r {
-      observe::<'r>(value: &'r owner);
+    region {
+      observe(value: &owner);
     }
   } else {
     return unit;
@@ -9142,15 +9182,15 @@ fn resolved_writes_stop_future_expansion_of_the_written_origin_binding() {
   return unit;
 }
 
-fn mutate['r](value: &uniq 'r Bool) -> result: own unit writes(value) {
+fn mutate(value: &uniq Bool) -> result: own unit writes(value) {
   set deref(value) = False();
   return unit;
 }
 
 fn through_holder(first: own Bool, second: own Bool) -> result: own unit pure {
   let source = band(first, second);
-  region 'r {
-    let holder = &uniq 'r source;
+  region {
+    let holder = &uniq source;
     set deref(holder) = False();
   }
   let alias = source;
@@ -9164,8 +9204,8 @@ fn through_holder(first: own Bool, second: own Bool) -> result: own unit pure {
 
 fn through_call(first: own Bool, second: own Bool) -> result: own unit pure {
   let source = band(first, second);
-  region 'r {
-    mutate::<'r>(value: &uniq 'r source);
+  region {
+    mutate(value: &uniq source);
   }
   let alias = source;
   if alias {
@@ -9260,7 +9300,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn contradiction_survives_effectful_prepared_call_writes_before_fn8() {
-    let source = br#"fn rewrite['r](out: &uniq 'r i32) -> result: own i32 writes(out) contract {
+    let source = br#"fn rewrite(out: &uniq i32) -> result: own i32 writes(out) contract {
   ensures result == 0_i32;
 } {
   set deref(out) = 0_i32;
@@ -9276,8 +9316,8 @@ fn need_negative(value: own i32) -> result: own unit pure contract {
 fn caller(slot: own i32) -> result: own unit pure {
   if slot < 5_i32 {
     if slot >= 5_i32 {
-      region 'r {
-        let rewritten = rewrite::<'r>(out: &uniq 'r slot);
+      region {
+        let rewritten = rewrite(out: &uniq slot);
       }
       need_negative(value: slot);
     } else {
@@ -9557,7 +9597,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call() {
     let source =
-        br#"fn update['r](value: &uniq 'r u64) -> result: own unit reads(value), writes(value) contract {
+        br#"fn update(value: &uniq u64) -> result: own unit reads(value), writes(value) contract {
   requires deref(value) < 10_u64;
 } {
   let old = deref(value);
@@ -9568,11 +9608,11 @@ fn a_call_is_judged_before_its_callee_write_and_that_write_kills_the_second_call
 fn caller(value: own u64) -> result: own unit pure {
   let small = value < 10_u64;
   if small {
-    region 'first {
-      update::<'first>(value: &uniq 'first value);
+    region {
+      update(value: &uniq value);
     }
-    region 'second {
-      update::<'second>(value: &uniq 'second value);
+    region {
+      update(value: &uniq value);
     }
   } else {
     return unit;
@@ -9608,23 +9648,23 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn writing_back_an_independent_copy_preserves_the_call_precondition() {
-    let source = br#"fn observe['r](value: &'r u64) -> result: own unit reads(value) contract {
+    let source = br#"fn observe(value: &u64) -> result: own unit reads(value) contract {
   requires deref(value) < 10_u64;
 } {
   let seen = deref(value);
   return unit;
 }
 
-fn update['r](value: &uniq 'r u64) -> result: own unit reads(value), writes(value) contract {
+fn update(value: &uniq u64) -> result: own unit reads(value), writes(value) contract {
   requires deref(value) < 10_u64;
 } {
-  region 'first {
-    observe::<'first>(value: &'first deref(value));
+  region {
+    observe(value: &deref(value));
   }
   let old = deref(value);
   set deref(value) = old;
-  region 'second {
-    observe::<'second>(value: &'second deref(value));
+  region {
+    observe(value: &deref(value));
   }
   return unit;
 }
@@ -9917,7 +9957,7 @@ fn a_call_writing_one_struct_field_preserves_facts_about_its_sibling() {
   right: u64;
 }
 
-fn write_left['r](pair: &uniq 'r Pair, value: own u64) -> result: own unit writes(pair.left) {
+fn write_left(pair: &uniq Pair, value: own u64) -> result: own unit writes(pair.left) {
   set deref(pair).left = value;
   return unit;
 }
@@ -9926,8 +9966,8 @@ fn preserve_right(pair: own Pair, values: own array<u8, 4>) -> result: own u8 re
   define room = len(values);
   requires pair.right < room;
 } {
-  region 'write {
-    write_left::<'write>(pair: &uniq 'write pair, value: 0_u64);
+  region {
+    write_left(pair: &uniq pair, value: 0_u64);
   }
   return values[pair.right];
 }

@@ -6,12 +6,11 @@ private implementation choices; the active language is defined by
 [`spec/kernel-spec.md`](../spec/kernel-spec.md), not by the compiler source or
 this README.
 
-The frontend targets the exact v0.41 bytes at `../spec/kernel-spec.md`,
-SHA-256 `899437ecf48691b9bc436c86a56ccc2a47fc4eb9290d546010296db7808c5761`.
-v0.41 respells the six integer comparisons as symbols, delimits call-site type
-application with `::`, and supersedes v0.40 at
-`15ec2f6f475a7b70fb2654026ec3b6ef79afca3bd588fb38f22005d6637c0168`, whose
-outgoing bytes are archived at `../spec/kernel-spec-v0.40.md`.
+The frontend targets the exact bytes at `../spec/kernel-spec.md`. Their
+version and SHA-256 are generated into `src/spec_identity.rs` from the
+activation chain in `../governance/APPROVALS.md`
+(`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`),
+and every other identity constant in the crate is derived from that module.
 `whitefoot-spec` checks the selected identity, activation chain,
 rule inventory, and generated syntax identity as one compiler gate.
 
@@ -272,6 +271,6 @@ selects the exact sequential reference lowering and cannot be combined with
 `--par`. When a report and emitted LLVM would otherwise share stdout, name the
 LLVM output with `-o`.
 
-From the repository root, `make check` is the canonical complete gate.
-Candidate specification work can run `make spec-candidate-integrity` before
-activation; this is an integrity check, not a separate branch permission.
+From the repository root, `make check` is the canonical complete gate;
+`make spec-archive-integrity` alone checks that a specification change carries
+its ACTIVE identity, the archive of the outgoing bytes, and its chain line.

@@ -49,7 +49,7 @@ fn hex_digit(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell_hex['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   let limit = at +wrap 16_u64;
@@ -76,15 +76,15 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let sequential = loop_total(n: n);
   let tree = split_total(lo: 0_u64, hi: n);
   let report = buffer_new(33_u64, 10_u8);
-  region 'a {
-    let first = spell_hex<'a>(destination: &uniq 'a report, at: 0_u64, value: sequential);
+  region {
+    let first = spell_hex(destination: &uniq report, at: 0_u64, value: sequential);
   }
-  region 'b {
-    let second = spell_hex<'b>(destination: &uniq 'b report, at: 16_u64, value: tree);
+  region {
+    let second = spell_hex(destination: &uniq report, at: 16_u64, value: tree);
   }
   region 'o {
-    region 's {
-      match write_once<'o, 's>(output: &'o out, source: &'s report, start: 0_u64, end: 33_u64) {
+    region {
+      match write_once(output: &'o out, source: &report, start: 0_u64, end: 33_u64) {
         Ok(value: next) => {
           return exit_status(code: 0_u8);
         }

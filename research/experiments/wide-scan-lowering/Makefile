@@ -5,6 +5,14 @@
 # Both subjects are the same tests/programs/wfgrep.wf bytes; `base` is
 # built by the base-revision compiler (BASE_ROOT, pinned at the task's
 # base revision) and `wide` by the candidate compiler (this repository).
+#
+# This driver is the record of the single run of 2026-08-06 (RESULTS.md),
+# retained with the frozen protocol. It is not replayable from HEAD: both
+# subjects were the tests/programs/wfgrep.wf of that day, which became a
+# recursive search printing PATH:LINE:TEXT lines on 2026-08-18, and `base`
+# needs the base-revision compiler checked out at BASE_ROOT. A replay writes
+# its JSON lines to the scratch root, never to the committed raw/ evidence
+# of the frozen run.
 
 ROOT := $(abspath ../../..)
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
@@ -15,7 +23,7 @@ TMP := $(WORK_ROOT)/tmp
 CARGO_TARGET := $(WORK_ROOT)/cargo-target
 BASE_CARGO_TARGET := $(WORK_ROOT)/cargo-target-base
 BUNDLE := $(abspath .)
-RAW ?= $(BUNDLE)/raw/wide-scan-lowering-1.jsonl
+RAW ?= $(WORK_ROOT)/replay.jsonl
 ENV := WFD_WORK_ROOT=$(WORK_ROOT) WFD_MANIFEST=$(BUNDLE)/../wfgrep-baseline/MANIFEST.txt WFD_RAW=$(RAW)
 CLANG := /usr/bin/clang
 RUSTC := rustc
@@ -29,7 +37,7 @@ ARTIFACTS := $(foreach name,base wide,$(BUILD)/$(name).raw.ll $(BUILD)/$(name).o
 build: prepare $(BINARIES) $(BUILD)/runner
 
 prepare:
-	mkdir -p $(BUILD) $(TMP) $(CARGO_TARGET) $(BASE_CARGO_TARGET) $(BUNDLE)/raw
+	mkdir -p $(BUILD) $(TMP) $(CARGO_TARGET) $(BASE_CARGO_TARGET)
 
 $(BUILD)/runner: runner.rs | prepare
 	$(RUSTC) --edition=2024 -C opt-level=2 -C panic=abort $< -o $@

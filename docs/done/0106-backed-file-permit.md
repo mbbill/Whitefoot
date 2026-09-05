@@ -1,7 +1,12 @@
-# Batch 0106 — the backed `FilePermit` (specification candidate v0.42)
+# Batch 0106 — the backed `FilePermit` (specification v0.45)
 
 Branch: `io/t4-resource-relations` (PR #13), from `main` at `e2c7c0ca`.
-Deliverables: the v0.42 candidate specification and everything derived from
+The amendment was written as candidate v0.42 over v0.41; when `main` (which
+had meanwhile activated v0.42 to v0.44) was merged into the branch on
+2026-09-05 it was renumbered `ACTIVE v0.45` over v0.44 and landed as one
+change under the no-candidate rule of `docs/WORKFLOW.md`. "v0.42 candidate"
+below names that first text.
+Deliverables: the amended specification and everything derived from
 it, the credit-backed permit in the runtime, the deletion of the descriptor
 retirement ledger on every route and target, the rewritten corpus, and this
 record. The plan is `docs/current-plan.md`, Batch 1; the ruling it implements
@@ -21,7 +26,8 @@ relation. The relation is now on the API.
 
 ## 1. Language delta ([SYS-10], [SYS-11], [SYS-14], tables)
 
-`spec/kernel-spec.md` is `Status: CANDIDATE v0.42 supersedes v0.41 <digest>`.
+`spec/kernel-spec.md` is `Status: ACTIVE v0.45` (first written as
+`CANDIDATE v0.42 supersedes v0.41`).
 
 - `reserve_file(&uniq FileFactory) -> Result<FilePermit, IoError>`. The
   factory has a real capacity, at most the descriptors the target provides;
@@ -53,7 +59,8 @@ relation. The relation is now on the API.
   other arms leave by `return` or `break` reading only carried bindings. An
   exiting arm with nothing in flight leaves at once; otherwise it drains first
   and leaves through a pending-exit edge (`compiler/src/lowering/builder/loops.rs`).
-- Qualification review pinned to v0.42; ABI symbols 16–18 for the closes.
+- Qualification review pinned to the amended version (v0.45 after the
+  merge); ABI symbols 16–18 for the closes.
 
 ## 3. Runtime
 
@@ -126,16 +133,16 @@ green against a mechanism that no longer exists:
 - `cargo test --profile gate --lib`: 1493 passed. `make conformance-run`:
   Pass=503, Xfail=1 (the recorded `ent5-neg-callee-uniq-buffer-replace-kills-length`),
   Skip=1. `make snapshot-run`: Pass=491, Flip=0.
-- Canonical `make check` stages on the branch: `repository-invariants`,
-  `approval-history-integrity`, `spec-append-only`, `spec-digest-sync`,
-  `conformance`, `compiler` (`== WHITEFOOT COMPILER GATE GREEN ==`),
-  `research-tests`, `conformance-run`, `snapshot-run` all green;
-  `spec-candidate-integrity` reports the declared v0.42 candidate over the
-  recorded v0.41. The one stage that refuses is `spec-archive-integrity`,
-  by design: a CANDIDATE status is valid branch work and not a merge-ready
-  ACTIVE identity. It turns green at activation (archive the v0.41 bytes,
-  install the ACTIVE v0.42 record), which is the merge step and not branch
-  work.
+- Canonical `make check` stages on the branch before the merge of `main`:
+  `repository-invariants`, `approval-history-integrity`, `spec-append-only`,
+  `spec-digest-sync`, `conformance`, `compiler` (`== WHITEFOOT COMPILER GATE
+  GREEN ==`), `research-tests`, `conformance-run`, `snapshot-run` all green;
+  `spec-candidate-integrity` reported the declared v0.42 candidate over the
+  recorded v0.41 and `spec-archive-integrity` refused the candidate by the
+  rule of that time. After the merge of 2026-09-05 the candidate state and
+  those two stages no longer exist; the amendment is `ACTIVE v0.45` with its
+  archive and record, and `spec-archive-integrity` and
+  `spec-prose-integrity` pass.
 
 ## 7. What the implementation revealed about the v0.42 text
 
@@ -201,6 +208,6 @@ emitter. Two are corrected in this batch; the third is the owner's call.
 
 ## Approval classes
 
-Specification (v0.42 candidate; the ACTIVE record is written at merge),
+Specification (`ACTIVE v0.45`, with its archive and `ACTIVE-SPEC:` record),
 conformance evidence (26 modified cases, one added case, manifest), compiler,
 runtime, and documentation.

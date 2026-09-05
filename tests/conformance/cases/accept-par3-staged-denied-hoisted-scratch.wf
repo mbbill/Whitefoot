@@ -1,4 +1,4 @@
-fn fold_prefix['b](source: &'b buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+fn fold_prefix(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
   let room = len(deref(source));
   let sum = seed;
@@ -28,38 +28,36 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let data = buffer_new(64_u64, 0_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 'f {
-      match reserve_file::<'f>(factory: &uniq 'f files) {
-        Ok(value: permit) => {
-          region 'n {
-            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
-              FileOpened(value: handle) => {
-                region 'h {
-                  region 'd {
-                    match read_at::<'h, 'd>(file: &'h handle, destination: &uniq 'd data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                      ReadBytes(next: produced) => {
-                        let digest = 0_u64;
-                        region 'fold {
-                          set digest = fold_prefix::<'fold>(source: &'fold data, produced: 64_u64, seed: 0_u64);
-                        }
-                        set total = total +wrap digest;
+    match reserve_file(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              region 'h {
+                region {
+                  match read_at(file: &'h handle, destination: &uniq data, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                    ReadBytes(next: produced) => {
+                      let digest = 0_u64;
+                      region {
+                        set digest = fold_prefix(source: &data, produced: 64_u64, seed: 0_u64);
                       }
-                      ReadEnd() => {
-                      }
-                      ReadFailed(error: problem) => {
-                      }
+                      set total = total +wrap digest;
+                    }
+                    ReadEnd() => {
+                    }
+                    ReadFailed(error: problem) => {
                     }
                   }
                 }
               }
-              FileOpenFailed(error: problem, permit: refused) => {
-              }
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
             }
           }
         }
-        Err(error: spent) => {
-          return exit_status(code: 1_u8);
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 1_u8);
       }
     }
   }

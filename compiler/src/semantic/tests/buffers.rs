@@ -674,8 +674,8 @@ fn buffer_vacant_requires_its_written_payload_and_effect_row() {
 #[test]
 fn buffer_vacant_rejects_a_region_bearing_payload_under_stor5() {
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap) {
-  let slots = buffer_vacant::<slice<'r, u8>>(2_u64);
+        br#"fn invalid(value: own slice<u8>) -> result: own unit allocates(heap) {
+  let slots = buffer_vacant::<slice<u8>>(2_u64);
   return unit;
 }
 
@@ -697,8 +697,8 @@ fn affine_element_views_and_structural_composites_stop_explicitly() {
     assert_unsupported(
         br#"command fn main() -> status: own ExitStatus allocates(heap) {
   let slots = buffer_vacant::<u32>(4_u64);
-  region 'v {
-    let view = slice_of(&'v slots);
+  region {
+    let view = slice_of(&slots);
   }
   return exit_status(code: 0_u8);
 }
@@ -881,7 +881,7 @@ fn region_bearing_buffer_content_rejects_under_stor5() {
         mechanical_fix: "keep the slice or arena as a direct local, parameter, or result; do not store it inside another value",
     };
     assert_rule(
-        br#"fn invalid['r](value: own buffer<slice<'r, u8>>) -> result: own unit pure {
+        br#"fn invalid(value: own buffer<slice<u8>>) -> result: own unit pure {
   return unit;
 }
 
@@ -901,7 +901,7 @@ command fn main() -> status: own ExitStatus pure {
     // derived from its operand [STOR-2, OP-2], so that is where the recorded
     // rule and kind still fire, at the operand atom the rule names.
     assert_rule(
-        br#"fn invalid['r](value: own slice<'r, u8>) -> result: own unit allocates(heap) {
+        br#"fn invalid(value: own slice<u8>) -> result: own unit allocates(heap) {
   box_new(move value);
   return unit;
 }
@@ -932,7 +932,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn a_hoisted_length_fact_survives_a_callee_element_write() {
     with_semantics(
-        br#"fn fill['d](destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+        br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
   let room = len(deref(destination));
   let inside = at < room;
@@ -943,7 +943,7 @@ fn a_hoisted_length_fact_survives_a_callee_element_write() {
   return next;
 }
 
-fn emit['s](source: &'s buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
+fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
   define capacity = len(deref(source));
   requires length <= capacity;
 } {
@@ -961,13 +961,13 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let line = buffer_new(64_u64, 0_u8);
   let room = len(line);
   let end = 0_u64;
-  region 'x {
-    set end = fill::<'x>(destination: &uniq 'x line, at: end);
+  region {
+    set end = fill(destination: &uniq line, at: end);
   }
   let fits = end <= room;
   if fits {
-    region 'e {
-      let sent = emit::<'e>(source: &'e line, length: end);
+    region {
+      let sent = emit(source: &line, length: end);
     }
   }
   return exit_status(code: 0_u8);
@@ -980,7 +980,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
         },
     );
     with_semantics(
-        br#"fn fill['d](destination: &uniq 'd buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+        br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Writes one byte through the borrow and returns the next position.";
   let room = len(deref(destination));
   let inside = at < room;
@@ -991,7 +991,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   return next;
 }
 
-fn emit['s](source: &'s buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
+fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
   define capacity = len(deref(source));
   requires length <= capacity;
 } {
@@ -1008,11 +1008,11 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   doc "Emits a prefix without a live length fact.";
   let line = buffer_new(64_u64, 0_u8);
   let end = 0_u64;
-  region 'x {
-    set end = fill::<'x>(destination: &uniq 'x line, at: end);
+  region {
+    set end = fill(destination: &uniq line, at: end);
   }
-  region 'e {
-    let sent = emit::<'e>(source: &'e line, length: end);
+  region {
+    let sent = emit(source: &line, length: end);
   }
   return exit_status(code: 0_u8);
 }

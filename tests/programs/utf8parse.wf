@@ -1,4 +1,4 @@
-fn parse['r](out: &uniq 'r buffer<u32>, src: own buffer<u8>) -> result: own u64 reads(out, src), writes(out) contract {
+fn parse(out: &uniq buffer<u32>, src: own buffer<u8>) -> result: own u64 reads(out, src), writes(out) contract {
   define source_length = len(src);
   define output_length = len(deref(out));
   define enough_output = output_length >= source_length;
@@ -226,8 +226,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set input[13_u64] = 226_u8;
   set input[14_u64] = 130_u8;
   let output = buffer_new(15_u64, 99_u32);
-  region 'parse_region {
-    let produced = parse::<'parse_region>(out: &uniq 'parse_region output, src: move input);
+  region {
+    let produced = parse(out: &uniq output, src: move input);
     if produced == 6_u64 {
     } else {
       return exit_status(code: 1_u8);

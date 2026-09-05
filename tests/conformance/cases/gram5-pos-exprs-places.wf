@@ -7,8 +7,8 @@ enum Sign {
 command fn main() -> return_value: own ExitStatus pure {
   doc "GRAM-5: literal atom, place atom, borrow_expr atom, deref place, call, construct.";
   let a = 5_i32;
-  region 'r {
-    let p = &'r a;
+  region {
+    let p = &a;
     let b = deref(p) +wrap a;
     let s = Zero();
     if b == 10_i32 {

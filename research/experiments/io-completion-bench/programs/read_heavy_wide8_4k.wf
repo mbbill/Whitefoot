@@ -1,10 +1,10 @@
-fn copy_name['a, 'n](args: &'a Args, name: &uniq 'n buffer<u8>, position: own u64) -> result: own u64 reads(args, name), writes(name) {
+fn copy_name(args: &Args, name: &uniq buffer<u8>, position: own u64) -> result: own u64 reads(args, name), writes(name) {
   doc "Copies one generated file name from the invocation's target-native code units.";
   let room = len(deref(name));
-  match arg_get::<'a>(args: args, position: position) {
+  match arg_get(args: args, position: position) {
     Ok(value: text) => {
-      region 'copy {
-        match host_copy_bytes::<'copy, 'copy>(value: &'copy text, destination: &uniq 'copy deref(name), start: 0_u64, end: room) {
+      region {
+        match host_copy_bytes(value: &text, destination: &uniq deref(name), start: 0_u64, end: room) {
           Ok(value: copied) => {
             return copied;
           }
@@ -20,7 +20,7 @@ fn copy_name['a, 'n](args: &'a Args, name: &uniq 'n buffer<u8>, position: own u6
   }
 }
 
-fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn render_u64(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   doc "Renders one twenty-digit zero-padded decimal number and reports the position after it.";
   let room = len(deref(destination));
   let remaining = value;
@@ -50,7 +50,7 @@ fn render_u64['d](destination: &uniq 'd buffer<u8>, at: own u64, value: own u64)
   return at +wrap 20_u64;
 }
 
-fn fold_bytes['b](source: &'b buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
+fn fold_bytes(source: &buffer<u8>, produced: own u64, seed: own u64) -> result: own u64 reads(source) {
   doc "Folds one read prefix into a running order-sensitive checksum.";
   let room = len(deref(source));
   let sum = seed;
@@ -124,29 +124,29 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let name_end_5 = 0_u64;
   let name_end_6 = 0_u64;
   let name_end_7 = 0_u64;
-  region 'name_0 {
-    set name_end_0 = copy_name::<'name_0, 'name_0>(args: &'name_0 args, name: &uniq 'name_0 name_0, position: 1_u64);
+  region {
+    set name_end_0 = copy_name(args: &args, name: &uniq name_0, position: 1_u64);
   }
-  region 'name_1 {
-    set name_end_1 = copy_name::<'name_1, 'name_1>(args: &'name_1 args, name: &uniq 'name_1 name_1, position: 2_u64);
+  region {
+    set name_end_1 = copy_name(args: &args, name: &uniq name_1, position: 2_u64);
   }
-  region 'name_2 {
-    set name_end_2 = copy_name::<'name_2, 'name_2>(args: &'name_2 args, name: &uniq 'name_2 name_2, position: 3_u64);
+  region {
+    set name_end_2 = copy_name(args: &args, name: &uniq name_2, position: 3_u64);
   }
-  region 'name_3 {
-    set name_end_3 = copy_name::<'name_3, 'name_3>(args: &'name_3 args, name: &uniq 'name_3 name_3, position: 4_u64);
+  region {
+    set name_end_3 = copy_name(args: &args, name: &uniq name_3, position: 4_u64);
   }
-  region 'name_4 {
-    set name_end_4 = copy_name::<'name_4, 'name_4>(args: &'name_4 args, name: &uniq 'name_4 name_4, position: 5_u64);
+  region {
+    set name_end_4 = copy_name(args: &args, name: &uniq name_4, position: 5_u64);
   }
-  region 'name_5 {
-    set name_end_5 = copy_name::<'name_5, 'name_5>(args: &'name_5 args, name: &uniq 'name_5 name_5, position: 6_u64);
+  region {
+    set name_end_5 = copy_name(args: &args, name: &uniq name_5, position: 6_u64);
   }
-  region 'name_6 {
-    set name_end_6 = copy_name::<'name_6, 'name_6>(args: &'name_6 args, name: &uniq 'name_6 name_6, position: 7_u64);
+  region {
+    set name_end_6 = copy_name(args: &args, name: &uniq name_6, position: 7_u64);
   }
-  region 'name_7 {
-    set name_end_7 = copy_name::<'name_7, 'name_7>(args: &'name_7 args, name: &uniq 'name_7 name_7, position: 8_u64);
+  region {
+    set name_end_7 = copy_name(args: &args, name: &uniq name_7, position: 8_u64);
   }
   let name_room_0 = len(name_0);
   let name_room_1 = len(name_1);
@@ -189,47 +189,47 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
     return exit_status(code: 19_u8);
   }
   region 'f {
-    match reserve_file::<'f>(factory: &uniq 'f files) {
+    match reserve_file(factory: &uniq files) {
       Ok(value: permit_0) => {
-        match reserve_file::<'f>(factory: &uniq 'f files) {
+        match reserve_file(factory: &uniq files) {
           Ok(value: permit_1) => {
-            match reserve_file::<'f>(factory: &uniq 'f files) {
+            match reserve_file(factory: &uniq files) {
               Ok(value: permit_2) => {
-                match reserve_file::<'f>(factory: &uniq 'f files) {
+                match reserve_file(factory: &uniq files) {
                   Ok(value: permit_3) => {
-                    match reserve_file::<'f>(factory: &uniq 'f files) {
+                    match reserve_file(factory: &uniq files) {
                       Ok(value: permit_4) => {
-                        match reserve_file::<'f>(factory: &uniq 'f files) {
+                        match reserve_file(factory: &uniq files) {
                           Ok(value: permit_5) => {
-                            match reserve_file::<'f>(factory: &uniq 'f files) {
+                            match reserve_file(factory: &uniq files) {
                               Ok(value: permit_6) => {
-                                match reserve_file::<'f>(factory: &uniq 'f files) {
+                                match reserve_file(factory: &uniq files) {
                                   Ok(value: permit_7) => {
-                                    region 'n {
-                                      let opened_0 = open_file::<'f, 'n>(permit: move permit_0, root: &'f cwd, name: &'n name_0, start: 0_u64, end: name_end_0);
-                                      let opened_1 = open_file::<'f, 'n>(permit: move permit_1, root: &'f cwd, name: &'n name_1, start: 0_u64, end: name_end_1);
-                                      let opened_2 = open_file::<'f, 'n>(permit: move permit_2, root: &'f cwd, name: &'n name_2, start: 0_u64, end: name_end_2);
-                                      let opened_3 = open_file::<'f, 'n>(permit: move permit_3, root: &'f cwd, name: &'n name_3, start: 0_u64, end: name_end_3);
-                                      let opened_4 = open_file::<'f, 'n>(permit: move permit_4, root: &'f cwd, name: &'n name_4, start: 0_u64, end: name_end_4);
-                                      let opened_5 = open_file::<'f, 'n>(permit: move permit_5, root: &'f cwd, name: &'n name_5, start: 0_u64, end: name_end_5);
-                                      let opened_6 = open_file::<'f, 'n>(permit: move permit_6, root: &'f cwd, name: &'n name_6, start: 0_u64, end: name_end_6);
-                                      let opened_7 = open_file::<'f, 'n>(permit: move permit_7, root: &'f cwd, name: &'n name_7, start: 0_u64, end: name_end_7);
+                                    region {
+                                      let opened_0 = open_file(permit: move permit_0, root: &'f cwd, name: &name_0, start: 0_u64, end: name_end_0);
+                                      let opened_1 = open_file(permit: move permit_1, root: &'f cwd, name: &name_1, start: 0_u64, end: name_end_1);
+                                      let opened_2 = open_file(permit: move permit_2, root: &'f cwd, name: &name_2, start: 0_u64, end: name_end_2);
+                                      let opened_3 = open_file(permit: move permit_3, root: &'f cwd, name: &name_3, start: 0_u64, end: name_end_3);
+                                      let opened_4 = open_file(permit: move permit_4, root: &'f cwd, name: &name_4, start: 0_u64, end: name_end_4);
+                                      let opened_5 = open_file(permit: move permit_5, root: &'f cwd, name: &name_5, start: 0_u64, end: name_end_5);
+                                      let opened_6 = open_file(permit: move permit_6, root: &'f cwd, name: &name_6, start: 0_u64, end: name_end_6);
+                                      let opened_7 = open_file(permit: move permit_7, root: &'f cwd, name: &name_7, start: 0_u64, end: name_end_7);
                                       match opened_0 {
-                                        Ok(value: handle_0) => {
+                                        FileOpened(value: handle_0) => {
                                           match opened_1 {
-                                            Ok(value: handle_1) => {
+                                            FileOpened(value: handle_1) => {
                                               match opened_2 {
-                                                Ok(value: handle_2) => {
+                                                FileOpened(value: handle_2) => {
                                                   match opened_3 {
-                                                    Ok(value: handle_3) => {
+                                                    FileOpened(value: handle_3) => {
                                                       match opened_4 {
-                                                        Ok(value: handle_4) => {
+                                                        FileOpened(value: handle_4) => {
                                                           match opened_5 {
-                                                            Ok(value: handle_5) => {
+                                                            FileOpened(value: handle_5) => {
                                                               match opened_6 {
-                                                                Ok(value: handle_6) => {
+                                                                FileOpened(value: handle_6) => {
                                                                   match opened_7 {
-                                                                    Ok(value: handle_7) => {
+                                                                    FileOpened(value: handle_7) => {
                                                                       let base = 0_u64;
                                                                       loop @scan {
                                                                         let done = base >= 32768_u64;
@@ -261,20 +261,20 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                         let block_7 = block_at(index: position_7);
                                                                         let offset_7 = block_7 *wrap 4096_u64;
                                                                         region 'h {
-                                                                          region 'd {
-                                                                            let read_0 = read_at::<'h, 'd>(file: &'h handle_0, destination: &uniq 'd data_0, file_offset: offset_0, start: 0_u64, end: 4096_u64);
-                                                                            let read_1 = read_at::<'h, 'd>(file: &'h handle_1, destination: &uniq 'd data_1, file_offset: offset_1, start: 0_u64, end: 4096_u64);
-                                                                            let read_2 = read_at::<'h, 'd>(file: &'h handle_2, destination: &uniq 'd data_2, file_offset: offset_2, start: 0_u64, end: 4096_u64);
-                                                                            let read_3 = read_at::<'h, 'd>(file: &'h handle_3, destination: &uniq 'd data_3, file_offset: offset_3, start: 0_u64, end: 4096_u64);
-                                                                            let read_4 = read_at::<'h, 'd>(file: &'h handle_4, destination: &uniq 'd data_4, file_offset: offset_4, start: 0_u64, end: 4096_u64);
-                                                                            let read_5 = read_at::<'h, 'd>(file: &'h handle_5, destination: &uniq 'd data_5, file_offset: offset_5, start: 0_u64, end: 4096_u64);
-                                                                            let read_6 = read_at::<'h, 'd>(file: &'h handle_6, destination: &uniq 'd data_6, file_offset: offset_6, start: 0_u64, end: 4096_u64);
-                                                                            let read_7 = read_at::<'h, 'd>(file: &'h handle_7, destination: &uniq 'd data_7, file_offset: offset_7, start: 0_u64, end: 4096_u64);
+                                                                          region {
+                                                                            let read_0 = read_at(file: &'h handle_0, destination: &uniq data_0, file_offset: offset_0, start: 0_u64, end: 4096_u64);
+                                                                            let read_1 = read_at(file: &'h handle_1, destination: &uniq data_1, file_offset: offset_1, start: 0_u64, end: 4096_u64);
+                                                                            let read_2 = read_at(file: &'h handle_2, destination: &uniq data_2, file_offset: offset_2, start: 0_u64, end: 4096_u64);
+                                                                            let read_3 = read_at(file: &'h handle_3, destination: &uniq data_3, file_offset: offset_3, start: 0_u64, end: 4096_u64);
+                                                                            let read_4 = read_at(file: &'h handle_4, destination: &uniq data_4, file_offset: offset_4, start: 0_u64, end: 4096_u64);
+                                                                            let read_5 = read_at(file: &'h handle_5, destination: &uniq data_5, file_offset: offset_5, start: 0_u64, end: 4096_u64);
+                                                                            let read_6 = read_at(file: &'h handle_6, destination: &uniq data_6, file_offset: offset_6, start: 0_u64, end: 4096_u64);
+                                                                            let read_7 = read_at(file: &'h handle_7, destination: &uniq data_7, file_offset: offset_7, start: 0_u64, end: 4096_u64);
                                                                             match read_0 {
                                                                               ReadBytes(next: produced_0) => {
                                                                                 let digest_0 = 0_u64;
-                                                                                region 'fold_0 {
-                                                                                  set digest_0 = fold_bytes::<'fold_0>(source: &'fold_0 data_0, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_0 = fold_bytes(source: &data_0, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_0 = position_0 +wrap 1_u64;
                                                                                 set digest_0 = digest_0 *wrap weight_0;
@@ -289,8 +289,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                             match read_1 {
                                                                               ReadBytes(next: produced_1) => {
                                                                                 let digest_1 = 0_u64;
-                                                                                region 'fold_1 {
-                                                                                  set digest_1 = fold_bytes::<'fold_1>(source: &'fold_1 data_1, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_1 = fold_bytes(source: &data_1, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_1 = position_1 +wrap 1_u64;
                                                                                 set digest_1 = digest_1 *wrap weight_1;
@@ -305,8 +305,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                             match read_2 {
                                                                               ReadBytes(next: produced_2) => {
                                                                                 let digest_2 = 0_u64;
-                                                                                region 'fold_2 {
-                                                                                  set digest_2 = fold_bytes::<'fold_2>(source: &'fold_2 data_2, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_2 = fold_bytes(source: &data_2, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_2 = position_2 +wrap 1_u64;
                                                                                 set digest_2 = digest_2 *wrap weight_2;
@@ -321,8 +321,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                             match read_3 {
                                                                               ReadBytes(next: produced_3) => {
                                                                                 let digest_3 = 0_u64;
-                                                                                region 'fold_3 {
-                                                                                  set digest_3 = fold_bytes::<'fold_3>(source: &'fold_3 data_3, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_3 = fold_bytes(source: &data_3, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_3 = position_3 +wrap 1_u64;
                                                                                 set digest_3 = digest_3 *wrap weight_3;
@@ -337,8 +337,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                             match read_4 {
                                                                               ReadBytes(next: produced_4) => {
                                                                                 let digest_4 = 0_u64;
-                                                                                region 'fold_4 {
-                                                                                  set digest_4 = fold_bytes::<'fold_4>(source: &'fold_4 data_4, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_4 = fold_bytes(source: &data_4, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_4 = position_4 +wrap 1_u64;
                                                                                 set digest_4 = digest_4 *wrap weight_4;
@@ -353,8 +353,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                             match read_5 {
                                                                               ReadBytes(next: produced_5) => {
                                                                                 let digest_5 = 0_u64;
-                                                                                region 'fold_5 {
-                                                                                  set digest_5 = fold_bytes::<'fold_5>(source: &'fold_5 data_5, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_5 = fold_bytes(source: &data_5, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_5 = position_5 +wrap 1_u64;
                                                                                 set digest_5 = digest_5 *wrap weight_5;
@@ -369,8 +369,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                             match read_6 {
                                                                               ReadBytes(next: produced_6) => {
                                                                                 let digest_6 = 0_u64;
-                                                                                region 'fold_6 {
-                                                                                  set digest_6 = fold_bytes::<'fold_6>(source: &'fold_6 data_6, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_6 = fold_bytes(source: &data_6, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_6 = position_6 +wrap 1_u64;
                                                                                 set digest_6 = digest_6 *wrap weight_6;
@@ -385,8 +385,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                             match read_7 {
                                                                               ReadBytes(next: produced_7) => {
                                                                                 let digest_7 = 0_u64;
-                                                                                region 'fold_7 {
-                                                                                  set digest_7 = fold_bytes::<'fold_7>(source: &'fold_7 data_7, produced: 64_u64, seed: 0_u64);
+                                                                                region {
+                                                                                  set digest_7 = fold_bytes(source: &data_7, produced: 64_u64, seed: 0_u64);
                                                                                 }
                                                                                 let weight_7 = position_7 +wrap 1_u64;
                                                                                 set digest_7 = digest_7 *wrap weight_7;
@@ -403,42 +403,42 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                                                         set base = base +wrap 8_u64;
                                                                       }
                                                                     }
-                                                                    Err(error: failed_7) => {
+                                                                    FileOpenFailed(error: failed_7, permit: refused) => {
                                                                       return exit_status(code: 11_u8);
                                                                     }
                                                                   }
                                                                 }
-                                                                Err(error: failed_6) => {
+                                                                FileOpenFailed(error: failed_6, permit: refused) => {
                                                                   return exit_status(code: 10_u8);
                                                                 }
                                                               }
                                                             }
-                                                            Err(error: failed_5) => {
+                                                            FileOpenFailed(error: failed_5, permit: refused) => {
                                                               return exit_status(code: 9_u8);
                                                             }
                                                           }
                                                         }
-                                                        Err(error: failed_4) => {
+                                                        FileOpenFailed(error: failed_4, permit: refused) => {
                                                           return exit_status(code: 8_u8);
                                                         }
                                                       }
                                                     }
-                                                    Err(error: failed_3) => {
+                                                    FileOpenFailed(error: failed_3, permit: refused) => {
                                                       return exit_status(code: 7_u8);
                                                     }
                                                   }
                                                 }
-                                                Err(error: failed_2) => {
+                                                FileOpenFailed(error: failed_2, permit: refused) => {
                                                   return exit_status(code: 6_u8);
                                                 }
                                               }
                                             }
-                                            Err(error: failed_1) => {
+                                            FileOpenFailed(error: failed_1, permit: refused) => {
                                               return exit_status(code: 5_u8);
                                             }
                                           }
                                         }
-                                        Err(error: failed_0) => {
+                                        FileOpenFailed(error: failed_0, permit: refused) => {
                                           return exit_status(code: 4_u8);
                                         }
                                       }
@@ -494,16 +494,16 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   set sum = sum +wrap sum_7;
   let room = len(line);
   let cursor = 0_u64;
-  region 'render_sum {
-    set cursor = render_u64::<'render_sum>(destination: &uniq 'render_sum line, at: cursor, value: sum);
+  region {
+    set cursor = render_u64(destination: &uniq line, at: cursor, value: sum);
   }
   let space_fits = cursor < room;
   if space_fits {
     set line[cursor] = 32_u8;
     set cursor = cursor +wrap 1_u64;
   }
-  region 'render_bytes {
-    set cursor = render_u64::<'render_bytes>(destination: &uniq 'render_bytes line, at: cursor, value: bytes);
+  region {
+    set cursor = render_u64(destination: &uniq line, at: cursor, value: bytes);
   }
   let end_fits = cursor < room;
   if end_fits {
@@ -513,8 +513,8 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let status = 0_u8;
   let publishable = cursor <= room;
   if publishable {
-    region 'publish {
-      match write_once::<'publish, 'publish>(output: &uniq 'publish out, source: &'publish line, start: 0_u64, end: cursor) {
+    region {
+      match write_once(output: &uniq out, source: &line, start: 0_u64, end: cursor) {
         Ok(value: written) => {
         }
         Err(error: problem) => {

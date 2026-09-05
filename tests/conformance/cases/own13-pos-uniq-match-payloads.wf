@@ -5,8 +5,8 @@ enum Packet {
 command fn main() -> return_value: own ExitStatus pure {
   doc "OWN-13: a local exclusive borrow match derives an &uniq payload binder that reads through its parent provenance.";
   let packet = Data(value: 4_i32);
-  region 'r {
-    let holder = &uniq 'r packet;
+  region {
+    let holder = &uniq packet;
     match deref(holder) {
       Data(value: payload) => {
         let saved = deref(payload);

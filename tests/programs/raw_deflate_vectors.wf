@@ -81,8 +81,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set valid_input[13_u64] = 108_u8;
   set valid_input[14_u64] = 111_u8;
   let valid_output = buffer_new(5_u64, 0_u8);
-  region 'valid_region {
-    let valid_result = inflate::<'valid_region>(out: &uniq 'valid_region valid_output, input: move valid_input);
+  region {
+    let valid_result = inflate(out: &uniq valid_output, input: move valid_input);
     match move valid_result {
       Ok(value: valid_length) => {
         if valid_length == 5_u64 {
@@ -131,8 +131,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set invalid_length_input[4_u64] = 255_u8;
   set invalid_length_input[5_u64] = 65_u8;
   let invalid_length_output = buffer_new(1_u64, 9_u8);
-  region 'invalid_length_region {
-    let invalid_length_result = inflate::<'invalid_length_region>(out: &uniq 'invalid_length_region invalid_length_output, input: move invalid_length_input);
+  region {
+    let invalid_length_result = inflate(out: &uniq invalid_length_output, input: move invalid_length_input);
     match move invalid_length_result {
       Ok(value: invalid_length_value) => {
         if False() {
@@ -195,8 +195,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set truncated_input[2_u64] = 0_u8;
   set truncated_input[3_u64] = 253_u8;
   let truncated_output = buffer_new(2_u64, 7_u8);
-  region 'truncated_region {
-    let truncated_result = inflate::<'truncated_region>(out: &uniq 'truncated_region truncated_output, input: move truncated_input);
+  region {
+    let truncated_result = inflate(out: &uniq truncated_output, input: move truncated_input);
     match move truncated_result {
       Ok(value: truncated_value) => {
         if False() {
@@ -262,8 +262,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set full_input[5_u64] = 65_u8;
   set full_input[6_u64] = 66_u8;
   let full_output = buffer_new(1_u64, 11_u8);
-  region 'full_region {
-    let full_result = inflate::<'full_region>(out: &uniq 'full_region full_output, input: move full_input);
+  region {
+    let full_result = inflate(out: &uniq full_output, input: move full_input);
     match move full_result {
       Ok(value: full_value) => {
         if False() {
@@ -329,8 +329,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_literal_input[5_u64] = 7_u8;
   set fixed_literal_input[6_u64] = 0_u8;
   let fixed_literal_output = buffer_new(5_u64, 0_u8);
-  region 'fixed_literal_region {
-    let fixed_literal_result = inflate::<'fixed_literal_region>(out: &uniq 'fixed_literal_region fixed_literal_output, input: move fixed_literal_input);
+  region {
+    let fixed_literal_result = inflate(out: &uniq fixed_literal_output, input: move fixed_literal_input);
     match move fixed_literal_result {
       Ok(value: fixed_literal_length) => {
         if fixed_literal_length == 5_u64 {
@@ -378,8 +378,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_match_input[3_u64] = 5_u8;
   set fixed_match_input[4_u64] = 0_u8;
   let fixed_match_output = buffer_new(16_u64, 0_u8);
-  region 'fixed_match_region {
-    let fixed_match_result = inflate::<'fixed_match_region>(out: &uniq 'fixed_match_region fixed_match_output, input: move fixed_match_input);
+  region {
+    let fixed_match_result = inflate(out: &uniq fixed_match_output, input: move fixed_match_input);
     match move fixed_match_result {
       Ok(value: fixed_match_length) => {
         if fixed_match_length == 16_u64 {
@@ -427,8 +427,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_phrase_input[8_u64] = 144_u8;
   set fixed_phrase_input[9_u64] = 0_u8;
   let fixed_phrase_output = buffer_new(17_u64, 0_u8);
-  region 'fixed_phrase_region {
-    let fixed_phrase_result = inflate::<'fixed_phrase_region>(out: &uniq 'fixed_phrase_region fixed_phrase_output, input: move fixed_phrase_input);
+  region {
+    let fixed_phrase_result = inflate(out: &uniq fixed_phrase_output, input: move fixed_phrase_input);
     match move fixed_phrase_result {
       Ok(value: fixed_phrase_length) => {
         if fixed_phrase_length == 17_u64 {
@@ -467,8 +467,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let dynamic_input = make_dynamic_input();
   let dynamic_output = buffer_new(100_u64, 0_u8);
-  region 'dynamic_region {
-    let dynamic_result = inflate::<'dynamic_region>(out: &uniq 'dynamic_region dynamic_output, input: move dynamic_input);
+  region {
+    let dynamic_result = inflate(out: &uniq dynamic_output, input: move dynamic_input);
     match move dynamic_result {
       Ok(value: dynamic_length) => {
         if dynamic_length == 100_u64 {
@@ -507,8 +507,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let literal_only_input = make_literal_only_dynamic_input();
   let literal_only_output = buffer_new(1_u64, 0_u8);
-  region 'literal_only_region {
-    let literal_only_result = inflate::<'literal_only_region>(out: &uniq 'literal_only_region literal_only_output, input: move literal_only_input);
+  region {
+    let literal_only_result = inflate(out: &uniq literal_only_output, input: move literal_only_input);
     match move literal_only_result {
       Ok(value: literal_only_length) => {
         if literal_only_length == 1_u64 {
@@ -531,8 +531,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let dynamic_match_input = make_dynamic_match_input();
   let dynamic_match_output = buffer_new(400_u64, 0_u8);
-  region 'dynamic_match_region {
-    let dynamic_match_result = inflate::<'dynamic_match_region>(out: &uniq 'dynamic_match_region dynamic_match_output, input: move dynamic_match_input);
+  region {
+    let dynamic_match_result = inflate(out: &uniq dynamic_match_output, input: move dynamic_match_input);
     match move dynamic_match_result {
       Ok(value: dynamic_match_length) => {
         if dynamic_match_length == 400_u64 {
@@ -603,8 +603,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let mixed_block_output = buffer_new(105_u64, 0_u8);
-  region 'mixed_block_region {
-    let mixed_block_result = inflate::<'mixed_block_region>(out: &uniq 'mixed_block_region mixed_block_output, input: move mixed_block_input);
+  region {
+    let mixed_block_result = inflate(out: &uniq mixed_block_output, input: move mixed_block_input);
     match move mixed_block_result {
       Ok(value: mixed_block_length) => {
         if mixed_block_length == 105_u64 {
@@ -674,8 +674,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   let invalid_tree_input = buffer_new(4_u64, 0_u8);
   set invalid_tree_input[0_u64] = 5_u8;
   let invalid_tree_output = buffer_new(1_u64, 0_u8);
-  region 'invalid_tree_region {
-    let invalid_tree_result = inflate::<'invalid_tree_region>(out: &uniq 'invalid_tree_region invalid_tree_output, input: move invalid_tree_input);
+  region {
+    let invalid_tree_result = inflate(out: &uniq invalid_tree_output, input: move invalid_tree_input);
     match move invalid_tree_result {
       Ok(value: invalid_tree_length) => {
         if False() {
@@ -710,8 +710,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
     }
   }
   let dynamic_truncated_output = buffer_new(100_u64, 0_u8);
-  region 'dynamic_truncated_region {
-    let dynamic_truncated_result = inflate::<'dynamic_truncated_region>(out: &uniq 'dynamic_truncated_region dynamic_truncated_output, input: move dynamic_truncated_input);
+  region {
+    let dynamic_truncated_result = inflate(out: &uniq dynamic_truncated_output, input: move dynamic_truncated_input);
     match move dynamic_truncated_result {
       Ok(value: dynamic_truncated_length) => {
         if False() {
@@ -730,8 +730,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let dynamic_full_input = make_dynamic_input();
   let dynamic_full_output = buffer_new(99_u64, 0_u8);
-  region 'dynamic_full_region {
-    let dynamic_full_result = inflate::<'dynamic_full_region>(out: &uniq 'dynamic_full_region dynamic_full_output, input: move dynamic_full_input);
+  region {
+    let dynamic_full_result = inflate(out: &uniq dynamic_full_output, input: move dynamic_full_input);
     match move dynamic_full_result {
       Ok(value: dynamic_full_length) => {
         if False() {
@@ -750,8 +750,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let reserved_block_input = buffer_new(1_u64, 7_u8);
   let reserved_block_output = buffer_new(1_u64, 0_u8);
-  region 'reserved_block_region {
-    let reserved_block_result = inflate::<'reserved_block_region>(out: &uniq 'reserved_block_region reserved_block_output, input: move reserved_block_input);
+  region {
+    let reserved_block_result = inflate(out: &uniq reserved_block_output, input: move reserved_block_input);
     match move reserved_block_result {
       Ok(value: reserved_block_length) => {
         if False() {
@@ -770,8 +770,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   }
   let fixed_truncated_input = buffer_new(1_u64, 203_u8);
   let fixed_truncated_output = buffer_new(5_u64, 0_u8);
-  region 'fixed_truncated_region {
-    let fixed_truncated_result = inflate::<'fixed_truncated_region>(out: &uniq 'fixed_truncated_region fixed_truncated_output, input: move fixed_truncated_input);
+  region {
+    let fixed_truncated_result = inflate(out: &uniq fixed_truncated_output, input: move fixed_truncated_input);
     match move fixed_truncated_result {
       Ok(value: fixed_truncated_length) => {
         if False() {
@@ -792,8 +792,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set invalid_huffman_input[0_u64] = 27_u8;
   set invalid_huffman_input[1_u64] = 3_u8;
   let invalid_huffman_output = buffer_new(1_u64, 0_u8);
-  region 'invalid_huffman_region {
-    let invalid_huffman_result = inflate::<'invalid_huffman_region>(out: &uniq 'invalid_huffman_region invalid_huffman_output, input: move invalid_huffman_input);
+  region {
+    let invalid_huffman_result = inflate(out: &uniq invalid_huffman_output, input: move invalid_huffman_input);
     match move invalid_huffman_result {
       Ok(value: invalid_huffman_length) => {
         if False() {
@@ -814,8 +814,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set invalid_distance_input[0_u64] = 3_u8;
   set invalid_distance_input[1_u64] = 2_u8;
   let invalid_distance_output = buffer_new(3_u64, 0_u8);
-  region 'invalid_distance_region {
-    let invalid_distance_result = inflate::<'invalid_distance_region>(out: &uniq 'invalid_distance_region invalid_distance_output, input: move invalid_distance_input);
+  region {
+    let invalid_distance_result = inflate(out: &uniq invalid_distance_output, input: move invalid_distance_input);
     match move invalid_distance_result {
       Ok(value: invalid_distance_length) => {
         if False() {
@@ -841,8 +841,8 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   set fixed_full_input[5_u64] = 7_u8;
   set fixed_full_input[6_u64] = 0_u8;
   let fixed_full_output = buffer_new(4_u64, 0_u8);
-  region 'fixed_full_region {
-    let fixed_full_result = inflate::<'fixed_full_region>(out: &uniq 'fixed_full_region fixed_full_output, input: move fixed_full_input);
+  region {
+    let fixed_full_result = inflate(out: &uniq fixed_full_output, input: move fixed_full_input);
     match move fixed_full_result {
       Ok(value: fixed_full_length) => {
         if False() {

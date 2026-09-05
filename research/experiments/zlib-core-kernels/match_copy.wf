@@ -1,4 +1,4 @@
-fn inflate_match_copy ['o] (out: &uniq 'o buffer<u8>, seed_len: own u64, distance: own u64, match_len: own u64, repeats: own u64) -> own u64 reads(out), writes(out), traps requires {
+fn inflate_match_copy  (out: &uniq buffer<u8>, seed_len: own u64, distance: own u64, match_len: own u64, repeats: own u64) -> own u64 reads(out), writes(out), traps requires {
   let distance_positive: own Bool = igt<u64>(distance, 0_u64);
   let distance_in_history: own Bool = ile<u64>(distance, seed_len);
   let distance_valid: own Bool = ile<u64>(distance, 32768_u64);

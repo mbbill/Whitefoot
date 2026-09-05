@@ -4,7 +4,7 @@ struct Pool {
   cnt: u64;
 }
 
-fn build ['r] (s: &uniq 'r Pool, d: own u32) -> own u64 reads(s.l, s.r, s.cnt), writes(s.l, s.r, s.cnt), traps {
+fn build  (s: &uniq Pool, d: own u32) -> own u64 reads(s.l, s.r, s.cnt), writes(s.l, s.r, s.cnt), traps {
   doc "bottom-up complete-tree build: one exclusive borrow, loops only; index 0 is the null sentinel";
   let leaves: own u64 = ishl.wrap<u64>(1_u64, d);
   let start: own u64 = deref(s).cnt;
@@ -58,7 +58,7 @@ fn build ['r] (s: &uniq 'r Pool, d: own u32) -> own u64 reads(s.l, s.r, s.cnt), 
   return start;
 }
 
-fn chk ['r] (s: &'r Pool, i: own u64) -> own u64 reads(s.l, s.r), traps {
+fn chk  (s: &Pool, i: own u64) -> own u64 reads(s.l, s.r), traps {
   let li: own u64 = index<u64>(deref(s).l, i);
   match ieq<u64>(li, 0_u64) {
     True() => {
@@ -85,16 +85,16 @@ fn main () -> own unit allocates(heap), traps {
   let bl: own buffer<u64> = buffer_new<u64>(cap, 0_u64);
   let br: own buffer<u64> = buffer_new<u64>(cap, 0_u64);
   let poolb: own Pool = Pool(l: move bl, r: move br, cnt: 1_u64);
-  region 'm {
+  region {
     let sd: own u32 = iadd.trap<u32>(maxd, 1_u32);
-    let sroot: own u64 = build(s: &uniq 'm poola, d: sd);
-    let sc: own u64 = chk(s: &'m poola, i: sroot);
+    let sroot: own u64 = build(s: &uniq poola, d: sd);
+    let sc: own u64 = chk(s: &poola, i: sroot);
     let sbits: own u32 = iadd.trap<u32>(sd, 1_u32);
     let sn: own u64 = ishl.wrap<u64>(1_u64, sbits);
     let sexp: own u64 = isub.trap<u64>(sn, 1_u64);
     check ieq<u64>(sc, sexp) else trap "stretch checksum drift";
     set poola.cnt = 1_u64;
-    let lroot: own u64 = build(s: &uniq 'm poola, d: maxd);
+    let lroot: own u64 = build(s: &uniq poola, d: maxd);
     let d: own u32 = mind;
     loop @depths {
       match igt<u32>(d, maxd) {
@@ -121,9 +121,9 @@ fn main () -> own unit allocates(heap), traps {
           }
         }
         set poolb.cnt = 1_u64;
-        region 'it {
-          let root: own u64 = build(s: &uniq 'it poolb, d: d);
-          let tc: own u64 = chk(s: &'it poolb, i: root);
+        region {
+          let root: own u64 = build(s: &uniq poolb, d: d);
+          let tc: own u64 = chk(s: &poolb, i: root);
           set sum = iadd.trap<u64>(sum, tc);
         }
         set k = iadd.trap<u64>(k, 1_u64);
@@ -132,7 +132,7 @@ fn main () -> own unit allocates(heap), traps {
       check ieq<u64>(sum, want) else trap "iteration checksum drift";
       set d = iadd.trap<u32>(d, 2_u32);
     }
-    let lc: own u64 = chk(s: &'m poola, i: lroot);
+    let lc: own u64 = chk(s: &poola, i: lroot);
     let lbits: own u32 = iadd.trap<u32>(maxd, 1_u32);
     let ln: own u64 = ishl.wrap<u64>(1_u64, lbits);
     let lexp: own u64 = isub.trap<u64>(ln, 1_u64);

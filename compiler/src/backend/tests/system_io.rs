@@ -122,21 +122,21 @@ pub(super) fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -
 /// Opens one argument-named path under `command.cwd` and reads its first
 /// bytes, reporting the exact count.
 const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         let bytes = buffer_new(64_u64, 0_u8);
                         region 'f {
-                          region 'd {
-                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
                               ReadBytes(next: n) => {
                                 let narrowed = cvt::<u64, u8>(n);
                                 match narrowed {
@@ -273,16 +273,16 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
     );
     let source = format!(
         r#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {{
-  region 'a {{
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {{
+  region {{
+    match arg_get(args: &args, position: 1_u64) {{
       Ok(value: text) => {{
         match relative_path(value: move text) {{
           Ok(value: path) => {{
             region 'c {{
-              region 'p {{
-                match reserve_file::<'c>(factory: &uniq 'c files) {{
+              region {{
+                match reserve_file(factory: &uniq 'c files) {{
                   Ok(value: permit) => {{
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {{
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {{
                       FileOpened(value: file) => {{
                         return exit_status(code: 0_u8);
                       }}
@@ -375,37 +375,33 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
 
 /// Drains one file in three-byte requests, reporting `total * 10 + requests`.
 pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         let bytes = buffer_new(3_u64, 0_u8);
                         let total = 0_u64;
                         let chunks = 0_u64;
                         let failed = False();
                         loop @drain {
-                          region 'f {
-                            region 'd {
-                              match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 3_u64) {
-                                ReadBytes(next: n) => {
-                                  set total = total +wrap n;
-                                  set chunks = chunks +wrap 1_u64;
-                                }
-                                ReadEnd() => {
-                                  break @drain;
-                                }
-                                ReadFailed(error: problem) => {
-                                  set failed = True();
-                                  break @drain;
-                                }
-                              }
+                          match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 3_u64) {
+                            ReadBytes(next: n) => {
+                              set total = total +wrap n;
+                              set chunks = chunks +wrap 1_u64;
+                            }
+                            ReadEnd() => {
+                              break @drain;
+                            }
+                            ReadFailed(error: problem) => {
+                              set failed = True();
+                              break @drain;
                             }
                           }
                         }
@@ -481,22 +477,22 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
 
 /// Reports a zero-length read's endpoint, then the following request's endpoint.
 const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         let bytes = buffer_new(8_u64, 0_u8);
                         let vacant = 0_u64;
                         region 'f {
-                          region 'd {
-                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
                               ReadBytes(next: n) => {
                                 set vacant = n;
                               }
@@ -514,8 +510,8 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
                           return exit_status(code: 212_u8);
                         }
                         region 'g {
-                          region 'e {
-                            match read_at::<'g, 'e>(file: &'g file, destination: &uniq 'e bytes, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                          region {
+                            match read_at(file: &'g file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
                               ReadBytes(next: n) => {
                                 let narrowed = cvt::<u64, u8>(n);
                                 match narrowed {
@@ -589,21 +585,21 @@ fn a_zero_length_read_reports_no_bytes_without_issuing_a_host_transfer() {
 /// Reads three bytes into the middle of a sentinel buffer and digests the
 /// complete buffer afterwards.
 const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         let bytes = buffer_new(8_u64, 7_u8);
                         region 'f {
-                          region 'd {
-                            match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: 0_u64, start: 2_u64, end: 5_u64) {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 2_u64, end: 5_u64) {
                               ReadBytes(next: n) => {
                                 if n == 5_u64 {
                                 } else {
@@ -699,8 +695,8 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
   set bytes[2_u64] = 121_u8;
   set bytes[3_u64] = 122_u8;
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 0_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 0_u64) {
         Ok(value: written) => {
           if written == 0_u64 {
           } else {
@@ -714,8 +710,8 @@ pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out
     }
   }
   region 'p {
-    region 't {
-      match write_once::<'p, 't>(output: &uniq 'p out, source: &'t bytes, start: 1_u64, end: 3_u64) {
+    region {
+      match write_once(output: &uniq 'p out, source: &bytes, start: 1_u64, end: 3_u64) {
         Ok(value: written) => {
           let narrowed = cvt::<u64, u8>(written);
           match narrowed {
@@ -756,8 +752,8 @@ fn write_once_publishes_the_requested_range_and_reports_its_absolute_endpoint() 
 const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(4_u64, 65_u8);
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 1_u64, end: 9_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 1_u64, end: 9_u64) {
         Ok(value: written) => {
           return exit_status(code: 10_u8);
         }
@@ -785,8 +781,8 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
   region 'o {
-    region 's {
-      match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+    region {
+      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -796,8 +792,8 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
     }
   }
   region 'p {
-    region 't {
-      match write_once::<'p, 't>(output: &uniq 'p out, source: &'t bytes, start: 1_u64, end: 2_u64) {
+    region {
+      match write_once(output: &uniq 'p out, source: &bytes, start: 1_u64, end: 2_u64) {
         Ok(value: written) => {
         }
         Err(error: problem) => {
@@ -807,8 +803,8 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
     }
   }
   region 'q {
-    region 'u {
-      match write_once::<'q, 'u>(output: &uniq 'q out, source: &'u bytes, start: 2_u64, end: 3_u64) {
+    region {
+      match write_once(output: &uniq 'q out, source: &bytes, start: 2_u64, end: 3_u64) {
         Ok(value: written) => {
           return exit_status(code: 0_u8);
         }
@@ -850,8 +846,8 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
     }}
     set attempts = attempts +wrap 1_u64;
     region 'o {{
-      region 's {{
-        match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {{
+      region {{
+        match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {{
           Ok(value: written) => {{
           }}
           Err(error: problem) => {{
@@ -884,39 +880,35 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
 
 /// Drains one file through a reusable buffer and publishes one byte.
 const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         let bytes = buffer_new(4096_u64, 0_u8);
                         let total = 0_u64;
                         loop @drain {
-                          region 'f {
-                            region 'd {
-                              match read_at::<'f, 'd>(file: &'f file, destination: &uniq 'd bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
-                                ReadBytes(next: n) => {
-                                  set total = total +wrap n;
-                                }
-                                ReadEnd() => {
-                                  break @drain;
-                                }
-                                ReadFailed(error: problem) => {
-                                  return exit_status(code: 202_u8);
-                                }
-                              }
+                          match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
+                            ReadBytes(next: n) => {
+                              set total = total +wrap n;
+                            }
+                            ReadEnd() => {
+                              break @drain;
+                            }
+                            ReadFailed(error: problem) => {
+                              return exit_status(code: 202_u8);
                             }
                           }
                         }
                         region 'o {
-                          region 's {
-                            match write_once::<'o, 's>(output: &uniq 'o out, source: &'s bytes, start: 0_u64, end: 1_u64) {
+                          region {
+                            match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
                               Ok(value: written) => {
                                 let masked = iand(total, 255_u64);
                                 let narrowed = cvt::<u64, u8>(masked);
@@ -1104,18 +1096,18 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
 const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
   let echo = buffer_new(64_u64, 0_u8);
   let name_length = 0_u64;
-  region 'a {
-    let arguments = args_count::<'a>(args: &'a args);
+  region {
+    let arguments = args_count(args: &args);
     if arguments == 2_u64 {
     } else {
       return exit_status(code: 2_u8);
     }
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         region 'v {
-          set name_length = host_bytes_len::<'v>(value: &'v text);
-          region 'd {
-            match host_copy_bytes::<'v, 'd>(value: &'v text, destination: &uniq 'd echo, start: 0_u64, end: 64_u64) {
+          set name_length = host_bytes_len(value: &text);
+          region {
+            match host_copy_bytes(value: &'v text, destination: &uniq echo, start: 0_u64, end: 64_u64) {
               Ok(value: copied) => {
               }
               Err(error: problem) => {
@@ -1123,15 +1115,15 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
               }
             }
           }
-          match host_utf8_len::<'v>(value: &'v text) {
+          match host_utf8_len(value: &text) {
             Ok(value: measured) => {
             }
             Err(error: invalid) => {
               return exit_status(code: 4_u8);
             }
           }
-          region 'e {
-            match host_copy_utf8::<'v, 'e>(value: &'v text, destination: &uniq 'e echo, start: 0_u64, end: 64_u64) {
+          region {
+            match host_copy_utf8(value: &'v text, destination: &uniq echo, start: 0_u64, end: 64_u64) {
               Ok(value: encoded) => {
               }
               Err(error: problem) => {
@@ -1143,10 +1135,10 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         let page = buffer_new(16_u64, 0_u8);
                         let total = 0_u64;
@@ -1155,8 +1147,8 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                         loop @copy {
                           let chunk = 0_u64;
                           region 'f {
-                            region 'g {
-                              match read_at::<'f, 'g>(file: &'f file, destination: &uniq 'g page, file_offset: file_offset, start: 0_u64, end: 16_u64) {
+                            region {
+                              match read_at(file: &'f file, destination: &uniq page, file_offset: file_offset, start: 0_u64, end: 16_u64) {
                                 ReadBytes(next: n) => {
                                   set chunk = n;
                                   set file_offset = file_offset +wrap n;
@@ -1178,8 +1170,8 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                             return exit_status(code: 12_u8);
                           }
                           region 'o {
-                            region 's {
-                              match write_once::<'o, 's>(output: &uniq 'o out, source: &'s page, start: 0_u64, end: chunk) {
+                            region {
+                              match write_once(output: &uniq 'o out, source: &page, start: 0_u64, end: chunk) {
                                 Ok(value: written) => {
                                   set total = total +wrap written;
                                 }
@@ -1202,8 +1194,8 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
                           return exit_status(code: 13_u8);
                         }
                         region 'x {
-                          region 'y {
-                            match write_once::<'x, 'y>(output: &uniq 'x err, source: &'y echo, start: 0_u64, end: name_length) {
+                          region {
+                            match write_once(output: &uniq 'x err, source: &echo, start: 0_u64, end: name_length) {
                               Ok(value: written) => {
                                 let masked = iand(total, 255_u64);
                                 let narrowed = cvt::<u64, u8>(masked);
@@ -1334,31 +1326,29 @@ fn windows_descriptor_exhaustion_is_resource_exhaustion() {
 /// credit open two descriptors, which is exactly the overlap-invented
 /// exhaustion T4 forbids in the other direction.
 pub(super) const CLOSE_KEEPS_THE_COUNT: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'c {
-              region 'p {
-                match reserve_file::<'c>(factory: &uniq 'c files) {
+              region {
+                match reserve_file(factory: &uniq 'c files) {
                   Ok(value: permit) => {
-                    match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p path) {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {
                         for @drain (index in 0_u64..4096_u64) {
-                          region 'r {
-                            match reserve_file::<'r>(factory: &uniq 'r files) {
-                              Ok(value: extra) => {
-                              }
-                              Err(error: spent) => {
-                                break;
-                              }
+                          match reserve_file(factory: &uniq files) {
+                            Ok(value: extra) => {
+                            }
+                            Err(error: spent) => {
+                              break;
                             }
                           }
                         }
                         let returned = close_read(file: move file);
-                        region 'q {
-                          match reserve_file::<'q>(factory: &uniq 'q files) {
+                        region {
+                          match reserve_file(factory: &uniq files) {
                             Ok(value: raised) => {
                               return exit_status(code: 20_u8);
                             }
@@ -1366,7 +1356,7 @@ pub(super) const CLOSE_KEEPS_THE_COUNT: &[u8] = br#"command fn main(command.args
                             }
                           }
                         }
-                        match open_read::<'c, 'p>(permit: move returned, root: &'c cwd, path: &'p path) {
+                        match open_read(permit: move returned, root: &'c cwd, path: &path) {
                           FileOpened(value: again) => {
                             return exit_status(code: 0_u8);
                           }
@@ -1448,37 +1438,35 @@ fn an_explicit_close_returns_the_credit_as_the_permit_and_never_raises_the_count
 /// `reserve_file` still refuses after the failure, and the returned permit
 /// still opens.
 pub(super) const FAILED_OPEN_RETURNS_THE_PERMIT: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
-  region 'a {
-    match arg_get::<'a>(args: &'a args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: absent_text) => {
         match relative_path(value: move absent_text) {
           Ok(value: absent) => {
-            match arg_get::<'a>(args: &'a args, position: 2_u64) {
+            match arg_get(args: &args, position: 2_u64) {
               Ok(value: present_text) => {
                 match relative_path(value: move present_text) {
                   Ok(value: present) => {
                     region 'c {
-                      region 'p {
-                        match reserve_file::<'c>(factory: &uniq 'c files) {
+                      region {
+                        match reserve_file(factory: &uniq 'c files) {
                           Ok(value: permit) => {
                             for @drain (index in 0_u64..4096_u64) {
-                              region 'r {
-                                match reserve_file::<'r>(factory: &uniq 'r files) {
-                                  Ok(value: extra) => {
-                                  }
-                                  Err(error: spent) => {
-                                    break;
-                                  }
+                              match reserve_file(factory: &uniq files) {
+                                Ok(value: extra) => {
+                                }
+                                Err(error: spent) => {
+                                  break;
                                 }
                               }
                             }
-                            match open_read::<'c, 'p>(permit: move permit, root: &'c cwd, path: &'p absent) {
+                            match open_read(permit: move permit, root: &'c cwd, path: &absent) {
                               FileOpened(value: unexpected) => {
                                 return exit_status(code: 20_u8);
                               }
                               FileOpenFailed(error: problem, permit: returned) => {
-                                region 'q {
-                                  match reserve_file::<'q>(factory: &uniq 'q files) {
+                                region {
+                                  match reserve_file(factory: &uniq files) {
                                     Ok(value: raised) => {
                                       return exit_status(code: 22_u8);
                                     }
@@ -1486,7 +1474,7 @@ pub(super) const FAILED_OPEN_RETURNS_THE_PERMIT: &[u8] = br#"command fn main(com
                                     }
                                   }
                                 }
-                                match open_read::<'c, 'p>(permit: move returned, root: &'c cwd, path: &'p present) {
+                                match open_read(permit: move returned, root: &'c cwd, path: &present) {
                                   FileOpened(value: again) => {
                                     return exit_status(code: 0_u8);
                                   }

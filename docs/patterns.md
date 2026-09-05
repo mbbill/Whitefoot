@@ -8,8 +8,12 @@ channel or machine property that makes it fast) before normative adoption.
 Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
-This document carries active v0.41 guidance, including the comparison symbols
-and call-site `::` delimiter v0.41 activates, the source-proof forms introduced
+This document carries guidance for the active specification at
+`spec/kernel-spec.md`, including the contract-clause measure operands and the
+call datum introduced by v0.44 (P16, P21), the loop-body
+region block and the associative [ENT-6] join introduced by v0.43, the one canonical
+region spelling introduced by [FORM-8] in v0.42, the comparison symbols and
+call-site `::` delimiter introduced by v0.41, the source-proof forms introduced
 by v0.40, the unified-state
 completion-I/O forms introduced by v0.37, the
 per-iteration scratch form [PAR-3] admits (P15), and the three forms the
@@ -261,9 +265,10 @@ maximum-size caller allocation, retry-after-partial-token mutation, and using
 
 Problem: a helper must pass through or select a read-only slice without moving
 the backing owner or hiding where the result may point.
-Pattern: return `own slice<'r, T>` directly. Every possible parameter supplier
-is also written as exactly `own slice<'r, T>` under the same formal region and
-element type. A function with several such parameters may return any of them,
+Pattern: return `own slice<'r, T>` directly. `'r` is written at the result and
+at every supplier because they share it [FORM-8]. Every possible parameter
+supplier is also written as exactly `own slice<'r, T>` under the same region
+and element type. A function with several such parameters may return any of them,
 but the caller conservatively treats all of them as possible origins. If a
 helper always selects one source and that precision matters, give that source
 the result region and put unrelated slices under distinct formal regions.
@@ -344,21 +349,26 @@ candidate guidance, introduced before v0.36 and preserved since.
 Decide which fix applies by asking why there are two sources. If the sources
 are structurally distinct — a node and its scratch buffer, a subject and its
 dictionary — give the non-source its own formal region:
-`fn pick['r, 's](a: &uniq 'r Node, b: &uniq 's Node) -> selected: &uniq 'r Node` is
-accepted, and its result is an ordinary holder over `a`'s storage that the
-caller binds, writes through, and reborrows from. If instead the choice is
+`fn pick['r](a: &uniq 'r Node, b: &uniq Node) -> selected: &uniq 'r Node` is
+accepted — `'r` is written because the result shares it with `a`, and `b`'s own
+region relates to nothing and is therefore left unwritten [FORM-8] — and its
+result is an ordinary holder over `a`'s storage that the caller binds, writes
+through, and reborrows from. If instead the choice is
 data-dependent, no signature can name the source, and the access belongs to
 the caller: return the decision as an owned value — a two-variant enum, or an
 index into a pool (P2) — and let the caller re-borrow from the place the
 decision names.
 
 The worked shape for the data-dependent case is three parts. The callee
-`fn heavier(a: &'r Node, b: &'r Node) -> side: own Side reads(a, b)` reads both
+`fn heavier(a: &Node, b: &Node) -> side: own Side reads(a, b)` reads both
 weights through its shared borrows and returns `Left()` or `Right()`. The
-superseded v0.36 spelled that effect `reads('r)`; since v0.39, `'r`
-remains only the shared loan lifetime. Both forms take shared borrows, so the returned owned decision has no
-borrow provenance. The caller binds
-`let side = heavier(a: &'a left, b: &'a right);`, and then `match side` takes
+superseded v0.36 spelled that effect `reads('r)`; since v0.39 a region
+remains only the shared loan lifetime, and since v0.42 neither parameter
+writes one because neither relates to another position [FORM-8]. Both forms
+take shared borrows, so the returned owned decision has no borrow provenance.
+The caller binds
+`let side = heavier(a: &left, b: &right);` inside the region block whose
+region those borrows take, and then `match side` takes
 the exclusive borrow it actually wants inside the taken arm, from `left` or
 from `right` by name. The result is longer than the rejected one-liner and
 that is the whole trade: the borrow is created where its source is a written
@@ -437,15 +447,13 @@ Pattern: construct the per-iteration scratch **inside** the loop body.
 for @scan (index in 0_u64..8192_u64) {
   let name = buffer_new(16_u64, 0_u8);
   let data = buffer_new(65536_u64, 0_u8);
-  region 'name {
-    let rendered = name_at::<'name>(name: &uniq 'name name, index: index);
-  }
+  let rendered = name_at(name: &uniq name, index: index);
   region 'f {
-    match reserve_file::<'f>(factory: &uniq 'f files) {
+    match reserve_file(factory: &uniq files) {
       Ok(value: permit) => {
-        region 'n {
-          match open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
-                                  name: &'n name, start: 0_u64, end: 10_u64) {
+        region {
+          match open_file(permit: move permit, root: &'f cwd,
+                          name: &name, start: 0_u64, end: 10_u64) {
             FileOpened(value: handle) => { /* read, fold, accumulate */ }
             FileOpenFailed(error: problem, permit: refused) => { }
           }
@@ -490,25 +498,25 @@ copy rather than a fact to rediscover:
   `close_directory`, `close_directory_source` return the permit); derived
   release closes but returns nothing. Write
   the reserve and the open in the loop body itself. Factoring the pair into a
-  helper — `fn open_source_from['f, 'd](factory: &uniq 'f FileFactory, …)` —
-  costs the loop its pipeline, because the callee's own retained loan is what
+  helper — `fn open_source_from(factory: &uniq FileFactory, …)` — costs the
+  loop its pipeline, because the callee's own retained loan is what
   the staged judgment then sees. Two programs identical except for that
   factoring (‹loop› stands for the writer's own file and line; the verdict text
   after it is byte-exact):
 
   ```text
-  inline  PAR stage  ‹loop›             for  permitted  staged at open_file::<'f, 'f>(…); 5 places classified
+  inline  PAR stage  ‹loop›             for  permitted  staged at open_file(…); 5 places classified
   helper  PAR stage  ‹loop›             for  denied     condition 3: a may-suspend call retains a borrow
                      past its own submission on storage the body writes and the iteration does not
                      introduce; instead, give each iteration its own resource; or, where the body only
                      publishes to that storage — an output stream is the pointed case — hoist the
                      per-iteration write out of the loop, folding a total in the body and writing it
                      once after the loop; or leave this loop sequential, because storage that carries
-                     one position cannot be held by two iterations at once, at &uniq 'f files
+                     one position cannot be held by two iterations at once, at &uniq files
   ```
 
   When the factory is itself a borrow — which it is in any recursive walker —
-  [OWN-6] pushes the other way and admits no inline `region 'source { let
+  [OWN-6] pushes the other way and admits no inline `region { let
   permit = …; match open_… }`, because that region holds two statements. The
   two rules genuinely conflict there, and the resolution is that only one of
   the two forms is a program at all. Which form to write is decided by how the
@@ -517,13 +525,13 @@ copy rather than a fact to rediscover:
 
   ```text
   owned factory, inline    PAR stage  ‹loop›                   for  permitted  staged at
-                           open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name,
+                           open_file(permit: move permit, root: &'f cwd, name: &name,
                            start: 0_u64, end: 4_u64); 4 places classified
   borrowed factory, inline [OWN-6] InvalidChildReborrow — the program does not compile
   borrowed factory, helper PAR stage  ‹loop›                   for  denied     condition 3: a
                            may-suspend call retains a borrow past its own submission on storage the
                            body writes and the iteration does not introduce; … at
-                           &uniq 'open deref(factory)
+                           &uniq deref(factory)
   ```
 
   So: **in a loop whose factory is an owned entry parameter — every top-level
@@ -626,8 +634,17 @@ let room = len(line);
 let fits = end <= room;
 ```
 
+Under v0.44 the same fact is stated directly in the contract
+that consumes it, with no binding and no `contract_define` at all: a
+`requires` and an `ensures` operand may be a measure of a place [MSR-5], so a
+callee writes `requires end <= len(destination);` where it used to write
+`define room = len(destination); requires end <= room;`. The define spelling
+of one measure is what v0.44 removes; the hoisted binding above remains the
+right form for a *body* fact a loop reads many times, because a body is not a
+contract.
+
 The first line sits above the loop and above every `put_text` that writes
-through `&uniq 'put line`. The second sits inside the loop after all of them,
+through `&uniq line`. The second sits inside the loop after all of them,
 and it still discharges `emit_all`'s `requires length <= capacity`, because
 nothing between the two killed `len(line)`.
 
@@ -665,7 +682,7 @@ Pattern: the walk returns its own subtotal, the caller binds it under a fresh
 the record is used as a value — passed, returned, or rebound.
 
 ```whitefoot
-let sub = walk::<'recurse, 'c>(factory: &uniq 'recurse deref(factory), directory: dir);
+let sub = walk(factory: &uniq deref(factory), directory: dir);
 set totals.lines = totals.lines +wrap sub.lines;
 set totals.bytes = totals.bytes +wrap sub.bytes;
 ```
@@ -717,8 +734,8 @@ given its own. (‹loop› is the writer's file and line; verdicts are byte-exac
 ```whitefoot
 for @scan (index in 0_u64..8_u64) {
   /* P15's reserve, open, and read; then */
-  region 'say {
-    let written = write_once::<'say, 'say>(output: &uniq 'say out, source: &'say data, start: 0_u64, end: 2_u64);
+  region {
+    let written = write_once(output: &uniq out, source: &data, start: 0_u64, end: 2_u64);
   }
 }
 ```
@@ -729,7 +746,7 @@ PAR stage  ‹loop›  for  denied  condition 3: a may-suspend call retains a bo
            its own resource; or, where the body only publishes to that storage — an output stream is the
            pointed case — hoist the per-iteration write out of the loop, folding a total in the body and
            writing it once after the loop; or leave this loop sequential, because storage that carries
-           one position cannot be held by two iterations at once, at &uniq 'say out
+           one position cannot be held by two iterations at once, at &uniq out
 ```
 
 Pattern: **hold no `&uniq` resource inside a loop body; hold a buffer instead,
@@ -748,18 +765,18 @@ for @scan (index in 0_u64..8_u64) {
     set page[index] = data[0_u64];
   }
 }
-region 'say {
-  let written = write_once::<'say, 'say>(output: &uniq 'say out, source: &'say page, start: 0_u64, end: 8_u64);
+region {
+  let written = write_once(output: &uniq out, source: &page, start: 0_u64, end: 8_u64);
 }
 ```
 
 ```text
-PAR stage  ‹loop›  for  permitted  staged at open_file::<'f, 'n>(permit: move permit, root: &'f cwd,
-           name: &'n name, start: 0_u64, end: 2_u64); 6 places classified
+PAR stage  ‹loop›  for  permitted  staged at open_file(permit: move permit, root: &cwd,
+           name: &name, start: 0_u64, end: 2_u64); 6 places classified
 ```
 
 Write into the page by element. A helper taking `&uniq` of it costs the loop
-its pipeline under condition 4 instead: `denied  &uniq 'page page  a call of
+its pipeline under condition 4 instead: `denied  &uniq page  a call of
 the remainder holds an exclusive loan on it, and two remainders coexist`.
 
 Current value: this is the explicit writer form. The [PAR-3] judgment can grant
@@ -782,10 +799,15 @@ every execution, and the loop is still rejected at [INV-1].
 The rule, in one line: every arm of a body join must leave a tracked binding
 with the same affine image, or with images differing only by a constant;
 otherwise the guard fact dies at the join and the header invariant cannot be
-re-established. [ENT-6]'s value-image join keeps an identical image, and joins
-images that share one nonconstant coefficient vector and differ only in their
-constant to that form plus a fresh delta atom over the incoming constant range.
-Every other combination gives the binding one fresh full-type atom. [ENT-5]'s
+re-established. [ENT-6]'s value-image join keeps an identical image; otherwise
+it normalizes each input by folding every delta atom an earlier join minted
+back into the constant interval it stands for, and where the inputs then share one
+nonconstant form it joins them to that form plus a fresh delta atom over the
+hull of their constant intervals. Every other combination gives the binding one
+fresh full-type atom. Because of that normalization the join is associative:
+one branch set written as nested `if`/`else` reaches exactly the image the same
+set written as one flat `match` reaches, so nesting the arms never costs a
+binding its image and the shapes below may be nested freely. [ENT-5]'s
 all-predecessor join then keeps only the bounds held on every input, so the
 correlation the writer is reasoning with — the delta is one exactly where
 `i < n` held — is precisely what the join discards, and [INV-1] proves the next
@@ -872,6 +894,115 @@ conclusion attached to the delta-atom join.
 Replaces: the reflex of restating the invariant inside each arm, and the belief
 that a relation true on every execution is therefore provable at a join the
 language deliberately does not make path-sensitive.
+
+## P20. The loop body is already the region
+
+Problem: a borrow taken inside a loop body must die with the iteration, and the
+reflex — carried over from every earlier version — is to wrap the body in a
+`region` block so that it does.
+
+Pattern: write the borrow bare. Under v0.43 every `loop_stmt` and `for_stmt`
+body is itself a region block: it introduces one unnamed region whose
+block is that body, so a borrow written directly in the body takes that region,
+dies with the iteration, and lets the outer binding be written again before the
+next one [OWN-11]. That is exactly the guarantee the wrapper used to buy, and it
+now costs nothing to write.
+
+```whitefoot
+for @concat (at in 0_u64..count) {
+  match bs_byte(s: &deref(source), index: at) {
+    Some(value: byte) => {
+      region {
+        bs_push(s: &uniq deref(destination), value: byte);
+      }
+    }
+    None() => {
+    }
+  }
+}
+```
+
+The inner block stays: it is not the loop body's only statement, it is the
+statement scope [OWN-6] needs for the `&uniq deref(destination)` child
+reborrow, and only the outer wrapper the body no longer needs is gone.
+
+Because that region exists, a `region` block that is the loop body's only
+statement is now a hard error citing [FORM-8]: its block is the body, so it is a
+second spelling of one region. Delete it and keep its statements as the body.
+
+A block the body writes another statement beside is a different region — it ends
+strictly earlier than the iteration — and stays legal, and there are two reasons
+to write one. The first is [OWN-6]: a statement-scoped child reborrow needs a
+region whose block does not extend beyond the enclosing statement, which a
+one-statement block inside a longer body gives and the body's own region does
+not. The second is a borrow that must be dead before a later statement of the
+same iteration writes the place it borrowed.
+
+```whitefoot
+for @append (i in 0_u64..count) {
+  let byte = deref(src)[i];
+  region {
+    let pushed = propagate vec_push(v: &uniq deref(dst), x: byte);
+  }
+}
+```
+
+Decide by reading the loop body alone: if the body writes nothing beside the
+block, the block is the body's own region under a second name and must go.
+
+Current value: mechanical. The corpus rewrite for v0.43 removed four
+such blocks across `tests/` and touched nothing else, because most existing
+blocks were already narrower than their bodies.
+
+Replaces: the habit of opening a `region` block as the first line of every loop
+body.
+
+## P21. Hand the measure back by value, and never through a `&uniq`
+
+Status: active in v0.44. Two of its rules decide one writer choice together.
+
+Problem: a helper receives a run, does something with it, and the caller
+afterwards needs to know a measure of what it got back. The reflex is to lend
+the run — `fn fill(destination: &uniq buffer<u8>, ...)` — and publish the
+measure from the callee: `ensures written <= len(deref(destination));`. That
+clause is a claim about a caller's object at a point the callee cannot name,
+because the callee may have replaced the very thing the measure describes, and
+[MSR-3] refuses it at the clause.
+
+Pattern: take the value by value and relate the *result*; state the fact the
+caller must supply as a `requires` instead of an `ensures`.
+
+```whitefoot
+fn size_of(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
+  ensures measured == len(taken);
+} { ... }
+
+let run = buffer_new(8_u64, 0_u8);
+let measured = size_of(taken: move run);
+```
+
+The relation reads at the caller as it is written, and it survives the `move`
+in the very same statement, because an `own` operand of a published relation
+denotes that call's **call datum** [MSR-3] — the value at transfer, a term
+with no place in it, which no consume and no later write can kill. That is the
+whole reason the value-in form is not merely tolerated but preferred: a
+borrowed run's measure cannot be published at all, and a consumed run's can.
+
+The second half is a discipline on the contract as a set. Everything a
+contract publishes is closed together at the caller [ENT-4], so two clauses
+that cannot both hold do not make one caller goal wrong — they make every
+caller goal discharge. [CALL-6] refuses such a contract at its declaration, so
+write the clauses that hold and check that they hold together; a clause added
+"to be safe" that contradicts an earlier one is not conservative, it is the
+end of every proof downstream of the call.
+
+Current value: measured on the v0.44 batch branch. The `ensures` over a consumed
+operand's measure is a real fact at the caller, where before v0.44 the
+consume in the same statement deleted it and the caller was left proving the
+measure again from its own allocation.
+
+Replaces: publishing a caller's post-state through a `&uniq` parameter, and
+re-measuring a run the caller just handed away.
 
 ## Known gaps (findings, not yet patterns)
 

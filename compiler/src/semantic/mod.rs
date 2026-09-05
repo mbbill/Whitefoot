@@ -68,6 +68,8 @@ pub enum SemanticRule {
     Form5,
     /// Numeric literal range or canonicality.
     Form7,
+    /// Canonical region spelling: which positions write a REGIONID.
+    Form8,
     /// Composite-type formation and element eligibility.
     Type2,
     /// Constant-expression formation and evaluation.
@@ -162,6 +164,11 @@ pub enum SemanticRule {
     Sys8,
     /// Counted endpoint admission to the closed term-or-constant vocabulary.
     Ent2,
+    /// One denotation per operand position, keyed on the parameter's mode.
+    Msr3,
+    /// Publication: where a declared relation is instantiated, where it is
+    /// established, and that a published relation set is consistent.
+    Call6,
     /// Proof-only loop invariant formation.
     Inv1,
     /// Finite source-written affine proof formation and checking.
@@ -175,6 +182,7 @@ impl SemanticRule {
         match self {
             Self::Form5 => "FORM-5",
             Self::Form7 => "FORM-7",
+            Self::Form8 => "FORM-8",
             Self::Type2 => "TYPE-2",
             Self::Const1 => "CONST-1",
             Self::Const2 => "CONST-2",
@@ -220,6 +228,8 @@ impl SemanticRule {
             Self::Sys2 => "SYS-2",
             Self::Sys8 => "SYS-8",
             Self::Ent2 => "ENT-2",
+            Self::Msr3 => "MSR-3",
+            Self::Call6 => "CALL-6",
             Self::Inv1 => "INV-1",
             Self::Prf1 => "PRF-1",
         }
@@ -244,7 +254,8 @@ impl SemanticRule {
     pub(crate) const fn next_in_definition_order(self) -> Option<Self> {
         Some(match self {
             Self::Form5 => Self::Form7,
-            Self::Form7 => Self::Gram6,
+            Self::Form7 => Self::Form8,
+            Self::Form8 => Self::Gram6,
             Self::Gram6 => Self::Give1,
             Self::Give1 => Self::Gram8,
             Self::Gram8 => Self::Gram10,
@@ -289,7 +300,9 @@ impl SemanticRule {
             Self::Err3 => Self::Sys2,
             Self::Sys2 => Self::Sys8,
             Self::Sys8 => Self::Ent2,
-            Self::Ent2 => Self::Inv1,
+            Self::Ent2 => Self::Msr3,
+            Self::Msr3 => Self::Call6,
+            Self::Call6 => Self::Inv1,
             Self::Inv1 => Self::Prf1,
             Self::Prf1 => return None,
         })
@@ -308,53 +321,56 @@ impl SemanticRule {
         match self {
             Self::Form5 => 0,
             Self::Form7 => 1,
-            Self::Gram6 => 2,
-            Self::Give1 => 3,
-            Self::Gram8 => 4,
-            Self::Gram10 => 5,
-            Self::Gram11 => 6,
-            Self::Type2 => 7,
-            Self::Type5 => 8,
-            Self::Type6 => 9,
-            Self::Type7 => 10,
-            Self::Set1 => 11,
-            Self::Set2 => 12,
-            Self::Const1 => 13,
-            Self::Const2 => 14,
-            Self::Own1 => 15,
-            Self::Own4 => 16,
-            Self::Own5 => 17,
-            Self::Own6 => 18,
-            Self::Own10 => 19,
-            Self::Own11 => 20,
-            Self::Own12 => 21,
-            Self::Own14 => 22,
-            Self::Stor1 => 23,
-            Self::Stor4 => 24,
-            Self::Stor5 => 25,
-            Self::Op1 => 26,
-            Self::Op2 => 27,
-            Self::Op4 => 28,
-            Self::Op5 => 29,
-            Self::Op6 => 30,
-            Self::Op9 => 31,
-            Self::Fn1 => 32,
-            Self::Fn2 => 33,
-            Self::Fn3 => 34,
-            Self::Fn4 => 35,
-            Self::Fn6 => 36,
-            Self::Fn7 => 37,
-            Self::Fn8 => 38,
-            Self::Fn9 => 39,
-            Self::Eff1 => 40,
-            Self::Eff2 => 41,
-            Self::Err2 => 42,
-            Self::Err3 => 43,
-            Self::Sys2 => 44,
-            Self::Sys8 => 45,
-            Self::Ent2 => 46,
-            Self::Inv1 => 47,
-            Self::Prf1 => 48,
+            Self::Form8 => 2,
+            Self::Gram6 => 3,
+            Self::Give1 => 4,
+            Self::Gram8 => 5,
+            Self::Gram10 => 6,
+            Self::Gram11 => 7,
+            Self::Type2 => 8,
+            Self::Type5 => 9,
+            Self::Type6 => 10,
+            Self::Type7 => 11,
+            Self::Set1 => 12,
+            Self::Set2 => 13,
+            Self::Const1 => 14,
+            Self::Const2 => 15,
+            Self::Own1 => 16,
+            Self::Own4 => 17,
+            Self::Own5 => 18,
+            Self::Own6 => 19,
+            Self::Own10 => 20,
+            Self::Own11 => 21,
+            Self::Own12 => 22,
+            Self::Own14 => 23,
+            Self::Stor1 => 24,
+            Self::Stor4 => 25,
+            Self::Stor5 => 26,
+            Self::Op1 => 27,
+            Self::Op2 => 28,
+            Self::Op4 => 29,
+            Self::Op5 => 30,
+            Self::Op6 => 31,
+            Self::Op9 => 32,
+            Self::Fn1 => 33,
+            Self::Fn2 => 34,
+            Self::Fn3 => 35,
+            Self::Fn4 => 36,
+            Self::Fn6 => 37,
+            Self::Fn7 => 38,
+            Self::Fn8 => 39,
+            Self::Fn9 => 40,
+            Self::Eff1 => 41,
+            Self::Eff2 => 42,
+            Self::Err2 => 43,
+            Self::Err3 => 44,
+            Self::Sys2 => 45,
+            Self::Sys8 => 46,
+            Self::Ent2 => 47,
+            Self::Msr3 => 48,
+            Self::Call6 => 49,
+            Self::Inv1 => 50,
+            Self::Prf1 => 51,
         }
     }
 }
@@ -584,6 +600,13 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by OWN-11.
         mechanical_fix: &'static str,
     },
+    /// A region is spelled at a position [FORM-8] does not spell that way:
+    /// written where the surrounding text already fixes it, or absent where
+    /// nothing fixes it.
+    RegionSpelling {
+        /// Exact mechanical repair selected by FORM-8.
+        mechanical_fix: &'static str,
+    },
     /// The selected operation family has no row for the written arguments.
     InvalidOperation,
     /// A contract predicate is not exactly `own Bool`.
@@ -754,6 +777,24 @@ pub enum SemanticIssueKind {
     InvalidPostconditionClause,
     /// The alpha-expanded final condition is not one output-bearing L0 relation.
     InvalidPostconditionRelation,
+    /// [MSR-3] an `ensures` names a measure of a `&uniq` state parameter,
+    /// which denotes no state a source-declared callee can name.
+    InadmissibleStateParameterMeasure {
+        /// The written `&uniq` parameter whose measure the clause names.
+        parameter: String,
+        /// The restructuring this clause needs.
+        mechanical_fix: &'static str,
+    },
+    /// [CALL-6] the relations one contract publishes are contradictory at
+    /// their establishment point, so every goal a caller submits would
+    /// discharge from that contradiction alone.
+    ContradictoryPublishedRelations {
+        /// The two clause relations whose conjunction is unsatisfiable, as
+        /// rendered from the declared templates.
+        relations: Vec<String>,
+        /// The restructuring this contract needs.
+        mechanical_fix: &'static str,
+    },
     /// A selected Result exit is not a direct canonical `Ok(value: atom)` or `Err(error: atom)`.
     InvalidPostconditionReturn,
     /// One concrete postcondition has no selected normal exit.

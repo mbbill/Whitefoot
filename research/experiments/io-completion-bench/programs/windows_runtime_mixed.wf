@@ -24,7 +24,7 @@ fn compute_pair(left_seed: own u64, right_seed: own u64) -> result: own u64 pure
   return ixor(left, rotated);
 }
 
-fn render_u64['d](destination: &uniq 'd buffer<u8>, value: own u64) -> result: own unit reads(destination), writes(destination) {
+fn render_u64(destination: &uniq buffer<u8>, value: own u64) -> result: own unit reads(destination), writes(destination) {
   doc "Renders one twenty-digit zero-padded decimal result.";
   let room = len(deref(destination));
   let remaining = value;
@@ -57,27 +57,27 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let left_data = buffer_new(4096_u64, 0_u8);
   let right_data = buffer_new(4096_u64, 0_u8);
   let report = buffer_new(21_u64, 10_u8);
-  region 'left_arg {
-    match arg_get::<'left_arg>(args: &'left_arg args, position: 1_u64) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
       Ok(value: left_text) => {
         match relative_path(value: move left_text) {
           Ok(value: left_path) => {
-            region 'right_arg {
-              match arg_get::<'right_arg>(args: &'right_arg args, position: 2_u64) {
+            region {
+              match arg_get(args: &args, position: 2_u64) {
                 Ok(value: right_text) => {
                   match relative_path(value: move right_text) {
                     Ok(value: right_path) => {
-                      region 'open {
-                        match reserve_file::<'open>(factory: &uniq 'open files) {
+                      region {
+                        match reserve_file(factory: &uniq files) {
                           Ok(value: left_permit) => {
-                            match reserve_file::<'open>(factory: &uniq 'open files) {
+                            match reserve_file(factory: &uniq files) {
                               Ok(value: right_permit) => {
-                                let left_opened = open_read::<'open, 'open>(permit: move left_permit, root: &'open cwd, path: &'open left_path);
-                                let right_opened = open_read::<'open, 'open>(permit: move right_permit, root: &'open cwd, path: &'open right_path);
+                                let left_opened = open_read(permit: move left_permit, root: &cwd, path: &left_path);
+                                let right_opened = open_read(permit: move right_permit, root: &cwd, path: &right_path);
                                 match move left_opened {
-                                  Ok(value: left_file) => {
+                                  FileOpened(value: left_file) => {
                                     match move right_opened {
-                                      Ok(value: right_file) => {
+                                      FileOpened(value: right_file) => {
                                         let checksum = 0_u64;
                                         let iteration = 0_u64;
                                         loop @work {
@@ -90,10 +90,10 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                           let block = iand(iteration, 4095_u64);
                                           let offset = block *wrap 4096_u64;
                                           region 'handles {
-                                            region 'data {
-                                              let left_read = read_at::<'handles, 'data>(file: &'handles left_file, destination: &uniq 'data left_data, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                            region {
+                                              let left_read = read_at(file: &'handles left_file, destination: &uniq left_data, file_offset: offset, start: 0_u64, end: 4096_u64);
                                               let compute = compute_pair(left_seed: left_seed, right_seed: right_seed);
-                                              let right_read = read_at::<'handles, 'data>(file: &'handles right_file, destination: &uniq 'data right_data, file_offset: offset, start: 0_u64, end: 4096_u64);
+                                              let right_read = read_at(file: &'handles right_file, destination: &uniq right_data, file_offset: offset, start: 0_u64, end: 4096_u64);
                                               match move left_read {
                                                 ReadBytes(next: left_next) => {
                                                   if left_next == 4096_u64 {
@@ -133,11 +133,11 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                           }
                                           set iteration = iteration +wrap 1_u64;
                                         }
-                                        region 'report {
-                                          let rendered = render_u64::<'report>(destination: &uniq 'report report, value: checksum);
+                                        region {
+                                          let rendered = render_u64(destination: &uniq report, value: checksum);
                                         }
-                                        region 'output {
-                                          match write_once::<'output, 'output>(output: &uniq 'output out, source: &'output report, start: 0_u64, end: 21_u64) {
+                                        region {
+                                          match write_once(output: &uniq out, source: &report, start: 0_u64, end: 21_u64) {
                                             Ok(value: published) => {
                                               if published == 21_u64 {
                                                 return exit_status(code: 0_u8);
@@ -150,12 +150,12 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
                                           }
                                         }
                                       }
-                                      Err(error: right_problem) => {
+                                      FileOpenFailed(error: right_problem, permit: refused) => {
                                         return exit_status(code: 6_u8);
                                       }
                                     }
                                   }
-                                  Err(error: left_problem) => {
+                                  FileOpenFailed(error: left_problem, permit: refused) => {
                                     return exit_status(code: 5_u8);
                                   }
                                 }

@@ -1,4 +1,4 @@
-fn digit_total['r](digits: &'r buffer<u8>, total_seed: own u64) -> own u64 reads(digits), traps {
+fn digit_total(digits: &buffer<u8>, total_seed: own u64) -> own u64 reads(digits), traps {
   let size = len(deref(digits));
   let offset = 0_u64;
   let total = total_seed;
@@ -25,9 +25,9 @@ fn main() -> own unit allocates(heap), traps {
   set digits[2_u64] = 4_u8;
   set digits[3_u64] = 1_u8;
   set digits[4_u64] = 5_u8;
-  region 'walk_view {
-    let view = &'walk_view digits;
-    let total = digit_total<'walk_view>(digits: view, total_seed: 10_u64);
+  region {
+    let view = &digits;
+    let total = digit_total(digits: view, total_seed: 10_u64);
     check ieq(total, 24_u64) else trap "digit total";
     let folded = total *wrap 3_u64;
     check ieq(folded, 72_u64) else trap "wrapped fold";

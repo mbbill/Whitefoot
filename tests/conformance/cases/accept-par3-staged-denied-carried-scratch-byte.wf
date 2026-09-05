@@ -1,4 +1,4 @@
-fn stamp['b](slot: &uniq 'b buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
+fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
   doc "Writes one marker byte on odd indices only, so its written extent is not a fact of the signature.";
   let room = len(deref(slot));
   let sized = 0_u64 < room;
@@ -12,7 +12,7 @@ fn stamp['b](slot: &uniq 'b buffer<u8>, index: own u64) -> result: own unit read
   return unit;
 }
 
-fn first_byte['b](source: &'b buffer<u8>) -> result: own u64 reads(source) {
+fn first_byte(source: &buffer<u8>) -> result: own u64 reads(source) {
   doc "Reports the first byte of a buffer, or zero when it has none.";
   let room = len(deref(source));
   let sized = 0_u64 < room;
@@ -30,18 +30,18 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   let name = buffer_new(16_u64, 97_u8);
   let total = 0_u64;
   for @scan (index in 0_u64..4_u64) {
-    region 's {
-      let stamped = stamp::<'s>(slot: &uniq 's scratch, index: index);
+    region {
+      let stamped = stamp(slot: &uniq scratch, index: index);
     }
     region 'f {
-      match reserve_file::<'f>(factory: &uniq 'f files) {
+      match reserve_file(factory: &uniq files) {
         Ok(value: permit) => {
-          region 'n {
-            match open_file::<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 4_u64) {
+          region {
+            match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
               FileOpened(value: handle) => {
                 let seen = 0_u64;
-                region 'r {
-                  set seen = first_byte::<'r>(source: &'r scratch);
+                region {
+                  set seen = first_byte(source: &scratch);
                 }
                 set total = total +wrap seen;
               }

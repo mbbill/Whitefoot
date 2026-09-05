@@ -1,0 +1,19 @@
+fn pass['r](value: &'r i32) -> result: &'r i32 pure {
+  doc "The result borrows the parameter, so the same region is meant at two positions of this declaration and [FORM-8] writes it at both [FN-1].";
+  return value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The relation is the callee's; the caller writes no region argument because the parameter position determines it.";
+  let a = 40_i32;
+  region {
+    let p = &a;
+    let held = pass(value: p);
+    let observed = deref(held);
+    if observed == 40_i32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

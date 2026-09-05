@@ -1,0 +1,19 @@
+fn read_shared(short: own buffer<u8>, long: own buffer<u8>) -> value: own u8 reads(long) contract {
+  requires len(short) <= len(long);
+  requires 3_u64 < len(short);
+} {
+  doc "A two-measure clause chains to the subscript bound with no contract definition.";
+  return long[3_u64];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "MSR-5: a clause names a measure of a place directly on either side of its comparison.";
+  let small = buffer_new(4_u64, 0_u8);
+  let large = buffer_new(8_u64, 0_u8);
+  let value = read_shared(short: move small, long: move large);
+  if value == 0_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

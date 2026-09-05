@@ -1,4 +1,4 @@
-fn get_borrowed['r](holder: &'r buffer<u8>, i: own u64) -> value: own u8 reads(holder) contract {
+fn get_borrowed(holder: &buffer<u8>, i: own u64) -> value: own u8 reads(holder) contract {
   define room = len(deref(holder));
   requires i < room;
 } {
@@ -8,9 +8,9 @@ fn get_borrowed['r](holder: &'r buffer<u8>, i: own u64) -> value: own u8 reads(h
 command fn main() -> status: own ExitStatus allocates(heap) {
   doc "EXPECT ACCEPT: requires uses define room = len(deref(holder)); index 5 is within len 6.";
   let buf = buffer_new(6_u64, 9_u8);
-  region 'r {
-    let p = &'r buf;
-    let value = get_borrowed::<'r>(holder: p, i: 5_u64);
+  region {
+    let p = &buf;
+    let value = get_borrowed(holder: p, i: 5_u64);
     if value == 9_u8 {
     } else {
       return exit_status(code: 1_u8);
