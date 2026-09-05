@@ -1,24 +1,33 @@
 command fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(4_u64, 7_u8);
-  region {
-    let window = mut_slice_of(&uniq table);
-    set window[0_u64] = 9_u8;
-    set window[3_u64] = 11_u8;
-  }
-  let first = table[0_u64];
-  let last = table[3_u64];
-  let untouched = table[1_u64];
-  if first == 9_u8 {
-  } else {
-    return exit_status(code: 201_u8);
-  }
-  if last == 11_u8 {
-  } else {
-    return exit_status(code: 202_u8);
-  }
-  if untouched == 7_u8 {
-  } else {
-    return exit_status(code: 203_u8);
+  region 'a {
+    let workspace = arena_frame::<4, 1, 'a>();
+    region {
+      let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      set table = place_back(vector: move table, value: 7_u8);
+      set table = place_back(vector: move table, value: 7_u8);
+      set table = place_back(vector: move table, value: 7_u8);
+      set table = place_back(vector: move table, value: 7_u8);
+      region {
+        let window = mut_slice_of(&uniq table);
+        set window[0_u64] = 9_u8;
+        set window[3_u64] = 11_u8;
+      }
+      let first = table[0_u64];
+      let last = table[3_u64];
+      let untouched = table[1_u64];
+      if first == 9_u8 {
+      } else {
+        return exit_status(code: 201_u8);
+      }
+      if last == 11_u8 {
+      } else {
+        return exit_status(code: 202_u8);
+      }
+      if untouched == 7_u8 {
+      } else {
+        return exit_status(code: 203_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }

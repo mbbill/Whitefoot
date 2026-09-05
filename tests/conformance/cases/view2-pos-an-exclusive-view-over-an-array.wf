@@ -1,5 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
-  let table = array_new::<u8, 4>(7_u8);
+  let table = fixed_vector::<u8, 4>();
+  set table = place_back(vector: move table, value: 7_u8);
+  set table = place_back(vector: move table, value: 7_u8);
+  set table = place_back(vector: move table, value: 7_u8);
+  set table = place_back(vector: move table, value: 7_u8);
   region {
     let window = mut_slice_of(&uniq table);
     set window[0_u64] = 9_u8;
