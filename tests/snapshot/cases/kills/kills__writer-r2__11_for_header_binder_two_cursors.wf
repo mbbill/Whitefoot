@@ -1,6 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- P11: the compiler-owned for-binder update on `i` is a kill on every backedge [ENT-5], but the structural half-open bound licenses `marks[i]` with no written invariant, even while the loop-carried `step` is set fresh each iteration.";
-  let marks = buffer_new(5_u64, 0_u32);
+  let marks = fixed_vector::<u32, 5>();
+  set marks = place_back(vector: move marks, value: 0_u32);
+  set marks = place_back(vector: move marks, value: 0_u32);
+  set marks = place_back(vector: move marks, value: 0_u32);
+  set marks = place_back(vector: move marks, value: 0_u32);
+  set marks = place_back(vector: move marks, value: 0_u32);
   let base = 100_u32;
   let step = 0_u32;
   for (i in 0_u64..5_u64) {

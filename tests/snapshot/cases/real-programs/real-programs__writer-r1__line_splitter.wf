@@ -1,6 +1,17 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- splits a byte buffer on LF into line lengths recorded in an output buffer with bounds checks";
-  let input = buffer_new(11_u64, 0_u8);
+  let input = fixed_vector::<u8, 11>();
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
+  set input = place_back(vector: move input, value: 0_u8);
   set input[0_u64] = 97_u8;
   set input[1_u64] = 98_u8;
   set input[2_u64] = 99_u8;
@@ -13,7 +24,10 @@ command fn main() -> status: own ExitStatus pure {
   set input[9_u64] = 104_u8;
   set input[10_u64] = 10_u8;
   let input_length = len_of(input);
-  let lengths = buffer_new(3_u64, 0_u64);
+  let lengths = fixed_vector::<u64, 3>();
+  set lengths = place_back(vector: move lengths, value: 0_u64);
+  set lengths = place_back(vector: move lengths, value: 0_u64);
+  set lengths = place_back(vector: move lengths, value: 0_u64);
   let lengths_room = len_of(lengths);
   let line_count = 0_u64;
   let current_length = 0_u64;

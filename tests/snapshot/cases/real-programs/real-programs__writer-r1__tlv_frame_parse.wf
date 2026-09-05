@@ -1,6 +1,16 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: ACCEPT -- walks a tag-length-value frame stream and sums the declared value lengths with bounds checks";
-  let frame = buffer_new(10_u64, 0_u8);
+  let frame = fixed_vector::<u8, 10>();
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
+  set frame = place_back(vector: move frame, value: 0_u8);
   set frame[0_u64] = 1_u8;
   set frame[1_u64] = 2_u8;
   set frame[2_u64] = 170_u8;
