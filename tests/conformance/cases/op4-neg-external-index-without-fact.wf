@@ -1,7 +1,11 @@
 command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
   region {
     let index = args_count(args: &args);
-    let bytes = buffer_new(4_u64, 0_u8);
+    let empty = fixed_vector::<u8, 4>();
+    let one = place_back(vector: move empty, value: 0_u8);
+    let two = place_back(vector: move one, value: 0_u8);
+    let three = place_back(vector: move two, value: 0_u8);
+    let bytes = place_back(vector: move three, value: 0_u8);
     let value = bytes[index];
     return exit_status(code: value);
   }

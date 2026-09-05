@@ -1,4 +1,4 @@
-fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+fn probe(table: own FixedVector<u8, 4>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
   define spare = len_of(table);
   requires lo < hi;
   requires hi <= spare;
@@ -13,7 +13,11 @@ fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = buffer_new(4_u64, 0_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 0_u8);
+  let two = place_back(vector: move one, value: 0_u8);
+  let three = place_back(vector: move two, value: 0_u8);
+  let table = place_back(vector: move three, value: 0_u8);
   let found = probe(table: move table, lo: 0_u64, hi: 4_u64);
   return exit_status(code: found);
 }

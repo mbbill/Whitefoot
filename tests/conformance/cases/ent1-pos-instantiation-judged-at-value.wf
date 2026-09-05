@@ -1,4 +1,4 @@
-fn element<const n: u64>(values: own array<u8, n>) -> result: own u8 pure {
+fn element<const n: u64>(values: own FixedVector<u8, n>) -> result: own u8 reads(values) {
   doc "Every generic source body first receives the source-schema ordinary judgment [ENT-1]. Executed control supplies the symbolic length bound required by the subscript, and the n = 4 concrete instance is then rechecked independently.";
   let spare = len_of(values);
   let inside = 2_u64 < spare;
@@ -9,7 +9,11 @@ fn element<const n: u64>(values: own array<u8, n>) -> result: own u8 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let wide = array_new::<u8, 4>(7_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  let two = place_back(vector: move one, value: 7_u8);
+  let three = place_back(vector: move two, value: 7_u8);
+  let wide = place_back(vector: move three, value: 7_u8);
   let value = element::<4>(values: move wide);
   let expected = value == 7_u8;
   if expected {

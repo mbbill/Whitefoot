@@ -1,7 +1,9 @@
 command fn main() -> status: own ExitStatus pure {
   doc "FORM-3: v0.22 releases index from the fixed grammar atoms, so it is an ordinary IDENT, declarable as a binding and usable as a subscript offset.";
   let index = 1_u64;
-  let items = buffer_new(2_u64, 7_u8);
+  let empty = fixed_vector::<u8, 2>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  let items = place_back(vector: move one, value: 7_u8);
   let value = items[index];
   return exit_status(code: 0_u8);
 }

@@ -11,8 +11,12 @@ fn choose_slice['r](take_left: own Bool, left: own Slice<'r, u8>, right: own Sli
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left = array_new::<u8, 2>(11_u8);
-  let right = array_new::<u8, 2>(29_u8);
+  let left_empty = fixed_vector::<u8, 2>();
+  let left_one = place_back(vector: move left_empty, value: 11_u8);
+  let left = place_back(vector: move left_one, value: 11_u8);
+  let right_empty = fixed_vector::<u8, 2>();
+  let right_one = place_back(vector: move right_empty, value: 29_u8);
+  let right = place_back(vector: move right_one, value: 29_u8);
   region {
     let pass_source = slice_of(&left);
     let passed = pass_slice(value: pass_source);

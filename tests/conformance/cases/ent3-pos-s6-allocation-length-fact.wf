@@ -1,7 +1,18 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "Source S6: `buffer_new(n, v)` establishes len_of(b) = n on the normal continuation [ENT-3, OP-9], and the copy equality of source S5 carries the literal into n, so a constant offset below that length discharges [OP-4]. The length is a declared allocation property, not a writer statement.";
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "Source S6: `heap_vector::<T>(store, count)` establishes cap_of(r) = count and room_of(r) = count on its Some continuation [ENT-3, BLK-2], and the copy equality of source S5 carries the literal into count, so each placement discharges its room requirement and a constant offset below the window the placements built discharges [OP-4]. The capacity is a declared allocation property, not a writer statement.";
   let size = 4_u64;
-  let b = buffer_new(size, 0_u8);
-  let value = b[2_u64];
-  return exit_status(code: 0_u8);
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: size) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let one = place_back(vector: move fresh, value: 0_u8);
+        let two = place_back(vector: move one, value: 0_u8);
+        let b = place_back(vector: move two, value: 0_u8);
+        let value = b[2_u64];
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
 }

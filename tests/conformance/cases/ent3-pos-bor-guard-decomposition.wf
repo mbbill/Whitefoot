@@ -1,5 +1,7 @@
-fn get(table: own array<u8, 4>, symbol: own u64) -> result: own u8 pure {
-  doc "ENT-3 signed Boolean decomposition [O11]: establishing a signed goal also establishes every member of its structural decomposition. The else edge of the `bor` guard establishes the negative sign of the disjunction, and decomp of a negative `bor(A, B)` is the conjunctive read {-A, -B}. So the edge establishes -below and -above, whose projections negate to symbol >= 0 and symbol < 4; with len_of(table) = 4 implicit, the guarded subscript's bounds obligation discharges and the function is accepted. Decomposition is a finite structural walk at establishment: no composition, no De Morgan rewriting, no search.";
+fn get(table: own FixedVector<u8, 4>, symbol: own u64) -> result: own u8 reads(table) contract {
+  requires 4_u64 <= len_of(table);
+} {
+  doc "ENT-3 signed Boolean decomposition [O11]: establishing a signed goal also establishes every member of its structural decomposition. The else edge of the `bor` guard establishes the negative sign of the disjunction, and decomp of a negative `bor(A, B)` is the conjunctive read {-A, -B}. So the edge establishes -below and -above, whose projections negate to symbol >= 0 and symbol < 4; with 4 <= len_of(table) required, the guarded subscript's bounds obligation discharges and the function is accepted. Decomposition is a finite structural walk at establishment: no composition, no De Morgan rewriting, no search.";
   let below = symbol < 0_u64;
   let above = symbol >= 4_u64;
   let invalid = bor(below, above);
@@ -11,7 +13,11 @@ fn get(table: own array<u8, 4>, symbol: own u64) -> result: own u8 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let table = array_new::<u8, 4>(7_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  let two = place_back(vector: move one, value: 7_u8);
+  let three = place_back(vector: move two, value: 7_u8);
+  let table = place_back(vector: move three, value: 7_u8);
   let value = get(table: move table, symbol: 2_u64);
   if value == 7_u8 {
   } else {
