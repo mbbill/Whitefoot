@@ -429,7 +429,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
          fn release_relative_path(value: own RelativePath) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_directory_read(value: own DirectoryRead) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
          fn release_read_file(value: own ReadFile) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
-         fn release_output(value: own Output) -> result: own unit pure {{\n  return unit;\n}}\n\n\
+         fn release_output(value: own OutputStream) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_exit_status(value: own ExitStatus) -> result: own unit pure {{\n  return unit;\n}}\n\n\
          fn release_directory_source(value: own DirectorySource) -> result: own unit writes(value) {{\n  return unit;\n}}\n\n\
          {COMMAND_ENTRY}"
@@ -479,7 +479,7 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
         );
         assert_contract(
             program,
-            SystemResourceType::Output,
+            SystemResourceType::OutputStream,
             SourceDetach,
             SystemReleaseRow::EMPTY,
             Opaque,
@@ -524,7 +524,11 @@ fn every_system_type_carries_its_release_contract_and_one_release_edge() {
                 SystemResourceType::ReadFile,
                 NativeCloseAttempt,
             ),
-            ("release_output", SystemResourceType::Output, SourceDetach),
+            (
+                "release_output",
+                SystemResourceType::OutputStream,
+                SourceDetach,
+            ),
             (
                 "release_exit_status",
                 SystemResourceType::ExitStatus,
@@ -778,7 +782,7 @@ fn releases_keep_reverse_declaration_order_on_the_normal_edge() {
 
 #[test]
 fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
-    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
+    let source = "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(source.as_bytes(), |program| {
         let main = function(program, "main");
         let block = only_block(main);
@@ -827,9 +831,9 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
         assert_eq!(
             resources,
             vec![
-                Some(SystemResourceType::FileFactory),
-                Some(SystemResourceType::Output),
-                Some(SystemResourceType::Output),
+                Some(SystemResourceType::HandleFactory),
+                Some(SystemResourceType::OutputStream),
+                Some(SystemResourceType::OutputStream),
                 Some(SystemResourceType::DirectoryRead),
                 Some(SystemResourceType::Args),
             ]
@@ -839,13 +843,13 @@ fn a_system_call_carries_its_semantic_identity_and_precedes_the_releases() {
 
 #[test]
 fn the_entry_retains_distinct_standard_input_rows_without_alias_metadata() {
-    let both = "command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let both = "command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(both.as_bytes(), |program| {
         let IrEntry::Command { inputs } = program.entry();
         assert_eq!(inputs, &vec![2, 3]);
     });
 
-    let one = "command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
+    let one = "command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n";
     with_ir(one.as_bytes(), |program| {
         let IrEntry::Command { inputs } = program.entry();
         assert_eq!(inputs, &vec![2]);
@@ -929,7 +933,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identity() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let total = 0_u64;
   for @plain (index in 0_u64..1_u64) {
     set total = total +wrap 1_u64;
@@ -937,7 +941,7 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region 'f {
-      match reserve_file(factory: &uniq files) {
+      match reserve_handle(factory: &uniq files) {
         Ok(value: permit) => {
           region {
             match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
@@ -1027,11 +1031,11 @@ fn staged_permission_reaches_a_complete_depth_one_driver_by_checked_loop_identit
 
 #[test]
 fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         region {
           match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
@@ -1087,11 +1091,11 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
 
 #[test]
 fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @first (index in 0_u64..3_u64) {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         region {
           match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
@@ -1109,7 +1113,7 @@ fn two_staged_loops_in_one_function_leave_both_on_the_ordinary_path() {
     }
   }
   for @second (index in 0_u64..3_u64) {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         region {
           match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
@@ -1292,11 +1296,11 @@ fn a_needle_declared_inside_the_loop_declines_the_wide_probe() {
 /// carried bindings, and leaves through the driver's exit block.
 #[test]
 fn a_prologue_gate_leaving_by_break_keeps_the_two_slot_driver() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..4_u64) {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         region {
           match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {

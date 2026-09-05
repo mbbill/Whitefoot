@@ -43,13 +43,24 @@ const ENUMERATOR_UNITS: [(&str, &str); 7] = [
 ];
 
 /// The constants §11 fixes: two lane slots, because I4's second half wants a
-/// power of two and never three, and ceilings that admit every swept
-/// configuration.
-const ENUMERATOR_DEFINES: [&str; 4] = [
+/// power of two and never three; ceilings that admit every swept
+/// configuration; and the idle window's bounded spin pinned to one round with
+/// no yield round, which `compiler/Makefile`'s `sched-enumerate` pins the same
+/// way and for the same two reasons. A spin round here is not a delay but a
+/// repetition of the window's looks, and every look is a primitive step the
+/// search branches on: one round costs 9.4 times the states at (2,4) and a
+/// second costs 24 times the states at (2,3). A yield round is worse than
+/// costly -- the enumerator makes a yield block until another process writes,
+/// so a yield in front of the park forces every device completion ahead of the
+/// park and the one thread then never sleeps on the primitive, which S10a
+/// asserts it does.
+const ENUMERATOR_DEFINES: [&str; 6] = [
     "-DWF_SCHED_ENUMERATE",
     "-DWF_SCHED_LANE_SLOTS=2u",
     "-DWF_SCHED_MAX_THREADS=4u",
     "-DWF_SCHED_MAX_STACKS=8u",
+    "-DWF_SCHED_IDLE_SPIN_ROUNDS=1u",
+    "-DWF_SCHED_IDLE_YIELD_ROUNDS=0u",
 ];
 
 /// Reached at every swept configuration: a park, the two states it passes

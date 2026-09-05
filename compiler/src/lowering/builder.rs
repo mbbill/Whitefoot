@@ -213,7 +213,7 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                             break;
                         };
                         let constructor =
-                            crate::system_constructor_index(declaration, crate::Inventory::ACTIVE)
+                            crate::system_constructor_index(declaration, data.inventory)
                                 .and_then(|index| {
                                     crate::SYSTEM_CONSTRUCTORS.get(usize::from(index))
                                 })
@@ -1441,11 +1441,22 @@ impl<'program> IrBuilder<'program> {
             }
             // An opaque resource value is its own borrow: it has no
             // source-visible content and needs no stable address, exactly as
-            // a `box` borrow does.
+            // a `box` borrow does. A borrow of one that is a struct field is
+            // the same value, read out of the aggregate: the field path is
+            // projected without consuming the root, because a borrow leaves
+            // the whole value live [SYS-18].
             CheckedExpression::BorrowSystemResource {
-                binding, nominal, ..
+                binding,
+                fields,
+                nominal,
+                ..
             } => {
-                let value = self.binding_value(*binding)?;
+                let root = self.binding_value(*binding)?;
+                let value = if fields.is_empty() {
+                    root
+                } else {
+                    self.project_struct_path(root, fields, false)?
+                };
                 if self.value_type(value)? != IrType::Nominal(IrNominalId(nominal.0)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }

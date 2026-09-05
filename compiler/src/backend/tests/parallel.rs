@@ -123,7 +123,7 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
   return at +wrap 8_u64;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let t0 = oct(a: 1_u64, b: 2_u64, c: 3_u64, d: 4_u64, e: 5_u64, f: 6_u64, g: 7_u64, h: 8_u64);
   let t1 = oct(a: 9_u64, b: 10_u64, c: 11_u64, d: 12_u64, e: 13_u64, f: 14_u64, g: 15_u64, h: 16_u64);
   let t2 = oct(a: 17_u64, b: 18_u64, c: 19_u64, d: 20_u64, e: 21_u64, f: 22_u64, g: 23_u64, h: 24_u64);
@@ -220,7 +220,7 @@ fn last_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "A pure call handed out while a pure call written as an if condition runs.";
   let report = buffer_new(2_u64, 0_u8);
   let value = mixdown(a: 11_u64, b: 22_u64);
@@ -762,7 +762,7 @@ const MIXED_COMPUTE_AROUND_A_WRITE: &[u8] =
   return imax(value, value);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let report = buffer_new(8_u64, 0_u8);
   region 'o {
     region {
@@ -810,7 +810,7 @@ const MIXED_WRITE_BEFORE_COMPUTE: &[u8] =
   return imax(value, value);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let report = buffer_new(8_u64, 0_u8);
   region 'o {
     region {
@@ -1526,7 +1526,7 @@ fn spell(destination: &uniq buffer<u8>, value: own u64) -> result: own u64 reads
   return cursor;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let report = buffer_new(8_u64, 0_u8);

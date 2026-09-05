@@ -1028,7 +1028,7 @@ impl IrBuilder<'_> {
 /// One gate in the prologue: a `match` on a `never-suspends` operation whose
 /// one continuing arm holds the staged submission and whose every other arm
 /// leaves the loop before any submission, which is an exit written in the
-/// prologue and admitted by [PAR-3]'s second condition. `reserve_file` is the
+/// prologue and admitted by [PAR-3]'s second condition. `reserve_handle` is the
 /// instance the backed permit introduces [SYS-10]: its `Err` arm exits, its
 /// `Ok` arm carries the permit into the open.
 struct PrologueGate<'body> {

@@ -204,24 +204,10 @@ void wf_prim_unlock(void) {
     pthread_mutex_unlock(&wf_prim_core_lock);
 }
 
-/* ------------------------------------------------------ 6. yield, pause */
+/* ------------------------------------------------------------- 6. yield */
 
 void wf_prim_yield(void) {
     (void)sched_yield();
-}
-
-void wf_prim_pause(void) {
-#if defined(__x86_64__) || defined(__i386__)
-    __builtin_ia32_pause();
-#elif defined(__aarch64__)
-    /* `isb` is what the ARM optimisation guides give a spin that has nothing
-     * to wait on but the next look; `yield` there is a hint the cores this
-     * runs on treat as a no-op. */
-    __asm__ __volatile__("isb" ::: "memory");
-#else
-    /* Nothing to hint with: the loop is still a bounded number of looks. */
-    __atomic_signal_fence(__ATOMIC_SEQ_CST);
-#endif
 }
 
 /* ---------------------------------------------------------- 7. progress */

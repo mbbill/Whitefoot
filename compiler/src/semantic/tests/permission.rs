@@ -74,7 +74,7 @@ fn denial(pair: &PermissionPair, condition: u8) -> &Denial {
 /// overlap is decided solely from the concrete actual places.
 #[test]
 fn independent_direct_output_operations_are_permitted() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -96,11 +96,11 @@ fn independent_direct_output_operations_are_permitted() {
     assert_eq!(pair.verdict, PermissionVerdict::PermittedEligible);
 }
 
-/// One Output is an ordinary mutable state object. Two loans covering the
+/// One OutputStream is an ordinary mutable state object. Two loans covering the
 /// same named region therefore fail before overlap permission is considered.
 #[test]
 fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region {
@@ -122,7 +122,7 @@ fn direct_output_operations_on_one_state_cannot_hold_two_unique_loans() {
 
 #[test]
 fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'out {
     region 'err {
@@ -156,17 +156,17 @@ fn completion_waits_for_the_exact_nonadjacent_unique_loan() {
 /// one directory without retaining either factory loan.
 #[test]
 fn independent_permits_allow_opens_through_one_shared_directory() {
-    let source = br#"fn open_two(first_permit: own FilePermit, second_permit: own FilePermit, directory: &DirectoryRead) -> result: own unit reads(first_permit, second_permit, directory), writes(first_permit, second_permit) {
+    let source = br#"fn open_two(first_permit: own HandlePermit, second_permit: own HandlePermit, directory: &DirectoryRead) -> result: own unit reads(first_permit, second_permit, directory), writes(first_permit, second_permit) {
   let first = open_directory_source(permit: move first_permit, directory: directory);
   let second = open_directory_source(permit: move second_permit, directory: directory);
   return unit;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: first_permit) => {
-        match reserve_file(factory: &uniq files) {
+        match reserve_handle(factory: &uniq files) {
           Ok(value: second_permit) => {
             open_two(first_permit: move first_permit, second_permit: move second_permit, directory: &cwd);
           }
@@ -1601,7 +1601,7 @@ command fn main() -> status: own ExitStatus pure {
 /// all about a program that plainly performs two independent operations.
 #[test]
 fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {
@@ -1649,7 +1649,7 @@ fn a_call_in_scrutinee_position_is_judged_as_the_bound_form_is() {
 /// match written *between* two bound calls already gets.
 #[test]
 fn a_scrutinee_call_denies_against_a_later_call_it_is_read_before() {
-    let source = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bytes = buffer_new(2_u64, 65_u8);
   region 'out {
     region 'err {

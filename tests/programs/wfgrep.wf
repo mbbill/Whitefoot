@@ -182,7 +182,7 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
   return target;
 }
 
-fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires length <= source_length;
 } {
@@ -304,7 +304,7 @@ fn put_decimal(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> re
   return end;
 }
 
-fn report_failure(err: &uniq Output, report: &uniq buffer<u8>, path: &buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads(err, report, path), writes(err, report) {
+fn report_failure(err: &uniq OutputStream, report: &uniq buffer<u8>, path: &buffer<u8>, path_length: own u64, status: own u8) -> result: own unit reads(err, report, path), writes(err, report) {
   doc "Assembles one `wfgrep: PATH: reason` diagnostic in the report buffer and publishes it with a single write, copying the caller's path bytes and clamping the assembled length against the report's capacity.";
   let length = 0_u64;
   let report_capacity = len(deref(report));
@@ -531,7 +531,7 @@ fn shift_input_tail(input: &uniq buffer<u8>, available: own u64, scan: own u64) 
   return move accepted;
 }
 
-fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, path: &buffer<u8>, path_length: own u64, out: &uniq Output) -> result: own u8 reads(file, pattern, path, out), writes(out), allocates(heap) {
+fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, path: &buffer<u8>, path_length: own u64, out: &uniq OutputStream) -> result: own u8 reads(file, pattern, path, out), writes(out), allocates(heap) {
   doc "Reads one open file and publishes `PATH:LINE:TEXT` for every line that holds the literal pattern bytes.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(8192_u64, 0_u8);
@@ -721,8 +721,8 @@ fn search_file(file: &ReadFile, pattern: &buffer<u8>, pattern_length: own u64, p
   return packed;
 }
 
-fn open_source_from_factory(factory: &uniq FileFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
-  match reserve_file(factory: move factory) {
+fn open_source_from_factory(factory: &uniq HandleFactory, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(factory, directory), writes(factory) {
+  match reserve_handle(factory: move factory) {
     Ok(value: permit) => {
       match open_directory_source(permit: move permit, directory: directory) {
         SourceOpened(value: opened) => {
@@ -739,14 +739,14 @@ fn open_source_from_factory(factory: &uniq FileFactory, directory: &DirectoryRea
   }
 }
 
-fn open_file_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
+fn open_file_from_factory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = start <= end;
   define capacity = len(deref(name));
   define within = end <= capacity;
   requires ordered;
   requires within;
 } {
-  match reserve_file(factory: move factory) {
+  match reserve_handle(factory: move factory) {
     Ok(value: permit) => {
       match open_file(permit: move permit, root: root, name: name, start: start, end: end) {
         FileOpened(value: opened) => {
@@ -763,14 +763,14 @@ fn open_file_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name
   }
 }
 
-fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
+fn open_directory_from_factory(factory: &uniq HandleFactory, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(factory, root, name), writes(factory) contract {
   define ordered = start <= end;
   define capacity = len(deref(name));
   define within = end <= capacity;
   requires ordered;
   requires within;
 } {
-  match reserve_file(factory: move factory) {
+  match reserve_handle(factory: move factory) {
     Ok(value: permit) => {
       match open_directory(permit: move permit, root: root, name: name, start: start, end: end) {
         DirectoryOpened(value: opened) => {
@@ -787,7 +787,7 @@ fn open_directory_from_factory(factory: &uniq FileFactory, root: &DirectoryRead,
   }
 }
 
-fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, prefix_length: own u64, pattern: &buffer<u8>, pattern_length: own u64, out: &uniq Output, err: &uniq Output) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err), allocates(heap) {
+fn walk(factory: &uniq HandleFactory, dir: &DirectoryRead, prefix: &buffer<u8>, prefix_length: own u64, pattern: &buffer<u8>, pattern_length: own u64, out: &uniq OutputStream, err: &uniq OutputStream) -> result: own u8 reads(factory, dir, prefix, pattern, out, err), writes(factory, out, err), allocates(heap) {
   doc "Enumerates one directory in sorted order, searches the regular files it names, and descends into the subdirectories it names. The descent carries no source-level depth cap; stack availability remains outside this version's portable result model. Two program bounds remain and both are recorded as defects. One truncates silently: at most 64 entries per directory are retained, in the host's enumeration order, before sorting, and the walk returns normally, so that truncation is indistinguishable from a complete one. The other stops the descent: a display path past a thousand bytes refuses, which on a tree of one-byte directory names binds at roughly five hundred levels, and it reports by exit status alone with nothing on standard error.";
   let matched = 0_u8;
   let failed = 0_u8;
@@ -1218,7 +1218,7 @@ fn walk(factory: &uniq FileFactory, dir: &DirectoryRead, prefix: &buffer<u8>, pr
   return packed;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
   doc "Searches one directory tree recursively and publishes `PATH:LINE:TEXT` for the lines holding the literal pattern bytes; 0 matched, 1 none, 2 error. The search is complete only within `walk`'s two remaining fixed bounds: 64 entries per directory, beyond which it truncates and still returns normally, and a thousand-byte display path, beyond which the descent stops and the run exits 2 with nothing on standard error.";
   let pattern = buffer_new(4096_u64, 0_u8);
   let root_name = buffer_new(256_u64, 0_u8);
@@ -1350,7 +1350,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
   let failed = 0_u8;
   let root_status = 0_u8;
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: root_permit) => {
         match open_directory(permit: move root_permit, root: &cwd, name: &root_name, start: 0_u64, end: root_length) {
           DirectoryOpened(value: root) => {
@@ -1386,7 +1386,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           match relative_path(value: move text) {
             Ok(value: path) => {
               region {
-                match reserve_file(factory: &uniq files) {
+                match reserve_handle(factory: &uniq files) {
                   Ok(value: fallback_permit) => {
                     match open_read(permit: move fallback_permit, root: &cwd, path: &path) {
                       FileOpened(value: file) => {

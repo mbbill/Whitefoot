@@ -19,7 +19,7 @@
 use super::super::qualification::{
     ApprovedImplementation, DirectoryEnumeration, EntryNameLength, ORIGIN_DESCRIPTOR_STATUS,
     ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_WRITE, ProgramKind, Qualification,
-    ReleaseImplementation, SystemTarget, qualified_representation,
+    ReleaseImplementation, ResourceRepresentation, SystemTarget, qualified_representation,
 };
 use super::completion::{
     CompletionRetirement, DIRECTORY_NEXT_SUBMIT, FILE_JOIN, WRAPPER_RAW_ERROR, WRAPPER_RAW_OUTCOME,
@@ -69,10 +69,13 @@ const OPEN_DIRECTORY: u8 = 11;
 const OPEN_LIST: u8 = 12;
 const LIST_ONCE: u8 = 13;
 const OPEN_FILE: u8 = 14;
-const RESERVE_FILE: u8 = 15;
+const RESERVE_HANDLE: u8 = 15;
 const CLOSE_READ: u8 = 16;
 const CLOSE_DIRECTORY: u8 = 17;
 const CLOSE_DIRECTORY_SOURCE: u8 = 18;
+const READ_NEXT: u8 = 19;
+const SOCKET_ADDRESS_V4: u8 = 20;
+const SOCKET_ADDRESS_V6: u8 = 21;
 
 /// The finite system operations the first typed file adapter can actualize.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -91,7 +94,10 @@ pub(super) fn completion_file_operation(
 ) -> Option<CompletionFileOperation> {
     match operation.ordinal() {
         OPEN_READ => Some(CompletionFileOperation::OpenRead),
-        READ_ONCE => Some(CompletionFileOperation::Read),
+        // `read_at` and `read_next` publish the same `ReadOutcome` from the
+        // same three raw scalars, so they share one completion mapper; what
+        // differs is the request they submit, not what its completion means.
+        READ_ONCE | READ_NEXT => Some(CompletionFileOperation::Read),
         WRITE_ONCE => Some(CompletionFileOperation::Write),
         OPEN_DIRECTORY => Some(CompletionFileOperation::OpenDirectory),
         OPEN_LIST => Some(CompletionFileOperation::OpenDirectorySource),
@@ -263,6 +269,10 @@ pub(super) fn emit_system_interface(
     // the module resolves the `IoError` type once from whichever outcome the
     // program actually uses.
     let mut io_error = None;
+    // `read_at` and `read_next` publish the same `ReadOutcome` through the one
+    // read completion mapper [SYS-8], so a program that uses both emits it
+    // once. The two shapes are the same interned type by construction.
+    let mut read_mapper: Option<ReadOutcomeShape> = None;
     for (ordinal, implementation) in qualification.used_operations() {
         let result = results
             .get(usize::from(ordinal))
@@ -320,6 +330,7 @@ pub(super) fn emit_system_interface(
                 let shape = read_outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.failed_type)?;
                 definitions.push_str(&emit_read_at(program, implementation, &shape, target)?);
+                read_mapper = Some(shape);
             }
             WRITE_ONCE => {
                 let shape = outcome_shape(program, result)?;
@@ -374,10 +385,22 @@ pub(super) fn emit_system_interface(
                     target_layout,
                 )?);
             }
-            RESERVE_FILE => {
+            READ_NEXT => {
+                let shape = read_outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.failed_type)?;
+                definitions.push_str(&emit_read_next(program, implementation, &shape, target)?);
+                read_mapper = Some(shape);
+            }
+            SOCKET_ADDRESS_V4 => {
+                definitions.push_str(&emit_socket_address_v4(implementation));
+            }
+            SOCKET_ADDRESS_V6 => {
+                definitions.push_str(&emit_socket_address_v6(implementation));
+            }
+            RESERVE_HANDLE => {
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
-                definitions.push_str(&emit_reserve_file(program, implementation, &shape)?);
+                definitions.push_str(&emit_reserve_handle(program, implementation, &shape)?);
             }
             CLOSE_READ => {
                 needs_close = true;
@@ -403,6 +426,9 @@ pub(super) fn emit_system_interface(
             declarations.insert(declaration);
         }
     }
+    if let Some(shape) = read_mapper.as_ref() {
+        definitions.push_str(&emit_read_completion_mapper(shape));
+    }
     if needs_validator {
         definitions.push_str(&emit_utf8_validator());
     }
@@ -424,6 +450,7 @@ pub(super) fn emit_system_interface(
     if target.is_windows() {
         declarations.insert("declare i32 @wf__windows_stdout_descriptor()".to_owned());
         declarations.insert("declare i32 @wf__windows_stderr_descriptor()".to_owned());
+        declarations.insert("declare i32 @wf__windows_stdin_descriptor()".to_owned());
     } else {
         declarations.insert("declare ptr @signal(i32, ptr)".to_owned());
     }
@@ -575,9 +602,19 @@ fn operation_declarations(
                 "declare void @abort() noreturn".to_owned(),
             ]);
         }
+        READ_NEXT => {
+            return Ok(vec![
+                format!(
+                    "declare void @{}(i32, ptr, i64, ptr)",
+                    target.file_read_submit_symbol()
+                ),
+                completion_join_declaration(target),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
+        }
         // The factory's credit count lives in the floor, linked into every
         // program [SYS-10].
-        RESERVE_FILE => &["declare i32 @wf__file_reserve()"],
+        RESERVE_HANDLE => &["declare i32 @wf__handle_reserve()"],
         CLOSE_READ | CLOSE_DIRECTORY | CLOSE_DIRECTORY_SOURCE => {
             return Ok(close_declarations(target));
         }
@@ -674,6 +711,10 @@ fn catalog_ir_type(
             width: 8,
             signed: false,
         },
+        crate::SystemTypeRef::U16 => IrType::Integer {
+            width: 16,
+            signed: false,
+        },
         crate::SystemTypeRef::U32 => IrType::Integer {
             width: 32,
             signed: false,
@@ -730,13 +771,29 @@ fn system_nominal_ir_type(
         if nominal.identity() != crate::IrNominalIdentity::System(index) {
             return Ok(false);
         }
-        if declared.opaque {
+        if declared.is_opaque() {
             let expected =
                 crate::system_resource_contract(index).ok_or(BackendFailure::InvalidIr)?;
             return Ok(matches!(
                 nominal.kind(),
                 IrNominalKind::SystemResource(actual) if *actual == expected
             ));
+        }
+        // A system struct is an ordinary struct nominal whose fields come from
+        // the catalog [SYS-18]; nothing about matching it is special.
+        if declared.is_struct() {
+            let IrNominalKind::Struct { fields } = nominal.kind() else {
+                return Ok(false);
+            };
+            if fields.len() != declared.fields.len() {
+                return Ok(false);
+            }
+            for (field, expected) in fields.iter().zip(declared.fields) {
+                if field.ty() != catalog_ir_type(program, expected.ty)? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
         }
         let IrNominalKind::Enum { variants } = nominal.kind() else {
             return Ok(false);
@@ -1728,7 +1785,6 @@ fn emit_read_at(
     // here: an empty transfer is completed with no external action, and an
     // offset above the signed maximum is published as `EINVAL`. The mapper
     // turns either into the same outcome the wrapper used to build itself.
-    let mapper = emit_read_completion_mapper(shape);
     let prepared =
         completion_transfer_target(&buffer, "%destination", "%start", "%base", "%target");
     let submit = completion_submit_call(
@@ -1741,7 +1797,9 @@ fn emit_read_at(
         READ_COMPLETION_MAPPER,
         "i64 %start, i64 %extent",
     );
-    let wrapper = format!(
+    // The one read completion mapper is emitted once by the caller, because
+    // `read_at` and `read_next` share it [SYS-8].
+    Ok(format!(
         "define private {llvm} @{symbol}({file} %file, {buffer} %destination, i64 %file_offset, \
          i64 %start, i64 %end) alwaysinline {{\n\
          entry:\n\
@@ -1752,8 +1810,60 @@ fn emit_read_at(
          }}\n\n",
         symbol = implementation.symbol(),
         reservation = completion_wrapper_reservation(false),
+    ))
+}
+
+/// Emits `read_next`: one unpositioned transfer attempt at the stream's own
+/// position [SYS-15].
+///
+/// It is `read_at`'s wrapper with the offset removed and the runtime's
+/// unpositioned request kind in place of the positioned one, and it publishes
+/// the same `ReadOutcome` through the same mapper: an empty range answers
+/// `ReadBytes(start)` with no host transfer, a progress-producing attempt
+/// answers `ReadBytes(next)`, a host end answers `ReadEnd`, and a refusal
+/// answers `ReadFailed`. The stream's position is the descriptor's own, so
+/// nothing here carries or advances a cursor of its own.
+fn emit_read_next(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &ReadOutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let stream = representation(SystemResourceType::InputStream);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let ReadOutcomeShape { llvm, .. } = shape;
+    let prepared =
+        completion_transfer_target(&buffer, "%destination", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        target.file_read_submit_symbol(),
+        &format!("{stream} %input, ptr %target, i64 %extent, ptr {WRAPPER_RECORD}"),
     );
-    Ok(format!("{mapper}{wrapper}"))
+    let retirement = transfer_retirement(
+        target.file_join_symbol(),
+        llvm,
+        READ_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    Ok(format!(
+        "define private {llvm} @{symbol}({stream} %input, {buffer} %destination, \
+         i64 %start, i64 %end) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    ))
 }
 
 fn emit_read_completion_mapper(shape: &ReadOutcomeShape) -> String {
@@ -1813,7 +1923,7 @@ fn emit_write_once(
     shape: &OutcomeShape,
     target: SystemTarget,
 ) -> Result<String, BackendFailure> {
-    let output = representation(SystemResourceType::Output);
+    let output = representation(SystemResourceType::OutputStream);
     let buffer = llvm_type(
         program,
         IrType::Buffer {
@@ -2760,6 +2870,90 @@ fn class_arm(io: &str, class: &IoErrorClass) -> String {
     format!("{prefix}:\n{value}  ret {io} {name}\n")
 }
 
+/// The [QUAL-1] representation of one `SocketAddress` [SYS-16].
+///
+/// Sixteen address bytes in two 64-bit words, then the port in the low sixteen
+/// bits of a 32-bit word whose bit 16 selects the family. Byte `i` of the
+/// address occupies bits `8 * (i % 8)` of word `i / 8`, so the same rule reads
+/// the value on either endianness and an IPv4 address simply leaves bytes 4
+/// through 15 zero. Nothing in source observes this layout [SYS-2]; it is the
+/// target column of the row, and the runtime routes of slice 2 read it by the
+/// same rule.
+const SOCKET_ADDRESS_FAMILY_V6: u32 = 1 << 16;
+
+fn emit_socket_address_v4(implementation: ApprovedImplementation) -> String {
+    let value = ResourceRepresentation::InternetAddress.llvm();
+    // The four bytes are the address in its conventional order, so byte 0 is
+    // `a` and byte 3 is `d`; bytes 4 through 15 stay zero and the family bit
+    // stays clear.
+    let mut body = String::new();
+    for (index, name) in ["%a", "%b", "%c", "%d"].into_iter().enumerate() {
+        let shift = 8 * index;
+        let _ = writeln!(
+            body,
+            "  {name}.w = zext i8 {name} to i64\n  \
+             {name}.s = shl nuw i64 {name}.w, {shift}"
+        );
+    }
+    format!(
+        "define private {value} @{symbol}(i8 %a, i8 %b, i8 %c, i8 %d, i16 %port) \
+         alwaysinline {{\n\
+         entry:\n\
+         {body}  \
+         %ab = or i64 %a.s, %b.s\n  \
+         %abc = or i64 %ab, %c.s\n  \
+         %word0 = or i64 %abc, %d.s\n  \
+         %port.wide = zext i16 %port to i32\n  \
+         %address.0 = insertvalue {value} zeroinitializer, i64 %word0, 0\n  \
+         %address.1 = insertvalue {value} %address.0, i64 0, 1\n  \
+         %address = insertvalue {value} %address.1, i32 %port.wide, 2\n  \
+         ret {value} %address\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    )
+}
+
+fn emit_socket_address_v6(implementation: ApprovedImplementation) -> String {
+    let value = ResourceRepresentation::InternetAddress.llvm();
+    // Group `i` occupies address bytes `2i` and `2i + 1`, high byte first,
+    // which is the conventional order of an IPv6 group.
+    let groups = ["%a", "%b", "%c", "%d", "%e", "%f", "%g", "%h"];
+    let mut body = String::new();
+    for (index, name) in groups.iter().enumerate() {
+        let high_shift = 8 * ((2 * index) % 8);
+        let low_shift = 8 * ((2 * index + 1) % 8);
+        let _ = writeln!(
+            body,
+            "  {name}.wide = zext i16 {name} to i64\n  \
+             {name}.low = and i64 {name}.wide, 255\n  \
+             {name}.high = lshr i64 {name}.wide, 8\n  \
+             {name}.hs = shl nuw i64 {name}.high, {high_shift}\n  \
+             {name}.ls = shl nuw i64 {name}.low, {low_shift}\n  \
+             {name}.packed = or i64 {name}.hs, {name}.ls"
+        );
+    }
+    format!(
+        "define private {value} @{symbol}(i16 %a, i16 %b, i16 %c, i16 %d, i16 %e, i16 %f, \
+         i16 %g, i16 %h, i16 %port) alwaysinline {{\n\
+         entry:\n\
+         {body}  \
+         %word0.ab = or i64 %a.packed, %b.packed\n  \
+         %word0.abc = or i64 %word0.ab, %c.packed\n  \
+         %word0 = or i64 %word0.abc, %d.packed\n  \
+         %word1.ef = or i64 %e.packed, %f.packed\n  \
+         %word1.efg = or i64 %word1.ef, %g.packed\n  \
+         %word1 = or i64 %word1.efg, %h.packed\n  \
+         %port.wide = zext i16 %port to i32\n  \
+         %tagged = or i32 %port.wide, {SOCKET_ADDRESS_FAMILY_V6}\n  \
+         %address.0 = insertvalue {value} zeroinitializer, i64 %word0, 0\n  \
+         %address.1 = insertvalue {value} %address.0, i64 %word1, 1\n  \
+         %address = insertvalue {value} %address.1, i32 %tagged, 2\n  \
+         ret {value} %address\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    )
+}
+
 fn emit_exit_status(implementation: ApprovedImplementation) -> String {
     let status = representation(SystemResourceType::ExitStatus);
     // Total and pure: every `u8` is a valid command code, so there is no
@@ -2779,12 +2973,12 @@ fn emit_exit_status(implementation: ApprovedImplementation) -> String {
 /// answers `Ok(permit)`, or `Err(ResourceExhausted)` when the factory is
 /// spent. The permit's own representation stays the erased bit: target open
 /// wrappers consume it in the checked program and pass nothing native.
-fn emit_reserve_file(
+fn emit_reserve_handle(
     program: &IrProgram<'_, '_, '_>,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
 ) -> Result<String, BackendFailure> {
-    let permit = representation(SystemResourceType::FilePermit);
+    let permit = representation(SystemResourceType::HandlePermit);
     if shape.ok_llvm != permit {
         return Err(BackendFailure::InvalidIr);
     }
@@ -2809,7 +3003,7 @@ fn emit_reserve_file(
     Ok(format!(
         "define private {llvm} @{symbol}() alwaysinline {{\n\
          entry:\n  \
-         %granted.native = call i32 @wf__file_reserve()\n  \
+         %granted.native = call i32 @wf__handle_reserve()\n  \
          %granted = icmp eq i32 %granted.native, 1\n  \
          br i1 %granted, label %grant, label %refuse\n\
          grant:\n  \
@@ -2863,7 +3057,7 @@ fn emit_close_helper(target: SystemTarget) -> String {
 /// open held comes back as the fresh permit, which is the erased bit. The
 /// factory's count is untouched: the permit value is the credit.
 fn emit_close(implementation: ApprovedImplementation, resource: SystemResourceType) -> String {
-    let permit = representation(SystemResourceType::FilePermit);
+    let permit = representation(SystemResourceType::HandlePermit);
     let owner = representation(resource);
     format!(
         "define private {permit} @{symbol}({owner} %owner) alwaysinline {{\n\
@@ -3089,10 +3283,18 @@ pub(super) fn emit_entry(
             3 => {
                 supplied.push("i32 2".to_owned());
             }
-            // FileFactory is a proof-only affine entry value. Supplying it
+            // HandleFactory is a proof-only affine entry value. Supplying it
             // performs no host allocation and carries no native handle.
             4 => {
                 supplied.push("i1 true".to_owned());
+            }
+            // The standard input binding supplies one affine owner over the
+            // invocation's own descriptor 0 [SYS-15]. Like the two output
+            // sinks it is a handle the invocation already holds, so the
+            // bootstrap opens nothing and the factory's capacity already
+            // excludes it.
+            5 => {
+                supplied.push("i32 0".to_owned());
             }
             _ => return Err(BackendFailure::InvalidIr),
         }
@@ -3226,6 +3428,14 @@ fn emit_windows_entry(
                 available.push("%stderr.available");
             }
             4 => supplied.push("i1 true".to_owned()),
+            5 => {
+                body.push_str(
+                    "  %stdin = call i32 @wf__windows_stdin_descriptor()\n  \
+                     %stdin.available = icmp sge i32 %stdin, 0\n",
+                );
+                supplied.push("i32 %stdin".to_owned());
+                available.push("%stdin.available");
+            }
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
@@ -3299,8 +3509,9 @@ fn expected_input(ordinal: u8) -> Result<SystemResourceType, BackendFailure> {
     match ordinal {
         0 => Ok(SystemResourceType::Args),
         1 => Ok(SystemResourceType::DirectoryRead),
-        2 | 3 => Ok(SystemResourceType::Output),
-        4 => Ok(SystemResourceType::FileFactory),
+        2 | 3 => Ok(SystemResourceType::OutputStream),
+        4 => Ok(SystemResourceType::HandleFactory),
+        5 => Ok(SystemResourceType::InputStream),
         _ => Err(BackendFailure::InvalidIr),
     }
 }
@@ -3416,5 +3627,14 @@ pub(super) fn emit_resource_release(
             )
             .map_err(|_| BackendFailure::TextEmission)
         }
+        // A connection direction's half-close reaches the runtime through the
+        // route slice 2 of the streams-and-TCP batch supplies. No program can
+        // hold a `TcpReceive` or a `TcpSend` in this version, because every
+        // operation that produces one is an unmapped target row that stops
+        // compilation at qualification (`backend/qualification.rs`), so
+        // reaching this arm means a `TcpConnection` was produced by something
+        // other than `tcp_accept` or `tcp_connect` — an invariant of the
+        // qualified program, not a source condition.
+        ReleaseImplementation::NativeDirectionClose => Err(BackendFailure::InvalidIr),
     }
 }

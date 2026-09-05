@@ -6,7 +6,7 @@
  *   3. the sleep and the wake on the one epoch;
  *   4. the stack reservation, made once at the core's entry;
  *   5. lock and unlock of the core's one mutex;
- *   6. the yield the exhausted compute arm keeps, and the pause of a spin;
+ *   6. the yield the exhausted compute arm keeps;
  *   7. target progress and the drain.
  *
  * Three implementations, selected at compile time and never at run time. The
@@ -299,16 +299,8 @@ size_t wf_prim_stack_stride(size_t bytes);
 void wf_prim_lock(enum wf_prim_section section);
 void wf_prim_unlock(void);
 
-/* 6. The yield the exhausted compute arm keeps, and the pause a bounded spin
- * puts between two of its looks. The pause reaches no shared state and can
- * observe nothing; it is a hint to the machine that these cycles are a wait,
- * and it is here with the yield because the core may name no instruction of
- * any platform. The host answers it with `pause` on x86 and `isb` on aarch64,
- * Windows with `YieldProcessor`, and the enumerator with nothing, because a
- * step that neither reads nor writes shared state is not a step it schedules.
- * `WF_SCHED_IDLE_SPIN_ROUNDS` in `core.h` is the one caller. */
+/* 6. The yield. */
 void wf_prim_yield(void);
-void wf_prim_pause(void);
 
 /* 7. Target progress and the drain: flush the deferred doorbell, run one
  * bounded target pass, and deliver every ready completion through

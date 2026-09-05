@@ -1146,6 +1146,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
 
         Ok(CheckedProgramData {
+            inventory: self.inventory(),
             nominals: self.nominals.clone(),
             executable_nominal_count,
             constants: self.checked_constants.clone(),

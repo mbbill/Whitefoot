@@ -983,7 +983,7 @@ mod tests {
     /// staged judgment denies it on `&uniq 'say out`, which is storage
     /// carrying one position, and the denial is the same under every lowering
     /// because the judgment is pure.
-    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    const DENIED_OUTPUT_LOOP: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Writes one line per iteration to standard output.";
   let page = buffer_new(8_u64, 0_u8);
   for @scan (index in 0_u64..4_u64) {

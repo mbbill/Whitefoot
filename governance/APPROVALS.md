@@ -2778,3 +2778,92 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   respelling. It deletes and renames no case and changes no adapter, runner,
   or collection wiring.
 ACTIVE-SPEC: v0.45 c07a8ba92b35c23c9d74f96a921750dc30933ebbf05975c52a1e595fe52c887c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+
+## 2026-09-05 — merge-time approval content: activate v0.46 (streams and TCP under T4: `command.stdin` and `read_next`, the socket address, the listener, the two-field connection struct, and the `HandleFactory`/`HandlePermit`/`OutputStream` respelling; numbered rules +4/-0, 140 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.46 at exact SHA-256
+  `d331dd1f44606635ba26507b57d294b1739746d7ed0581f308b51c2b3f475382`.
+  It supersedes active v0.45 at SHA-256
+  `c07a8ba92b35c23c9d74f96a921750dc30933ebbf05975c52a1e595fe52c887c`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.45.md`. The amendment lands as one change with no
+  candidate state. It adds four numbered rules and retires none (140 remain)
+  and adds and retires no grammar production (84 remain). [SYS-15] declares
+  `InputStream`, a state resource with one live position, supplied at entry
+  ordinal 5 as `command.stdin` and read by `read_next`, release-complete by
+  logical source detach with no explicit close. [SYS-16] declares
+  `SocketAddress` and its two total pure constructors `socket_address_v4` and
+  `socket_address_v6`, with no name resolution. [SYS-17] declares
+  `TcpListener` with `tcp_listen`, `tcp_accept`, `tcp_connect` and
+  `close_listener`. [SYS-18] declares `TcpConnection`, the first
+  system-declared struct — a new category of system nominal that contributes
+  one nominal-type entry, two owner-local field records and no constructor
+  entry — with its two direction resources `TcpReceive` and `TcpSend`,
+  `receive_next`, `send_once` and `close_connection`; its fields are ordinary
+  places under [EFF-1], [OWN-5] and [OWN-1], so full duplex is two loans on
+  disjoint fields and a partial move keeps a broken pair away from the close.
+  It modifies [SYS-2] (inventory, preorder, counts and target contracts),
+  [SYS-4] (the no-split sentence), [SYS-5] (release table), [SYS-6] (outcome
+  table, and the `propagate` operation list, which was stale from v0.45
+  because an open's outcome stopped being a `Result` in that version and is
+  corrected here to `write_once`, `reserve_handle` and `send_once`), [SYS-8]
+  (range-bearing set), [SYS-10] (permit accounting) and [FN-7] (standard-input
+  table and canonical entry header). It respells `Output`, `FileFactory`,
+  `FilePermit`, `command.files` and `reserve_file` as `OutputStream`,
+  `HandleFactory`, `HandlePermit`, `command.handles` and `reserve_handle`
+  wherever they are written, because a listener and a connection each draw one
+  credit from the same capacity a file open draws from. Counts: writer
+  operation spellings +10 with one respelled, opaque system nominal spellings
+  +5 with three respelled, struct system nominal spellings +1, enum system
+  nominal spellings +3 with six constructors and ten variant fields, entry
+  standard-input rows +1 (6 remain), system operations +10 (29 remain), and
+  declaration records +80 (307 remain). Ground: constitution T4 (resource
+  dependencies are API relations, owner ruling 2026-09-04) applied to every
+  socket resource in `research/investigations/io-model/NETWORK.md` §2, and the
+  owner's decisions of 2026-09-05 recorded in that document's §8: the network
+  first with standard input as the first stream, `InputStream` and
+  `OutputStream`, TCP only with address literals and no UDP or name
+  resolution, a target-fixed backlog, full duplex designed in from the start as
+  two halves, the `HandleFactory`/`HandlePermit`/`command.handles`/
+  `reserve_handle` spelling, and the connection as the two-field struct.
+- CONFORMANCE BOUNDARY: this merge adds eleven cases with their manifest rows.
+  Four are about the stream: `run-sysin-read-to-end` ([SYS-8], [SYS-15],
+  [FN-7]: the entry's standard input read to its end, with the arranged body's
+  own length as the verdict), `sysin-read-zero-range` ([SYS-8], [SYS-15]: an
+  empty range answers `ReadBytes(start)` with no host transfer and advances no
+  position, so the following read still sees the first byte),
+  `sysin-read-outcome-exhaustive` ([ERR-2], [SYS-6], [SYS-15]: `read_next`
+  answers the same three-variant `ReadOutcome`, so a match omitting
+  `ReadFailed` is rejected). Seven are about TCP:
+  `systcp-address-pure` ([SYS-2], [SYS-6], [SYS-16]: the two address
+  constructors are total and pure and an entry that builds two of them
+  declares the empty row); `systcp-connection-not-constructible` ([SYS-2],
+  [SYS-18], [TYPE-6]: a system struct contributes no constructor entry, so a
+  source construction is an unresolved use);
+  `systcp-connection-moved-half-kills-binding` ([OWN-1], [SYS-18]: a moved-out
+  direction kills the whole binding, so `close_connection` on it is refused by
+  the ordinary partial-move rule); `systcp-connection-two-halves` ([OWN-5],
+  [PAR-1], [SYS-18], [QUAL-1]: two `&uniq` loans on disjoint direction fields
+  coexist); `systcp-connection-field-effect-paths` ([EFF-1], [EFF-2],
+  [SYS-18], [QUAL-1]: a row over a whole connection is stated as the field
+  paths `link.receive` and `link.send`); and
+  `systcp-listen-permit-returned`, `systcp-accept-permit-returned`,
+  `systcp-connect-permit-returned` ([SYS-10], [SYS-17], [SYS-18], [QUAL-1]:
+  each failed variant hands the permit back and the explicit closes return the
+  credit). The last five expect the `unsupported` verdict, because every
+  language judgment admits them and the stop is target qualification's own
+  unmapped semantic identity [QUAL-1]; they become `accept` when slice 2 maps
+  the TCP rows, and the corpus is what will notice. It modifies
+  `accept-sysentry-command-all-inputs` to select all six standard-input rows
+  now that `command.stdin` exists, keeping its `accept` verdict, its rules and
+  its status, and adding [SYS-15] to its rule list. It modifies the source of
+  every other existing case that spells `Output`, `FileFactory`, `FilePermit`,
+  `command.files` or `reserve_file`, so that each uses the v0.46 spelling,
+  without changing any case's rules, expected verdict, exit code, arrangement
+  or status. It deletes and renames no case and changes no adapter, runner, or
+  collection wiring.
+ACTIVE-SPEC: v0.46 d331dd1f44606635ba26507b57d294b1739746d7ed0581f308b51c2b3f475382 c07a8ba92b35c23c9d74f96a921750dc30933ebbf05975c52a1e595fe52c887c

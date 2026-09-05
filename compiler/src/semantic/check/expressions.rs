@@ -345,7 +345,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     }
 
     /// One value's exact written mode and type, as `own u64`, `&'r
-    /// buffer<u8>`, or `&uniq 'r Output`.
+    /// buffer<u8>`, or `&uniq 'r OutputStream`.
     pub(in crate::semantic::check) fn checked_value_name(
         &self,
         mode: CheckedMode,

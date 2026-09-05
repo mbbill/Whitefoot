@@ -1,12 +1,14 @@
-# Current Plan: back the file permit, then park on miss
+# Current Plan: back the file permit, park on miss, then streams and TCP
 
-Status: IN PROGRESS on `io/t4-resource-relations` (PR #13). The previous
-plan, source-carried proof, is IMPLEMENTED AND ACTIVATED as v0.40 and is
-recorded in `docs/done/` and the v0.41 activation.
+Status: IN PROGRESS on `io/t4-resource-relations` (PR #13). Batch 1 (the
+backed permit) and batch 2 (park on miss) are done on this branch; batch 3's
+slice 1, streams and TCP, landed on 2026-09-05 and its slices 2 through 5 are
+open. The previous plan, source-carried proof, is IMPLEMENTED AND ACTIVATED as
+v0.40 and is recorded in `docs/done/` and the v0.41 activation.
 
 The active language authority is the specification at `spec/kernel-spec.md`;
 its version and digest are the chain tail in `governance/APPROVALS.md`. This
-branch carries the backed-permit amendment as one change: the amended file,
+branch carries two amendments, each landed as one change: the amended file,
 the archive of the outgoing bytes, the appended approval record, and the
 regenerated identity module, so the branch is merge-ready the moment its gate
 is green and the owner's merge approval of that exact revision is the
@@ -769,6 +771,73 @@ directory enumeration, and the two standard outputs. That surface reaches
 every state of the scheduler through the enumeration harness and injected
 stubs, and it cannot exercise a real wait: a cached read does not wait, and a
 cold read waits briefly and uniformly.
+
+## Batch 3: streams and TCP (specification v0.46)
+
+**Status 2026-09-05, slice 1: landed on this branch.** The amendment and
+everything derived from it are in the tree: `spec/kernel-spec.md` declares
+`Status: ACTIVE v0.46` over v0.45's text, the v0.45 bytes are archived, the
+`ACTIVE-SPEC:` record is appended in `governance/APPROVALS.md`, the derivation
+ledger carries the v0.46 section with rows for the four added rules, and
+`compiler/src/spec_identity.rs` is regenerated. The design is
+`research/investigations/io-model/NETWORK.md`, whose §8 records the owner's
+decisions of 2026-09-05; the ruling it implements is constitution T4 applied to
+every socket resource that document's §2 enumerates.
+
+The language delta: `Output`, `FileFactory`, `FilePermit`, `command.files` and
+`reserve_file` are respelled `OutputStream`, `HandleFactory`, `HandlePermit`,
+`command.handles` and `reserve_handle`, because a listener and a connection
+each draw one credit from the same capacity a file open draws from. [SYS-15]
+adds `InputStream`, supplied at entry ordinal 5 as `command.stdin` and read by
+`read_next`. [SYS-16] adds `SocketAddress` with two total pure constructors.
+[SYS-17] adds `TcpListener` with `tcp_listen`, `tcp_accept`, `tcp_connect` and
+`close_listener`. [SYS-18] adds `TcpConnection`, the first system-declared
+struct, whose `receive: TcpReceive` and `send: TcpSend` fields are ordinary
+places: two `&uniq` loans on disjoint fields coexist under [OWN-5], a partial
+move kills the whole binding under [OWN-1], and no `split` or `join` exists.
+
+### Slices (NETWORK.md §7)
+
+1. **Amendment v0.46: the two renames, `command.stdin` and `read_next`, the
+   types and operations of §4, conformance cases, corpus programs.** Done.
+   `read_next` is end to end on POSIX: the runtime's existing unpositioned
+   stream-read kind, routed to the io_uring ring as a read at offset -1 and to
+   the shared file adapter's own `read` otherwise, with the Windows leaf
+   reading a console or a redirected handle through one `ReadFile` at the
+   handle's own position. `tests/programs/stdin_echo.wf` echoes its standard
+   input on both shapes and both routes. The TCP operations are declared,
+   checked, lowered and emitted, and refused at target qualification, because
+   their runtime routes are slice 2.
+2. **POSIX runtime: adapter route for every TCP kind, Linux ring route for
+   accept, connect, receive and send; loopback tests in `tests/programs`.**
+   This is where a wait becomes a real ring wait for the first time.
+3. **Windows: the completion-port route; the io-hosts job proves it.**
+4. **The control benchmark** against the io_uring and epoll references, in
+   `io-completion-bench`, reported as a ratio to the io_uring reference.
+5. **Batch record.**
+
+### What slice 1 revealed
+
+- **A latent inventory-decoding defect.** Lowering decoded a
+  `CheckedConstructor::System` ordinal against `Inventory::ACTIVE` rather than
+  against the inventory the unit was resolved under. The two agreed while
+  every inventory state had the same nominal-record block, and stopped
+  agreeing the moment a system struct added field records ahead of the
+  constructor block. The checked program now carries its inventory and lowering
+  reads that. The prefix-differential property is what caught it.
+- **A field borrow of a system resource was unsupported.** `&uniq
+  connection.receive` is the whole point of the two-field connection, and no
+  checked borrow form carried a field path for a non-buffer type.
+  `BorrowSystemResource` now carries one, and lowering projects the field
+  without consuming the root. The loan machinery needed nothing: the borrow's
+  own `place` already named the field, so [OWN-5] decides two loans on disjoint
+  fields exactly as it does for a source struct.
+- **A read into a buffer kills nothing the publish needs, if the publish is a
+  helper.** `write_once` over the buffer a read filled needs
+  `available <= len(chunk)`, and both halves of that are live only immediately
+  after the read. A helper whose contract states the bound moves the obligation
+  to that point; a second inner loop loses it. This is P22 in
+  `docs/patterns.md`.
 
 ## After batch 2: the order the owner agreed on 2026-09-04
 

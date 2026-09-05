@@ -1,8 +1,13 @@
 # Streams and TCP under T4
 
-Status: PROPOSAL, revised 2026-09-05 after the owner's first round. Owner
-decisions listed at the end. The specification is `spec/kernel-spec.md`;
-nothing here is language until an amendment lands there.
+Status: AMENDED. Slice 1 of §7 landed as specification v0.46 on
+`io/t4-resource-relations` on 2026-09-05: the two renames, `command.stdin` and
+`read_next`, and the types and operations of §4 are in `spec/kernel-spec.md`
+under [SYS-15] through [SYS-18], with the merge-time record in
+`governance/APPROVALS.md` and the derivation rows in
+`spec/derivation/derivation-ledger.md`. Slices 2 through 5 are open, and the
+owner decisions at the end are the ones the amendment implements. Where this
+document and the specification differ, the specification is the language.
 
 ## 1. Why the network first
 
@@ -207,7 +212,10 @@ now rather than later.
 ## 7. Slices
 
 1. Amendment v0.46: the two renames, `command.stdin` and `read_next`, the
-   types and operations of §4, conformance cases, corpus programs.
+   types and operations of §4, conformance cases, corpus programs. Landed
+   2026-09-05. `read_next` is end to end on POSIX and Windows; the TCP
+   operations are declared, checked, lowered and emitted, and a submission is
+   refused at target qualification until slice 2 supplies its routes.
 2. POSIX runtime: adapter route for every kind, Linux ring route for accept,
    connect, receive, send and stream read; loopback tests in `tests/programs`.
 3. Windows: the completion-port route; the io-hosts job proves it.

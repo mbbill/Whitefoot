@@ -1153,9 +1153,9 @@ command fn main() -> status: own ExitStatus pure {
 /// open API, whose permit and directory inputs are independent.
 #[test]
 fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
-    let source = b"fn probe(factory: &uniq FileFactory, root: &DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
+    let source = b"fn probe(factory: &uniq HandleFactory, root: &DirectoryRead) -> result: own u64 reads(factory, root), writes(factory) {
   region {
-    match reserve_file(factory: move factory) {
+    match reserve_handle(factory: move factory) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: root) {
           SourceOpened(value: listing) => {
@@ -1173,7 +1173,7 @@ fn a_may_suspend_directory_wrapper_keeps_its_unique_loan() {
   }
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let total = 0_u64;
   for @scan (i in 0_u64..4_u64) {
     let seen = probe(factory: &uniq files, root: &cwd);
@@ -1190,10 +1190,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 /// loop-iteration overlap.
 #[test]
 fn a_direct_directory_state_transition_keeps_its_unique_loan() {
-    let source = b"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = b"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(1_u64, 0_u8);
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: listing) => {

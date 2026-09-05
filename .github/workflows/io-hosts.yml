@@ -353,7 +353,7 @@ jobs:
       # is the production boundary: native whitefootc emits and links a real
       # .wf program, whose two argument paths are UTF-16, whose files are
       # opened relative to command.cwd, whose first independent read_at must
-      # submit to IOCP, and whose bytes leave through Output.write_once. The
+      # submit to IOCP, and whose bytes leave through OutputStream.write_once. The
       # opt-in runtime assertion aborts at process exit unless at least one
       # IOCP submission was also reaped, so a silent direct fallback cannot
       # satisfy this step.
@@ -595,7 +595,7 @@ jobs:
           # shipped program -- against the runtime the driver stages here.
           #
           # `$WINDOWS_UNITS` is exactly what the driver stages for this module,
-          # not a superset of it. `par_layout` reaches `Output.write_once`, so
+          # not a superset of it. `par_layout` reaches `OutputStream.write_once`, so
           # `module_requires_completion_runtime` is true for it and
           # `whitefootc` stages the floor group, the core group *and* the
           # completion group (`src/bin/whitefootc.rs`, `runtime_units`); that

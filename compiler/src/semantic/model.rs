@@ -1440,6 +1440,11 @@ pub(crate) enum CheckedExpression {
     BorrowSystemResource {
         carrier: NodePath,
         binding: BindingId,
+        /// The struct-field path from the binding to the borrowed resource,
+        /// empty when the binding is the resource itself. A system struct's
+        /// direction fields are ordinary field places [SYS-18], so a borrow of
+        /// one is this expression with a one-element path.
+        fields: Vec<u32>,
         state_origins: Option<CheckedStateOrigins>,
         nominal: NominalId,
     },
@@ -1970,6 +1975,15 @@ pub(crate) struct CheckedEntryForm {
 
 #[derive(Debug)]
 pub(crate) struct CheckedProgramData {
+    /// Which [SYS-2] inventory this unit was resolved and checked against.
+    ///
+    /// Carried here because a `CheckedConstructor::System` holds a declaration
+    /// ordinal, and an ordinal is only meaningful against the inventory that
+    /// assigned it: lowering decodes those ordinals and must use this one
+    /// rather than the shipped active state. Reading the active state here was
+    /// a latent defect that only showed once an inventory state changed the
+    /// size of the nominal-record block ahead of the constructor block.
+    pub(crate) inventory: crate::Inventory,
     pub(crate) nominals: Vec<CheckedNominal>,
     // Nominal instances discovered by the ordinary function path form this
     // prefix. Later instances exist only to type-check static metadata.

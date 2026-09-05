@@ -19,6 +19,14 @@ fn system_catalog_actions_have_one_shot_ownership_completion() {
                 | "close_read"
                 | "close_directory"
                 | "close_directory_source"
+                | "read_next"
+                | "tcp_listen"
+                | "tcp_accept"
+                | "tcp_connect"
+                | "receive_next"
+                | "send_once"
+                | "close_connection"
+                | "close_listener"
         );
         assert_eq!(
             operation.target_action.may_suspend(),

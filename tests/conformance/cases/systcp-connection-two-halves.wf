@@ -1,0 +1,58 @@
+fn pump(receive: &uniq TcpReceive, send: &uniq TcpSend, scratch: &uniq buffer<u8>) -> result: own u8 reads(receive, send, scratch), writes(receive, send, scratch) contract {
+  define room = len(deref(scratch));
+  requires 64_u64 <= room;
+} {
+  doc "Reads one chunk from the receiving direction and sends it back through the sending direction, holding both directions at once.";
+  let outcome = 0_u8;
+  region {
+    match receive_next(receive: &uniq deref(receive), destination: &uniq deref(scratch), start: 0_u64, end: 64_u64) {
+      ReadBytes(next: endpoint) => {
+        region {
+          match send_once(send: &uniq deref(send), source: &deref(scratch), start: 0_u64, end: endpoint) {
+            Ok(value: accepted) => {
+            }
+            Err(error: problem) => {
+              set outcome = 2_u8;
+            }
+          }
+        }
+      }
+      ReadEnd() => {
+      }
+      ReadFailed(error: problem) => {
+        set outcome = 3_u8;
+      }
+    }
+  }
+  return outcome;
+}
+
+command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles), allocates(heap) {
+  doc "SYS-18: the two directions of one connection are two field places, so `&uniq link.receive` and `&uniq link.send` are two exclusive loans on disjoint fields and coexist [OWN-5]; full duplex is two overlapping places and needs nothing beyond the rules a source struct already has. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+  let scratch = buffer_new(64_u64, 0_u8);
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9101_u16);
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &address) {
+            Connected(connection: link) => {
+              let outcome = 0_u8;
+              region {
+                set outcome = pump(receive: &uniq link.receive, send: &uniq link.send, scratch: &uniq scratch);
+              }
+              let returned = close_connection(connection: move link);
+              return exit_status(code: outcome);
+            }
+            ConnectFailed(error: problem, permit: returned) => {
+              return exit_status(code: 4_u8);
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+}

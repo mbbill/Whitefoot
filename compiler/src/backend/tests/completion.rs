@@ -10,7 +10,7 @@ use crate::OverlapLowering;
 use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::SystemTarget;
 
-const INDEPENDENT_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+const INDEPENDENT_WRITES: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let bulk = buffer_new(1048576_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
   region 'out {
@@ -46,7 +46,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let first_bytes = buffer_new(1_u64, 65_u8);
   let middle_bytes = buffer_new(1_u64, 66_u8);
   let last_bytes = buffer_new(1_u64, 67_u8);
@@ -67,7 +67,7 @@ const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(comma
 }
 "#;
 
-const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
+const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -76,7 +76,7 @@ const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args:
             let first_bytes = buffer_new(1_u64, 65_u8);
             let last_bytes = buffer_new(1_u64, 67_u8);
             region 'state {
-              match reserve_file(factory: &uniq files) {
+              match reserve_handle(factory: &uniq files) {
                 Ok(value: permit) => {
                   region 'out {
                     region 'first_bytes {
@@ -108,7 +108,7 @@ const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args:
 }
 "#;
 
-const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files), allocates(heap) {
+const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -119,7 +119,7 @@ const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args
               region 'p {
                 region 'err {
                   region {
-                    match reserve_file(factory: &uniq 'c files) {
+                    match reserve_handle(factory: &uniq 'c files) {
                       Ok(value: permit) => {
                         let opened = open_read(permit: move permit, root: &'c cwd, path: &'p path);
                         let announced = write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64);
@@ -147,14 +147,14 @@ const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args
 }
 "#;
 
-const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region {
-              match reserve_file(factory: &uniq files) {
+              match reserve_handle(factory: &uniq files) {
                 Ok(value: permit) => {
                   match open_read(permit: move permit, root: &cwd, path: &path) {
                     FileOpened(value: file) => {
@@ -184,7 +184,7 @@ const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: 
 }
 "#;
 
-const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files), allocates(heap) {
+const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -192,7 +192,7 @@ const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as ar
           Ok(value: path) => {
             let marker = buffer_new(1_u64, 77_u8);
             region 'state {
-              match reserve_file(factory: &uniq files) {
+              match reserve_handle(factory: &uniq files) {
                 Ok(value: permit) => {
                   region 'marker {
                     region {
@@ -228,13 +228,13 @@ const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as ar
 }
 "#;
 
-const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let first_name = buffer_new(1_u64, 46_u8);
   let second_name = buffer_new(1_u64, 46_u8);
   region 'c {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: first_permit) => {
-        match reserve_file(factory: &uniq files) {
+        match reserve_handle(factory: &uniq files) {
           Ok(value: second_permit) => {
             region {
               let first = open_directory(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
@@ -255,11 +255,11 @@ const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cw
 }
 "#;
 
-const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: first_permit) => {
-        match reserve_file(factory: &uniq files) {
+        match reserve_handle(factory: &uniq files) {
           Ok(value: second_permit) => {
             let first = open_directory_source(permit: move first_permit, directory: &cwd);
             let second = open_directory_source(permit: move second_permit, directory: &cwd);
@@ -278,13 +278,13 @@ const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cw
 }
 "#;
 
-const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let first_name = buffer_new(1_u64, 120_u8);
   let second_name = buffer_new(1_u64, 120_u8);
   region 'c {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: first_permit) => {
-        match reserve_file(factory: &uniq files) {
+        match reserve_handle(factory: &uniq files) {
           Ok(value: second_permit) => {
             region {
               let first = open_file(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
@@ -305,13 +305,13 @@ const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as
 }
 "#;
 
-const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let first_bytes = buffer_new(4096_u64, 0_u8);
   let second_bytes = buffer_new(4096_u64, 0_u8);
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: first_permit) => {
-        match reserve_file(factory: &uniq files) {
+        match reserve_handle(factory: &uniq files) {
           Ok(value: second_permit) => {
             match open_directory_source(permit: move first_permit, directory: &cwd) {
               SourceOpened(value: first_list) => {
@@ -346,7 +346,7 @@ const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cw
 }
 "#;
 
-const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'out {
     region {
@@ -374,7 +374,7 @@ const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output
 /// from the arm's own `bbN` header, so the join block's phis have to name that
 /// block. Nothing else in this corpus puts a hand-out in a block whose
 /// successor carries block parameters.
-const OVERLAP_BEFORE_A_BLOCK_JOIN: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+const OVERLAP_BEFORE_A_BLOCK_JOIN: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let first = buffer_new(2_u64, 65_u8);
   let second = buffer_new(2_u64, 66_u8);
   region 'o {
@@ -409,7 +409,7 @@ const COMPUTE_AND_IO: &[u8] = br#"fn choose(value: own u64) -> result: own u64 p
   return imax(value, value);
 }
 
-command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   let left = choose(value: 1_u64);
   let right = choose(value: 2_u64);
   let total = imax(left, right);
@@ -427,11 +427,11 @@ command fn main(command.stdout as out: own Output, command.stderr as err: own Ou
 }
 "#;
 
-const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..12_u64) {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         region {
           match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
@@ -459,10 +459,10 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
 }
 "#;
 
-const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..1_u64) {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         region {
           match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
@@ -482,7 +482,7 @@ const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own 
 }
 "#;
 
-const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let opened = 0_u64;
   let names = buffer_new(5_u64, 97_u8);
   set names[1_u64] = 98_u8;
@@ -492,7 +492,7 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
   for @scan (index in 0_u64..5_u64) {
     let end = index + 1_u64;
     region 'f {
-      match reserve_file(factory: &uniq files) {
+      match reserve_handle(factory: &uniq files) {
         Ok(value: permit) => {
           region {
             match open_file(permit: move permit, root: &'f cwd, name: &names, start: index, end: end) {
@@ -523,7 +523,7 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
 
 fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
     let mut source = String::from(
-        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region {\n    match arg_get(args: &args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region {\n                match reserve_file(factory: &uniq 'c files) {\n                  Ok(value: permit) => {\n                    match open_read(permit: move permit, root: &'c cwd, path: &path) {\n                      FileOpened(value: file) => {\n",
+        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {\n  region {\n    match arg_get(args: &args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region {\n                match reserve_handle(factory: &uniq 'c files) {\n                  Ok(value: permit) => {\n                    match open_read(permit: move permit, root: &'c cwd, path: &path) {\n                      FileOpened(value: file) => {\n",
     );
     for index in 0..count {
         source.push_str(&format!(
@@ -2491,7 +2491,7 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
 /// program had no pair at all — one candidate is not a window — so its first
 /// write was never handed out and the two spellings compiled to different
 /// work for no semantic reason.
-const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   doc "Two independent writes whose second call is bound before it is matched.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
@@ -2515,7 +2515,7 @@ const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out
 }
 "#;
 
-const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   doc "Two independent writes whose second call is written in scrutinee position.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
@@ -2547,7 +2547,7 @@ const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as o
 /// a binding exists and is the wrong identity for the site — `written` is what
 /// the arms give, not what `write_once` returned — which is why the site's
 /// identity had to become the call occurrence.
-const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   doc "Two independent writes whose second call is a value match's scrutinee.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
@@ -2578,7 +2578,7 @@ const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as 
 /// dispatch and the arm it selects read the call's result, so every statement
 /// after the match already stands behind that read. Handing the scrutinee call
 /// out would run the second write before the first write's arms.
-const SCRUTINEE_HEAD_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
+const SCRUTINEE_HEAD_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err), allocates(heap) {
   doc "A scrutinee call followed by an independent call, which cannot overlap.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);

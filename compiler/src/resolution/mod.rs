@@ -141,17 +141,20 @@ impl PreludeDeclarationId {
 }
 
 /// Dense identity of one normative [SYS-2] system declaration record.
+///
+/// The ordinal is a `u16` because v0.46's inventory is three hundred and seven
+/// records; it was a `u8` while the inventory fitted one byte.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SystemDeclarationId(u8);
+pub struct SystemDeclarationId(u16);
 
 impl SystemDeclarationId {
-    pub(crate) const fn new(ordinal: u8) -> Self {
+    pub(crate) const fn new(ordinal: u16) -> Self {
         Self(ordinal)
     }
 
     /// Returns the zero-based `system_declaration_ordinal` in [SYS-2] preorder.
     #[must_use]
-    pub const fn ordinal(self) -> u8 {
+    pub const fn ordinal(self) -> u16 {
         self.0
     }
 }

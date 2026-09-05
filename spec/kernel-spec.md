@@ -1,11 +1,11 @@
-# Kernel Specification v0.45
+# Kernel Specification v0.46
 
-Status: ACTIVE v0.45
+Status: ACTIVE v0.46
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (136 remain); grammar productions +0/-0 (84 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +3/-0 (`close_read`, `close_directory`, `close_directory_source`); opaque system nominal spellings +0/-0; enum system nominal spellings +3/-0 (`FileOpenOutcome`, `DirectoryOpenOutcome`, `SourceOpenOutcome`, six constructors); runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations +3/-0 (19 remain) and declaration records +24/-0 (227 remain); exception clauses +0/-0. The changed rows are `reserve_file`, whose outcome becomes `Result<FilePermit, IoError>`, the four opens, whose outcomes become the three open outcome enums that hand a refused open's permit back to the program, and the three added explicit closes that return the permit; [SYS-10], [SYS-11] and [SYS-14] are respelled to the backed permit. No rule id is added or retired.
-This version backs the file permit: the factory's capacity is a count fixed at program start, a permit is one credit of it, a refused open hands the credit back beside the host's error, and an explicit close returns it, so every dependency between a close and a later open is a relation on the API that the checker sees.
-Selection ground: evidence-selected under constitution T4 (resource dependencies are API relations, owner ruling 2026-09-04) and FIRST-PRINCIPLES §12: the proof-only permit let a pipeline overlap `close` with a later `open`, and the descriptor retirement ledger that hid the resulting `EMFILE` (963 of 1000 misawards without its order) is the measured cost of the missing relation; this version deletes that ledger. Prior selection ground for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for v0.42's canonical region spelling, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
+META-5 delta declaration: numbered rules +4/-0 (140 remain: [SYS-15], [SYS-16], [SYS-17], [SYS-18]); grammar productions +0/-0 (84 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +10/-0 and 1 respelled (`read_next`, `socket_address_v4`, `socket_address_v6`, `tcp_listen`, `tcp_accept`, `tcp_connect`, `receive_next`, `send_once`, `close_connection`, `close_listener` are added; `reserve_file` is respelled `reserve_handle`); opaque system nominal spellings +5/-0 and 3 respelled (`InputStream`, `SocketAddress`, `TcpListener`, `TcpReceive`, `TcpSend` are added; `Output`, `FileFactory`, `FilePermit` are respelled `OutputStream`, `HandleFactory`, `HandlePermit`); struct system nominal spellings +1/-0 (`TcpConnection`; a system-declared struct is a new category of system nominal beside the opaque and enum ones, and it contributes one nominal-type entry, two owner-local field records, and no constructor entry); enum system nominal spellings +3/-0 (`ListenOutcome`, `AcceptOutcome`, `ConnectOutcome`, six constructors with ten variant fields); runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); entry standard-input rows +1/-0 (6 remain: ordinal 5 is `command.stdin`, and ordinal 4 is respelled `command.handles`); contract block forms +0/-0; system operations +10/-0 (29 remain) and declaration records +80/-0 (307 remain); exception clauses +0/-0. The changed rows are the six respellings above wherever they are written; [SYS-2]'s inventory, preorder and counts; [SYS-4]'s no-split sentence, which now states that a connection's two halves are two fields of one returned struct rather than the product of a split operation; [SYS-5]'s release table, which gains five rows and states that a system struct takes no row of its own; [SYS-6]'s outcome table and its `propagate` sentence, whose operation list was stale from v0.45 (an open's outcome has not been a `Result` since that version) and is corrected here to the three operations that answer `Result<_, IoError>`; [SYS-8]'s range-bearing set, which gains `read_next`, `receive_next` and `send_once`; [SYS-10]'s permit accounting, which gains three consuming operations and two returning closes; and [FN-7]'s standard-input table and canonical entry header. No rule id is retired.
+This version adds the first system operations that wait on something other than a local file: one readable byte stream, supplied to the entry as `command.stdin`, and TCP over address literals. A connection is two owners from the first version that has one, because a system operation has one signature and a later split would need a second `receive` and `send` over half types: `tcp_accept` and `tcp_connect` return one `TcpConnection`, the system-declared struct whose `receive` and `send` fields are two ordinary places, so full duplex is two loans on disjoint fields under [OWN-5] with nothing added. The descriptor factory and its permit are respelled `HandleFactory` and `HandlePermit` because a listener and a connection draw one credit each from the same capacity a file open draws from, and the standard sinks are respelled `OutputStream` beside the new `InputStream`.
+Selection ground: evidence-selected under constitution T4 (resource dependencies are API relations, owner ruling 2026-09-04), applied to every socket resource in `research/investigations/io-model/NETWORK.md` §2: a native descriptor for a listener and for every connection is one credit of the entry's factory, consumed by listen, accept and connect and handed back by the failed variant and by the explicit closes; a local port is the `SocketAddress` value the program binds, so two binds of one port are the program's own source-order conflict; an ephemeral port, the accept queue and the socket buffers are outside the program, and each answers with honest target exhaustion or with partial progress the sequential program already produces. Overlap therefore invents no outcome the sequential program does not: two accepts on one listener each hold their own permit, and the two directions of one connection are two places under [PAR-1]. The pairing is on the API by the owner's decision of 2026-09-05 (NETWORK.md §3, §4 and §8) rather than in a later `split`. Prior selection ground for v0.45's backed permit, for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for v0.42's canonical region spelling, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
 R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
@@ -1274,9 +1274,10 @@ The closed standard-input table for kind `command` is:
 |---|---|---|---|
 | 0 | `command.args` | `own Args` | the immutable invocation-argument snapshot |
 | 1 | `command.cwd` | `own DirectoryRead` | the initial working-directory state |
-| 2 | `command.stdout` | `own Output` | the standard output sink |
-| 3 | `command.stderr` | `own Output` | the standard error sink |
-| 4 | `command.files` | `own FileFactory` | the source of one-shot file-open permits |
+| 2 | `command.stdout` | `own OutputStream` | the standard output sink |
+| 3 | `command.stderr` | `own OutputStream` | the standard error sink |
+| 4 | `command.handles` | `own HandleFactory` | the source of one-shot handle permits |
+| 5 | `command.stdin` | `own InputStream` | the standard input stream |
 
 Every value parameter of main carries an `input_label` and selects one row of that table.
 Its label tail equals that row's tail and the written mode and type equal the row exactly; the `command` prefix is fixed by grammar and there is no conversion, default, or inferred mode [TYPE-4, TYPE-5].
@@ -1288,7 +1289,7 @@ An unknown, repeated, or out-of-order label, a mode or type differing from its r
 No label tail is a member of [OP-1]'s `ModeWords`, because [GRAM-1] would form `command.` plus that tail as one operation-name token.
 The system declaration domain is admitted to every compilation unit under [SYS-3]; entry validation therefore never changes which system names exist or lets an invalid entry steal an earlier undeclared-name diagnostic.
 
-The one canonical byte sequence for a complete five-input entry header whose body immediately returns is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {` because the normal return edge performs the directory state's compiler-derived close while the file factory's logical consume has an empty row.
+The one canonical byte sequence for a complete six-input entry header whose body immediately returns is `command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as handles: own HandleFactory, command.stdin as input: own InputStream) -> status: own ExitStatus writes(cwd) {` because the normal return edge performs the directory state's compiler-derived close while the handle factory's logical consume and the input stream's source detach both have empty rows.
 The [FORM-2] rule renders it without amendment; `program_kind`, `input_label`, and `result_binding` introduce no formatting boundary.
 
 The entry states a program's complete standard-input access in its own signature, so no system value reaches another function except as a written parameter [FN-1]: there is no ambient system state, and no entry-supplied aggregate that source can own, name, or pass.
@@ -1480,7 +1481,7 @@ Binding, moving, passing, returning, borrowing, reborrowing, and slicing preserv
 At a user or system call, each callee effect path selects its root formal's actual argument and appends its static field suffix to that actual's resolved place. Holder resolution then reaches the borrowed referent, and a slice actual projects through its complete [OWN-5] origin set. A projection rooted in one of the current function's formals contributes the corresponding current-function path. A projection rooted only in fresh local state contributes no enclosing effect.
 Thus a callee write through a child reborrow of incoming `&uniq` storage reaches the incoming formal path, while the same callee write through fresh local storage frames out. Equal lifetime arguments never merge two suppliers because lifetimes do not participate in this substitution.
 
-Resource-producing calls follow the same rule. For example, `reserve_file(factory: &uniq factory)` exhibits the callee's `writes(factory)` on the caller's `factory`; an open with `permit: move permit` exhibits `writes(permit)` only on that local permit; and later operations on the returned fresh local resource remain local. Creating the permit or resource establishes no hidden child-to-factory ancestry. Any externally visible change to the factory or namespace is the direct effect of the operation that changes that parameter and must appear in that operation's own row [EFF-5].
+Resource-producing calls follow the same rule. For example, `reserve_handle(factory: &uniq factory)` exhibits the callee's `writes(factory)` on the caller's `factory`; an open with `permit: move permit` exhibits `writes(permit)` only on that local permit; and later operations on the returned fresh local resource remain local. Creating the permit or resource establishes no hidden child-to-factory ancestry. Any externally visible change to the factory or namespace is the direct effect of the operation that changes that parameter and must appear in that operation's own row [EFF-5].
 Framing an action on fresh local state out of the enclosing signature means only that it contributes no formal-rooted boundary path. The checked call still retains its instantiated nonempty effect on that local place. Eliminating it requires the ordinary closed-state, escape, result, release, and observer proof which justifies deleting any stateful call; absence from the enclosing row alone proves none of those facts. A target operation is lowered with its qualified physical side effects intact. The mandatory direct write on the creating factory, namespace, allocator, or permit prevents the enclosing call from becoming `pure` merely because the produced owner stayed local [EFF-5].
 
 The release contribution collects the effects of compiler-derived release.
@@ -1518,7 +1519,7 @@ Target qualification failure, unavailable external resources, and a trusted-comp
 
 [EFF-5] Every Whitefoot-observable system interaction is one ordinary state access under [EFF-1] and ordinary ownership under [OWN-1] through [OWN-12]. There is no second outside-state permission, root, fragment, coexistence relation, or global world object.
 
-A system operation whose behavior or result can depend on evolving state carries the occurrence through at least one `own` or `&uniq` state parameter and exhibits `writes(path)` for that transition. Other inputs whose own Whitefoot-visible state stays stable for the complete loan may be shared and read normally; no shared object receives an interior-mutation exception. In particular, a file open consumes and writes a one-shot `FilePermit`, while the `DirectoryRead` and path or component bytes are stable selector inputs borrowed through `&`. An operation which creates a system resource or consumes finite quota must receive the factory, allocator, permit, or other changed state as an ordinary parameter and exhibit its write directly. No source operation obtains mutable system state from ambient process context.
+A system operation whose behavior or result can depend on evolving state carries the occurrence through at least one `own` or `&uniq` state parameter and exhibits `writes(path)` for that transition. Other inputs whose own Whitefoot-visible state stays stable for the complete loan may be shared and read normally; no shared object receives an interior-mutation exception. In particular, a file open consumes and writes a one-shot `HandlePermit`, while the `DirectoryRead` and path or component bytes are stable selector inputs borrowed through `&`. An operation which creates a system resource or consumes finite quota must receive the factory, allocator, permit, or other changed state as an ordinary parameter and exhibit its write directly. No source operation obtains mutable system state from ambient process context.
 
 The returned owner of a successful resource-producing operation is a fresh ordinary value. It carries no hidden ancestry to the parameter that produced it. The producing operation's direct parameter effect records the factory or namespace transition, while later actions on the returned local value frame out in the enclosing function exactly as actions on fresh local memory do [EFF-2]. Moves and borrows use their existing ownership identity and add no language feature.
 
@@ -2234,7 +2235,7 @@ That ordinal is the entry's identity in a diagnostic origin [DIAG-1].
 
 The notation here is normative record notation and is not writable source.
 
-Ten opaque nominal types: `Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, `DirectorySource`, `FileFactory`, and `FilePermit`.
+Fifteen opaque nominal types: `Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `OutputStream`, `ExitStatus`, `DirectorySource`, `HandleFactory`, `HandlePermit`, `InputStream`, `SocketAddress`, `TcpListener`, `TcpReceive`, and `TcpSend`.
 Each contributes one nominal-type entry and no constructor entry.
 An opaque type has no writer-visible field, variant, literal, size, alignment, or representation.
 It is a complete written `type` under [GRAM-3] as a bare TYPEID with no `targs`, carries no region and no type parameter, and is therefore region-free under [STOR-5].
@@ -2242,7 +2243,21 @@ It is not const-eligible [CONST-2], is not a `cvt` or `reinterpret` domain [OP-6
 Its values are produced only by the operations in this rule and by the command entry's standard input bindings.
 Every value of an opaque type is affine under [OWN-1].
 
-Eleven enum nominal types with forty-six variant constructors:
+One struct nominal type with two owner-local field records:
+
+```
+struct TcpConnection {
+  receive: TcpReceive;
+  send: TcpSend;
+}
+```
+
+A system-declared struct is a third category of system nominal beside the opaque and the enum ones.
+It contributes one nominal-type entry and no constructor entry, so no source construction expression names it and its values are produced only by the operations in this rule [SYS-18].
+Its field records are owner-local in exactly the sense every other owner-local record here is: each is visible only within its owning system declaration and never enters source lookup, while the field names themselves are ordinary member names of the ordinary source struct machinery — a field is a place, an effect path may name it [EFF-1], two exclusive loans on disjoint fields coexist [OWN-5], and moving one field out is the language's own partial move, which kills the whole binding [OWN-1].
+Nothing in this category is a new judgment: the struct is written into the inventory instead of into source, and every rule that already governs a struct governs it unchanged.
+
+Fourteen enum nominal types with fifty-two variant constructors:
 
 ```
 enum ArgError {
@@ -2309,19 +2324,31 @@ enum ListOutcome {
 }
 enum FileOpenOutcome {
   FileOpened(value: ReadFile);
-  FileOpenFailed(error: IoError, permit: FilePermit);
+  FileOpenFailed(error: IoError, permit: HandlePermit);
 }
 enum DirectoryOpenOutcome {
   DirectoryOpened(value: DirectoryRead);
-  DirectoryOpenFailed(error: IoError, permit: FilePermit);
+  DirectoryOpenFailed(error: IoError, permit: HandlePermit);
 }
 enum SourceOpenOutcome {
   SourceOpened(value: DirectorySource);
-  SourceOpenFailed(error: IoError, permit: FilePermit);
+  SourceOpenFailed(error: IoError, permit: HandlePermit);
+}
+enum ListenOutcome {
+  Listening(listener: TcpListener);
+  ListenFailed(error: IoError, permit: HandlePermit);
+}
+enum AcceptOutcome {
+  Accepted(connection: TcpConnection, peer: SocketAddress);
+  AcceptFailed(error: IoError, permit: HandlePermit);
+}
+enum ConnectOutcome {
+  Connected(connection: TcpConnection);
+  ConnectFailed(error: IoError, permit: HandlePermit);
 }
 ```
 
-Nineteen operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
+Twenty-nine operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
 
 ```
 fn args_count(args: &Args) -> result: own u64 reads(args);
@@ -2331,21 +2358,31 @@ fn host_copy_bytes(value: &HostString, destination: &uniq buffer<u8>, start: own
 fn host_utf8_len(value: &HostString) -> result: own Result<u64, Utf8Error> reads(value);
 fn host_copy_utf8(value: &HostString, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value, destination), writes(destination);
 fn relative_path(value: own HostString) -> result: own Result<RelativePath, PathError> pure;
-fn open_read(permit: own FilePermit, root: &DirectoryRead, path: &RelativePath) -> result: own FileOpenOutcome reads(permit, root, path), writes(permit);
+fn open_read(permit: own HandlePermit, root: &DirectoryRead, path: &RelativePath) -> result: own FileOpenOutcome reads(permit, root, path), writes(permit);
 fn read_at(file: &ReadFile, destination: &uniq buffer<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own ReadOutcome reads(file, destination), writes(destination);
-fn write_once(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output);
+fn write_once(output: &uniq OutputStream, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output);
 fn exit_status(code: own u8) -> result: own ExitStatus pure;
-fn open_directory(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own DirectoryOpenOutcome reads(permit, root, name), writes(permit);
-fn open_directory_source(permit: own FilePermit, directory: &DirectoryRead) -> result: own SourceOpenOutcome reads(permit, directory), writes(permit);
+fn open_directory(permit: own HandlePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own DirectoryOpenOutcome reads(permit, root, name), writes(permit);
+fn open_directory_source(permit: own HandlePermit, directory: &DirectoryRead) -> result: own SourceOpenOutcome reads(permit, directory), writes(permit);
 fn directory_next(source: &uniq DirectorySource, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own ListOutcome reads(source, destination), writes(source, destination);
-fn open_file(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(permit, root, name), writes(permit);
-fn reserve_file(factory: &uniq FileFactory) -> result: own Result<FilePermit, IoError> reads(factory), writes(factory);
-fn close_read(file: own ReadFile) -> result: own FilePermit reads(file), writes(file);
-fn close_directory(directory: own DirectoryRead) -> result: own FilePermit reads(directory), writes(directory);
-fn close_directory_source(source: own DirectorySource) -> result: own FilePermit reads(source), writes(source);
+fn open_file(permit: own HandlePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(permit, root, name), writes(permit);
+fn reserve_handle(factory: &uniq HandleFactory) -> result: own Result<HandlePermit, IoError> reads(factory), writes(factory);
+fn close_read(file: own ReadFile) -> result: own HandlePermit reads(file), writes(file);
+fn close_directory(directory: own DirectoryRead) -> result: own HandlePermit reads(directory), writes(directory);
+fn close_directory_source(source: own DirectorySource) -> result: own HandlePermit reads(source), writes(source);
+fn read_next(input: &uniq InputStream, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own ReadOutcome reads(input, destination), writes(input, destination);
+fn socket_address_v4(a: own u8, b: own u8, c: own u8, d: own u8, port: own u16) -> result: own SocketAddress pure;
+fn socket_address_v6(a: own u16, b: own u16, c: own u16, d: own u16, e: own u16, f: own u16, g: own u16, h: own u16, port: own u16) -> result: own SocketAddress pure;
+fn tcp_listen(permit: own HandlePermit, address: &SocketAddress) -> result: own ListenOutcome reads(permit, address), writes(permit);
+fn tcp_accept(permit: own HandlePermit, listener: &TcpListener) -> result: own AcceptOutcome reads(permit, listener), writes(permit);
+fn tcp_connect(permit: own HandlePermit, address: &SocketAddress) -> result: own ConnectOutcome reads(permit, address), writes(permit);
+fn receive_next(receive: &uniq TcpReceive, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own ReadOutcome reads(receive, destination), writes(receive, destination);
+fn send_once(send: &uniq TcpSend, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(send, source), writes(send);
+fn close_connection(connection: own TcpConnection) -> result: own HandlePermit reads(connection), writes(connection);
+fn close_listener(listener: own TcpListener) -> result: own HandlePermit reads(listener), writes(listener);
 ```
 
-The inventory is therefore exactly twenty-one nominal types, forty-six enum-variant constructors, seventy-two variant fields, nineteen operations, twenty-two operation region parameters, and forty-seven operation value parameters.
+The inventory is therefore exactly thirty nominal types — fifteen opaque, one struct, and fourteen enum — with two struct-field records, fifty-two enum-variant constructors, eighty-two variant fields, twenty-nine operations, thirty-one operation region parameters, and eighty-one operation value parameters.
 
 Each operation's state access is fixed by its own signature. Immutable invocation and host-string state is observed through shared parameters and contributes `reads(parameter)`. Every buffer or system resource the operation changes is supplied through `&uniq` and contributes `writes(parameter)`. The lifetime on each borrow states only how long that loan lives and never appears in the row.
 The rows above are exactly those state accesses; a system operation's row is declaration data and is never derived from a body, narrowed by a proof, or selected by a call site [ERR-4].
@@ -2354,11 +2391,11 @@ A returned or loaded runtime value enters the caller only as a typed symbolic te
 No system operation allocates.
 
 Each operation additionally carries one compiler-owned target contract. This record is not source syntax and does not change contract equality.
-The target contract is `never-suspends` for `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`, `host_utf8_len`, `host_copy_utf8`, `relative_path`, `exit_status`, and `reserve_file`. It is `may-suspend` for `open_read`, `read_at`, `write_once`, `open_directory`, `open_directory_source`, `directory_next`, `open_file`, `close_read`, `close_directory`, and `close_directory_source`.
+The target contract is `never-suspends` for `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`, `host_utf8_len`, `host_copy_utf8`, `relative_path`, `exit_status`, `reserve_handle`, `socket_address_v4`, and `socket_address_v6`. It is `may-suspend` for `open_read`, `read_at`, `write_once`, `open_directory`, `open_directory_source`, `directory_next`, `open_file`, `close_read`, `close_directory`, `close_directory_source`, `read_next`, `tcp_listen`, `tcp_accept`, `tcp_connect`, `receive_next`, `send_once`, `close_connection`, and `close_listener`.
 A `may-suspend` operation is a finite one-shot operation. Its logical record exists before target handoff and carries separate `result-ready`, one `loan-released(path)` fact for every retained borrow, and `terminal` milestones. In this first system slice the `loan-released(path)` fact for the name an open borrows — `open_read`'s `path`, `open_file`'s and `open_directory`'s `name` — is published before target transfer, because forming the request copies the admitted code-unit range into compiler-owned storage and that copy is the operation's last access to the caller's buffer; every other applicable fact is published by the same exactly-once terminal transition. Keeping them distinct is required contract structure, not a promise that later operations publish them together.
 The operation result becomes an ordinary usable source value only when its `result-ready` fact holds, and each borrow held for the call remains live until its own `loan-released(path)` fact holds. The call's ownership-complete requirement is the conjunction of its result fact and every loan-release fact the caller regains.
 
-Every borrow keeps its ordinary [OWN-5] loan until the target contract releases it. A successful `reserve_file` returns one fresh ordinary `FilePermit`, and each explicit close returns one; a successful open which returns `ReadFile`, `DirectoryRead`, or `DirectorySource` likewise produces one fresh ordinary owned value. Each result has its own binding identity and no compiler-retained parent relation to the parameter that produced it [EFF-2].
+Every borrow keeps its ordinary [OWN-5] loan until the target contract releases it. A successful `reserve_handle` returns one fresh ordinary `HandlePermit`, and each of the five explicit closes — `close_read`, `close_directory`, `close_directory_source`, `close_connection`, and `close_listener` — returns one; a successful open which returns `ReadFile`, `DirectoryRead`, or `DirectorySource`, and a successful `tcp_listen`, `tcp_accept`, or `tcp_connect` which returns `TcpListener` or `TcpConnection`, likewise produces one fresh ordinary owned value. Each result has its own binding identity and no compiler-retained parent relation to the parameter that produced it [EFF-2].
 
 Submission has exactly three internal outcomes. `inline-terminal` publishes every promised milestone and guarantees that no later completion can arrive. `target-owned` transfers the complete operation bundle to the qualified adapter. `wait-capacity` transfers nothing to the target and retains the bundle in the runtime so another ready frame can run until bounded target capacity is available. No source value observes which outcome occurred.
 A qualified target may implement this contract with native completion, readiness plus a nonblocking attempt, polling, interrupts, or a bounded blocking helper. A helper executes only the typed target adapter and publishes milestones; it never executes a writer function or writer continuation. Target completion publication may make a stackless writer frame runnable, but target code never invokes that frame directly.
@@ -2374,11 +2411,11 @@ A call whose callee resolves to a system operation writes its region arguments a
 Positional operands are not admitted.
 A system operation is not a contract member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies [FN-4]'s bound-function premise; a conformance binds only a top-level source function.
 
-The inventory contributes exactly two hundred and twenty-seven declaration records in this preorder: each nominal type in table order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
-Exactly the nominal types, the constructors, and the operations enter the source resolver's whole-unit lookup inventory of a system-admitted unit [SYS-1].
-The field and parameter records are owner-local: a field record enters only its owning constructor's table and a parameter record only its owning operation signature, and neither is visible to source lookup.
+The inventory contributes exactly three hundred and seven declaration records in this preorder: each nominal type in table order, and immediately after a struct nominal type's own row each of its declared fields in declared order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
+Exactly the nominal types, the constructors, and the operations enter the source resolver's whole-unit lookup inventory of a system-admitted unit [SYS-1]; a struct nominal type contributes no constructor entry, so no source expression constructs one.
+The field and parameter records are owner-local: a constructor field record enters only its owning constructor's table, a struct field record only its owning nominal type's table, and a parameter record only its owning operation signature, and none is visible to source lookup.
 
-Each nominal-type row fixes one TYPEID spelling.
+Each nominal-type row fixes one TYPEID spelling, and a struct nominal-type row additionally fixes its fields in declared order, each with a field name and a type.
 Each constructor row fixes one TYPEID spelling, its class as struct-constructor or enum-variant, its owning system nominal type, and its fields in declared order, each with a field name and a type.
 Each operation row fixes one IDENT spelling; its region parameters in declared order, each one REGIONID spelling; its value parameters in declared order, each with a parameter name, a mode, and a type; its result mode and type; and its written effect row.
 
@@ -2387,7 +2424,7 @@ Each is a property of this specification's data, established once for this docum
 Every nominal-type and constructor spelling satisfies TYPEID and every operation spelling satisfies IDENT and contains no dot [FORM-3].
 No operation spelling is a member of `ReservedLowerNames` [OP-1].
 Spellings are unique within each of the nominal-type, constructor, and lexical IDENT domains, and are disjoint from the PRE-1 spellings of the same domain.
-Every field name is unique within its constructor and every parameter name is unique within its operation.
+Every field name is unique within its constructor or within its struct nominal type, and every parameter name is unique within its operation.
 Every type written in the table is a nameable type [TYPE-3] fixed by this document or by this table.
 
 [SYS-3] Every compilation unit is system-admitted.
@@ -2476,12 +2513,12 @@ This rule fixes the required emitted shape; the evidence establishing it is insp
 Every operation signature directly states its ordinary parameter modes and exact state effects, which are the complete source facts used by ownership, effect checking, and overlap. A stable observation may use `&` plus `reads(path)`; an operation which advances, consumes, acknowledges, clears, or otherwise changes state uses `&uniq` or `own` and declares `writes(path)`. These are ordinary [OWN-2, EFF-1] judgments rather than properties inferred from the nominal type name.
 
 The system catalog may keep target-only representation and release data for an opaque type [SYS-2, SYS-5]. That data selects construction, target lowering, and compiler-derived release, but it grants no source access and forms no second type hierarchy.
-A later operation that duplicates or splits a resource exists only when it returns ordinary owned values whose independence is part of that operation's complete semantic contract. The first slice declares none, so no system value is duplicated, split, attenuated, or converted, and no integer right mask is exposed to source.
+An operation that duplicates or splits a resource exists only when it returns ordinary owned values whose independence is part of that operation's complete semantic contract. This specification declares none: `tcp_accept` and `tcp_connect` are not splits, because the two directions of a connection are two fields of the one `TcpConnection` value the operation returns rather than two values a later operation derives from a whole one [SYS-18]. No system value is duplicated, split, attenuated, or converted, and no integer right mask is exposed to source.
 
 [SYS-5] Every system resource type declares one completion policy.
 This specification defines exactly one: release-complete.
 Under it, compiler-derived release is the complete language obligation for the type, and a source program needs no terminal operation to discharge ownership.
-`Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `Output`, `ExitStatus`, `DirectorySource`, `FileFactory`, and `FilePermit` are all release-complete, so this specification defines no exact-use checking obligation.
+`Args`, `HostString`, `RelativePath`, `DirectoryRead`, `ReadFile`, `OutputStream`, `ExitStatus`, `DirectorySource`, `HandleFactory`, `HandlePermit`, `InputStream`, `SocketAddress`, `TcpListener`, `TcpReceive`, `TcpSend`, and `TcpConnection` are all release-complete, so this specification defines no exact-use checking obligation.
 
 Two further policy classes are named and reserved without machinery.
 Explicitly-abandonable means the type exposes a consuming abandon operation whose contract permits loss of unfinished external work, so abandonment is a source action rather than an accidental affine discard.
@@ -2498,18 +2535,25 @@ The consuming release action of each system type is fixed by the following table
 | `RelativePath` | logical consume of an inline lease | none | never-suspends |
 | `DirectoryRead` | at most one native close attempt | `writes(owner)` | may-suspend; terminal |
 | `ReadFile` | at most one native close attempt | `writes(owner)` | may-suspend; terminal |
-| `Output` | logical source detach | none | never-suspends |
+| `OutputStream` | logical source detach | none | never-suspends |
 | `ExitStatus` | logical consume | none | never-suspends |
 | `DirectorySource` | at most one native close attempt | `writes(owner)` | may-suspend; terminal |
-| `FileFactory` | logical consume | none | never-suspends |
-| `FilePermit` | logical consume | none | never-suspends |
+| `HandleFactory` | logical consume | none | never-suspends |
+| `HandlePermit` | logical consume | none | never-suspends |
+| `InputStream` | logical source detach | none | never-suspends |
+| `SocketAddress` | logical consume | none | never-suspends |
+| `TcpListener` | at most one native close attempt | `writes(owner)` | may-suspend; terminal |
+| `TcpReceive` | at most one native direction-close attempt | `writes(owner)` | may-suspend; terminal |
+| `TcpSend` | at most one native direction-close attempt | `writes(owner)` | may-suspend; terminal |
 ```
 
 A logical consume performs no host call, no target call, no handle lookup, no byte copy, and no state effect.
 A native close attempt discards only the close diagnostic and never retries an ambiguous close: a consuming close invalidates the source handle on success and on error, because the native descriptor may already be closed and reusable.
 Its one-shot terminal transition consumes the moved owner and carries no writer result. A consuming caller cannot continue past the release until `terminal`, but a scheduler lane need not remain occupied while the target owns the close.
-`Output`'s logical source detach neither closes nor flushes the host descriptor [SYS-12].
-Release of an outcome value is release of its components: `ArgError`, `Utf8Error`, `CopyError`, `Utf8CopyError`, `PathError`, `IoError`, `ReadOutcome`, `ListOutcome`, `FileOpenOutcome`, `DirectoryOpenOutcome`, and `SourceOpenOutcome` have no release action and take no row above, and a `ReadOutcome`, `ListOutcome`, `FileOpenOutcome`, `DirectoryOpenOutcome`, `SourceOpenOutcome`, or `Result` carrying a system value releases that value by this table.
+`OutputStream`'s logical source detach neither closes nor flushes the host descriptor [SYS-12], and `InputStream`'s neither closes nor drains it [SYS-15].
+A native direction-close attempt is the half-close of one direction of one connection, with the same discarded diagnostic and the same no-retry rule; the target closes the underlying object once both directions have been released, and that second release is the one that spends the credit [SYS-18].
+Release of an outcome value is release of its components: `ArgError`, `Utf8Error`, `CopyError`, `Utf8CopyError`, `PathError`, `IoError`, `ReadOutcome`, `ListOutcome`, `FileOpenOutcome`, `DirectoryOpenOutcome`, `SourceOpenOutcome`, `ListenOutcome`, `AcceptOutcome`, and `ConnectOutcome` have no release action and take no row above, and any of them, or a `Result`, carrying a system value releases that value by this table.
+A system struct is the same case: `TcpConnection` has no release action of its own and takes no row above, and releasing one is releasing its two fields by this table, in declared order.
 
 A release action is compiler-derived and explicit in the checked program [STOR-3, DIAG-2].
 `flush`, `sync`, directory sync, atomic commit, and final handle release are different semantic operations; this specification declares none of them, and release is never a substitute for one.
@@ -2538,10 +2582,20 @@ The complete inventory is:
 | `open_directory_source` | `own SourceOpenOutcome` |
 | `directory_next` | `own ListOutcome` |
 | `open_file` | `own FileOpenOutcome` |
-| `reserve_file` | `own Result<FilePermit, IoError>` |
-| `close_read` | `own FilePermit`; total, no failure outcome |
-| `close_directory` | `own FilePermit`; total, no failure outcome |
-| `close_directory_source` | `own FilePermit`; total, no failure outcome |
+| `reserve_handle` | `own Result<HandlePermit, IoError>` |
+| `close_read` | `own HandlePermit`; total, no failure outcome |
+| `close_directory` | `own HandlePermit`; total, no failure outcome |
+| `close_directory_source` | `own HandlePermit`; total, no failure outcome |
+| `read_next` | `own ReadOutcome` |
+| `socket_address_v4` | `own SocketAddress`; total, no failure outcome |
+| `socket_address_v6` | `own SocketAddress`; total, no failure outcome |
+| `tcp_listen` | `own ListenOutcome` |
+| `tcp_accept` | `own AcceptOutcome` |
+| `tcp_connect` | `own ConnectOutcome` |
+| `receive_next` | `own ReadOutcome` |
+| `send_once` | `own Result<u64, IoError>` |
+| `close_connection` | `own HandlePermit`; total, no failure outcome |
+| `close_listener` | `own HandlePermit`; total, no failure outcome |
 ```
 
 `InvalidIndex` states that the requested argument index is not present and returns no value.
@@ -2549,12 +2603,15 @@ The complete inventory is:
 `CopyTooSmall(required)` and `Utf8CopyTooSmall(required)` state the exact length the destination range must have for the same call to succeed.
 `Utf8CopyInvalid` states that the host string is not valid UTF-8.
 `PathInvalid` states that the consumed host string is not a valid relative path and returns no value.
-`ReadBytes(next)`, `ReadEnd`, and `ReadFailed(error)` are [SYS-8]'s three read outcomes.
+`ReadBytes(next)`, `ReadEnd`, and `ReadFailed(error)` are [SYS-8]'s three read outcomes, and `read_at`, `read_next`, and `receive_next` share them because each reports the same three things about one transfer: it moved bytes, it observed the end, or it failed.
+`Listening(listener)`, `Accepted(connection, peer)`, and `Connected(connection)` carry the fresh owner the operation created; `ListenFailed(error, permit)`, `AcceptFailed(error, permit)`, and `ConnectFailed(error, permit)` carry the host's error beside the very permit the operation took, exactly as `FileOpenOutcome` does [SYS-10].
+`Accepted`'s `peer` is the address the target reported for the connected peer; it is diagnostic and routing data of the program's own, and no portable semantics is defined in terms of it.
 `ListBytes(next, entries)`, `ListEnd`, and `ListFailed(error)` are [SYS-8]'s three enumeration outcomes; `next - start` is the exact byte length of the portable entry-record prefix written into the requested range and `entries` is the exact number of complete records that prefix holds.
 On a successful `arg_get` the `Ok` payload is the requested `HostString`; on a successful copy or write the `Ok` payload is the absolute first endpoint after the transferred range.
 
 These error types are distinct nominal types and do not convert into one another [TYPE-4].
-`propagate` [ERR-3] therefore chains only across operations that already share one error type: that is exactly `open_read`, `write_once`, `open_directory`, `open_directory_source`, and `open_file` inside a function whose written result is `own Result<U, IoError>`.
+`propagate` [ERR-3] therefore chains only across operations whose own outcome is a `Result` over one shared error type: that is exactly `write_once`, `reserve_handle`, and `send_once` inside a function whose written result is `own Result<U, IoError>`.
+An operation whose outcome is its own enum is outside `propagate` however its variants are spelled, so none of the four opens, neither `tcp_listen`, `tcp_accept`, nor `tcp_connect`, and neither `read_next` nor `receive_next` is a `propagate` operand; a program that wants one writes the `match` and returns the `Result` itself.
 `PathError`'s `PathInvalid` and `IoError`'s `InvalidPath` are deliberately different failures and never substitute for each other.
 
 [SYS-7] `IoError` is the closed portable class set declared by [SYS-2].
@@ -2572,7 +2629,7 @@ The detail is copy data in the transfer sense: it allocates nothing, owns nothin
 A payload-carrying variant is affine under [OWN-1], so an `IoError` value, like a `ReadOutcome` value, is moved or matched rather than copied; that affinity is a consequence of the declared source form and is not a cleanup obligation.
 No class carries a message, a buffer, or any heap-backed payload.
 
-[SYS-8] `read_at`, `write_once`, `directory_next`, `host_copy_bytes`, `host_copy_utf8`, `open_directory`, and `open_file` are the complete range-bearing system-operation set.
+[SYS-8] `read_at`, `read_next`, `receive_next`, `write_once`, `send_once`, `directory_next`, `host_copy_bytes`, `host_copy_utf8`, `open_directory`, and `open_file` are the complete range-bearing system-operation set.
 Each accesses one caller-owned initialized `buffer<u8>` through a call-scoped borrow and names a half-open range `[start, end)` in that buffer; every resource and buffer owner remains with the caller on every outcome.
 
 Every call to a member of this family carries exactly two independent [ENT-6] obligations in this order: `start <= end`, then `end <= len(deref(buffer))`, where `buffer` is that operation's declared buffer parameter.
@@ -2582,15 +2639,16 @@ There is no operation-internal range check, runtime fallback, or range trap.
 Only after both obligations succeed may lowering form the exact extent `end - start`, whose absence of underflow follows from the first obligation, and pass the range to a target.
 The target is never asked to validate a source pointer or source range.
 
-For an empty range, `read_at` returns `ReadBytes(start)`, `write_once` returns `Ok(start)`, and `directory_next` returns `ListBytes(start, 0)`, each without a host transfer; an empty read or enumeration is never reported as `ReadEnd` or `ListEnd`.
+For an empty range, `read_at`, `read_next`, and `receive_next` return `ReadBytes(start)`, `write_once` and `send_once` return `Ok(start)`, and `directory_next` returns `ListBytes(start, 0)`, each without a host transfer; an empty read or enumeration is never reported as `ReadEnd` or `ListEnd`, and an empty read advances no stream position.
 For an empty copy range, a zero-length source succeeds with `Ok(start)` and a nonempty source returns its ordinary too-small outcome without writing.
 For `open_directory` and `open_file`, an empty range is ordinary invalid component content and returns `Err(InvalidPath(code: 0_u32, origin: 0_u8))` before any host call.
 
-For a nonempty range, `read_at`, `write_once`, and `directory_next` make at most one progress-producing host transfer attempt for the admitted call.
+For a nonempty range, `read_at`, `read_next`, `receive_next`, `write_once`, `send_once`, and `directory_next` make at most one progress-producing host transfer attempt for the admitted call.
 If a host interruption reports no progress, the target adapter resumes the same operation without publishing a writer outcome; if an attempt reports progress, the operation returns that progress immediately and never hides a later failure by attempting again.
 Host readiness or nonblocking refusal is target scheduling state and produces no `WouldBlock` writer outcome. A readiness adapter waits for the next readiness fact and retries the same admitted operation while retaining its operation record and argument loans.
 `read_at` performs a positioned read beginning at `file_offset` and never observes or changes an implicit file cursor. It returns `ReadBytes(next)` only for `next > start`. A `file_offset` which the qualified target cannot represent returns `ReadFailed(InvalidInput(...))` before target handoff.
-`write_once` never reports an unchanged endpoint after a nonempty host attempt: a host zero-length write is `Err(WriteZero())`.
+`read_next` and `receive_next` perform an unpositioned read at the stream's own implicit position and take no offset: each returns `ReadBytes(next)` only for `next > start` and advances that position by exactly `next - start`, returns `ReadEnd` exactly when the stream reported that no byte was available at the observed end, and returns `ReadFailed(error)` otherwise. `ReadEnd` from an `InputStream` states that the invocation's standard input has no further byte; `ReadEnd` from a `TcpReceive` states that the peer closed its own sending direction, which is an ordinary end of that direction and not a failure. Neither operation advances the position on `ReadEnd` or on `ReadFailed`, because an attempt that made progress reports `ReadBytes` instead.
+`write_once` and `send_once` never report an unchanged endpoint after a nonempty host attempt: a host zero-length write is `Err(WriteZero())`. `send_once`'s `Ok(next)` means exactly that the local facility accepted the prefix `[start, next)`; it promises neither delivery, peer acknowledgement, nor that the peer will ever read those bytes, and a peer that has closed its receiving direction reaches source as `BrokenPipe` or `ConnectionReset` through the same signal normalization [QUAL-3] fixes for `write_once` [SYS-12].
 A short success is not end of input; only `ReadEnd` states that no byte was available at the observed end.
 Repetition, accumulation, and retry policy are ordinary source loops over these operations; this specification defines no read-exact, write-all, positioned, or vectored operation.
 `directory_next` returns `ListBytes(next, entries)` for the records one admitted batch reported, `ListEnd` exactly when the source reported that the directory holds no further entry, and `ListFailed(error)` otherwise.
@@ -2600,12 +2658,12 @@ No entry is ever split across two attempts and no record is ever reported withou
 
 Buffer and cursor disposition is exact.
 Every successful transfer payload is an absolute endpoint `next`, not a count, and satisfies `start <= next <= end`; the checked program establishes both relations on the matching successful edge [ENT-3.S10].
-On `ReadBytes(next)` exactly `[start, next)` may have changed and every other byte of the buffer is unchanged; `ReadFile` has no implicit byte cursor or observation counter to advance.
+On `ReadBytes(next)` exactly `[start, next)` may have changed and every other byte of the buffer is unchanged; `ReadFile` has no implicit byte cursor or observation counter to advance, while an `InputStream` and a `TcpReceive` each advance exactly the one position that is their whole state.
 On `ReadEnd` and on `ReadFailed` no byte of the buffer changes, because an attempt that made progress reports `ReadBytes` instead.
-On every recoverable failure of `write_once` and of both copy operations the whole buffer is unchanged.
+On every recoverable failure of `write_once`, of `send_once`, and of both copy operations the whole buffer is unchanged.
 On `ListBytes(next, entries)` any byte in `[start, end)` may have changed, every byte of the buffer outside that range is unchanged, `[start, next)` is the portable entry-record prefix holding exactly `entries` complete records, and the enumeration cursor advances past exactly the entries those records name.
 On `ListEnd` and on `ListFailed` no byte of the buffer changes and the cursor does not advance.
-A qualified target binding guarantees that its internal host count is no greater than `end - start`. For `read_at` and `write_once`, only that compiler-owned sanitized count may form `next = start + count`; for `directory_next`, that count bounds the native batch and only the compiler-derived length of the completely validated portable prefix may form `next = start + length`.
+A qualified target binding guarantees that its internal host count is no greater than `end - start`. For `read_at`, `read_next`, `receive_next`, `write_once`, and `send_once`, only that compiler-owned sanitized count may form `next = start + count`; for `directory_next`, that count bounds the native batch and only the compiler-derived length of the completely validated portable prefix may form `next = start + length`.
 A violation is a target/runtime TCB defect [SCOPE-3, QUAL-1], never a source-visible outcome, language trap, or permission to continue with an out-of-range endpoint.
 
 The two copy operations differ only after their two call obligations succeed.
@@ -2638,22 +2696,22 @@ On `Ok(length)`, a `host_copy_utf8` on the same host string neither returns `Utf
 The one-host-string-type rule, the command-lifetime backing, the distinct owned-backing type for any other producer, and the no-implicit-retype consequence are [HOST-3]; release is a logical consume with no target call [SYS-5].
 No system value stores an ordinary source borrow or needs a runtime handle-table lookup.
 
-[SYS-10] `FileFactory`, `FilePermit`, and `DirectoryRead` are ordinary affine opaque values; none is a writer-visible capability category.
-Program start supplies one `FileFactory` only when the entry selects `command.files`. The factory carries a capacity fixed at program start: the number of native descriptors the target provides to this program, less the descriptors the runtime itself holds and the handles the entry already supplies. That capacity is not a source constant and no operation reports it; it is observed only through `reserve_file`'s outcome. `reserve_file` takes a call-scoped `&uniq FileFactory`, exhibits `reads(factory), writes(factory)`, performs no host call, and returns `Ok(FilePermit)` while the factory holds an unspent credit and `Err(ResourceExhausted)` otherwise; that error is the program's own source-order outcome, never one an overlapped schedule invents. The factory loan ends when that inline operation returns, so a caller may reserve several permits through short sequential loans and then move those permits into independent long-running opens.
+[SYS-10] `HandleFactory`, `HandlePermit`, and `DirectoryRead` are ordinary affine opaque values; none is a writer-visible capability category.
+Program start supplies one `HandleFactory` only when the entry selects `command.handles`. The factory carries a capacity fixed at program start: the number of native descriptors the target provides to this program, less the descriptors the runtime itself holds and the handles the entry already supplies. That capacity is not a source constant and no operation reports it; it is observed only through `reserve_handle`'s outcome. `reserve_handle` takes a call-scoped `&uniq HandleFactory`, exhibits `reads(factory), writes(factory)`, performs no host call, and returns `Ok(HandlePermit)` while the factory holds an unspent credit and `Err(ResourceExhausted)` otherwise; that error is the program's own source-order outcome, never one an overlapped schedule invents. The factory loan ends when that inline operation returns, so a caller may reserve several permits through short sequential loans and then move those permits into independent long-running opens.
 
-A `FilePermit` is one credit of that capacity and authorizes exactly one attempt by `open_read`, `open_file`, `open_directory`, or `open_directory_source`. Each operation takes `permit: own FilePermit`, exhibits `reads(permit), writes(permit)`, and consumes it; its outcome is the operation's own two-variant enum (`FileOpenOutcome`, `DirectoryOpenOutcome`, or `SourceOpenOutcome`), whose opened variant carries the fresh owner and whose failed variant carries the host's `IoError` beside the very permit the open took, handed back because no descriptor was taken. The program reuses that permit or lets derived release spend it; no count changes on a failure. An open holding a permit cannot fail for want of a descriptor the program's own opens consumed: `ResourceExhausted` on an open names only honest target exhaustion, a limit changed outside the program such as a system-wide file table. The credit a successful open holds comes back to the program as the fresh `FilePermit` the explicit closes `close_read`, `close_directory`, and `close_directory_source` return on every outcome; each consumes the owner, performs the native close attempt derived release would perform, and discards its diagnostic exactly as derived release does. The factory's count is never raised: a credit is at every moment exactly one of unreserved in the factory, a `FilePermit` value, an open resource value, or spent for the rest of the program. Compiler-derived release of an open resource closes it and spends the credit: it returns nothing to the factory, so a program that reuses its capacity closes explicitly.
+A `HandlePermit` is one credit of that capacity and authorizes exactly one attempt by `open_read`, `open_file`, `open_directory`, `open_directory_source`, `tcp_listen`, `tcp_accept`, or `tcp_connect`. A listener, a connection, and an open file each cost the target one native handle, so each draws from the one capacity and none has a factory of its own. Each operation takes `permit: own HandlePermit`, exhibits `reads(permit), writes(permit)`, and consumes it; its outcome is the operation's own two-variant enum (`FileOpenOutcome`, `DirectoryOpenOutcome`, `SourceOpenOutcome`, `ListenOutcome`, `AcceptOutcome`, or `ConnectOutcome`), whose succeeding variant carries the fresh owner and whose failed variant carries the host's `IoError` beside the very permit the operation took, handed back because no handle was taken. The program reuses that permit or lets derived release spend it; no count changes on a failure. An operation holding a permit cannot fail for want of a descriptor the program's own opens, listens, accepts, or connects consumed: `ResourceExhausted` on one of them names only honest target exhaustion, a limit changed outside the program such as a system-wide file table. `AddressInUse` and `AddressUnavailable` are not that failure: the first is the program's own source-order conflict over the port its `SocketAddress` names, and the second is the target's own ephemeral-port pool, which is outside the program and outside this factory [SYS-17]. The credit a successful open, listen, accept, or connect holds comes back to the program as the fresh `HandlePermit` the explicit closes `close_read`, `close_directory`, `close_directory_source`, `close_listener`, and `close_connection` return on every outcome; each consumes the owner, performs the native close attempt derived release would perform, and discards its diagnostic exactly as derived release does. `close_connection` takes the whole `TcpConnection` and returns the one credit the pair holds [SYS-18]. The factory's count is never raised: a credit is at every moment exactly one of unreserved in the factory, a `HandlePermit` value, a live resource value — an open file, a directory state, an enumeration source, a listener, or a connection pair — or spent for the rest of the program. Compiler-derived release of a live resource closes it and spends the credit: it returns nothing to the factory, so a program that reuses its capacity closes explicitly.
 
 `DirectoryRead` is a stable directory-selector resource with one live state. It is live from its entry binding or from the `open_directory` that created it until its release or its `close_directory`. This specification declares no duplicate or split operation for it.
 
-`open_read`, `open_file`, and `open_directory` borrow `DirectoryRead` through `&` as `root`; `open_directory_source` borrows it through `&` as `directory`. They exhibit `reads(root)` or `reads(directory)` and do not change that value. The changing observation occurrence belongs to the consumed `FilePermit`, not to hidden mutation behind the shared directory borrow [EFF-5]. The directory owner remains live on every outcome.
+`open_read`, `open_file`, and `open_directory` borrow `DirectoryRead` through `&` as `root`; `open_directory_source` borrows it through `&` as `directory`. They exhibit `reads(root)` or `reads(directory)` and do not change that value. The changing observation occurrence belongs to the consumed `HandlePermit`, not to hidden mutation behind the shared directory borrow [EFF-5]. The directory owner remains live on every outcome.
 
 On success, `open_read` and `open_file` each return one fresh `ReadFile`, `open_directory` returns one fresh `DirectoryRead`, and `open_directory_source` returns one fresh `DirectorySource`. The returned owner has its own ordinary binding identity, carries no parent relation to the directory argument, and can be released without changing that argument. Two values may still contact the same host directory or file; nothing infers host separateness from a native handle or separate open [EFF-5].
 
 Its completion policy is release-complete [SYS-5], on the same ground as `ReadFile` [SYS-11]: losing a close diagnostic on a read-only directory state cannot invalidate an already opened file and cannot promise durability.
 
-Two opens using two distinct owned permits may overlap through shared loans of the same `DirectoryRead` when their other ordinary loans, data dependencies, and exits permit it. Reserving those permits does not keep a long factory loan alive. Operations on distinct directory values may likewise overlap even when the host environment later makes those values contact one physical object.
+Two opens using two distinct owned permits may overlap through shared loans of the same `DirectoryRead` when their other ordinary loans, data dependencies, and exits permit it, and two accepts using two distinct owned permits may likewise overlap through shared loans of the same `TcpListener` [SYS-17]. Reserving those permits does not keep a long factory loan alive. Operations on distinct directory values may likewise overlap even when the host environment later makes those values contact one physical object.
 
-`FileFactory` and `FilePermit` have no native representation beyond one process-wide credit count the runtime keeps for the factory: `reserve_file` takes a credit or refuses without a host call, nothing raises the count again, an explicit close returns the credit as a permit value and touches no count, and a qualified open wrapper consumes the permit in the checked program but passes no extra argument to the native open facility. Thus explicit authority changes source ownership and effect facts without adding a native open hot-path ABI argument [QUAL-3]. Both types release by logical consume with the empty row [SYS-5]; releasing an unspent `FilePermit` spends its credit for the rest of the program, exactly as derived release of an open resource does.
+`HandleFactory` and `HandlePermit` have no native representation beyond one process-wide credit count the runtime keeps for the factory: `reserve_handle` takes a credit or refuses without a host call, nothing raises the count again, an explicit close returns the credit as a permit value and touches no count, and a qualified open, listen, accept, or connect wrapper consumes the permit in the checked program but passes no extra argument to the native facility. Thus explicit authority changes source ownership and effect facts without adding a native hot-path ABI argument [QUAL-3]. Both types release by logical consume with the empty row [SYS-5]; releasing an unspent `HandlePermit` spends its credit for the rest of the program, exactly as derived release of an open resource does.
 
 Resolution, process-equivalence, the no-emulation qualification rule, and the deferred confined form are [PATH-2].
 
@@ -2667,15 +2725,16 @@ Several reads through the same `ReadFile` may overlap when their destination loa
 
 `ReadFile` is release-complete [SYS-5].
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about bytes already observed and no durability guarantee.
-`close_read` is the explicit consuming close: it takes `file: own ReadFile`, exhibits `reads(file), writes(file)`, performs the same one native close attempt with the same discarded diagnostic, consumes the owner on every outcome, and returns one fresh `FilePermit` carrying the credit the open spent [SYS-10]. It changes no derived-release semantics; derived release differs from it only in returning no permit.
+`close_read` is the explicit consuming close: it takes `file: own ReadFile`, exhibits `reads(file), writes(file)`, performs the same one native close attempt with the same discarded diagnostic, consumes the owner on every outcome, and returns one fresh `HandlePermit` carrying the credit the open spent [SYS-10]. It changes no derived-release semantics; derived release differs from it only in returning no permit.
 If the host terminates the process because an external resource is unavailable under [SCOPE-3], native descriptor reclamation is host behavior rather than a Whitefoot release edge [SYS-5].
 
-[SYS-12] `Output` is a state resource with one live state.
+[SYS-12] `OutputStream` is a state resource with one live state.
+It is the writing half of the stream pair this specification declares; `InputStream` is the reading half and carries the same policy [SYS-15].
 The standard output and standard error entry bindings supply separate affine owners. Host redirection may make them contact one physical sink, but environment aliasing does not merge their Whitefoot places or introduce a cross-value order [EFF-5].
-`write_once` takes `&uniq Output`, reads the current output state and supplied payload, and exhibits `reads(output, source), writes(output)`. The exclusive loan remains live until `loan-released(output)`, so another write through the same `Output` begins only after the first operation has completed its access. Source order on one value therefore follows ordinary ownership without an ordered queue or a second attribution mechanism. An `Ok(next)` means exactly that the local output facility accepted the prefix `[start, next)`: it promises neither line atomicity, peer acknowledgement, nor storage durability.
+`write_once` takes `&uniq OutputStream`, reads the current output state and supplied payload, and exhibits `reads(output, source), writes(output)`. The exclusive loan remains live until `loan-released(output)`, so another write through the same `OutputStream` begins only after the first operation has completed its access. Source order on one value therefore follows ordinary ownership without an ordered queue or a second attribution mechanism. An `Ok(next)` means exactly that the local output facility accepted the prefix `[start, next)`: it promises neither line atomicity, peer acknowledgement, nor storage durability.
 
-Writes through distinct `Output` values may overlap under [PAR-1]. Every failure reported for one call reaches that call's typed outcome; target capacity pressure remains internal `wait-capacity`, not `WouldBlock`.
-`Output` is release-complete [SYS-5]: compiler-derived release only detaches the source state and reports nothing.
+Writes through distinct `OutputStream` values may overlap under [PAR-1]. Every failure reported for one call reaches that call's typed outcome; target capacity pressure remains internal `wait-capacity`, not `WouldBlock`.
+`OutputStream` is release-complete [SYS-5]: compiler-derived release only detaches the source state and reports nothing.
 It does not close the host descriptor, it does not flush, and it makes no target call; operating-system process teardown closes the native descriptors afterwards.
 
 That policy has one stated limitation.
@@ -2686,7 +2745,7 @@ Strengthening it is a later buffered or durable output type, which is completion
 A broken pipe reaches `write_once` as `BrokenPipe` through the bootstrap signal normalization [QUAL-3] fixes; a deployment the bootstrap does not own obtains an equivalent guarantee under its own qualification [QUAL-3].
 
 Terminal control, color, and console mode require separate system state types that this specification does not declare.
-Static proof diagnostics use compiler output [DIAG-1]; the source runtime has no proof-reporting channel and never flushes an `Output` for a proof failure.
+Static proof diagnostics use compiler output [DIAG-1]; the source runtime has no proof-reporting channel and never flushes an `OutputStream` for a proof failure.
 
 [SYS-13] `ExitStatus` is an opaque immutable value carrying one portable command code.
 `exit_status(code)` is its one constructor: it is total and pure, every `u8` is a valid command code, so the closed code range is 0 through 255 and there is no failure outcome, no allocation, no host call, and no state effect.
@@ -2699,12 +2758,12 @@ The target maps the returned code exactly onto the host process status.
 Startup or external-resource failure before entry is outside this mapping [PROG-3, SCOPE-3] and returns no Whitefoot status.
 
 [SYS-14] `DirectorySource` is a state resource with one live enumeration state.
-`open_directory_source` consumes one `FilePermit`, takes `&DirectoryRead`, exhibits `reads(permit, directory), writes(permit)`, and on success returns one fresh `DirectorySource` over the directory object the supplied value names. A separate call with a separate permit returns a separate ordinary owner. Environment aliasing may make two Sources enumerate the same physical directory, but it does not merge their Whitefoot places [EFF-5].
+`open_directory_source` consumes one `HandlePermit`, takes `&DirectoryRead`, exhibits `reads(permit, directory), writes(permit)`, and on success returns one fresh `DirectorySource` over the directory object the supplied value names. A separate call with a separate permit returns a separate ordinary owner. Environment aliasing may make two Sources enumerate the same physical directory, but it does not merge their Whitefoot places [EFF-5].
 
 `directory_next` is call-scoped, takes `&uniq DirectorySource` and `&uniq buffer<u8>`, exhibits `reads(source, destination), writes(source, destination)`, and leaves both owners live on every outcome; its transfer, cursor, and buffer semantics are [SYS-8]. Only one call through one Source may be pending because the exclusive source loan remains live until `loan-released(source)`. Calls through distinct Sources may overlap under [PAR-1].
 It reports the entries the host reported, in the host's own order: this specification fixes no enumeration order, promises no stability across two enumerations of the same directory, and states no relationship to a concurrent change of that directory's content.
 A program that needs a deterministic order sorts what it collected.
-`close_directory_source` is the explicit consuming close of a `DirectorySource`, and `close_directory` of a `DirectoryRead` other than the entry's: each takes its owner by `own`, exhibits `reads(owner), writes(owner)` with the table-local path substituted [EFF-2], performs the one native close attempt derived release would perform with the same discarded diagnostic, consumes the owner on every outcome, and returns one fresh `FilePermit` [SYS-10]. Closing the entry's `DirectoryRead` through `close_directory` is admitted and returns a permit as well, because that handle is counted in the factory's capacity.
+`close_directory_source` is the explicit consuming close of a `DirectorySource`, and `close_directory` of a `DirectoryRead` other than the entry's: each takes its owner by `own`, exhibits `reads(owner), writes(owner)` with the table-local path substituted [EFF-2], performs the one native close attempt derived release would perform with the same discarded diagnostic, consumes the owner on every outcome, and returns one fresh `HandlePermit` [SYS-10]. Closing the entry's `DirectoryRead` through `close_directory` is admitted and returns a permit as well, because that handle is counted in the factory's capacity.
 
 The reported entries are exactly what the target's directory holds, including the self and parent entries when the target's directory holds them.
 They are not filtered, because filtering them would cost a second host call in the batch that held only them [QUAL-3], and a program that descends must exclude them anyway to terminate.
@@ -2729,6 +2788,42 @@ On success `open_directory` returns an independent `DirectoryRead` for the named
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about entries already observed.
 A deep traversal holds one descriptor per live level until `close_directory` or derived release closes that level; only `close_directory` returns the level's credit to the factory.
 If the host terminates the process because an external resource is unavailable under [SCOPE-3], native descriptor reclamation is host behavior rather than a Whitefoot release edge [SYS-5].
+
+[SYS-15] `InputStream` is a state resource with one live position.
+The standard input entry binding supplies one affine owner. Host redirection may make it contact a terminal, a pipe, or a regular file, but environment aliasing does not merge it with any other Whitefoot place or introduce a cross-value order [EFF-5].
+`read_next` takes `&uniq InputStream` and `&uniq buffer<u8>`, reads the current stream state and writes both the stream and the destination, and exhibits `reads(input, destination), writes(input, destination)`. The exclusive loan remains live until `loan-released(input)`, so a second read through the same stream begins only after the first operation has completed its access; source order on one stream therefore follows ordinary ownership without an ordered queue or a second attribution mechanism. Its transfer, position, and buffer semantics are [SYS-8].
+The position is the whole of the type's source-visible state and no operation reports it. There is no seek, no peek, no pushback, and no line, record, or text framing: a program that needs any of them writes it over `read_next` and its own buffer.
+Reads through distinct `InputStream` values may overlap under [PAR-1]; this version supplies exactly one such value, at the entry.
+
+`InputStream` is release-complete [SYS-5], on the same ground as `OutputStream` [SYS-12]: compiler-derived release only detaches the source state and reports nothing.
+It does not close the host descriptor, it does not drain it, and it makes no target call; operating-system process teardown closes the native descriptors afterwards. There is therefore no explicit close operation for it, and none is needed: no credit is at stake, because the entry's standard input is a handle the invocation already holds and the factory's capacity already excludes [SYS-10].
+A stream whose end the program has observed keeps its `ReadEnd` answer: this specification promises nothing about a host that makes further bytes available after reporting the end, and a program that reads again after `ReadEnd` receives whatever the host reports at that moment.
+
+[SYS-16] `SocketAddress` is an opaque immutable value carrying one internet address and one port.
+`socket_address_v4(a, b, c, d, port)` and `socket_address_v6(a, b, c, d, e, f, g, h, port)` are its two constructors: each is total and pure, every combination of its operands is a valid address, so there is no failure outcome, no allocation, no host call, and no state effect. The four `u8` operands of the first are the address bytes in their conventional order and the eight `u16` operands of the second are the address groups in theirs; `port` is a `u16` in host-independent numeric form, and the target writes whichever byte order its own facility requires.
+The type is opaque rather than a tuple of integers for the reason [SYS-13] gives for `ExitStatus`: there are no implicit conversions [TYPE-4] and every value's type is exactly what its producer fixes [TYPE-5], so keeping the type distinct is what stops an arbitrary integer group from being bound or connected to, and it matches how every other system type is fixed [SYS-2].
+`SocketAddress` is release-complete and its release is a logical consume [SYS-5]: the value owns nothing the host knows about.
+Name resolution is a DEFERRED addition with its own delta [META-5]: this version declares no operation turning a host name into an address, and no operation decomposes, compares, or displays an address.
+A port a target reserves, and the source-order conflict of two binds of one port, are the program's own outcomes through `tcp_listen` [SYS-17]; the value itself claims nothing.
+
+[SYS-17] `TcpListener` is a state resource with one live state.
+`tcp_listen` consumes one `HandlePermit`, takes `&SocketAddress`, exhibits `reads(permit, address), writes(permit)`, and on success returns one fresh `TcpListener` bound to the address the value names and accepting connections. A separate call with a separate permit returns a separate ordinary owner. Two listeners may contact the same host object however they were produced, and environment aliasing does not merge their Whitefoot places [EFF-5].
+The address is the program's own claim on a local port: a second `tcp_listen` on a port this program or another already holds answers `ListenFailed(AddressInUse(...), permit)`, which is the ordinary outcome of that source-order conflict and not an invention of a schedule. The backlog the target keeps behind the listener is a kernel queue the peer fills; it is not a resource on this API, it is fixed by the target, and a full backlog refuses the peer rather than the program, so no outcome of `tcp_accept` reports it.
+`tcp_accept` consumes one `HandlePermit`, takes `&TcpListener`, exhibits `reads(permit, listener), writes(permit)`, and leaves the listener live on every outcome. Because the listener loan is shared, several accepts may overlap through shared loans of one listener while each holds its own permit, which is how a program takes connections concurrently; each takes whichever connection the target hands it, and the specification fixes no order among them. On success it returns `Accepted(connection, peer)`, one fresh `TcpConnection` [SYS-18] and the address the target reported for its peer.
+`tcp_connect` consumes one `HandlePermit`, takes `&SocketAddress`, exhibits `reads(permit, address), writes(permit)`, and on success returns `Connected(connection)`. The local endpoint it uses is drawn from the target's own ephemeral-port pool, which is outside this program and therefore not a resource on this API; a pool with nothing left answers `ConnectFailed(AddressUnavailable(...), permit)`, which is honest target exhaustion [SYS-10]. A peer that refuses answers `ConnectFailed(ConnectionRefused(...), permit)`.
+`TcpListener` is release-complete [SYS-5].
+Compiler-derived release consumes the resource, makes at most one native close attempt, and may discard only a close diagnostic, which carries no guarantee about connections already accepted and no guarantee about connections the target queued and never handed over.
+`close_listener` is the explicit consuming close: it takes `listener: own TcpListener`, exhibits `reads(listener), writes(listener)`, performs the same one native close attempt with the same discarded diagnostic, consumes the owner on every outcome, and returns one fresh `HandlePermit` carrying the credit the listen spent [SYS-10]. It changes no derived-release semantics; derived release differs from it only in returning no permit.
+This version declares no operation reporting a listener's own bound address, and none observing, setting, or reporting any socket option.
+
+[SYS-18] `TcpConnection` is the system-declared struct of one connection's two directions, and `TcpReceive` and `TcpSend` are state resources with one live state each.
+The struct is declared in [SYS-2] with the fields `receive: TcpReceive` and `send: TcpSend` in that order. It contributes no constructor entry, so no source expression constructs one: a `TcpConnection` value is produced only by `tcp_accept` or `tcp_connect`, exactly as an opaque value is produced only by its operations.
+Everything else about it is the language's ordinary struct machinery, unchanged and with no special case. `connection.receive` and `connection.send` are ordinary field places: an effect path may name either [EFF-1]; `&uniq connection.receive` and `&uniq connection.send` are two exclusive loans on disjoint fields and coexist [OWN-5], which is what makes full duplex two overlapping places under [PAR-1] rather than a construct of its own; and moving one field out is the language's own partial move, which kills the whole binding [OWN-1], so a broken pair can never reach `close_connection` while the moved half lives on as an ordinary owner and the remainder is derived-released.
+`receive_next` takes `&uniq TcpReceive` and `&uniq buffer<u8>`, exhibits `reads(receive, destination), writes(receive, destination)`, and leaves both owners live on every outcome; `send_once` takes `&uniq TcpSend` and `&buffer<u8>`, exhibits `reads(send, source), writes(send)`, and leaves both owners live on every outcome. Their transfer and buffer semantics are [SYS-8]. Only one call through one direction may be pending, because that direction's exclusive loan remains live until its `loan-released(path)` fact holds; calls through the two directions of one connection, and through the directions of distinct connections, may overlap under [PAR-1].
+The two directions are two Whitefoot places and the target's object behind them is one. Derived release of one direction is that direction's half-close and reports nothing; derived release of the second releases the target's object and spends the credit, exactly as derived release of a `ReadFile` spends it [SYS-10]. Which direction is released first is the program's own ordinary release order and changes no outcome the program can observe: after a direction is released nothing can name it again.
+`close_connection` is the explicit consuming close of the pair: it takes `connection: own TcpConnection`, exhibits `reads(connection), writes(connection)`, performs the same native close attempts derived release would perform with the same discarded diagnostics, consumes the whole value on every outcome, and returns one fresh `HandlePermit` carrying the one credit the pair holds [SYS-10]. There is exactly one credit for a connection and therefore exactly one permit returned, whichever way the pair is released.
+`TcpConnection` is release-complete [SYS-5] and takes no release row of its own; releasing one is releasing its two fields. It declares no `split`, no `join`, and no operation producing one direction from a whole connection: the pairing is on the API, so a later full-duplex form needs nothing added.
+This version declares no shutdown, linger, timeout, keep-alive, or option operation, and no operation reporting a connection's own local address.
 
 ## 18. Obligation discharge: deterministic facts, invariants, and local certificates (normative)
 

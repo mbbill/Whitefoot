@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::io::Read;
+use std::io::{Read, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Output, Stdio};
@@ -512,6 +512,60 @@ impl CompiledProgram {
             .expect("read the program's diagnostics");
         let status = child.wait().expect("wait for compiled program");
         (status, diagnostics)
+    }
+
+    /// Runs the program with its standard input redirected from a pipe this
+    /// process fills with `bytes` and then closes.
+    ///
+    /// This is one of the two shapes a real standard input takes [SYS-15]: a
+    /// stream whose end the writer decides, where a read may return less than
+    /// the requested range and the end arrives only when the writer closes.
+    /// `native_ring` selects the runtime route — `true` is the shipped
+    /// default, `false` sets `WF_IO_NO_NATIVE_RING` so the same program runs
+    /// through the shared file adapter instead of the kernel completion ring.
+    pub fn run_with_piped_input(&self, bytes: &[u8], native_ring: bool) -> Output {
+        let (reader, mut writer) = std::io::pipe().expect("create the input pipe");
+        let mut command = Command::new(&self.executable);
+        command
+            .current_dir(&self.directory)
+            .stdin(Stdio::from(reader))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if native_ring {
+            command.env_remove("WF_IO_NO_NATIVE_RING");
+        } else {
+            command.env("WF_IO_NO_NATIVE_RING", "1");
+        }
+        let child = command.spawn().expect("spawn compiled program");
+        // The writer is closed before the child is waited on, or a program
+        // that reads to end would never observe one.
+        writer.write_all(bytes).expect("fill the input pipe");
+        drop(writer);
+        child.wait_with_output().expect("wait for compiled program")
+    }
+
+    /// Runs the program with its standard input redirected from a regular
+    /// file holding `bytes`.
+    ///
+    /// This is the other shape [SYS-15] admits, and it is a different runtime
+    /// path on Linux: a regular file's descriptor is one the kernel ring
+    /// completes without any readiness wait, while a pipe's is not.
+    pub fn run_with_file_input(&self, bytes: &[u8], native_ring: bool) -> Output {
+        let path = self.directory.join("standard-input");
+        std::fs::write(&path, bytes).expect("write the input fixture");
+        let file = std::fs::File::open(&path).expect("open the input fixture");
+        let mut command = Command::new(&self.executable);
+        command
+            .current_dir(&self.directory)
+            .stdin(Stdio::from(file))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if native_ring {
+            command.env_remove("WF_IO_NO_NATIVE_RING");
+        } else {
+            command.env("WF_IO_NO_NATIVE_RING", "1");
+        }
+        command.output().expect("run compiled program")
     }
 }
 

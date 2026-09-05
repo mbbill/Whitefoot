@@ -262,11 +262,11 @@ fn scripted_facility_defines() -> Vec<String> {
 ///
 /// The program is ordinary source: it names no target record and reads only
 /// the portable form [SYS-14] fixes.
-const PUBLISH_ONE_BATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
+const PUBLISH_ONE_BATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
   doc "Publishes the portable record prefix of one enumeration batch.";
   let entries = buffer_new(4096_u64, 0_u8);
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: list) => {

@@ -9,8 +9,9 @@ Writers may be taught this catalog during validation; hitting a wall is a
 catalog finding, not authority to invent a language rule.
 
 This document carries guidance for the active specification at
-`spec/kernel-spec.md`, including the contract-clause measure operands and the
-call datum introduced by v0.44 (P16, P21), the loop-body
+`spec/kernel-spec.md`, including the readable byte stream, the socket address,
+and the two-field connection introduced by v0.46 (P22), the contract-clause
+measure operands and the call datum introduced by v0.44 (P16, P21), the loop-body
 region block and the associative [ENT-6] join introduced by v0.43, the one canonical
 region spelling introduced by [FORM-8] in v0.42, the comparison symbols and
 call-site `::` delimiter introduced by v0.41, the source-proof forms introduced
@@ -449,7 +450,7 @@ for @scan (index in 0_u64..8192_u64) {
   let data = buffer_new(65536_u64, 0_u8);
   let rendered = name_at(name: &uniq name, index: index);
   region 'f {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         region {
           match open_file(permit: move permit, root: &'f cwd,
@@ -486,8 +487,8 @@ copy rather than a fact to rediscover:
   rooted outside the body in iteration order. This is strictly more general
   than [PAR-2]'s admitted operation set: a non-associative fold, a float fold,
   and a `Result` route are all admitted here.
-- **Reserve the file factory in the prologue, inline.** `reserve_file` takes
-  and returns a short unique `&uniq FileFactory` loan inline [SYS-10], and
+- **Reserve the handle factory in the prologue, inline.** `reserve_handle` takes
+  and returns a short unique `&uniq HandleFactory` loan inline [SYS-10], and
   prologues run in index order without overlapping, so one enclosing factory
   serves every iteration with no replication and no [OWN-5] relaxation. Its
   `Err(ResourceExhausted)` edge is the program's own source-order outcome (the
@@ -495,10 +496,13 @@ copy rather than a fact to rediscover:
   so match on it and take the exit there, before the open: that is an early
   exit before the first submission, which the first rule admits. A program
   that reuses its capacity closes explicitly (`close_read`,
-  `close_directory`, `close_directory_source` return the permit); derived
-  release closes but returns nothing. Write
+  `close_directory`, `close_directory_source`, `close_listener` and
+  `close_connection` return the permit); derived release closes but returns
+  nothing. One factory serves every handle the target counts, so a listener
+  and a connection draw from the same capacity a file open draws from
+  [SYS-10, SYS-17, SYS-18]. Write
   the reserve and the open in the loop body itself. Factoring the pair into a
-  helper — `fn open_source_from(factory: &uniq FileFactory, …)` — costs the
+  helper — `fn open_source_from(factory: &uniq HandleFactory, …)` — costs the
   loop its pipeline, because the callee's own retained loan is what
   the staged judgment then sees. Two programs identical except for that
   factoring (‹loop› stands for the writer's own file and line; the verdict text
@@ -1003,6 +1007,60 @@ measure again from its own allocation.
 
 Replaces: publishing a caller's post-state through a `&uniq` parameter, and
 re-measuring a run the caller just handed away.
+
+## P22. Read a stream to its end, and publish through a helper
+
+The stream operations `read_next` and `receive_next` have no offset: the
+position they advance is the stream's own [SYS-15, SYS-18]. A read to end is
+therefore an uncounted loop whose only exit is the `ReadEnd` arm, and the
+buffer it reads into is the loop's own.
+
+```whitefoot
+loop @chunks {
+  let available = 0_u64;
+  let ended = 0_u8;
+  region {
+    match read_next(input: &uniq input, destination: &uniq chunk,
+                    start: 0_u64, end: 4096_u64) {
+      ReadBytes(next: endpoint) => { set available = endpoint; }
+      ReadEnd() => { set ended = 1_u8; }
+      ReadFailed(error: problem) => { set outcome = 3_u8; set ended = 2_u8; }
+    }
+  }
+  if ended == 0_u8 {
+    region {
+      match publish_all(output: &uniq out, source: &chunk, length: available) {
+        Ok(value: published) => { }
+        Err(error: problem) => { set outcome = 4_u8; set ended = 2_u8; }
+      }
+    }
+  }
+  if ended == 0_u8 { } else { break @chunks; }
+}
+```
+
+Two rules make it work, and both are forms to copy:
+
+- **Publish through the helper of P16's shape, not through a second inner
+  loop.** `write_once` over the same buffer the read filled needs
+  `available <= len(chunk)` at its call site. The read's own [SYS-8] relation
+  gives `available <= 4096` on the `ReadBytes` edge, and the buffer's
+  allocation gives `4096 <= len(chunk)`; both are live immediately after the
+  read region and neither survives a second loop header. A helper whose
+  contract states `requires length <= len(deref(source))` moves the obligation
+  to that one live point, and the writer never restates the bound.
+- **Leave through one flag, at the bottom.** The `ReadEnd` break is selected
+  by the submission's own outcome, so it can never be taken in a staged
+  prologue and the loop stays sequential ([PAR-3] says so in as many words).
+  Writing the exit as a flag the body sets and one `break` at the end keeps the
+  failure and the end on the same edge and keeps the body's shape readable.
+
+Current value: measured on the v0.46 batch branch, on `tests/programs/stdin_echo.wf`
+against a pipe and against a redirected file, on both runtime routes.
+
+Replaces: a positioned read with a writer-tracked offset, which is the wrong
+operation for a stream, and an inner publish loop, which loses the length
+fact the read left behind.
 
 ## Known gaps (findings, not yet patterns)
 

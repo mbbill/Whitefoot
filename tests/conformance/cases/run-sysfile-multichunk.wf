@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   doc "SYS-8: a file larger than the buffer needs repeated calls, each ReadBytes payload is the absolute endpoint of that call's changed prefix, and source code advances the explicit file offset by next - start. On the final short read exactly [start, next) may have changed while every other byte of the reused buffer is unchanged. Repetition and accumulation are ordinary source loops, not a read-exact primitive.";
   let page = buffer_new(8_u64, 0_u8);
   let total = 0_u64;
@@ -11,7 +11,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region {
-                match reserve_file(factory: &uniq 'c files) {
+                match reserve_handle(factory: &uniq 'c files) {
                   Ok(value: permit) => {
                     match open_read(permit: move permit, root: &'c cwd, path: &path) {
                       FileOpened(value: file) => {

@@ -42,7 +42,7 @@ mod target_frame;
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::lexer::{LexLimits, LexOutcome, lex};
@@ -326,7 +326,7 @@ fn compile_sources(sources: &[(&str, &[u8])]) -> String {
         .expect("normal compiler pipeline must emit")
 }
 
-fn compile_and_run(llvm: &str) -> Output {
+fn compile_and_run(llvm: &str) -> std::process::Output {
     compile_and_run_with(llvm, &[])
 }
 
@@ -528,13 +528,17 @@ fn build_linked_executable(
 ///
 /// The bytes are passed as raw `OsStr`s so a test can hand the program an
 /// argument that is not valid text [HOST-1].
-fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> Output {
+fn compile_and_run_with(llvm: &str, arguments: &[&[u8]]) -> std::process::Output {
     compile_link_and_run(llvm, None, arguments)
 }
 
 /// Runs one emitted module, optionally linked against one host translation
 /// unit.
-fn compile_link_and_run(llvm: &str, host: Option<&str>, arguments: &[&[u8]]) -> Output {
+fn compile_link_and_run(
+    llvm: &str,
+    host: Option<&str>,
+    arguments: &[&[u8]],
+) -> std::process::Output {
     let directory = test_directory();
     let executable = build_linked_executable(llvm, host, &[], &directory);
     let output = Command::new(&executable)
@@ -563,7 +567,7 @@ fn compile_link_and_run_with(
     host: Option<&str>,
     defines: &[String],
     arguments: &[&[u8]],
-) -> Output {
+) -> std::process::Output {
     let directory = test_directory();
     let executable = build_linked_executable(llvm, host, defines, &directory);
     let output = Command::new(&executable)

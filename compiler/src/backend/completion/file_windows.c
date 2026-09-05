@@ -145,6 +145,78 @@ static wf_file_result wf_file_windows_pread(const wf_file_request *request) {
     return result;
 }
 
+/* One unpositioned stream read [SYS-15], made to wait here.
+ *
+ * A Windows read names its position in an `OVERLAPPED`, and this operation has
+ * none to name: the position it reads at is the handle's own. The two shapes a
+ * standard input can be are handled by one call, and neither is a fork of any
+ * logic here.
+ *
+ * A console handle is not opened for overlapped I/O and has no overlapped
+ * form at all, so `ReadFile` with a null `OVERLAPPED` is the only thing that
+ * reads it; that call advances the console's own position and blocks this
+ * helper's thread until the user supplies a line, which is exactly what the
+ * bounded adapter's helper thread exists for.
+ *
+ * A redirected pipe or file is the same call. A pipe handle the process
+ * inherited is likewise not opened overlapped, so a null `OVERLAPPED` reads it
+ * at its own position and returns when the writer supplies bytes or closes;
+ * a redirected regular file also advances the handle's own file pointer, which
+ * is what an unpositioned read means. Passing an `OVERLAPPED` here would be
+ * wrong in both cases rather than faster: on a synchronous handle Windows
+ * ignores it for the wait and still uses the offset it carries, which would
+ * turn a stream read into a positioned read at zero and re-read the first
+ * bytes forever.
+ *
+ * End of stream is a successful zero-byte read in this contract. A pipe whose
+ * writer closed reports `ERROR_BROKEN_PIPE`, which is that end and not a
+ * failure, so it is normalized to zero here exactly as a file's
+ * `ERROR_HANDLE_EOF` is. */
+static wf_file_result wf_file_windows_read(const wf_file_request *request) {
+    wf_file_result result;
+    HANDLE handle;
+    DWORD transferred = 0;
+    DWORD error_code = 0;
+
+    memset(&result, 0, sizeof(result));
+    result.head.kind = request->kind;
+    result.head.value = -1;
+    if (request->operation.read.count == 0) {
+        result.head.value = 0;
+        return result;
+    }
+    if (request->operation.read.count > (size_t)MAXDWORD) {
+        result.head.error_code = ERROR_INVALID_PARAMETER;
+        return result;
+    }
+    handle = wf__windows_completion_descriptor_handle(
+        request->operation.read.descriptor
+    );
+    if (handle == INVALID_HANDLE_VALUE) {
+        result.head.error_code = ERROR_INVALID_HANDLE;
+        return result;
+    }
+    if (ReadFile(
+            handle,
+            request->operation.read.buffer,
+            (DWORD)request->operation.read.count,
+            &transferred,
+            NULL
+        ) == FALSE) {
+        error_code = GetLastError();
+    }
+    if (error_code == ERROR_HANDLE_EOF || error_code == ERROR_BROKEN_PIPE) {
+        error_code = 0;
+        transferred = 0;
+    }
+    if (error_code != 0) {
+        result.head.error_code = (int)error_code;
+        return result;
+    }
+    result.head.value = (int64_t)transferred;
+    return result;
+}
+
 static wf_file_result wf_file_windows_open_at(const wf_file_request *request) {
     wf_file_result result;
     HANDLE root;
@@ -262,21 +334,21 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
         return wf_file_windows_write(request);
     case WF_FILE_CLOSE:
         return wf_file_windows_close(request);
+    case WF_FILE_READ:
+        return wf_file_windows_read(request);
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     case WF_FILE_DIRECTORY_NEXT:
         return wf_file_windows_directory_next(request);
 #endif
-    case WF_FILE_READ:
     case WF_FILE_PWRITE:
     case WF_FILE_STATUS:
     default:
-        /* Three shapes the Windows target row does not qualify: a stream read
-         * (the language's read is positioned), a positioned write (the row's
-         * write is `write_once`, which has the stream's own current position),
-         * and a status (the row reports no `stat` record).  Each is refused as
-         * an outcome the program sees, because the emitter can name any of the
-         * seven submit entries on any target and a refusal is not a defect of
-         * the runtime. */
+        /* Two shapes the Windows target row does not qualify: a positioned
+         * write (the row's write is `write_once`, which has the stream's own
+         * current position) and a status (the row reports no `stat` record).
+         * Each is refused as an outcome the program sees, because the emitter
+         * can name any submit entry on any target and a refusal is not a
+         * defect of the runtime. */
         return wf_file_windows_refused(request, ERROR_NOT_SUPPORTED);
     }
 }

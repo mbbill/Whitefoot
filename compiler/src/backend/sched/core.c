@@ -397,103 +397,11 @@ static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int *was_ready)
 
 /* ---------------------------------------------------------- the rule (§2) */
 
-/* The looks one turn of the idle window makes, in the order it makes them:
- * the record this stack waits on, the ready list, the entry thread's exit
- * test, and -- for the scheduler loop's own turn -- this thread's own deque
- * and a steal. Returns 1 when a look found something and the turn acted on
- * it, which is what makes the caller's loop restart, and 0 when every look
- * missed.
- *
- * `idle_bit` is this thread's bit in `core->idle` when the caller has raised
- * this turn's registration, and 0 during the bounded spin below, which looks
- * before anything is raised. An arm that acts ends the registration first:
- * each of them either switches away or runs a hand-out here, and none may
- * leave a thread published as idle while it does. */
-static void wf_sched_idle_end(
-    wf_sched_core *core,
-    wf_sched_record *on_record,
-    unsigned long long idle_bit
-) {
-    if (idle_bit == 0ull) {
-        return;
-    }
-    (void)wf_prim_and_q(&core->idle, ~idle_bit, WF_PRIM_SEQ_CST);
-    if (on_record != NULL) {
-        /* The in-place registration ends with the turn; a publisher that
-         * claimed it already found the marker and woke. */
-        void *marker = WF_SCHED_WAITER_IN_PLACE;
-        (void)wf_prim_cas_p((void **)&on_record->waiter, &marker, NULL, WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST);
-    }
-}
-
-static int wf_sched_idle_looks(
-    wf_sched_core *core,
-    wf_sched_record *on_record,
-    unsigned long long idle_bit,
-    int *left_for_status
-) {
-    wf_sched_thread *thread = wf_sched_current_thread(core);
-    wf_sched_stack *ready;
-    if (on_record != NULL) {
-        unsigned state = wf_prim_load_u(&on_record->state, WF_PRIM_ACQUIRE);
-        if (state == WF_SCHED_DONE || state == WF_SCHED_COMPLETING) {
-            wf_sched_idle_end(core, on_record, idle_bit);
-            return 1;
-        }
-    }
-    ready = wf_sched_ready_pop(core);
-    if (ready != NULL) {
-        wf_sched_idle_end(core, on_record, idle_bit);
-        if (on_record != NULL) {
-            /* The third line taken late: this stack parks with its own I/O as
-             * the wake and switches to the stack that appeared (§2). The park
-             * registers this stack on the record itself and re-reads the
-             * record's state after it does, so the in-place registration the
-             * line above has just ended is not one it needs. */
-            thread->counts.late_parks += 1u;
-            (void)wf_sched_park(core, on_record, ready, 1);
-            return 1;
-        }
-        thread->pending_empty = thread->stack;
-        wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
-        wf_sched_switch_to(core, ready);
-        return 1;
-    }
-    if (on_record == NULL && thread->index == 0u
-        && wf_prim_load_u(&core->status_posted, WF_PRIM_SEQ_CST) != 0u) {
-        wf_sched_idle_end(core, on_record, idle_bit);
-        *left_for_status = 1;
-        return 1;
-    }
-    if (on_record == NULL) {
-        /* One more look at the deques after the bit went up (§6). */
-        wf_sched_slot *slot = wf_sched_pop(thread->lane);
-        if (slot == NULL) {
-            slot = wf_sched_find(core, thread);
-        }
-        if (slot != NULL) {
-            wf_sched_idle_end(core, on_record, idle_bit);
-            wf_sched_execute(core, slot);
-            return 1;
-        }
-    }
-    return 0;
-}
-
 /* Step 4 of the scheduler loop and the I/O arm of the fourth line are one
- * sequence (§6): a bounded spin over the looks above, then raise this turn's
- * registration, capture the epoch, flush and progress, look once more, and
- * park on the captured epoch. `on_record`, when given, is the record this
- * stack would park on if a READY stack appears, and the entry test is the
- * entry thread's alone. Returns 1 when the loop must restart.
- *
- * The spin is entirely before the capture, so §6's lost-wake argument is the
- * argument it was: the window from the capture to the park is the same window,
- * and the spin puts more looks in front of it and changes nothing inside it.
- * It is also before the bit goes up, so a publisher that pushes while a thread
- * spins issues no wake at all and the spinning thread finds that push by its
- * own look. What the spin is for, and where its two constants come from, is
- * `core.h`. */
+ * sequence (§6): capture the epoch, flush and progress, re-test the ready
+ * list, then park on the captured epoch. `on_record`, when given, is the
+ * record this stack would park on if a READY stack appears, and the entry
+ * test is the entry thread's alone. Returns 1 when the loop must restart. */
 static int wf_sched_idle_step(
     wf_sched_core *core,
     wf_sched_record *on_record,
@@ -501,21 +409,10 @@ static int wf_sched_idle_step(
 ) {
     wf_sched_thread *thread = wf_sched_current_thread(core);
     unsigned long long bit = 1ull << thread->index;
-    unsigned spin_rounds = WF_SCHED_IDLE_SPIN_ROUNDS;
-    unsigned look_rounds = WF_SCHED_IDLE_SPIN_ROUNDS + WF_SCHED_IDLE_YIELD_ROUNDS;
-    unsigned round;
     uint64_t epoch;
+    wf_sched_stack *ready;
+    int was_ready;
     *left_for_status = 0;
-    for (round = 0u; round < look_rounds; round += 1u) {
-        if (wf_sched_idle_looks(core, on_record, 0ull, left_for_status)) {
-            return 1;
-        }
-        if (round < spin_rounds) {
-            wf_prim_pause();
-        } else {
-            wf_prim_yield();
-        }
-    }
     /* The bit goes up before the epoch is captured and before the last look,
      * so a publisher that misses the bit is one whose push the look finds.
      * The in-place waiter registers the same way, so a drain on another
@@ -526,14 +423,58 @@ static int wf_sched_idle_step(
     }
     epoch = wf_prim_epoch();
     if (wf_prim_progress(core)) {
-        wf_sched_idle_end(core, on_record, bit);
+        goto restart;
+    }
+    if (on_record != NULL) {
+        unsigned state = wf_prim_load_u(&on_record->state, WF_PRIM_ACQUIRE);
+        if (state == WF_SCHED_DONE || state == WF_SCHED_COMPLETING) {
+            goto restart;
+        }
+    }
+    ready = wf_sched_ready_pop(core);
+    if (ready != NULL) {
+        if (on_record != NULL) {
+            /* The third line taken late: this stack parks with its own I/O as
+             * the wake and switches to the stack that appeared (§2). */
+            (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
+            was_ready = 1;
+            thread->counts.late_parks += 1u;
+            (void)wf_sched_park(core, on_record, ready, was_ready);
+            return 1;
+        }
+        thread->pending_empty = thread->stack;
+        wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
+        (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
+        wf_sched_switch_to(core, ready);
         return 1;
     }
-    if (wf_sched_idle_looks(core, on_record, bit, left_for_status)) {
-        return 1;
+    if (on_record == NULL && thread->index == 0u
+        && wf_prim_load_u(&core->status_posted, WF_PRIM_SEQ_CST) != 0u) {
+        *left_for_status = 1;
+        goto restart;
+    }
+    if (on_record == NULL) {
+        /* One more look at the deques after the bit went up (§6). */
+        wf_sched_slot *slot = wf_sched_pop(thread->lane);
+        if (slot == NULL) {
+            slot = wf_sched_find(core, thread);
+        }
+        if (slot != NULL) {
+            (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
+            wf_sched_execute(core, slot);
+            return 1;
+        }
     }
     wf_prim_park(epoch);
-    wf_sched_idle_end(core, on_record, bit);
+restart:
+    (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
+    if (on_record != NULL) {
+        /* The in-place registration ends with the arm's turn; a publisher
+         * that claimed it already found the marker and woke. The late
+         * third line above overwrote it with the stack's own registration. */
+        void *marker = WF_SCHED_WAITER_IN_PLACE;
+        (void)wf_prim_cas_p((void **)&on_record->waiter, &marker, NULL, WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST);
+    }
     return 1;
 }
 

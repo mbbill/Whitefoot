@@ -17,6 +17,7 @@ extern "C" {
 #define WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT 2u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE 3u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT 4u
+#define WF_WINDOWS_DESCRIPTOR_CLASS_INPUT 5u
 
 /* What the runtime remembers about one descriptor it produced.
  *
@@ -107,6 +108,7 @@ int *wf__windows_error_location(void);
 int wf__windows_open_cwd(const void *unused_path, int flags, ...);
 int wf__windows_stdout_descriptor(void);
 int wf__windows_stderr_descriptor(void);
+int wf__windows_stdin_descriptor(void);
 int64_t wf__windows_diagnostic_write(const void *bytes, uint64_t length);
 
 int wf__windows_completion_file_open_at_worker(

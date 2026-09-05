@@ -1,4 +1,4 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "`open_directory` takes a caller-owned name range rather than a path value, and validates that range before any host call [SYS-14]. A range containing a target separator is not one path component, so it yields `InvalidPath` with both detail fields zero [SYS-7], no host call, and no DirectoryRead result. Exit 0 is reached only through that class with both details zero.";
   let name = buffer_new(3_u64, 0_u8);
   set name[0_u64] = 97_u8;
@@ -6,7 +6,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   set name[2_u64] = 98_u8;
   region 'c {
     region {
-      match reserve_file(factory: &uniq 'c files) {
+      match reserve_handle(factory: &uniq 'c files) {
         Ok(value: permit) => {
           match open_directory(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 3_u64) {
             DirectoryOpened(value: opened) => {

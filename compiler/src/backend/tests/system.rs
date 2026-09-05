@@ -587,13 +587,13 @@ fn an_out_of_range_copy_is_a_static_sys8_rejection() {
 
 #[test]
 fn every_release_action_emits_exactly_its_contract() {
-    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {
+    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
     // The one native close attempt is the `DirectoryRead` release; `Args`,
-    // both `Output` owners, `FileFactory`, and the returned `ExitStatus`
+    // both `OutputStream` owners, `HandleFactory`, and the returned `ExitStatus`
     // release with no host call at all [SYS-5]. A close is submitted into the
     // record the releasing frame reserved and joined there, like every other
     // operation (`research/investigations/io-model/PARK-ON-MISS.md` §8), so
@@ -611,14 +611,14 @@ fn every_release_action_emits_exactly_its_contract() {
     assert_eq!(llvm.matches("  ; drop %v").count(), 5);
     assert!(
         llvm.contains("i32 %cwd, i32 1, i32 2, i1 true"),
-        "the bootstrap must supply the proof-only FileFactory after stderr"
+        "the bootstrap must supply the proof-only HandleFactory after stderr"
     );
 }
 
 #[test]
 fn the_command_bootstrap_normalizes_once_and_maps_the_returned_status_exactly() {
     let source =
-        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+        br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {
   return exit_status(code: 42_u8);
 }
 "#;
@@ -760,11 +760,11 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 
 #[test]
 fn a_target_without_directory_relative_resolution_rejects_component_opening() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region {
-      match reserve_file(factory: &uniq 'c files) {
+      match reserve_handle(factory: &uniq 'c files) {
         Ok(value: permit) => {
           match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
             FileOpened(value: file) => {
@@ -802,7 +802,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -829,7 +829,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 
 #[test]
 fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
     region {
@@ -878,9 +878,9 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 /// only ever standing in for, is the refusal below.
 #[test]
 fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: list) => {
@@ -929,9 +929,9 @@ fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
 /// arm is reached through a probe rather than left unexecuted.
 #[test]
 fn a_facility_without_an_approved_record_is_a_missing_mapping() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: list) => {
@@ -1020,7 +1020,7 @@ fn component_open_flags_are_target_exact() {
 
 #[test]
 fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1052,7 +1052,7 @@ fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
 
 #[test]
 fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -1139,7 +1139,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
         ));
     });
 
-    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
   region {
     match arg_get(args: &args, position: 0_u64) {
       Ok(value: text) => {
@@ -1201,11 +1201,11 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
 
 #[test]
 fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region {
-      match reserve_file(factory: &uniq 'c files) {
+      match reserve_handle(factory: &uniq 'c files) {
         Ok(value: permit) => {
           match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
             FileOpened(value: file) => {
@@ -1237,9 +1237,9 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             // The permit is one credit of the factory's capacity [SYS-10]: the
             // wrapper answers the `Result` shape from the floor's count and
             // performs no host call.
-            assert!(llvm.contains("@wf.sys.reserve_file.v1() alwaysinline"));
-            assert!(llvm.contains("call i32 @wf__file_reserve()"));
-            assert!(llvm.contains("@wf.sys.reserve_file.v1()"));
+            assert!(llvm.contains("@wf.sys.reserve_handle.v1() alwaysinline"));
+            assert!(llvm.contains("call i32 @wf__handle_reserve()"));
+            assert!(llvm.contains("@wf.sys.reserve_handle.v1()"));
             assert!(
                 !llvm.contains("@wf.sys.open_file.v1(i1"),
                 "the proof-only permit must not enter the qualified open ABI"
@@ -1273,10 +1273,10 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 
 #[test]
 fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: list) => {
@@ -1350,10 +1350,10 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
 /// rows embed, which the two counted assertions below state.
 #[test]
 fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: list) => {

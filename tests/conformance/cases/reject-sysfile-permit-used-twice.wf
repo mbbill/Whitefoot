@@ -1,7 +1,7 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  doc "FilePermit is an ordinary affine own value. The first open consumes it on every outcome, so the second move is use after move and rejects under OWN-1 without any I/O-specific identity rule.";
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  doc "HandlePermit is an ordinary affine own value. The first open consumes it on every outcome, so the second move is use after move and rejects under OWN-1 without any I/O-specific identity rule.";
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         let first = open_directory_source(permit: move permit, directory: &cwd);
         let second = open_directory_source(permit: move permit, directory: &cwd);

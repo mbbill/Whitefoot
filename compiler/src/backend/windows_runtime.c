@@ -733,7 +733,10 @@ int wf__windows_open_cwd(const void *unused_path, int flags, ...) {
     return descriptor;
 }
 
-static int wf_windows_duplicate_descriptor(int descriptor) {
+static int wf_windows_duplicate_descriptor(
+    int descriptor,
+    unsigned descriptor_class
+) {
     int duplicate;
     int saved_errno;
     errno = 0;
@@ -743,26 +746,38 @@ static int wf_windows_duplicate_descriptor(int descriptor) {
         wf_windows_record_error(wf_windows_error_from_errno(saved_errno));
     } else if (wf__windows_completion_register_descriptor(
                    duplicate,
-                   WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT
+                   descriptor_class
                ) != 0) {
         if (_close(duplicate) != 0) {
             wf_windows_fail(
-                "an output descriptor could not be closed after its registration failed"
+                "a standard descriptor could not be closed after its registration failed"
             );
         }
         wf_windows_fail(
-            "an output descriptor could not be registered"
+            "a standard descriptor could not be registered"
         );
     }
     return duplicate;
 }
 
 int wf__windows_stdout_descriptor(void) {
-    return wf_windows_duplicate_descriptor(1);
+    return wf_windows_duplicate_descriptor(1, WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT);
 }
 
 int wf__windows_stderr_descriptor(void) {
-    return wf_windows_duplicate_descriptor(2);
+    return wf_windows_duplicate_descriptor(2, WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT);
+}
+
+/* The [SYS-15] standard input stream.
+ *
+ * It is registered under its own class, not the output one, because the two
+ * are read and written by different request kinds and the registry's class is
+ * what a leaf checks before it uses a descriptor. A console handle has no
+ * overlapped form and a redirected pipe or file does, but neither difference
+ * is decided here: this entry duplicates and registers the descriptor, and
+ * `file_windows.c` decides per request how to read it. */
+int wf__windows_stdin_descriptor(void) {
+    return wf_windows_duplicate_descriptor(0, WF_WINDOWS_DESCRIPTOR_CLASS_INPUT);
 }
 
 int64_t wf__windows_diagnostic_write(const void *bytes, uint64_t length) {

@@ -1,8 +1,8 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "The enumeration source is a cursor with one position, opened above the loop and advanced by every iteration through a retained exclusive borrow. It is not read-only, it is not prologue-only, and an opaque system nominal has no copy element type to replicate, so PAR-3 denies it permanently rather than for a stage-one reason. This is the ownership model working, not a gap.";
   let total = 0_u64;
   region {
-    match reserve_file(factory: &uniq files) {
+    match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
         match open_directory_source(permit: move permit, directory: &cwd) {
           SourceOpened(value: list) => {

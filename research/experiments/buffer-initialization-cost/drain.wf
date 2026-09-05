@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   doc "Drains one named file through one reusable initialized buffer and reports a witness of what it read.";
   let page = buffer_new(4096_u64, 0_u8);
   let arguments = 0_u64;
@@ -19,7 +19,7 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         match relative_path(value: move text) {
           Ok(value: path) => {
             region {
-              match reserve_file(factory: &uniq files) {
+              match reserve_handle(factory: &uniq files) {
                 Ok(value: permit) => {
                   match open_read(permit: move permit, root: &cwd, path: &path) {
                     FileOpened(value: file) => {

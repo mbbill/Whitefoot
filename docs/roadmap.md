@@ -1063,14 +1063,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: active v0.40 unified-state model, retained from v0.39]`
-`[next: wider APIs and target measurements]`
+`[current: the unified-state model, widened by v0.46 to one readable stream and TCP]`
+`[next: the TCP runtime routes, then file write and create]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** v0.40 retains this released v0.39 model. It uses
+- **Current:** the model released in v0.39 and widened since. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration
@@ -1078,21 +1078,24 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   no `world`, `external`, `blocks`, `capability-root`, `family-fragment`, or
   `Ordered` permission layer. Changing clocks, Outputs, Sources, cursors, and
   factories use `own` or `&uniq`; genuinely independent work uses distinct
-  ordinary owned places or borrows. File opens consume proof-only one-shot
-  `FilePermit` values produced by total `reserve_file(&uniq FileFactory)`;
-  `DirectoryRead` is a shared selector, host exhaustion remains a typed open
-  result, and the permit is erased before the native ABI. That proof-only
-  permit is the stated gap under constitution T4 (2026-09-04): `close`
-  produces nothing the checker sees, so a pipeline overlaps it with a later
-  `open`, the host answers `EMFILE` for a schedule the sequential program never
-  produces, and the runtime hid it with a descriptor retirement ledger. The
-  branch `io/t4-resource-relations` carries the v0.45 amendment that closes
-  it (`Status: ACTIVE v0.45` in `spec/kernel-spec.md`, landed as one change
-  with its archive and approval record; the plan is `docs/current-plan.md`): the permit is credit-backed by a
-  process-wide counter set from the target's descriptor budget, the three
-  explicit closes return the credit as a permit, a refused open hands its
-  permit back in its outcome enum, and the ledger, its award order, the
-  thread-holding retry wait, and their Windows twins are deleted. Completion remains the sole language-level
+  ordinary owned places or borrows. The complete writer surface is: `Args` and
+  the two host-string routes; `RelativePath`; `DirectoryRead`, `ReadFile` and
+  `DirectorySource` with the four opens, `read_at`, `directory_next` and the
+  three explicit closes; the `InputStream` and `OutputStream` pair with
+  `read_next` and `write_once`; `SocketAddress` with `socket_address_v4` and
+  `socket_address_v6`; `TcpListener` with `tcp_listen`, `tcp_accept`,
+  `tcp_connect` and `close_listener`; the system-declared struct
+  `TcpConnection` with its `TcpReceive` and `TcpSend` directions,
+  `receive_next`, `send_once` and `close_connection`; `HandleFactory`,
+  `HandlePermit` and `reserve_handle`; and `ExitStatus`. Every handle the
+  target counts, a file, a directory, an enumeration source, a listener and a
+  connection alike, is one credit of the one factory, whose capacity is fixed
+  at program start and never raised: a refused open, listen, accept or connect
+  hands the permit back in its outcome enum, an explicit close returns it, and
+  derived release spends it. That backed permit is the v0.45 amendment, which
+  closed the T4 gap the proof-only permit left (a `close` that produced
+  nothing the checker saw, an `EMFILE` a pipeline invented, and the descriptor
+  retirement ledger that hid it, all deleted with it). Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
   io_uring work and component measurements were retained while the rejected
   group machinery was removed. The Windows runtime is no longer a second copy:
@@ -1139,29 +1142,26 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [run 33651024745](https://github.com/mbbill/Whitefoot/actions/runs/33651024745)
   passed on exact revision
   `a7c49c4d9876461739dd2c63b5600158facc403f`.
-- **Missing / next:** back the `FilePermit` (constitution T4, owner ruling
-  2026-09-04): `FileFactory` carries a capacity fixed at program start and never
-  larger than the descriptors the target provides to this program;
-  `reserve_file` returns a `Result` whose exhaustion member is the program's own
-  source-order outcome; release returns the permit or its credit through one of
-  the explicit dispositions of FIRST-PRINCIPLES §12, so `close(held);
-  open(path)` is a move dependency the checker sequences; an `open` holding a
-  permit cannot fail for want of a descriptor, and `ResourceExhausted` names
-  only honest target exhaustion. This replaces the [SYS-10] sentences "This
-  first slice never returns or recycles the permit. Reserving it promises no
-  native descriptor, handle-table entry, kernel memory, or host quota: host
-  exhaustion remains the ordinary `ResourceExhausted` member of the open
-  operation's typed `IoError` result." It is a specification change and ships
-  with its derived work in one batch: the system-operation table and its
-  compiler-side signatures, conformance cases and verdicts, and the runtime,
-  where the retirement ledger, its award order, and the thread-holding retry
-  wait are deleted rather than ported (the park-on-miss design's §7 depends on
-  this deletion). The stackless lowering this line asked to widen beyond
+- **Missing / next:** the TCP runtime routes. v0.46 declares the network
+  surface above and the checker, the lowering and the emitter carry a program
+  that uses it, but no target row maps a TCP submission: the request kinds and
+  their io_uring, shared-adapter and completion-port routes are slice 2 of the
+  streams-and-TCP batch, so a module that submits one stops at target
+  qualification with an unmapped semantic identity rather than at a source
+  rejection. Slice 3 is the Windows route, slice 4 the control benchmark
+  against a hand-written io_uring server and an epoll server of the same
+  design, and the shape a real server loop needs is the language work the
+  batch exists to expose: the checker admits a fixed-trip staged loop over
+  accepts or an overlap group, and not yet an unbounded accept loop. After that
+  comes file write and create, the second examination of the resource
+  accounting: write handles, the namespace effect of a create, and their
+  dependencies on directory reads, all expressed on the API the way the permit
+  is. The stackless lowering this line asked to widen beyond
   single-instruction tail chains is gone instead: batch 2 deleted it and the
   park-on-miss stack park carries every suspension
   ([batch 0107](done/0107-park-on-miss.md)). Then add a clock reading, keyed
-  directory places, namespace mutation, and
-  network, timer, cancellation, deadline, and finish-required output APIs only
+  directory places, namespace mutation, name resolution, and
+  timer, cancellation, deadline, and finish-required output APIs only
   with complete ordinary ownership and target contracts. The remaining
   completion-width question is how to extend the implemented direct
   counted-loop batch to wider control flow, more operation families, and
@@ -1179,6 +1179,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·
   [staged loop pipeline design](../research/investigations/io-model/LOOP-PIPELINE.md) ·
+  [streams and TCP design](../research/investigations/io-model/NETWORK.md) ·
   [experimental implementation audit](../research/investigations/io-model/IMPLEMENTATION-AUDIT.md) ·
   [program-level and clean-core measurements](../research/investigations/io-model/RESULTS.md) ·
   [historical architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·

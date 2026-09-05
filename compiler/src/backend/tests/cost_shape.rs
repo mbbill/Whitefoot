@@ -58,7 +58,7 @@
 //! | `read_at` / `write_once` | `each_transfer_is_one_host_call_with_a_cold_outcome_mapper` |
 //! | `DirectoryRead`/`ReadFile` release | `every_release_close_is_one_discarded_attempt` |
 //! | value releases | `releasing_a_value_or_an_output_reaches_no_host_facility` |
-//! | `Output` release | the same test, plus the deterministic-host run below. The row's second half is a *recording* obligation, not a gate: a failure surfaced only at close or writeback is outside this slice's error model, is recorded as such in the dossier, and is observed rather than assumed by `deterministic_target::an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release`. |
+//! | `OutputStream` release | the same test, plus the deterministic-host run below. The row's second half is a *recording* obligation, not a gate: a failure surfaced only at close or writeback is outside this slice's error model, is recorded as such in the dossier, and is observed rather than assumed by `deterministic_target::an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release`. |
 //! | output batching | `the_output_batch_costs_one_host_write_per_full_batch` — a count over a real run rather than a shape, so it is gated against task 0013's deterministic host, where host attempts are observable. |
 //! | buffer initialization reuse | `the_reused_buffers_are_initialized_once_at_allocation` — the *initialized* control, which answers the structural question only. |
 //! | initialization cost | `research/experiments/buffer-initialization-cost/` — the *uninitialized* control, which is the only one that can answer whether paying for initialization is material at all. It is a measurement, and per `tests/codegen/README.md` noisy timing is experimental evidence rather than an every-commit invariant. |
@@ -383,7 +383,7 @@ const SELECTED_ROWS: &[(u32, &str)] = &[
     (12, "open_directory_source"),
     (13, "directory_next"),
     (14, "open_file"),
-    (15, "reserve_file"),
+    (15, "reserve_handle"),
 ];
 
 /// §9.1 row 1 — target selection is one link-time table decision.
@@ -833,7 +833,7 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 fn every_release_close_is_one_discarded_attempt() {
     // The three closing resource kinds close: `DirectoryRead`, `DirectorySource`,
     // and `ReadFile`. Across the command and its retained helper definitions,
-    // the optimizer retains ten compiler-derived release sites. FilePermit
+    // the optimizer retains ten compiler-derived release sites. HandlePermit
     // itself erases before emission. The typed file adapter validates a
     // provisional descriptor before publishing it as a Whitefoot value, so its
     // failure cleanup belongs to the adapter rather than to this IR.
@@ -891,13 +891,13 @@ fn every_release_close_is_one_discarded_attempt() {
     );
 }
 
-/// §9.1 rows 9 and 10 — the value releases and the `Output` release reach no
+/// §9.1 rows 9 and 10 — the value releases and the `OutputStream` release reach no
 /// host facility at all.
 #[test]
 fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     let program = program();
     // `Args`, `HostString`, `RelativePath`, and `ExitStatus` release by
-    // logical consume. `Output` releases by logical source detach: no close,
+    // logical consume. `OutputStream` releases by logical source detach: no close,
     // no flush, no target call. Standard output and standard error are
     // descriptors 1 and 2 here, and neither is ever closed or flushed —
     // operating-system process teardown owns them [SYS-12].
@@ -914,7 +914,7 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     ] {
         assert!(
             !program.contains(forbidden),
-            "an Output release must not reach {forbidden}"
+            "an OutputStream release must not reach {forbidden}"
         );
     }
     // The complete inventory of what the finished program calls. Every entry
@@ -972,9 +972,9 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "wf__completion_directory_next_submit"
             | "wf__completion_file_join" | "wf__completion_file_open_join"
             // The factory's credit count, kept by the floor [SYS-10]: one
-            // atomic word, no host facility, no handle table. `reserve_file`
+            // atomic word, no host facility, no handle table. `reserve_handle`
             // spends a credit through it and an explicit close returns one.
-            | "wf__file_reserve"
+            | "wf__handle_reserve"
             // The lease length pass and the path NUL scan.
             | "strlen" | "memchr"
             // Buffer allocation and language cleanup.
@@ -1244,7 +1244,7 @@ fn the_output_batch_costs_one_host_write_per_full_batch() {
     // The same run witnesses the release rows on the real program, which the
     // structural gates above can only establish statically. Exactly two closes
     // fire — one for the `DirectoryRead` and one for the `ReadFile`, each
-    // attempted once — and neither `Output` is closed or flushed, because its
+    // attempted once — and neither `OutputStream` is closed or flushed, because its
     // release is a logical source detach [SYS-5, SYS-12].
     assert_eq!(
         trace.matches("wf_test close ").count(),

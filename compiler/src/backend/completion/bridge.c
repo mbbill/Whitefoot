@@ -1220,7 +1220,7 @@ static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
  * changed is that the record is published at the end, so every submit path
  * ends in a published record (design §7).  A refusal the host gives it,
  * including an open that found no descriptor, is the outcome the program
- * sees: the descriptor an open needs is owned by its `FilePermit` [SYS-10],
+ * sees: the descriptor an open needs is owned by its `HandlePermit` [SYS-10],
  * drawn from a factory whose capacity is inside what the host provides, so a
  * refusal here is a genuine exhaustion and not a schedule's invention. */
 static void wf_bridge_execute_here(wf_completion_record *record) {
@@ -1431,7 +1431,7 @@ void wf__completion_file_write_submit(
             "a write was submitted with a buffer and a count that do not describe a range"
         );
     }
-    /* write_once is an unpositioned Output operation. The native adapter's
+    /* write_once is an unpositioned OutputStream operation. The native adapter's
      * write request fixes an explicit offset, which would change regular
      * file-offset semantics and is not a meaningful stream offset. Until a
      * Linux request kind is qualified for exact write(2) current-position and

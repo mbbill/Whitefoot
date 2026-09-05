@@ -16,7 +16,6 @@
 //! needs it.
 
 use std::fmt::Write as _;
-use std::process::Output;
 
 use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::SystemTarget;
@@ -380,6 +379,54 @@ static ssize_t wf_test_pread(int descriptor, void *destination, size_t capacity,
     return (ssize_t)delivered;\n\
 }\n\
 \n\
+/* One unpositioned stream read [SYS-15], answered from the same fixture and\n\
+   the same read script the positioned route uses. The position it reads at is\n\
+   this host's own, exactly as a real descriptor's is: one cursor, advanced by\n\
+   what each call delivered. */\n\
+static unsigned long wf_test_stream_position = 0;\n\
+\n\
+static ssize_t wf_test_read(int descriptor, void *destination, size_t capacity) {\n\
+    char line[192];\n\
+    long entry;\n\
+    for (;;) {\n\
+        entry = wf_test_step(wf_test_pread_script, wf_test_pread_scripted,\n\
+                             &wf_test_pread_calls);\n\
+        if (entry == -EINTR) {\n\
+            snprintf(line, sizeof line,\n\
+                     \"wf_test read fd=%d progress=eintr\\n\", descriptor);\n\
+            wf_test_trace(line);\n\
+            continue;\n\
+        }\n\
+        if (entry == -EAGAIN) {\n\
+            snprintf(line, sizeof line,\n\
+                     \"wf_test read fd=%d wait=readable\\n\", descriptor);\n\
+            wf_test_trace(line);\n\
+            continue;\n\
+        }\n\
+        break;\n\
+    }\n\
+    if (entry < 0) {\n\
+        snprintf(line, sizeof line,\n\
+                 \"wf_test read fd=%d capacity=%lu -> error\\n\", descriptor,\n\
+                 (unsigned long)capacity);\n\
+        wf_test_trace(line);\n\
+        errno = (int)(-entry);\n\
+        return -1;\n\
+    }\n\
+    unsigned long position = wf_test_stream_position;\n\
+    unsigned long remaining = position < wf_test_file_length\n\
+        ? wf_test_file_length - position : 0;\n\
+    unsigned long delivered = capacity < remaining ? capacity : remaining;\n\
+    delivered = wf_test_capped(entry, delivered);\n\
+    memcpy(destination, wf_test_file_bytes + position, delivered);\n\
+    wf_test_stream_position = position + delivered;\n\
+    snprintf(line, sizeof line,\n\
+             \"wf_test read fd=%d position=%lu capacity=%lu delivered=%lu\\n\",\n\
+             descriptor, position, (unsigned long)capacity, delivered);\n\
+    wf_test_trace(line);\n\
+    return (ssize_t)delivered;\n\
+}\n\
+\n\
 static ssize_t wf_test_write(int descriptor, const void *source, size_t count) {\n\
     char line[192];\n\
     long entry;\n\
@@ -529,6 +576,18 @@ void wf_test_pread_submit(int descriptor, void *destination, uint64_t count,\n\
                     moved < 0 ? errno : 0, WF_TEST_OPEN_SUCCEEDED);\n\
 }\n\
 \n\
+void wf_test_read_submit(int descriptor, void *destination, uint64_t count,\n\
+                         void *record) {\n\
+    ssize_t moved;\n\
+    if (count == 0) {\n\
+        wf_test_publish(record, 0, 0, WF_TEST_OPEN_SUCCEEDED);\n\
+        return;\n\
+    }\n\
+    moved = wf_test_read(descriptor, destination, (size_t)count);\n\
+    wf_test_publish(record, moved < 0 ? -1 : (int64_t)moved,\n\
+                    moved < 0 ? errno : 0, WF_TEST_OPEN_SUCCEEDED);\n\
+}\n\
+\n\
 void wf_test_write_submit(int descriptor, const void *source, uint64_t count,\n\
                           void *record) {\n\
     ssize_t accepted;\n\
@@ -566,7 +625,7 @@ void wf_test_file_open_join(const void *record, int64_t *value,\n\
 /// One run of one program against the deterministic test target.
 pub(super) struct DeterministicRun {
     /// The compiled program's own result.
-    pub(super) output: Output,
+    pub(super) output: std::process::Output,
 }
 
 impl DeterministicRun {
@@ -648,7 +707,7 @@ const READS_ITS_ARGUMENTS: &[u8] =
 /// while also binding the initial working directory so exactly one resource
 /// in the program releases with a close.
 const WRITES_THEN_RELEASES_BOTH: &[u8] =
-    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
+    br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
@@ -682,11 +741,11 @@ const WRITES_THEN_RELEASES_BOTH: &[u8] =
 fn opens_one_file(named: &[(&str, &str)], default: &str) -> String {
     let arms = class_arms(16, named, default);
     format!(
-        r#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {{
+        r#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {{
   let name = buffer_new(1_u64, 65_u8);
   region 'c {{
     region {{
-      match reserve_file(factory: &uniq 'c files) {{
+      match reserve_handle(factory: &uniq 'c files) {{
         Ok(value: permit) => {{
           match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {{
             FileOpened(value: file) => {{
@@ -1163,7 +1222,7 @@ fn a_forced_short_write_reports_the_absolute_endpoint_after_the_host_prefix() {
 
 #[test]
 fn an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release() {
-    // [SYS-12]: releasing an `Output` is a logical source detach — no close,
+    // [SYS-12]: releasing an `OutputStream` is a logical source detach — no close,
     // no flush, no target call. A sink whose failure appears only at close or
     // writeback therefore cannot reach the program: every accepted write
     // stands and the command still produces its own status. The scripted
@@ -1192,7 +1251,7 @@ fn an_output_sink_that_fails_only_at_close_is_never_closed_by_its_release() {
             .contains("wf_test write fd=1 count=3 accepted=3 bytes=ABC")
     );
     // Exactly one close attempt, and it is the `DirectoryRead`'s. Neither
-    // `Output` owner closed its descriptor, so the sink's close-time failure
+    // `OutputStream` owner closed its descriptor, so the sink's close-time failure
     // is outside what any release can observe.
     assert_eq!(run.attempts("close"), 1);
     assert!(run.trace().contains("wf_test close fd=41 outcome=error"));
@@ -1206,7 +1265,7 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
     // the operation row has a target column: the resource-record writer is the
     // compiler's own and must never be scriptable, or a forced short write
     // could truncate the record. One module declares both.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -1258,7 +1317,7 @@ fn a_host_that_accepts_nothing_reaches_source_as_write_zero() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
+        r#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
   let bytes = buffer_new(2_u64, 119_u8);
   region 'o {{
     region {{

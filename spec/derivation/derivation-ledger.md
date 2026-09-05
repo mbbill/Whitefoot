@@ -4,7 +4,7 @@ The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
 are the chain tail in `governance/APPROVALS.md`; each superseded version is
-archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.44 amendments
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.46 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -14,7 +14,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 through v0.44 amendments below and the active
+the v0.40 through v0.46 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -23,6 +23,11 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
+**v0.46 statistics: 84 derived · 56 existence-only · 0 underived**
+(140 rules: v0.46 adds derived SYS-15, SYS-17 and SYS-18 and existence-only
+SYS-16, retires no rule, and moves no existing row's status, so every other
+derivation status carries over from v0.45. v0.45 added and retired no rule and
+moved no row's status.)
 **v0.44 statistics: 81 derived · 55 existence-only · 0 underived**
 (136 rules: v0.44 adds derived MSR-3 and CALL-6 and existence-only MSR-5 and
 CALL-4, retires no rule, and moves no existing row's status, so every other
@@ -1922,3 +1927,43 @@ the factory's count is never raised; an open holding a permit is refused a
 descriptor only by honest target exhaustion. The descriptor retirement ledger
 is deleted with it. No rule changes derivation status: SYS-10's chain gains T4
 as its ground; SYS-11 and SYS-14 keep theirs. Statistics unchanged from v0.44.
+
+## v0.46 amendment — streams and TCP (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.46, at
+SHA-256 `d331dd1f44606635ba26507b57d294b1739746d7ed0581f308b51c2b3f475382`,
+superseding v0.45
+(`c07a8ba92b35c23c9d74f96a921750dc30933ebbf05975c52a1e595fe52c887c`), whose
+bytes are archived at `spec/kernel-spec-v0.45.md`. The amendment landed as one
+change with no candidate state; the merge-time record is in
+`governance/APPROVALS.md`. The ground is constitution T4 (resource
+dependencies are API relations, owner ruling 2026-09-04) applied to every
+socket resource in `research/investigations/io-model/NETWORK.md` §2, and the
+owner's decisions of 2026-09-05 recorded in that document's §8.
+
+v0.46 adds four rules and retires none. SYS-15 declares `InputStream`, the
+reading half of the stream pair, supplied at entry ordinal 5 as
+`command.stdin` and read by `read_next`. SYS-16 declares `SocketAddress` and
+its two pure constructors. SYS-17 declares `TcpListener`, `tcp_listen`,
+`tcp_accept`, `tcp_connect` and `close_listener`. SYS-18 declares
+`TcpConnection`, the first system-declared struct, with its two direction
+resources `TcpReceive` and `TcpSend`, `receive_next`, `send_once` and
+`close_connection`.
+
+It amends SYS-2 (inventory, preorder, counts, target contracts), SYS-4 (the
+no-split sentence), SYS-5 (release table), SYS-6 (outcome table, and the
+`propagate` operation list, which was stale from v0.45 because an open's
+outcome stopped being a `Result` in that version), SYS-8 (range-bearing set),
+SYS-10 (permit accounting) and FN-7 (standard-input table and canonical entry
+header). It respells `Output`, `FileFactory`, `FilePermit`, `command.files`
+and `reserve_file` as `OutputStream`, `HandleFactory`, `HandlePermit`,
+`command.handles` and `reserve_handle` wherever they are written: a listener
+and a connection draw one credit each from the same capacity a file open draws
+from, so the factory is no longer a file factory.
+
+| Rule | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| SYS-15 | `InputStream` is a state resource with one live position; `read_next` takes it `&uniq` and carries SYS-8's range and outcome rules; release is a logical source detach with no host call and no explicit close | 🟢 derived | Derived from SYS-12 read from the other side. T1/OWN-5 require an advancing position to be written through `&uniq`, which is what makes the per-stream source order ordinary ownership rather than a second ordering mechanism, exactly as it does for `write_once`. The release is derived from SYS-10's own accounting: the entry's standard input is a handle the invocation already holds and the factory's capacity already excludes it, so there is no credit to return and an explicit close would be a close that produces nothing the checker can see — the defect T4 named in the proof-only permit. The absence of seek, peek, pushback and framing is R1: none of them is required by any operation this version declares, and each is writable over `read_next` and a caller-owned buffer. | Registered: this version supplies exactly one `InputStream`, at the entry, so the overlap of two streams is stated by PAR-1 and exercised by nothing. A stream that supplies further bytes after reporting `ReadEnd` is outside what this rule promises, and no test forces that host. |
+| SYS-16 | `SocketAddress` is an opaque immutable value with two total pure constructors and no decomposition, comparison, display or resolution | 🟡 existence-only | Existence derived: TYPE-4 and TYPE-5 give the otherwise unwritable operand of `tcp_listen` and `tcp_connect` its constructor, on exactly the ground SYS-13 states for `ExitStatus`, and keeping the type distinct from a group of integers is what stops an arbitrary integer from being bound or connected to (W3). Form NOT derived: that the constructors take four `u8` operands and eight `u16` operands rather than one caller-owned byte range is minimality-selected — the operand list is the address's own conventional shape and needs no range obligation, but no writer trial has measured either spelling, and address literals only are the batch's stated scope, so name resolution is DEFERRED rather than refuted. | Registered: no writer trial has measured the constructor spelling; name resolution, address comparison and address display are DEFERRED with their deltas; and no operation reports a listener's or a connection's own local address, so a program cannot yet read back the ephemeral port a connect used. |
+| SYS-17 | `TcpListener` is a state resource with one live state and one credit; `tcp_listen`, `tcp_accept` and `tcp_connect` each consume one `HandlePermit` and hand it back in their failed variant; `tcp_accept` borrows the listener `&`; `close_listener` returns the credit | 🟢 derived | Derived from T4 applied to each finite resource NETWORK.md §2 enumerates. The native handle is the resource the API must state, so it is one credit of the same factory a file open draws from and the failed variant hands it back for the reason SYS-10 already records: the error is the system's and the permit is ours. A local port is not a second credit, because the program's own `SocketAddress` value is what claims it and a second bind is that program's own source-order conflict, which is what `AddressInUse` reports; the ephemeral pool and the accept backlog are outside the program, so the first is honest target exhaustion and the second refuses the peer rather than the program. The shared listener borrow is forced by the same test: two accepts each holding their own permit is exactly the overlap PAR-1 admits, and an exclusive borrow would serialize a server loop for a relation the API does not have. | Registered: the accept order among overlapping accepts is deliberately unfixed, and no test pins it; the runtime routes for every TCP kind are slice 2 of this batch, so this version's compiler admits and lowers a TCP program's shape and refuses its submission at target qualification. No operation reports the listener's own bound address. |
+| SYS-18 | `TcpConnection` is a system-declared struct of `receive: TcpReceive` and `send: TcpSend`, produced only by an operation and constructed by no source expression; its fields are ordinary places under EFF-1, OWN-5 and OWN-1; `close_connection` takes the pair and returns the one credit | 🟢 derived | Derived from the same T4 test plus FN-1's signature discipline. A system operation has one signature, so a later `split` would need a second `receive` and `send` over half types; putting the pair on the API from the first version that has one is therefore the form that needs nothing added, and the owner ruled that way on 2026-09-05. Making it a struct rather than two returned values is derived from the credit: one connection is one credit, and the explicit close must be able to name the whole thing that holds it, which two independent owners cannot express. Everything else follows from rules that already exist and is deliberately not restated as a new judgment: a field is a place (EFF-1), two exclusive loans on disjoint fields coexist (OWN-5), and a partial move kills the whole binding (OWN-1), which is exactly what keeps a broken pair away from `close_connection`. The absence of a constructor entry is R4: a value the program could build would be a value the runtime never gave it. | Registered: the struct is the first and only member of its category, so the resolver, checker and backend exercise the system-struct path on one type; a second would be the first evidence that the category generalizes. Half-close ordering is the program's own release order and is stated to be unobservable, which no test can falsify from source alone — the runtime's two-count is what upholds it and is checked on the runtime side. |

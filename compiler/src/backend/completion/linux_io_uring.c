@@ -387,6 +387,15 @@ int wf_linux_io_uring_carries(const wf_completion_record *record) {
         return 0;
     }
     switch (record->request.kind) {
+    /* One unpositioned stream read [SYS-15]. The ring carries it as a read at
+     * offset -1, which is io_uring's own spelling for "the file's current
+     * position", so the request needs no offset and the descriptor's own
+     * position advances exactly as it does through `read`. */
+    case WF_FILE_READ:
+        return record->request.operation.read.descriptor >= 0
+            && record->request.operation.read.count != 0
+            && record->request.operation.read.count <= UINT32_MAX
+            && record->request.operation.read.buffer != NULL;
     case WF_FILE_PREAD:
         return record->request.operation.pread.descriptor >= 0
             && record->request.operation.pread.count != 0
@@ -419,6 +428,8 @@ int wf_linux_io_uring_carries(const wf_completion_record *record) {
 /* The descriptor one record's request operates on, or resolves against. */
 static int wf_linux_record_descriptor(const wf_completion_record *record) {
     switch (record->request.kind) {
+    case WF_FILE_READ:
+        return record->request.operation.read.descriptor;
     case WF_FILE_PREAD:
         return record->request.operation.pread.descriptor;
     case WF_FILE_PWRITE:
@@ -432,7 +443,8 @@ static int wf_linux_record_descriptor(const wf_completion_record *record) {
 }
 
 static int wf_linux_transfer_kind(enum wf_file_operation_kind kind) {
-    return kind == WF_FILE_PREAD || kind == WF_FILE_PWRITE;
+    return kind == WF_FILE_PREAD || kind == WF_FILE_PWRITE
+        || kind == WF_FILE_READ;
 }
 
 /* Builds one SQE straight from the record and names the record's own address
@@ -456,7 +468,8 @@ static void wf_linux_stage_entry_locked(
     if (record->ring.waiting_readiness != 0) {
         submission->opcode = IORING_OP_POLL_ADD;
         submission->fd = wf_linux_record_descriptor(record);
-        submission->poll_events = record->request.kind == WF_FILE_PREAD
+        submission->poll_events = (record->request.kind == WF_FILE_PREAD
+                                   || record->request.kind == WF_FILE_READ)
             ? POLLIN
             : POLLOUT;
     } else {
@@ -489,6 +502,17 @@ static void wf_linux_stage_entry_locked(
             submission->addr =
                 (uint64_t)(uintptr_t)record->request.operation.pwrite.buffer;
             submission->len = (uint32_t)record->request.operation.pwrite.count;
+            break;
+        case WF_FILE_READ:
+            /* Offset -1 is io_uring's "use the file's current position", so
+             * this is the same opcode as a positioned read with the position
+             * left to the descriptor [SYS-15]. */
+            submission->opcode = IORING_OP_READ;
+            submission->fd = record->request.operation.read.descriptor;
+            submission->off = (uint64_t)-1;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.read.buffer;
+            submission->len = (uint32_t)record->request.operation.read.count;
             break;
         case WF_FILE_PREAD:
         default:
