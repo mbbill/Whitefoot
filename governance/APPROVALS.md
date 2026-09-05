@@ -2879,7 +2879,7 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   record creates no separate approval step, and nothing in this record asserts
   that the approval has been given.
 - SPECIFICATION: activate Whitefoot v0.48 at exact SHA-256
-  `742e7d4e3d792f4a743e30d239999d9a06096ff29638f069b6f4a0cd94245d63`.
+  `fe7149d23d623acfd7648704813d12b5d37f485b347e3b1e65522c7c5c565ebf`.
   It supersedes active v0.47 at SHA-256
   `8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`;
   those outgoing bytes are preserved byte-for-byte as
@@ -2907,12 +2907,16 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   this very construct in prose. The mandatory parentheses were measured
   against all 124 `use` sites in the corpus: 61 bare relations, 29 names, 29
   name-with-multiplicity, 5 relation-with-multiplicity.
-- CONFORMANCE BOUNDARY: this merge adds four conformance cases and modifies
+- CONFORMANCE BOUNDARY: this merge adds five conformance cases and modifies
   eleven; it deletes and renames none, and changes no manifest schema,
   adapter, runner, or collection wiring.
   ADDED `tests/conformance/cases/prf1-pos-term-multiplicity.wf`, manifest id
   `prf1-pos-term-multiplicity`, rules PRF-1, ENT-6, ENT-3, expect run exit 0:
   the matrix inner index at a runtime stride.
+  ADDED `tests/conformance/cases/prf1-pos-term-multiplicity-shared-product.wf`,
+  manifest id `prf1-pos-term-multiplicity-shared-product`, rules PRF-1, ENT-6,
+  expect run exit 0: two bindings hold the same product and the fold follows
+  the one the target names.
   ADDED `tests/conformance/cases/prf1-neg-signed-multiplicity.wf`, manifest id
   `prf1-neg-signed-multiplicity`, rules PRF-1, expect reject PRF-1: the same
   certificate over signed operands.
@@ -2932,4 +2936,4 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   `prf1-pos-multiplied-relation-use.wf` (manifest doc restated), and
   `reject-gram11-unnamed-call.wf` (a doc-string repair only). Rule coverage is
   136/136 before and after.
-ACTIVE-SPEC: v0.48 742e7d4e3d792f4a743e30d239999d9a06096ff29638f069b6f4a0cd94245d63 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5
+ACTIVE-SPEC: v0.48 fe7149d23d623acfd7648704813d12b5d37f485b347e3b1e65522c7c5c565ebf 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5

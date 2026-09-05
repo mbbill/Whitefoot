@@ -3370,7 +3370,7 @@ The checker forms S independently of premise admission by multiplying each norma
 A bare-decimal multiplicity keeps that accumulation affine.
 A named multiplicity does not: scaling a normalized premise by a value introduces products of two value images, so the accumulation is a polynomial of degree at most two whose nonlinear monomials exist only while S is being formed.
 Before S is used, every such monomial is folded to the one value that already equals it: the value image bound by an admitted exact multiplication [ENT-6] of the same two operand images, where each operand image is itself a single value image and that multiplication's own [OP-2] domain discharged through an affine route.
-When several bindings hold that product, the least such value image is chosen; they are equal values, so the choice is a canonical form and not a search.
+When several bindings hold that product, the one the target itself names is chosen, and otherwise the least; they are equal values, so either choice is sound and this one is a canonical form rather than a search.
 S is that folded accumulation, and it must be an affine inequality: a certificate that leaves any nonlinear monomial unfolded rejects and proves nothing.
 Nothing else in this specification carries a nonlinear term — no fact, no published conclusion, no invariant target, and no `affine_expr` [INV-1] — so the accumulation above is the complete extent of degree two in the language.
 Let S be that one accumulated inequality and T the owning invariant target.

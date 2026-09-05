@@ -9621,7 +9621,7 @@ impl Analyzer<'_, '_> {
             }
             CertificateSum::Affine(sum) => sum,
             CertificateSum::Nonlinear(polynomial) => {
-                folded = self.folded_certificate_sum(polynomial)?;
+                folded = self.folded_certificate_sum(polynomial, target)?;
                 &folded
             }
         };
@@ -9632,15 +9632,36 @@ impl Analyzer<'_, '_> {
     fn folded_certificate_sum(
         &self,
         polynomial: &CertificatePolynomial,
+        target: &AffineInequality,
     ) -> Result<AffineInequality, SourceProofCertificateFailure> {
+        // Several bindings can hold the same product, and they are equal
+        // values, so any of them folds soundly. The target's own text picks
+        // among them: a monomial folded to the value the target already names
+        // cancels against it, while one folded to an equal value under
+        // another name does not. Failing that, the least atom is a canonical
+        // choice. Neither is a search — one pass, one winner per operand pair.
+        let named_by_target = target
+            .terms()
+            .iter()
+            .map(|coefficient| coefficient.term())
+            .collect::<HashSet<_>>();
         let mut products = std::collections::BTreeMap::new();
         for (product, operands) in &self.product_atoms {
-            // Several bindings can hold the same product; the least atom is
-            // one deterministic choice among equal values, and every one of
-            // them satisfies the target that names any of them.
             products
                 .entry(*operands)
-                .and_modify(|chosen: &mut AffineTermId| *chosen = (*chosen).min(*product))
+                .and_modify(|chosen: &mut AffineTermId| {
+                    let better = match (
+                        named_by_target.contains(chosen),
+                        named_by_target.contains(product),
+                    ) {
+                        (false, true) => true,
+                        (true, false) => false,
+                        _ => *product < *chosen,
+                    };
+                    if better {
+                        *chosen = *product;
+                    }
+                })
                 .or_insert(*product);
         }
         let folded = polynomial
