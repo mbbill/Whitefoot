@@ -265,6 +265,7 @@ const CORPUS_UNITS: &[&[&str]] = &[
     &["prefix_expression.wf"],
     &["recursive_tree.wf"],
     &["run_queue.wf"],
+    &["run_views.wf"],
     &["sha256_abc.wf"],
     &["telemetry_packet.wf"],
     &["utf8parse.wf"],
