@@ -913,34 +913,33 @@ static int test_bridge_open_status_and_close_are_typed_operations(
 #endif
     (void)native_before;
 
-    descriptor = (int)wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        path,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_REGULAR,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(
-        descriptor >= 0 && error_code == 0
-        && open_outcome == WF_FILE_OPEN_SUCCEEDED
-    );
-    CHECK(
-        wf__completion_file_status_direct(
-            descriptor,
-            status,
-            sizeof(status)
-        ) == 0
-    );
-    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+    /* The same lifecycle through the direct family used to be repeated here.
+     * There is one lowering now, so the submitted lifecycle above is the whole
+     * of it and the second leg has no route left to take (design §8). */
     CHECK(unlink(path) == 0);
     return 0;
 }
 
 /* One file of exactly one byte, so the byte a later read returns names which
  * file was opened. */
+/* Closes one descriptor the way every close is performed now: submit, then
+ * join.  The direct family is gone with the second lowering that named it
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §8), so this is the one
+ * close, here as in emitted code.  It reports the way a host call does so the
+ * cases below read unchanged. */
+static int wf_harness_close(int descriptor) {
+    wf_harness_record record;
+    int64_t value = -1;
+    int error_code = -1;
+    wf__completion_file_close_submit(descriptor, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    if (value < 0) {
+        errno = error_code;
+        return -1;
+    }
+    return 0;
+}
+
 static int wf_harness_write_marker_file(int root, const char *name, char byte) {
     int descriptor = openat(root, name, O_CREAT | O_TRUNC | O_WRONLY, 0600);
     if (descriptor < 0) {
@@ -1070,8 +1069,8 @@ static int test_submitted_open_resolves_the_submitters_bytes(
     marker = 0;
     CHECK(pread((int)other_value, &marker, 1, 0) == 1);
     CHECK(marker == 'B');
-    CHECK(wf__completion_file_close_direct((int)value) == 0);
-    CHECK(wf__completion_file_close_direct((int)other_value) == 0);
+    CHECK(wf_harness_close((int)value) == 0);
+    CHECK(wf_harness_close((int)other_value) == 0);
 
     /* `open_directory` carries its name through exactly the same request, so
      * it is checked the same way: the marker file exists only under the first
@@ -1124,7 +1123,7 @@ static int test_submitted_open_resolves_the_submitters_bytes(
     marker_descriptor = openat(descriptor, "marker", O_RDONLY);
     CHECK(marker_descriptor >= 0);
     CHECK(close(marker_descriptor) == 0);
-    CHECK(wf__completion_file_close_direct(descriptor) == 0);
+    CHECK(wf_harness_close(descriptor) == 0);
 
 #if defined(__linux__)
     /* Where the ring is the qualified target, the bridge opens above are ring
@@ -1251,7 +1250,7 @@ static int test_a_name_no_pool_record_could_hold_takes_the_completion_path(
         );
         CHECK(pread((int)value, &marker, 1, 0) == 1);
         CHECK(marker == 'L');
-        CHECK(wf__completion_file_close_direct((int)value) == 0);
+        CHECK(wf_harness_close((int)value) == 0);
         CHECK(unlinkat(root, relative, 0) == 0);
     } else {
         CHECK(
@@ -1357,23 +1356,6 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     (void)unlink(path);
     CHECK(mkfifo(path, 0600) == 0);
 
-    value = wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        path,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_REGULAR,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
-    errno = 0;
-    CHECK(fcntl((int)value, F_GETFD) == -1);
-    CHECK(errno == EBADF);
-
     wf__completion_file_open_at_submit(
         AT_FDCWD,
         path,
@@ -1396,25 +1378,8 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     CHECK(fcntl((int)value, F_GETFD) == -1);
     CHECK(errno == EBADF);
 
-    value = wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        scratch_directory,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_REGULAR,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
-    errno = 0;
-    CHECK(fcntl((int)value, F_GETFD) == -1);
-    CHECK(errno == EBADF);
-
-    /* The same submitted refusal, so a target which carries opens natively
-     * answers the same discriminator as one which does not. */
+    /* A directory where a regular file was expected: the second
+     * discriminator, answered by whoever executes the operation. */
     wf__completion_file_open_at_submit(
         AT_FDCWD,
         scratch_directory,
@@ -1441,11 +1406,11 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     return 0;
 }
 
-/* Every way an open can fail names its own terminal discriminator, on the
- * submitted path and on the direct one.  The generated program switches on
- * exactly this value and aborts on anything outside the set, so a target
- * which answers the wrong one is a fail-stop defect rather than a wrong
- * program. */
+/* Every way an open can fail names its own terminal discriminator.  The
+ * generated program switches on exactly this value and aborts on anything
+ * outside the set, so a target which answers the wrong one is a fail-stop
+ * defect rather than a wrong program.  There is one lowering, so there is one
+ * route to check rather than two (design §8). */
 static int test_open_failure_classes_are_typed_outcomes(
     const char *scratch_directory
 ) {
@@ -1502,20 +1467,6 @@ static int test_open_failure_classes_are_typed_outcomes(
     CHECK(error_code == ENOENT);
     CHECK(open_outcome == WF_FILE_OPEN_FAILED);
 
-    value = wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        missing,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_REGULAR,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(value < 0);
-    CHECK(error_code == ENOENT);
-    CHECK(open_outcome == WF_FILE_OPEN_FAILED);
-
     /* A directory open of a regular file is refused by the same one rule
      * that refuses a regular open of a directory. */
     wf__completion_file_open_at_submit(
@@ -1530,23 +1481,6 @@ static int test_open_failure_classes_are_typed_outcomes(
     wf__completion_file_open_join(
         record.bytes,
         &value,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
-    errno = 0;
-    CHECK(fcntl((int)value, F_GETFD) == -1);
-    CHECK(errno == EBADF);
-
-    value = wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        regular,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_DIRECTORY,
         &error_code,
         &open_outcome
     );
@@ -1851,33 +1785,6 @@ static int test_uncached_reads_are_target_policy_only(
     }
     CHECK(close((int)value) == 0);
 
-    /* The same open through the direct path. */
-    value = wf__completion_file_open_at_direct(
-        AT_FDCWD,
-        regular,
-        O_RDONLY,
-        0u,
-        0u,
-        WF_FILE_EXPECT_REGULAR,
-        &error_code,
-        &open_outcome
-    );
-    CHECK(value >= 0);
-    CHECK(error_code == 0);
-    CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    CHECK(wf_uncached_open_flags((int)value) == (O_RDONLY | O_NONBLOCK));
-    memset(window, 0, sizeof(window));
-    CHECK(
-        wf__completion_file_pread_direct(
-            (int)value,
-            window,
-            (uint64_t)sizeof(window),
-            0
-        ) == (int64_t)sizeof(window)
-    );
-    CHECK(memcmp(window, content, sizeof(content)) == 0);
-    CHECK(close((int)value) == 0);
-
     /* An unchecked open carries exactly the request's own flags. */
     wf__completion_file_open_at_submit(
         AT_FDCWD,
@@ -1918,21 +1825,31 @@ static int test_uncached_reads_are_target_policy_only(
         &open_outcome
     );
     CHECK(open_outcome == WF_FILE_OPEN_OTHER_KIND);
-    value = wf__completion_file_open_at_direct(
+
+    /* Neither does an open that never resolved a name. */
+    wf__completion_file_open_at_submit(
         AT_FDCWD,
         missing,
         O_RDONLY,
         0u,
         0u,
         WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
+    wf__completion_file_open_join(
+        record.bytes,
+        &value,
         &error_code,
         &open_outcome
     );
     CHECK(value < 0);
     CHECK(open_outcome == WF_FILE_OPEN_FAILED);
 
+    /* Two opens produced a descriptor for the policy to apply to; the third
+     * leg was the direct family's copy of the first and left with it
+     * (design §8). */
     after = wf_uncached_applications_now();
-    CHECK(after - before == (asked ? 3u : 0u));
+    CHECK(after - before == (asked ? 2u : 0u));
 
     CHECK(unlink(regular) == 0);
     return 0;
@@ -2518,7 +2435,7 @@ static int test_completion_window_answers_at_the_boundaries(void) {
  * eight-wide benchmark and 2,048 when it is deferred (LOOP-PIPELINE.md §9.1).
  * Deferring is only safe while the two facts below hold, and they are what
  * this checks: a submission alone rings nothing, and the first thing that
- * could wait — a join, or a blocking direct host call — rings it first.
+ * could wait — a join — rings it first.
  *
  * The enter counter only exists where the ring is the target route, so the
  * counted half of this test runs there and the functional half runs
@@ -2579,7 +2496,12 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     ring_route =
         wf__completion_linux_io_uring_submissions() > submissions_before;
 
-    /* A submission alone rings nothing. */
+    /* A submission alone rings nothing, and the join that follows it rings it
+     * first.  The blocking direct host call this leg used to make between the
+     * two went with the direct family (design section 8); a caller's thread
+     * reaches a host call now only by running its own queued record, and that
+     * path rings the doorbell for the same reason before the same kind of
+     * call. */
     enters = wf__completion_linux_io_uring_submission_enters();
     memset(first, 0, sizeof(first));
     wf__completion_file_pread_submit(
@@ -2592,15 +2514,10 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     if (ring_route) {
         CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
     }
-
-    /* A blocking direct host call rings it first. This one is refused
-     * immediately by the host, so what it proves is the ordering and not the
-     * waiting: the doorbell rang before the call, not after it. */
-    CHECK(wf__completion_file_close_direct(-1) < 0);
+    wf__completion_file_join(read_record.bytes, &value, &error_code);
     if (ring_route) {
         CHECK(wf__completion_linux_io_uring_submission_enters() == enters + 1u);
     }
-    wf__completion_file_join(read_record.bytes, &value, &error_code);
     CHECK(value == 8 && error_code == 0);
     CHECK(memcmp(first, "doorbell", 8) == 0);
 
@@ -2716,26 +2633,10 @@ static int test_directory_progress_is_internal(void) {
     wf_directory_poll_timeout = 0;
     CHECK(pipe(descriptors) == 0);
     CHECK(write(descriptors[1], &readiness, 1) == 1);
-    CHECK(
-        wf__completion_directory_next_direct(
-            descriptors[0],
-            &byte,
-            1,
-            &position
-        ) == 1
-    );
-    CHECK(wf_directory_host_calls == 3);
-    CHECK(wf_directory_poll_calls == 1);
-    CHECK(wf_directory_poll_descriptor == descriptors[0]);
-    CHECK(wf_directory_poll_events == POLLIN);
-    CHECK(wf_directory_poll_timeout == -1);
-    CHECK(byte == 'd');
-    CHECK(position == wf_expected_position());
-
-    wf_directory_host_calls = 0;
-    wf_directory_poll_calls = 0;
-    byte = 0;
-    position = 4242;
+    /* One lowering, so the enumeration is asserted once, on the submitted
+     * route the direct entry's leg used to duplicate (design §8).  The poll
+     * the readiness refusal waited on is checked here, where the direct leg
+     * used to check it. */
     wf__completion_directory_next_submit(
         descriptors[0],
         &byte,
@@ -2747,6 +2648,9 @@ static int test_directory_progress_is_internal(void) {
     CHECK(value == 1 && error_code == 0);
     CHECK(wf_directory_host_calls == 3);
     CHECK(wf_directory_poll_calls == 1);
+    CHECK(wf_directory_poll_descriptor == descriptors[0]);
+    CHECK(wf_directory_poll_events == POLLIN);
+    CHECK(wf_directory_poll_timeout == -1);
     CHECK(byte == 'd');
     CHECK(position == wf_expected_position());
     CHECK(close(descriptors[0]) == 0);

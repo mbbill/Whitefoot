@@ -200,15 +200,23 @@ fn windows_emits_the_utf16_bootstrap_and_typed_positioned_read_route() {
     assert!(llvm.contains("@wf__windows_open_cwd(ptr null, i32 0)"));
     assert!(llvm.contains("call i64 @wf__windows_wcslen(ptr %text)"));
     assert!(llvm.contains("call i32 @wf__windows_relative_path_valid"));
-    assert!(llvm.contains("call ptr @wf__windows_error_location()"));
+    // No emitted code reads the native error slot any more: a failing
+    // operation publishes its error into the record the frame reserved, and
+    // the join hands it to the operation's own mapper
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The Windows
+    // error location was read only by the direct family that left with it.
+    assert!(!llvm.contains("@wf__windows_error_location"));
     assert!(llvm.contains(
-        "declare i32 @wf__completion_file_open_at_direct(i32, ptr, i32, i32, i32, i32, i32, ptr, ptr)"
+        "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)"
     ));
+    // The Windows descriptor class is the extra argument this family carries,
+    // and it still reaches the submit ahead of the record.
     assert!(llvm.contains(
-        "@wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
+        "@wf__completion_file_open_at_submit(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, i32 1, ptr %record)"
     ));
     assert!(llvm.contains("@wf__completion_file_pread_submit"));
-    assert!(llvm.contains("@wf__completion_file_pread_direct"));
+    assert!(!llvm.contains("_direct("));
+    assert!(!llvm.contains("_direct)"));
     assert!(!llvm.contains("declare ptr @signal"));
     assert!(!llvm.contains("@pread("));
     assert!(!llvm.contains("@openat("));
@@ -222,10 +230,10 @@ fn open_read_resolves_a_relative_path_through_the_targets_own_facility() {
     // path and resolved against an ambient working directory.
     assert!(llvm.contains("; QUAL-1 semantic id 7 -> @wf.sys.open_read.v1"));
     assert!(llvm.contains(
-        "declare i32 @wf__completion_file_open_at_direct(i32, ptr, i32, i32, i32, i32, ptr, ptr)"
+        "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, ptr)"
     ));
     assert!(llvm.contains(
-        "@wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
+        "@wf__completion_file_open_at_submit(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, ptr %record)"
     ));
     for absent in ["@getcwd", "@chdir", "@realpath", "@strcat", "@snprintf"] {
         assert!(
@@ -234,7 +242,7 @@ fn open_read_resolves_a_relative_path_through_the_targets_own_facility() {
         );
     }
     // The supplied directory's own descriptor is the resolution root.
-    assert!(llvm.contains("%descriptor = call i32 @wf__completion_file_open_at_direct"));
+    assert!(llvm.contains("call void @wf__completion_file_open_at_submit(i32 %root,"));
 
     // A path naming a file in the initial directory opens and reads it; the
     // exact byte count reaches source.
@@ -990,23 +998,39 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
             "an approved implementation survives on the transfer path:\n{entry}"
         );
     }
-    // One source transfer is one call into the compiler-owned progress
-    // adapter. EINTR/readiness retries remain inside that call and only its
-    // first progress-producing or terminal answer reaches this path.
+    // One source transfer is one submission into the compiler-owned completion
+    // runtime and one join of the record the entry's own frame reserved for
+    // it. EINTR/readiness retries remain behind that pair and only its first
+    // progress-producing or terminal answer reaches this path
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8: one lowering per
+    // operation, submit then join).
     assert_eq!(
-        entry.matches("@wf__completion_file_pread_direct(").count(),
+        entry.matches("@wf__completion_file_pread_submit(").count(),
         1,
         "{entry}"
     );
     assert_eq!(
-        entry.matches("@wf__completion_file_write_direct(").count(),
+        entry.matches("@wf__completion_file_write_submit(").count(),
         1,
         "{entry}"
     );
     assert_eq!(
         entry
-            .matches("@wf__completion_file_open_at_direct(")
+            .matches("@wf__completion_file_open_at_submit(")
             .count(),
+        1,
+        "{entry}"
+    );
+    // Each of the three is joined exactly once, and the open through the join
+    // that also publishes the kind outcome.
+    assert_eq!(
+        entry.matches("@wf__completion_file_join(").count(),
+        entry.matches("@wf__completion_file_close_submit(").count() + 2,
+        "every submitted operation is joined exactly once: the two transfers \
+         and one close per release site:\n{entry}"
+    );
+    assert_eq!(
+        entry.matches("@wf__completion_file_open_join(").count(),
         1,
         "{entry}"
     );
@@ -1051,41 +1075,55 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
 }
 
 #[test]
-fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
+fn an_opened_file_releases_with_one_close_that_is_never_retried() {
     let llvm = compile(OPEN_AND_READ);
     // `DirectoryRead` and `ReadFile` release with at most one native close
-    // attempt [SYS-5]; every release site is one direct call to the one
-    // declared close symbol.
-    assert!(llvm.contains("declare i32 @wf__completion_file_close_direct(i32)"));
-    let releases = llvm
-        .matches("call i32 @wf__completion_file_close_direct(i32")
-        .count();
+    // attempt [SYS-5]. A close is submitted into the record its own frame
+    // reserved and joined there, like every other operation
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8), so every
+    // release site is one call of the one close helper and the helper holds
+    // the one submit and the one join.
+    assert!(llvm.contains("declare void @wf__completion_file_close_submit(i32, ptr)"));
+    assert!(llvm.contains("declare void @wf__completion_file_join(ptr, ptr, ptr)"));
+    let releases = llvm.matches("call void @wf.sys.close(i32").count();
     assert!(releases >= 2, "both closing owners must release:\n{llvm}");
+    assert_eq!(
+        llvm.matches("call void @wf__completion_file_close_submit(i32")
+            .count(),
+        1,
+        "one helper holds the one submit:\n{llvm}"
+    );
     // The close diagnostic is discarded and an ambiguous close is never
-    // retried: every release value is produced by a close, named once, and
-    // never read again, so nothing branches on it.
-    let mut inspected = 0;
+    // retried: the helper joins the record into slots nothing reads, and the
+    // helper itself answers nothing a caller could branch on.
+    assert!(llvm.contains("define private void @wf.sys.close(i32 %descriptor) alwaysinline"));
     for line in llvm.lines() {
-        let Some(rest) = line.trim_start().strip_prefix("%release.") else {
-            continue;
-        };
         assert!(
-            line.contains("call i32 @wf__completion_file_close_direct(i32"),
-            "a release value comes from one direct close:\n{line}"
+            !line.trim_start().starts_with("%release."),
+            "a release produces no value to inspect:\n{line}"
         );
-        let ordinal = rest
-            .split_whitespace()
-            .next()
-            .expect("a release value has an ordinal");
-        let name = format!("%release.{ordinal} ");
-        assert_eq!(
-            llvm.matches(&name).count(),
-            1,
-            "the close diagnostic must be discarded, not inspected"
-        );
-        inspected += 1;
     }
-    assert_eq!(inspected, releases);
+    let helper = llvm
+        .split_once("define private void @wf.sys.close(")
+        .expect("the module defines the one close")
+        .1
+        .split_once("\n}\n")
+        .expect("the close helper closes")
+        .0;
+    assert_eq!(
+        helper
+            .matches("call void @wf__completion_file_close_submit(i32 %descriptor, ptr %record)")
+            .count(),
+        1
+    );
+    assert_eq!(
+        helper
+            .matches(
+                "call void @wf__completion_file_join(ptr %record, ptr %raw.value, ptr %raw.error)"
+            )
+            .count(),
+        1
+    );
 }
 
 /// Uses every one of the eleven [SYS-2] operations once: it counts the

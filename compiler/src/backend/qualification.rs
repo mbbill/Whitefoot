@@ -272,66 +272,67 @@ impl HostFacilities {
         }
     }
 
-    /// The facility one [SYS-5] consuming release attempts its single close
-    /// through, and the facility a qualified wrapper disposes of a
-    /// provisional descriptor through.
-    const fn close(self) -> &'static str {
+    /// The submit entry one [SYS-5] consuming release, and each explicit
+    /// close, hands its descriptor to.
+    ///
+    /// Every file facility below is now a submit and its matching join: an
+    /// operation is filled into the record the frame reserved, handed to the
+    /// runtime, and joined where its outcome is needed. There is one lowering
+    /// and no direct family left to select
+    /// (`research/investigations/io-model/PARK-ON-MISS.md` §8), so a target
+    /// column supplies the pair rather than a blocking call.
+    const fn file_close_submit(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_close_direct",
-            Self::Windows => "wf__completion_file_close_direct",
+            Self::Native | Self::Windows => "wf__completion_file_close_submit",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_close",
+            Self::DeterministicTest => "wf_test_close_submit",
         }
     }
 
-    /// The directory-relative open facility `open_read` resolves through
-    /// [PATH-2].
-    const fn file_open(self) -> &'static str {
+    /// The directory-relative open `open_read` resolves through [PATH-2].
+    const fn file_open_at_submit(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_open_at_direct",
-            Self::Windows => "wf__completion_file_open_at_direct",
+            Self::Native | Self::Windows => "wf__completion_file_open_at_submit",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_openat",
+            Self::DeterministicTest => "wf_test_open_at_submit",
         }
     }
 
-    /// The descriptor-status facility used to validate that `open_file`
-    /// produced the regular-file value its semantic row promises.
-    const fn file_status(self, _native: &'static str) -> &'static str {
+    /// The submit entry one positioned `read_at` transfer attempt reaches.
+    const fn file_pread_submit(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_status_direct",
-            Self::Windows => "wf__completion_file_status_direct",
+            Self::Native | Self::Windows => "wf__completion_file_pread_submit",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_fstat",
+            Self::DeterministicTest => "wf_test_pread_submit",
         }
     }
 
-    const fn uses_typed_completion_file_adapter(self) -> bool {
+    /// The submit entry one `write_once` transfer attempt reaches.
+    const fn file_write_submit(self) -> &'static str {
         match self {
-            Self::Native => true,
-            Self::Windows => true,
+            Self::Native | Self::Windows => "wf__completion_file_write_submit",
             #[cfg(test)]
-            Self::DeterministicTest => false,
+            Self::DeterministicTest => "wf_test_write_submit",
         }
     }
 
-    /// The facility one positioned `read_at` transfer attempt reaches.
-    const fn pread(self) -> &'static str {
+    /// The join a transferring or closing record is consumed through.
+    const fn file_join(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_pread_direct",
-            Self::Windows => "wf__completion_file_pread_direct",
+            Self::Native | Self::Windows => "wf__completion_file_join",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_pread",
+            Self::DeterministicTest => "wf_test_file_join",
         }
     }
 
-    /// The facility one `write_once` transfer attempt reaches.
-    const fn write(self) -> &'static str {
+    /// The join an open's record is consumed through. It publishes the
+    /// outcome the target decided the descriptor's kind with, so the kind
+    /// check and its close on mismatch belong to whoever answers the submit.
+    const fn file_open_join(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_write_direct",
-            Self::Windows => "wf__completion_file_write_direct",
+            Self::Native | Self::Windows => "wf__completion_file_open_join",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_write",
+            Self::DeterministicTest => "wf_test_file_open_join",
         }
     }
 }
@@ -814,9 +815,10 @@ pub(crate) enum ReleaseImplementation {
     /// A logical consume or a logical source detach: no host call, no target
     /// call, no handle lookup, no byte copy, and no external effect.
     NoCode,
-    /// At most one direct native close attempt through this symbol; the close
-    /// diagnostic is discarded and an ambiguous close is never retried.
-    NativeClose(&'static str),
+    /// At most one native close attempt, submitted and joined through the
+    /// selected target's own close facility; the close diagnostic is
+    /// discarded and an ambiguous close is never retried.
+    NativeClose,
 }
 
 /// One approved implementation of one opaque resource type's qualification
@@ -886,12 +888,6 @@ pub(crate) struct SystemTarget {
     /// Single-component `open_file`, which must not follow its terminal
     /// symbolic link or block while a non-regular object is rejected.
     component_file_open_flags: i32,
-    /// The target `struct stat` size and `st_mode` byte offset.
-    file_status_size: u64,
-    file_status_mode_offset: u64,
-    native_file_status_symbol: &'static str,
-    errno_location: &'static str,
-    errno_declaration: &'static str,
     error_classes: &'static [PortableErrorClass; 28],
     broken_pipe_signal: i32,
     ignored_disposition: i64,
@@ -945,41 +941,10 @@ impl SystemTarget {
         self.component_file_open_flags
     }
 
-    /// The target descriptor-status facility and record coordinates used to
-    /// validate `open_file` before the resource reaches source.
-    pub(crate) const fn file_status_symbol(self) -> &'static str {
-        self.host.file_status(self.native_file_status_symbol)
-    }
-
-    pub(crate) const fn file_status_size(self) -> u64 {
-        self.file_status_size
-    }
-
-    pub(crate) const fn file_status_mode_offset(self) -> u64 {
-        self.file_status_mode_offset
-    }
-
-    /// Whether the selected target reaches file open/status/close through the
-    /// typed completion adapter ABI rather than the deterministic test shim.
-    pub(crate) const fn uses_typed_completion_file_adapter(self) -> bool {
-        self.host.uses_typed_completion_file_adapter()
-    }
-
-    /// The same target close facility resource release uses. An `open_file`
-    /// classification failure consumes the provisional descriptor here.
-    pub(crate) const fn close_symbol(self) -> &'static str {
-        self.host.close()
-    }
-
-    /// The symbol yielding the address of the calling thread's native error
-    /// slot, read immediately after a failing facility call.
-    pub(crate) const fn errno_location(self) -> &'static str {
-        self.errno_location
-    }
-
-    /// That symbol's declaration.
-    pub(crate) const fn errno_declaration(self) -> &'static str {
-        self.errno_declaration
+    /// The submit entry a consuming release and an explicit close hand their
+    /// descriptor to.
+    pub(crate) const fn file_close_submit_symbol(self) -> &'static str {
+        self.host.file_close_submit()
     }
 
     /// The target's complete [SYS-7] class mapping, in [SYS-2] declared order.
@@ -993,24 +958,34 @@ impl SystemTarget {
         self.host.directory_open()
     }
 
-    /// The host facility `open_read` resolves a relative path through
-    /// [PATH-2].
-    pub(crate) const fn file_open_symbol(self) -> &'static str {
-        self.host.file_open()
+    /// The submit entry `open_read`, `open_directory`, `open_file` and
+    /// `open_directory_source` resolve their name through [PATH-2].
+    pub(crate) const fn file_open_at_submit_symbol(self) -> &'static str {
+        self.host.file_open_at_submit()
     }
 
-    /// The host facility one positioned `read_at` attempt reaches [SYS-8].
-    pub(crate) const fn pread_symbol(self) -> &'static str {
-        self.host.pread()
+    /// The submit entry one positioned `read_at` attempt reaches [SYS-8].
+    pub(crate) const fn file_pread_submit_symbol(self) -> &'static str {
+        self.host.file_pread_submit()
     }
 
-    /// The host facility one `write_once` transfer attempt reaches [SYS-8].
+    /// The submit entry one `write_once` transfer attempt reaches [SYS-8].
     ///
     /// This is the `write_once` row's facility only. External-resource records
     /// write through the native `write` on every target: a scripted host must
     /// never be able to truncate a resource record.
-    pub(crate) const fn write_symbol(self) -> &'static str {
-        self.host.write()
+    pub(crate) const fn file_write_submit_symbol(self) -> &'static str {
+        self.host.file_write_submit()
+    }
+
+    /// The join a transferring or closing record is consumed through.
+    pub(crate) const fn file_join_symbol(self) -> &'static str {
+        self.host.file_join()
+    }
+
+    /// The join an open's record is consumed through.
+    pub(crate) const fn file_open_join_symbol(self) -> &'static str {
+        self.host.file_open_join()
     }
 
     /// The write-to-closed-pipe signal number [QUAL-3] normalizes once.
@@ -1068,19 +1043,11 @@ impl SystemTarget {
                 // 255 UTF-16 code units, exposed losslessly as bytes.
                 component_limit: 510,
                 // These private bits are interpreted only by
-                // wf__completion_file_open_at_direct on Windows.
+                // wf__completion_file_open_at_submit on Windows.
                 directory_open_flags: 0,
                 file_open_flags: 0,
                 component_directory_open_flags: 1,
                 component_file_open_flags: 1,
-                // The typed Windows open route performs classification before
-                // publication.  The status ABI is retained for the shared
-                // completion contract and uses this private eight-byte cell.
-                file_status_size: 8,
-                file_status_mode_offset: 0,
-                native_file_status_symbol: "wf__completion_file_status_direct",
-                errno_location: "wf__windows_error_location",
-                errno_declaration: "declare ptr @wf__windows_error_location()",
                 error_classes: &WINDOWS_ERROR_CLASSES,
                 // Windows has no SIGPIPE disposition.  Its bootstrap and
                 // WriteFile wrapper supply the equivalent broken-pipe result.
@@ -1094,11 +1061,6 @@ impl SystemTarget {
             directory_open_flags,
             component_directory_open_flags,
             component_file_open_flags,
-            file_status_size,
-            file_status_mode_offset,
-            native_file_status_symbol,
-            errno_location,
-            errno_declaration,
             error_classes,
             directory_enumeration_facility,
             directory_enumeration,
@@ -1109,11 +1071,6 @@ impl SystemTarget {
                 0x0010_0000,
                 0x0010_0100,
                 0x0000_0104,
-                144,
-                4,
-                "fstat",
-                "__error",
-                "declare ptr @__error()",
                 &DARWIN_ERROR_CLASSES,
                 true,
                 Some(DARWIN_ENUMERATION),
@@ -1125,11 +1082,6 @@ impl SystemTarget {
                 0x0010_0000,
                 0x0010_0100,
                 0x0000_0104,
-                144,
-                4,
-                "fstat$INODE64",
-                "__error",
-                "declare ptr @__error()",
                 &DARWIN_ERROR_CLASSES,
                 true,
                 Some(DARWIN_ENUMERATION),
@@ -1143,11 +1095,6 @@ impl SystemTarget {
                 0x0000_4000,
                 0x0000_c000,
                 0x0000_8800,
-                128,
-                16,
-                "fstat",
-                "__errno_location",
-                "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
                 true,
                 Some(LINUX_ENUMERATION),
@@ -1158,11 +1105,6 @@ impl SystemTarget {
                 0x0001_0000,
                 0x0003_0000,
                 0x0002_0800,
-                144,
-                24,
-                "fstat",
-                "__errno_location",
-                "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
                 true,
                 Some(LINUX_ENUMERATION),
@@ -1185,11 +1127,6 @@ impl SystemTarget {
             file_open_flags: 0,
             component_directory_open_flags,
             component_file_open_flags,
-            file_status_size,
-            file_status_mode_offset,
-            native_file_status_symbol,
-            errno_location,
-            errno_declaration,
             error_classes,
             // `SIGPIPE` is 13 on every supported target.
             broken_pipe_signal: 13,
@@ -1536,9 +1473,7 @@ fn resource_row(
         // [SYS-12], and every other type releases with a logical consume.
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
-        | SystemResourceType::DirectorySource => {
-            ReleaseImplementation::NativeClose(target.host.close())
-        }
+        | SystemResourceType::DirectorySource => ReleaseImplementation::NativeClose,
         SystemResourceType::Args
         | SystemResourceType::HostString
         | SystemResourceType::RelativePath
@@ -1558,7 +1493,7 @@ fn resource_row(
             ReleaseImplementation::NoCode,
         ) | (
             SystemReleaseAction::NativeCloseAttempt,
-            ReleaseImplementation::NativeClose(_)
+            ReleaseImplementation::NativeClose
         )
     );
     if !consistent {

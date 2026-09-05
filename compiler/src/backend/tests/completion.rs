@@ -585,7 +585,8 @@ fn windows_completion_modules_require_the_native_runtime_at_link_time() {
     );
 }
 
-/// Core pressure on the Windows target must never become direct execution.
+/// Core pressure on the Windows target must never become an inline arm of the
+/// emitted function.
 ///
 /// The retry-shape assertions of
 /// `windows_core_pressure_materializes_the_oldest_owned_result_and_retries`
@@ -594,9 +595,10 @@ fn windows_completion_modules_require_the_native_runtime_at_link_time() {
 /// submit answers nothing and there is no oldest owned result to materialize
 /// and no retry to shape. The assertion design section 8 says **stays** is the
 /// one below, and it is now the stronger statement the one lowering makes:
-/// there is no direct-execution arm in the emitted function at all.
+/// there is no second arm in the emitted function at all — the direct family
+/// it would have selected is gone from the compiler.
 #[test]
-fn windows_core_pressure_never_becomes_direct_execution() {
+fn windows_core_pressure_never_becomes_inline_execution() {
     let source = more_than_target_capacity_reads(3);
     let module = emit_windows_completion(&source);
     let body = emitted_function(&module, "main");
@@ -604,7 +606,20 @@ fn windows_core_pressure_never_becomes_direct_execution() {
         .matches("call void @wf__completion_file_pread_submit")
         .count();
 
-    assert_eq!(submissions, 2, "the source-last read remains direct");
+    // Two of the three reads are handed out and submit here; the source-last
+    // read submits from inside its own qualified wrapper, which is a separate
+    // definition this body does not hold (design §8).
+    assert_eq!(
+        submissions, 2,
+        "the two handed-out reads submit in the body"
+    );
+    assert!(
+        module.contains(
+            "call void @wf__completion_file_pread_submit(i32 %file, ptr %target, \
+             i64 %extent, i64 %file_offset, ptr %record)"
+        ),
+        "the source-last read submits from its wrapper's own record"
+    );
     assert!(
         !body.contains("completion.inline."),
         "core pressure must never become direct execution:\n{body}"
@@ -749,8 +764,24 @@ fn only_an_actualized_target_operation_selects_the_completion_runtime() {
     // Three writer-scheduler assertions retired here with the stackless plan
     // (design section 8): no module can publish a writer frame any more, so
     // there is no predicate left to ask.
-    assert!(sequential.contains("@wf__completion_file_write_direct"));
-    assert!(!sequential.contains("call void @wf__completion_file_write_submit"));
+    // One lowering: a source-order call and a handed-out call both submit and
+    // join (`research/investigations/io-model/PARK-ON-MISS.md` §8), so the
+    // question the predicate answers is only whether the module submits
+    // anything at all. What still separates the two worlds is *where* the
+    // record lives: the sequential module submits from inside the qualified
+    // wrapper, against the block that wrapper reserves in its own frame, and
+    // never from a call site against a planned-frame element.
+    assert!(sequential.contains(
+        "call void @wf__completion_file_write_submit(i32 %output, ptr %target, i64 %extent, \
+         ptr %record)"
+    ));
+    for line in sequential.lines() {
+        assert!(
+            !line.contains("call void @wf__completion_file_write_submit(")
+                || line.ends_with("ptr %record)"),
+            "a sequential call submits from its wrapper's own record:\n{line}"
+        );
+    }
     assert!(!pure.contains("wf__completion_"));
     assert_eq!(pure, pure_sequential);
 }
@@ -760,12 +791,26 @@ fn compute_world_selection_does_not_disable_completion_io() {
     let module = super::emit_with_overlap(COMPUTE_AND_IO);
     assert!(crate::module_requires_parallel_runtime(&module));
     assert!(crate::module_requires_completion_runtime(&module));
+    // Two handed-out submissions, one per compute world, and the source-last
+    // call submits from inside its own qualified wrapper — one lowering, three
+    // submissions (design §8).
     assert_eq!(
         module
             .matches("call void @wf__completion_file_write_submit")
             .count(),
-        2,
-        "both compute worlds submit the earlier I/O and keep the source-last call direct"
+        3,
+        "both compute worlds submit the earlier I/O, and the source-last call \
+         submits from its wrapper"
+    );
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_write_submit(i32 %output, ptr %target, \
+                      i64 %extent, ptr %record)"
+            )
+            .count(),
+        1,
+        "exactly one of the three is the wrapper's own"
     );
     let directory = test_directory();
     let executable = build_executable(&module, &directory);
@@ -1004,7 +1049,7 @@ fn a_target_without_native_completion_runs_the_same_batch_one_iteration_at_a_tim
         "the direct target must not materialize a native K=2 completion ring"
     );
     assert!(module.contains("= add i64 0, 1"));
-    assert!(module.contains("call ") && module.contains("@wf_test_openat("));
+    assert!(module.contains("call ") && module.contains("@wf_test_open_at_submit("));
     assert!(!crate::module_requires_completion_runtime(&module));
 
     let run =
@@ -1029,19 +1074,35 @@ fn the_file_helper_receives_a_typed_request_and_never_a_writer_thunk() {
         .map(|offset| first + offset)
         .expect("the earlier operation must join after the source-last direct call");
     assert!(first < join);
+    // One lowering: every call submits and joins (design §8). The call with
+    // later independent work is handed out and submits at its call site; the
+    // source-last call submits from inside the qualified wrapper, against the
+    // record that wrapper reserved in its own frame. What the hand-out buys is
+    // the distance between the submission and the join, which the two offsets
+    // above are what this case reads.
     assert_eq!(
         module
             .matches("call void @wf__completion_file_write_submit")
             .count(),
+        2,
+        "both calls submit; only one is handed out"
+    );
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_write_submit(i32 %output, ptr %target, \
+                      i64 %extent, ptr %record)"
+            )
+            .count(),
         1,
-        "only a call with later independent work is submitted"
+        "the source-last call submits from its wrapper's own record"
     );
     assert_eq!(
         module
             .matches("call void @wf__completion_file_join")
             .count(),
-        1,
-        "each submitted operation owns and consumes its own token"
+        2,
+        "each submitted operation owns and consumes its own record"
     );
     assert!(!module.contains("wf__completion_file_batch_claim"));
     assert!(!module.contains("submit_reserved"));
@@ -1056,16 +1117,30 @@ fn the_file_helper_receives_a_typed_request_and_never_a_writer_thunk() {
 fn positioned_read_emits_a_checked_typed_pread_request() {
     let module = emit(POSITIONED_READS);
     assert!(crate::module_requires_completion_runtime(&module));
+    // One lowering (design §8): the handed-out read submits at its call site
+    // and the source-last read submits from inside the qualified wrapper,
+    // against the record that wrapper reserved in its own frame.
     assert_eq!(
         module
             .matches("call void @wf__completion_file_pread_submit")
             .count(),
-        1,
-        "the final positioned read keeps the direct specialization"
+        2,
+        "both positioned reads submit"
     );
-    assert!(module.contains("%offset.fits = icmp ule i64 %file_offset"));
-    assert!(module.contains("9223372036854775807"));
-    assert!(module.contains("call i64 @wf__completion_file_pread_direct(i32"));
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_pread_submit(i32 %file, ptr %target, \
+                      i64 %extent, i64 %file_offset, ptr %record)"
+            )
+            .count(),
+        1,
+        "the source-last read submits from its wrapper's own record"
+    );
+    // The offset the target ABI cannot express is refused by the runtime and
+    // published as the host's own `EINVAL`, so no wrapper carries a second arm
+    // for it any more.
+    assert!(!module.contains("%offset.fits = icmp ule i64 %file_offset"));
     assert!(crate::COMPLETION_BRIDGE_SOURCE.contains("request.kind = WF_FILE_PREAD"));
     assert!(crate::COMPLETION_BRIDGE_SOURCE.contains("file_offset > (uint64_t)INT64_MAX"));
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
@@ -1089,20 +1164,12 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
         .0;
     assert!(!write.contains("wf_bridge_submit_linux"));
     assert!(write.contains("current-position and"));
-    let direct_write = bridge
-        .split_once("int64_t wf__completion_file_write_direct(")
-        .expect("the bridge exposes direct write progress")
-        .1
-        .split_once("int wf__completion_file_open_at_direct(")
-        .expect("direct write precedes the direct open")
-        .0;
-    assert!(!direct_write.contains("wf_bridge_submit_linux"));
-    // A direct call executes the typed request through the bridge's own
-    // executor rather than a bare host call.
-    assert!(direct_write.contains("wf_bridge_execute_direct"));
-    // Inside that executor the host attempt is timed rather than plain, so
-    // the adapter's measurement of what its own operations cost keeps
-    // running on the route it may have declined a submission in favour of.
+    // The direct family is gone from the bridge with the second lowering that
+    // named it (design §8). What executed a typed request inside the bridge
+    // for it is the same engine an operation with no kernel completion form
+    // still reaches, and there the host attempt is timed rather than plain, so
+    // the adapter keeps measuring what its own operations cost.
+    assert!(!bridge.contains("_direct("));
     assert!(bridge.contains("wf_file_execute_timed(&wf_bridge_adapter"));
     assert!(crate::COMPLETION_LINUX_IO_URING_HEADER.contains("#if defined(__linux__)"));
     assert!(
@@ -1122,10 +1189,15 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
 }
 
 #[test]
-fn one_empty_write_uses_the_normal_direct_operation_path() {
+fn one_empty_write_uses_the_one_normal_operation_path() {
     let module = emit(EMPTY_WRITE);
+    // An empty transfer takes the same lowering as every other: it is
+    // submitted, completed by the runtime with no external action, and the
+    // mapper answers `Ok(start)` for it, which is the arm read here
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8).
     assert!(module.contains("%empty = icmp eq i64 %extent, 0"));
     assert!(module.contains("label %vacant, label %nonempty"));
+    assert!(module.contains("call void @wf__completion_file_write_submit"));
     assert!(!module.contains("wf__completion_file_batch_claim"));
     assert!(!module.contains("wf__completion_output_batch"));
     assert!(!module.contains("submit_reserved"));
@@ -1588,12 +1660,25 @@ fn reused_output_progress_preserves_ac_around_an_independent_rejected_open() {
 fn more_than_sixty_four_calls_progress_by_falling_back_only_the_full_call() {
     let source = more_than_target_capacity_reads(66);
     let module = emit(&source);
+    // Sixty-five handed-out submissions, one per call with later work, plus
+    // the one the qualified wrapper makes for the source-last call: one
+    // lowering, so no call is left without a submission (design §8).
     assert_eq!(
         module
             .matches("call void @wf__completion_file_pread_submit")
             .count(),
-        65,
-        "every call with later work attempts its own submission"
+        66,
+        "every call submits, and the sixty-five with later work are handed out"
+    );
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_pread_submit(i32 %file, ptr %target, \
+                      i64 %extent, i64 %file_offset, ptr %record)"
+            )
+            .count(),
+        1,
+        "exactly one of them is the wrapper's own"
     );
 
     let directory = test_directory();
@@ -1648,7 +1733,18 @@ fn a_rejected_nonregular_open_does_not_delay_independent_writer_work() {
 fn direct_and_completion_open_read_reject_a_fifo_without_blocking() {
     let direct = emit_lowered(DIRECT_NONREGULAR_OPEN, crate::OverlapLowering::Off);
     let completion = emit(COMPLETION_NONREGULAR_OPEN);
-    assert!(!direct.contains("@wf__completion_file_open_at_submit"));
+    // One lowering: both modules submit and join. What separates them is where
+    // the record lives — the source-order open reserves it inside the
+    // qualified wrapper, the handed-out open in the submitting function's own
+    // planned frame (design §8). Both reject the FIFO the same way, which is
+    // what the runs below observe.
+    assert_eq!(
+        direct
+            .matches("call void @wf__completion_file_open_at_submit")
+            .count(),
+        1
+    );
+    assert!(direct.contains("call void @wf__completion_file_open_at_submit(i32 %root, ptr %text,"));
     assert!(completion.contains("call void @wf__completion_file_open_at_submit"));
     assert!(completion.contains("i32 1, ptr %"));
 
@@ -1686,11 +1782,21 @@ fn direct_and_completion_open_read_reject_a_fifo_without_blocking() {
 #[test]
 fn component_directory_open_uses_the_same_typed_completion_route() {
     let module = emit(INDEPENDENT_COMPONENT_OPENS);
+    // The handed-out open submits at its call site and the qualified wrapper
+    // submits from its own frame: one lowering, two submissions of the one
+    // route (`research/investigations/io-model/PARK-ON-MISS.md` §8).
     assert_eq!(
         module
             .matches("call void @wf__completion_file_open_at_submit")
             .count(),
-        1
+        2
+    );
+    assert_eq!(
+        module
+            .matches("call void @wf__completion_file_open_at_submit(i32 %root, ptr %component,")
+            .count(),
+        1,
+        "one of the two is the wrapper's own"
     );
     assert!(module.contains("completion.component.scan"));
     assert!(module.contains("i32 2, ptr %"));
@@ -1739,11 +1845,20 @@ fn windows_component_completion_stages_one_terminated_utf16_name() {
 #[test]
 fn directory_source_open_uses_the_typed_completion_route() {
     let module = emit(INDEPENDENT_DIRECTORY_SOURCE_OPENS);
+    // The handed-out open and the qualified wrapper both submit: one lowering
+    // (design §8).
     assert_eq!(
         module
             .matches("call void @wf__completion_file_open_at_submit")
             .count(),
-        1
+        2
+    );
+    assert_eq!(
+        module
+            .matches("call void @wf__completion_file_open_at_submit(i32 %directory,")
+            .count(),
+        1,
+        "one of the two is the wrapper's own"
     );
     assert!(module.contains("@wf.sys.open_directory_source.completion"));
     assert!(module.contains("i32 2, ptr %"));
@@ -1767,14 +1882,18 @@ fn directory_source_open_uses_the_typed_completion_route() {
 #[test]
 fn regular_file_open_maps_status_and_release_after_completion() {
     let module = emit(INDEPENDENT_REGULAR_FILE_OPENS);
+    // The handed-out open and the qualified wrapper both submit: one lowering
+    // (design §8).
     assert_eq!(
         module
             .matches("call void @wf__completion_file_open_at_submit")
             .count(),
-        1
+        2
     );
     assert!(module.contains("@wf.sys.open_file.completion"));
-    assert!(module.contains("@wf__completion_file_close_direct"));
+    // The release closes the same way: submitted into the record the releasing
+    // frame reserved, and joined there.
+    assert!(module.contains("call void @wf__completion_file_close_submit(i32 %descriptor,"));
     assert!(module.contains("i32 1, ptr %"));
     // The kind decision reads the mode of the descriptor the open produced.
     // It moved out of this adapter into the one shared rule every target
@@ -1807,11 +1926,20 @@ fn regular_file_open_maps_status_and_release_after_completion() {
 #[test]
 fn directory_enumeration_completes_before_writer_normalization() {
     let module = emit(INDEPENDENT_DIRECTORY_READS);
+    // The handed-out enumeration and the qualified wrapper both submit: one
+    // lowering (design §8).
     assert_eq!(
         module
             .matches("call void @wf__completion_directory_next_submit")
             .count(),
-        1
+        2
+    );
+    assert_eq!(
+        module
+            .matches("call void @wf__completion_directory_next_submit(i32 %list, ptr %window,")
+            .count(),
+        1,
+        "one of the two is the wrapper's own"
     );
     assert!(module.contains("@wf.sys.directory_next.completion"));
     let directory = test_directory();

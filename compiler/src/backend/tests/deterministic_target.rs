@@ -251,9 +251,9 @@ const HOST_PRELUDE: &str = "\
 ";
 
 /// The fixed body of the generated host unit: one function per facility a
-/// [QUAL-1] deterministic-target row names.
+/// [QUAL-1] deterministic-target row names, and the submit-and-join pair the
+/// one lowering reaches them through.
 const HOST_FACILITIES: &str = "\
-\n\
 /* Every facility appends one line to the real standard error so a test can\n\
    observe host-visible facts the source cannot see — how many attempts a\n\
    release made, and against which descriptor. */\n\
@@ -290,7 +290,7 @@ int wf_test_open(const char *path, int flags, ...) {\n\
     return WF_TEST_DIRECTORY;\n\
 }\n\
 \n\
-int wf_test_openat(int directory, const char *path, int flags, ...) {\n\
+static int wf_test_openat(int directory, const char *path, int flags) {\n\
     char line[128];\n\
     (void)path;\n\
     /* The one fixture is a regular file, so a directory-only open of it\n\
@@ -317,7 +317,7 @@ int wf_test_openat(int directory, const char *path, int flags, ...) {\n\
     return WF_TEST_FILE;\n\
 }\n\
 \n\
-int wf_test_fstat(int descriptor, struct stat *status) {\n\
+static int wf_test_fstat(int descriptor, struct stat *status) {\n\
     char line[128];\n\
     if (descriptor != WF_TEST_FILE) {\n\
         errno = EBADF;\n\
@@ -338,8 +338,8 @@ int wf_test_fstat(int descriptor, struct stat *status) {\n\
     return 0;\n\
 }\n\
 \n\
-ssize_t wf_test_pread(int descriptor, void *destination, size_t capacity,\n\
-                      int64_t offset) {\n\
+static ssize_t wf_test_pread(int descriptor, void *destination, size_t capacity,\n\
+                             int64_t offset) {\n\
     char line[192];\n\
     long entry;\n\
     for (;;) {\n\
@@ -380,7 +380,7 @@ ssize_t wf_test_pread(int descriptor, void *destination, size_t capacity,\n\
     return (ssize_t)delivered;\n\
 }\n\
 \n\
-ssize_t wf_test_write(int descriptor, const void *source, size_t count) {\n\
+static ssize_t wf_test_write(int descriptor, const void *source, size_t count) {\n\
     char line[192];\n\
     long entry;\n\
     for (;;) {\n\
@@ -417,7 +417,7 @@ ssize_t wf_test_write(int descriptor, const void *source, size_t count) {\n\
     return (ssize_t)accepted;\n\
 }\n\
 \n\
-int wf_test_close(int descriptor) {\n\
+static int wf_test_close(int descriptor) {\n\
     char line[128];\n\
     long outcome = wf_test_step(wf_test_close_script, wf_test_close_scripted,\n\
                                 &wf_test_close_calls);\n\
@@ -429,6 +429,138 @@ int wf_test_close(int descriptor) {\n\
         return -1;\n\
     }\n\
     return 0;\n\
+}\n\
+\n\
+/* The one lowering, answered by this target's own column.\n\
+ *\n\
+ * Every qualified wrapper now reserves a record in its own frame, submits the\n\
+ * operation into it, and joins it where the outcome is needed\n\
+ * (research/investigations/io-model/PARK-ON-MISS.md section 8). This host\n\
+ * answers the pair the way the design's second shape admits: the engine\n\
+ * executes the operation inside the submitting call and publishes the\n\
+ * completion into the record, so a scripted condition is still observed\n\
+ * through exactly the emitted lowering and every host attempt above is still\n\
+ * traced once, in the same words. */\n\
+typedef struct wf_test_completion {\n\
+    int64_t value;\n\
+    int error_code;\n\
+    unsigned open_outcome;\n\
+} wf_test_completion;\n\
+\n\
+/* The emitter reserves WF_COMPLETION_RECORD_BYTES at WF_COMPLETION_RECORD_ALIGN\n\
+   for every operation. What a target keeps there is its own business; this one\n\
+   keeps the published outcome, and says so it cannot outgrow the block. */\n\
+_Static_assert(sizeof(wf_test_completion) <= 128, \"the record block holds it\");\n\
+_Static_assert(_Alignof(wf_test_completion) <= 8, \"the record block aligns it\");\n\
+\n\
+/* The five open outcomes the emitted mapper switches on, in the order the\n\
+   completion contract states them. */\n\
+#define WF_TEST_OPEN_SUCCEEDED 0u\n\
+#define WF_TEST_OPEN_FAILED 1u\n\
+#define WF_TEST_OPEN_STATUS_FAILED 2u\n\
+#define WF_TEST_OPEN_IS_DIRECTORY 3u\n\
+#define WF_TEST_OPEN_OTHER_KIND 4u\n\
+#define WF_TEST_EXPECT_ANY 0u\n\
+#define WF_TEST_EXPECT_REGULAR 1u\n\
+#define WF_TEST_EXPECT_DIRECTORY 2u\n\
+\n\
+static void wf_test_publish(void *record, int64_t value, int error_code,\n\
+                            unsigned open_outcome) {\n\
+    wf_test_completion completion;\n\
+    completion.value = value;\n\
+    completion.error_code = error_code;\n\
+    completion.open_outcome = open_outcome;\n\
+    memcpy(record, &completion, sizeof completion);\n\
+}\n\
+\n\
+/* The descriptor-kind check and the close of a provisional descriptor that\n\
+   fails it belong to whoever answers the submit, so they are here rather than\n\
+   in the wrapper. */\n\
+void wf_test_open_at_submit(int directory, const char *path, int flags,\n\
+                            unsigned mode, unsigned has_mode,\n\
+                            unsigned expected_kind, void *record) {\n\
+    struct stat status;\n\
+    int descriptor;\n\
+    (void)mode;\n\
+    (void)has_mode;\n\
+    descriptor = wf_test_openat(directory, path, flags);\n\
+    if (descriptor < 0) {\n\
+        wf_test_publish(record, -1, errno, WF_TEST_OPEN_FAILED);\n\
+        return;\n\
+    }\n\
+    if (expected_kind == WF_TEST_EXPECT_ANY) {\n\
+        wf_test_publish(record, descriptor, 0, WF_TEST_OPEN_SUCCEEDED);\n\
+        return;\n\
+    }\n\
+    if (wf_test_fstat(descriptor, &status) != 0) {\n\
+        int inspection = errno;\n\
+        (void)wf_test_close(descriptor);\n\
+        wf_test_publish(record, -1, inspection, WF_TEST_OPEN_STATUS_FAILED);\n\
+        return;\n\
+    }\n\
+    if ((expected_kind == WF_TEST_EXPECT_REGULAR && S_ISREG(status.st_mode))\n\
+        || (expected_kind == WF_TEST_EXPECT_DIRECTORY\n\
+            && S_ISDIR(status.st_mode))) {\n\
+        wf_test_publish(record, descriptor, 0, WF_TEST_OPEN_SUCCEEDED);\n\
+        return;\n\
+    }\n\
+    (void)wf_test_close(descriptor);\n\
+    wf_test_publish(record, -1, 0,\n\
+                    S_ISDIR(status.st_mode) ? WF_TEST_OPEN_IS_DIRECTORY\n\
+                                            : WF_TEST_OPEN_OTHER_KIND);\n\
+}\n\
+\n\
+/* An empty transfer has no external action at all, so it reaches no scripted\n\
+   facility and consumes no script entry. */\n\
+void wf_test_pread_submit(int descriptor, void *destination, uint64_t count,\n\
+                          uint64_t file_offset, void *record) {\n\
+    ssize_t moved;\n\
+    if (count == 0) {\n\
+        wf_test_publish(record, 0, 0, WF_TEST_OPEN_SUCCEEDED);\n\
+        return;\n\
+    }\n\
+    if (file_offset > (uint64_t)INT64_MAX) {\n\
+        wf_test_publish(record, -1, EINVAL, WF_TEST_OPEN_SUCCEEDED);\n\
+        return;\n\
+    }\n\
+    moved = wf_test_pread(descriptor, destination, (size_t)count,\n\
+                          (int64_t)file_offset);\n\
+    wf_test_publish(record, moved < 0 ? -1 : (int64_t)moved,\n\
+                    moved < 0 ? errno : 0, WF_TEST_OPEN_SUCCEEDED);\n\
+}\n\
+\n\
+void wf_test_write_submit(int descriptor, const void *source, uint64_t count,\n\
+                          void *record) {\n\
+    ssize_t accepted;\n\
+    if (count == 0) {\n\
+        wf_test_publish(record, 0, 0, WF_TEST_OPEN_SUCCEEDED);\n\
+        return;\n\
+    }\n\
+    accepted = wf_test_write(descriptor, source, (size_t)count);\n\
+    wf_test_publish(record, accepted < 0 ? -1 : (int64_t)accepted,\n\
+                    accepted < 0 ? errno : 0, WF_TEST_OPEN_SUCCEEDED);\n\
+}\n\
+\n\
+void wf_test_close_submit(int descriptor, void *record) {\n\
+    int outcome = wf_test_close(descriptor);\n\
+    wf_test_publish(record, outcome, outcome != 0 ? errno : 0,\n\
+                    WF_TEST_OPEN_SUCCEEDED);\n\
+}\n\
+\n\
+void wf_test_file_join(const void *record, int64_t *value, int *error_code) {\n\
+    wf_test_completion completion;\n\
+    memcpy(&completion, record, sizeof completion);\n\
+    *value = completion.value;\n\
+    *error_code = completion.error_code;\n\
+}\n\
+\n\
+void wf_test_file_open_join(const void *record, int64_t *value,\n\
+                            int *error_code, unsigned *open_outcome) {\n\
+    wf_test_completion completion;\n\
+    memcpy(&completion, record, sizeof completion);\n\
+    *value = completion.value;\n\
+    *error_code = completion.error_code;\n\
+    *open_outcome = completion.open_outcome;\n\
 }\n";
 
 /// One run of one program against the deterministic test target.
@@ -699,25 +831,48 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     let native = super::compile(RELEASES_ONE_DIRECTORY);
     let deterministic = emit_for_deterministic_target(RELEASES_ONE_DIRECTORY);
 
-    assert!(native.contains("declare i32 @wf__completion_file_close_direct(i32)"));
+    // A close is one operation like every other: submitted into the record the
+    // releasing frame reserved, then joined
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The row a target
+    // column redirects is therefore the submit-and-join pair, not a blocking
+    // call.
+    assert!(native.contains("declare void @wf__completion_file_close_submit(i32, ptr)"));
+    assert!(native.contains("declare void @wf__completion_file_join(ptr, ptr, ptr)"));
     assert!(native.contains("declare i32 @open(ptr, i32, ...)"));
     assert!(!native.contains("wf_test"));
 
-    assert!(deterministic.contains("declare i32 @wf_test_close(i32)"));
+    assert!(deterministic.contains("declare void @wf_test_close_submit(i32, ptr)"));
+    assert!(deterministic.contains("declare void @wf_test_file_join(ptr, ptr, ptr)"));
     assert!(deterministic.contains("declare i32 @wf_test_open(ptr, i32, ...)"));
     // The redirect is complete: no use site keeps calling the native facility.
-    assert!(!deterministic.contains("@wf__completion_file_close_direct(i32 "));
+    assert!(!deterministic.contains("@wf__completion_file_close_submit(i32 "));
+    assert!(!deterministic.contains("@wf__completion_file_join(ptr "));
     assert!(!deterministic.contains("@open(ptr "));
 
-    // One release, one close attempt, on either target [SYS-5].
+    // One release, one close attempt, on either target [SYS-5]: one submit and
+    // the one join that consumes its terminal completion.
     assert_eq!(
         native
-            .matches("call i32 @wf__completion_file_close_direct(i32")
+            .matches("call void @wf__completion_file_close_submit(i32")
             .count(),
         1
     );
     assert_eq!(
-        deterministic.matches("call i32 @wf_test_close(i32").count(),
+        native
+            .matches("call void @wf__completion_file_join(ptr")
+            .count(),
+        1
+    );
+    assert_eq!(
+        deterministic
+            .matches("call void @wf_test_close_submit(i32")
+            .count(),
+        1
+    );
+    assert_eq!(
+        deterministic
+            .matches("call void @wf_test_file_join(ptr")
+            .count(),
         1
     );
 
@@ -726,12 +881,9 @@ fn only_the_host_facing_rows_differ_between_the_two_targets() {
     // emits.
     assert_eq!(
         native
-            .replace("@wf__completion_file_close_direct", "@wf_test_close")
-            .replace("@open", "@wf_test_open")
-            .replace(
-                "declare i32 @wf_test_open(ptr, i32, ...)\ndeclare i32 @wf_test_close(i32)",
-                "declare i32 @wf_test_close(i32)\ndeclare i32 @wf_test_open(ptr, i32, ...)",
-            ),
+            .replace("@wf__completion_file_close_submit", "@wf_test_close_submit")
+            .replace("@wf__completion_file_join", "@wf_test_file_join")
+            .replace("@open", "@wf_test_open"),
         deterministic
     );
 }
@@ -864,7 +1016,11 @@ fn the_deterministic_release_keeps_the_native_optimized_shape() {
     // the selected target's own facility, with no dispatch table, no handle
     // lookup, and no allocation introduced by the second column.
     let optimized = host_optimized_module(&emit_for_deterministic_target(RELEASES_ONE_DIRECTORY));
-    assert_eq!(optimized.matches("@wf_test_close(").count(), 2);
+    // The close is a submit and the join that consumes its completion, both
+    // inlined into the releasing frame with the record it reserved there
+    // (design §8). Two symbols, one call and one declaration each.
+    assert_eq!(optimized.matches("@wf_test_close_submit(").count(), 2);
+    assert_eq!(optimized.matches("@wf_test_file_join(").count(), 2);
     assert!(!optimized.contains("@malloc"));
 }
 
@@ -1066,11 +1222,11 @@ fn the_heap_resource_record_writer_stays_native_on_the_deterministic_target() {
 }
 "#;
     let module = emit_for_deterministic_target(source);
-    assert!(module.contains("declare i64 @wf_test_write(i32, ptr, i64)"));
+    assert!(module.contains("declare void @wf_test_write_submit(i32, ptr, i64, ptr)"));
     assert!(module.contains("declare i64 @write(i32, ptr, i64)"));
     assert!(module.contains("%written = call i64 @write(i32 2, ptr %cursor"));
     assert!(module.contains("call void @wf_resource_record_abort("));
-    assert!(module.contains("%accepted = call i64 @wf_test_write(i32 %output"));
+    assert!(module.contains("call void @wf_test_write_submit(i32 %output"));
 
     // And the native target still declares exactly one `@write` for both.
     let native = super::compile(source);

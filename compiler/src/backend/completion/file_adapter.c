@@ -894,6 +894,75 @@ enum wf_file_submit_result wf_file_adapter_submit(
     return WF_FILE_TARGET_OWNS;
 }
 
+/* Takes this exact record off the queue for the thread that is waiting on it.
+ *
+ * This is the one visit to the queue a joining thread may make while helpers
+ * exist: the rule that otherwise keeps it out is about *unrelated* work, which
+ * could block the very frame waiting on a completion a helper has already
+ * published.  Its own record cannot be that, because this thread has nothing
+ * left to do until that record is DONE, and running it here is the same host
+ * call the helper would have made without a queue crossing and without waiting
+ * behind whatever the helpers are already inside.
+ *
+ * Answering 0 covers every other case with no special reasoning: a record the
+ * ring owns, one a helper has already taken, and one already published are all
+ * simply not on this list.
+ *
+ * A claimed record is the caller's to run, and the caller must run it: it is
+ * off the queue and no other engine will publish it. */
+int wf_file_adapter_claim_own(
+    wf_file_adapter *adapter,
+    wf_completion_record *record
+) {
+    int claimed = 0;
+    if (!wf_file_adapter_initialized(adapter) || record == NULL) {
+        return 0;
+    }
+    (void)pthread_mutex_lock(&adapter->queue_lock);
+    if (adapter->queue_head == record) {
+        adapter->queue_head = record->next;
+        if (adapter->queue_head == NULL) {
+            adapter->queue_tail = NULL;
+        }
+        claimed = 1;
+    } else {
+        wf_completion_record *previous = adapter->queue_head;
+        while (previous != NULL && previous->next != record) {
+            previous = previous->next;
+        }
+        if (previous != NULL) {
+            previous->next = record->next;
+            if (adapter->queue_tail == record) {
+                adapter->queue_tail = previous;
+            }
+            claimed = 1;
+        }
+    }
+    if (claimed != 0) {
+        record->next = NULL;
+        atomic_store_explicit(
+            &adapter->queue_count,
+            atomic_load_explicit(&adapter->queue_count, memory_order_relaxed)
+                - 1u,
+            memory_order_seq_cst
+        );
+    }
+    (void)pthread_mutex_unlock(&adapter->queue_lock);
+    return claimed;
+}
+
+/* Runs a record `wf_file_adapter_claim_own` answered 1 for, and publishes it.
+ *
+ * It is the same execution a helper would have made, timed by the same
+ * adapter, so the measurement of what this program's operations cost keeps
+ * running on the route a joining thread took. */
+void wf_file_adapter_run_claimed(
+    wf_file_adapter *adapter,
+    wf_completion_record *record
+) {
+    wf_file_run_work(adapter, record, 0);
+}
+
 size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
     size_t executed = 0;
     if (!wf_file_adapter_initialized(adapter)) {

@@ -95,6 +95,131 @@ pub(crate) fn completion_record_element_type() -> String {
     format!("[{COMPLETION_RECORD_BYTES} x i8]")
 }
 
+/// The name a qualified wrapper reserves its operation's record block under.
+pub(super) const WRAPPER_RECORD: &str = "%record";
+/// The raw target value the join publishes into.
+pub(super) const WRAPPER_RAW_VALUE: &str = "%raw.value";
+/// The raw target error the join publishes into.
+pub(super) const WRAPPER_RAW_ERROR: &str = "%raw.error";
+/// The open outcome the open join publishes into.
+pub(super) const WRAPPER_RAW_OUTCOME: &str = "%raw.outcome";
+
+/// Reserves one operation's record block and raw result slots in the entry
+/// block of the qualified wrapper that submits it.
+///
+/// A wrapper is `alwaysinline`, which is the condition [QUAL-3] states, so
+/// these reservations become blocks of the frame that called it — which is
+/// exactly where the record belongs
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §5). A handed-out site
+/// reserves the same three things through `completion_entry_slot` instead,
+/// because its own frame may hold several operations of one call site at once;
+/// that is the whole difference between the two lowerings.
+pub(super) fn completion_wrapper_reservation(open: bool) -> String {
+    let element = completion_record_element_type();
+    let mut text = format!(
+        "  {WRAPPER_RECORD} = alloca {element}, align {COMPLETION_RECORD_ALIGN}\n  \
+         {WRAPPER_RAW_VALUE} = alloca i64, align 8\n  \
+         {WRAPPER_RAW_ERROR} = alloca i32, align 4\n"
+    );
+    if open {
+        text.push_str(&format!("  {WRAPPER_RAW_OUTCOME} = alloca i32, align 4\n"));
+    }
+    text
+}
+
+/// The submit call itself, which both lowerings render identically: the
+/// operation's own arguments, then the address of the record it is given.
+pub(super) fn completion_submit_call(symbol: &str, arguments: &str) -> String {
+    format!("  call void @{symbol}({arguments})\n")
+}
+
+/// The address one transfer starts at, from the buffer value and the proved
+/// start endpoint. Both lowerings render exactly this.
+pub(super) fn completion_transfer_target(
+    buffer_type: &str,
+    buffer: &str,
+    start: &str,
+    base: &str,
+    target: &str,
+) -> String {
+    format!(
+        "  {base} = extractvalue {buffer_type} {buffer}, 0\n  \
+         {target} = getelementptr inbounds i8, ptr {base}, i64 {start}\n"
+    )
+}
+
+/// One submitted operation's retirement: the join that consumes its terminal
+/// completion, the raw slots it published into, and the operation's own
+/// completion mapper.
+///
+/// This is the second half of the one lowering, and it is one text because
+/// there is nothing left to differ: a handed-out site and a qualified wrapper
+/// name different storage and put the result in different places, but the
+/// instructions between the record and the typed outcome are the same
+/// (design §8).
+pub(super) struct CompletionRetirement<'a> {
+    /// The join entry the record is consumed through.
+    pub(super) join: &'a str,
+    /// The record block address.
+    pub(super) record: &'a str,
+    /// The slot the raw target value is published into.
+    pub(super) raw_value: &'a str,
+    /// The slot the raw target error is published into.
+    pub(super) raw_error: &'a str,
+    /// The open outcome slot and the name its load takes, for an open only.
+    pub(super) open_outcome: Option<(&'a str, &'a str)>,
+    /// The names the loaded value and error take.
+    pub(super) value: &'a str,
+    pub(super) error: &'a str,
+    /// The operation's completion mapper and its complete argument list.
+    pub(super) mapper: &'a str,
+    pub(super) mapper_arguments: &'a str,
+    /// Where the typed outcome lands, and its type.
+    pub(super) result: &'a str,
+    pub(super) result_type: &'a str,
+}
+
+pub(super) fn completion_retirement(plan: &CompletionRetirement<'_>) -> String {
+    let CompletionRetirement {
+        join,
+        record,
+        raw_value,
+        raw_error,
+        open_outcome,
+        value,
+        error,
+        mapper,
+        mapper_arguments,
+        result,
+        result_type,
+    } = plan;
+    let (outcome_argument, outcome_load) = match open_outcome {
+        Some((slot, name)) => (
+            format!(", ptr {slot}"),
+            format!("  {name} = load i32, ptr {slot}\n"),
+        ),
+        None => (String::new(), String::new()),
+    };
+    format!(
+        "  call void @{join}(ptr {record}, ptr {raw_value}, ptr {raw_error}\
+         {outcome_argument})\n  \
+         {value} = load i64, ptr {raw_value}\n  \
+         {error} = load i32, ptr {raw_error}\n\
+         {outcome_load}  \
+         {result} = call {result_type} @{mapper}({mapper_arguments})\n"
+    )
+}
+
+/// The runtime's own enumeration submit and its two joins.
+///
+/// A target column redirects the file operations it answers itself; the
+/// directory enumeration has no such column, so its submit — and therefore the
+/// join that consumes the record it filled — is the runtime's on every target,
+/// exactly as its direct entry was before one lowering replaced it.
+pub(super) const DIRECTORY_NEXT_SUBMIT: &str = "wf__completion_directory_next_submit";
+/// The join the record that enumeration filled is consumed through.
+pub(super) const FILE_JOIN: &str = "wf__completion_file_join";
+
 /// The emitted call spellings of the seven submit entries.
 ///
 /// A module that contains one of these has handed an operation to the
@@ -165,16 +290,16 @@ pub(crate) const COMPLETION_WINDOWS_WINDOW_DECLARATION: &str =
 pub(crate) const COMPLETION_WINDOW_FALLBACK: &str = "define weak i64 @wf__completion_window(i64 %span, i64 %slot_bytes, i64 %ceiling) {\nentry:\n  ret i64 1\n}\n\n";
 
 /// True exactly when this emitted module contains a completion actualization.
+///
+/// One lowering means one question: does the module submit anything to the
+/// completion runtime? A handed-out operation and an ordinary qualified
+/// wrapper reach the same seven entries, so the submit calls are the whole
+/// test and the direct family has no spelling left to look for
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §8).
 pub fn module_requires_completion_runtime(module: &str) -> bool {
     COMPLETION_SUBMIT_CALLS
         .iter()
         .any(|call| module.contains(call))
-        || module.contains("@wf__completion_file_pread_direct")
-        || module.contains("@wf__completion_file_write_direct")
-        || module.contains("@wf__completion_file_open_at_direct")
-        || module.contains("@wf__completion_file_status_direct")
-        || module.contains("@wf__completion_file_close_direct")
-        || module.contains("@wf__completion_directory_next_direct")
 }
 
 /// Whether this operation's completion lowering can reach its outcome without
@@ -553,20 +678,19 @@ impl FunctionEmitter<'_, '_> {
         // is completed by the runtime, and a file offset the target ABI cannot
         // express is published by it as the host's own refusal, so neither is
         // a reason to select a second arm here.
-        writeln!(
+        let prepared = completion_transfer_target(
+            &rendered_buffer,
+            &self.value_name(*buffer),
+            &self.value_name(*start),
+            &base,
+            &target,
+        );
+        write!(
             self.output,
-            "  {extent} = sub i64 {}, {}\n  \
-             {base} = extractvalue {rendered_buffer} {}, 0\n  \
-             {target} = getelementptr inbounds i8, ptr {base}, i64 {}",
+            "  {extent} = sub i64 {}, {}\n{prepared}{}",
             self.value_name(*end),
             self.value_name(*start),
-            self.value_name(*buffer),
-            self.value_name(*start),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        writeln!(
-            self.output,
-            "  call void @{submit_symbol}({submit_arguments})"
+            completion_submit_call(submit_symbol, &submit_arguments),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let captured_start = self.capture_completion_value(
@@ -707,12 +831,18 @@ impl FunctionEmitter<'_, '_> {
         } else {
             String::new()
         };
-        writeln!(
-            self.output,
-            "  call void @wf__completion_file_open_at_submit(i32 {}, ptr {path}, \
-             i32 {flags}, i32 0, i32 0, i32 {expected_kind}{descriptor_class_argument}, \
-             ptr {token_pointer})",
+        let submit_arguments = format!(
+            "i32 {}, ptr {path}, i32 {flags}, i32 0, i32 0, \
+             i32 {expected_kind}{descriptor_class_argument}, ptr {token_pointer}",
             self.value_name(directory),
+        );
+        write!(
+            self.output,
+            "{}",
+            completion_submit_call(
+                self.qualification.target().file_open_at_submit_symbol(),
+                &submit_arguments,
+            ),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let not_submitted = match (result_slot, result_pointer) {
@@ -959,23 +1089,24 @@ impl FunctionEmitter<'_, '_> {
         let _qualified = self.qualification.operation(operation)?;
         // An empty destination range is submitted like any other and completed
         // by the runtime, so there is no branch and no second arm (design §8).
-        writeln!(
+        let prepared = completion_transfer_target(
+            &destination_llvm,
+            &self.value_name(*destination),
+            &self.value_name(*start),
+            &base,
+            &target,
+        );
+        let submit_arguments = format!(
+            "i32 {}, ptr {target}, i64 {extent}, ptr {position}, ptr {token_pointer}",
+            self.value_name(*source),
+        );
+        write!(
             self.output,
-            "  {extent} = sub i64 {}, {}\n  \
-             store i64 0, ptr {position}, align 8\n  \
-             {base} = extractvalue {destination_llvm} {}, 0\n  \
-             {target} = getelementptr inbounds i8, ptr {base}, i64 {}",
+            "  {extent} = sub i64 {}, {}\n  store i64 0, ptr {position}, align 8\n\
+             {prepared}{}",
             self.value_name(*end),
             self.value_name(*start),
-            self.value_name(*destination),
-            self.value_name(*start),
-        )
-        .map_err(|_| BackendFailure::TextEmission)?;
-        writeln!(
-            self.output,
-            "  call void @wf__completion_directory_next_submit(i32 {}, ptr {target}, \
-             i64 {extent}, ptr {position}, ptr {token_pointer})",
-            self.value_name(*source),
+            completion_submit_call(DIRECTORY_NEXT_SUBMIT, &submit_arguments),
         )
         .map_err(|_| BackendFailure::TextEmission)?;
         let captured_destination = self.capture_completion_value(
@@ -1047,16 +1178,14 @@ impl FunctionEmitter<'_, '_> {
         let completed_value = format!("%{}", self.next_temporary()?);
         let completed_error = format!("%{}", self.next_temporary()?);
         let result_llvm = llvm_type(self.program, result_type)?;
-        let (join_call, extra_load, mapper_arguments) = match mapping {
+        let target = self.qualification.target();
+        let (join, open_outcome, mapper_arguments) = match mapping {
             CompletionMapping::Open { outcome } => {
                 let outcome = self.completion_storage_pointer(&outcome)?;
                 let completed_outcome = format!("%{}", self.next_temporary()?);
                 (
-                    format!(
-                        "call void @wf__completion_file_open_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error}, ptr {outcome})"
-                    ),
-                    format!("  {completed_outcome} = load i32, ptr {outcome}\n"),
+                    target.file_open_join_symbol(),
+                    Some((outcome, completed_outcome.clone())),
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, i32 {completed_outcome}"
                     ),
@@ -1066,11 +1195,8 @@ impl FunctionEmitter<'_, '_> {
                 let start = self.load_completion_value(start)?;
                 let extent = self.load_completion_value(extent)?;
                 (
-                    format!(
-                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
-                         ptr {raw_error})"
-                    ),
-                    String::new(),
+                    target.file_join_symbol(),
+                    None,
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, i64 {start}, i64 {extent}"
                     ),
@@ -1086,11 +1212,11 @@ impl FunctionEmitter<'_, '_> {
                 let start = self.load_completion_value(start)?;
                 let extent = self.load_completion_value(extent)?;
                 (
-                    format!(
-                        "call void @wf__completion_file_join(ptr {token}, ptr {raw_value}, \
-                     ptr {raw_error})"
-                    ),
-                    String::new(),
+                    // The enumeration submit is the runtime's own on every
+                    // target, so its record is consumed through the runtime's
+                    // own join beside it.
+                    FILE_JOIN,
+                    None,
                     format!(
                         "i64 {completed_value}, i32 {completed_error}, {destination_type} \
                          {destination}, i64 {start}, i64 {extent}"
@@ -1099,19 +1225,28 @@ impl FunctionEmitter<'_, '_> {
             }
         };
         let mapper = completion_mapper_symbol(operation);
+        let retirement = |result: &str| {
+            completion_retirement(&CompletionRetirement {
+                join,
+                record: &token,
+                raw_value: &raw_value,
+                raw_error: &raw_error,
+                open_outcome: open_outcome
+                    .as_ref()
+                    .map(|(slot, name)| (slot.as_str(), name.as_str())),
+                value: &completed_value,
+                error: &completed_error,
+                mapper,
+                mapper_arguments: &mapper_arguments,
+                result,
+                result_type: &result_llvm,
+            })
+        };
         let Some((result_slot, submitted)) = not_submitted else {
             // Every path through this operation submitted, so the wait is the
             // whole join: no branch, no phi and no block of its own.
-            return writeln!(
-                self.output,
-                "  {join_call}\n  \
-                 {completed_value} = load i64, ptr {raw_value}\n  \
-                 {completed_error} = load i32, ptr {raw_error}\n  \
-                 {extra_load}\
-                 {} = call {result_llvm} @{mapper}({mapper_arguments})",
-                value_name(result),
-            )
-            .map_err(|_| BackendFailure::TextEmission);
+            return write!(self.output, "{}", retirement(&value_name(result)))
+                .map_err(|_| BackendFailure::TextEmission);
         };
         let direct = format!("%{}", self.next_temporary()?);
         let completed = format!("%{}", self.next_temporary()?);
@@ -1124,15 +1259,12 @@ impl FunctionEmitter<'_, '_> {
              {inline_label}:\n  \
              {direct} = load {result_llvm}, ptr {result_slot}\n  \
              br label %{done_label}\n\
-             {wait_label}:\n  \
-             {join_call}\n  \
-             {completed_value} = load i64, ptr {raw_value}\n  \
-             {completed_error} = load i32, ptr {raw_error}\n  \
-             {extra_load}\
-             {completed} = call {result_llvm} @{mapper}({mapper_arguments})\n  \
+             {wait_label}:\n\
+             {}  \
              br label %{done_label}\n\
              {done_label}:\n  \
              {} = phi {result_llvm} [ {direct}, %{inline_label} ], [ {completed}, %{wait_label} ]",
+            retirement(&completed),
             value_name(result),
         )
         .map_err(|_| BackendFailure::TextEmission)

@@ -84,56 +84,6 @@ void wf__completion_file_close_submit(
     void *record
 );
 
-void wf__completion_directory_next_submit(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t *position,
-    void *record
-);
-
-int64_t wf__completion_file_pread_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t file_offset
-);
-
-int64_t wf__completion_file_write_direct(
-    int descriptor,
-    const void *buffer,
-    uint64_t count
-);
-
-int wf__completion_file_open_at_direct(
-    int directory,
-    const char *path,
-    int flags,
-    unsigned mode,
-    unsigned has_mode,
-    unsigned expected_kind,
-#if defined(_WIN32)
-    unsigned descriptor_class,
-#endif
-    int *error_code,
-    unsigned *open_outcome
-);
-
-void wf__completion_file_open_join(
-    const void *record,
-    int64_t *value,
-    int *error_code,
-    unsigned *open_outcome
-);
-
-int wf__completion_file_status_direct(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity
-);
-
-int wf__completion_file_close_direct(int descriptor);
-
 /* The selected family's qualified directory-enumeration facility through the
  * same target-progress normalization as typed file operations --
  * `__getdirentries64` on Darwin, `getdents64` on Linux.  EINTR and readiness
@@ -142,11 +92,19 @@ int wf__completion_file_close_direct(int descriptor);
  * in the descriptor and leaves the cell untouched.  The native record the
  * batch holds differs by family and is decoded by the emitted shim, not
  * here. */
-int64_t wf__completion_directory_next_direct(
+void wf__completion_directory_next_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
-    int64_t *position
+    int64_t *position,
+    void *record
+);
+
+void wf__completion_file_open_join(
+    const void *record,
+    int64_t *value,
+    int *error_code,
+    unsigned *open_outcome
 );
 
 /* The join waits in place on the record with the scheduler core's own

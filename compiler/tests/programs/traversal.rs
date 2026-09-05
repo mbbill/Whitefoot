@@ -36,7 +36,12 @@ fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
     assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
     assert!(llvm.contains("@wf.sys.directory_next.v1"));
     assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    assert!(llvm.contains("wf__completion_directory_next_direct"));
+    // One lowering: the enumeration is submitted into the record the wrapper
+    // reserved in its own frame and joined there
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8), and the submit
+    // is the runtime's own on every target because the enumeration facility
+    // has no target column of its own.
+    assert!(llvm.contains("wf__completion_directory_next_submit"));
     assert!(!llvm.contains("call i64 @__getdirentries64"));
 
     let program = build_program(&llvm);
@@ -255,16 +260,19 @@ fn the_component_validation_precedes_every_host_call() {
     assert!(shim.contains("%terminating = icmp eq i32 %byte.value, 0"));
 
     let open_block = shim.find("\nopen:\n").expect("the admitted-name block");
+    // One lowering: the admitted name is submitted and the record joined
+    // there (`research/investigations/io-model/PARK-ON-MISS.md` §8), so the
+    // operation the rejection path must not reach is the submission.
     let host_call = shim
-        .find("@wf__completion_file_open_at_direct")
+        .find("@wf__completion_file_open_at_submit")
         .expect("the typed directory-relative open");
     assert!(
         host_call > open_block,
-        "the host call must be reachable only from the admitted-name block"
+        "the operation must be reachable only from the admitted-name block"
     );
     let invalid_block = shim.find("\ninvalid:\n").expect("the rejection block");
     assert!(
-        !shim[invalid_block..].contains("@wf__completion_file_open_at_direct"),
-        "the rejection path must make no host call"
+        !shim[invalid_block..].contains("@wf__completion_file_open_at_submit"),
+        "the rejection path must submit nothing"
     );
 }

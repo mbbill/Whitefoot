@@ -72,7 +72,6 @@ int main(int argc, char **argv) {
     DWORD written = 0;
     HANDLE native;
     int descriptor;
-    unsigned char direct_buffer = 0;
     wf_completion_token tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u];
     unsigned char buffers[WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u];
     wf_windows_bridge_probe_submit full;
@@ -121,17 +120,9 @@ int main(int argc, char **argv) {
         (void)_close(descriptor);
         return wf_windows_bridge_probe_fail("could not associate the file");
     }
-    if (wf__completion_file_pread_direct(
-            descriptor,
-            &direct_buffer,
-            1,
-            0
-        ) != 1
-        || direct_buffer != (unsigned char)'x') {
-        return wf_windows_bridge_probe_fail(
-            "direct pread on the associated handle did not complete exactly"
-        );
-    }
+    /* The direct pread that used to warm this handle went with the direct
+     * family (design section 8); the submitted reads below are the only route
+     * an associated handle has now. */
     memset(tokens, 0, sizeof(tokens));
     memset(buffers, 0, sizeof(buffers));
     for (index = 0; index < WF_WINDOWS_BRIDGE_PROBE_CAPACITY; ++index) {
@@ -218,8 +209,18 @@ int main(int argc, char **argv) {
             "an IOCP-eligible request used a direct fallback"
         );
     }
-    if (wf__completion_file_close_direct(descriptor) != 0) {
-        return wf_windows_bridge_probe_fail("could not close the descriptor");
+    {
+        wf_completion_token close_token;
+        int64_t value = -1;
+        int error_code = -1;
+        memset(&close_token, 0, sizeof(close_token));
+        wf__completion_file_close_submit(descriptor, &close_token);
+        wf__completion_file_join(&close_token, &value, &error_code);
+        if (value != 0 || error_code != 0) {
+            return wf_windows_bridge_probe_fail(
+                "could not close the descriptor"
+            );
+        }
     }
     if (DeleteFileA(argv[1]) == FALSE) {
         return wf_windows_bridge_probe_fail("could not remove the fixture");

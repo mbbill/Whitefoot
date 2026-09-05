@@ -363,8 +363,22 @@ before the code lands.
    entries moved to `windows_completion.h`, and both platforms state the
    same reservation, but nothing Windows was compiled or run here (this
    host has no Windows toolchain, and the gate's matrix is Linux and macOS).
-   The port is slice 3's Windows twins bullet and stays there. The emitter
-   half of (c), the one lowering, is next.
+   The port is slice 3's Windows twins bullet and stays there.
+
+   The emitter half of (c) landed next: every ordinary I/O wrapper in
+   `emitter/system.rs` reserves the record in its own `alwaysinline` frame,
+   submits and joins, and derived release closes through one shared
+   `wf.sys.close` helper that does the same; the direct family, the
+   qualification rows that named it and every `declare` of a `_direct` symbol
+   are gone from the compiler, the bridge, the Windows runtime and the
+   harness, and `module_requires_completion_runtime` is now "the module calls
+   a submit". Two things the one lowering exposed and this step answered: the
+   `open_file`/`open_directory` kind check and its close on mismatch left the
+   wrapper for the runtime that already decides them from `expected_kind`, so
+   no emitted code holds a `struct stat`; and a thread joining its own
+   submission now runs that record itself when it is still queued
+   (`wf_file_adapter_claim_own`), because with helpers pinned an ordinary
+   write would otherwise wait behind an unrelated blocked one.
 3. **Runtime** (design §7): the core replaces both parallel runtimes and both
    writer schedulers; the bridge, adapters and rings find the record by
    address and lose their pools, capacity waits and tokens; the I/O joins park

@@ -284,6 +284,21 @@ void wf_file_complete_record(
 
 /* Executes at most `budget` queued requests on the calling thread.  It never
  * runs a Whitefoot continuation. */
+/* Takes one still-queued record off the queue for the thread waiting on it,
+ * and runs a record so taken.
+ *
+ * The caller must be the thread waiting on this exact record, and must run
+ * every record the claim answered 1 for.  See the definitions for why this is
+ * the one queue visit a joining thread may make while helpers exist. */
+int wf_file_adapter_claim_own(
+    wf_file_adapter *adapter,
+    wf_completion_record *record
+);
+void wf_file_adapter_run_claimed(
+    wf_file_adapter *adapter,
+    wf_completion_record *record
+);
+
 size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget);
 
 size_t wf_file_adapter_queued(const wf_file_adapter *adapter);

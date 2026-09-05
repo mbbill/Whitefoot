@@ -383,11 +383,24 @@ fn emit_llvm_for(
         // there is no weak body that could stand in for the runtime, and a
         // link that omits it is an unresolved symbol rather than a program
         // that silently runs a second arm (design §8).
-        text.push_str(if system_target.is_windows() {
+        //
+        // The qualified wrappers reach the same entries, and declared the ones
+        // they name through the system interface above, so the two sets
+        // overlap wherever a module both hands an operation out and calls a
+        // wrapper. One module declares each entry once, the same way the
+        // resource record and the system interface share a host symbol.
+        let runtime = if system_target.is_windows() {
             completion::COMPLETION_WINDOWS_RUNTIME_DECLARATIONS
         } else {
             completion::COMPLETION_RUNTIME_DECLARATIONS
-        });
+        };
+        for declaration in runtime.lines() {
+            if system_declarations.contains(declaration) {
+                continue;
+            }
+            text.push_str(declaration);
+            text.push('\n');
+        }
         // Emitted only where a module actually asks for a window, exactly as
         // the split budget's fallback is, so a module that stages no loop
         // names no such symbol at all.
@@ -1980,7 +1993,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         system::emit_resource_release(
                             self.qualification,
                             &mut self.output,
-                            &mut self.temporary,
                             contract,
                             &value_name,
                         )?;

@@ -60,28 +60,6 @@ int wf__windows_stdout_descriptor(void);
 int wf__windows_stderr_descriptor(void);
 int64_t wf__windows_diagnostic_write(const void *bytes, uint64_t length);
 
-int64_t wf__completion_file_pread_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t file_offset
-);
-int64_t wf__completion_file_write_direct(
-    int descriptor,
-    const void *buffer,
-    uint64_t count
-);
-int wf__completion_file_open_at_direct(
-    int directory,
-    const char *path,
-    int flags,
-    unsigned mode,
-    unsigned has_mode,
-    unsigned expected_kind,
-    unsigned descriptor_class,
-    int *error_code,
-    unsigned *open_outcome
-);
 int wf__windows_completion_file_open_at_worker(
     HANDLE root,
     const char *path,
@@ -121,18 +99,6 @@ int64_t wf__windows_completion_file_write_worker(
 );
 int64_t wf__windows_completion_directory_next_worker(
     HANDLE directory,
-    void *buffer,
-    uint64_t count,
-    int64_t *position
-);
-int wf__completion_file_status_direct(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity
-);
-int wf__completion_file_close_direct(int descriptor);
-int64_t wf__completion_directory_next_direct(
-    int descriptor,
     void *buffer,
     uint64_t count,
     int64_t *position

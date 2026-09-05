@@ -216,11 +216,10 @@ fn first_argument<'line>(line: &'line str, callee: &str) -> Option<&'line str> {
 /// A publication is one source `publish_all` call. In the emitted program each
 /// appears in exactly one of two forms: a call into the out-of-line
 /// `publish_all`, whose first argument is the descriptor, or — where the host
-/// inliner expanded that site — the typed direct target call of the expanded
-/// copy, carrying the same literal descriptor. The out-of-line body's own
-/// target call names the parameter instead of a literal and is not a
-/// publication site; it is the one transfer the one source `write_once` site
-/// emits.
+/// inliner expanded that site — the typed submission of the expanded copy,
+/// carrying the same literal descriptor. The out-of-line body's own submission
+/// names the parameter instead of a literal and is not a publication site; it
+/// is the one transfer the one source `write_once` site emits.
 fn publications() -> Vec<u32> {
     let mut descriptors = Vec::new();
     for line in program().lines() {
@@ -228,7 +227,7 @@ fn publications() -> Vec<u32> {
             continue;
         };
         let argument = match target {
-            "wf_publish_all" | "wf__completion_file_write_direct" => first_argument(line, target),
+            "wf_publish_all" | "wf__completion_file_write_submit" => first_argument(line, target),
             _ => None,
         };
         let Some(argument) = argument else {
@@ -536,7 +535,7 @@ fn open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor() {
     // lease itself. No concatenation, no ambient working-directory lookup.
     assert!(row.contains("%text = extractvalue { ptr, i64 } %path, 0"));
     assert!(row.contains(
-        "call i32 @wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
+        "call void @wf__completion_file_open_at_submit(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, ptr %record)"
     ));
     for forbidden in [
         "@calloc",
@@ -551,9 +550,9 @@ fn open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor() {
             "the open path must not reach {forbidden}:\n{row}"
         );
     }
-    // In the finished program every source open site is one typed direct
-    // completion call against a bound `DirectoryRead`; the native adapter
-    // below that call owns `openat`. The only native open visible here is the
+    // In the finished program every source open site is one typed submission
+    // against a bound `DirectoryRead`; the native adapter below that
+    // submission owns `openat`. The only native open visible here is the
     // bootstrap's one-time acquisition of the initial directory [QUAL-3].
     // The search has exactly five open sites, derived from the source and not
     // from the module: `main` opens the search root with `open_directory` and,
@@ -562,21 +561,25 @@ fn open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor() {
     // `open_directory`, and each regular file with `open_file`.
     assert_eq!(
         program()
-            .matches("@wf__completion_file_open_at_direct(")
+            .matches("@wf__completion_file_open_at_submit(")
             .count(),
         5
     );
     assert_eq!(program().matches("@open(").count(), 1);
     assert!(program().contains("@open(ptr nonnull @.wf.sys.working.directory"));
-    let opening = basic_block(entry(), "@wf__completion_file_open_at_direct(");
+    let opening = basic_block(entry(), "@wf__completion_file_open_at_submit(");
     let host_calls: Vec<_> = call_targets(opening)
         .into_iter()
         .filter(|target| !target.starts_with("llvm."))
         .collect();
     assert_eq!(
         host_calls,
-        vec!["wf__completion_file_open_at_direct"],
-        "the open is the only host call on its path:\n{opening}"
+        vec![
+            "wf__completion_file_open_at_submit",
+            "wf__completion_file_open_join"
+        ],
+        "the open is the only operation on its path, and it is submitted and \
+         then joined:\n{opening}"
     );
     // The entry's first open is the search root's, which the name route
     // reaches, so its block also holds the one bounded copy that terminates
@@ -596,22 +599,22 @@ fn open_read_is_one_direct_relative_open_on_the_directorys_own_descriptor() {
 }
 
 /// §9.1 row 7 — `read_at` and `write_once` consume statically authorized
-/// ranges, make one compiler-owned typed target call, sanitize one target
-/// count into an absolute endpoint, and use a cold outcome mapper. Target
-/// target edge-case tests separately pin that no-progress retries produce at most one
-/// progress-producing transfer.
+/// ranges, submit one compiler-owned typed operation and join it, sanitize one
+/// target count into an absolute endpoint, and use a cold outcome mapper.
+/// Target edge-case tests separately pin that no-progress retries produce at
+/// most one progress-producing transfer.
 #[test]
 fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     let module = emitted();
     for (operation, facility, mapper) in [
         (
             "wf.sys.read_at.v1",
-            "@wf__completion_file_pread_direct(",
+            "@wf__completion_file_pread_submit(",
             "wf.sys.read.completion",
         ),
         (
             "wf.sys.write_once.v1",
-            "@wf__completion_file_write_direct(",
+            "@wf__completion_file_write_submit(",
             "wf.sys.write.completion",
         ),
     ] {
@@ -623,18 +626,36 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
             !row.contains("@wf_trap"),
             "a system transfer must not retain a runtime range trap:\n{row}"
         );
-        // A zero-length range issues no host call at all.
+        // One lowering, so the wrapper has no branch at all: it reserves its
+        // record, submits, joins and maps
+        // (`research/investigations/io-model/PARK-ON-MISS.md` §8).
         assert!(
-            row.contains("%vacant = icmp eq i64 %extent, 0"),
-            "{operation} must short-circuit an empty range:\n{row}"
+            row.contains("%record = alloca [128 x i8], align 8"),
+            "{operation} reserves its record in its own frame:\n{row}"
         );
-        // Exactly one typed target call, and one check of the count it reported.
+        assert!(
+            !row.contains("br "),
+            "{operation} takes one path with no branch:\n{row}"
+        );
+        // Exactly one typed target submission, joined once.
         assert_eq!(
             row.matches(facility).count(),
             1,
-            "{operation} must make one typed target call:\n{row}"
+            "{operation} must make one typed submission:\n{row}"
+        );
+        assert_eq!(
+            row.matches("@wf__completion_file_join(").count(),
+            1,
+            "{operation} must join it once:\n{row}"
         );
         let mapped = approved_row(module, mapper);
+        // A zero-length range issues no host transfer: the runtime completes
+        // such a record with no external action, and the mapper answers with
+        // the endpoint the range started at.
+        assert!(
+            mapped.contains("%empty = icmp eq i64 %extent, 0"),
+            "{operation}'s mapper must answer an empty range:\n{mapped}"
+        );
         assert!(mapped.contains("%progress = icmp sgt i64"));
         assert_eq!(mapped.matches("@wf.sys.io.error(").count(), 1);
         for forbidden in [
@@ -721,13 +742,13 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     // inliner left standing.
     assert_eq!(
         program
-            .matches("@wf__completion_file_pread_direct(")
+            .matches("@wf__completion_file_pread_submit(")
             .count(),
         1
     );
     assert_eq!(
         program
-            .matches("@wf__completion_file_write_direct(")
+            .matches("@wf__completion_file_write_submit(")
             .count(),
         1,
         "one transfer per surviving copy of the one source write_once site"
@@ -743,25 +764,43 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     assert_eq!(published.iter().filter(|fd| **fd == 1).count(), 2);
     assert_eq!(published.iter().filter(|fd| **fd == 2).count(), 3);
     // Each transfer is alone on its path: the block that holds it computes an
-    // address and makes one call, so nothing allocates, copies the transferred
-    // bytes, takes a lock, or touches a signal disposition beside the transfer
-    // [QUAL-3].
+    // address, submits the operation and joins it, so nothing allocates,
+    // copies the transferred bytes, takes a lock, or touches a signal
+    // disposition beside the transfer [QUAL-3]. Two calls now instead of one,
+    // because a transfer is a submission and the join that consumes its
+    // terminal completion
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8).
+    let mut transfer_paths = 0;
     for function in program_functions() {
-        for site in [
-            "@wf__completion_file_pread_direct(",
-            "@wf__completion_file_write_direct(",
+        for submit in [
+            "wf__completion_file_pread_submit",
+            "wf__completion_file_write_submit",
         ] {
-            if !function.contains(site) {
+            let site = format!("@{submit}(");
+            if !function.contains(&site) {
                 continue;
             }
-            let block = basic_block(function, site);
+            let block = basic_block(function, &site);
+            // Only real calls are read: `llvm.lifetime` marks the live range
+            // of the record block and the two raw slots the wrapper reserved
+            // in this frame, and is not a call to anything.
+            let host_calls: Vec<_> = call_targets(block)
+                .into_iter()
+                .filter(|target| !target.starts_with("llvm."))
+                .collect();
             assert_eq!(
-                calls(block),
-                1,
-                "{site} must be alone on its path:\n{block}"
+                host_calls,
+                vec![submit, "wf__completion_file_join"],
+                "{submit} must be alone on its path, with its own join:\n{block}"
             );
+            transfer_paths += 1;
         }
     }
+    assert_eq!(
+        transfer_paths, 2,
+        "both of wfgrep's transfer sites are read here"
+    );
+
     // One-time normalization belongs to the bootstrap, not to any transfer.
     assert_eq!(program.matches("@signal(").count(), 1);
     assert!(program.contains("@signal(i32 13,"));
@@ -788,71 +827,68 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
     }
 }
 
-/// §9.1 row 8 — a closing owner releases with at most one direct native close
+/// §9.1 row 8 — a closing owner releases with at most one native close
 /// attempt, and an ambiguous close is never retried.
 #[test]
 fn every_release_close_is_one_discarded_attempt() {
     // The three closing resource kinds close: `DirectoryRead`, `DirectorySource`,
     // and `ReadFile`. Across the command and its retained helper definitions,
-    // the optimizer retains nine compiler-derived release sites. FilePermit
-    // itself erases before emission. The typed file adapter now validates a
-    // provisional descriptor before publishing it as a Whitefoot value, so
-    // its failure cleanup belongs to the adapter rather than to this IR.
+    // the optimizer retains ten compiler-derived release sites. FilePermit
+    // itself erases before emission. The typed file adapter validates a
+    // provisional descriptor before publishing it as a Whitefoot value, so its
+    // failure cleanup belongs to the adapter rather than to this IR.
+    //
+    // The number was nine until a close became one submission into the record
+    // its own frame reserved and one join of that record
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The emitter
+    // still writes exactly sixteen release sites, the same sixteen it wrote
+    // before; what moved is what the host optimizer can merge. Two closing
+    // edges of `wf__main_body` used to end in an identical one-instruction
+    // tail and were folded into one; each now ends in a two-call sequence over
+    // its own record block, which is not the same tail, so both stand. No
+    // release was added and none was removed.
     let closes = program()
-        .matches("@wf__completion_file_close_direct(")
+        .matches("@wf__completion_file_close_submit(")
         .count();
     assert_eq!(
         closes,
-        9,
-        "all nine closing return edges must remain:\n{}",
+        10,
+        "all ten closing return edges must remain:\n{}",
         program()
     );
-    // Every close result is named once and never read again. Nothing compares
-    // it, branches on it, or feeds it to a retry: the diagnostic is discarded,
-    // which makes "never retry an ambiguous fd close" a property of emitted
-    // code rather than a convention [SYS-5]. This applies equally to normal
-    // resource releases. A provisional descriptor that fails type validation
+    // The close diagnostic is discarded and an ambiguous close is never
+    // retried, and that is now a property of the shape rather than of a
+    // name: a release produces no value at all. The submit answers nothing,
+    // and the join beside it publishes into slots the helper reads back
+    // nowhere, so there is nothing for a caller to compare, branch on, or feed
+    // to a retry [SYS-5]. A provisional descriptor that fails type validation
     // is closed inside the typed file adapter before this IR can observe it.
-    // Value names are function-local, so each function is read on its own.
     let mut releases = 0;
-    let mut provisional_cleanups = 0;
     for function in program_functions() {
         for line in function.lines() {
             let trimmed = line.trim_start();
-            if !trimmed.contains("@wf__completion_file_close_direct(") {
+            if !trimmed.contains("@wf__completion_file_close_submit(") {
                 continue;
             }
-            let name = trimmed
-                .split_once(" = ")
-                .map(|(name, _)| name)
-                .unwrap_or_else(|| panic!("a close result must be named:\n{line}"));
-            let occurrences = function.matches(&format!("{name} ")).count()
-                + function.matches(&format!("{name},")).count()
-                + function.matches(&format!("{name})")).count();
-            if name.starts_with("%release.") {
-                releases += 1;
-            } else {
-                assert!(
-                    name.starts_with("%inspection.close") || name.starts_with("%kind.close"),
-                    "an unclassified close site escaped the release/provisional split: {name}"
-                );
-                provisional_cleanups += 1;
-            }
-            assert_eq!(
-                occurrences, 1,
-                "a close diagnostic must be discarded, not inspected or retried: {name}"
+            assert!(
+                trimmed.starts_with("call void @wf__completion_file_close_submit(")
+                    || trimmed.starts_with("tail call void @wf__completion_file_close_submit("),
+                "a close answers nothing a caller could act on:\n{line}"
             );
+            releases += 1;
         }
     }
     assert_eq!(
-        releases, 9,
-        "all nine resource closes must be compiler-derived releases"
+        releases, closes,
+        "every close site is a compiler-derived release"
     );
-    assert_eq!(
-        provisional_cleanups, 0,
-        "typed-open validation must keep provisional cleanup outside Whitefoot IR"
+    // Each of them is joined exactly once, and the joined value and error are
+    // written into the release frame's own slots and read by nobody.
+    assert!(
+        program().matches("@wf__completion_file_join(").count() >= closes,
+        "every submitted close is joined:\n{}",
+        program()
     );
-    assert_eq!(releases + provisional_cleanups, closes);
 }
 
 /// §9.1 rows 9 and 10 — the value releases and the `Output` release reach no
@@ -868,8 +904,8 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     for forbidden in [
         "@close(i32 1)",
         "@close(i32 2)",
-        "@wf__completion_file_close_direct(i32 1)",
-        "@wf__completion_file_close_direct(i32 2)",
+        "@wf__completion_file_close_submit(i32 1)",
+        "@wf__completion_file_close_submit(i32 2)",
         "@fflush",
         "@fclose",
         "@fsync",
@@ -925,21 +961,20 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             // signal normalization [QUAL-3].
             "open" | "signal"
             // The first slice's own host operations, including the [SYS-14]
-            // enumeration facility this target's [QUAL-1] row names.
+            // enumeration facility this target's [QUAL-1] row names. Each is
+            // one submission into the record its own frame reserved and one
+            // join of that record: the one lowering
+            // (`research/investigations/io-model/PARK-ON-MISS.md` §8).
             | "openat" | "fstat" | "pread" | "write" | "close"
-            | "wf__completion_file_open_at_direct"
-            | "wf__completion_file_status_direct"
-            | "wf__completion_file_close_direct"
-            | "wf__completion_file_pread_direct" | "wf__completion_file_write_direct"
-            | "wf__completion_directory_next_direct"
+            | "wf__completion_file_open_at_submit"
+            | "wf__completion_file_close_submit"
+            | "wf__completion_file_pread_submit" | "wf__completion_file_write_submit"
+            | "wf__completion_directory_next_submit"
+            | "wf__completion_file_join" | "wf__completion_file_open_join"
             // The factory's credit count, kept by the floor [SYS-10]: one
             // atomic word, no host facility, no handle table. `reserve_file`
             // spends a credit through it and an explicit close returns one.
             | "wf__file_reserve"
-            // The selected family's native error-slot access on a failed host
-            // operation: `__error` on Darwin, `__errno_location` on Linux.
-            // Both names are listed because this census runs on both.
-            | "__error" | "__errno_location"
             // The lease length pass and the path NUL scan.
             | "strlen" | "memchr"
             // Buffer allocation and language cleanup.
@@ -1095,9 +1130,9 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
         };
         for transfer in [
             "@openat(",
-            "@wf__completion_file_pread_direct(",
-            "@wf__completion_file_write_direct(",
-            "@wf__completion_directory_next_direct(",
+            "@wf__completion_file_pread_submit(",
+            "@wf__completion_file_write_submit(",
+            "@wf__completion_directory_next_submit(",
         ] {
             let Some(first) = function.find(transfer) else {
                 continue;

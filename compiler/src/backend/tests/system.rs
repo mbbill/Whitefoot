@@ -594,13 +594,18 @@ fn every_release_action_emits_exactly_its_contract() {
     let llvm = compile(source);
     // The one native close attempt is the `DirectoryRead` release; `Args`,
     // both `Output` owners, `FileFactory`, and the returned `ExitStatus`
-    // release with no host call at all [SYS-5].
+    // release with no host call at all [SYS-5]. A close is submitted into the
+    // record the releasing frame reserved and joined there, like every other
+    // operation (`research/investigations/io-model/PARK-ON-MISS.md` §8), so
+    // the one attempt is one call of the one close helper.
+    assert_eq!(llvm.matches("call void @wf.sys.close(i32").count(), 1);
     assert_eq!(
-        llvm.matches("call i32 @wf__completion_file_close_direct(i32")
+        llvm.matches("call void @wf__completion_file_close_submit(i32")
             .count(),
         1
     );
-    assert!(llvm.contains("declare i32 @wf__completion_file_close_direct(i32)"));
+    assert!(llvm.contains("declare void @wf__completion_file_close_submit(i32, ptr)"));
+    assert!(llvm.contains("declare void @wf__completion_file_join(ptr, ptr, ptr)"));
     // A logical consume and a source detach are explicit releases that emit
     // no code; the drop marker is still present for each owner.
     assert_eq!(llvm.matches("  ; drop %v").count(), 5);
@@ -955,7 +960,15 @@ fn a_facility_without_an_approved_record_is_a_missing_mapping() {
 }
 
 #[test]
-fn component_open_flags_and_status_abis_are_target_exact() {
+fn component_open_flags_are_target_exact() {
+    // The descriptor-status ABI this used to pin beside the flags — the
+    // facility symbol, the record size and the `st_mode` offset — is gone from
+    // the target row with the wrapper that read it. The kind an open promises
+    // is now stated as `expected_kind` on the submit and decided by whoever
+    // executes the operation, so no emitted code holds a `struct stat` or
+    // knows where its mode byte is
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The flags
+    // remain the target's own and are still pinned exactly.
     let cases = [
         (
             "aarch64-apple-darwin",
@@ -963,9 +976,6 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "wf__completion_file_status_direct",
-            144,
-            4,
         ),
         (
             "x86_64-apple-darwin",
@@ -973,9 +983,6 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "wf__completion_file_status_direct",
-            144,
-            4,
         ),
         (
             "aarch64-unknown-linux-gnu",
@@ -983,9 +990,6 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0000_4000,
             0x0000_c000,
             0x0000_8800,
-            "wf__completion_file_status_direct",
-            128,
-            16,
         ),
         (
             "x86_64-unknown-linux-gnu",
@@ -993,32 +997,10 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0001_0000,
             0x0003_0000,
             0x0002_0800,
-            "wf__completion_file_status_direct",
-            144,
-            24,
         ),
-        (
-            "x86_64-pc-windows-msvc",
-            510,
-            0,
-            1,
-            1,
-            "wf__completion_file_status_direct",
-            8,
-            0,
-        ),
+        ("x86_64-pc-windows-msvc", 510, 0, 1, 1),
     ];
-    for (
-        triple,
-        component_limit,
-        directory,
-        component_directory,
-        component_file,
-        status,
-        size,
-        mode,
-    ) in cases
-    {
+    for (triple, component_limit, directory, component_directory, component_file) in cases {
         let target = SystemTarget::for_triple(triple).expect("a supported target row");
         assert_eq!(target.component_limit(), component_limit, "{triple}");
         assert_eq!(target.directory_open_flags(), directory, "{triple}");
@@ -1033,9 +1015,6 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             component_file,
             "{triple}"
         );
-        assert_eq!(target.file_status_symbol(), status, "{triple}");
-        assert_eq!(target.file_status_size(), size, "{triple}");
-        assert_eq!(target.file_status_mode_offset(), mode, "{triple}");
     }
 }
 
@@ -1265,7 +1244,14 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
                 !llvm.contains("@wf.sys.open_file.v1(i1"),
                 "the proof-only permit must not enter the qualified open ABI"
             );
-            assert!(llvm.contains("i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"));
+            // One lowering: the wrapper states the kind it expects on the
+            // submit and reads the outcome the join publishes; it holds no
+            // status record and closes nothing itself (design §8).
+            assert!(llvm.contains("i32 1, ptr %record)"));
+            assert!(llvm.contains(
+                "call void @wf__completion_file_open_join(ptr %record, ptr %raw.value, \
+                 ptr %raw.error, ptr %raw.outcome)"
+            ));
             assert!(llvm.contains("@wf.sys.open_file.completion"));
             assert!(llvm.contains("i32 3, label %kind.directory.return"));
             assert!(llvm.contains("i32 4, label %kind.other.return"));
@@ -1319,10 +1305,14 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
             .expect("Darwin must qualify and emit directory_next")
             .into_string()
     });
+    // One lowering, so one normalizer: the wrapper submits, joins, and hands
+    // the batch to the operation's own completion mapper, which is where the
+    // portable-record normalization lives (design §8). It used to be emitted
+    // twice because the wrapper carried a copy.
     assert_eq!(
         llvm.matches("%record.extent = zext").count(),
-        2,
-        "the direct wrapper and completion mapper validate the same native record"
+        1,
+        "the one completion mapper validates the native record"
     );
     assert!(llvm.contains("%bounded.batch = icmp ule i64 %filled, %extent"));
     assert!(llvm.contains("br i1 %bounded.batch, label %normalize, label %tcb.defect"));
@@ -1340,10 +1330,13 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
     assert!(llvm.contains("%target.name = getelementptr inbounds i8, ptr %target.record, i64 3"));
     assert!(llvm.contains("%copy.invalid = or i1 %copy.nul, %copy.separator"));
     assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
-    assert!(llvm.contains("@wf__completion_directory_next_direct"));
+    // The enumeration facility has no target column of its own, so its submit
+    // is the runtime's on every target, exactly as its direct entry was
+    // (design §8); the shim never names the family facility itself.
+    assert!(llvm.contains("@wf__completion_directory_next_submit"));
     assert!(!llvm.contains("call i64 @__getdirentries64"));
     let optimized = host_optimized_module(&llvm);
-    assert!(optimized.contains("@wf__completion_directory_next_direct"));
+    assert!(optimized.contains("@wf__completion_directory_next_submit"));
 }
 
 /// The Linux row derives a name's length by one scan bounded by the record's
@@ -1419,24 +1412,28 @@ fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
     assert!(darwin.contains("%named.at = getelementptr inbounds i8, ptr %entry.record, i64 18"));
     assert!(darwin.contains("%named.native = load i16, ptr %named.at, align 1"));
     assert!(!darwin.contains("%name.span = sub nuw"));
-    // Both rows embed one walk, in both the direct route and the completion
-    // mapper: the record model varies, the normalization does not.
+    // Both rows embed one walk, in the one completion mapper the one lowering
+    // reaches: the record model varies, the normalization does not. It used to
+    // be emitted twice, once for the direct route the wrapper took and once
+    // for the mapper; the wrapper submits and joins now, so the mapper is the
+    // only place it lives (design §8).
     for module in [&linux, &darwin] {
-        assert_eq!(module.matches("%record.extent = zext").count(), 2);
+        assert_eq!(module.matches("%record.extent = zext").count(), 1);
         assert_eq!(
             module
                 .matches("%source.next = add i64 %source, %record.extent")
                 .count(),
-            2
+            1
         );
         assert_eq!(
             module
                 .matches("%fits = icmp ule i64 %after, %extent")
                 .count(),
-            2
+            1
         );
         assert!(module.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
-        assert!(module.contains("@wf__completion_directory_next_direct"));
+        assert!(module.contains("call void @wf__completion_directory_next_submit(i32 %list, "));
+        assert!(module.contains("declare void @wf__completion_directory_next_submit"));
     }
     assert!(!linux.contains("call i64 @getdents64"));
 }

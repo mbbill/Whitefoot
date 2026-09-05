@@ -588,6 +588,27 @@ static int wf_bridge_spin_for_completion(const wf_completion_record *record) {
  * The registration goes up before the epoch is captured and before the last
  * look at the state, so a publisher that misses the marker is one whose DONE
  * that look finds. */
+/* Runs the waiting thread's own submission here, if it is still queued.
+ *
+ * A thread that has submitted an operation and is now waiting for exactly that
+ * operation runs it rather than waiting behind whatever the helpers are
+ * already inside.  It is the one queue visit a joining thread may make while
+ * helpers exist, and it takes nothing that belongs to another frame: the
+ * record is this frame's own and this thread has nothing else to do until it
+ * is DONE (design §7).  The host call it then makes is a blocking one, so the
+ * doorbell rings before it, exactly as it does for every other host call this
+ * bridge makes on a caller's thread. */
+static int wf_bridge_run_own(wf_completion_record *record) {
+    if (wf_bridge_file_ready == 0
+        || !wf_file_adapter_claim_own(&wf_bridge_adapter, record)) {
+        return 0;
+    }
+    /* The host call below is outside every path the ring can see through. */
+    wf_bridge_flush_target();
+    wf_file_adapter_run_claimed(&wf_bridge_adapter, record);
+    return 1;
+}
+
 static void wf_bridge_wait_in_place(wf_completion_record *record) {
     for (;;) {
         unsigned state = wf_bridge_record_state(record);
@@ -599,6 +620,9 @@ static void wf_bridge_wait_in_place(wf_completion_record *record) {
         }
         if (state == WF_SCHED_COMPLETING) {
             wf_prim_yield();
+            continue;
+        }
+        if (wf_bridge_run_own(record)) {
             continue;
         }
         if (wf_bridge_progress()) {
@@ -723,24 +747,18 @@ static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
     }
 }
 
-/* One blocking direct host call.  A refusal the host gives it, including an
- * open that found no descriptor, is the outcome the program sees: the
- * descriptor an open needs is owned by its `FilePermit` [SYS-10], drawn from a
- * factory whose capacity is inside what the host provides, so a refusal here
- * is a genuine exhaustion and not a schedule's invention. */
-static wf_file_result wf_bridge_execute_direct(
-    const wf_file_request *request
-) {
-    return wf_file_execute_timed(&wf_bridge_adapter, request);
-}
-
 /* Executes the record's operation here and publishes it.
  *
  * This is where an operation with no kernel completion form ends up, and it
  * is the runtime's engine running the operation rather than a path an emitted
- * program can take (design §7.1, primitive 7).  It is the same host call on
- * the same thread the refused submission used to leave to the caller, with the
- * record published at the end. */
+ * program can take (design §7.1, primitive 7).  The blocking host call is the
+ * one the deleted direct family used to make on the caller's behalf; what
+ * changed is that the record is published at the end, so every submit path
+ * ends in a published record (design §7).  A refusal the host gives it,
+ * including an open that found no descriptor, is the outcome the program
+ * sees: the descriptor an open needs is owned by its `FilePermit` [SYS-10],
+ * drawn from a factory whose capacity is inside what the host provides, so a
+ * refusal here is a genuine exhaustion and not a schedule's invention. */
 static void wf_bridge_execute_here(wf_completion_record *record) {
     wf_file_result result;
     record->route = WF_COMPLETION_ROUTE_INLINE;
@@ -751,7 +769,7 @@ static void wf_bridge_execute_here(wf_completion_record *record) {
     );
     /* The host call below is outside every path the ring can see through. */
     wf_bridge_flush_target();
-    result = wf_bridge_execute_direct(&record->request);
+    result = wf_file_execute_timed(&wf_bridge_adapter, &record->request);
     wf_file_complete_record(record, &result);
 }
 
@@ -1113,165 +1131,6 @@ uint64_t wf__completion_window(
         }
     }
     return window == 0 ? 1u : window;
-}
-
-/* ------------------------------------------------------ the direct family */
-
-static int64_t wf_bridge_return_direct(wf_file_result result) {
-    if (result.head.value < 0) {
-        errno = result.head.error_code;
-    }
-    return result.head.value;
-}
-
-int64_t wf__completion_file_pread_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t file_offset
-) {
-    wf_file_request request;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_PREAD;
-    request.operation.pread.descriptor = descriptor;
-    request.operation.pread.buffer = buffer;
-    request.operation.pread.count = (size_t)count;
-    request.operation.pread.offset = file_offset;
-    if ((uint64_t)request.operation.pread.count != count) {
-        errno = EINVAL;
-        return -1;
-    }
-    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-}
-
-int64_t wf__completion_file_write_direct(
-    int descriptor,
-    const void *buffer,
-    uint64_t count
-) {
-    wf_file_request request;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_WRITE;
-    request.operation.write.descriptor = descriptor;
-    request.operation.write.buffer = buffer;
-    request.operation.write.count = (size_t)count;
-    if ((uint64_t)request.operation.write.count != count) {
-        errno = EINVAL;
-        return -1;
-    }
-    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-}
-
-int wf__completion_file_open_at_direct(
-    int directory,
-    const char *path,
-    int flags,
-    unsigned mode,
-    unsigned has_mode,
-    unsigned expected_kind,
-    int *error_code,
-    unsigned *open_outcome
-) {
-    wf_file_request request;
-    wf_file_result result;
-    if (path == NULL || has_mode > 1u
-        || expected_kind > WF_FILE_EXPECT_DIRECTORY || error_code == NULL
-        || open_outcome == NULL) {
-        errno = EINVAL;
-        return -1;
-    }
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_OPEN_AT;
-    request.operation.open_at.directory = directory;
-    request.operation.open_at.path = path;
-    request.operation.open_at.flags = flags;
-    request.operation.open_at.mode = mode;
-    request.operation.open_at.has_mode = has_mode;
-    request.operation.open_at.expected_kind =
-        (enum wf_file_expected_kind)expected_kind;
-    result = wf_bridge_execute_direct(&request);
-    *error_code = result.head.error_code;
-    *open_outcome = (unsigned)result.head.open_outcome;
-    return (int)wf_bridge_return_direct(result);
-}
-
-int wf__completion_file_status_direct(
-    int descriptor,
-    void *status,
-    uint64_t status_capacity
-) {
-    wf_file_request request;
-    wf_file_result result;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    if (status == NULL
-        || (uint64_t)(size_t)status_capacity != status_capacity) {
-        errno = EINVAL;
-        return -1;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_STATUS;
-    request.operation.status.descriptor = descriptor;
-    result = wf_bridge_execute_direct(&request);
-    if (result.head.value == 0) {
-        if ((uint64_t)result.status_size > status_capacity) {
-            errno = EOVERFLOW;
-            return -1;
-        }
-        memcpy(status, result.status, result.status_size);
-    }
-    return (int)wf_bridge_return_direct(result);
-}
-
-int wf__completion_file_close_direct(int descriptor) {
-    wf_file_request request;
-    /* The blocking host call below is outside every path the ring can see
-     * through, so the doorbell rings first. */
-    wf_bridge_flush_target();
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_CLOSE;
-    request.operation.close.descriptor = descriptor;
-    return (int)wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-}
-
-int64_t wf__completion_directory_next_direct(
-    int descriptor,
-    void *buffer,
-    uint64_t count,
-    int64_t *position
-) {
-#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
-    wf_file_request request;
-    if ((buffer == NULL && count != 0) || position == NULL
-        || (uint64_t)(size_t)count != count) {
-        errno = EINVAL;
-        return -1;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_FILE_DIRECTORY_NEXT;
-    request.operation.directory_next.descriptor = descriptor;
-    request.operation.directory_next.buffer = buffer;
-    request.operation.directory_next.count = (size_t)count;
-    request.operation.directory_next.position = position;
-    return wf_bridge_return_direct(wf_bridge_execute_direct(&request));
-#else
-    (void)descriptor;
-    (void)buffer;
-    (void)count;
-    (void)position;
-    errno = ENOTSUP;
-    return -1;
-#endif
 }
 
 void wf__writer_run_root(void *frame) {
