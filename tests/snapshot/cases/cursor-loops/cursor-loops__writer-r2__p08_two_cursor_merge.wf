@@ -1,4 +1,4 @@
-fn merge_total(left: own buffer<u64>, right: own buffer<u64>) -> total: own u64 reads(left, right) {
+fn merge_total<const left_cap: u64, const right_cap: u64>(left: own FixedVector<u64, left_cap>, right: own FixedVector<u64, right_cap>) -> total: own u64 reads(left, right) {
   doc "ACCEPT: two independent read cursors advance in three ordinary loops, each guarded by its own buffer length.";
   let left_len = len_of(left);
   let right_len = len_of(right);
@@ -54,14 +54,19 @@ fn merge_total(left: own buffer<u64>, right: own buffer<u64>) -> total: own u64 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left = buffer_new(3_u64, 0_u64);
+  let left = fixed_vector::<u64, 3>();
+  set left = place_back(vector: move left, value: 0_u64);
+  set left = place_back(vector: move left, value: 0_u64);
+  set left = place_back(vector: move left, value: 0_u64);
   set left[0_u64] = 1_u64;
   set left[1_u64] = 4_u64;
   set left[2_u64] = 6_u64;
-  let right = buffer_new(2_u64, 0_u64);
+  let right = fixed_vector::<u64, 2>();
+  set right = place_back(vector: move right, value: 0_u64);
+  set right = place_back(vector: move right, value: 0_u64);
   set right[0_u64] = 2_u64;
   set right[1_u64] = 3_u64;
-  let total = merge_total(left: move left, right: move right);
+  let total = merge_total::<3, 2>(left: move left, right: move right);
   let correct = total == 16_u64;
   if correct {
   } else {

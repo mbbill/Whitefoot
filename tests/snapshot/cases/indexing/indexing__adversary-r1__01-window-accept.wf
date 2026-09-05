@@ -1,4 +1,4 @@
-fn window_last(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
+fn window_last<const n: u64>(buf: own FixedVector<u8, n>, start: own u64, end: own u64) -> value: own u8 reads(buf) contract {
   define spare = len_of(buf);
   requires start < end;
   requires end <= spare;
@@ -10,8 +10,16 @@ fn window_last(buf: own buffer<u8>, start: own u64, end: own u64) -> value: own 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = buffer_new(8_u64, 5_u8);
-  let value = window_last(buf: move buf, start: 2_u64, end: 5_u64);
+  let buf = fixed_vector::<u8, 8>();
+  set buf = place_back(vector: move buf, value: 5_u8);
+  set buf = place_back(vector: move buf, value: 5_u8);
+  set buf = place_back(vector: move buf, value: 5_u8);
+  set buf = place_back(vector: move buf, value: 5_u8);
+  set buf = place_back(vector: move buf, value: 5_u8);
+  set buf = place_back(vector: move buf, value: 5_u8);
+  set buf = place_back(vector: move buf, value: 5_u8);
+  set buf = place_back(vector: move buf, value: 5_u8);
+  let value = window_last::<8>(buf: move buf, start: 2_u64, end: 5_u64);
   if value == 5_u8 {
   } else {
     return exit_status(code: 1_u8);

@@ -1,4 +1,4 @@
-fn read_at_index(bytes: own buffer<u8>, index: own u64) -> result: own u8 reads(bytes) contract {
+fn read_at_index<const n: u64>(bytes: own FixedVector<u8, n>, index: own u64) -> result: own u8 reads(bytes) contract {
   define spare = len_of(bytes);
   requires index < spare;
 } {
@@ -9,8 +9,12 @@ command fn main(command.args as args: own Args) -> status: own ExitStatus reads(
   doc "expect REJECT: [FN-8] the caller never establishes index < len_of(bytes) before calling read_at_index";
   region {
     let index = args_count(args: &args);
-    let bytes = buffer_new(4_u64, 0_u8);
-    let value = read_at_index(bytes: move bytes, index: index);
+    let bytes = fixed_vector::<u8, 4>();
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    set bytes = place_back(vector: move bytes, value: 0_u8);
+    let value = read_at_index::<4>(bytes: move bytes, index: index);
     return exit_status(code: value);
   }
 }

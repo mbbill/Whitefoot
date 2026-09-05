@@ -1,11 +1,11 @@
-fn weighted_sum(weights: &buffer<u8>) -> result: own u32 reads(weights) {
+fn weighted_sum(weights: own Slice<u8>) -> result: own u32 reads(weights) {
   let sum = 0_u32;
-  let length = len_of(deref(weights));
+  let length = len_of(weights);
   for (
     i in 0_u64..length,
     invariant per_byte: sum <= 255_u32 * i
   ) {
-    let w = deref(weights)[i];
+    let w = weights[i];
     let wide = cvt::<u8, u32>(w);
     set sum = sum + wide;
   }
@@ -14,13 +14,18 @@ fn weighted_sum(weights: &buffer<u8>) -> result: own u32 reads(weights) {
 
 command fn main() -> status: own ExitStatus pure {
   doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT from the P8 affine premise, but len_of(deref(weights)) is unbounded at this signature, so the checked sum + wide has no proved domain; adding a requires bound on the length makes the identical loop compile.";
-  let weights = buffer_new(4_u64, 0_u8);
+  let weights = fixed_vector::<u8, 4>();
+  set weights = place_back(vector: move weights, value: 0_u8);
+  set weights = place_back(vector: move weights, value: 0_u8);
+  set weights = place_back(vector: move weights, value: 0_u8);
+  set weights = place_back(vector: move weights, value: 0_u8);
   set weights[0_u64] = 10_u8;
   set weights[1_u64] = 20_u8;
   set weights[2_u64] = 30_u8;
   set weights[3_u64] = 40_u8;
   region {
-    let total = weighted_sum(weights: &weights);
+    let window = slice_of(&weights);
+    let total = weighted_sum(weights: window);
     if total == 100_u32 {
     } else {
       return exit_status(code: 1_u8);

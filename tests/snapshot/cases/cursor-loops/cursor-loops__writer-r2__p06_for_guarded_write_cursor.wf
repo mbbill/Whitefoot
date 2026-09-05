@@ -1,4 +1,4 @@
-fn count_nonzero(values: own buffer<u64>) -> kept: own u64 reads(values) {
+fn count_nonzero<const n: u64>(values: own FixedVector<u64, n>) -> kept: own u64 reads(values) {
   doc "ACCEPT: a counted for cursor walks the source while a second write cursor advances only when the source is nonzero.";
   let length = len_of(values);
   let write_at = 0_u64;
@@ -17,14 +17,20 @@ fn count_nonzero(values: own buffer<u64>) -> kept: own u64 reads(values) {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let source = buffer_new(6_u64, 0_u64);
+  let source = fixed_vector::<u64, 6>();
+  set source = place_back(vector: move source, value: 0_u64);
+  set source = place_back(vector: move source, value: 0_u64);
+  set source = place_back(vector: move source, value: 0_u64);
+  set source = place_back(vector: move source, value: 0_u64);
+  set source = place_back(vector: move source, value: 0_u64);
+  set source = place_back(vector: move source, value: 0_u64);
   set source[0_u64] = 4_u64;
   set source[1_u64] = 0_u64;
   set source[2_u64] = 9_u64;
   set source[3_u64] = 0_u64;
   set source[4_u64] = 1_u64;
   set source[5_u64] = 2_u64;
-  let kept = count_nonzero(values: move source);
+  let kept = count_nonzero::<6>(values: move source);
   let correct = kept == 4_u64;
   if correct {
   } else {

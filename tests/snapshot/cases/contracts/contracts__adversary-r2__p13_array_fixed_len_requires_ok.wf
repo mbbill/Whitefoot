@@ -1,4 +1,4 @@
-fn read_slot(values: own array<u8, 8>, index: own u64) -> output: own u8 pure contract {
+fn read_slot(values: own FixedVector<u8, 8>, index: own u64) -> output: own u8 reads(values) contract {
   define capacity = len_of(values);
   requires index < capacity;
 } {
@@ -7,7 +7,15 @@ fn read_slot(values: own array<u8, 8>, index: own u64) -> output: own u8 pure co
 
 command fn main() -> status: own ExitStatus pure {
   doc "EXPECT ACCEPT: define capacity = len_of(values) is a fixed-size array<u8, 8> constant length; the literal index 7 satisfies requires 7 < 8 statically with no runtime dependence on the array contents.";
-  let values = array_new::<u8, 8>(5_u8);
+  let values = fixed_vector::<u8, 8>();
+  set values = place_back(vector: move values, value: 5_u8);
+  set values = place_back(vector: move values, value: 5_u8);
+  set values = place_back(vector: move values, value: 5_u8);
+  set values = place_back(vector: move values, value: 5_u8);
+  set values = place_back(vector: move values, value: 5_u8);
+  set values = place_back(vector: move values, value: 5_u8);
+  set values = place_back(vector: move values, value: 5_u8);
+  set values = place_back(vector: move values, value: 5_u8);
   let output = read_slot(values: move values, index: 7_u64);
   if output == 5_u8 {
   } else {
