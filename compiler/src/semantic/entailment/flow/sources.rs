@@ -24,8 +24,8 @@ use super::super::state::{
     OutcomeRelation, Relation, close,
 };
 use super::super::term::{
-    CountedCaptureSide, PlaceProjection, PlaceRoot, PlaceTerm, ProjectedPlaceTerm, TermId,
-    TermKind, ZERO, integer_value, type_range,
+    CountedCaptureSide, MeasurePlacement, PlaceProjection, PlaceRoot, PlaceTerm,
+    ProjectedPlaceTerm, TermId, TermKind, ZERO, integer_value, type_range,
 };
 use super::super::{
     CountedAtomicDerivation, CountedBoundDerivation, CountedDerivationSet,
@@ -484,7 +484,7 @@ impl Analyzer<'_, '_> {
 
     /// The place term a binding names directly, for length facts over an
     /// allocated or borrowed collection.
-    fn bound_place(&self, binding: BindingId) -> PlaceTerm {
+    pub(super) fn bound_place(&self, binding: BindingId) -> PlaceTerm {
         PlaceTerm {
             root: PlaceRoot::Binding(binding),
             deref: false,
@@ -512,29 +512,59 @@ impl Analyzer<'_, '_> {
         ordinal: u32,
         value: &CheckedExpression,
         state: &mut FactState,
-    ) -> Option<MeasureRebind> {
+    ) -> Option<MeasureCarry> {
         let CheckedExpression::Binding { binding, ty, .. } = value else {
             return None;
         };
-        let measured = super::measured_kind(*ty)?;
-        let constant = super::type_constant(*ty);
-        let source = PlaceTerm {
+        let source = projected_place(PlaceTerm {
             root: PlaceRoot::Binding(*binding),
             deref: self.is_holder(*binding),
             fields: Vec::new(),
-        };
+        });
+        self.mint_measure_datums(
+            node_path,
+            ordinal,
+            MeasurePlacement::Rebind,
+            source,
+            *ty,
+            state,
+        )
+    }
+
+    /// [MSR-3] the first half of every placement below the entry and the
+    /// call: at the point before the statement's own kills, one immutable
+    /// datum per [MSR-1] measure of the source place, established equal to
+    /// that measure.
+    ///
+    /// The datum contains no place, so neither the consume the statement
+    /// performs nor the write it commits can kill it. That is the whole
+    /// content of a placement: without a term with empty support standing
+    /// between the two names, a measured value would arrive at its new name
+    /// with no measures at all, because the equality to the source dies with
+    /// the source.
+    ///
+    /// `ordinal` separates the placements one statement carries — a
+    /// construct's field, a destructuring's binder, a target list's target,
+    /// the displaced and the stored halves of one `replace`.
+    pub(super) fn mint_measure_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        ordinal: u32,
+        placement: MeasurePlacement,
+        source: ProjectedPlaceTerm,
+        ty: CheckedType,
+        state: &mut FactState,
+    ) -> Option<MeasureCarry> {
+        let measured = super::measured_kind(ty)?;
+        let constant = super::type_constant(ty);
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
         let mut datums = Vec::with_capacity(4);
         for measure in MEASURES {
-            let live = self.place_measure_term(
-                measure,
-                projected_place(source.clone()),
-                measured,
-                constant,
-            );
-            let datum = self.terms.intern(TermKind::RebindDatum {
+            let live = self.place_measure_term(measure, source.clone(), measured, constant);
+            let datum = self.terms.intern(TermKind::MeasureDatum {
                 statement: node_path.components().to_vec(),
                 ordinal,
+                placement,
                 measure,
             });
             self.adopt_measure_atom(datum, live);
@@ -549,7 +579,7 @@ impl Analyzer<'_, '_> {
             );
             datums.push(datum);
         }
-        Some(MeasureRebind {
+        Some(MeasureCarry {
             measured,
             constant,
             datums,
@@ -557,22 +587,35 @@ impl Analyzer<'_, '_> {
     }
 
     /// [MSR-3] the rebind placement, second half: after the transfer, the
-    /// destination's own measures equal the datums minted before it.
+    /// destination binding's own measures equal the datums minted before it.
     pub(super) fn establish_rebind_datums(
         &mut self,
         node_path: &crate::NodePath,
         binding: BindingId,
-        rebind: &MeasureRebind,
+        rebind: &MeasureCarry,
         state: &mut FactState,
     ) {
-        let target = self.bound_place(binding);
+        let target = projected_place(self.bound_place(binding));
+        self.establish_measure_datums(node_path, target, rebind, state);
+    }
+
+    /// [MSR-3] the second half of every placement: after the statement's own
+    /// kills, the destination place's measures equal the datums minted before
+    /// them.
+    pub(super) fn establish_measure_datums(
+        &mut self,
+        node_path: &crate::NodePath,
+        destination: ProjectedPlaceTerm,
+        carry: &MeasureCarry,
+        state: &mut FactState,
+    ) {
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
-        for (measure, datum) in MEASURES.into_iter().zip(&rebind.datums) {
+        for (measure, datum) in MEASURES.into_iter().zip(&carry.datums) {
             let left = self.place_measure_term(
                 measure,
-                projected_place(target.clone()),
-                rebind.measured,
-                rebind.constant,
+                destination.clone(),
+                carry.measured,
+                carry.constant,
             );
             state.establish(
                 &Relation::Equal {
@@ -1554,9 +1597,9 @@ const MEASURES: [CheckedMeasure; 4] = [
     CheckedMeasure::Head,
 ];
 
-/// [MSR-3] one rebind placement's datums, held between the pre-transfer mint
-/// and the post-transfer establishment.
-pub(super) struct MeasureRebind {
+/// [MSR-3] one placement's datums, held between the mint before the
+/// statement's kills and the establishment after them.
+pub(super) struct MeasureCarry {
     measured: MeasuredKind,
     constant: Option<CheckedConst>,
     datums: Vec<TermId>,

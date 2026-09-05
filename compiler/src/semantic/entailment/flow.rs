@@ -16,7 +16,7 @@
 mod kernel;
 mod sources;
 
-use sources::ValueImage;
+use sources::{MeasureCarry, ValueImage};
 use std::collections::{HashMap, HashSet};
 
 use super::super::goal::{
@@ -54,8 +54,9 @@ use super::state::{
     materialize_closure_before_kill,
 };
 use super::term::{
-    CallDatumProjection, CountedCaptureSide, MeasureBound, PlaceProjection, PlaceRoot, PlaceTerm,
-    ProjectedPlaceTerm, TermId, TermKind, TermTable, ZERO, integer_value, type_range,
+    CallDatumProjection, CountedCaptureSide, MeasureBound, MeasurePlacement, PlaceProjection,
+    PlaceRoot, PlaceTerm, ProjectedPlaceTerm, TermId, TermKind, TermTable, ZERO, integer_value,
+    type_range,
 };
 use super::{
     BoundsRequest, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedDerivationSet,
@@ -549,6 +550,26 @@ struct AvailablePostcondition {
     field: Option<crate::PreludeDeclarationId>,
     summary: VerifiedPostconditionSummary,
     discharged: bool,
+}
+
+/// The one payload-carrying variant of a nominal enum [MSR-3].
+struct SolePayloadVariant {
+    /// Its position in the declared variant list, which is what a
+    /// `construct` names.
+    index: u32,
+    /// Its [GRAM-10] tag, which is what a `match` arm names.
+    tag: u32,
+    fields: Vec<super::super::model::CheckedField>,
+}
+
+/// [MSR-3] one payload placement's datums, held between the mint before the
+/// `match` consumes its scrutinee and the establishment at the arm binder
+/// that names the payload.
+struct PayloadPlacement {
+    /// The tag of the arm these datums reach; every other arm binds no
+    /// payload of this enum.
+    tag: u32,
+    carried: Vec<(u32, MeasureCarry)>,
 }
 
 #[derive(Clone)]
@@ -1980,7 +2001,7 @@ impl Analyzer<'_, '_> {
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
-            | TermKind::RebindDatum { .. } => {}
+            | TermKind::MeasureDatum { .. } => {}
         }
         holders
     }
@@ -3655,7 +3676,7 @@ impl Analyzer<'_, '_> {
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
-            | TermKind::RebindDatum { .. } => false,
+            | TermKind::MeasureDatum { .. } => false,
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
@@ -3765,7 +3786,7 @@ impl Analyzer<'_, '_> {
             | TermKind::CommitValue { .. }
             | TermKind::CallDatum { .. }
             | TermKind::EntryDatum { .. }
-            | TermKind::RebindDatum { .. } => false,
+            | TermKind::MeasureDatum { .. } => false,
             TermKind::Place(place, _) | TermKind::Measure(_, place) => match place.root {
                 PlaceRoot::Binding(binding) => exited.contains(&binding),
                 PlaceRoot::Constant(_) => false,
@@ -7329,6 +7350,274 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// The place one [LIV-2] commit writes, as every measure term over it is
+    /// stated [MSR-1]: a plain place, or one element position of a run.
+    ///
+    /// An element position is a place only where its offset is one a place
+    /// relation can name [MSR-1] — a written literal, a live `own` integer
+    /// binding, or an in-scope const generic. An offset of any other form is
+    /// provably distinct from nothing, itself included, so a measure over it
+    /// would relate two elements as one term [OWN-7] and there is no place to
+    /// carry a measure to.
+    fn set_target_place(&self, target: &CheckedSetTarget) -> Option<ProjectedPlaceTerm> {
+        match target {
+            CheckedSetTarget::Place(place) => Some(projected_place(PlaceTerm {
+                root: PlaceRoot::Binding(place.binding),
+                deref: self.is_holder(place.binding),
+                fields: place.fields.clone(),
+            })),
+            CheckedSetTarget::RunIndex(target) => {
+                if matches!(target.place_offset, PlaceOffset::Opaque) {
+                    return None;
+                }
+                let mut path = self.container_root_path(&target.root);
+                path.projections
+                    .push(PlaceProjection::Subscript(target.place_offset));
+                Some(path)
+            }
+            // Neither element domain names the offset its commit wrote, so
+            // neither has an element place a measure could be stated over.
+            CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::BufferIndex(_) => None,
+        }
+    }
+
+    /// [MSR-3] the datums one [LIV-2] commit carries, minted before the
+    /// statement's own kills.
+    ///
+    /// The right-hand side is a bare use of a measured place, which is the
+    /// same shape the `let` rebind placement admits: the value keeps every
+    /// measure it had and only the name it is reached by changes. Every other
+    /// right-hand side mints none, and the ordinary sources establish
+    /// whatever that expression publishes.
+    fn mint_commit_placement(
+        &mut self,
+        node_path: &crate::NodePath,
+        ordinal: u32,
+        target: &CheckedSetTarget,
+        value: &CheckedExpression,
+        state: &mut FactState,
+    ) -> Option<MeasureCarry> {
+        let CheckedExpression::Binding { binding, ty, .. } = value else {
+            return None;
+        };
+        self.set_target_place(target)?;
+        let placement = match target {
+            CheckedSetTarget::RunIndex(_) => MeasurePlacement::Element,
+            _ => MeasurePlacement::Rebind,
+        };
+        let source = projected_place(PlaceTerm {
+            root: PlaceRoot::Binding(*binding),
+            deref: self.is_holder(*binding),
+            fields: Vec::new(),
+        });
+        self.mint_measure_datums(node_path, ordinal, placement, source, *ty, state)
+    }
+
+    /// [MSR-3] the construct placement: the datums one `construct`'s field
+    /// operands carry into the fields of the value they fill.
+    ///
+    /// A field whose operand is a bare use of a measured place carries that
+    /// place's measures into the field, which is the one event at which a
+    /// measured value enters a nominal it did not previously belong to. The
+    /// operand shape admitted is the shape every other placement admits: the
+    /// value keeps every measure it had and only the place it is reached by
+    /// changes.
+    fn mint_construct_placements(
+        &mut self,
+        node_path: &crate::NodePath,
+        value: &CheckedExpression,
+        state: &mut FactState,
+    ) -> Vec<(u32, MeasureCarry)> {
+        let fields = match value {
+            CheckedExpression::ConstructStruct { fields, .. } => fields,
+            // [MSR-3] an enum's payload is a place only where the nominal
+            // carries one payload variant, which is what makes the field
+            // path select one storage; see `sole_payload_variant`.
+            CheckedExpression::ConstructEnum {
+                nominal,
+                variant,
+                fields,
+                ..
+            } if self
+                .sole_payload_variant(*nominal)
+                .is_some_and(|sole| sole.index == *variant) =>
+            {
+                fields
+            }
+            _ => return Vec::new(),
+        };
+        let mut carried = Vec::new();
+        for (ordinal, field) in fields.iter().enumerate() {
+            let CheckedExpression::Binding { binding, ty, .. } = field else {
+                continue;
+            };
+            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+            let source = projected_place(PlaceTerm {
+                root: PlaceRoot::Binding(*binding),
+                deref: self.is_holder(*binding),
+                fields: Vec::new(),
+            });
+            if let Some(carry) = self.mint_measure_datums(
+                node_path,
+                ordinal,
+                MeasurePlacement::Construct,
+                source,
+                *ty,
+                state,
+            ) {
+                carried.push((ordinal, carry));
+            }
+        }
+        carried
+    }
+
+    /// [MSR-3] the construct placement's second half: after the statement's
+    /// own kills, field i of the constructed value has the measures its
+    /// operand had.
+    fn establish_construct_placements(
+        &mut self,
+        node_path: &crate::NodePath,
+        base: &PlaceTerm,
+        carried: &[(u32, MeasureCarry)],
+        state: &mut FactState,
+    ) {
+        for (ordinal, carry) in carried {
+            let mut destination = base.clone();
+            destination.fields.push(*ordinal);
+            let destination = projected_place(destination);
+            self.establish_measure_datums(node_path, destination, carry, state);
+        }
+    }
+
+    /// The one variant of a nominal enum that carries fields, where exactly
+    /// one does, together with its declared order in the variant list.
+    ///
+    /// A tracked place's path is field selections, derefs and subscripts
+    /// [ENT-2], and none of those steps names a variant: two variants'
+    /// payloads are two storages one path cannot separate, so `Result`'s
+    /// `Ok(value)` and `Err(error)` would be one place. Where the nominal
+    /// carries a single payload variant — the prelude `Option` among them —
+    /// the field path selects one storage on every execution and the payload
+    /// is an ordinary [MSR-1] measure place. Everything else has no payload
+    /// place in this version and carries no measure across the event
+    /// [MSR-3].
+    fn sole_payload_variant(
+        &self,
+        nominal: super::super::model::NominalId,
+    ) -> Option<SolePayloadVariant> {
+        let CheckedNominalKind::Enum { variants } =
+            &self.context.nominals.get(nominal.0 as usize)?.kind
+        else {
+            return None;
+        };
+        let mut carrying = variants
+            .iter()
+            .enumerate()
+            .filter(|(_, variant)| !variant.fields.is_empty());
+        let (index, variant) = carrying.next()?;
+        if carrying.next().is_some() {
+            return None;
+        }
+        Some(SolePayloadVariant {
+            index: u32::try_from(index).ok()?,
+            tag: variant.tag,
+            fields: variant.fields.clone(),
+        })
+    }
+
+    /// [MSR-3] the payload placement: the datums a `match` over an own enum
+    /// place carries out of that place's payload.
+    ///
+    /// The `match` consumes the scrutinee, so a measure of the payload dies
+    /// with it; the datum minted here is the value that measure had
+    /// immediately before the consume, and the arm binder that names the
+    /// payload receives it on its own arm.
+    fn mint_payload_placements(
+        &mut self,
+        scrutinee: &CheckedExpression,
+        enum_type: CheckedEnumType,
+        state: &mut FactState,
+    ) -> Option<PayloadPlacement> {
+        let CheckedExpression::Binding {
+            carrier: node_path,
+            binding,
+            ..
+        } = scrutinee
+        else {
+            return None;
+        };
+        let CheckedEnumType::Nominal(nominal) = enum_type else {
+            return None;
+        };
+        let sole = self.sole_payload_variant(nominal)?;
+        let base = PlaceTerm {
+            root: PlaceRoot::Binding(*binding),
+            deref: self.is_holder(*binding),
+            fields: Vec::new(),
+        };
+        let mut carried = Vec::new();
+        for (ordinal, field) in sole.fields.iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+            let mut source = base.clone();
+            source.fields.push(ordinal);
+            if let Some(carry) = self.mint_measure_datums(
+                node_path,
+                ordinal,
+                MeasurePlacement::Payload,
+                projected_place(source),
+                field.ty,
+                state,
+            ) {
+                carried.push((ordinal, carry));
+            }
+        }
+        (!carried.is_empty()).then_some(PayloadPlacement {
+            tag: sole.tag,
+            carried,
+        })
+    }
+
+    /// [MSR-3] the destructuring placement: the datums a destructuring
+    /// consume carries out of the fields it takes apart.
+    ///
+    /// The operand is a bare use of a measured nominal place — `let N(f: a)
+    /// = move v;` — and binder i takes the measures of `v`'s field i. A
+    /// `let (a, b) = f(...)` binder list has no such operand and mints
+    /// nothing; its ordinals are [CALL-4] destinations instead.
+    fn mint_destructuring_placements(
+        &mut self,
+        node_path: &crate::NodePath,
+        bindings: &[(BindingId, CheckedType)],
+        value: &CheckedExpression,
+        state: &mut ProofFlowState,
+    ) -> Vec<(u32, MeasureCarry)> {
+        let CheckedExpression::Binding { binding, .. } = value else {
+            return Vec::new();
+        };
+        let base = PlaceTerm {
+            root: PlaceRoot::Binding(*binding),
+            deref: self.is_holder(*binding),
+            fields: Vec::new(),
+        };
+        let mut carried = Vec::new();
+        for (ordinal, (_, ty)) in bindings.iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+            let mut source = base.clone();
+            source.fields.push(ordinal);
+            if let Some(carry) = self.mint_measure_datums(
+                node_path,
+                ordinal,
+                MeasurePlacement::Destructuring,
+                projected_place(source),
+                *ty,
+                &mut state.facts,
+            ) {
+                carried.push((ordinal, carry));
+            }
+        }
+        carried
+    }
+
     /// The [OWN-5] resolved place that root names.
     fn container_root_place(&self, root: &CheckedContainerRoot) -> ResolvedPlace {
         let path = self.container_root_path(root);
@@ -7943,7 +8232,7 @@ impl Analyzer<'_, '_> {
             TermKind::Measure(..)
             | TermKind::ProjectedMeasure(..)
             | TermKind::EntryDatum { .. }
-            | TermKind::RebindDatum { .. }
+            | TermKind::MeasureDatum { .. }
             | TermKind::CallDatum {
                 measure: Some(_), ..
             } => Some(self.measure_atom(term)),
@@ -10752,7 +11041,7 @@ impl Analyzer<'_, '_> {
                         ..
                     }
                     | TermKind::EntryDatum { .. }
-                    | TermKind::RebindDatum { .. }
+                    | TermKind::MeasureDatum { .. }
             ) {
                 self.measure_terms_seen.push(id);
             }
@@ -11402,6 +11691,21 @@ impl Analyzer<'_, '_> {
         values: &CheckedCommitValues,
         state: &mut ProofFlowState,
     ) {
+        // [MSR-3] the [LIV-2] `set`-target placement, per ordinal: a written
+        // value list commits value i into target i, so ordinal i carries
+        // exactly what a single-target `set` carries.
+        let placements = match values {
+            CheckedCommitValues::Written(values) => targets
+                .iter()
+                .zip(values)
+                .enumerate()
+                .map(|(ordinal, (target, value))| {
+                    let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+                    self.mint_commit_placement(node_path, ordinal, target, value, &mut state.facts)
+                })
+                .collect::<Vec<_>>(),
+            CheckedCommitValues::ResultList { .. } => Vec::new(),
+        };
         let mut target_reached = true;
         for target in targets {
             target_reached &= self.judge_set_target(target, state);
@@ -11446,6 +11750,13 @@ impl Analyzer<'_, '_> {
         }
         if !commit_reached {
             return;
+        }
+        for (target, carry) in targets.iter().zip(&placements) {
+            if let Some(carry) = carry
+                && let Some(destination) = self.set_target_place(target)
+            {
+                self.establish_measure_datums(node_path, destination, carry, &mut state.facts);
+            }
         }
         let destination = |target: &CheckedSetTarget| match target {
             CheckedSetTarget::Place(place) => Some((
@@ -11505,6 +11816,15 @@ impl Analyzer<'_, '_> {
         force_target_event: bool,
         state: &mut ProofFlowState,
     ) -> SetWalkOutcome {
+        // [MSR-3] the [LIV-2] `set`-target placement is minted before the
+        // statement's own kills, because the datum it forms is the value the
+        // transferred place had immediately before them. The destination is
+        // the place this commit writes, which is a plain place or one element
+        // position of a run.
+        let placement = self.mint_commit_placement(node_path, 0, target, value, &mut state.facts);
+        let constructed = matches!(target, CheckedSetTarget::Place(_))
+            .then(|| self.mint_construct_placements(node_path, value, &mut state.facts))
+            .unwrap_or_default();
         // [SET-1]: the target's base and offset are evaluated before the
         // right-hand side; both are judged at this point, then the commit
         // kill applies.
@@ -11577,6 +11897,25 @@ impl Analyzer<'_, '_> {
             }
         } else {
             self.apply_kills(state, &target_kills);
+        }
+        // [MSR-3] the placement's second half, after the target's own kills:
+        // the committed place's measures are the datums minted before them.
+        if commit_reached
+            && let Some(carry) = &placement
+            && let Some(destination) = self.set_target_place(target)
+        {
+            self.establish_measure_datums(node_path, destination, carry, &mut state.facts);
+        }
+        if commit_reached
+            && !constructed.is_empty()
+            && let CheckedSetTarget::Place(place) = target
+        {
+            let base = PlaceTerm {
+                root: PlaceRoot::Binding(place.binding),
+                deref: self.is_holder(place.binding),
+                fields: place.fields.clone(),
+            };
+            self.establish_construct_placements(node_path, &base, &constructed, &mut state.facts);
         }
         // [CALL-4] a `set` target is an S12 destination, and [CALL-6] puts
         // the establishment after the call's own transfer, consumes and the
@@ -11666,6 +12005,11 @@ impl Analyzer<'_, '_> {
                 // initializer's own kills, because the datum it forms is the
                 // value the transferred place had immediately before them.
                 let rebind = self.mint_rebind_datums(node_path, 0, value, &mut state.facts);
+                // [MSR-3] the construct placement is minted at the same
+                // point and for the same reason: a field operand is consumed
+                // by the construct that fills the field with it.
+                let constructed =
+                    self.mint_construct_placements(node_path, value, &mut state.facts);
                 let judgment = self.expression_effects(value, state);
                 self.declare(*binding);
                 if judgment.reached
@@ -11705,6 +12049,15 @@ impl Analyzer<'_, '_> {
                 {
                     self.establish_rebind_datums(node_path, *binding, rebind, &mut state.facts);
                 }
+                if judgment.reached && !constructed.is_empty() {
+                    let base = self.bound_place(*binding);
+                    self.establish_construct_placements(
+                        node_path,
+                        &base,
+                        &constructed,
+                        &mut state.facts,
+                    );
+                }
                 if let Some(established) = unsigned_division
                     && let Some(quotient) = state.affine.values.get(binding).cloned()
                     && let Some(dividend) =
@@ -11728,11 +12081,30 @@ impl Analyzer<'_, '_> {
                 value,
                 ..
             } => {
+                // [MSR-3] the destructuring placement is minted before the
+                // consume the statement performs, because the datums it
+                // forms are the measures the taken-apart value's fields had
+                // immediately before it.
+                let taken = self.mint_destructuring_placements(node_path, bindings, value, state);
                 let judgment = self.expression_effects(value, state);
                 let mut destinations = Vec::with_capacity(bindings.len());
                 for (binding, ty) in bindings {
                     self.declare(*binding);
                     destinations.push(Some((*binding, Vec::new(), *ty)));
+                }
+                if judgment.reached {
+                    for (ordinal, carry) in &taken {
+                        let Some((binding, _)) = bindings.get(*ordinal as usize) else {
+                            continue;
+                        };
+                        let destination = projected_place(self.bound_place(*binding));
+                        self.establish_measure_datums(
+                            node_path,
+                            destination,
+                            carry,
+                            &mut state.facts,
+                        );
+                    }
                 }
                 if let Some(prepared) = &judgment.prepared_call
                     && judgment.reached
@@ -11804,8 +12176,35 @@ impl Analyzer<'_, '_> {
                     }
                     _ => None,
                 };
+                // [MSR-3] the displaced half of the placement: the value this
+                // `replace` takes out of the target had the target's own
+                // measures, and it is minted before the commit that
+                // overwrites them. [SET-2]'s commit still establishes no
+                // fact of its own — this datum carries a fact the target
+                // already had across the naming event, exactly as the
+                // rebind, construct, and element placements do.
+                let displaced = self.set_target_place(target).and_then(|place| {
+                    let placement = match target {
+                        CheckedSetTarget::RunIndex(_) => MeasurePlacement::Element,
+                        _ => MeasurePlacement::Rebind,
+                    };
+                    self.mint_measure_datums(
+                        node_path,
+                        1,
+                        placement,
+                        place,
+                        target.ty(),
+                        &mut state.facts,
+                    )
+                });
                 let outcome = self.walk_set(node_path, target, value, false, state);
                 self.declare(*binding);
+                if outcome.commit_reached
+                    && let Some(carry) = &displaced
+                {
+                    let destination = projected_place(self.bound_place(*binding));
+                    self.establish_measure_datums(node_path, destination, carry, &mut state.facts);
+                }
                 if outcome.commit_reached
                     && self.affine_binding_type(*binding).is_some()
                     && let Some(previous) = previous
@@ -12113,6 +12512,10 @@ impl Analyzer<'_, '_> {
                 arms,
                 ..
             } => {
+                // [MSR-3] the payload placement is minted before the `match`
+                // consumes its scrutinee, because the datums it forms are the
+                // measures the payload had immediately before that consume.
+                let payload = self.mint_payload_placements(scrutinee, *enum_type, &mut state.facts);
                 let judgment = self.expression_effects(scrutinee, state);
                 let facts = if judgment.reached {
                     self.arm_facts(scrutinee, *enum_type, &state.facts)
@@ -12125,7 +12528,9 @@ impl Analyzer<'_, '_> {
                     let direct_call = prepared
                         .as_ref()
                         .map(|prepared| (scrutinee, *enum_type, prepared));
-                    if let Some(exit) = self.walk_arm(arm, state, &facts, direct_call) {
+                    if let Some(exit) =
+                        self.walk_arm(arm, state, &facts, direct_call, payload.as_ref())
+                    {
                         exits.push(exit);
                     }
                 }
@@ -12146,6 +12551,10 @@ impl Analyzer<'_, '_> {
                 arms,
                 ..
             } => {
+                // [MSR-3] the payload placement is minted before the `match`
+                // consumes its scrutinee, because the datums it forms are the
+                // measures the payload had immediately before that consume.
+                let payload = self.mint_payload_placements(scrutinee, *enum_type, &mut state.facts);
                 let judgment = self.expression_effects(scrutinee, state);
                 let facts = if judgment.reached {
                     self.arm_facts(scrutinee, *enum_type, &state.facts)
@@ -12171,7 +12580,7 @@ impl Analyzer<'_, '_> {
                     let direct_call = prepared
                         .as_ref()
                         .map(|prepared| (scrutinee, *enum_type, prepared));
-                    let _ = self.walk_arm(arm, state, &facts, direct_call);
+                    let _ = self.walk_arm(arm, state, &facts, direct_call, payload.as_ref());
                 }
                 let frame = self
                     .gives
@@ -12545,6 +12954,7 @@ impl Analyzer<'_, '_> {
         entry: &ProofFlowState,
         facts: &ArmFacts,
         direct_call: Option<(&CheckedExpression, CheckedEnumType, &PreparedCall)>,
+        payload: Option<&PayloadPlacement>,
     ) -> Option<ProofFlowState> {
         let mut state = entry.clone();
         let s1_event = (!facts.goals.is_empty() || facts.comparison.is_some())
@@ -12560,6 +12970,23 @@ impl Analyzer<'_, '_> {
                     .map(|binder| self.proof_event(kind, Some(&binder.node_path)))
             });
         self.establish_arm_entry(arm, facts, &mut state.facts, s1_event, outcome_event);
+        // [MSR-3] the payload placement's second half: on the arm whose
+        // variant carries the payload, the binder that names it has the
+        // measures the payload had before the consume.
+        if let Some(payload) = payload.filter(|payload| payload.tag == arm.tag) {
+            for (field, carry) in &payload.carried {
+                let Some(binder) = arm.binders.iter().find(|binder| binder.field == *field) else {
+                    continue;
+                };
+                let destination = projected_place(self.bound_place(binder.binding));
+                self.establish_measure_datums(
+                    &binder.node_path,
+                    destination,
+                    carry,
+                    &mut state.facts,
+                );
+            }
+        }
         // [CALL-6] a kernel-domain row publishes on the arm its route names
         // from its own declared relation list [BLK-0]; a source callee takes
         // the direct-match route below, which is what [FN-9] gives it.
@@ -13338,10 +13765,19 @@ impl Analyzer<'_, '_> {
                 }
                 format!("{}({place})", measure.spelling())
             }
-            // A rebind datum has no source spelling of its own: it is the
-            // measure the transferred value had where it was renamed.
-            TermKind::RebindDatum { measure, .. } => {
-                format!("<{} at the rebind>", measure.spelling())
+            // A measure datum has no source spelling of its own: it is the
+            // measure the carried value had at the event that renamed it.
+            TermKind::MeasureDatum {
+                measure, placement, ..
+            } => {
+                let event = match placement {
+                    MeasurePlacement::Rebind => "the rebind",
+                    MeasurePlacement::Construct => "the construct",
+                    MeasurePlacement::Destructuring => "the destructuring",
+                    MeasurePlacement::Element => "the element position",
+                    MeasurePlacement::Payload => "the payload",
+                };
+                format!("<{} at {event}>", measure.spelling())
             }
         }
     }

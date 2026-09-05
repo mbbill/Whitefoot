@@ -427,7 +427,8 @@ impl Analyzer<'_, '_> {
                 continue;
             };
             let ty = actual.ty();
-            let Some(datum) = self.interned_call_datum(call, ordinal, &[], Some(measure), ty) else {
+            let Some(datum) = self.interned_call_datum(call, ordinal, &[], Some(measure), ty)
+            else {
                 continue;
             };
             let Some(live) = self.kernel_operand_term(actual, ty, Some(measure)) else {
@@ -462,9 +463,7 @@ impl Analyzer<'_, '_> {
         if let Some((binding, _, _)) = destinations.iter().flatten().next() {
             return Some(*binding);
         }
-        if exit.route.is_none() {
-            return None;
-        }
+        exit.route?;
         goal_arguments.iter().find_map(|argument| {
             let super::super::super::goal::GoalExpression::Datum(
                 super::super::super::goal::GoalDatum::Place { root, .. },

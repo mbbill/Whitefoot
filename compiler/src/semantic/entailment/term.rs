@@ -93,18 +93,47 @@ pub(crate) enum TermKind {
         projections: Vec<CallDatumProjection>,
         measure: CheckedMeasure,
     },
-    /// One immutable compiler-owned rebind datum [MSR-3]: the value one
-    /// [MSR-1] measure of a measured place had immediately before one `let`
-    /// or one [LIV-2] `set` transferred that place to a new name. The
-    /// statement's finalized NodePath, the ordinal within its target list and
-    /// the measure are its complete function-local identity. No place occurs
-    /// in it, so the consume the same statement performs cannot kill it,
-    /// which is what carries a measured value's measures across the rename.
-    RebindDatum {
+    /// One immutable compiler-owned measure datum [MSR-3]: the value one
+    /// [MSR-1] measure of a measured place had immediately before one
+    /// statement carried that value across a naming event — a `let` or
+    /// [LIV-2] `set` rebind, a construct's field operand, a destructuring
+    /// binder, an element position, or an enum payload. The statement's
+    /// finalized NodePath, the placement, the ordinal within that statement
+    /// and the measure are its complete function-local identity. No place
+    /// occurs in it, so neither the consume the statement performs nor the
+    /// write it commits can kill it, which is what carries a measured
+    /// value's measures across the event.
+    MeasureDatum {
         statement: Vec<u32>,
+        placement: MeasurePlacement,
         ordinal: u32,
         measure: CheckedMeasure,
     },
+}
+
+/// Which naming event one measure datum stands at [MSR-3].
+///
+/// The placement is part of the datum's identity so that one statement
+/// carrying two of them — a `replace`, whose displaced value leaves the
+/// target as its stored value arrives — mints two terms and not one, and so
+/// that a diagnostic can name the event the datum belongs to.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum MeasurePlacement {
+    /// One `let` binder or one [LIV-2] `set` target whose right-hand side is
+    /// a bare use of a measured place.
+    Rebind,
+    /// One field operand of a `construct`, carried into the field of the
+    /// value it builds.
+    Construct,
+    /// One binder of a destructuring consume, carried out of the field it
+    /// names.
+    Destructuring,
+    /// One element position of a run, written by a [LIV-2] element-position
+    /// commit or read out by the [SET-2] `replace` that displaces it.
+    Element,
+    /// One payload binder of a `match` arm, carried out of the payload of
+    /// the enum place the arm consumes.
+    Payload,
 }
 
 /// Ordered projection identity inside one call datum's operand place.

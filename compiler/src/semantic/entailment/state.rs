@@ -3010,7 +3010,7 @@ fn for_each_implicit_bound(
         // fragment type u64 and with empty support. Its standing orderings
         // reach it through the equality this datum is established with at
         // entry; what it carries of its own is the type range.
-        TermKind::EntryDatum { .. } | TermKind::RebindDatum { .. } => {
+        TermKind::EntryDatum { .. } | TermKind::MeasureDatum { .. } => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
             emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
