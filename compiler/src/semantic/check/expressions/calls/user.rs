@@ -11,7 +11,7 @@ use super::super::super::super::goal::{
 };
 use super::super::super::super::model::{
     CheckedElement, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedResultBorrow,
-    CheckedSliceOrigin, CheckedStateOrigins, CheckedType,
+    CheckedSliceOrigin, CheckedStateOrigins, CheckedType, LoanStrength,
 };
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, SliceInfo, places_overlap, push_slice_origin,
@@ -1449,20 +1449,33 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                     for path in self.effect_paths_for_place(&place, bindings)? {
                         actual_paths.push(path);
                     }
-                } else if matches!(parameter.ty, CheckedType::Slice { .. }) {
+                } else if let CheckedType::Slice { strength, .. } = parameter.ty {
                     let slice = slices
                         .get(index)
                         .and_then(Option::as_ref)
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+                    // [PROV-3] use 1: an access the callee makes through this
+                    // view is *that view's own* access to its origin, judged
+                    // at its own strength, and not a second access the view's
+                    // loan should refuse. The skip is exact rather than
+                    // conservative: no other loan can stand on a place an
+                    // exclusive view already views, because a second view of
+                    // either strength and every ordinary write are refused
+                    // there [OWN-5], so the only loan the check would find is
+                    // the one this actual holds. A shared actual keeps the
+                    // check, where the callee's own row admits reads alone.
+                    let judged = strength != LoanStrength::Exclusive;
                     for (mut place, _) in slice.source_places() {
                         place.fields.extend_from_slice(&formal.fields);
-                        self.check_loan_access(
-                            bindings,
-                            holders.get(index).copied().flatten(),
-                            &place,
-                            access,
-                            node,
-                        )?;
+                        if judged {
+                            self.check_loan_access(
+                                bindings,
+                                holders.get(index).copied().flatten(),
+                                &place,
+                                access,
+                                node,
+                            )?;
+                        }
                     }
                     for mut place in slice.effect_places() {
                         place.fields.extend_from_slice(&formal.fields);

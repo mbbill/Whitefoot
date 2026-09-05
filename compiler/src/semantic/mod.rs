@@ -1271,6 +1271,15 @@ pub enum UnsupportedSemanticFeature {
     /// that would carry one of those values to execution stops here rather
     /// than lowering wrong code.
     ContainerRuntime,
+    /// An exclusive view over an `array<T, N>` [VIEW-1, VIEW-2]. An array is
+    /// a value with no stable address in this lowering — an element commit
+    /// rebuilds the whole array and writes it back to its binding — so the
+    /// descriptor a view of one carries points at a snapshot, and a write
+    /// through that view would reach the snapshot and not the array. The
+    /// shared view is unaffected, because a live shared loan already refuses
+    /// every write to its origin [OWN-5]; only the exclusive one stops here,
+    /// and it stops rather than lowering a write nobody can observe.
+    ExclusiveViewOverArray,
 }
 
 /// Exact source node at which an unimplemented compiler family was required.

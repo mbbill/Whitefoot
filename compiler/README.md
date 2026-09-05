@@ -303,7 +303,15 @@ the added view, formed by `mut_slice_of(&uniq p)` beside `slice_of(&p)`, and
 the view's own data pointer to the storage it views, and the descriptor is
 unchanged. [SET-1] admits a target path through a view exactly at the exclusive
 strength, so the same statement through a `Slice` is the refusal probe `p7`
-measured. Exclusivity is not a clause of its own: the formation takes the borrow
+measured. **The storage has to be addressable, and an `array<T, N>` is not**: an
+array is a value here — an element commit rebuilds it and writes it back to its
+binding — so the descriptor a view of one carries points at a snapshot, and a
+write through an exclusive view of an array would reach the snapshot. That stops
+as the explicit unsupported capability `ExclusiveViewOverArray` rather than
+lowering a write nobody can observe; the shared view over an array is unaffected,
+because a live shared loan refuses every write to its origin and the snapshot and
+the array therefore agree wherever the view is readable. Exclusivity is not a
+clause of its own: the formation takes the borrow
 its strength names, so a second `mut_slice_of` over one place meets the first
 view's loan and is refused there as an ordinary [OWN-5] conflict, while two
 `slice_of` views of one place are admitted. What is **not** implemented of the

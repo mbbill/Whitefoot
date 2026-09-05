@@ -443,8 +443,8 @@ fn a_shared_view_is_no_set_target_and_an_exclusive_view_is() {
         },
     );
     with_semantics(
-        br#"command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(0_u8);
+        br#"command fn main() -> status: own ExitStatus allocates(heap) {
+  let values = buffer_new(2_u64, 0_u8);
   region {
     let window = mut_slice_of(&uniq values);
     set window[0_u64] = 1_u8;

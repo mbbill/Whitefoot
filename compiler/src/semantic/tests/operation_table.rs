@@ -581,6 +581,9 @@ fn the_wf_measures_table_and_the_compilers_measure_table_agree() {
         (MeasuredKind::Array, "array<T, N>"),
         (MeasuredKind::Buffer, "buffer<T>"),
         (MeasuredKind::Slice, "Slice<'r, T>"),
+        // [VIEW-1] the two views are one measured kind and two rows: the
+        // strength separates the types and no cell of the table reads it.
+        (MeasuredKind::Slice, "MutSlice<'r, T>"),
         (MeasuredKind::FixedVector, "FixedVector<T, n>"),
         (MeasuredKind::Vector, "Vector<'s, T>"),
         (MeasuredKind::Extent, "Arena<'s, bytes, align>"),

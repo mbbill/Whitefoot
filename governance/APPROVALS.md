@@ -3926,7 +3926,20 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   than [BLK-0] kernel declaration records. **The child reborrow of an exclusive
   view and the two-same-region-result refusal are not landed at all**, and
   neither is stated as a rule in this specification.
-- CONFORMANCE BOUNDARY (B8e): seven added cases, no modification of a case's
+- CONSEQUENCE OF THE ELEMENT WRITE, ONE STORAGE FORM IT CANNOT REACH: this
+  compiler represents an `array<T, N>` as a value — an element commit rebuilds
+  the whole array and writes it back to its binding — so the descriptor a view
+  of one carries points at a snapshot, and a write through an exclusive view of
+  an array would reach the snapshot rather than the array. That stops as the
+  explicit unsupported capability `ExclusiveViewOverArray` rather than lowering
+  a write nobody can observe, and the specification's own domain is unchanged:
+  [VIEW-2] states one viewed domain for both strengths, because a view is a view
+  of storage and no rule reads what that storage is made of. The shared view
+  over an array is unaffected, a live shared loan already refusing every write
+  to its origin. `view2-pos-an-exclusive-view-over-an-array` is the case,
+  carried at `status: pending` with the specification's own accept as its
+  expectation and the stop as its recorded reason.
+- CONFORMANCE BOUNDARY (B8e): eight added cases, no modification of a case's
   expectation, no deletion and no rename, beside the source respell recorded
   above.
   `view1-pos-an-element-write-through-an-exclusive-view`
@@ -3942,14 +3955,18 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `view2-neg-an-exclusive-view-of-a-named-const`
   (`{"kind": "reject", "rule": "CONST-2"}`) and
   `view2-neg-a-shared-view-of-a-place-an-exclusive-view-holds`
-  (`{"kind": "reject", "rule": "OWN-5"}`), each status runnable. Before this
-  batch the corpus holds 649 cases with the native adapter reporting Pass=647,
-  Xfail=1, Skip=1; after it the corpus holds 656 with the adapter reporting
-  Pass=654, Xfail=1, Skip=1. The one xfail
-  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
-  unchanged in id, expectation and status, rule coverage stays complete at
-  150/150, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0.
+  (`{"kind": "reject", "rule": "OWN-5"}`), each status runnable, and
+  `view2-pos-an-exclusive-view-over-an-array`
+  (`{"kind": "run", "exit": 0}`) at status pending, whose recorded reason is the
+  stop above. Before this batch the corpus holds 649 cases with the native
+  adapter reporting Pass=647, Xfail=1, Skip=1; after it the corpus holds 657
+  with the adapter reporting Pass=654, Xfail=1, Skip=2. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) is unchanged in id,
+  expectation and status; the skip count moves from one to two, the second being
+  the pending case this batch adds and no existing case's status. Rule coverage
+  stays complete at 150/150, and the recorded-verdict snapshot corpus reports
+  Pass=491, Flip=0.
   No verdict of either corpus moved and no program of the executable corpus
   changed behaviour: every source the respell touched compiles to the same
   verdict under the new spelling.
-ACTIVE-SPEC: v0.45 7ba7880481d958a3cf02d414e297f65c09859ec25b4276a74529a0074f5d6344 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 8457e1dc74e269415639426c21edbc352e0f3ac62909a6a623e4613c0eeb21c9 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

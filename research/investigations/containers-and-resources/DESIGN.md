@@ -7553,6 +7553,17 @@ rather than as a plan.
   the origin through the view's own data pointer and leaves the descriptor unchanged, which
   is one added IR instruction and one added emitter. Probe `p7`'s refusal is lifted, and
   the same statement through a `Slice` is still refused, naming the shared view.
+  **The storage has to be addressable, and this compiler's `array<T, N>` is not.** An
+  array is a value here — an element commit rebuilds it and writes it back to its binding —
+  so the descriptor a view of one carries points at a snapshot, and the first version of
+  this batch's own positive case wrote 9 through the view and read 7 back out of the array.
+  An exclusive view over an array now stops as an explicit unsupported capability, the
+  positive cases are over `buffer<T>`, and `view2-pos-an-exclusive-view-over-an-array`
+  carries the specification's own accept at status pending with the stop as its reason. The
+  shared view over an array is unaffected: a live shared loan refuses every write to its
+  origin, so the snapshot and the array agree wherever the view is readable. That is the
+  design's addressability cost [VIEW-7] names for a destination, met one batch early and by
+  a different route.
 
 - **Exclusivity is not a clause.** [VIEW-2] makes the formation's own access the access its
   strength names, so a second `mut_slice_of` over one place takes a unique borrow the first
@@ -7590,9 +7601,10 @@ class. Neither is deep, and both are outside a batch that had already changed th
 [VIEW-6]'s two-same-region-result refusal and [S31]'s child reborrow of an exclusive view
 are not implemented and are not stated as rules.
 
-**Verdicts.** The adapter moves from Pass=647 over 649 cases to Pass=654 over 656, with the
-one xfail and the one skip unchanged, coverage complete at 150/150, and the snapshot corpus
-at Pass=491, Flip=0. No corpus verdict moved. The respell touched 12 conformance case
+**Verdicts.** The adapter moves from Pass=647 over 649 cases to Pass=654 over 657, the one xfail
+unchanged and the skip count moving from one to two — the second is this batch's own pending
+case, over the storage form the write cannot reach — with coverage complete at 150/150 and the
+snapshot corpus at Pass=491, Flip=0. No corpus verdict moved. The respell touched 12 conformance case
 sources, 3 snapshot case sources, 4 `tests/programs` sources, the compiler's embedded test
 sources, the conformance manifest's own prose and `docs/patterns.md`, and every one of them
 keeps the verdict it recorded.

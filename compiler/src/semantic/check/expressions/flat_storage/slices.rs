@@ -183,6 +183,19 @@ inside the `region` block whose region it takes",
             );
         };
         let (source, resolved) = match indexed {
+            // TEMPORARY capability stop, judged after every source rejection
+            // above: an array is a value with no stable address in this
+            // lowering, so the descriptor a view of one carries points at a
+            // snapshot of it. A shared view is unaffected — a live shared
+            // loan refuses every write to its origin, so the snapshot and the
+            // array agree at every point the view is readable — while a write
+            // through an exclusive view would reach the snapshot and not the
+            // array. It stops here rather than lowering a write nobody can
+            // observe.
+            CheckedIndexedPlace::Array(_) if strength == LoanStrength::Exclusive => {
+                return self
+                    .unsupported(UnsupportedSemanticFeature::ExclusiveViewOverArray, atoms[0]);
+            }
             CheckedIndexedPlace::Array(array) => {
                 let resolved = array.resolved_place().unwrap_or(ResolvedPlace {
                     root: declaration,

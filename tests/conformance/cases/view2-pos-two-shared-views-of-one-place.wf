@@ -1,5 +1,5 @@
-command fn main() -> status: own ExitStatus pure {
-  let table = array_new::<u8, 4>(7_u8);
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(4_u64, 7_u8);
   region {
     let first = slice_of(&table);
     let second = slice_of(&table);

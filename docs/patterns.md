@@ -1600,7 +1600,7 @@ positions, and an `Option<T>` slot standing in for a temporarily empty one.
 There are two views, and the one you form says what you may do through it:
 
 ```whitefoot
-let window = mut_slice_of(&uniq table);
+let window = mut_slice_of(&uniq buffer);
 set window[0_u64] = 9_u8;
 let seen = window[0_u64];
 ```
@@ -1624,6 +1624,13 @@ offsets, not two views.
 A named const is a legal `slice_of` source and never a `mut_slice_of` source:
 its storage is permanently read-only [CONST-2], and the rejection is at the
 operand.
+
+**View a `buffer<T>`, not an `array<T, N>`, when you mean to write.** An array
+is a value in this compiler — an element commit rebuilds it and writes it back
+to its binding — so a view of one carries a snapshot, and an exclusive view over
+an array stops as an explicit unsupported capability rather than writing where
+nobody can see it. A shared view over an array is unaffected, because a live
+shared loan refuses every write to the array while the view can be read.
 
 Replaces: taking a run or a buffer by value in order to write it, passing a
 `&uniq buffer<T>` where the callee only needs a window, and the `Option<T>`

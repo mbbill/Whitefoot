@@ -227,8 +227,10 @@ goal over `len_of(P[i])` outlived the write that replaced `P[i]`.
 and releases the lowercase word, [VIEW-1] adds `MutSlice<'r, T>` as the second
 view at exclusive loan strength, [VIEW-2] states the two formation rows as one
 judgment, and [SET-1] admits a target path through a view exactly at that
-strength, so `set view[i] = e;` through a `MutSlice` compiles, links and runs
-where probe `p7` was a refusal. Three parts of that rule set did not land and
+strength, so `set view[i] = e;` through a `MutSlice` over a `buffer<T>` compiles,
+links and runs where probe `p7` was a refusal; over an `array<T, N>` it stops as
+an explicit unsupported capability, because an array is a value here and a view
+of one carries a snapshot. Three parts of that rule set did not land and
 are DEFERRED with stated deltas: [S27]'s copy classification of `Slice`, which
 would move an accepted conformance program that `move`s a shared view; the
 widening of the viewed domain to the two runs, with the non-wrap premise and the
@@ -1080,9 +1082,10 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   and holder-derived slices remain absent. v0.45 adds the second view:
   [VIEW-1] and [VIEW-2] give the language `Slice<'r, T>` and `MutSlice<'r, T>`
   at shared and exclusive loan strength, and [SET-1] admits an element write
-  through the exclusive one, so a helper can fill a caller's storage without
+  through the exclusive one, so a helper can fill a caller's `buffer<T>` without
   taking it. `Slice` is still affine, the viewed domain is still `array<T, N>`
-  and `buffer<T>`, and neither run is viewable.
+  and `buffer<T>` with the exclusive view over an array an explicit unsupported
+  capability, and neither run is viewable.
 - **Missing / next:** choose the smallest missing rule only after a real
   project cannot express its required access pattern. The 31-rule loan/freeze
   review candidate and older M1 model are parked evidence, not language
