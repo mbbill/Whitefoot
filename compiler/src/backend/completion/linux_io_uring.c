@@ -589,6 +589,10 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
         return WF_LINUX_IO_URING_SUBMIT_FAILED;
     }
     atomic_fetch_add_explicit(&adapter->in_flight, 1, memory_order_relaxed);
+    /* Every word of the record the reaper will read is written above and by
+     * the submitting bridge before this call; this release is what orders
+     * them before the reaper's acquire (contract.h, `issued`). */
+    atomic_store_explicit(&record->issued, 1u, memory_order_release);
     wf_linux_stage_entry_locked(adapter, record);
     atomic_fetch_add_explicit(
         &adapter->stat_submissions,
@@ -752,7 +756,8 @@ static int wf_linux_publish_completion(
         (wf_completion_record *)(uintptr_t)completion->user_data;
 
     *terminal_published = 0;
-    if (record == NULL) {
+    if (record == NULL
+        || atomic_load_explicit(&record->issued, memory_order_acquire) == 0) {
         return EPROTO;
     }
 

@@ -189,6 +189,14 @@ typedef struct wf_completion_record {
     wf_file_result_head result;
     /* Which route owns the operation. */
     unsigned route;
+    /* Set with release by the ring's submit after every other word of the
+     * record is written, and read with acquire by the CQE reaper before it
+     * reads any of them.  The kernel carries the record's address from the
+     * SQE to the CQE, but a mapped ring is not a C11 synchronization, so this
+     * pair is what orders the submitter's writes before the reaper's reads;
+     * the thread sanitizer reported exactly that gap without it.  A CQE
+     * naming a record that was never issued is a protocol failure. */
+    _Atomic unsigned issued;
     /* The io_uring resubmission state.  A readiness refusal re-arms the same
      * operation as a poll and publishes nothing, so several CQEs may name one
      * record while exactly one is terminal (design §7). */
