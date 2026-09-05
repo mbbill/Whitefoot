@@ -34,6 +34,11 @@ impl IrBuilder<'_> {
                 }
                 IrOperation::SliceFromBuffer { buffer }
             }
+            // [VIEW-2] a run's window: its own slots, from `head` onward.
+            CheckedSliceSource::Run(root) => {
+                let run = self.container_root_value(root)?;
+                IrOperation::SliceFromRun { run }
+            }
             // The arena runtime lowering is not implemented. Two semantic
             // capability stops together keep this source out of every
             // published checked program: a view over a local arena stops

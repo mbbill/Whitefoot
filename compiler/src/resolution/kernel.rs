@@ -118,6 +118,10 @@ pub enum KernelRow {
     TakeBack,
     /// `take_front(vector)` [BLK-3].
     TakeFront,
+    /// `slice_of(vector)` [VIEW-2]: the shared view over a viewable operand.
+    SliceOf,
+    /// `mut_slice_of(vector)` [VIEW-2]: the exclusive view over one.
+    MutSliceOf,
 }
 
 /// One [BLK-0] operation record's lookup data.

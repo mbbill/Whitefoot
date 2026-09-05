@@ -797,6 +797,9 @@ impl<'check> Survey<'check, '_> {
                 CheckedSliceSource::ArenaContent { binding, .. } => {
                     Some((*binding, slice_source_place(self.places, source)))
                 }
+                CheckedSliceSource::Run(root) => {
+                    Some((root.binding, slice_source_place(self.places, source)))
+                }
                 CheckedSliceSource::Array {
                     root: CheckedArrayRoot::Constant(_),
                     ..

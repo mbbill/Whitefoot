@@ -722,7 +722,46 @@ impl Analyzer<'_, '_> {
                 let ValueImage::Binding(binding) = destination else {
                     return true;
                 };
+                // [BLK-0] the row's own published relation `len_of(result)
+                // == len_of(vector)`, established here over the viewed
+                // place. The row's other three relations are the constant
+                // cells [MSR-1] gives every view — `cap_of` equals `len_of`,
+                // and `room_of` and `head_of` are zero — which the term layer
+                // already answers from the measure table, so this is the one
+                // clause of the record that needs a source.
+                if let CheckedSliceSource::Run(root) = source {
+                    let Some(measured) = super::measured_kind(root.ty) else {
+                        return true;
+                    };
+                    let source_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        self.container_root_path(root),
+                        measured,
+                        super::type_constant(root.ty),
+                    );
+                    let slice_place = self.bound_place(binding);
+                    let slice_length = self.place_measure_term(
+                        CheckedMeasure::Length,
+                        projected_place(slice_place),
+                        MeasuredKind::Slice,
+                        None,
+                    );
+                    let event = self.binding_event(event, FlowEventKind::S6, node_path);
+                    state.establish(
+                        &Relation::Equal {
+                            left: slice_length,
+                            right: source_length,
+                            difference: 0,
+                        },
+                        &mut self.derivations,
+                        event,
+                    );
+                    return true;
+                }
                 let (place, array_length) = match source {
+                    // Answered above; a run's viewed place is a projection
+                    // path and not a field list.
+                    CheckedSliceSource::Run(_) => return true,
                     CheckedSliceSource::Array { root, length } => {
                         (self.array_root_place(root), Some(*length))
                     }

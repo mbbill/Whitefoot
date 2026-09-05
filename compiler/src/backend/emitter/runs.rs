@@ -399,6 +399,47 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         }
     }
 
+    /// [VIEW-2] one view formed over a run's initialized window.
+    ///
+    /// The window is `len` slots beginning at `head`, and the row's own
+    /// requirement `head_of(vector) <= room_of(vector)` is discharged before
+    /// this operation exists [BLK-0], so `head + len <= cap` and the window
+    /// is one contiguous range: the descriptor is the address of slot `head`
+    /// together with `len`, and no modulus is emitted.
+    ///
+    /// An inline run's slots travel with its value, so the address is taken
+    /// in the same per-result frame slot a subscript of one uses; only the
+    /// shared view reaches that, because an exclusive view of an inline run
+    /// stops in the checker.
+    pub(super) fn emit_slice_from_run(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        run: IrValueId,
+    ) -> Result<(), BackendFailure> {
+        let IrType::Slice { element } = ty else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        let run_type = self.value_type(run).ok_or(BackendFailure::InvalidIr)?;
+        let Some(shape) = RunShape::of(run_type) else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        if shape.element() != IrElement::Flat(element) {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let head = self.run_word(run_type, run, shape.head_field())?;
+        let length = self.run_word(run_type, run, shape.length_field())?;
+        let pointer = self.element_pointer(result, shape, run_type, run, &head)?;
+        let descriptor_type = llvm_type(self.program, ty)?;
+        let partial = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{partial} = insertvalue {descriptor_type} zeroinitializer, ptr %{pointer}, 0\n  {} = insertvalue {descriptor_type} %{partial}, i64 {length}, 1",
+            self.value_name(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
     /// [OP-4, BLK-1] one discharged subscript read at logical offset `i`.
     pub(super) fn emit_run_index(
         &mut self,

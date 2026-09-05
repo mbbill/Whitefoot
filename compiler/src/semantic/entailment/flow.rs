@@ -31,8 +31,8 @@ use super::super::model::{
     CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation, CheckedLoopId,
     CheckedLoopInvariant, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominal,
     CheckedNominalKind, CheckedNumericType, CheckedPlaceStep, CheckedProofUseSource,
-    CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
-    MeasureCell, MeasuredKind, ValueInitializerKind,
+    CheckedSetTarget, CheckedSliceSource, CheckedStatement, CheckedType, CheckedValue, FloatType,
+    IntegerType, LoanStrength, MeasureCell, MeasuredKind, ValueInitializerKind,
 };
 use super::super::places::{BindingSummary, PlaceMap, PlaceOffset, PlaceStep, ResolvedPlace};
 use super::super::postcondition::{
@@ -6201,6 +6201,40 @@ impl Analyzer<'_, '_> {
                     reached: reached && self.obligations_since_discharged(obligation_start),
                 }
             }
+            // [VIEW-2] a view formed over a run submits that row's own
+            // declared requirement here, judged under [MSR-4] exactly as
+            // every other consumer's obligation is. The clause is
+            // `head_of(vector) <= room_of(vector)`, which is what makes the
+            // viewed window one contiguous range: a wrapped window is two,
+            // and a view of one would reach storage the run does not own.
+            // The two retiring operand types carry the same clause and
+            // discharge it from their own measure-table row, whose `head`
+            // and `room` cells are both the constant zero [MSR-1].
+            CheckedExpression::SliceOf {
+                carrier,
+                source: CheckedSliceSource::Run(root),
+                strength,
+                ..
+            } => {
+                let obligation_start = self.obligations.len();
+                let reached = self.judge_place_subscripts(root, states);
+                if reached && let Some(goal) = self.non_wrapped_window_goal(root) {
+                    self.judge_kernel_requirement(
+                        crate::semantic::kernel::kernel_ordinal(match strength {
+                            LoanStrength::Shared => crate::KernelRow::SliceOf,
+                            LoanStrength::Exclusive => crate::KernelRow::MutSliceOf,
+                        }),
+                        0,
+                        carrier,
+                        goal,
+                        ProofContext::new(&states.facts, &states.affine),
+                    );
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reached && self.obligations_since_discharged(obligation_start),
+                }
+            }
             // [OP-4, BLK-1] a run's subscript owes `i < len_of(v)` wherever it
             // is written: the offset is a logical one and the window's length
             // bounds it, so the measured kind is the run's own and the written
@@ -6324,6 +6358,46 @@ impl Analyzer<'_, '_> {
     /// A record has no source node, so the outcome carries the row's own
     /// ordinal and the requirement's position in the row's declared list;
     /// [DIAG-1]'s location is the call itself.
+    /// [VIEW-2]'s non-wrap premise over one viewed run, as a caller-side
+    /// goal.
+    ///
+    /// A run whose measure table has no row is no operand of this row, and a
+    /// goal it cannot be stated over is simply unavailable, which leaves the
+    /// obligation unsubmitted and the formation refused by the ordinary
+    /// [MSR-4] disposition rather than admitted unchecked.
+    fn non_wrapped_window_goal(&mut self, root: &CheckedContainerRoot) -> Option<ConcreteGoal> {
+        let measured = root.measured()?;
+        let measure = |measure| GoalExpression::Operation {
+            row: GoalOperation::ContainerMeasure {
+                measure,
+                measured,
+                element: root.element(),
+                constant: root.type_constant(),
+            },
+            type_arguments: Vec::new(),
+            const_arguments: Vec::new(),
+            result: CheckedType::Integer(IntegerType::U64),
+            arguments: vec![self.goal_binding_place(
+                root.binding,
+                root.goal_projections(),
+                root.ty,
+            )],
+        };
+        Some(ConcreteGoal::new(GoalExpression::Operation {
+            row: GoalOperation::Integer {
+                operation: CheckedIntegerOperation::LessEqual,
+                operand_type: CheckedType::Integer(IntegerType::U64),
+            },
+            type_arguments: Vec::new(),
+            const_arguments: Vec::new(),
+            result: CheckedType::Bool,
+            arguments: vec![
+                measure(CheckedMeasure::Head),
+                measure(CheckedMeasure::Room),
+            ],
+        }))
+    }
+
     fn judge_kernel_requirement(
         &mut self,
         operation: u8,

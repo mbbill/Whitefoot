@@ -3608,9 +3608,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::ObligationFamily::KernelRequirement => {
                             let operation = outcome
                                 .kernel_row
-                                .and_then(|row| {
-                                    crate::KERNEL_OPERATIONS.get(usize::from(row)).copied()
-                                })
+                                .and_then(super::kernel::kernel_signature_at)
                                 .ok_or(SemanticCompilerFailure::InvalidResolution)?;
                             SemanticIssue {
                                 rule: SemanticRule::Blk0,

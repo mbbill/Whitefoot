@@ -1658,6 +1658,13 @@ pub(crate) enum CheckedSliceSource {
         fields: Vec<u32>,
         length: CheckedConst,
     },
+    /// One run [BLK-1], viewed over its initialized window.
+    ///
+    /// The window is `len_of` slots beginning at `head_of`, and the row's own
+    /// requirement is what makes that one contiguous range: `head_of(vector)
+    /// <= room_of(vector)` [VIEW-2], so the view is the slots from `head_of`
+    /// onward and never wraps.
+    Run(CheckedContainerRoot),
 }
 
 /// Source category retained only for integer-operation operands whose exact

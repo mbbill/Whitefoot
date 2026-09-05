@@ -331,6 +331,12 @@ impl IrBuilder<'_> {
     ) -> Result<IrValueId, LoweringFailure> {
         let result_type = lower_type(self.erasure, result)?;
         match row {
+            // [VIEW-2]'s formation rows are lowered at their own checked
+            // expression, which carries the viewed source; no `KernelCall`
+            // ever names them.
+            crate::KernelRow::SliceOf | crate::KernelRow::MutSliceOf => {
+                Err(LoweringFailure::InvalidCheckedProgram)
+            }
             crate::KernelRow::FixedVector => {
                 if !arguments.is_empty() {
                     return Err(LoweringFailure::InvalidCheckedProgram);
@@ -533,7 +539,7 @@ impl IrBuilder<'_> {
 
     /// The run or extent value one measured place reads, projected out of its
     /// root binding by the field selections that reach it [MSR-2].
-    fn container_root_value(
+    pub(super) fn container_root_value(
         &mut self,
         root: &CheckedContainerRoot,
     ) -> Result<IrValueId, LoweringFailure> {

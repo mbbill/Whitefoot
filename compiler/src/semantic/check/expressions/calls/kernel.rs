@@ -172,6 +172,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             let expectation = match parameter.mode {
                 KernelMode::Own => ModeExpectation::Own,
+                // [VIEW-2]'s two rows are the only shared-borrow operands of
+                // the inventory, and both are reached through their [OP-1]
+                // family spelling rather than through this path.
+                KernelMode::Shared => ModeExpectation::Borrow {
+                    kind: BorrowKind::Shared,
+                    region: None,
+                },
                 KernelMode::Unique => ModeExpectation::Borrow {
                     kind: BorrowKind::Unique,
                     region: None,
@@ -499,6 +506,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         atom: NodeId,
     ) -> Result<CheckedType, CheckStop> {
         match shape {
+            // [VIEW-2]'s rows are checked at their own formation, which reads
+            // the operand's borrow and the viewed place rather than a
+            // `fieldinit_list`, so their three shapes never reach this
+            // argument path.
+            KernelShape::Viewable | KernelShape::Slice | KernelShape::MutSlice => {
+                Err(SemanticCompilerFailure::InvalidResolution.into())
+            }
             KernelShape::U64 => Ok(CheckedType::Integer(IntegerType::U64)),
             KernelShape::Element => instance
                 .element
@@ -673,6 +687,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .ok_or(SemanticCompilerFailure::InvalidResolution)
         };
         Ok(match shape {
+            KernelShape::Viewable | KernelShape::Slice | KernelShape::MutSlice => {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
             KernelShape::U64 => CheckedType::Integer(IntegerType::U64),
             KernelShape::Element => instance.element,
             KernelShape::Run => instance

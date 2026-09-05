@@ -781,7 +781,11 @@ impl FunctionFramePlan {
                     IrOperation::RunIndex { run, .. }
                     | IrOperation::RunTaken { run, .. }
                     | IrOperation::RunStore { run, .. }
-                    | IrOperation::RunBoundary { run, .. } => {
+                    | IrOperation::RunBoundary { run, .. }
+                    // [VIEW-2] a view of an inline run takes the address of
+                    // its slots, so it needs the same frame slot an element
+                    // access of one needs.
+                    | IrOperation::SliceFromRun { run } => {
                         let run_type =
                             function.value_type(*run).ok_or(BackendFailure::InvalidIr)?;
                         if matches!(run_type, IrType::FixedVector { .. }) {
@@ -1693,6 +1697,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrOperation::SliceFromBuffer { buffer } => {
                 self.emit_slice_from_buffer(result, ty, *buffer)
             }
+            IrOperation::SliceFromRun { run } => self.emit_slice_from_run(result, ty, *run),
             IrOperation::SliceMeasure { slice } => self.emit_slice_length(result, ty, *slice),
             IrOperation::SliceIndex {
                 slice,

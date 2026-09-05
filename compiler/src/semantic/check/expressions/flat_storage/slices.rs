@@ -8,7 +8,7 @@ use crate::{
 
 use super::super::super::super::model::{
     CheckedExpression, CheckedMode, CheckedSliceOrigin, CheckedSliceSource, CheckedType,
-    LoanStrength,
+    LoanStrength, MeasuredKind,
 };
 use super::super::super::borrows::{AccessKind, ResolvedPlace, SliceInfo, SliceLoan};
 use super::super::super::{
@@ -212,10 +212,46 @@ inside the `region` block whose region it takes",
             CheckedIndexedPlace::Buffer(buffer) => {
                 (CheckedSliceSource::Buffer(buffer.root), buffer.resolved)
             }
-            // [OP-1] `slice_of` takes an array or a buffer; a view of a run
-            // is [BLK-0]'s own `slice_of` row, which is DEFERRED with the
-            // views batch.
-            CheckedIndexedPlace::Slice(_) | CheckedIndexedPlace::Container(_) => {
+            // [VIEW-2] a run is viewable: the row's operand class is the
+            // storage a view may be formed over, and the two runs [BLK-1]
+            // joined it when the row's own non-wrap requirement was stated.
+            // The requirement is submitted at this formation and is what
+            // makes the viewed window one contiguous range.
+            //
+            // TEMPORARY capability stop for the *inline* run at exclusive
+            // strength, judged after every source rejection above and for the
+            // reason the array's own stop states: a `FixedVector<T, n>` is a
+            // value whose slots travel with it, so the descriptor a view of
+            // one carries points at a snapshot. The shared view is
+            // unaffected — a live shared loan refuses every write to its
+            // origin, so the snapshot and the run agree wherever the view is
+            // readable — and the store-resident run is unaffected at either
+            // strength.
+            CheckedIndexedPlace::Container(container) => {
+                let Some(measured) = container.root.measured() else {
+                    return self.issue_node(
+                        SemanticRule::Op1,
+                        node,
+                        SemanticIssueKind::InvalidOperation,
+                    );
+                };
+                if !matches!(measured, MeasuredKind::FixedVector | MeasuredKind::Vector) {
+                    return self.issue_node(
+                        SemanticRule::Op1,
+                        node,
+                        SemanticIssueKind::InvalidOperation,
+                    );
+                }
+                if measured == MeasuredKind::FixedVector && strength == LoanStrength::Exclusive {
+                    return self.unsupported(
+                        UnsupportedSemanticFeature::ExclusiveViewOverInlineRun,
+                        atoms[0],
+                    );
+                }
+                let resolved = container.resolved.clone();
+                (CheckedSliceSource::Run(container.root.clone()), resolved)
+            }
+            CheckedIndexedPlace::Slice(_) => {
                 return self.issue_node(
                     SemanticRule::Op1,
                     node,

@@ -1086,6 +1086,15 @@ pub enum IrOperation {
     SliceFromBuffer {
         buffer: IrValueId,
     },
+    /// [VIEW-2] one view over a run's initialized window [BLK-1].
+    ///
+    /// The window is `len` slots beginning at `head`, and the row's own
+    /// requirement `head_of(vector) <= room_of(vector)` was discharged before
+    /// this operation exists, so the window is one contiguous range and the
+    /// descriptor is the slot at `head` together with `len`.
+    SliceFromRun {
+        run: IrValueId,
+    },
     SliceMeasure {
         slice: IrValueId,
     },

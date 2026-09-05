@@ -45,6 +45,20 @@ pub(crate) enum KernelShape {
     Extent,
     /// `Heap<'s>`.
     Heap,
+    /// [VIEW-2]'s **viewable** operand class: the storage a view may be
+    /// formed over.
+    ///
+    /// It is a class rather than one parameter because the class is wider
+    /// than any one type — the two runs [BLK-1] and, until [S34] retires
+    /// them, `array<T, N>` and `buffer<T>` — and because nothing in the
+    /// formation reads what that storage is made of. The row's element type
+    /// is the operand's own element, so the class supplies `T`, and the
+    /// operand's borrow supplies the view's region.
+    Viewable,
+    /// `Slice<'r, T>`.
+    Slice,
+    /// `MutSlice<'r, T>`.
+    MutSlice,
 }
 
 /// The mode of one value parameter [OWN-2]. The domain writes exactly two:
@@ -53,6 +67,11 @@ pub(crate) enum KernelShape {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum KernelMode {
     Own,
+    /// A `&'r` operand: the mode the shared view's formation row takes
+    /// [VIEW-2]. It reads the operand's state and takes one shared access to
+    /// it [OWN-5], and the value the row produces — not this borrow — holds
+    /// the loan [PROV-3].
+    Shared,
     Unique,
 }
 
@@ -327,6 +346,15 @@ impl KernelEffects {
         allocates: None,
     };
 
+    /// `reads(P)`: a row that observes its operand and writes nothing.
+    const fn reading(parameter: u32) -> Self {
+        Self {
+            reads: Some(parameter),
+            writes: None,
+            allocates: None,
+        }
+    }
+
     const fn over(parameter: u32, allocates: bool) -> Self {
         Self {
             reads: Some(parameter),
@@ -340,6 +368,10 @@ impl KernelEffects {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct KernelSignature {
     pub(crate) row: KernelRow,
+    /// The row's exact IDENT spelling [BLK-0], carried here because a record
+    /// has no source declaration and a diagnostic arising in this domain
+    /// names the operation in its payload.
+    pub(crate) spelling: &'static str,
     /// Written and supplied generic parameters in the order [GRAM-2] writes
     /// them: type parameters, then const parameters, then region parameters.
     pub(crate) generics: &'static [KernelGenericParameter],
@@ -414,6 +446,7 @@ const REGION_SUPPLIED: KernelGenericParameter = KernelGenericParameter {
 /// `fixed_vector<T, const n: u64>() -> result: own FixedVector<T, n> pure`.
 const SEQ_FIXED: KernelSignature = KernelSignature {
     row: KernelRow::FixedVector,
+    spelling: "fixed_vector",
     generics: &[TYPE_WRITTEN, CAPACITY_WRITTEN],
     parameters: &[],
     results: &[KernelResult {
@@ -504,6 +537,7 @@ const SEQ_ARENA_PAYLOAD: [KernelRelation; 4] = [
 /// Option<Vector<'s, T>>`.
 const SEQ_ARENA: KernelSignature = KernelSignature {
     row: KernelRow::ArenaVector,
+    spelling: "arena_vector",
     generics: &[
         TYPE_WRITTEN,
         BYTES_SUPPLIED,
@@ -590,6 +624,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
 /// result: own Vector<'s, T>`.
 const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
     row: KernelRow::ArenaVectorProved,
+    spelling: "arena_vector_proved",
     generics: &[
         TYPE_WRITTEN,
         BYTES_SUPPLIED,
@@ -685,6 +720,7 @@ const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
 /// declaration and by no executable path.
 const SEQ_HEAP: KernelSignature = KernelSignature {
     row: KernelRow::HeapVector,
+    spelling: "heap_vector",
     generics: &[TYPE_WRITTEN, REGION_SUPPLIED],
     parameters: &[
         KernelParameter {
@@ -712,6 +748,7 @@ const SEQ_HEAP: KernelSignature = KernelSignature {
 /// bytes, align> pure`.
 const ARENA_FRAME: KernelSignature = KernelSignature {
     row: KernelRow::ArenaFrame,
+    spelling: "arena_frame",
     generics: &[BYTES_WRITTEN, ALIGN_WRITTEN, REGION_WRITTEN],
     parameters: &[],
     results: &[KernelResult {
@@ -930,6 +967,7 @@ const TAKE_BACK: [KernelRelation; 3] = removal_relations();
 /// `place_back(vector: own V, value: own T) -> result: own V`.
 const SEQ_PLACE: KernelSignature = KernelSignature {
     row: KernelRow::PlaceBack,
+    spelling: "place_back",
     generics: &[TYPE_SUPPLIED],
     parameters: &PLACE_PARAMETERS,
     results: &[KernelResult {
@@ -950,6 +988,7 @@ const SEQ_PLACE: KernelSignature = KernelSignature {
 /// `place_front(vector: own V, value: own T) -> result: own V`.
 const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
     row: KernelRow::PlaceFront,
+    spelling: "place_front",
     generics: &[TYPE_SUPPLIED],
     parameters: &PLACE_PARAMETERS,
     results: &[KernelResult {
@@ -971,6 +1010,7 @@ const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
 /// `take_back(vector: own V) -> (rest: own V, value: own T)`.
 const SEQ_TAKE: KernelSignature = KernelSignature {
     row: KernelRow::TakeBack,
+    spelling: "take_back",
     generics: &[TYPE_SUPPLIED],
     parameters: &TAKE_PARAMETERS,
     results: &TAKE_RESULTS,
@@ -983,6 +1023,7 @@ const SEQ_TAKE: KernelSignature = KernelSignature {
 /// `take_front(vector: own V) -> (rest: own V, value: own T)`.
 const SEQ_TAKE_FRONT: KernelSignature = KernelSignature {
     row: KernelRow::TakeFront,
+    spelling: "take_front",
     generics: &[TYPE_SUPPLIED],
     parameters: &TAKE_PARAMETERS,
     results: &TAKE_RESULTS,
@@ -998,9 +1039,141 @@ const SEQ_TAKE_FRONT: KernelSignature = KernelSignature {
     fits: None,
 };
 
+/// The one value parameter both [VIEW-2] formation rows write: the viewable
+/// storage the view is formed over, borrowed at the row's own strength.
+const VIEW_PARAMETER: [KernelParameter; 2] = [
+    KernelParameter {
+        name: "vector",
+        mode: KernelMode::Shared,
+        shape: KernelShape::Viewable,
+    },
+    KernelParameter {
+        name: "vector",
+        mode: KernelMode::Unique,
+        shape: KernelShape::Viewable,
+    },
+];
+
+/// `requires head_of(vector) <= room_of(vector);` — [VIEW-2]'s non-wrap
+/// premise.
+///
+/// A view is one contiguous range and a wrapped window is two, so the row
+/// admits exactly the operands whose window does not wrap. The rule states
+/// the premise as `head_of + len_of <= cap_of`, which has three measure
+/// operands; under [MSR-2]'s standing identity `len_of + room_of = cap_of` it
+/// is exactly this difference bound between two terms, which is the shape
+/// [ENT-4]'s closure carries and the record notation admits. An empty run
+/// satisfies it from the standing `head_of <= cap_of` alone, and the two
+/// retiring operand types satisfy it from their own table row, whose `head`
+/// and `room` cells are both the constant zero [MSR-1].
+const NON_WRAPPED: KernelRelation = KernelRelation::plain(
+    KernelTerm::new(KernelOperand::Measure(
+        CheckedMeasure::Head,
+        KernelPlace::Parameter(0),
+    )),
+    KernelComparison::LessOrEqual,
+    KernelTerm::new(KernelOperand::Measure(
+        CheckedMeasure::Room,
+        KernelPlace::Parameter(0),
+    )),
+);
+
+/// The four relations a formation row publishes over the view it forms
+/// [MSR-1]: the viewed extent is the view's own length and its capacity, and
+/// a view is never a window.
+const fn view_relations(result: u32) -> [KernelRelation; 4] {
+    [
+        KernelRelation::plain(
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Length,
+                KernelPlace::Result(result),
+            )),
+            KernelComparison::Equal,
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Length,
+                KernelPlace::Parameter(0),
+            )),
+        ),
+        KernelRelation::plain(
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Capacity,
+                KernelPlace::Result(result),
+            )),
+            KernelComparison::Equal,
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Length,
+                KernelPlace::Parameter(0),
+            )),
+        ),
+        KernelRelation::plain(
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Room,
+                KernelPlace::Result(result),
+            )),
+            KernelComparison::Equal,
+            KernelTerm::constant(0),
+        ),
+        KernelRelation::plain(
+            KernelTerm::new(KernelOperand::Measure(
+                CheckedMeasure::Head,
+                KernelPlace::Result(result),
+            )),
+            KernelComparison::Equal,
+            KernelTerm::constant(0),
+        ),
+    ]
+}
+
+const VIEW_RELATIONS: [KernelRelation; 4] = view_relations(0);
+
+/// `slice_of['r, T](vector: &'r V) -> result: own Slice<'r, T> reads(vector)`.
+const SLICE_OF: KernelSignature = KernelSignature {
+    row: KernelRow::SliceOf,
+    spelling: "slice_of",
+    generics: &[TYPE_SUPPLIED, REGION_SUPPLIED],
+    parameters: &[VIEW_PARAMETER[0]],
+    results: &[KernelResult {
+        name: "result",
+        shape: KernelShape::Slice,
+    }],
+    effects: KernelEffects::reading(0),
+    requires: &[NON_WRAPPED],
+    ensures: &VIEW_RELATIONS,
+    fits: None,
+};
+
+/// `mut_slice_of['r, T](vector: &uniq 'r V) -> result: own MutSlice<'r, T>
+/// reads(vector)`.
+const MUT_SLICE_OF: KernelSignature = KernelSignature {
+    row: KernelRow::MutSliceOf,
+    spelling: "mut_slice_of",
+    generics: &[TYPE_SUPPLIED, REGION_SUPPLIED],
+    parameters: &[VIEW_PARAMETER[1]],
+    results: &[KernelResult {
+        name: "result",
+        shape: KernelShape::MutSlice,
+    }],
+    // The formation reads the operand's state and writes none of it: an
+    // element write through the formed view is that view's own access to its
+    // origin [PROV-3 use 1] and happens at the write, not here.
+    effects: KernelEffects::reading(0),
+    requires: &[NON_WRAPPED],
+    ensures: &VIEW_RELATIONS,
+    fits: None,
+};
+
 /// Every [BLK-0] signature record, in the `container_declaration_ordinal`
 /// preorder [BLK-2]'s rows followed by [BLK-3]'s.
-pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 9] = [
+///
+/// The last two are [VIEW-2]'s formation rows. Their record data is this
+/// domain's — the operand class, the borrow mode, the non-wrap requirement
+/// and the four published relations — while their *spelling* is still the
+/// [OP-1] family entry every existing program writes, because the transitional
+/// operand domain includes `array<T, N>` and `buffer<T>` and those two types
+/// retire with [S34]. Two domains may not claim one spelling [TYPE-6], so the
+/// spelling passes to the kernel IDENT domain in the same change that retires
+/// them, and until then these two rows carry no resolver entry.
+pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 11] = [
     SEQ_FIXED,
     SEQ_ARENA,
     SEQ_ARENA_PROVED,
@@ -1010,7 +1183,26 @@ pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 9] = [
     SEQ_PLACE_FRONT,
     SEQ_TAKE,
     SEQ_TAKE_FRONT,
+    SLICE_OF,
+    MUT_SLICE_OF,
 ];
+
+/// The `container_declaration_ordinal` of one row [BLK-0], which is its index
+/// in the inventory above.
+pub(crate) fn kernel_ordinal(row: KernelRow) -> u8 {
+    u8::try_from(
+        KERNEL_SIGNATURES
+            .iter()
+            .position(|signature| signature.row == row)
+            .expect("every row is an inventory member"),
+    )
+    .expect("the inventory is far below u8")
+}
+
+/// The record at one `container_declaration_ordinal`.
+pub(crate) fn kernel_signature_at(ordinal: u8) -> Option<&'static KernelSignature> {
+    KERNEL_SIGNATURES.get(usize::from(ordinal))
+}
 
 /// `advance<T>(count)`, the bump domain's acquire quantity [BLK-0].
 ///
@@ -1065,10 +1257,30 @@ mod tests {
 
     /// [BLK-0]: the two tables are one inventory. The resolver's row and the
     /// checker's record agree on every parameter name, every result binder
-    /// spelling, and the order of both.
+    /// spelling, the operation spelling, and the order of both.
+    ///
+    /// The record table is the longer of the two by exactly [VIEW-2]'s two
+    /// formation rows, whose spelling is still an [OP-1] family entry while
+    /// the transitional operand domain includes `array<T, N>` and
+    /// `buffer<T>`; every row the *resolver* carries has a record, and the
+    /// resolver's own index is the record's index, which is what
+    /// `container_declaration_ordinal` names.
     #[test]
     fn every_resolved_row_has_the_record_it_resolves_to() {
-        assert_eq!(KERNEL_OPERATIONS.len(), KERNEL_SIGNATURES.len());
+        assert!(KERNEL_OPERATIONS.len() <= KERNEL_SIGNATURES.len());
+        for (ordinal, operation) in KERNEL_OPERATIONS.iter().enumerate() {
+            assert_eq!(
+                KERNEL_SIGNATURES[ordinal].row, operation.row,
+                "{}",
+                operation.spelling
+            );
+            assert_eq!(
+                kernel_signature(operation.row).spelling,
+                operation.spelling,
+                "{}",
+                operation.spelling
+            );
+        }
         for operation in KERNEL_OPERATIONS {
             let signature = kernel_signature(operation.row);
             assert_eq!(
@@ -1169,7 +1381,12 @@ mod tests {
                     KernelShape::Extent => MeasuredKind::Extent,
                     // `V` is either run and the two rows agree on every cell.
                     KernelShape::Run => MeasuredKind::FixedVector,
-                    KernelShape::U64 | KernelShape::Element | KernelShape::Heap => continue,
+                    // The measure table gives both views one row [MSR-1].
+                    KernelShape::Slice | KernelShape::MutSlice => MeasuredKind::Slice,
+                    KernelShape::U64
+                    | KernelShape::Element
+                    | KernelShape::Heap
+                    | KernelShape::Viewable => continue,
                 };
                 let place = if matches!(result.shape, KernelShape::OptionVector) {
                     KernelPlace::Payload
@@ -1199,6 +1416,9 @@ mod tests {
             };
             let measured = match parameter.shape {
                 KernelShape::Extent => MeasuredKind::Extent,
+                // A viewable operand is read and never written, so no row
+                // reaches this arm through it.
+                KernelShape::Viewable => continue,
                 // The run a boundary row transforms is `own`, so its
                 // post-state is its result rather than the operand.
                 KernelShape::Run | KernelShape::Heap => continue,
@@ -1313,8 +1533,17 @@ mod tests {
                             KernelGenericKind::Type,
                             KernelShape::Element | KernelShape::Run
                         ) | (
+                            KernelGenericKind::Type,
+                            KernelShape::Viewable
+                        ) | (
                             KernelGenericKind::Region,
                             KernelShape::Extent | KernelShape::Heap | KernelShape::Vector,
+                        ) | (
+                            // [VIEW-2] the operand's own borrow takes the
+                            // view's region [FORM-8], so no argument is
+                            // written for it.
+                            KernelGenericKind::Region,
+                            KernelShape::Viewable
                         ) | (KernelGenericKind::Const(_), KernelShape::Extent)
                     )
                 });
