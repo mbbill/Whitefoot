@@ -6020,6 +6020,40 @@ impl Analyzer<'_, '_> {
                     reached: reaches_index && self.obligations_since_discharged(obligation_start),
                 }
             }
+            // [OP-4, BLK-1] a run's subscript owes `i < len_of(v)` wherever it
+            // is written: the offset is a logical one and the window's length
+            // bounds it, so the measured kind is the run's own and the written
+            // capacity is not the bound. A read owes exactly what the
+            // element-position target below owes, and is judged here.
+            CheckedExpression::RunIndex {
+                root,
+                offset,
+                obligation,
+                ..
+            } => {
+                let reaches_index =
+                    self.judge_children_reach_parent(std::iter::once(offset.as_ref()), states);
+                let obligation_start = self.obligations.len();
+                if reaches_index && let Some(measured) = root.measured() {
+                    let base = PlaceTerm {
+                        root: PlaceRoot::Binding(root.binding),
+                        deref: self.is_holder(root.binding),
+                        fields: root.fields.clone(),
+                    };
+                    self.judge_obligation(
+                        base,
+                        measured,
+                        root.type_constant(),
+                        offset,
+                        obligation.clone(),
+                        states,
+                    );
+                }
+                ExpressionJudgment {
+                    prepared_call: None,
+                    reached: reaches_index && self.obligations_since_discharged(obligation_start),
+                }
+            }
             CheckedExpression::BufferFill {
                 carrier,
                 element,
