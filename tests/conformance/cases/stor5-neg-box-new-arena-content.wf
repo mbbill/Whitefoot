@@ -1,9 +1,16 @@
-fn invalid(value: own arena<u64>) -> function_result: own unit pure {
-  doc "STOR-5 forbids region-bearing box content, and an arena descriptor bears a region exactly as a slice does. box_new derives its content type from its operand [STOR-2], so moving an arena<'r, u64> into it places a region-bearing type in box content and is rejected at that operand.";
-  box_new(move value);
-  return unit;
-}
-
-command fn main() -> status: own ExitStatus pure {
-  return exit_status(code: 0_u8);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "STOR-5 forbids region-bearing cell content, and a provider bears a region exactly as a slice does. heap_box derives its content type from its operand [S39], so moving an Arena<'r, bytes, align> into it places a region-bearing type in cell content and is rejected at that operand.";
+  region 'r {
+    let workspace = arena_frame::<8, 8, 'r>();
+    region {
+      match heap_box(store: &uniq heap, value: move workspace) {
+        Ok(value: cell) => {
+          return exit_status(code: 1_u8);
+        }
+        Err(error: back) => {
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
 }

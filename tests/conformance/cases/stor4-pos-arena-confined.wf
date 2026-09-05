@@ -1,11 +1,20 @@
 command fn main() -> status: own ExitStatus pure {
-  doc "An arena<'r,T> stays within its region 'r and is released at block exit [STOR-4].";
+  doc "An Arena<'r, bytes, align> stays within its region 'r, a cell taken at it is read through deref, and the extent is released at 'r's block exit [STOR-4].";
   region 'r {
-    let a = arena_new::<'r, i32>(4_i32);
-    let v = deref(a);
-    if v == 4_i32 {
-    } else {
-      return exit_status(code: 1_u8);
+    let a = arena_frame::<8, 8, 'r>();
+    region {
+      match arena_box(store: &uniq a, value: 4_i32) {
+        Err(error: back) => {
+          return exit_status(code: 2_u8);
+        }
+        Ok(value: cell) => {
+          let v = deref(cell);
+          if v == 4_i32 {
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
     }
   }
   return exit_status(code: 0_u8);

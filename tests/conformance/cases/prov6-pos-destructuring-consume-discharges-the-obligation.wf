@@ -1,13 +1,22 @@
 linear struct Chunk {
-  page: buffer<u8>;
+  page: Vector<u8>;
   spare: u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "PROV-6: `let N(f1: b1, ..., fk: bk) = move v;` consumes a value of nominal struct type whole and binds every declared field in declaration order. No residual of the consumed value survives it, so the statement is the second route out of a scope for a value linear in it, and its binders are ordinary own bindings of the enclosing block.";
-  let run = buffer_new(4_u64, 0_u8);
-  let chunk = Chunk(page: move run, spare: 7_u8);
-  let Chunk(page: page, spare: spare) = move chunk;
-  dispose page;
-  return exit_status(code: spare);
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let run = move fresh;
+        let chunk = Chunk(page: move run, spare: 7_u8);
+        let Chunk(page: page, spare: spare) = move chunk;
+        dispose page;
+        return exit_status(code: spare);
+      }
+    }
+  }
 }

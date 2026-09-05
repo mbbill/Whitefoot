@@ -1,5 +1,13 @@
-fn invalid(value: own Slice<u8>) -> function_result: own unit pure {
-  box_new(value);
+fn invalid(store: &uniq Heap, value: own Slice<u8>) -> function_result: own unit reads(store), writes(store), allocates(store) {
+  doc "heap_box accepts any ordinary operand type, but a direct slice in cell content is rejected by STOR-5 at that operand.";
+  region {
+    match heap_box(store: &uniq deref(store), value: value) {
+      Ok(value: cell) => {
+      }
+      Err(error: back) => {
+      }
+    }
+  }
   return unit;
 }
 

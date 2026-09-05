@@ -1,10 +1,18 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "Creation: box_new(v) returns own box<T> [STOR-2]; content is read through deref.";
-  let b = box_new(5_i32);
-  let v = deref(b);
-  if v == 5_i32 {
-  } else {
-    return exit_status(code: 1_u8);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "Creation: heap_box(store: s, value: v) returns own Result<Box<'s, T>, T> [S39]; content is read through deref.";
+  region {
+    match heap_box(store: &uniq heap, value: 5_i32) {
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+      Ok(value: b) => {
+        let v = deref(b);
+        if v == 5_i32 {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+        return exit_status(code: 0_u8);
+      }
+    }
   }
-  return exit_status(code: 0_u8);
 }
