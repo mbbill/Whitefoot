@@ -6,7 +6,7 @@
 //! returned, or bound only where every member of that set outlives the
 //! destination. The half this module carries is the one [STOR-5] deferred —
 //! the refusal of a `&uniq` parameter of a source-declared `fn` whose
-//! referent reaches a run, a view, or a type parameter — together with the
+//! referent reaches a run or a type parameter — together with the
 //! reachability closure [PROV-4] states and [PROV-6]'s release graph reads.
 //!
 //! Nothing here reads a name or a signature shape: the closure is over
@@ -27,13 +27,10 @@ enum ReachedSurface {
     /// One of the two runs [BLK-1], whose boundary operations move exactly
     /// the measures a caller would otherwise retain across the call [MSR-3].
     Run,
-    /// A view [VIEW-1], whose origin set a stored or borrowed position would
-    /// hide [PROV-3].
-    View,
     /// A type parameter, which is opaque at the declaration where this
-    /// verdict is reached, and which no [S37] bound excludes both of the
-    /// above at: the runs are affine and `MutSlice` is affine, while `Slice`
-    /// is copy, so every one of the three classes admits one of them.
+    /// verdict is reached, and which no [S37] bound excludes a run at: the
+    /// runs are affine, so the `affine` and `linear` bounds admit one and the
+    /// unbounded position admits one too.
     TypeParameter,
 }
 
@@ -41,7 +38,6 @@ impl ReachedSurface {
     const fn phrase(self) -> &'static str {
         match self {
             Self::Run => "a container nominal",
-            Self::View => "a loan-bearing type",
             Self::TypeParameter => "a type parameter no linearity bound excludes both at",
         }
     }
@@ -209,7 +205,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return Ok(Some(ReachedSurface::Run));
                 }
                 CheckedType::Vector { .. } => return Ok(Some(ReachedSurface::Run)),
-                CheckedType::Slice { .. } => return Ok(Some(ReachedSurface::View)),
+                // [BLK-4, VIEW-4] a `&uniq` whose referent is a view is
+                // admitted: a view carries no measure a callee could move,
+                // [VIEW-4] already forbids replacing a view through such a
+                // borrow, and [CALL-3] classifies what a callee writes
+                // through one as a viewed-storage write. That is what lets a
+                // helper be handed `&uniq MutSlice<u8>`, fill it, and leave
+                // its caller's own measures standing.
+                CheckedType::Slice { .. } => {}
                 CheckedType::Generic(_) => return Ok(Some(ReachedSurface::TypeParameter)),
                 CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                     pending.push(element.ty());

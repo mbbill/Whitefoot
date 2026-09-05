@@ -640,12 +640,14 @@ fn catalog_ir_type(
             width: 64,
             signed: false,
         },
-        crate::SystemTypeRef::BufferU8 => IrType::Buffer {
-            element: crate::IrFlatElement::Integer {
-                width: 8,
-                signed: false,
-            },
-        },
+        // [VIEW-7] an operand class has no one IR type: a range-bearing
+        // operand is a `MutSlice<u8>` or a `Slice<u8>` descriptor, or, until
+        // the old surface retires, a `buffer<u8>` one. Each member renders as
+        // the same `{ ptr, i64 }` pair, which is what the approved
+        // implementation's ABI takes; membership is checked at the argument.
+        crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+            return Err(BackendFailure::InvalidIr);
+        }
         crate::SystemTypeRef::Nominal(index) => system_nominal_ir_type(program, index)?,
         crate::SystemTypeRef::Result { ok, err } => {
             let ok = match ok {
@@ -674,6 +676,27 @@ fn catalog_ir_type(
                     && matches!(err_variant.fields(), [field] if field.ty() == error))
             })?
         }
+    })
+}
+
+/// Whether one emitted argument's IR type is a member of one [SYS-2] operand
+/// class [VIEW-7]. A parameter naming an exact type is not a class and is
+/// judged by [`catalog_ir_type`] equality instead.
+fn system_operand_admits(
+    declared: crate::SystemTypeRef,
+    argument: IrType,
+) -> Result<bool, BackendFailure> {
+    let element = crate::IrFlatElement::Integer {
+        width: 8,
+        signed: false,
+    };
+    Ok(match declared {
+        crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => matches!(
+            argument,
+            IrType::Buffer { element: actual } | IrType::Slice { element: actual }
+                if actual == element
+        ),
+        _ => false,
     })
 }
 
@@ -3396,7 +3419,9 @@ impl FunctionEmitter<'_, '_> {
                 .function
                 .value_type(*argument)
                 .ok_or(BackendFailure::InvalidIr)?;
-            if argument_type != catalog_ir_type(self.program, parameter.ty)? {
+            if !system_operand_admits(parameter.ty, argument_type)?
+                && argument_type != catalog_ir_type(self.program, parameter.ty)?
+            {
                 return Err(BackendFailure::InvalidIr);
             }
             if proof_only_resource(self.program, argument_type)? {

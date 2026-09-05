@@ -1,7 +1,7 @@
 use crate::{PreludeDeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
 use super::super::model::{
-    CheckedConstructor, CheckedField, CheckedFlatElement, CheckedNominal, CheckedNominalKind,
+    CheckedConstructor, CheckedField, CheckedNominal, CheckedNominalKind,
     CheckedType, CheckedVariant, IntegerType, LoanStrength, NominalId,
 };
 use super::{CheckStop, Checker, PendingNominal, PreludeType};
@@ -454,7 +454,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for field in constructor.fields {
                     fields.push(CheckedField {
                         name: field.name.to_owned(),
-                        ty: self.ensure_system_type(field.ty)?,
+                        ty: self
+                            .ensure_system_type(field.ty)?
+                            .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                     });
                 }
                 let declaration = u8::try_from(constructor_index)
@@ -496,17 +498,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     /// Maps one written [SYS-2] table type to its checked type, interning
     /// every system nominal and prelude `Result` instantiation it needs.
+    /// `None` for an operand class [VIEW-7]: a class is admitted by
+    /// membership rather than by type equality, so it has no one checked type
+    /// and interns nothing of its own.
     pub(super) fn ensure_system_type(
         &mut self,
         ty: crate::SystemTypeRef,
-    ) -> Result<CheckedType, CheckStop> {
-        Ok(match ty {
+    ) -> Result<Option<CheckedType>, CheckStop> {
+        Ok(Some(match ty {
             crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
             crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
             crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
-            crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
-            },
+            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+                return Ok(None);
+            }
             crate::SystemTypeRef::Nominal(index) => {
                 CheckedType::Nominal(self.intern_system_nominal(index)?)
             }
@@ -520,20 +525,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let error = CheckedType::Nominal(self.intern_system_nominal(err)?);
                 CheckedType::Nominal(self.intern_prelude_nominal(PreludeType::Result(ok, error))?)
             }
-        })
+        }))
     }
 
     /// Read-only variant of [`Self::ensure_system_type`] for use during
     /// function checking, after the mutable pre-pass interned every needed
     /// instance.
-    pub(super) fn system_type(&self, ty: crate::SystemTypeRef) -> Result<CheckedType, CheckStop> {
-        Ok(match ty {
+    /// `None` for an operand class [VIEW-7], exactly as above.
+    pub(super) fn system_type(
+        &self,
+        ty: crate::SystemTypeRef,
+    ) -> Result<Option<CheckedType>, CheckStop> {
+        Ok(Some(match ty {
             crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
             crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
             crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
-            crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {
-                element: CheckedFlatElement::Integer(IntegerType::U8),
-            },
+            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+                return Ok(None);
+            }
             crate::SystemTypeRef::Nominal(index) => {
                 CheckedType::Nominal(self.system_nominal(index)?)
             }
@@ -547,7 +556,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let error = CheckedType::Nominal(self.system_nominal(err)?);
                 CheckedType::Nominal(self.prelude_nominal(PreludeType::Result(ok, error))?)
             }
-        })
+        }))
     }
 
     pub(super) fn intern_prelude_nominal(

@@ -17,7 +17,10 @@ use crate::{
     SystemOperation, SystemParameterMode, operation_state_effects,
 };
 
-use super::super::super::super::model::{CheckedExpression, CheckedMode, CheckedStateOrigins};
+use super::super::super::super::model::{
+    CheckedExpression, CheckedFlatElement, CheckedMode, CheckedStateOrigins, CheckedType,
+    LoanStrength,
+};
 use super::super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, ResolvedPlace, places_overlap,
 };
@@ -125,14 +128,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         .ok_or(SemanticCompilerFailure::InvalidResolution)?,
                 },
             };
-            let expected_type = self.system_type(parameter.ty)?;
-            if argument.expression.ty() != expected_type {
+            let actual_type = argument.expression.ty();
+            if !self.system_operand_admits(parameter.ty, actual_type)? {
                 return self.issue_node(
                     SemanticRule::Type5,
                     atom,
                     SemanticIssueKind::type_mismatch(
-                        self.checked_type_name(expected_type)?,
-                        self.checked_type_name(argument.expression.ty())?,
+                        self.system_operand_name(parameter.ty)?,
+                        self.checked_type_name(actual_type)?,
                     ),
                 );
             }
@@ -179,7 +182,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             &mut effects,
         )?;
-        let result = self.system_type(operation.result)?;
+        let result = self
+            .system_type(operation.result)?
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         Ok(TypedExpression::owned(
             CheckedExpression::SystemCall {
                 operation: operation_index,
@@ -321,6 +326,61 @@ occurs at one parameter position, so this call's own arguments determine it",
             }
         }
         Ok(())
+    }
+
+    /// Whether one actual's type is admitted at one [SYS-2] parameter.
+    ///
+    /// Every parameter but the range-bearing ones names one exact type and is
+    /// admitted by equality. A range-bearing parameter names an operand class
+    /// [VIEW-7], which is admitted by membership: a destination takes the
+    /// exclusive view, a source takes the shared one, and both take
+    /// `buffer<u8>` until [S34] retires the old container surface. Nothing in
+    /// the row reads what the storage is made of, and the region a view
+    /// carries relates to nothing the row declares, so no member's region is
+    /// constrained here.
+    fn system_operand_admits(
+        &self,
+        declared: crate::SystemTypeRef,
+        actual: CheckedType,
+    ) -> Result<bool, CheckStop> {
+        let element = CheckedFlatElement::Integer(crate::semantic::model::IntegerType::U8);
+        Ok(match declared {
+            crate::SystemTypeRef::DestinationU8 => matches!(
+                actual,
+                CheckedType::Buffer { element: actual_element } if actual_element == element
+            ) || matches!(
+                actual,
+                CheckedType::Slice {
+                    element: actual_element,
+                    strength: LoanStrength::Exclusive,
+                    ..
+                } if actual_element == element
+            ),
+            crate::SystemTypeRef::SourceU8 => matches!(
+                actual,
+                CheckedType::Buffer { element: actual_element } if actual_element == element
+            ) || matches!(
+                actual,
+                CheckedType::Slice {
+                    element: actual_element,
+                    strength: LoanStrength::Shared,
+                    ..
+                } if actual_element == element
+            ),
+            _ => self.system_type(declared)? == Some(actual),
+        })
+    }
+
+    /// What one [SYS-2] parameter position expects, for a [TYPE-5] mismatch.
+    fn system_operand_name(&self, declared: crate::SystemTypeRef) -> Result<String, CheckStop> {
+        Ok(match declared {
+            crate::SystemTypeRef::DestinationU8 => "MutSlice<u8> or buffer<u8>".to_owned(),
+            crate::SystemTypeRef::SourceU8 => "Slice<u8> or buffer<u8>".to_owned(),
+            _ => match self.system_type(declared)? {
+                Some(ty) => self.checked_type_name(ty)?,
+                None => return Err(SemanticCompilerFailure::InvalidResolution.into()),
+            },
+        })
     }
 
     fn invalid_system_arguments(operation: &SystemOperation) -> SemanticIssueKind {

@@ -8154,11 +8154,19 @@ impl Analyzer<'_, '_> {
         else {
             return;
         };
+        // [SYS-8, VIEW-7] the row's own range-bearing parameter: the operand
+        // class this row writes or reads, whose `len_of` the second
+        // obligation is stated over.
         let Some((buffer_ordinal, buffer_parameter)) = row
             .parameters
             .iter()
             .enumerate()
-            .find(|(_, parameter)| parameter.ty == crate::SystemTypeRef::BufferU8)
+            .find(|(_, parameter)| {
+                matches!(
+                    parameter.ty,
+                    crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8
+                )
+            })
         else {
             return;
         };
@@ -8208,50 +8216,64 @@ impl Analyzer<'_, '_> {
         // remains the fallback for an argument that carries no place at all.
         let buffer_root = match buffer {
             CheckedExpression::BorrowBuffer { root, .. } => {
-                Some((root.binding, root.fields.clone(), root.element))
+                Some((root.binding, root.fields.clone()))
             }
             CheckedExpression::Binding {
                 binding,
-                ty: CheckedType::Buffer { element },
+                ty: CheckedType::Buffer { .. } | CheckedType::Slice { .. },
                 ..
-            } => Some((*binding, Vec::new(), *element)),
+            } => Some((*binding, Vec::new())),
             _ => None,
         };
         let buffer_spelling = match &buffer_root {
-            Some((binding, fields, _)) => self.render_place(&PlaceTerm {
+            Some((binding, fields)) => self.render_place(&PlaceTerm {
                 root: PlaceRoot::Binding(*binding),
                 deref: self.is_holder(*binding),
                 fields: fields.clone(),
             }),
             None => buffer_parameter.name.to_owned(),
         };
-        let CheckedType::Buffer {
-            element: buffer_element,
-        } = buffer.ty()
-        else {
-            return;
+        // [VIEW-7] the obligation is `end <= len_of(<the range-bearing
+        // operand>)`, stated over the measure-table row that operand's own
+        // type has [MSR-1]: a view is measured as a view and a `buffer` as a
+        // buffer, and neither reading is the other's.
+        let range_type = buffer.ty();
+        let (measure_row, measured_kind) = match range_type {
+            CheckedType::Buffer { element } => (
+                GoalOperation::BufferMeasure {
+                    measure: CheckedMeasure::Length,
+                    element,
+                },
+                MeasuredKind::Buffer,
+            ),
+            CheckedType::Slice {
+                region, element, ..
+            } => (
+                GoalOperation::SliceMeasure {
+                    measure: CheckedMeasure::Length,
+                    region,
+                    element,
+                },
+                MeasuredKind::Slice,
+            ),
+            _ => return,
         };
         let buffer_goal = match buffer_root.as_ref() {
             None => self.obligation_goal_operand(node_path, buffer_ordinal, buffer, &states.facts),
-            Some((buffer_binding, buffer_fields, _)) => self.goal_binding_place(
+            Some((buffer_binding, buffer_fields)) => self.goal_binding_place(
                 *buffer_binding,
                 buffer_fields.iter().copied().map(GoalProjection::Field),
-                CheckedType::Buffer {
-                    element: buffer_element,
-                },
+                range_type,
             ),
         };
         let length_goal = GoalExpression::Operation {
-            row: GoalOperation::BufferMeasure {
-                measure: CheckedMeasure::Length,
-                element: buffer_element,
-            },
+            row: measure_row,
             type_arguments: Vec::new(),
             const_arguments: Vec::new(),
             result: CheckedType::Integer(IntegerType::U64),
             arguments: vec![buffer_goal],
         };
-        let length_term = buffer_root.map(|(buffer_binding, buffer_fields, _)| {
+        let length_term = buffer_root.map(|(buffer_binding, buffer_fields)| {
             let base = PlaceTerm {
                 root: PlaceRoot::Binding(buffer_binding),
                 deref: self.is_holder(buffer_binding),
@@ -8260,7 +8282,7 @@ impl Analyzer<'_, '_> {
             self.place_measure_term(
                 CheckedMeasure::Length,
                 projected_place(base),
-                MeasuredKind::Buffer,
+                measured_kind,
                 None,
             )
         });
