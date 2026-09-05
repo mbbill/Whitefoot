@@ -272,6 +272,41 @@ already uses for structural limits — the 4096-entry `proof_use` capacity and
 the parser and the semantic former actually overflows. Removed when that limit
 exists and a test pins it.
 
+### Known defect: a runtime-sized allocation fails with no rule and no location
+
+```
+fn make(capacity: own u64) -> result: own buffer<u8> allocates(heap) {
+  let backing = buffer_new(capacity, 0_u8);
+  return move backing;
+}
+```
+
+stops with `TargetLayout/TargetLayout:
+TargetLayout(Unrepresentable(RuntimeSizedAllocation))` — no rule id, no source
+coordinate, no line, no mechanical fix. The program's actual defect is an
+undischarged size obligation, and `requires capacity <= 1000_u64;` fixes it,
+but nothing in the output says so. It passes semantic checking silently and
+stops four stages later. A sweep of 22 struct-owning-buffer programs hit it in
+all 22, which is why the corpus carries `1000_u64` ceilings that read as style
+and are compensation for this.
+
+The stage taxonomy is right — this is not a `Compiler` channel failure — but
+for a writer it is indistinguishable from one. The obligation belongs in the
+semantic walk with the shape `[OP-4]` and `[OP-2]` already use: a rule, a
+residual, a mechanical fix. Pre-existing; reproduces on a pre-v0.48 build.
+Removed when the rejection carries a rule and a location.
+
+### Known cost: a large `proof_use` block is impractical well below its ceiling
+
+[PRF-1] admits 4096 `proof_use` entries in one block and calls that "a source
+structural ceiling, not a work or time budget". Measured, the checker costs
+389 ms at 64 entries, 3.0 s at 128, and 26.8 s at 256 — about eight times per
+doubling, which puts the admitted ceiling many hours away. Pre-existing and
+not specific to any one entry shape; a pre-v0.48 build measures the same at
+128. Nothing in the corpus writes a block anywhere near this size, so this is
+recorded rather than fixed. Removed when the ceiling is reachable, or when the
+specification says what the real limit is.
+
 ## Running and checking
 
 From `compiler/`:

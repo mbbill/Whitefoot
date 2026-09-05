@@ -2879,7 +2879,7 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   record creates no separate approval step, and nothing in this record asserts
   that the approval has been given.
 - SPECIFICATION: activate Whitefoot v0.48 at exact SHA-256
-  `8102bf5f5aa32a8a220fa03c57965782f2de1969c67ea6f9455037f86af97f88`.
+  `1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`.
   It supersedes active v0.47 at SHA-256
   `8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`;
   those outgoing bytes are preserved byte-for-byte as
@@ -2894,7 +2894,14 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   productions go 84 to 85, unique fixed lowercase atoms 54 to 55, and the
   [FORM-2] whitespace rule that told a multiplied premise from an affine
   relation is replaced by the ordinary keyword-paren space a `for_stmt` header
-  already states. [ENT-3] gains no source. [INV-1]'s `compare_op` sentence
+  already states. [ENT-3] gains no source. [PRF-1] names the bindings it admits
+  as a named multiplicity by what they are — any live own-mode integer value
+  binding, a `for_stmt` binder and a match binder included, or an integer
+  `const` — rather than by three declaration syntaxes, which is what the
+  implementation always did; and it says which routes fix the operand images a
+  fold names without borrowing "the affine route", a phrase this specification
+  uses elsewhere for the constant-operand normalization alone.
+  [INV-1]'s `compare_op` sentence
   gains the citation the rest of the specification already implied: the
   restriction is one rule stated once, and `==` or `!=` cites INV-1 in an
   invariant target and PRF-1 in a `use_premise`, which is where the amended
@@ -2911,7 +2918,7 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   this very construct in prose. The mandatory parentheses were measured
   against all 124 `use` sites in the corpus: 61 bare relations, 29 names, 29
   name-with-multiplicity, 5 relation-with-multiplicity.
-- CONFORMANCE BOUNDARY: this merge adds six conformance cases and modifies
+- CONFORMANCE BOUNDARY: this merge adds seven conformance cases and modifies
   eleven; it deletes and renames none, and changes no manifest schema,
   adapter, runner, or collection wiring.
   ADDED `tests/conformance/cases/prf1-pos-term-multiplicity.wf`, manifest id
@@ -2935,6 +2942,10 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   suffixed literal where a bare-decimal multiplicity is required, pinning the
   citation to the position's own rule now that `const` is no longer the sole
   production using the pattern predicate.
+  ADDED `tests/conformance/cases/prf1-pos-binder-multiplicity.wf`, manifest id
+  `prf1-pos-binder-multiplicity`, rules PRF-1, expect run exit 0: a counted
+  loop binder as the named multiplicity, pinning the admitted domain now that
+  the rule names it.
   MODIFIED, all to the new spelling with their recorded verdicts unchanged:
   `gram4-neg-multiplied-use-relation-bare.wf` (still reject GRAM-4; its bare
   relation is now written after `times`, and its manifest doc is restated),
@@ -2945,4 +2956,4 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   `prf1-pos-multiplied-relation-use.wf` (manifest doc restated), and
   `reject-gram11-unnamed-call.wf` (a doc-string repair only). Rule coverage is
   136/136 before and after.
-ACTIVE-SPEC: v0.48 8102bf5f5aa32a8a220fa03c57965782f2de1969c67ea6f9455037f86af97f88 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5
+ACTIVE-SPEC: v0.48 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5

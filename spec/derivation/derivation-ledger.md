@@ -1970,7 +1970,7 @@ moves no row's status.
 ## v0.48 amendment — a use cites one premise (activated 2026-09-05)
 
 Specification binding: active `spec/kernel-spec.md`, headed v0.48, at
-SHA-256 `8102bf5f5aa32a8a220fa03c57965782f2de1969c67ea6f9455037f86af97f88`,
+SHA-256 `1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`,
 superseding v0.47
 (`8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`), whose
 bytes are archived at `spec/kernel-spec-v0.47.md`. This version amends and

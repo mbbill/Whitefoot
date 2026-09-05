@@ -1,0 +1,21 @@
+fn probe(x: own u64, y: own u64) -> result: own unit pure contract {
+  requires x <= 100_u64;
+  requires y <= 100_u64;
+  requires x <= y;
+} {
+  doc "A counted loop binder as the named multiplicity. The fold products are pre-bound so the case is about which bindings PRF-1 admits there, not about the fold; the binder is own-mode unsigned by the language's own counted-loop rule.";
+  invariant rel: x <= y;
+  for (i in 3_u64..4_u64) {
+    let scaled_x = i * x;
+    let scaled_y = i * y;
+    invariant scaled: scaled_x <= scaled_y {
+      use i times rel;
+    }
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let finished = probe(x: 2_u64, y: 5_u64);
+  return exit_status(code: 0_u8);
+}
