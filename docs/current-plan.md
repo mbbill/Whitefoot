@@ -553,11 +553,24 @@ before the code lands.
    Windows unit compiles clean under a second compiler's `-Werror`, that the
    link imports the real fiber, port, SRWLOCK and reservation entries, that
    the IOCP ring carries a real positioned read found by the record's own
-   address, and that the default-route probe passes on both routes. Only the
-   real host can settle the floor on a pool fiber, because wine approximates
-   the overflow classification `SetThreadStackGuarantee` and the vectored
-   handler give a fiber stack; the compiler-emitted end-to-end steps are the
-   host's for the same reason. The POSIX numbers did not move: the same
+   address, and that the default-route probe passes on both routes. The real
+   host settled the rest: `completion-windows` is green at `427b9aa` on every
+   step, including the floor on a pool fiber and a `--par` program stealing
+   across four workers. It took seven rounds, and each found something the
+   proxies could not: the MSVC C runtime deprecates `getenv` under `-Werror`,
+   so the platform layer gained one setting read (`prim.h` P4); the driver's
+   include-closure test needs every header staged on every platform; the
+   host runtime must not reach the bridge, since a program that submits
+   nothing links no bridge; binding a handle to the completion port is one
+   critical section under the descriptor table's lock, because every lane
+   offers its first record on one descriptor at once and a handle cannot
+   leave a port, and the file leaf sets the low bit of its overlapped event
+   so its reads post no packet to that port; and on the MSVC target a
+   destructor attribute is a C-runtime terminator that runs after the
+   streams are torn down, so the grant observer registers its report
+   through `atexit`. Every Windows run step now prints both channels and the
+   exit status before judging, and every fail-stop in the Windows link set
+   names its site. The POSIX numbers did not move: the same
    `--emit-llvm` module linked against the previous commit's runtime and
    against this one reads io-completion-bench `many_files_wide` at 0.1088 s
    and 0.1095 s best of seven, and `par_layout.wf` best of nine at W=1
