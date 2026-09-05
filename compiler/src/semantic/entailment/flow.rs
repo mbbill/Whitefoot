@@ -11050,6 +11050,7 @@ impl Analyzer<'_, '_> {
         requested.sort_unstable();
         requested.dedup();
 
+        let measure_terms_by_atom = self.measure_terms_by_atom();
         let mut term_intervals = HashMap::new();
         for atom_id in requested {
             let atom = *self
@@ -11065,7 +11066,7 @@ impl Analyzer<'_, '_> {
                 })
                 .collect::<Vec<_>>();
             bindings.sort_by_key(|binding| binding.0);
-            let terms = bindings
+            let mut terms = bindings
                 .into_iter()
                 .filter_map(|binding| {
                     if self.affine_binding_type(binding) != Some(atom.ty) {
@@ -11081,6 +11082,9 @@ impl Analyzer<'_, '_> {
                     )))
                 })
                 .collect::<Vec<_>>();
+            if let Some(measures) = measure_terms_by_atom.get(&atom_id) {
+                terms.extend(measures.iter().copied());
+            }
             term_intervals.insert(atom_id, (minimum, maximum, terms));
         }
 
@@ -11253,6 +11257,28 @@ impl Analyzer<'_, '_> {
         }
         self.measure_terms_scanned = registered;
         self.measure_terms_seen.clone()
+    }
+
+    /// Every live measure term, grouped by the affine atom it images.
+    ///
+    /// [MSR-4]'s interval step starts from each atom's *direct closed L0*
+    /// interval, so it has to be able to name the term whose value the atom
+    /// stands for. A local's atom is named through the binding that denotes
+    /// it; a measure atom's own name is its measure term [MSR-2], and without
+    /// this map a measure entered every interval substitution at its complete
+    /// `u64` range however tightly the closed state had already bounded it.
+    fn measure_terms_by_atom(&mut self) -> HashMap<AffineTermId, Vec<TermId>> {
+        let mut grouped: HashMap<AffineTermId, Vec<TermId>> = HashMap::new();
+        for term in self.measure_terms() {
+            if let Some(atom) = self.measure_atom(term).unit_term() {
+                grouped.entry(atom).or_default().push(term);
+            }
+        }
+        for terms in grouped.values_mut() {
+            terms.sort_unstable_by_key(|term| term.0);
+            terms.dedup();
+        }
+        grouped
     }
 
     fn affine_l0_candidates(&mut self, values: &AffineFlowState) -> Vec<AffineL0Candidate> {
@@ -11479,6 +11505,7 @@ impl Analyzer<'_, '_> {
         requested.sort_unstable();
         requested.dedup();
 
+        let measure_terms_by_atom = self.measure_terms_by_atom();
         let mut term_intervals = HashMap::new();
         for atom_id in requested {
             let atom = *self
@@ -11494,7 +11521,7 @@ impl Analyzer<'_, '_> {
                 })
                 .collect::<Vec<_>>();
             bindings.sort_by_key(|binding| binding.0);
-            let terms = bindings
+            let mut terms = bindings
                 .into_iter()
                 .filter_map(|binding| {
                     if self.affine_binding_type(binding) != Some(atom.ty) {
@@ -11510,6 +11537,9 @@ impl Analyzer<'_, '_> {
                     )))
                 })
                 .collect::<Vec<_>>();
+            if let Some(measures) = measure_terms_by_atom.get(&atom_id) {
+                terms.extend(measures.iter().copied());
+            }
             term_intervals.insert(atom_id, (minimum, maximum, terms));
         }
 
