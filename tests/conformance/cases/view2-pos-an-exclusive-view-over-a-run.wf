@@ -1,0 +1,14 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "VIEW-2 states one viewed domain for both strengths, and the viewable operand class now contains the two runs, so this program is the exclusive half of it over a frame-resident run: the view is formed, one element is written through it, and the run itself is read back. The buffer sibling view1-pos-an-element-write-through-an-exclusive-view is the same program over storage this compiler can address.";
+  let empty = fixed_vector::<u8, 2>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  region {
+    let window = mut_slice_of(&uniq one);
+    set window[0_u64] = 9_u8;
+  }
+  let seen = one[0_u64];
+  if seen == 9_u8 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

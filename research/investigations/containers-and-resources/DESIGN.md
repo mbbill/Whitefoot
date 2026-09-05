@@ -7718,9 +7718,11 @@ viewable run all landed; the fill-and-publish helper did not, and its delta is s
   reborrowed descriptor, its lowering, and the call-boundary loan the returned child carries
   at the caller; none of those is deep, and none of them is one line.
 
-**Verdicts.** The adapter moves from Pass=654 over 657 cases to Pass=663 over 666, the one
-xfail and the two skips unchanged, with coverage complete at 152/152 and the snapshot corpus
-at Pass=491, Flip=0. One case is deleted and ten are added; ten case sources are respelled
+**Verdicts.** The adapter moves from Pass=654 over 657 cases to Pass=663 over 667, the one
+xfail unchanged and the skip count moving from two to three — the third is this batch's own
+pending case, over the second storage form the element write cannot reach — with coverage
+complete at 152/152 and the snapshot corpus at Pass=491, Flip=0. One case is deleted and
+eleven are added; ten case sources are respelled
 and every one keeps the verdict it recorded. `tests/programs/run_views.wf` is the executable
 witness: a view over a run, the copy view used twice bare, an append after that view's last
 use inside the same region, a drained run viewed, and an exclusive view whose shared child

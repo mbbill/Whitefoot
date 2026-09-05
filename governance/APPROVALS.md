@@ -4022,8 +4022,14 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   reborrow formed through a *view holder* — `slice_of(&'r deref(destination))`
   from a `&uniq MutSlice<'r, u8>` parameter — is not implemented, so the
   fill-and-publish helper is still unwritable and [VIEW-6]'s ceiling half has no
-  positive case. Both are DEFERRED in [META-5] with stated deltas.
-- CONFORMANCE BOUNDARY (B8f): ten added cases, one deleted case, one modified
+  positive case. Both are DEFERRED in [META-5] with stated deltas. Beside them
+  stands one storage form the exclusive view cannot reach: a `FixedVector<T, n>`
+  is frame-resident and its slots travel with its value, so an exclusive view of
+  one stops as the explicit unsupported capability `ExclusiveViewOverInlineRun`
+  exactly as an array's does, and `view2-pos-an-exclusive-view-over-a-run`
+  carries the specification's own accept at status pending with that stop as its
+  reason.
+- CONFORMANCE BOUNDARY (B8f): eleven added cases, one deleted case, one modified
   case source whose expectation is unchanged, and no rename.
   Added:
   `view1-pos-a-shared-view-is-used-twice-without-move`
@@ -4045,7 +4051,11 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `view2-neg-an-element-write-while-a-child-view-lives`
   (`{"kind": "reject", "rule": "OWN-5"}`) and
   `view6-neg-two-same-region-view-results`
-  (`{"kind": "reject", "rule": "VIEW-6"}`), each status runnable.
+  (`{"kind": "reject", "rule": "VIEW-6"}`), each status runnable, and
+  `view2-pos-an-exclusive-view-over-a-run`
+  (`{"kind": "run", "exit": 0}`) at status pending, whose recorded reason is the
+  same inline-storage stop `view2-pos-an-exclusive-view-over-an-array` carries,
+  read over the second storage form that has it.
   Deleted: `view2-neg-a-shared-view-of-a-place-an-exclusive-view-holds`
   (`{"kind": "reject", "rule": "OWN-5"}`, status runnable), added by B8e in this
   same unmerged branch and never on `main`. Its refusal held only while this
@@ -4056,12 +4066,13 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   Modified: `fn1-pos-returned-slice-inputs-run`, source only, expectation
   `{"kind": "run", "exit": 0}` and status runnable both unchanged.
   Before this batch the corpus holds 657 cases with the native adapter
-  reporting Pass=654, Xfail=1, Skip=2; after it the corpus holds 666 with the
-  adapter reporting Pass=663, Xfail=1, Skip=2. The one xfail
-  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the two skips are
-  unchanged in id, expectation and status. Rule coverage stays complete at
+  reporting Pass=654, Xfail=1, Skip=2; after it the corpus holds 667 with the
+  adapter reporting Pass=663, Xfail=1, Skip=3. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) is unchanged in id,
+  expectation and status, and the skip count moves from two to three, the third
+  being the pending case this batch adds and no existing case's status. Rule coverage stays complete at
   152/152, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0.
   No verdict of either corpus moved apart from the one deleted case recorded
   above, and no program of the executable corpus changed behaviour;
   `tests/programs/run_views.wf` is added and runs to exit 0.
-ACTIVE-SPEC: v0.45 c0d830f8f4f202d5a5ab0c0c9222893f76ae912ea68542f41bdfb524aa6be26f 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 78e1a6fbd1942ce0fb9679dfb4b14d5a55ec24a1ca79e815e6b6707b7b9699a8 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
