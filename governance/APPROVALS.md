@@ -3178,4 +3178,55 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
+- CONTENT (B7a4, the bump extent at run time, and the const generic as an
+  affine atom): no numbered rule is added and none is retired (148 remain);
+  grammar productions +0/-0 and no grammar atom is added or retired; entry
+  forms +0/-0, the closed standard-input table keeping its five rows; kernel
+  declaration records +0/-0 (44 remain), one spelling of that record data
+  changing as stated below. [BLK-0], [BLK-2], [INV-1], [MSR-6] and [STOR-3] are
+  amended in place. [BLK-2] gains the sentence that a reservation establishes
+  the extent's initial state at every activation of its region block and that
+  an extent therefore carries no release action of its own; [STOR-3]'s table
+  loses that row rather than restating it. [BLK-0] fixes `advance<T>(count)` as
+  `round_up(stride_ceiling(T) * count, align)` rather than over
+  `size_ceiling(T)`, because a run's slots are stride-spaced and a take of
+  `size_ceiling(T) * count` would hand out a run whose last slots lie outside
+  what the store gave it; it also states that every declared value-parameter
+  and result spelling of the inventory satisfies [FORM-3]'s IDENT class, and
+  that a requirement naming `advance<T>(count)` at an open count states a bound
+  over an opaque term its caller cannot discharge. [MSR-6] and [INV-1] admit an
+  in-scope const generic as an [INV-1] affine atom, on the const generic's own
+  ground rather than the named const's: [ENT-2] clause (c) makes it a constant
+  with no liveness, no entry state and no support, while a named const is a
+  tracked place of clause (a) whose exclusion from the affine atom this version
+  keeps.
+- CONSEQUENCE OF THE PROVIDER OPERAND'S SPELLING: the provider operand of the
+  three acquiring rows was named `arena` and `heap` after each store's own
+  nominal, and both are fixed grammar atoms -- the `arena<'r, T>` type and
+  `allocates(heap)`'s allocation atom -- which [FORM-3] excludes from IDENT. A
+  kernel-domain call writes its value arguments as a `fieldinit_list` whose
+  IDENTs equal the declared parameter names, so `seq_arena(arena: ...)` was a
+  FORM-3 parse rejection and no call to any of the three rows could be written
+  at all. The operand is spelled `store` in all three rows. This changes no
+  writer declaration, no reserved word and no `ReservedLowerNames` member: a
+  kernel row's parameter name is record data, and no source in either corpus
+  wrote such a call, so no case source changed and no verdict moved.
+- CONFORMANCE BOUNDARY (B7a4): this batch ADDS eight conformance cases and
+  their eight manifest rows, and modifies, deletes and renames none; it changes
+  no adapter, runner, or collection wiring, and no existing case's source, id,
+  expectation, rule citation or status. The eight added ids are
+  `blk2-pos-a-bump-take-hands-out-a-run` (run, exit 0),
+  `blk2-pos-a-refused-take-leaves-the-store-unmoved` (run, exit 0),
+  `blk2-neg-a-reservation-names-a-region-parameter` (reject, BLK-2),
+  `blk2-neg-a-reservation-inside-a-loop-of-its-block` (reject, BLK-2),
+  `prov1-neg-a-second-store-in-one-region` (reject, PROV-1),
+  `blk0-neg-a-proved-take-without-the-room-it-requires` (reject, BLK-0),
+  `msr6-pos-a-const-generic-is-an-affine-atom` (run, exit 0) and
+  `msr6-neg-a-const-generic-affine-atom-is-unproved` (reject, INV-1). Before
+  this batch the corpus holds 589 cases with the native adapter reporting
+  Pass=587, Xfail=1, Skip=1; after it the corpus holds 597 with the adapter
+  reporting Pass=595, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, and the recorded-verdict snapshot
+  corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
 ACTIVE-SPEC: v0.45 5afec1348d18049b9aa4b8c7759cb40091a969a4982b510d6d86b80acd3d54c9 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

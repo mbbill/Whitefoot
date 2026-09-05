@@ -151,10 +151,20 @@ B7a3b makes a contract clause side the affine expression an invariant already
 is, gives a parameter's measure in an `ensures` its entry datum and a `let`
 rebind its own, lands the element-position window store over both runs, and
 opens a run's element domain to [BLK-1]'s, which together are what let the
-design's own fixed-run library prove its contracts and run. The store -- the
-bump take, the extent reservation and the general store's provider value --
-together with the confinement rule, a run of runs and the retirement of the old
-container types, is what remains.
+design's own fixed-run library prove its contracts and run. B7a4 makes the bump
+extent execute: `arena_frame` reserves one in the reserving activation's own
+frame, `seq_arena_proved` and `seq_arena` take a run of slots from it, the
+placement judgment and [PROV-1]'s one-store-per-region refusal are enforced,
+and the extent's release action is deleted because the reservation establishes
+its state at every activation of its block. The same batch makes an in-scope
+const generic an [INV-1] affine atom [MSR-6], so a capacity-parametric loop
+states its own bound. **The general store is what remains of the store half:**
+[FN-7]'s `command.heap` row is still unwritable, because `heap` is the atom
+[EFF-1] fixes for `allocates(heap)` and [FORM-3] therefore excludes it from
+IDENT, and a heap-backed run's release action is a free the compiler's
+region-erased run type cannot select. Beside it stand the confinement rule, a
+run of runs, a source function generic over a store -- which needs the region
+axis in generic substitution -- and the retirement of the old container types.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

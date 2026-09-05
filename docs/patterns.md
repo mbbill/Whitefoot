@@ -704,20 +704,23 @@ carry — one difference bound between two operands displaced by a constant
 declaration while the same expression in a `requires` is admitted; write the
 two-datum fact as two clauses, or let [MSR-2]'s standing identity supply it.
 
-**And an affine atom is one bare local or one literal.** A const-generic
-parameter is not an atom [INV-1], so a loop over `n` that needs `n` inside an
-invariant binds it first:
+**An affine atom is one bare local, one literal, or one const generic.** A
+capacity-parametric loop states its bound as the parameter itself
+[INV-1, MSR-6]:
 
 ```whitefoot
-let limit = n;
 for @fill (
   at in 0_u64..n,
-  invariant spare: room_of(built) + at >= limit
+  invariant spare: room_of(built) + at >= n
 ) {
 ```
 
-The binding is the [ENT-3.S6] equality that carries the symbolic constant into
-the affine domain; without it the atom does not resolve.
+The const generic is the constant [ENT-2] clause (c) already fixes, so it needs
+no liveness and no support and nothing kills it. Until v0.45 the position was
+missing and the loop bound it first with `let limit = n;`; that binding is now
+redundant and the direct spelling is the canonical one. A *named* const is
+still not an affine atom — it is a tracked place rather than a constant — so a
+`const CAP: u64 = 8;` read inside an invariant still needs the binding.
 
 Under v0.44 the same fact is stated directly in the contract
 that consumes it, with no binding and no `contract_define` at all: a
@@ -1290,6 +1293,43 @@ second kind, so an `Arena` writes it at every position: `Arena<4096, 16>` is a
 [FORM-8] rejection and `Arena<'s, 4096, 16>` is the form.
 
 Replaces: putting a region parameter on every declaration that touches a run.
+
+## P26. Reserve the extent in the outer block and take inside an inner one
+
+Problem: a bump extent is reserved by naming its own region —
+`arena_frame::<4096, 16, 'a>()` — so the binding that holds the provider is
+declared *inside* `'a`'s block. A take borrows that provider, and the borrow's
+elided region is the innermost enclosing one, which is `'a` itself. [OWN-10]
+refuses it: `'a` is introduced outside the binding it would borrow, so a loan
+living for `'a` could outlive the storage.
+
+Pattern: reserve in the named block and take inside a nested unnamed one, with
+the run's uses inside it too:
+
+```whitefoot
+region 'a {
+  let workspace = arena_frame::<256, 8, 'a>();
+  region {
+    let page = seq_arena_proved::<u64>(store: &uniq workspace, count: 4_u64);
+    let one = seq_place(vector: move page, value: 11_u64);
+  }
+}
+```
+
+This is the same `region { call(&uniq local) }` shape a `&uniq` argument
+already takes anywhere else; what is particular to a store is that the runs it
+hands out are used inside the inner block as well, because the binding that
+holds one dies at that block's exit. That costs nothing: an arena-backed run's
+release action is empty, its storage being the extent's [PROV-6].
+
+Two takes share one inner block. A second reservation for the same region is a
+[PROV-1] rejection — one region names one store — so a program that wants two
+extents opens two region blocks.
+
+Replaces: threading the provider into a helper generic over its store, which
+this version cannot spell: a region argument is not substituted into a
+container type at a call, so `Arena<'s, bytes, align>` at a parameter never
+matches the actual.
 
 ## Known gaps (findings, not yet patterns)
 

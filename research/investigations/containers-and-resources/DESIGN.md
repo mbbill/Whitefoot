@@ -1219,6 +1219,19 @@ through `ent2_place`. *Depends:* [ENT-2] 2681 clause (c), which is why this rule
 spelling and not a fact source. *Verified today:* probe `q10`. *Law:* L16, L18.
 *History:* r6 F1-14; r5 F4-1.
 
+> **Correction, decided 2026-09-05, from B7a4's implementation.** This rule named three
+> positions and 3.L needs a fourth: [INV-1]'s affine **atom**. B7a3b measured it —
+> `invariant spare: room_of(built) + at >= n` was refused, and the library bound `let
+> limit = n;` in three functions to state its bound over a local instead. The fourth
+> position is *not* one a named const already occupies, so it is not carried by this
+> rule's own sentence and is admitted on the const generic's own ground: [ENT-2] clause
+> (c) makes an in-scope const generic a **constant**, so it needs no liveness, no entry
+> state and no support and nothing kills it, while a named const is a *tracked place* of
+> clause (a) whose exclusion from the affine atom this version keeps. [MSR-6] and
+> [INV-1] state that, the three `let limit = n;` lines are gone, and the admission still
+> adds a spelling and no fact source: a concrete instance reads the mathematical value
+> and the one symbolic instance reads the symbolic constant term.
+
 #### 3.K.2 `[PROV]`: stores, brand, activation, and release
 
 **[PROV-1] A store's identity is a region, the region is in the type, a region names at
@@ -1459,6 +1472,28 @@ trip, making `arena_frame`'s published `len_of(result) = 0` false from trip two;
 refusal no rule stated. It is now a hard error citing PROV-5 at the `targ`, with the
 restructuring `move the region block inside the loop, so the store is reserved and reset
 per iteration`, which is the idiom [RES-10] recommends.
+
+> **Correction, decided 2026-09-05, from B7a4's implementation.** The seventh draft gave
+> a frame-placed extent a release action carried on every edge leaving its region block:
+> the bump cursor reset to zero. The reservation is where that state belongs and the
+> only place that needs no machinery. The occurrence is a statement of the block and of
+> no loop inside it [PROV-5], so it runs exactly once per activation of the block and
+> sets the cursor to zero there; the storage is the activation's own frame; and nothing
+> of the extent is observable outside the block. A reset on the leaving edge is
+> therefore unobservable, and [BLK-2] and [STOR-3] state that an extent has no release
+> action instead of naming a row for one.
+
+> **Correction, decided 2026-09-05, from B7a4's implementation.** The provider operand of
+> each acquiring row was named after its store's own nominal — `arena` and `heap` — and
+> both are fixed grammar atoms, the `arena<'r, T>` type and `allocates(heap)`'s
+> allocation atom, which [FORM-3] excludes from IDENT. A kernel-domain call writes its
+> value arguments as a `fieldinit_list` whose IDENTs equal the declared parameter names
+> [BLK-0], so `seq_arena(arena: ...)` was a FORM-3 *parse* rejection and no call to any
+> of the three acquiring rows could be written at all. The operand is `store` in all
+> three, which is [3.K.10]'s one name per concept, and one machine test holds every
+> declared spelling of the inventory to [FORM-3]'s IDENT class. **Nothing had caught it
+> because no test had ever written such a call**: every positive test of B7a and B7a2
+> stopped at `ContainerRuntime` before an operand was read.
 
 The `frame` form lays the extent out in the reserving activation's frame, so it enters
 that context's `stack` item, and [STK-3] states that `frame(f)` includes the alignment
@@ -6364,6 +6399,111 @@ first, which needs a value of the element type and therefore a copy element type
 other route — `let (shorter, one) = ...; set vector = move shorter;` — stops at
 `Semantics/Unsupported: OwnershipJoin` inside a loop. **`collect`, the `BlockPool` and the
 `bs_*` family are the next batch's** and none was attempted.
+### 6.0j B7a4 landed (v0.45)
+
+**The bump extent executes, a const generic is an affine atom, and the general store is
+still unreachable.** Four items of this batch's brief landed; two did not, and both are
+blocked on things this file records rather than on the rows themselves.
+
+- **The three bump rows execute [BLK-2].** `arena_frame::<bytes, align, 's>()` reserves
+  one extent in the reserving activation's own frame, at that extent's own written
+  alignment; `seq_arena_proved` and `seq_arena` take a run of `count` slots from it; the
+  `Vector<'s, T>` descriptor they hand back is the one the four boundary rows and the
+  window subscript already worked over, so a run taken from a store is a run in every
+  other respect. `tests/programs/arena_workspace.wf` reserves an extent, reads the
+  store's own cursor before and after each take, fills a taken run through `seq_place`
+  and reads the window back, and observes that a refused take leaves the cursor exactly
+  where it was. **The take is branch-free**: the refusal is a value, so both arms are
+  computed and the outcome selects between them.
+- **`arena_frame`'s placement and `[PROV-1]`'s one-store-per-region refusal are
+  judged.** The written store region must be one an enclosing `region_stmt` of the
+  reserving function introduced, and the occurrence must be a statement of that block and
+  of no loop inside it. [BLK-2] and [PROV-1] are cited rules of the compiler's own rule
+  enum for the first time and take their definition ranks there.
+- **A const generic is an [INV-1] affine atom [MSR-6].** `invariant spare:
+  room_of(built) + at >= n` is what a capacity-parametric loop wants to state, and B7a3b
+  measured that it could not. The three `let limit = n;` lines in
+  `tests/programs/fixed_run_library.wf` are gone. The admission is on the const
+  generic's own ground: [ENT-2] clause (c) makes it a *constant* with no liveness, no
+  entry state and no support, while a named const is a term of clause (a) whose
+  exclusion from the affine atom this version keeps.
+- **The extent has no release action.** The seventh draft gave it a reset carried on
+  every edge leaving its region block. The reservation is the better place and the only
+  one that needs no machinery: it establishes the cursor at zero at every activation of
+  the block, the storage is the activation's own frame, and nothing of the extent is
+  observable outside the block, so no leaving edge has work to do. [BLK-2] and [STOR-3]
+  say that now, and [STOR-3]'s table loses a row rather than gaining a mechanism.
+
+**Three defects were measured rather than reasoned, and each is worth naming.**
+
+```text
+| what was wrong                       | how it showed                      | repair                        |
+|--------------------------------------|------------------------------------|-------------------------------|
+| the provider operand was named       | `seq_arena(arena: ...)` is a       | the operand is `store` in all |
+| `arena` / `heap`                     | FORM-3 parse rejection: both are   | three acquiring rows, and one |
+|                                      | fixed grammar atoms, so no call    | machine test holds the whole  |
+|                                      | to any of the three rows could be  | table to FORM-3's IDENT class |
+|                                      | written at all                     |                               |
+| `advance<T>(count)` was the size     | a run's slots are stride-spaced,   | it is the stride, in [BLK-0]  |
+|                                      | so a take of `size * count` hands  | and in the compiler's one     |
+|                                      | out a run whose last slots lie     | reader of the quantity        |
+|                                      | outside what the store gave it     |                               |
+| a requirement dropped its written    | `room_of(store) >= advance(count)` | the requirement carries it,   |
+| displacement                         | was submitted as `>= 0` and every  | one machine test holds the    |
+|                                      | store discharged it                | record data to the one shape  |
+|                                      |                                    | a goal can express            |
+```
+
+The first is the one to learn from. Nothing had caught it because **no test had ever
+written a call to one of those rows**: B7a2 resolved and checked them, B7a2's own record
+said so, and every one of its positive tests stopped at `ContainerRuntime` before an
+operand was read. A record whose spelling no program can write is not a record.
+
+**What this batch did not reach, and why.**
+
+- **[S22] is still unwritable and the general store still has no value.** The row is
+  `command.heap as heap: own Heap`, and `heap` is the atom [EFF-1] fixes for
+  `allocates(heap)`, which [FORM-3] therefore excludes from IDENT — the label tail and
+  the binder are both IDENT positions. B7a's record already said this and it is still
+  true. **The three routes out are: retire the atom in favour of [PROV-4]'s
+  `allocates(path)` [S23], which no current program survives because the ambient heap is
+  not a value and no path can be rooted at it; respell the atom, which is one mechanical
+  respell of 415 `.wf` occurrences and 441 more inside the compiler's embedded tests,
+  with every verdict unchanged, on the S36 precedent; or change [S22]'s own label tail.
+  Each is an owner surface decision and none was taken here.**
+- **`seq_heap` keeps its `ContainerRuntime` stop, and D3's capability half keeps its
+  accept cases.** Beyond the missing provider value there is a second blocker with its
+  own cost: a heap-backed run's release action is a free, an arena-backed one's is
+  empty, and this compiler's `IrType::Vector` erases the region, so the lowering cannot
+  select between them. The class *is* decidable from the region declaration alone —
+  entry heap and an unbounded or `linear`-bounded region parameter are general,
+  `affine`-bounded and `region_stmt` regions are extents — so the repair is one field on
+  `CheckedType::Vector` and one on `IrType::Vector`, not a new judgment. D3's refusal
+  half is reachable without it and its accept half is not.
+- **No source function can be generic over a store.** `fn take['s](store: &uniq
+  Arena<'s, bytes, align>, ...)` declares and its body checks, but at a call the region
+  argument is not substituted into the parameter's container type: `Arena<'s, ...>` stays
+  `'s` and the actual is `Arena<'a, ...>`, which is a [TYPE-5] mismatch. This is the
+  region axis in `GenericSubstitution` that 6.0g already recorded as absent; what is new
+  is that it now blocks the natural writer form for the arena, so every take must be
+  written where the extent is reserved.
+- **A take needs a nested region block.** `&uniq workspace` inside `'a`'s own block is
+  [OWN-10]'s ordinary refusal — the borrow's elided region is `'a`, which is introduced
+  outside the binding it borrows — so the corpus idiom `region { call(&uniq local) }`
+  applies, and the run's uses go inside that inner block with it. This is a pre-existing
+  property of [FORM-8]'s elision and [OWN-10], not of the rows, but it is what the arena
+  programs of this batch are shaped by.
+- **A proved take at an open count is an explicit unsupported capability.** `advance<T>
+  (count)` at a count that is not a closed expression is an opaque term with no source
+  spelling, so a caller can state nothing about it and `seq_arena_proved`'s third
+  requirement has no difference-bound form. Skipping the requirement would admit an
+  unproved partial operation, so the call stops instead. The refusing row is the one for
+  that position and it carries no such requirement.
+- **[LIV-2]'s declaring `set` target is not landed.** It is not a checker change: a
+  target identifier that resolves to no binding is an unresolved use before the checker
+  sees it, so the declaration has to be minted in the resolver's own scope walk.
+  `rebase<T, const n>` therefore stays at a copy element type.
+
 ### 6.1 What the compiler did in this session
 
 ```text
@@ -7179,8 +7319,12 @@ and `head_of` are standing facts; the descriptor is materialized at each use.
 constant and [MSR-2] already makes it a standing fact with empty support.
 
 **`advance<T>(count)`**, the bump domain's acquire quantity and the one compiler-owned
-term former A.2's rows name, is `round_up(size_ceiling(T) * count, align)`, where
-`align` is the store's own type constant. It is one [ENT-2] term of fragment type `u64`
+term former A.2's rows name, is `round_up(stride_ceiling(T) * count, align)`, where
+`align` is the store's own type constant. It is the **stride** and not the size because
+a run's slots are stride-spaced: `count` of them occupy `stride_ceiling(T) * count`
+bytes, and a take of `size_ceiling(T) * count` would hand out a run whose last slots lie
+outside what the store gave it. The seventh draft wrote the size; B7a4 measured the
+difference and [BLK-0] now writes the stride. It is one [ENT-2] term of fragment type `u64`
 with the support of `count`: a symbolic constant when `count` is a closed expression,
 and an opaque term otherwise, so a relation over it is an ordinary difference bound
 between two terms. Whether `count` is closed is [RES-3]'s question and is answered at the
@@ -7208,24 +7352,24 @@ Formation                                                                       
   seq_fixed<T, const n: u64>()                       -> own FixedVector<T, n>       pure
       len_of(result) = 0, cap_of(result) = n, room_of(result) = n, head_of(result) = 0
   seq_arena<T, const bytes: u64, const align: u64>['s](
-        arena: &uniq Arena<'s, bytes, align>, count: own u64)
-      -> own Option<Vector<'s, T>>       reads(arena), writes(arena), allocates(arena)
+        store: &uniq Arena<'s, bytes, align>, count: own u64)
+      -> own Option<Vector<'s, T>>       reads(store), writes(store), allocates(arena)
       requires align >= align_ceiling(T)
       requires fits::<T>(count)
       Some(value: r): len_of(r) = 0, cap_of(r) = count, room_of(r) = count, head_of(r) = 0,
-                      len_of(arena) = len_of(arena at the call) + advance<T>(count)
-      None:           len_of(arena) = len_of(arena at the call),
-                      room_of(arena) < advance<T>(count)
-      both:           cap_of(arena) = cap_of(arena at the call)
+                      len_of(store) = len_of(store at the call) + advance<T>(count)
+      None:           len_of(store) = len_of(store at the call),
+                      room_of(store) < advance<T>(count)
+      both:           cap_of(store) = cap_of(store at the call)
   seq_arena_proved<T, const bytes: u64, const align: u64>['s](
-        arena: &uniq Arena<'s, bytes, align>, count: own u64)
-      -> own Vector<'s, T>               reads(arena), writes(arena), allocates(arena)
+        store: &uniq Arena<'s, bytes, align>, count: own u64)
+      -> own Vector<'s, T>               reads(store), writes(store), allocates(arena)
       requires align >= align_ceiling(T)
       requires fits::<T>(count)
-      requires room_of(arena) >= advance<T>(count)
+      requires room_of(store) >= advance<T>(count)
       as the Some row above
-  seq_heap<T>['s](heap: &uniq Heap<'s>, count: own u64)
-      -> own Option<Vector<'s, T>>       reads(heap), writes(heap), allocates(heap)
+  seq_heap<T>['s](store: &uniq Heap<'s>, count: own u64)
+      -> own Option<Vector<'s, T>>       reads(store), writes(store), allocates(heap)
       requires fits::<T>(count)
       Some(value: r): len_of(r) = 0, cap_of(r) = count, room_of(r) = count, head_of(r) = 0
       None:           nothing; a general store publishes no measure (L6)

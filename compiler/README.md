@@ -250,19 +250,27 @@ supports them:
 This list is an implementation map, not a second language specification. The
 compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
-The largest such gap today is the store-backed half of the container
-specification. The frame-resident run executes: `seq_fixed` forms one,
-[BLK-3]'s four boundary operations move its boundaries, `len_of`, `cap_of`,
-`room_of` and `head_of` read its measures, a subscript reads the window at
-`(head_of + i) mod cap_of`, each row's requirement is discharged at the call under
-[MSR-4] and each row's declared relations are published at the caller under
-[CALL-6]. What is not implemented is the store: `arena_frame`,
-`seq_arena`, `seq_arena_proved` and `seq_heap` are resolved, checked and
-judged, and a call to one stops as an explicit unsupported capability, so no
-`Vector<'s, T>` and no `Arena<'s, bytes, align>` value exists at run time even
-though both types are named, branded, confined, laid out and measured by the
-ordinary source judgments. `seq_heap` additionally has no writable operand at
-all, because [FN-7]'s `command.heap` row is DEFERRED. A run whose element type
+The largest such gap today is the general store. Both runs execute:
+`seq_fixed` forms a frame-resident one, `arena_frame` reserves one bump extent
+in the reserving activation's own frame and `seq_arena_proved` and `seq_arena`
+take a store-resident one from it, [BLK-3]'s four boundary operations move
+either run's boundaries, `len_of`, `cap_of`, `room_of` and `head_of` read the
+measures of a run and of a store, a subscript reads the window at
+`(head_of + i) mod cap_of`, each row's requirement is discharged at the call
+under [MSR-4] and each row's declared relations are published at the caller
+under [CALL-6]. What is not implemented is `seq_heap`, which stops as an
+explicit unsupported capability for two reasons at once: [FN-7]'s
+`command.heap` row is DEFERRED, so no program can obtain a `Heap<'s>` value at
+all, and a heap-backed run's release action is a free that this compiler's
+region-erased `IrType::Vector` cannot select from an arena-backed run's empty
+one. Two further stops are worth naming. A source function cannot be generic
+over a store: a region argument is not substituted into a container type at a
+call, so `Arena<'s, bytes, align>` at a parameter never matches the actual, and
+every take must be written where its extent is reserved. And a proved take
+whose count is not a closed expression stops, because `advance<T>(count)` is
+then an opaque term with no source spelling and its requirement has no
+difference-bound form a caller could discharge; the refusing row is the one for
+that position. A run whose element type
 is itself a run is the one further stop, and it is explicit: a run's element
 type is otherwise every type [BLK-1] states — every copy element, one
 region-free affine nominal stored by value, and an unbounded type parameter,
@@ -275,11 +283,16 @@ Beside them stands one source-surface gap the container library needs and this
 compiler does not have: [MSR-3]'s construct, `set`-target, enum-payload and
 destructuring placements, so a measured value renamed by anything but a `let`
 binder loses its measures. A `requires` or `ensures` side is an affine
-expression [GRAM-4, GRAM-5, MSR-5] and a parameter's measure named in an
-`ensures` is its entry datum [MSR-3], which together are what let the container
+expression [GRAM-4, GRAM-5, MSR-5], a parameter's measure named in an
+`ensures` is its entry datum [MSR-3], and an in-scope const generic is an
+affine atom [MSR-6, INV-1], which together are what let the container
 design's own fixed-run library — `vacant`, `filled`, `take_at`, `try_place`,
 `try_take` and `rebase` — prove its contracts and execute
-(`tests/programs/fixed_run_library.wf`).
+(`tests/programs/fixed_run_library.wf`), each capacity-parametric loop stating
+its bound as the const generic itself.
+`tests/programs/arena_workspace.wf` is the store-backed companion: it reserves
+an extent, reads the store's own cursor across each take, fills a taken run and
+observes that a refused take leaves the cursor where it was.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 
