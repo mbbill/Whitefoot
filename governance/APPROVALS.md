@@ -3726,4 +3726,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   region argument at its two constructs for the same reason as the first three
   modified cases and keeps its recorded behaviour; it is outside the
   conformance boundary.
-ACTIVE-SPEC: v0.45 eb3a72ac4aa7387e0b024e99bc553a118f1ae2343112f512c39bf680751e421d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 1877abdc9545a2789eef360637495789b49f2c21152652337bee6dd8c2cde14c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
