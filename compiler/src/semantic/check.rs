@@ -3009,7 +3009,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             "write a canonical positive bare-decimal factor, or omit the factor when it is one"
                         }
                         crate::SourceProofObligation::NonlinearCertificateSum => {
-                            "bind the product this certificate scales into, `let scaled = n * p;`, so the sum names a value already proved exact, or scale the premise by a bare decimal instead"
+                            "the multiplied operand must be one the checker holds as a single value — a parameter or a call result — because a locally derived one is expanded into its own operands and no admitted product then matches the sum; take it as a parameter, or scale the premise by a bare decimal instead"
                         }
                     };
                     Err(CheckStop::source_issue(SemanticIssue {

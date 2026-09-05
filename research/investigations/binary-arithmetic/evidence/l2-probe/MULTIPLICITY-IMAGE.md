@@ -36,3 +36,37 @@ written down here.
 This table was measured after an adversarial sweep reported an asymmetry
 between `a + 1` and `a - 1`. There is none; that sweep's three probes carried
 three different targets, so the multiplicity was not the variable under test.
+
+## The operand axis, measured on the domain that motivated the feature
+
+A stride sweep across 19 padded-bitmap, DIB, alignment, tiling, volume and
+interleaved-audio programs found the second axis is the one that bites, and it
+bites harder than the ledger first recorded. Held to one shape, varying only
+where the stride comes from:
+
+| `stride` | verdict |
+| --- | --- |
+| `let stride = stride_src;` (a copy of a parameter) | accept |
+| `let stride = stride_src + padding;` | reject, `NonlinearCertificateSum` |
+| `let stride = stride_src + 4_u64;` | reject, `NonlinearCertificateSum` |
+| `let stride = 2_u64 * stride_src;` | reject, `NonlinearCertificateSum` |
+
+Any derivation kills it, and a stride in this domain is *definitionally*
+derived — width plus padding, a row rounded up to four bytes, a tile area, a
+channel count, an alignment. The feature admits the case where the stride is
+already a parameter, which is matrix multiply's, and refuses the case the
+sweep was written to test.
+
+The ledger's first remedy, "the writer must bind the sum first", is wrong:
+`let stride = width + padding;` *is* binding it, and the binding's image is
+still the sum, so no product is recorded. The compiler's own mechanical fix
+said the same wrong thing and told a writer who had already bound the product
+to bind the product. Both now name the real condition — the operand must be
+one the checker holds as a single value, a parameter or a call result — and
+the sweep's only working workaround is a whole extra function to make it so.
+
+The repair this points at is not more proof power. [PRF-1] already resolves a
+**named premise** by declaration identity, explicitly not by re-deriving its
+current value; the same treatment applied to the **named multiplicity** and to
+the product's operands would fold `stride * row` to the binding the writer
+wrote rather than to whatever sum it currently denotes.
