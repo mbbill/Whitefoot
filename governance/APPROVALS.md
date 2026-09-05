@@ -4075,4 +4075,96 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   No verdict of either corpus moved apart from the one deleted case recorded
   above, and no program of the executable corpus changed behaviour;
   `tests/programs/run_views.wf` is added and runs to exit 0.
-ACTIVE-SPEC: v0.45 4386b78bcf9488f5959e70a48b05878e1e6a74de10933000caacacd3a3165118 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B7b, the store as a value, the allocation path, and confinement):
+  [S23] gives [EFF-1]'s `allocates` entry the same formal-rooted `effect_path`
+  its `reads` and `writes` entries take and releases the lowercase `heap` atom
+  to IDENT, which is what makes [S22]'s entry row `command.heap as heap: own
+  Heap` writable at all; the entry standard-input table gains ordinal 5 and now
+  has six rows, and a program that omits the row reaches no allocation of the
+  general store. The `arena` REGIONID alternative of the same entry stays, with
+  its own retirement delta, for exactly as long as `arena<'r, T>` and its
+  `arena_new` row live, because an allocation into a caller-supplied region is a
+  write of the caller's storage that [PAR-1]'s overlap footprint reads. The
+  ambient heap of `box<T>` and `buffer<T>` has no provider value, therefore no
+  path and no written entry at all: its allocation is still checked, reachable
+  and reclaimed, and its reachability is the compiler's own retained record,
+  closed over the call graph, rather than a declared row.
+  `heap_vector` executes: the take is an allocation from the provider and the
+  run's release class selects a free emitted after the window walk, so the
+  general store's storage is reclaimed on the edge that owns it. [PROV-6]'s
+  capability half is reachable for the first time with the provider value — a
+  run branded to a general store is linear in every scope holding no live
+  binding of that store's provider, and the rejection names the binding, the
+  edge and the absent capability — and its other direction is the row: a derived
+  release of store-backed storage, and a `dispose` of it, both write the
+  resolved provider place.
+  [BLK-4] is added as one numbered rule: the position closure [STOR-5] deferred,
+  the `ConfinedTypeWithoutStore` refusal [PROV-1] deferred, and the `&uniq`
+  parameter refusal over a referent that reaches a run, a view, or a type
+  parameter. Its container clause is the two runs and no other, stated on its
+  own ground — the refusal exists for a measure a callee moves while its caller
+  retains it, and exactly the four boundary operations move one — so `array<T,
+  N>` and `buffer<T>`, each carrying one measure fixed at formation, are outside
+  it and the clause retires with them. A provider parameter is the one `&uniq`
+  the rule does not refuse.
+- CONSEQUENCE, WHAT DID NOT LAND (B7b): the retirement of `buffer<T>`,
+  `box<T>`, `arena<'r, T>` and `array<T, N>` with their [OP-1] rows, the move of
+  `slice_of` and `mut_slice_of` into the kernel IDENT domain that waits on it,
+  and [CALL-4]'s remaining admissions. The measured reason is the corpus: the
+  replacement for a `buffer<T>` is a `Vector<'s, T>` formed empty and filled by
+  a loop carrying three invariants, which is a per-program proof obligation
+  rather than a rename, and `buffer_new` alone stands in 113 conformance cases,
+  20 corpus programs, about 137 snapshot cases and about 446 places inside the
+  compiler's own embedded test sources. Retiring the spelling without migrating
+  them would leave this specification and the compiler disagreeing about several
+  hundred accepted programs, which is the defect the branch rule forbids. Every
+  one of those clauses keeps its DEFERRED entry and its stated delta.
+- CONFORMANCE BOUNDARY (B7b): seven added cases, no deleted case, no rename,
+  eight rewritten cases whose recorded expectations are unchanged, and 126
+  modified case sources whose expectations are unchanged.
+  Added:
+  `blk4-neg-a-unique-parameter-reaches-a-run`
+  (`{"kind": "reject", "rule": "BLK-4"}`),
+  `blk4-neg-a-unique-parameter-reaches-a-run-through-a-field`
+  (`{"kind": "reject", "rule": "BLK-4"}`),
+  `blk4-neg-a-unique-parameter-reaches-a-type-parameter`
+  (`{"kind": "reject", "rule": "BLK-4"}`),
+  `blk4-pos-a-provider-is-the-one-unique-parameter-admitted`
+  (`{"kind": "run", "exit": 0}`),
+  `fn7-pos-the-entry-receives-the-general-store`
+  (`{"kind": "run", "exit": 16}`),
+  `prov6-neg-a-store-backed-run-reaches-an-exit-without-the-capability`
+  (`{"kind": "reject", "rule": "PROV-6"}`) and
+  `prov6-pos-a-scope-holding-the-provider-takes-the-derived-release`
+  (`{"kind": "run", "exit": 0}`), each status runnable.
+  Rewritten, source replaced and expectation unchanged: the eight cases that
+  pinned the retired `heap` atom — `eff1-neg-wrong-order-row`
+  (`{"kind": "reject", "rule": "EFF-1"}`), `x-eff-trailing-comma-row`
+  (`{"kind": "reject", "rule": "EFF-1"}`),
+  `x-eff-pure-combined-with-allocation`
+  (`{"kind": "reject", "rule": "EFF-1"}`), `eff2-neg-undeclared-exhibited`
+  (`{"kind": "reject", "rule": "EFF-2"}`), `eff2-neg-declared-unexhibited`
+  (`{"kind": "reject", "rule": "EFF-2"}`),
+  `x-eff-pure-fn-calls-allocating-fn`
+  (`{"kind": "reject", "rule": "EFF-2"}`),
+  `x-eff-allocating-fn-calls-only-pure`
+  (`{"kind": "reject", "rule": "EFF-2"}`) and
+  `fn3-neg-signature-effect-mismatch`
+  (`{"kind": "reject", "rule": "FN-3"}`). Each now names a provider path over
+  the general store in place of the atom, and each keeps its recorded kind,
+  rule and status.
+  Modified, source only: 126 case sources, of which 125 lose the
+  `allocates(heap)` entry the ambient heap no longer writes and one,
+  `prov6-pos-a-region-argument-names-a-bump-extent`
+  (`{"kind": "run", "exit": 0}`), gains the `allocates(store)` its
+  `arena_vector` call exhibits. No expectation, rule list or status changed.
+  Before this batch the corpus holds 667 cases with the native adapter
+  reporting Pass=663, Xfail=1, Skip=3; after it the corpus holds 674 with the
+  adapter reporting Pass=670, Xfail=1, Skip=3. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the three skips are
+  unchanged in id, expectation and status. Rule coverage stays complete at
+  153/153, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0
+  over 148 modified sources, none of whose verdicts moved. No program of the
+  executable corpus changed behaviour or exit code; `tests/programs/heap_run.wf`
+  is added and runs to exit 12.
+ACTIVE-SPEC: v0.45 8359b110b2a41203e06e944505661ac97fd1af0c9e07d5ead8699736adc56748 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

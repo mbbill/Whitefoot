@@ -100,8 +100,14 @@ the innermost suitable region with `arena_new::<'r, T>(value)`. The returned
 compiler rejects an arena value that leaves the region rather than promoting
 it implicitly. A value that truly needs a different lifetime therefore belongs
 in that region from the start or uses another owned storage form such as `box`.
-Effect rows (`allocates(arena 'r)` vs `allocates(heap)`) keep the allocation
-site visible in a signature.
+Effect rows keep the allocation site visible in a signature. Since [S23] the
+`allocates` entry takes the same formal-rooted paths `reads` and `writes` take,
+so an allocation from a store whose provider is a value names that provider:
+`allocates(store)` for a helper taking `&uniq Arena<'s, ...>` or `&uniq Heap`,
+and `allocates(heap)` for a `main` whose `command.heap` binder is spelled
+`heap`. The ambient heap of `box<T>` and `buffer<T>` has no provider value and
+therefore no path, so it writes no entry at all; `allocates(arena 'r)` is the
+one remaining region-keyed entry and retires with `arena<'r, T>`.
 
 Current value: each region owns a compiler-generated allocation list. An
 allocation pushes one `{ next, content }` node. Normal fallthrough, loop

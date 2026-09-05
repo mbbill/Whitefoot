@@ -6612,7 +6612,7 @@ measured and are recorded here rather than in a report.
   as source — the type is nameable, branded, confined, laid out and measured — and stop
   before lowering, exactly as an `arena<'r, T>` value has stopped since v0.31. Every
   positive test of this batch is therefore a declaration rather than an execution.
-- **`command.heap` cannot be spelled.** [S22]'s row is `command.heap as heap: own Heap`,
+- **`command.heap` cannot be spelled.** *(Superseded by 6.0s: [S23] retired the atom and the row is written, so the general store has a source route from B7b onward.)* [S22]'s row is `command.heap as heap: own Heap`,
   and `heap` is the atom [EFF-1] fixes for `allocates(heap)`, which [FORM-3] therefore
   excludes from IDENT: the label tail and the binder are both unwritable, and no
   compiler change repairs that. The row is recorded in [FN-7] as DEFERRED with its delta
@@ -6622,7 +6622,7 @@ measured and are recorded here rather than in a report.
   [PROV-1] is written so that the entry heap's store region exists in every unit whether
   or not the entry holds the provider, so brand resolution is unaffected; what is absent
   is the provider *value*.
-- **`array<T, n>` does not retire.** [S34] retires it together with `array_new`, and the
+- **`array<T, n>` does not retire.** *(Still true after 6.0s, and for the same reason measured over the whole surface rather than `array` alone.)* [S34] retires it together with `array_new`, and the
   corpus holds **ninety-nine `array_new` occurrences across sixty-five `.wf` sources and
   a hundred and fifteen more inside the compiler's own embedded test sources**. Each has
   exactly one replacement, 3.L.3's `filled`, which is a source generic over a formation
@@ -6637,7 +6637,7 @@ measured and are recorded here rather than in a report.
   unchecked publishes `len_of(result) == 0_u64` falsely from the second activation. The
   frame form carries the region-locality and loop-free conditions and is stated;
   `arena_extent` is DEFERRED with a records delta of one.
-- **Confinement is `[BLK-4]`'s and is B7b's.** `[STOR-5]` states the half `[PROV-1]`
+- **Confinement is `[BLK-4]`'s and is B7b's.** *(Superseded by 6.0s: [BLK-4] landed there.)* `[STOR-5]` states the half `[PROV-1]`
   needs — a provider is region-bearing and a store-branded run is not — and defers the
   position closure and the `&uniq` parameter refusal with a delta of one numbered rule.
   `[FN-2]`'s blanket region-bearing-argument rejection narrows to loan-bearing and
@@ -6967,7 +6967,7 @@ operand was read. A record whose spelling no program can write is not a record.
 
 **What this batch did not reach, and why.**
 
-- **[S22] is still unwritable and the general store still has no value.** The row is
+- **[S22] is still unwritable and the general store still has no value.** *(Superseded by 6.0s: the first of the three routes out — retiring the atom in favour of [PROV-4]'s `allocates(path)` — is the one that was taken, and no current program needed a respell because the ambient heap's allocation simply writes no entry.)* The row is
   `command.heap as heap: own Heap`, and `heap` is the atom [EFF-1] fixes for
   `allocates(heap)`, which [FORM-3] therefore excludes from IDENT — the label tail and
   the binder are both IDENT positions. B7a's record already said this and it is still
@@ -6978,7 +6978,7 @@ operand was read. A record whose spelling no program can write is not a record.
   with every verdict unchanged, on the S36 precedent; or change [S22]'s own label tail.
   Each is an owner surface decision and none was taken here.**
 - **`seq_heap` keeps its `ContainerRuntime` stop, and D3's capability half keeps its
-  accept cases.** Beyond the missing provider value there is a second blocker with its
+  accept cases.** *(Superseded by 6.0s: the stop is gone, `heap_vector` allocates and frees, and D3's refusal half is what found an accepted program releasing without a capability.)* Beyond the missing provider value there is a second blocker with its
   own cost: a heap-backed run's release action is a free, an arena-backed one's is
   empty, and this compiler's `IrType::Vector` erases the region, so the lowering cannot
   select between them. The class *is* decidable from the region declaration alone —
@@ -7085,7 +7085,7 @@ doc says what it now demonstrates. No other corpus verdict moved.
   `copy`, so an affine instance is what the bound refuses; `u8` and `u64` are what it has.
 - **[S22] and `seq_heap` are unchanged.** Both keep the two blockers 6.0j named, and the
   release class this batch landed removes the second of them for the version that retires
-  the `heap` atom.
+  the `heap` atom. *(Superseded by 6.0s: B7b retired the atom, spelled the row, and spent the release class on the free.)*
 
 ### 6.0l B7a6 landed (v0.45)
 
@@ -7727,6 +7727,117 @@ and every one keeps the verdict it recorded. `tests/programs/run_views.wf` is th
 witness: a view over a run, the copy view used twice bare, an append after that view's last
 use inside the same region, a drained run viewed, and an exclusive view whose shared child
 reads what the parent wrote.
+
+### 6.0s B7b landed (v0.45)
+
+**The general store is a value, its allocation names a path, its run allocates and
+frees, and confinement is a numbered rule.** Everything §7's B7 lists under the brand,
+the window and the declaration domain landed except the retirements; those did not, and
+what they cost is measured below rather than argued.
+
+- **[S23] landed and it is what unblocked [S22].** `allocates` takes the same
+  formal-rooted `effect_path` `reads` and `writes` take, so the lowercase `heap` atom
+  retires to IDENT and `command.heap as heap: own Heap` becomes writable — label tail and
+  binder both. A `main` whose binder is spelled `heap` writes `allocates(heap)`, the same
+  bytes as the retired atom and now a path rooted at that parameter, so no transitional
+  atom and no respell were needed. The `arena REGIONID` alternative of the entry **stays**,
+  with its own stated retirement delta: an allocation into a *caller-supplied* region is a
+  write of the caller's storage that `[PAR-1]`'s overlap footprint reads, and dropping it
+  would leave a callee's arena allocation invisible at a call. That is the one place this
+  batch read the two adopted decisions as narrower than §7 wrote them, and the reason is a
+  soundness one rather than a scope one.
+- **The ambient heap writes no row at all, and that is the reading the two decisions
+  force.** `[PROV-6]` already says the ambient heap is not a value, that no writable type
+  names it and that no `effect_path` can be rooted at it. Under `allocates(path)` it
+  follows that a `buffer_new` or `box_new` allocation contributes nothing writable to a
+  row: the entry is not narrowed, it has no spelling. Its reachability is still exact and
+  is still closed over the call graph — the closure moved from the declared row to the
+  compiler's own retained record, computed in the same fixed point that derives every
+  target action — so `[PROG-1]`'s resource closure reads what it always read. The corpus
+  consequence is one mechanical respell across **343 gate sources**, every verdict
+  unchanged.
+- **`heap_vector` executes.** The take was already emitted as a `malloc`; what was
+  missing was the other half of the pair, and B7a5's release class on `IrType::Vector` is
+  where it went: a run whose class is `General` frees its backing after the window walk,
+  and a module holding one declares the two allocator symbols without writing a resource
+  record, because a refused take is the row's own `None` arm and never an abort.
+  `tests/programs/heap_run.wf` is the evidence — one `malloc`, one `free`, exit 12.
+- **D3's capability half is reachable for the first time, and it found the hole it was
+  written for.** Before this batch, `fn peek(run: own Vector<u8>) -> code: own u8` was
+  **accepted**: it holds no provider, its run reaches the return edge, and the release
+  that edge would run has no capability to spend. It is now refused naming the binding, the
+  edge and the absent capability, and the same helper taking `&uniq Heap` is accepted with
+  `writes(store)` in its row — which is D3's own sentence about the free being more visible
+  than forty scattered statements, now true in the compiler.
+- **[BLK-4] landed as one numbered rule** and both `[STOR-5]`'s deferred clause and
+  `[PROV-1]`'s `ConfinedTypeWithoutStore` sentence are withdrawn into it. Its container
+  clause is **the two runs and no other**, and the ground is stated rather than
+  convenient: the refusal exists for a measure a callee moves while its caller retains it
+  `[MSR-3]`, and exactly the four boundary operations `[BLK-3]` move one. `array<T, N>`
+  and `buffer<T>` each carry one measure fixed at formation that nothing moves, so neither
+  is a container nominal here and the clause retires with them. That reading is what keeps
+  **94 `&uniq buffer<...>` parameters** in the corpus compiling while `&uniq Vector<u8>`,
+  `&uniq Env` over a `FixedVector`, and probe `gen3`'s `&uniq Holder<T>` are all refused.
+  `[FN-2]`'s narrowing was already landed by B7a and needed no change.
+
+**Two compiler defects were measured rather than reasoned, and both are fixed here.**
+
+```text
+| what was wrong                      | how it showed                       | repair                         |
+|-------------------------------------|-------------------------------------|--------------------------------|
+| a call whose parameter type named   | every call taking a `Heap` — the     | a position naming the entry    |
+| the entry heap's store region asked | first ones any program could write   | heap observes nothing and is   |
+| for that region's position in the   | — stopped at `Semantics/Compiler:    | skipped: the region is minted  |
+| callee's formal region list         | InvalidResolution`                   | before `main` and is no        |
+|                                     |                                     | declaration's formal           |
+| a store-backed run reached a scope   | `fn peek(run: own Vector<u8>)`       | D3's capability half, judged   |
+| exit in a scope holding no provider  | compiled, and its exit edge emitted  | over the bindings live at that |
+|                                     | a free the scope had no capability   | edge                           |
+|                                     | to spend                             |                                |
+```
+
+**One assertion moved stage rather than rule, and it is worth naming.** `pure, writes(f)`
+is not derivable by the `effects` production, and regenerating the tables for the
+`allocates` entry's two alternatives tightened the decision that used to admit the bytes
+and leave the refusal to the checker. The conformance corpus keeps its recorded
+`reject EFF-1` verdict for the same program either way; only the compiler's own embedded
+assertion moved, and it moved to the parse stage through a helper added for it.
+
+**What this batch did not reach, and what it costs.**
+
+- **The retirements did not land: `buffer<T>`, `box<T>`, `arena<'r, T>` and `array<T, n>`
+  all survive.** The reason is measured. A `buffer<T>`'s replacement is a `Vector<'s, T>`
+  formed **empty** at a capacity and filled by a loop carrying 3.L.3's three invariants,
+  plus the provider threaded to every scope that lets one reach an exit — which is a
+  per-program proof obligation and a signature change, not a rename. `buffer_new` alone
+  stands in **113 conformance cases, 20 corpus programs, about 137 snapshot cases and
+  about 446 places inside the compiler's own embedded test sources**; `array_new` in 24
+  cases and 117 embedded places; `box_new` in 5 and 76; `arena_new` in 4 and 55. Retiring
+  the spellings without migrating all of them would leave the specification and the
+  compiler disagreeing about several hundred accepted programs, which is exactly the
+  defect the branch rule forbids. **This is the same obstacle 6.0j priced for `array`
+  alone, now measured over the whole surface**, and it is one migration rather than four:
+  the four types share the corpus and the ambient heap.
+- **The `slice_of` / `mut_slice_of` spelling move is still blocked on that**, for
+  `[TYPE-6]`'s reason and no other: the viewable class still contains `array<T, N>` and
+  `buffer<T>`, and two domains may not claim one spelling. 6.0r's own sentence said the
+  move lands with `[S34]`'s retirement, and the retirement is what did not happen.
+- **`[CALL-4]`'s remaining admissions stay DEFERRED**, no migrated program having needed
+  one.
+- **`box<T>` has no single replacement, and that is a design gap rather than a schedule
+  one.** The design names none: the nearest form is a one-element `Vector<'s, T>` —
+  `heap_vector` at count 1 followed by one `place_back` — which costs a four-word
+  descriptor and an `Option` match where `box_new` costs a pointer and no branch, and
+  which is *linear* in every scope not holding the provider where a `box` is affine
+  everywhere. `tests/programs/recursive_tree.wf` is the program that shows the cost:
+  under `box` its `Node` is affine and its release walk is derived; under a run it needs a
+  region parameter on the enum, a provider in every scope that builds or drops a node, and
+  a `heap-unreachable` unit could not declare the type at all. **The design should either
+  name a store-backed single-value form or state that the one-element run is it and
+  accept the descriptor.** Recorded here as the gap it is.
+- **`ConfinedTypeWithoutStore` is stated and unexercised.** Every unit in the corpus that
+  declares a run-holding nominal also receives the general store, so the refusal has no
+  witness; it is written where it belongs rather than where a test could reach it.
 
 ### 6.1 What the compiler did in this session
 

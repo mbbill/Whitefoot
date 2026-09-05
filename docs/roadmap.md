@@ -187,11 +187,12 @@ one from its actual. A store region is invariant at a call with it, and the
 region is erased at lowering, where two instances differing only in it are one
 IR nominal. **3.L.4's block pool now runs with `BlockPool['s]` and
 `linear struct Lease['s]`**, which is what makes its lease must-return.
-**The general store is what remains of the store
-half:** [FN-7]'s `command.heap` row is still unwritable, because `heap` is the
-atom [EFF-1] fixes for `allocates(heap)` and [FORM-3] therefore excludes it
-from IDENT. Beside it stand the confinement rule and the retirement of the old
-container types. B8a lands the affine element read-out — `set (v[i],
+**The general store landed in B7b:** [S23] gives `allocates` a formal-rooted
+path and releases the `heap` atom, [FN-7]'s `command.heap` row supplies the
+provider as a value, `heap_vector` allocates and its release frees, and D3's
+capability half makes a store-backed run linear in every scope holding no
+provider. [BLK-4] landed with it. What remains of the store half is the
+retirement of the old container types, which B7b did not reach. B8a lands the affine element read-out — `set (v[i],
 v[j]) = move v[j], move v[i];` is the direct element swap — because the offsets
 [LIV-2] can decide are literals and a target already carries its own, and **B8b
 lands the second of B7a6's two items**: a tracked place is a root plus field
