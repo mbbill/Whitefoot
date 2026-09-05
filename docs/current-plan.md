@@ -416,6 +416,64 @@ before the code lands.
    for that step; it had been red on this branch since `554f1d9` for a
    stale expectation line and is repaired at `7b9d41f`, so the steps it
    had been skipping since then run again from the next push.
+
+   **Status 2026-09-05, step (iii) landed.** `compiler/src/backend/sched/`
+   gains `entry.h` and `entry.c`, the platform layer of design §7 over
+   `core.c`: the process's one `wf__sched_core`, the startup policy
+   `par_runtime.c` had (`WF_WORKERS`, the machine's core count, the
+   `WF_PAR_MAX_LANES` ceiling, a value below two meaning no workers) plus the
+   stack count's own setting (`WF_STACKS`, else the thread count plus eight,
+   raised to the core's floor of threads plus one, at
+   `wf__floor_stack_bytes()` each), the worker threads with their reserved
+   host stacks and the rendezvous that made "the pool started" mean "the pool
+   can take work", and the `wf__par_*` module ABI as thin functions over the
+   core. `wf_floor.c` tests one weak symbol, `wf__sched_entry_stack`, and when
+   the core answers it the entry runs `wf__main_body` on a pool stack whose
+   bottom is the scheduler loop, posts its status there and returns it on its
+   own host stack; its two `pthread_create` fallbacks stay and are unreachable
+   on that branch. The floor's per-thread attach is now the alternate signal
+   stack and the host stack's bounds, and the per-stack half is
+   `wf__floor_set_stack_bounds`, which the switch writes from the reservation
+   record. Every I/O join runs the core's rule when the calling thread is on a
+   pool stack and waits in place when it is not.
+   `par_runtime.c`, `completion/writer_scheduler.c` and
+   `completion/writer_scheduler.h` are deleted, the core is staged under
+   `module_requires_parallel_runtime || module_requires_completion_runtime` at
+   every link site, and the Windows units keep the retired writer ABI behind
+   `#if defined(_WIN32)` in `completion/bridge.h` until step (iv) deletes them
+   with the twins that use them.
+
+   Two defects the step exposed and fixed, both of them consequences of the
+   scheduler loop being the thing that sleeps. The bridge's wake seam
+   (`wf__sched_host_epoch` / `_park` / `_wake`) answered "not mine" until the
+   whole bridge had initialized, so a thread that parked before the program's
+   first operation slept on `prim_host.c`'s own condition variable while every
+   later wake went to the bridge's — a lost wake, and with no timeout in this
+   design, a hang; the wake epoch now has its own `pthread_once`, taken by
+   whichever of a seam call or the bridge's initializer arrives first. And the
+   bridge's `atexit` shutdown now returns without destroying the ring when the
+   pool is still running, because a detached worker may be asleep inside it.
+
+   **Worker start, measured before chosen (2026-09-05).** The step's first
+   cut started the workers eagerly at the core's entry; design §5 keeps the
+   start lazy, under a `pthread_once` at the first lane acquisition. Both
+   were built and timed on this host (4 cores), one `--emit-llvm` module
+   linked against each runtime. io-completion-bench `many_files_wide` at the
+   default configuration (FILES=8192, MAX_KIB=16, `WF_WORKERS` and
+   `WF_IO_HELPERS` unset), best of 7: before step (iii) 0.1063 s, eager
+   0.2851 s, lazy 0.1083 s; eager at `WF_WORKERS=1` 0.1074 s, so the cost is
+   the idle workers' progress-pass-and-park traffic against the epoch every
+   submit bumps. The lazy start shipped: a program that submits and never
+   hands out runs on the entry thread's loop alone, and its parked stack is
+   resumed by that loop when the completion arrives. The same pair on
+   `tests/programs/par_layout.wf`, best of 9, before and after step (iii):
+   W=1 1.5210 s and 1.5231 s, W=2 0.7791 s and 0.8301 s, W=4 0.4067 s and
+   0.5711 s, W=8 0.4213 s and 0.8307 s; at W=4 lazy 0.5822 s against eager
+   0.5711 s, so that regression is not the start but park-on-miss itself at
+   a compute miss, which is §12's first item. Its bar is "within noise" and
+   this misses it; the design's stated fallback is nested runs of
+   never-suspends jobs at a miss, which needs the target-action bit at the
+   hand-out. Slice 4 measures that against the park before either is chosen.
 4. **Replay, the remaining measurements, docs, record** (design §11 item 24,
    §12): the enumerator's recorder replays a run's data and completion order;
    park cost and per-frame record growth measured; `LOOP-PIPELINE.md` §3.4

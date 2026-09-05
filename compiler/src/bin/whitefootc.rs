@@ -6,8 +6,8 @@ use std::process::{Command, Stdio};
 
 use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, CompilerLimits, FLOOR_STACK_BYTES,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SourceInput, WRITER_SCHEDULER_HEADER,
-    compile_with_io_notices, compile_with_permission_ledger, stack_ledger,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SourceInput, compile_with_io_notices,
+    compile_with_permission_ledger, stack_ledger,
 };
 
 #[cfg(not(target_os = "windows"))]
@@ -15,8 +15,8 @@ use whitefoot::{
     COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER,
     COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
     COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, FLOOR_RUNTIME_SOURCE,
-    HOST_LINK_LIBRARIES, PARALLEL_RUNTIME_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, WRITER_SCHEDULER_SOURCE,
+    HOST_LINK_LIBRARIES, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
+    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER,
     module_requires_completion_runtime, module_requires_parallel_runtime,
 };
 
@@ -93,10 +93,6 @@ const WINDOWS_RUNTIME_UNITS: &[WindowsRuntimeUnit] = &[
     WindowsRuntimeUnit {
         relative_path: "completion/bridge.h",
         source: COMPLETION_BRIDGE_HEADER,
-    },
-    WindowsRuntimeUnit {
-        relative_path: "completion/writer_scheduler.h",
-        source: WRITER_SCHEDULER_HEADER,
     },
     WindowsRuntimeUnit {
         relative_path: "windows_runtime.c",
@@ -321,18 +317,15 @@ fn print_stack_ledger(llvm: &str) -> Result<Vec<String>, String> {
 #[cfg(not(target_os = "windows"))]
 fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
     let completion_required = module_requires_completion_runtime(llvm);
-    // The parallel runtime joins the link only when the module hands work to
-    // it. Its bytes travel inside this executable, so no installed path, no
-    // build directory, and no environment decides which runtime a program
-    // gets.
-    let runtime = if module_requires_parallel_runtime(llvm) {
-        let path = std::env::temp_dir().join(format!("whitefootc-par-{}.c", std::process::id()));
-        std::fs::write(&path, PARALLEL_RUNTIME_SOURCE)
-            .map_err(|error| format!("cannot write the parallel runtime: {error}"))?;
-        Some(path)
-    } else {
-        None
-    };
+    // The scheduler core joins the link on the union of the two predicates
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Where the core
+    // is linked"): it is one scheduler for compute hand-outs and I/O
+    // completions, so a module that hands work out needs it and so does a
+    // module that submits an operation, and a completion-only program parks
+    // its stack at every join. Its bytes travel inside this executable, so no
+    // installed path, no build directory, and no environment decides which
+    // runtime a program gets.
+    let core_required = module_requires_parallel_runtime(llvm) || completion_required;
     // The floor joins unconditionally, because every program can exhaust its
     // stack. It travels the same way and for the same reason: its bytes are
     // the compiler's, so what a program does when it runs out is decided here
@@ -352,10 +345,7 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
         .arg("-x")
         .arg("c")
         .arg(&floor);
-    if let Some(path) = runtime.as_ref() {
-        command.arg("-x").arg("c").arg(path);
-    }
-    let completion = if completion_required {
+    let staged = if core_required {
         let directory =
             std::env::temp_dir().join(format!("whitefootc-completion-{}", std::process::id()));
         std::fs::create_dir_all(&directory)
@@ -370,65 +360,70 @@ fn compile_executable(llvm: &str, output: &Path) -> Result<(), String> {
                 .map_err(|error| format!("cannot create completion runtime directory: {error}"))?;
         }
         for (name, source) in [
-            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
-            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("completion/writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            (
-                "completion/linux_io_uring.h",
-                COMPLETION_LINUX_IO_URING_HEADER,
-            ),
             ("sched/core.h", SCHED_CORE_HEADER),
             ("sched/prim.h", SCHED_PRIM_HEADER),
             ("sched/switch.h", SCHED_SWITCH_HEADER),
-            ("completion/runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion/bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("completion/writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-            (
-                "completion/linux_io_uring.c",
-                COMPLETION_LINUX_IO_URING_SOURCE,
-            ),
+            ("sched/entry.h", SCHED_ENTRY_HEADER),
             ("sched/core.c", SCHED_CORE_SOURCE),
             ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
+            ("sched/entry.c", SCHED_ENTRY_SOURCE),
         ] {
             std::fs::write(directory.join(name), source)
-                .map_err(|error| format!("cannot write completion runtime {name}: {error}"))?;
+                .map_err(|error| format!("cannot write scheduler core {name}: {error}"))?;
         }
         command
-            .arg("-I")
-            .arg(directory.join("completion"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/runtime.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/file_adapter.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/bridge.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/writer_scheduler.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/linux_io_uring.c"))
             .arg("-x")
             .arg("c")
             .arg(directory.join("sched/core.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("sched/prim_host.c"));
+            .arg(directory.join("sched/prim_host.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/entry.c"));
+        if completion_required {
+            for (name, source) in [
+                ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+                ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+                ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+                (
+                    "completion/linux_io_uring.h",
+                    COMPLETION_LINUX_IO_URING_HEADER,
+                ),
+                ("completion/runtime.c", COMPLETION_RUNTIME_SOURCE),
+                ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+                ("completion/bridge.c", COMPLETION_BRIDGE_SOURCE),
+                (
+                    "completion/linux_io_uring.c",
+                    COMPLETION_LINUX_IO_URING_SOURCE,
+                ),
+            ] {
+                std::fs::write(directory.join(name), source)
+                    .map_err(|error| format!("cannot write completion runtime {name}: {error}"))?;
+            }
+            command
+                .arg("-I")
+                .arg(directory.join("completion"))
+                .arg("-x")
+                .arg("c")
+                .arg(directory.join("completion/runtime.c"))
+                .arg("-x")
+                .arg("c")
+                .arg(directory.join("completion/file_adapter.c"))
+                .arg("-x")
+                .arg("c")
+                .arg(directory.join("completion/bridge.c"))
+                .arg("-x")
+                .arg("c")
+                .arg(directory.join("completion/linux_io_uring.c"));
+        }
         Some(directory)
     } else {
         None
     };
     let outcome = link(&mut command, llvm, output);
     let _ = std::fs::remove_file(floor);
-    if let Some(path) = runtime {
-        let _ = std::fs::remove_file(path);
-    }
-    if let Some(directory) = completion {
+    if let Some(directory) = staged {
         let _ = std::fs::remove_dir_all(directory);
     }
     outcome

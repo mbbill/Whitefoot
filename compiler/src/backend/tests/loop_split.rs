@@ -14,10 +14,7 @@
 
 use std::process::Command;
 
-use super::parallel::{
-    CountedProgram, build_executable_without_parallel_runtime, clone_symbols, function_body,
-    identical,
-};
+use super::parallel::{CountedProgram, clone_symbols, function_body, identical};
 use super::{
     build_executable, emit, emit_with_overlap, module_requires_parallel_runtime, test_directory,
 };
@@ -1520,13 +1517,17 @@ fn a_loop_whose_frame_is_too_wide_declines_and_says_so() {
 /// that fit, or — the direction that matters — not fire on loops that do not.
 #[test]
 fn the_compile_time_frame_bound_is_the_runtimes() {
-    let runtime = super::PARALLEL_RUNTIME_SOURCE;
-    let declared = runtime
+    let core = crate::SCHED_CORE_HEADER;
+    let declared = core
         .lines()
-        .find_map(|line| line.strip_prefix("#define WF_PAR_FRAME_BYTES "))
-        .expect("the runtime must state its frame bound");
+        .find_map(|line| line.strip_prefix("#define WF_SCHED_FRAME_BYTES "))
+        .expect("the core must state its frame bound");
     assert_eq!(
-        declared.trim().parse::<u64>().expect("a decimal bound"),
+        declared
+            .trim()
+            .trim_end_matches('u')
+            .parse::<u64>()
+            .expect("a decimal bound"),
         crate::LANE_FRAME_BYTES,
         "the lowering's frame bound has drifted from the runtime's"
     );
@@ -1535,9 +1536,17 @@ fn the_compile_time_frame_bound_is_the_runtimes() {
 /// A module with a split loop and no runtime linked is a complete program.
 ///
 /// The module carries its own weak answer to every entry point the split names,
-/// including the allowance: with no runtime there are no lanes, so the honest
-/// allowance is zero, the splitter descends straight to its leaf, and the whole
-/// range runs as the loop it was.
+/// including the allowance: with no lanes the honest allowance is zero, the
+/// splitter descends straight to its leaf, and the whole range runs as the loop
+/// it was.
+///
+/// The lane-free run is `WF_WORKERS=1` rather than a link with no runtime in
+/// it. Design §7's "Where the core is linked" is why: the scheduler core is
+/// staged under the union of the two predicates, so this fixture — which
+/// writes its result — carries the core in every link the compiler produces
+/// and has no core-free link left. `WF_WORKERS=1` reaches the same schedule
+/// through the answer the module actually asks for: `wf__par_pool_active`
+/// reports no pool, the allowance is zero, and nothing is handed out.
 #[test]
 fn a_module_with_a_split_loop_and_no_runtime_still_runs() {
     let module = emit_with_overlap(PERMITTED_FOLD);
@@ -1546,16 +1555,17 @@ fn a_module_with_a_split_loop_and_no_runtime_still_runs() {
         "a module that splits must carry its own answer to the allowance:\n{module}"
     );
     let directory = test_directory();
-    let alone = build_executable_without_parallel_runtime(&module, &directory);
-    let output = Command::new(&alone)
+    let executable = build_executable(&module, &directory);
+    let output = Command::new(&executable)
+        .env("WF_WORKERS", "1")
         .output()
-        .expect("run the split module with no runtime linked");
+        .expect("run the split module with no lane");
     assert_eq!(output.status.code(), Some(0));
 
-    let linked = Command::new(build_executable(&module, &directory))
+    let linked = Command::new(&executable)
         .env("WF_WORKERS", "8")
         .output()
-        .expect("run the same module against the runtime");
+        .expect("run the same module against a pool");
     assert_eq!(linked.status.code(), Some(0));
     assert_eq!(
         output.stdout, linked.stdout,

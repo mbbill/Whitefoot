@@ -2,10 +2,39 @@
 #define WHITEFOOT_COMPLETION_BRIDGE_H
 
 #include <stdint.h>
-#include "writer_scheduler.h"
 
 #if defined(__cplusplus)
 extern "C" {
+#endif
+
+#if defined(_WIN32)
+/* The writer-frame ready queue, which POSIX retires here and Windows has not
+ * yet (`research/investigations/io-model/PARK-ON-MISS.md` §7: its handshake
+ * moves to the scheduler core's stack park, and both writer schedulers go with
+ * both parallel runtimes).  The Windows twins -- `windows_bridge.c` and
+ * `writer_scheduler_windows.c` -- are ported as shared code in a later step
+ * and still name this ABI, so its declarations stay here, behind the platform
+ * test, rather than in a header of their own that no POSIX link would have a
+ * use for.  Nothing outside `#if defined(_WIN32)` may name any of it. */
+typedef void (*wf__writer_resume_fn)(void *frame);
+
+#define WF_WRITER_HEADER_STORAGE_BYTES 64u
+#define WF_WRITER_HEADER_STORAGE_ALIGNMENT 8u
+#define WF_COMPLETION_SLOT_CAPACITY 64u
+#define WF_WRITER_READY_CAPACITY WF_COMPLETION_SLOT_CAPACITY
+
+void wf__writer_frame_init(void *frame);
+void wf__writer_begin_suspend(void *frame, wf__writer_resume_fn resume);
+int wf__writer_commit_suspend(void *frame);
+void wf__writer_cancel_suspend(void *frame);
+void wf__writer_complete(void *frame);
+void wf__writer_scheduler_ready(void *frame);
+int wf__writer_scheduler_help_once(void);
+void wf__writer_scheduler_prepare_lanes(void);
+int wf__writer_is_done(const void *frame);
+uint64_t wf__writer_resume_migrations(void);
+uint64_t wf__writer_resume_count(void);
+void wf__writer_run_root(void *frame);
 #endif
 
 /* How many iterations of one loop the runtime will carry in flight at once,
@@ -107,10 +136,13 @@ void wf__completion_file_open_join(
     unsigned *open_outcome
 );
 
-/* The join waits in place on the record with the scheduler core's own
- * protocol: nothing runs above it, and the thread makes target progress until
- * the record is DONE or there is nothing left to do but sleep (design §2's
- * fourth line, I/O arm; §6 step 4). */
+/* Every join runs the scheduler core's one rule over the record (design §2):
+ * read it if it is DONE, park this stack and continue on another if a stack is
+ * free or READY, and otherwise wait in place with nothing running above the
+ * join, making target progress until the record is DONE or there is nothing
+ * left to do but sleep (§2's fourth line, I/O arm; §6 step 4).  A thread that
+ * is not on a pool stack has no stack to park and takes that last arm
+ * directly. */
 void wf__completion_file_join(
     const void *record,
     int64_t *value,
@@ -125,8 +157,6 @@ void wf__completion_file_status_join(
     uint64_t status_capacity,
     uint64_t *status_size
 );
-
-void wf__writer_run_root(void *frame);
 
 uint64_t wf__completion_file_submissions(void);
 uint64_t wf__completion_file_fallback_submissions(void);

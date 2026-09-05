@@ -29,8 +29,8 @@
 #include "contract.h"
 #include "bridge.h"
 #include "file_adapter.h"
-#include "writer_scheduler.h"
 #include "../sched/core.h"
+#include "../sched/entry.h"
 #include "../sched/prim.h"
 #if defined(__linux__)
 #include "linux_io_uring.h"
@@ -65,19 +65,7 @@
  * the hand-written ceiling program measured its optimum (LOOP-PIPELINE.md
  * §9.2), so the change moves no measurement. */
 #define WF_BRIDGE_WINDOW_DEFAULT 32u
-/* The pool stacks the scheduler core reserves at the bridge's start.
- *
- * Nothing runs on one in this step: the core is linked for its record
- * protocol -- `wf_sched_record_init`, `wf_sched_complete`, and the in-place
- * waiter of §2's fourth line -- and no code here calls `wf_sched_run`.  The
- * count is the floor `wf_sched_init` enforces for one thread (design §5), and
- * the size is the smoke build's. */
-#define WF_BRIDGE_SCHED_THREADS 1u
-#define WF_BRIDGE_SCHED_STACKS 2u
-#define WF_BRIDGE_SCHED_STACK_BYTES (256u * 1024u)
-
 static wf_completion_runtime wf_bridge_runtime;
-static wf_sched_core wf_bridge_core;
 static wf_file_adapter wf_bridge_adapter;
 static pthread_t wf_bridge_helpers[WF_BRIDGE_MAX_HELPERS];
 static pthread_once_t wf_bridge_once = PTHREAD_ONCE_INIT;
@@ -233,6 +221,19 @@ static void wf_bridge_shutdown(void) {
     if (wf_bridge_ready == 0) {
         return;
     }
+    /* A pool the scheduler core started is detached and may be asleep inside
+     * the engine this handler would pull down: a thread with nothing to run
+     * sleeps on the one primitive (design §6), and on a completion link that
+     * primitive is this bridge's park -- the ring's `epoll_wait` on descriptors
+     * `wf_linux_io_uring_destroy` closes and mappings it unmaps.  There is no
+     * stop protocol for a detached worker and this handler is hygiene rather
+     * than contract -- `wf_bridge_initialize` already treats a failed `atexit`
+     * as changing cleanup and nothing else -- so a process whose pool is still
+     * running leaves its descriptors and mappings to the kernel instead of
+     * taking them out from under a sleeping worker. */
+    if (wf__sched_pool_running() != 0u) {
+        return;
+    }
     if (wf_bridge_file_ready != 0) {
         (void)wf_file_adapter_shutdown(&wf_bridge_adapter);
         wf_bridge_file_ready = 0;
@@ -276,19 +277,43 @@ static int wf_bridge_native_ring_refused(void) {
 }
 #endif
 
-static void wf_bridge_initialize(void) {
-    wf_bridge_error = wf_completion_runtime_init(&wf_bridge_runtime);
-    if (wf_bridge_error != 0) {
-        return;
+/* The wake epoch, and it comes up before everything else the bridge has.
+ *
+ * The core sleeps and wakes on one primitive (design §7, platform item 2), and
+ * "one" has to mean one for the life of the process rather than one at a time.
+ * The three seam functions below answer from `wf_bridge_runtime`, so a thread
+ * that parked before this unit had a runtime would sleep on `prim_host.c`'s own
+ * condition variable while every wake after it went to this one -- a lost wake
+ * and, with no timeout anywhere in this design, a hang.  Two things make that
+ * reachable rather than theoretical: a worker enters its scheduler loop at the
+ * core's entry, before the program's first operation, and the first operation's
+ * `pthread_once` is a window another thread can park inside.
+ *
+ * So the epoch has its own start, taken by whichever of the two arrives first:
+ * a seam call, or the bridge's own initializer.  It is a mutex, a condition
+ * variable and a counter -- no ring, no helper, no descriptor -- so a program
+ * that never submits anything pays for those and nothing else.  Both sleep
+ * mechanisms announce themselves against this one epoch under this one lock,
+ * the ring's `epoll_wait` included, so one wake reaches a sleeper on either. */
+static pthread_once_t wf_bridge_wake_once = PTHREAD_ONCE_INIT;
+static int wf_bridge_wake_error;
+static _Atomic unsigned wf_bridge_wake_ready;
+
+static void wf_bridge_initialize_wake(void) {
+    wf_bridge_wake_error = wf_completion_runtime_init(&wf_bridge_runtime);
+    if (wf_bridge_wake_error == 0) {
+        wf_bridge_wake_ready = 1;
     }
-    if (wf_sched_init(
-            &wf_bridge_core,
-            WF_BRIDGE_SCHED_THREADS,
-            WF_BRIDGE_SCHED_STACKS,
-            WF_BRIDGE_SCHED_STACK_BYTES
-        ) != 0) {
-        wf_bridge_error = ENOMEM;
-        (void)wf_completion_runtime_destroy(&wf_bridge_runtime);
+}
+
+static int wf_bridge_ensure_wake(void) {
+    return pthread_once(&wf_bridge_wake_once, wf_bridge_initialize_wake) == 0
+        && wf_bridge_wake_ready != 0;
+}
+
+static void wf_bridge_initialize(void) {
+    if (!wf_bridge_ensure_wake()) {
+        wf_bridge_error = wf_bridge_wake_error != 0 ? wf_bridge_wake_error : EAGAIN;
         return;
     }
 #if defined(__linux__)
@@ -363,7 +388,7 @@ void wf_completion_record_complete(wf_completion_record *record) {
         1,
         memory_order_relaxed
     );
-    wf_sched_complete(&wf_bridge_core, &record->sched);
+    wf_sched_complete(&wf__sched_core, &record->sched);
 }
 
 /* --------------------------------- the one wait and wake (§7, platform 2) */
@@ -388,7 +413,7 @@ void wf_completion_record_complete(wf_completion_record *record) {
  * completion runtime -- the smoke build, the enumerator -- keeps its own
  * epoch, and a completion link gets these. */
 int wf__sched_host_epoch(uint64_t *epoch) {
-    if (wf_bridge_ready == 0) {
+    if (!wf_bridge_ensure_wake()) {
         return 0;
     }
     *epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
@@ -396,7 +421,7 @@ int wf__sched_host_epoch(uint64_t *epoch) {
 }
 
 int wf__sched_host_park(uint64_t observed) {
-    if (wf_bridge_ready == 0) {
+    if (!wf_bridge_ensure_wake()) {
         return 0;
     }
     wf_bridge_park(observed);
@@ -404,7 +429,7 @@ int wf__sched_host_park(uint64_t observed) {
 }
 
 int wf__sched_host_wake(void) {
-    if (wf_bridge_ready == 0) {
+    if (!wf_bridge_ensure_wake()) {
         return 0;
     }
     wf_completion_notify_target(&wf_bridge_runtime);
@@ -503,12 +528,6 @@ static void wf_bridge_park(uint64_t observed_epoch) {
         if (parked == WF_COMPLETION_PARK_FAILED) {
             abort();
         }
-    }
-}
-
-void wf__writer_scheduler_notify(void) {
-    if (wf_bridge_ready != 0) {
-        wf_completion_notify_compute(&wf_bridge_runtime);
     }
 }
 
@@ -652,6 +671,41 @@ static void wf_bridge_wait_in_place(wf_completion_record *record) {
     }
 }
 
+/* Every join parks, and this is where the rule of design §2 is entered.
+ *
+ * A thread on a pool stack has a stack to park, so it runs the rule: read the
+ * record if it is DONE, else park this stack and continue on another, else --
+ * with no free stack and nothing READY -- the I/O arm of the fourth line,
+ * which is the same window `wf_bridge_wait_in_place` runs and nothing above
+ * the join.  A completion resumes the parked stack from wherever it is
+ * published, so a completed I/O's continuation is never buried.
+ *
+ * A thread that is not on a pool stack has no stack to park and waits in
+ * place.  That is the harness and the probes, which call these joins from
+ * plain threads; a linked program never does, because the floor runs its entry
+ * on a pool stack and every worker's loop lives on one (design §5).
+ *
+ * The one thing both arms do before anything else is run this thread's *own*
+ * submission, if it is still queued.  It is the engine executing an operation
+ * that has no other engine, not a schedule decision and not a fallback: with
+ * the helper count pinned, an ordinary write can sit in the queue behind an
+ * unrelated blocked one, and no helper, no ring and no progress pass will ever
+ * reach it -- `wf_bridge_progress` deliberately takes nothing from the queue
+ * while helpers exist, because an unrelated request could block the exact
+ * frame whose completion they have already published.  The record is this
+ * frame's own and this thread has nothing else to do until it is DONE, so
+ * taking it here takes nothing that belongs to another frame.  One attempt is
+ * the whole of it: after it, the record is either DONE, or owned by an engine
+ * that will finish it, and the rule below waits for that. */
+static void wf_bridge_join(wf_completion_record *record) {
+    (void)wf_bridge_run_own(record);
+    if (wf__sched_current_stack() != NULL) {
+        wf_sched_join(&wf__sched_core, &record->sched, 1);
+        return;
+    }
+    wf_bridge_wait_in_place(record);
+}
+
 static wf_completion_record *wf_bridge_record_of(const void *record) {
     if (record == NULL) {
         abort();
@@ -668,7 +722,7 @@ void wf__completion_file_join(
     if (value == NULL || error_code == NULL) {
         abort();
     }
-    wf_bridge_wait_in_place(held);
+    wf_bridge_join(held);
     *value = held->result.value;
     *error_code = held->result.error_code;
 }
@@ -683,7 +737,7 @@ void wf__completion_file_open_join(
     if (value == NULL || error_code == NULL || open_outcome == NULL) {
         abort();
     }
-    wf_bridge_wait_in_place(held);
+    wf_bridge_join(held);
     if (held->result.kind != WF_FILE_OPEN_AT) {
         abort();
     }
@@ -708,7 +762,7 @@ void wf__completion_file_status_join(
         || (uint64_t)(size_t)status_capacity != status_capacity) {
         abort();
     }
-    wf_bridge_wait_in_place(held);
+    wf_bridge_join(held);
     if (held->result.kind != WF_FILE_STATUS
         || held->request.operation.status.destination != status
         || held->request.operation.status.capacity != (size_t)status_capacity) {
@@ -1131,17 +1185,6 @@ uint64_t wf__completion_window(
         }
     }
     return window == 0 ? 1u : window;
-}
-
-void wf__writer_run_root(void *frame) {
-    while (!wf__writer_is_done(frame)) {
-        uint64_t epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
-        int progressed = wf_bridge_progress();
-        progressed |= wf__writer_scheduler_help_once();
-        if (!progressed && !wf__writer_is_done(frame)) {
-            wf_bridge_park(epoch);
-        }
-    }
 }
 
 /* ------------------------------------------------------- the statistics */

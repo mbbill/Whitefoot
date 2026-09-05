@@ -57,6 +57,7 @@ jobs:
             -DWF_COMPLETION_POLL=wf_completion_test_poll \
             compiler/src/backend/sched/core.c \
             compiler/src/backend/sched/prim_host.c \
+            compiler/src/backend/sched/entry.c \
             compiler/src/backend/completion/runtime.c \
             compiler/src/backend/completion/linux_io_uring.c \
             compiler/src/backend/completion/native_adapter_probe.c \

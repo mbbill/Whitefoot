@@ -142,13 +142,29 @@ size_t wf_prim_stack_stride(size_t bytes) {
     return page + rounded;
 }
 
+/* One mapping, carved into `count` slots of `bytes` each with a guard page
+ * below every one of them.
+ *
+ * `MAP_NORESERVE` is what makes it a reservation rather than a commitment, and
+ * it is not optional at the sizes the runtime asks for: a pool stack is the
+ * floor's own 1 GiB, so a machine's worth of threads plus the spare stacks is
+ * tens of gigabytes of address space, and Linux's heuristic overcommit refuses
+ * a single mapping larger than memory plus swap unless it is told the mapping
+ * is a reservation. The pages are committed on touch either way, so a run that
+ * never descends pays for none of them. A host without the flag (it is a Linux
+ * spelling) keeps today's behaviour exactly. */
 unsigned char *wf_prim_reserve(unsigned count, size_t bytes) {
     size_t page = wf_prim_page();
     size_t stride = wf_prim_stack_stride(bytes);
     size_t total = stride * (size_t)count;
     unsigned char *base;
     unsigned index;
-    base = mmap(NULL, total, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#if defined(MAP_NORESERVE)
+    int flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE;
+#else
+    int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+#endif
+    base = mmap(NULL, total, PROT_READ | PROT_WRITE, flags, -1, 0);
     if (base == MAP_FAILED) {
         return NULL;
     }

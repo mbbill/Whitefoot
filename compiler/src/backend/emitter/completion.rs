@@ -18,8 +18,6 @@ pub const COMPLETION_CONTRACT_HEADER: &str = include_str!("../completion/contrac
 pub const COMPLETION_FILE_ADAPTER_HEADER: &str = include_str!("../completion/file_adapter.h");
 /// The compiler-owned file-completion bridge contract embedded in the compiler.
 pub const COMPLETION_BRIDGE_HEADER: &str = include_str!("../completion/bridge.h");
-/// The bounded ready-frame writer scheduler ABI embedded in the compiler.
-pub const WRITER_SCHEDULER_HEADER: &str = include_str!("../completion/writer_scheduler.h");
 /// The target-guarded Linux io_uring adapter contract embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/linux_io_uring.h");
 /// The target-private completion ABI shared by the Windows core and IOCP adapter.
@@ -38,8 +36,6 @@ pub const COMPLETION_RUNTIME_SOURCE: &str = include_str!("../completion/runtime.
 pub const COMPLETION_FILE_ADAPTER_SOURCE: &str = include_str!("../completion/file_adapter.c");
 /// The compiler-owned file-completion bridge embedded in the compiler.
 pub const COMPLETION_BRIDGE_SOURCE: &str = include_str!("../completion/bridge.c");
-/// The bounded ready-frame scheduler implementation. It creates no thread.
-pub const WRITER_SCHEDULER_SOURCE: &str = include_str!("../completion/writer_scheduler.c");
 /// The target-guarded Linux io_uring adapter embedded in the compiler.
 pub const COMPLETION_LINUX_IO_URING_SOURCE: &str = include_str!("../completion/linux_io_uring.c");
 /// The Windows completion core embedded in the compiler.
@@ -70,6 +66,11 @@ pub const SCHED_PRIM_HEADER: &str = include_str!("../sched/prim.h");
 pub const SCHED_PRIM_HOST_SOURCE: &str = include_str!("../sched/prim_host.c");
 /// The one stack switch, shared by the host primitives and the enumerator.
 pub const SCHED_SWITCH_HEADER: &str = include_str!("../sched/switch.h");
+/// The platform layer over the core: its one instance, the startup policy and
+/// the emitted module's `wf__par_*` ABI (design §7's platform layer).
+pub const SCHED_ENTRY_HEADER: &str = include_str!("../sched/entry.h");
+/// That layer's implementation, which replaces `par_runtime.c`.
+pub const SCHED_ENTRY_SOURCE: &str = include_str!("../sched/entry.c");
 
 /// Size in bytes of the opaque record block an emitted frame reserves for one
 /// outstanding completion operation.

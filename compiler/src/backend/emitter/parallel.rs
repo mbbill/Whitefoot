@@ -77,10 +77,6 @@ pub(super) struct LoopSplitSite<'ir> {
     pub(super) weight: u64,
 }
 
-/// The C source of the parallel runtime, embedded so that every path that
-/// links a Whitefoot executable links the same bytes.
-pub const PARALLEL_RUNTIME_SOURCE: &str = include_str!("../par_runtime.c");
-
 /// The native Windows worker-pool runtime.
 pub const PARALLEL_WINDOWS_RUNTIME_SOURCE: &str = include_str!("../par_runtime_windows.c");
 

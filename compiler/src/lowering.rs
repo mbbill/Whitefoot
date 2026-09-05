@@ -1469,7 +1469,7 @@ impl IrCompletionBatchDriver {
 
 /// How large a lane frame a handed-out call is granted, in bytes.
 ///
-/// This restates `WF_PAR_FRAME_BYTES` in `backend/par_runtime.c`, because the
+/// This restates `WF_SCHED_FRAME_BYTES` in `backend/sched/core.h`, because the
 /// decision to emit a [`IrOperation::LoopSplit`] at all has to be made long
 /// before a runtime exists — and a split whose frame is over the bound would be
 /// refused every lane at run time and sequentialize with no report. The two

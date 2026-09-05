@@ -64,7 +64,11 @@ COMPLETION_DIR := src/backend/completion
 # record begins with a `wf_sched_record` and every publication goes through
 # `wf_sched_complete` (design §7).
 SCHED_DIR := src/backend/sched
-SCHED_SOURCES := $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c
+# `entry.c` is the platform layer over the core: the one core instance every
+# unit that publishes or joins a record names, the startup policy, and the
+# emitted module's `wf__par_*` ABI. It is part of the core's own group, so a
+# link that carries `core.c` carries it (design §7's platform layer).
+SCHED_SOURCES := $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c $(SCHED_DIR)/entry.c
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_DEFINES := \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
@@ -103,7 +107,6 @@ COMPLETION_SOURCES := \
 	$(COMPLETION_DIR)/file_adapter.c \
 	$(COMPLETION_DIR)/bridge.c \
 	$(COMPLETION_DIR)/linux_io_uring.c \
-	$(COMPLETION_DIR)/writer_scheduler.c \
 	$(COMPLETION_DIR)/native_contract.c \
 	$(COMPLETION_DIR)/harness.c
 # The same runtime the harness links, with the probe in place of the harness.
@@ -129,7 +132,7 @@ COMPLETION_CORE_READ_ALLOWED_SOURCES := \
 COMPLETION_CORE_READ_UNEXPECTED_SOURCES := $(filter-out \
 	$(COMPLETION_CORE_READ_ALLOWED_SOURCES),$(COMPLETION_CORE_READ_SOURCES))
 COMPLETION_CORE_READ_FORBIDDEN_SOURCES := $(filter \
-	%/bridge.c %/writer_scheduler.c,$(COMPLETION_CORE_READ_SOURCES))
+	%/bridge.c,$(COMPLETION_CORE_READ_SOURCES))
 COMPLETION_CORE_READ_DEFINES := \
 	-DWF_COMPLETION_PREAD=wf_completion_test_pread
 
@@ -375,7 +378,7 @@ completion-core-read-test: completion-core-read-source-boundary
 		-o "$(COMPLETION_TMP)/core-read-probe"
 	"$(COMPLETION_TMP)/core-read-probe" "$(COMPLETION_TMP)"
 	@if $(NM) "$(COMPLETION_TMP)/core-read-probe" | \
-		grep -Eq 'wf__writer_run_root|wf__completion_file_pread_submit'; then \
+		grep -Eq 'wf__completion_file_pread_submit'; then \
 		echo "isolated completion core/read probe links the generated-code bridge" >&2; \
 		exit 1; \
 	fi

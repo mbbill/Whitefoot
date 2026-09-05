@@ -5,8 +5,10 @@
  * The first is that the ceiling should be the compiler's number rather than
  * the environment's. A program's depth limit was whatever `ulimit -s` happened
  * to leave it, so the same binary on the same input succeeded on one shell and
- * died on another. `wf__floor_run` runs the entry on a thread this file sizes,
- * so the limit travels with the program.
+ * died on another. `wf__floor_run` runs the entry on a stack this file sizes —
+ * a pool stack of the scheduler core's reservation where that core is linked,
+ * and a thread of its own where it is not — so the limit travels with the
+ * program.
  *
  * The second is that running out should be a defined, reported abort instead
  * of a bare host signal. A guard-page hit is converted into one fixed record
@@ -17,9 +19,11 @@
  * misdirect the reader.
  *
  * Everything below the handler boundary is async-signal-safe: no allocation,
- * no stdio, no locks, and no pthread queries. The per-thread stack bounds the
- * handler reads are captured at attach time, on the thread itself, where the
- * ordinary rules still apply.
+ * no stdio, no locks, and no pthread queries. The stack bounds the handler
+ * reads are written outside signal context by the two writers
+ * `wf__floor_set_stack_bounds` names: a thread's host stack at attach time, on
+ * the thread itself, and a Whitefoot stack by the scheduler core's switch,
+ * from the reservation record that knows each slot's own base and size.
  */
 
 #if !defined(__APPLE__)
@@ -56,15 +60,16 @@ extern int wf__main_body(int argc, char **argv);
  * further is that a runaway recursion should still end in a bounded time. */
 #define WF_FLOOR_STACK_BYTES ((size_t)1024u * 1024u * 1024u)
 
-/* The same number, for the parallel runtime's lanes.
+/* The same number, for every stack of the scheduler core's pool and for every
+ * worker's host stack.
  *
- * A lane runs ordinary Whitefoot calls and a stolen call starts at the bottom
- * of the lane's own stack, so a lane sized like the entry makes stealing
- * strictly headroom-positive: no schedule reaches a depth the no-steal
- * schedule could not. A lane sized any other way puts the program's liveness
- * in the hands of a steal race. Exporting the constant rather than repeating
- * it is what makes "the same number" a fact about the program instead of a
- * comment in two files. */
+ * A pool stack runs ordinary Whitefoot calls and a stolen call starts at the
+ * bottom of the stack it is run on, so a pool stack sized like the entry makes
+ * stealing strictly headroom-positive: no schedule reaches a depth the
+ * no-steal schedule could not. A stack sized any other way puts the program's
+ * liveness in the hands of a steal race. Exporting the constant rather than
+ * repeating it is what makes "the same number" a fact about the program
+ * instead of a comment in two files. */
 size_t wf__floor_stack_bytes(void) { return WF_FLOOR_STACK_BYTES; }
 
 /* ------------------------------------------------- the descriptor factory */
@@ -132,11 +137,28 @@ int wf__file_reserve(void) {
 
 /* ------------------------------------------------------- per-thread state */
 
-/* [low, high) of this thread's usable stack. Written once at attach, on the
- * thread itself; the handler only reads it. */
+/* [low, high) of the stack this thread is *running on*, which is not always
+ * the stack the host gave it. The handler only reads these three.
+ *
+ * Two writers, and the split is the design's (`research/investigations/
+ * io-model/PARK-ON-MISS.md` §5, §7's platform item 3). A thread's own host
+ * stack is captured once at attach, on the thread itself, where the ordinary
+ * pthread queries are available. A Whitefoot stack is a slot of the scheduler
+ * core's own carve and no thread's pthread stack, so asking pthread about one
+ * answers the *host* stack's bounds and the range test below then fails for a
+ * pool-stack overflow — the floor off for exactly the stacks the core adds.
+ * The switch therefore writes the target slot's own low and high from the
+ * reservation record, through `wf__floor_set_stack_bounds`. */
 static _Thread_local unsigned long wf__floor_stack_low;
 static _Thread_local unsigned long wf__floor_stack_high;
 static _Thread_local int wf__floor_stack_known;
+
+/* This thread's host stack, kept so that a return to it restores its bounds:
+ * the entry thread comes back to its host stack once, when the exit status is
+ * posted, and the last switch before that wrote a pool stack's bounds. */
+static _Thread_local unsigned long wf__floor_host_low;
+static _Thread_local unsigned long wf__floor_host_high;
+static _Thread_local int wf__floor_host_known;
 
 /* The alternate stack the handler runs on, because the ordinary one is exactly
  * what has just run out. One mapping per thread, populated on first use. */
@@ -269,9 +291,9 @@ static void wf__floor_capture_bounds(void) {
     /* Darwin reports the high address — one past the top — and the size. */
     void *top = pthread_get_stackaddr_np(pthread_self());
     size_t size = pthread_get_stacksize_np(pthread_self());
-    wf__floor_stack_high = (unsigned long)(uintptr_t)top;
-    wf__floor_stack_low = wf__floor_stack_high - (unsigned long)size;
-    wf__floor_stack_known = 1;
+    wf__floor_host_high = (unsigned long)(uintptr_t)top;
+    wf__floor_host_low = wf__floor_host_high - (unsigned long)size;
+    wf__floor_host_known = 1;
 #else
     pthread_attr_t attributes;
     void *base = NULL;
@@ -280,22 +302,52 @@ static void wf__floor_capture_bounds(void) {
         return;
     }
     if (pthread_attr_getstack(&attributes, &base, &size) == 0) {
-        wf__floor_stack_low = (unsigned long)(uintptr_t)base;
-        wf__floor_stack_high = wf__floor_stack_low + (unsigned long)size;
-        wf__floor_stack_known = 1;
+        wf__floor_host_low = (unsigned long)(uintptr_t)base;
+        wf__floor_host_high = wf__floor_host_low + (unsigned long)size;
+        wf__floor_host_known = 1;
     }
     /* Unconditional: the query can succeed and the read still fail, and the
      * attribute object is owned either way. */
     pthread_attr_destroy(&attributes);
 #endif
+    wf__floor_stack_low = wf__floor_host_low;
+    wf__floor_stack_high = wf__floor_host_high;
+    wf__floor_stack_known = wf__floor_host_known;
 }
 
-/* The per-thread half: somewhere for the handler to run, and the bounds that
- * tell it whether a fault was this thread running out.
+/* The per-stack half of the attach, and the scheduler core's switch is its one
+ * caller: it writes the target slot's own low and high from the reservation
+ * record before it switches, and never asks pthread about a Whitefoot stack
+ * (design §5). A null pair means "this thread's host stack", which the entry
+ * thread's one return to it needs and nothing else does.
  *
- * Every thread that runs Whitefoot code calls this — the entry thread here,
- * and each pool lane as it attaches. A thread without it is not unsafe; its
- * overflow simply falls back to the bare host signal. */
+ * `prim_host.c` carries the weak answer for a core linked without this file;
+ * this is the strong one, and it is why the floor is compiled into every
+ * program that carries the core. */
+void wf__floor_set_stack_bounds(unsigned char *low, unsigned char *high) {
+    if (low == NULL || high == NULL) {
+        wf__floor_stack_low = wf__floor_host_low;
+        wf__floor_stack_high = wf__floor_host_high;
+        wf__floor_stack_known = wf__floor_host_known;
+        return;
+    }
+    wf__floor_stack_low = (unsigned long)(uintptr_t)low;
+    wf__floor_stack_high = (unsigned long)(uintptr_t)high;
+    wf__floor_stack_known = 1;
+}
+
+/* The per-thread half: somewhere for the handler to run, and this thread's own
+ * host-stack bounds.
+ *
+ * Every thread that runs Whitefoot code calls this once, at its start — the
+ * entry thread here, and each pool worker as `sched/entry.c` creates it. A
+ * thread without it is not unsafe; its overflow simply falls back to the bare
+ * host signal.
+ *
+ * It stays at thread start and never moves onto a switch, because the mapping
+ * below would then be one `mmap` and one leaked mapping per switch. The half
+ * that does move is the bounds, which the switch writes (design §7's
+ * `wf__floor_attach_thread` bullet). */
 void wf__floor_attach_thread(void) {
     stack_t alternate;
     void *memory;
@@ -359,12 +411,50 @@ static void *wf__floor_entry(void *opaque) {
     return NULL;
 }
 
+/* The scheduler core's entry, and the link-time fact that selects the shape
+ * below (design §5).
+ *
+ * Strong in `sched/entry.c`, which every link that carries the core carries:
+ * it starts the core, runs the body on a pool stack whose bottom is the
+ * scheduler loop, and returns on this thread's own host stack with the status.
+ * The weak answer here is "no core is linked", and then the entry keeps the
+ * shape it has always had. The linker resolves this once and no runtime unit
+ * has to ask anything — which is the difference between it and a run-time
+ * world query, and why no join has a pool-off behaviour.
+ *
+ * The body arrives as a pointer rather than as a symbol `entry.c` would have
+ * to name, because a link that carries the core without an emitted module —
+ * the completion harness, the probes — would otherwise carry an undefined
+ * `wf__main_body`. */
+__attribute__((weak)) int wf__sched_entry_stack(
+    int (*body)(int, char **),
+    int argc,
+    char **argv,
+    int *status
+) {
+    (void)body;
+    (void)argc;
+    (void)argv;
+    (void)status;
+    return 0;
+}
+
 /* Runs the program's entry on a stack of this file's choosing.
  *
- * Every failure on the way falls back to running the entry on the thread the
- * host started us with — the program the caller asked for still runs, with the
- * ceiling it had before. Losing the headroom is a worse outcome than the one
- * this file promises, but refusing to run at all would be worse still. */
+ * With the scheduler core linked that stack is a pool stack of the core's own
+ * reservation, whose bottom frame is the scheduler loop. It has to be: a
+ * parked entry stack resumed by another thread and run to its end would return
+ * from a function that thread never called, so `wf__main_body` cannot bottom
+ * out in a pthread whose creator waits on `pthread_join`. The status is posted
+ * from wherever the body finishes, and `wf_sched_run` returns it here on this
+ * thread's own host stack. The two fallbacks below are then unreachable rather
+ * than an alternative shape: no `pthread_create` is on that path at all.
+ *
+ * Without the core the function is exactly what it was. Every failure on the
+ * way falls back to running the entry on the thread the host started us with —
+ * the program the caller asked for still runs, with the ceiling it had before.
+ * Losing the headroom is a worse outcome than the one this file promises, but
+ * refusing to run at all would be worse still. */
 int wf__floor_run(int argc, char **argv) {
     pthread_attr_t attributes;
     pthread_t thread;
@@ -375,6 +465,10 @@ int wf__floor_run(int argc, char **argv) {
     call.status = 0;
 
     wf__floor_install();
+
+    if (wf__sched_entry_stack(wf__main_body, argc, argv, &call.status)) {
+        return call.status;
+    }
 
     if (pthread_attr_init(&attributes) != 0) {
         return wf__main_body(argc, argv);

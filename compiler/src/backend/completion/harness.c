@@ -12,6 +12,7 @@
 #include "file_adapter.h"
 #include "native_contract.h"
 #include "../sched/core.h"
+#include "../sched/entry.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -2321,6 +2322,112 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
     return 0;
 }
 
+/* An I/O join made on a pool stack parks that stack, and the completion
+ * resumes it.
+ *
+ * This is design §11 item 1 in its real-thread form, and the case above in the
+ * shape a linked program actually runs: there the join is made from a plain
+ * harness thread with no stack to park, so it takes §2's fourth line and waits
+ * in place; here the thread enters the core the way `sched/smoke.c` does, the
+ * join has a stack, and §2's third line parks it.
+ *
+ * The operation is completed by a thread of this case's own rather than by an
+ * engine, and that is what makes the park unconditional. A record the bounded
+ * adapter still holds is run by the joining thread itself, which is the engine
+ * doing its job and not a park; a record in the ring is reaped by whichever
+ * thread makes the next progress pass. Which of those a real read takes
+ * depends on the helper policy and on whether this host has io_uring, so a
+ * case that submitted one would assert a park on some gate hosts and not
+ * others. A record only another thread can publish takes §2's third line on
+ * every host and every helper setting, and it is the same record, the same
+ * join entry point and the same publication call
+ * (`wf_completion_record_complete`) an operation of any kind ends in.
+ *
+ * What the counters say is the whole property. `parks` above zero says the
+ * stack really parked rather than spinning to DONE; `resumes` equal to `parks`
+ * says every parked stack came back; and the join returned the record's own
+ * result, so the stack that was resumed is the stack that joined. The
+ * publisher sleeps first, so a join that did not park would have to spin on a
+ * record nothing had completed: a park that was never resumed is a hang the
+ * watchdog reports by name.
+ *
+ * Three stacks and one thread: the entry takes one, so a park has one to
+ * switch to and the exhausted arm is not what is being tested. The core is the
+ * process's own `wf__sched_core`, which nothing has started here -- a harness
+ * link carries no floor, so no entry started it -- and it stays initialised for
+ * the cases after this one, whose joins run on plain threads and wait in place
+ * exactly as before.
+ *
+ * A compute hand-out joined newest-first on the core from a linked program is
+ * not duplicated here: `compiler/tests/programs/parallel.rs` runs whole
+ * compiled programs whose overlap groups do exactly that, at several worker
+ * counts, and reads the core's own grant count back. */
+typedef struct pool_stack_join_context {
+    int failed;
+    wf_harness_record record;
+    int64_t value;
+    int error_code;
+    uint64_t publications_before;
+} pool_stack_join_context;
+
+static void *complete_after_a_delay(void *opaque) {
+    wf_completion_record *record = opaque;
+    struct timespec delay = {.tv_sec = 0, .tv_nsec = 20000000};
+    (void)nanosleep(&delay, NULL);
+    record->result.kind = WF_FILE_READ;
+    record->result.value = 11;
+    record->result.error_code = 0;
+    wf_completion_record_complete(record);
+    return NULL;
+}
+
+static void run_pool_stack_join(void *argument) {
+    pool_stack_join_context *context = argument;
+    wf_completion_record *record = (wf_completion_record *)context->record.bytes;
+    pthread_t publisher;
+
+    context->failed = 1;
+    if (wf__sched_current_stack() == NULL) {
+        wf_sched_post_status(&wf__sched_core, 0);
+        return;
+    }
+    context->publications_before = wf__completion_publications();
+    harness_record_init(record, WF_FILE_READ);
+    if (pthread_create(&publisher, NULL, complete_after_a_delay, record) != 0) {
+        wf_sched_post_status(&wf__sched_core, 0);
+        return;
+    }
+    wf__completion_file_join(
+        context->record.bytes,
+        &context->value,
+        &context->error_code
+    );
+    if (pthread_join(publisher, NULL) != 0) {
+        wf_sched_post_status(&wf__sched_core, 0);
+        return;
+    }
+    context->failed = 0;
+    wf_sched_post_status(&wf__sched_core, 0);
+}
+
+static int test_an_io_join_on_a_pool_stack_parks_and_is_resumed(void) {
+    pool_stack_join_context context;
+    wf_sched_statistics counts;
+
+    memset(&context, 0, sizeof(context));
+    context.value = -1;
+    context.error_code = -1;
+    CHECK(wf_sched_init(&wf__sched_core, 1u, 3u, 256u * 1024u) == 0);
+    CHECK(wf__sched_enter(0u, run_pool_stack_join, &context) == 0);
+    wf_sched_statistics_sum(&wf__sched_core, &counts);
+    CHECK(context.failed == 0);
+    CHECK(context.value == 11 && context.error_code == 0);
+    CHECK(wf__completion_publications() == context.publications_before + 1u);
+    CHECK(counts.parks >= 1u);
+    CHECK(counts.resumes == counts.parks);
+    return 0;
+}
+
 /* Interruption and readiness refusal are adapter progress, never an outcome.
  *
  * The read below is of a nonblocking empty pipe, so its first host attempt is
@@ -2789,6 +2896,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_helper_count_above_its_storage_is_refused());
     RUN_TEST(test_shutdown_refuses_every_later_entry());
     RUN_TEST(test_a_helper_completion_wakes_a_waiting_join());
+    RUN_TEST(test_an_io_join_on_a_pool_stack_parks_and_is_resumed());
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));

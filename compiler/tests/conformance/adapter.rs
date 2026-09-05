@@ -44,10 +44,9 @@ use whitefoot::{
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
-    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
-    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile, module_requires_completion_runtime,
-    module_requires_parallel_runtime,
+    HOST_OPTIMIZATION_ARGUMENTS, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
+    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER,
+    SourceInput, compile, module_requires_completion_runtime, module_requires_parallel_runtime,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -219,39 +218,54 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     let floor = directory.join("wf_floor.c");
     std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor);
+    // The scheduler core joins under the union of the two predicates
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Where the core
+    // is linked"): one scheduler for compute hand-outs and I/O completions.
+    // The completion units join only under the second.
     let completion = module_requires_completion_runtime(module);
-    if module_requires_parallel_runtime(module) {
-        let runtime = directory.join("par_runtime.c");
-        std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the parallel runtime");
-        command.arg("-x").arg("c").arg(runtime);
+    if completion || module_requires_parallel_runtime(module) {
+        for (name, source) in [
+            ("sched/core.h", SCHED_CORE_HEADER),
+            ("sched/prim.h", SCHED_PRIM_HEADER),
+            ("sched/switch.h", SCHED_SWITCH_HEADER),
+            ("sched/entry.h", SCHED_ENTRY_HEADER),
+            ("sched/core.c", SCHED_CORE_SOURCE),
+            ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
+            ("sched/entry.c", SCHED_ENTRY_SOURCE),
+        ] {
+            std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
+            std::fs::write(directory.join(name), source).expect("write scheduler core unit");
+        }
+        command
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/core.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/prim_host.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/entry.c"));
     }
     if completion {
         for (name, source) in [
             ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
             ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
             ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("completion/writer_scheduler.h", WRITER_SCHEDULER_HEADER),
             (
                 "completion/linux_io_uring.h",
                 COMPLETION_LINUX_IO_URING_HEADER,
             ),
-            ("sched/core.h", SCHED_CORE_HEADER),
-            ("sched/prim.h", SCHED_PRIM_HEADER),
-            ("sched/switch.h", SCHED_SWITCH_HEADER),
             ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
             ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
             ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("completion/writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
             (
                 "completion/linux_io_uring.c",
                 COMPLETION_LINUX_IO_URING_SOURCE,
             ),
-            ("sched/core.c", SCHED_CORE_SOURCE),
-            ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
         ] {
             std::fs::create_dir_all(directory.join("completion"))
                 .expect("stage completion directory");
-            std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
             std::fs::write(directory.join(name), source).expect("write completion runtime unit");
         }
         command
@@ -268,16 +282,7 @@ fn link(module: &str, directory: &Path) -> PathBuf {
             .arg(directory.join("completion/completion_bridge.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion/writer_scheduler.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion/linux_io_uring.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("sched/core.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("sched/prim_host.c"));
+            .arg(directory.join("completion/linux_io_uring.c"));
     }
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)

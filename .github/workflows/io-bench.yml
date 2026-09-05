@@ -17,7 +17,7 @@ on:
     paths:
       - 'compiler/src/backend/completion/**'
       - 'compiler/src/backend/emitter/**'
-      - 'compiler/src/backend/par_runtime.c'
+      - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/par_runtime_windows.c'
       - 'compiler/src/backend/par_runtime_windows_probe.c'
       - 'compiler/src/backend/windows_runtime.c'

@@ -26,9 +26,8 @@ use crate::backend::target::{
 
 use super::system::{with_ir, with_parallel_ir};
 use super::{
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, append_completion_runtime,
-    build_executable, compile_and_run, emit, emit_with_overlap, emitted_function,
-    module_requires_parallel_runtime, test_directory,
+    HOST_OPTIMIZATION_ARGUMENTS, append_runtime_units, build_executable, compile_and_run, emit,
+    emit_with_overlap, emitted_function, module_requires_parallel_runtime, test_directory,
 };
 
 /// A pure recursive fold over a heap tree, the smallest shape that has
@@ -374,24 +373,32 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
     });
 }
 
-/// The two constants checked by selected-target lane layout are the runtime
-/// slot's actual byte capacity and base alignment.
+/// The two constants checked by selected-target lane layout are the scheduler
+/// core slot's actual byte capacity and base alignment.
+///
+/// The slot moved from `par_runtime.c` to `sched/core.h` when the core became
+/// the runtime (design §7), and so did the two numbers; nothing else about
+/// this case changes, because the lowering's question is the same one.
 #[test]
 fn ordinary_lane_frame_limits_match_the_runtime_slot() {
-    let runtime = super::PARALLEL_RUNTIME_SOURCE;
-    let declared = runtime
+    let core = crate::SCHED_CORE_HEADER;
+    let declared = core
         .lines()
-        .find_map(|line| line.strip_prefix("#define WF_PAR_FRAME_BYTES "))
-        .expect("the runtime must state its frame capacity");
+        .find_map(|line| line.strip_prefix("#define WF_SCHED_FRAME_BYTES "))
+        .expect("the core must state its frame capacity");
     assert_eq!(
-        declared.trim().parse::<u64>().expect("a decimal capacity"),
+        declared
+            .trim()
+            .trim_end_matches('u')
+            .parse::<u64>()
+            .expect("a decimal capacity"),
         crate::LANE_FRAME_BYTES
     );
     assert!(
-        runtime.contains(&format!(
-            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_PAR_FRAME_BYTES];"
+        core.contains(&format!(
+            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_SCHED_FRAME_BYTES];"
         )),
-        "the runtime slot must provide the alignment target layout relies on"
+        "the core slot must provide the alignment target layout relies on"
     );
 }
 
@@ -1691,28 +1698,38 @@ fn a_module_that_hands_nothing_out_needs_no_runtime() {
 /// Without this the whole path could be silently sequential forever: every
 /// other test here passes just as well when the weak refusal wins, because
 /// refusing every lane is a correct execution.
+///
+/// The reference run moved, and design §7's "Where the core is linked" is why.
+/// It used to be the same module linked with no parallel runtime at all; the
+/// scheduler core is now staged under the union of the two predicates, because
+/// one core serves compute hand-outs and I/O completions alike and a
+/// completion-only program parks its stack at every join, so this fixture —
+/// which writes its result — has no core-free link any more and the shipped
+/// compiler produces none. The sequential world of the same binary is the
+/// reference instead: `WF_WORKERS=1` answers "no pool" at the bootstrap, the
+/// program enters its sequential clone world, and nothing is ever handed out,
+/// which the grant count below states rather than assumes.
 #[test]
 fn the_runtime_replaces_the_modules_weak_refusal() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
+    let counted = CountedProgram::link(&module, &directory);
 
-    // Linked with nothing: the module's own weak definitions answer, every
-    // lane is refused, and the program still produces its whole result.
-    let alone = build_executable_without_parallel_runtime(&module, &directory);
-    let sequential = Command::new(&alone)
-        .output()
-        .expect("run the linked module");
+    let (refused, sequential) = counted.run(Some("1"));
     assert_eq!(sequential.status.code(), Some(0));
     assert_eq!(
         sequential.stdout.len(),
         8,
         "the fold must report eight bytes"
     );
+    assert_eq!(
+        refused, 0,
+        "the sequential world hands nothing out, so nothing can be granted"
+    );
 
-    // Linked with the runtime: the strong definitions win. The count is the
+    // Asked for a pool: the strong definitions win. The count is the
     // runtime's own, reported at process exit by the observer unit, so a
     // link that kept the weak refusal reports zero here and fails.
-    let counted = CountedProgram::link(&module, &directory);
     let (granted, parallel) = counted.run(Some("4"));
     assert_eq!(parallel.status.code(), Some(0));
     assert_eq!(
@@ -1731,11 +1748,9 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         );
     }
 
-    // And the explicit opt-out: one lane of execution is the calling thread
-    // alone, so the pool never starts and every offer is refused.
-    let (opted_out, quiet) = counted.run(Some("1"));
-    assert_eq!(quiet.stdout, sequential.stdout);
-    assert_eq!(opted_out, 0, "WF_WORKERS=1 must never start the pool");
+    // The explicit opt-out is the reference run above: one lane of execution
+    // is the calling thread alone, so no hand-out is made and nothing is
+    // granted.
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -1816,14 +1831,19 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
             runs.push((format!("WF_WORKERS={workers}"), output.stdout));
         }
     }
-    // The sequential reference is the same program with no runtime linked at
-    // all, so the repeat is compared against today's execution and not only
-    // against itself.
-    let alone = build_executable_without_parallel_runtime(&module, &directory);
+    // The sequential reference is the default compilation of the same source
+    // — no overlap group actualized at all, so no hand-out and no thunk — and
+    // the repeat is therefore compared against today's execution rather than
+    // only against itself. It used to be the same overlapped module linked
+    // with no parallel runtime, which design §7's union predicate retires: a
+    // module that submits an operation carries the scheduler core in every
+    // link the compiler produces, and the core is what supplies the lanes.
+    let alone = build_executable(&emit(OVERLAPPING_FOLD), &directory);
     let reference = Command::new(&alone)
         .output()
-        .expect("run the linked module");
-    runs.push(("no runtime".to_owned(), reference.stdout));
+        .expect("run the sequential compilation");
+    assert_eq!(reference.status.code(), Some(0));
+    runs.push(("no overlap lowering".to_owned(), reference.stdout));
 
     identical(&runs).expect("overlapping must not move one byte of the result");
 
@@ -2016,34 +2036,6 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Links one module without the parallel runtime, while retaining any target
-/// runtime the normal completion-only build requires. This is the exact
-/// sequential schedule of an overlap-capable module, not an invalid bare link.
-pub(super) fn build_executable_without_parallel_runtime(
-    module: &str,
-    directory: &Path,
-) -> std::path::PathBuf {
-    let assembly = directory.join("alone.ll");
-    let executable = directory.join("alone");
-    std::fs::write(&assembly, module).expect("write the module");
-    let mut command = Command::new("/usr/bin/clang");
-    command.arg("-x").arg("ir").arg(&assembly);
-    let _completion_units = append_completion_runtime(&mut command, module, directory);
-    let linked = command
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .expect("invoke host clang");
-    assert!(
-        linked.status.success(),
-        "a module that hands work out must link without the parallel runtime:\n{}",
-        String::from_utf8_lossy(&linked.stderr)
-    );
-    std::fs::remove_file(&assembly).expect("remove the module");
-    executable
-}
-
 /// Whether this host can tell "the runtime granted no lane" apart from "no
 /// worker was scheduled inside the window".
 ///
@@ -2088,7 +2080,17 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
 /// every one of the thirty-two runs and still totals zero.
 pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
 
-/// One linked build of a module against the parallel runtime and the grant
+/// The observer linked beside a counted program: one destructor that reports
+/// the runtime's own grant count on standard error at process exit.
+///
+/// `wf__par_grants` is the scheduler core's steal count, summed across the
+/// core's threads on demand (`sched/entry.c`). It used to be a plain
+/// `unsigned long` the parallel runtime incremented; the core keeps its
+/// counters per thread so that no two threads ever write one word, so the
+/// observer calls rather than reads.
+pub(super) const GRANT_OBSERVER: &str = "#include <stdio.h>\nextern unsigned long wf__par_grants(void);\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants());\n}\n";
+
+/// One linked build of a module against the scheduler core and the grant
 /// observer, so a case that wants several runs of one module pays for the link
 /// once.
 ///
@@ -2167,32 +2169,27 @@ impl CountedProgram {
 /// of one module pays for it once.
 fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let assembly = directory.join("counted.ll");
-    let runtime = directory.join("counted_runtime.c");
     let floor = directory.join("counted_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
-    std::fs::write(&runtime, PARALLEL_RUNTIME_SOURCE).expect("write the runtime");
-    // The floor joins every link the driver makes, and a lane's per-thread arm
-    // lives in it, so this harness links what a shipped program links.
+    // The floor joins every link the driver makes, it runs the entry on a pool
+    // stack when the core is linked, and a worker's per-thread arm lives in
+    // it, so this harness links what a shipped program links.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    std::fs::write(
-        &observer,
-        "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
-    )
-    .expect("write the observer");
+    std::fs::write(&observer, GRANT_OBSERVER).expect("write the observer");
     let mut command = Command::new("/usr/bin/clang");
     command
+        .arg("-std=c11")
         .arg("-pthread")
         .arg("-x")
         .arg("ir")
         .arg(&assembly)
         .arg("-x")
         .arg("c")
-        .arg(&runtime)
         .arg(&floor)
         .arg(&observer);
-    let _completion_units = append_completion_runtime(&mut command, module, directory);
+    let _runtime_units = append_runtime_units(&mut command, module, directory);
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -2204,7 +2201,7 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
         "the runtime and its observer must link:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
-    for path in [assembly, runtime, observer] {
+    for path in [assembly, observer] {
         std::fs::remove_file(path).expect("remove a counted-run artifact");
     }
     executable

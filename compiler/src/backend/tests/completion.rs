@@ -1309,7 +1309,7 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     // The staged tree keeps the repository's own two directories, because the
     // completion header reaches the scheduler core by the relative path it
     // uses in the tree: the completion record begins with a `wf_sched_record`.
-    let units: [(&str, &str); 17] = [
+    let units: [(&str, &str); 16] = [
         ("completion/contract.h", crate::COMPLETION_CONTRACT_HEADER),
         (
             "completion/file_adapter.h",
@@ -1317,16 +1317,13 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
         ),
         ("completion/bridge.h", crate::COMPLETION_BRIDGE_HEADER),
         (
-            "completion/writer_scheduler.h",
-            crate::WRITER_SCHEDULER_HEADER,
-        ),
-        (
             "completion/linux_io_uring.h",
             crate::COMPLETION_LINUX_IO_URING_HEADER,
         ),
         ("sched/core.h", crate::SCHED_CORE_HEADER),
         ("sched/prim.h", crate::SCHED_PRIM_HEADER),
         ("sched/switch.h", crate::SCHED_SWITCH_HEADER),
+        ("sched/entry.h", crate::SCHED_ENTRY_HEADER),
         ("completion/runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
         (
             "completion/file_adapter.c",
@@ -1334,17 +1331,13 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
         ),
         ("completion/bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
         (
-            "completion/writer_scheduler.c",
-            crate::WRITER_SCHEDULER_SOURCE,
-        ),
-        (
             "completion/linux_io_uring.c",
             crate::COMPLETION_LINUX_IO_URING_SOURCE,
         ),
         ("sched/core.c", crate::SCHED_CORE_SOURCE),
         ("sched/prim_host.c", crate::SCHED_PRIM_HOST_SOURCE),
+        ("sched/entry.c", crate::SCHED_ENTRY_SOURCE),
         ("completion/floor.c", crate::FLOOR_RUNTIME_SOURCE),
-        ("completion/par_runtime.c", crate::PARALLEL_RUNTIME_SOURCE),
     ];
     for staged in ["completion", "sched"] {
         std::fs::create_dir_all(directory.join(staged)).expect("stage runtime directory");
@@ -1381,36 +1374,40 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     std::fs::remove_dir(directory).expect("remove the default-dialect directory");
 }
 
-/// The writer-ready cells still name one capacity source, and the completion
-/// runtime no longer has one at all.
+/// The completion runtime has no capacity of any kind left, and the ready
+/// queue that had the last one is gone with the unit that owned it.
 ///
 /// This case used to tie three numbers together: the completion slot count,
 /// the bridge's operation capacity, and the writer scheduler's ready cells.
-/// The first two are deleted with the record pool — the record is a block of
-/// the submitting frame, so there is no slot to run out of and no operation
+/// The first two went with the record pool — the record is a block of the
+/// submitting frame, so there is no slot to run out of and no operation
 /// capacity anywhere in the runtime
 /// (`research/investigations/io-model/PARK-ON-MISS.md` §7, "The record's pool
-/// machinery: deleted, not answered"). What is left is the writer scheduler's
-/// own ready array, which still derives its bound from one constant, and the
-/// deletion itself, which is asserted here so a capacity cannot creep back in
-/// unnoticed.
+/// machinery: deleted, not answered"). The third goes here, with
+/// `completion/writer_scheduler.c` itself: its handshake is the scheduler
+/// core's stack park and its bounded ready array is the core's intrusive ready
+/// list, whose capacity is the stack count by construction (§6, §7's
+/// "`writer_scheduler.c` ... retired"). What is asserted now is the deletion,
+/// so no capacity can creep back in unnoticed.
 #[test]
 fn the_writer_ready_cells_have_one_capacity_source() {
-    let header = crate::WRITER_SCHEDULER_HEADER;
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let scheduler = crate::WRITER_SCHEDULER_SOURCE;
 
-    assert_eq!(
-        header
-            .matches("#define WF_COMPLETION_SLOT_CAPACITY 64u")
-            .count(),
-        1,
-        "the writer scheduler must name its capacity once"
+    for gone in [
+        "WF_COMPLETION_SLOT_CAPACITY",
+        "WF_WRITER_READY_CAPACITY",
+        "wf__writer_scheduler_ready",
+        "wf__writer_run_root",
+    ] {
+        assert!(
+            !bridge.contains(gone),
+            "the bridge still names the retired writer scheduler: {gone}"
+        );
+    }
+    assert!(
+        !crate::COMPLETION_BRIDGE_HEADER.contains("#include \"writer_scheduler.h\""),
+        "the bridge header still reaches for the retired writer scheduler"
     );
-    assert!(header.contains("#define WF_WRITER_READY_CAPACITY WF_COMPLETION_SLOT_CAPACITY"));
-    assert!(!scheduler.contains("#define WF_WRITER_READY_COUNT"));
-    assert!(scheduler.contains("wf_writer_ready[WF_WRITER_READY_CAPACITY]"));
-    assert!(scheduler.contains("wf_writer_count == WF_WRITER_READY_CAPACITY"));
 
     // The bridge keeps no operation capacity, no slot array and no queue
     // array, so nothing there can refuse an operation.
@@ -1472,11 +1469,11 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     assert!(parked < callback);
 
     let progress = bridge
-        .split_once("static int wf_bridge_progress(void)")
+        .split_once("static int wf_bridge_progress(void) {")
         .expect("bridge has bounded progress")
         .1
-        .split_once("void wf__writer_scheduler_notify")
-        .expect("progress precedes writer notification")
+        .split_once("static void wf_bridge_park(uint64_t observed_epoch) {")
+        .expect("progress precedes the park")
         .0;
     assert!(progress.contains("int error = wf_linux_io_uring_progress"));
     assert!(progress.contains("if (error != 0)"));
@@ -2021,11 +2018,34 @@ fn a_join_waits_in_place_and_sleeps_on_the_one_primitive() {
             "the bridge still names the deleted drain machinery: {gone}"
         );
     }
-    // Every join runs the one arm.
+    // Every join runs the one dispatch, and the dispatch runs the arm above
+    // for a thread with no stack to park (design §2's third line takes the
+    // rest). A thread on a pool stack parks instead, which is the whole of
+    // this design; the arm stays because the harness and the probes call these
+    // joins from plain threads.
     assert_eq!(
-        bridge.matches("wf_bridge_wait_in_place(held)").count(),
+        bridge.matches("wf_bridge_join(held)").count(),
         3,
-        "each of the three joins waits in place the same way"
+        "each of the three joins enters the rule the same way"
+    );
+    let dispatch = bridge
+        .split_once("static void wf_bridge_join(wf_completion_record *record) {")
+        .expect("the joins share one dispatch")
+        .1
+        .split_once("\n}\n")
+        .expect("the dispatch ends with the function")
+        .0;
+    assert!(
+        dispatch.contains("wf__sched_current_stack() != NULL"),
+        "a stack to park is what selects the third line: {dispatch}"
+    );
+    assert!(
+        dispatch.contains("wf_sched_join(&wf__sched_core, &record->sched, 1)"),
+        "a thread on a pool stack runs the core's rule: {dispatch}"
+    );
+    assert!(
+        dispatch.contains("wf_bridge_wait_in_place(record)"),
+        "a thread with no pool stack waits in place: {dispatch}"
     );
 }
 
@@ -2405,12 +2425,16 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
         ("runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
         ("file_adapter.c", crate::COMPLETION_FILE_ADAPTER_SOURCE),
         ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
-        ("writer_scheduler.c", crate::WRITER_SCHEDULER_SOURCE),
+        ("sched/core.c", crate::SCHED_CORE_SOURCE),
+        ("sched/prim_host.c", crate::SCHED_PRIM_HOST_SOURCE),
+        ("sched/entry.c", crate::SCHED_ENTRY_SOURCE),
         ("contract.h", crate::COMPLETION_CONTRACT_HEADER),
         ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
         ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
         ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
-        ("writer_scheduler.h", crate::WRITER_SCHEDULER_HEADER),
+        ("sched/core.h", crate::SCHED_CORE_HEADER),
+        ("sched/prim.h", crate::SCHED_PRIM_HEADER),
+        ("sched/entry.h", crate::SCHED_ENTRY_HEADER),
     ] {
         for reserved in ["linux", "unix"] {
             for shape in [format!(" {reserved};"), format!(".{reserved}")] {

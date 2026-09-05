@@ -1,7 +1,12 @@
 /* Windows bounded stackless-writer ready queue.
  *
- * This is a direct platform port of writer_scheduler.c: the six-state frame
- * protocol and fixed 64-cell admission bound are unchanged. Publication only
+ * This is a direct platform port of the POSIX writer scheduler, which is
+ * retired: the scheduler core's stack park is its handshake now and the core's
+ * intrusive ready list is its queue (`research/investigations/io-model/
+ * PARK-ON-MISS.md` §6, §7). This file and its callers go with the Windows
+ * port, which is a later step; until then its ABI is declared in
+ * `bridge.h` behind `#if defined(_WIN32)`. The six-state frame protocol and
+ * fixed 64-cell admission bound are unchanged. Publication only
  * enqueues an opaque frame. A normal scheduler lane calls help_once and is the
  * sole place that reads and invokes the resume entry. This file creates no
  * thread.
@@ -14,7 +19,7 @@
 #define _WIN32_WINNT 0x0600
 #endif
 
-#include "writer_scheduler.h"
+#include "bridge.h"
 
 #include <windows.h>
 
