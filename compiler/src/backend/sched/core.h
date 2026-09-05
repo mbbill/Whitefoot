@@ -131,6 +131,48 @@ typedef struct wf_sched_lane {
 #define WF_SCHED_MAX_STACKS 1024u
 #endif
 
+/* The bounded spin before the idle park. A turn of the idle window whose
+ * looks all missed repeats them -- the ready list and this thread's own deque
+ * and a steal, or the record a stack waits on -- for SPIN rounds of
+ * `wf_prim_pause` and then YIELD rounds of `wf_prim_yield`, and only then
+ * raises the idle bit, captures the epoch and parks. These are scheduling
+ * policy numbers of the same kind as `WF_PAR_SPLIT_OVERSUBSCRIBE` in
+ * `sched/entry.c`: nothing about which programs are accepted, what they
+ * compute, or what any of them observes depends on either one, and the park
+ * they precede is unchanged.
+ *
+ * What they are for. A park is a kernel sleep and its wake is a kernel round
+ * trip, which a virtual machine makes long. The Windows qualification bench
+ * (`.github/workflows/io-bench.yml`) measures the unified `--par` build of
+ * `research/experiments/io-completion-bench/programs/windows_runtime_mixed.wf`
+ * at 1.06 times its completion-only build on a four-vCPU Windows VM, against a
+ * bar of 0.95: per iteration of that program's loop two wakes are on the
+ * critical path -- an idle worker's, to steal the hand-out just published, and
+ * the publisher's own, when the stolen job makes its joiner's stack READY --
+ * and on that host both are kernel round trips. A spinning thread finds either
+ * one by looking, with no kernel in it.
+ *
+ * The retired runtime (`git show 92b19e1^:compiler/src/backend/par_runtime.c`,
+ * its `WF_PAR_SPIN_ROUNDS` and `WF_PAR_YIELD_ROUNDS`) spun 4096 rounds and
+ * then yielded 16 times before its condition variable, with the floor under
+ * the spin argued from that machine's 2.2 microsecond park-and-wake: a thread
+ * that looks for less time than a park costs sleeps to save less than the
+ * sleep costs, and pays the wake anyway when work appears.
+ *
+ * What this measurement chose, and why, is the "§12 addendum: the idle spin"
+ * section of `research/experiments/park-on-miss-measurements/README.md`.
+ *
+ * Under `WF_SCHED_ENUMERATE` a round is not a delay but a step -- the looks
+ * are primitives and the enumerator walks every interleaving of them -- so the
+ * enumerate build overrides both to a small number through these same
+ * `#if !defined` guards (`compiler/Makefile`, target `sched-enumerate`). */
+#if !defined(WF_SCHED_IDLE_SPIN_ROUNDS)
+#define WF_SCHED_IDLE_SPIN_ROUNDS 4096u
+#endif
+#if !defined(WF_SCHED_IDLE_YIELD_ROUNDS)
+#define WF_SCHED_IDLE_YIELD_ROUNDS 16u
+#endif
+
 /* The counters one thread keeps. */
 typedef struct wf_sched_statistics {
     unsigned long long parks;

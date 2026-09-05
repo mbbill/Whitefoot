@@ -299,10 +299,16 @@ void wf_prim_unlock(void) {
     ReleaseSRWLockExclusive(&wf_prim_core_lock);
 }
 
-/* ------------------------------------------------------------- 6. yield */
+/* ------------------------------------------------------ 6. yield, pause */
 
 void wf_prim_yield(void) {
     (void)SwitchToThread();
+}
+
+void wf_prim_pause(void) {
+    /* `YieldProcessor` is `pause` on x86 and `yield` on aarch64, from the
+     * platform's own header rather than an instruction this file names. */
+    YieldProcessor();
 }
 
 /* ---------------------------------------------------------- 7. progress */

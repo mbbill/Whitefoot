@@ -323,10 +323,19 @@ sched-smoke:
 # configurations §11 derives from §5's floor, (T=1,S=2), (T=1,S=3), (T=2,S=3)
 # and (T=2,S=4), with every invariant checked after every step rather than
 # once at the end. Two lane slots because I4's second half wants a power of two.
+#
+# The idle window's bounded spin is pinned small here for the same reason the
+# lane slot count is: under `WF_SCHED_ENUMERATE` a spin round is not a delay
+# but a repetition of the window's looks, and every look is a primitive step
+# the search branches on. Two spin rounds and one yield round reach both arms
+# of the spin -- a look that hits during it, and the fall through it to the
+# park -- at a state count the search still walks (`core.h` states the same
+# thing from the constants' side).
 sched-enumerate:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_ENUMERATE -DWF_SCHED_LANE_SLOTS=2u \
 		-DWF_SCHED_MAX_THREADS=4u -DWF_SCHED_MAX_STACKS=8u \
+		-DWF_SCHED_IDLE_SPIN_ROUNDS=2u -DWF_SCHED_IDLE_YIELD_ROUNDS=1u \
 		$(SCHED_DIR)/core.c $(SCHED_DIR)/enumerate.c $(SCHED_DIR)/schedules.c \
 		-o "$(COMPLETION_TMP)/sched-enumerate"
 	@# The four sweeps are independent and the two-thread ones are long, so
