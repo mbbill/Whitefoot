@@ -312,6 +312,29 @@ before the code lands.
    park cost and per-frame record growth measured; `LOOP-PIPELINE.md` §3.4
    and the roadmap's two stackless items edited in place; batch record.
 
+### Decided 2026-09-05: measured before chosen
+
+The owner ruled that the locked form and the lock-free form of §6 are both
+built in slice 3 over the one `prim.h`, and §12 chooses between them by
+measurement; and that every other choice with a plausible cost is measured
+the same way rather than argued. The choices the enumeration added to §12's
+list, each measured as one park and one publish against the 2.2 microsecond
+park-and-wake figure, and on the four-stage chain:
+
+- the claim protocol: the compare-exchange on `record->waiter` that every
+  completion with a registered waiter now pays, and the COMPLETING store
+  before the DONE store that every completion pays;
+- the in-place wait of the idle window against parking at once;
+- the sequentially consistent orders the core uses today at the record and
+  the phase, against the acquire and release orders the enumerator cannot
+  tell apart (its model is sequentially consistent, so a weaker order is
+  admitted only with the GenMC run the deferred note below names);
+- the lane slot count and the ready list under the one mutex, against a
+  per-thread ready list.
+
+A choice the measurement cannot separate keeps the form the enumerator
+checked.
+
 Batch 2 is done with the surface the language has today: read-only files,
 directory enumeration, and the two standard outputs. That surface reaches
 every state of the scheduler through the enumeration harness and injected
