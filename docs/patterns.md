@@ -100,6 +100,15 @@ the innermost suitable region with `arena_new::<'r, T>(value)`. The returned
 compiler rejects an arena value that leaves the region rather than promoting
 it implicitly. A value that truly needs a different lifetime therefore belongs
 in that region from the start or uses another owned storage form such as `box`.
+A single value at a store is `Box<'s, T>` [S39], formed by `heap_box(store: h,
+value: e)` or `arena_box(store: a, value: e)`: the call writes no type or region
+argument, its outcome is `Result<Box<'s, T>, T>` whose `Err` arm hands the value
+back, `deref(cell)` reads the referent, and `let Box(value: v) = move cell;`
+takes the value out and releases the cell in one statement. A cell carries no
+measure, so a read of one owes no proof; a recursive shape writes the region on
+its own nominal — `enum Tree['s] { Leaf(); Branch(left: Box<'s, Tree<'s>>,
+right: Box<'s, Tree<'s>>); }` — and its release is the recursive walk.
+
 Effect rows keep the allocation site visible in a signature. Since [S23] the
 `allocates` entry takes the same formal-rooted paths `reads` and `writes` take,
 so an allocation from a store whose provider is a value names that provider:

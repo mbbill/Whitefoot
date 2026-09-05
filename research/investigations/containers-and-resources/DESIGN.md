@@ -4291,7 +4291,33 @@ on 2026-09-04, and S37 and the three S38 supersedes on 2026-09-05.
 | S38 | X_of(v) for a derivation, verb_object for   | naming decision         | ADOPTED   |
 |     |   a transformation; the operation names     |   (supersedes S7, S8    |           |
 |     |   follow the type names                     |    and S10's spellings) |           |
+| S39 | Box<'s, T>; heap_box / arena_box            | type + two formation    | ADOPTED   |
+|     |                                             |   rows                  |           |
 ```
+
+**One entry decided 2026-09-06, after B7b measured what `box<T>`'s replacement
+costs.** **S39**: `Box<'s, T>` is a fifth compiler-owned nominal — one value of `T`
+resident in the store `'s` names, store-branded on exactly `[PROV-1]`'s terms and
+carrying **no measure at all**, and `heap_box` and `arena_box` are its two
+`[BLK-0]` formation rows. The owner's ground, recorded: the one-element
+`Vector<'s, T>` this file had been treating as the replacement costs three
+descriptor words where a cell needs one pointer, and — the part that is not a
+size argument — it owes `0 < len_of(v)` at **every read**, for a container the
+language knows is never empty. A proof obligation a rule can always discharge is
+a proof obligation a writer still has to write, and `[MSR-1]`'s table would have
+to carry a row whose every cell is a constant. The cell has no row instead.
+Its ownership class is D3's unchanged: affine where a `Heap<'s>` binding is live,
+linear where none is, and its release class read off its region — a free at a
+general store, nothing at a bump extent. It joins `[PROV-6]`'s walk with its
+referent visited before its own storage, which is what admits
+`enum Tree['s] { Leaf(); Branch(left: Box<'s, Tree<'s>>, right: Box<'s, Tree<'s>>); }`
+and makes its release the recursive walk the owner allowed on 2026-09-04.
+**The two rows hand back `Result<Box<'s, T>, T>` and not `Option`**, which is the
+one place the cell's inventory differs from the runs': every run formation takes a
+count and a borrowed provider, so a refusal has nothing to hand back and `[L3]`
+is satisfied by an `Option`; a cell formation **consumes** the value it is given,
+so a refusal that dropped it would destroy it. The `Err` arm carries the value
+itself.
 
 **Two entries decided 2026-09-04, after B1 landed, when the owner asked why
 `array<T, n>` had survived the redesign.** The seven falsifier rounds asked whether the
@@ -7780,7 +7806,12 @@ what they cost is measured below rather than argued.
   `&uniq Env` over a `FixedVector`, and probe `gen3`'s `&uniq Holder<T>` are all refused.
   `[FN-2]`'s narrowing was already landed by B7a and needed no change.
 
-**Two compiler defects were measured rather than reasoned, and both are fixed here.**
+**[S39] landed with the batch, and its own three defects are named below.** The cell is
+`Box<'s, T>`, its two formation rows are `heap_box` and `arena_box`, and the program that
+proves it is `tests/programs/recursive_tree.wf` — the one §7's B7 could not keep and
+6.0j's own record said would have to move. It keeps its exit code.
+
+**Five compiler defects were measured rather than reasoned, and all five are fixed here.**
 
 ```text
 | what was wrong                      | how it showed                       | repair                         |
@@ -7794,6 +7825,15 @@ what they cost is measured below rather than argued.
 | exit in a scope holding no provider  | compiled, and its exit edge emitted  | over the bindings live at that |
 |                                     | a free the scope had no capability   | edge                           |
 |                                     | to spend                             |                                |
+| a cell field did not determine its   | `Branch(left: ..., right: ...)`      | a cell's store region is a     |
+| nominal's own region                 | demanded a written region argument   | component of its type, so the  |
+|                                     | its own operands fixed               | field determines it            |
+| a cell's region was not substituted  | every `Box` parameter mismatched its | the substitution reads the     |
+| at a call                            | actual                               | actual's own cell, as a source |
+|                                     |                                     | instance's already did         |
+| the region-blind nominal comparison  | two instances of a cyclic type       | the walk assumes the pair it   |
+| recursed forever on a cyclic type    | differing only in region compared    | is already deciding, which is  |
+| and answered at its depth cap        | unequal                              | what terminates it             |
 ```
 
 **One assertion moved stage rather than rule, and it is worth naming.** `pure, writes(f)`
@@ -7824,17 +7864,29 @@ assertion moved, and it moved to the parse stage through a helper added for it.
   move lands with `[S34]`'s retirement, and the retirement is what did not happen.
 - **`[CALL-4]`'s remaining admissions stay DEFERRED**, no migrated program having needed
   one.
-- **`box<T>` has no single replacement, and that is a design gap rather than a schedule
-  one.** The design names none: the nearest form is a one-element `Vector<'s, T>` —
-  `heap_vector` at count 1 followed by one `place_back` — which costs a four-word
-  descriptor and an `Option` match where `box_new` costs a pointer and no branch, and
-  which is *linear* in every scope not holding the provider where a `box` is affine
-  everywhere. `tests/programs/recursive_tree.wf` is the program that shows the cost:
-  under `box` its `Node` is affine and its release walk is derived; under a run it needs a
-  region parameter on the enum, a provider in every scope that builds or drops a node, and
-  a `heap-unreachable` unit could not declare the type at all. **The design should either
-  name a store-backed single-value form or state that the one-element run is it and
-  accept the descriptor.** Recorded here as the gap it is.
+- **`box<T>`'s replacement was a gap and the owner closed it: [S39] is `Box<'s, T>`.**
+  The gap this batch found is recorded because the answer follows from it: the nearest
+  form the design had was a one-element `Vector<'s, T>` — `heap_vector` at count 1 plus
+  one `place_back` — which costs three descriptor words where a cell needs one pointer
+  and, worse, owes `0 < len_of(v)` at **every read** of a container the language knows is
+  never empty. The owner's ruling of 2026-09-06 adds the cell instead: no measure at all,
+  the same brand and the same release class a run has, `heap_box` and `arena_box` as its
+  two formation rows, and `deref` plus the existing destructuring consume as its reader
+  and its taker. `tests/programs/recursive_tree.wf` runs on it, with the region parameter
+  on the enum §7 asked for and the recursive release walk `[PROV-6]` admits.
+  **What the cell's inventory did not inherit is the `Option`**: every run formation takes
+  a count and a borrowed provider, so its refusal has nothing to hand back, while a cell
+  formation consumes the value it is given, so its refusal is a `Result<Box<'s, T>, T>`
+  whose `Err` arm carries that value. That is `[L3]` deciding a signature.
+- **The cell's own migration stopped at one program.** `recursive_tree.wf` moved;
+  `prefix_expression.wf`, `par_layout.wf` and `option_slots.wf`, and the twelve
+  conformance cases that name `box<T>` or `box_new`, did not. The reason is the one above:
+  `box<T>` and `box_new` do **not** retire in this batch, so those sources are the live
+  coverage of a live surface, and migrating them would delete that coverage while risking
+  the exit codes the corpus pins — `prefix_expression` in particular threads an
+  infallible `box_new` through a `Result`-returning parser, and the cell's refusal is a
+  second failure the parser's own error enum would have to carry. They migrate when the
+  ambient heap does.
 - **`ConfinedTypeWithoutStore` landed and moved two corpus sources.** The refusal is
   taken at the field's own `type`, over the whole-program fact that the entry selects no
   `command.heap` row, so the two positive cases that declared a `Vector<u8>` field in a

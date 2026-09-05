@@ -4107,6 +4107,33 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   N>` and `buffer<T>`, each carrying one measure fixed at formation, are outside
   it and the clause retires with them. A provider parameter is the one `&uniq`
   the rule does not refuse.
+- CONTENT (B7b, [S39] the store-resident cell, owner-adopted 2026-09-06):
+  `Box<'s, T>` is a fifth compiler-owned nominal [TYPE-2]: one value of `T` at
+  the store `'s` names, store-branded on [PROV-1]'s own terms, carrying no
+  measure at all, and taking its ownership class from D3 and its release class
+  from its region exactly as `Vector<'s, T>` does. Its referent may be any
+  nameable type, including one that reaches the cell's own nominal, so a
+  recursive type is written with a region parameter on its enum and its release
+  is the recursive walk [PROV-6] already admits.
+  Its two [BLK-0] formation rows are `arena_box` and `heap_box`, and their exact
+  recorded signatures are
+  `fn arena_box<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, value: own T) -> made: own Result<Box<'s, T>, T> reads(store), writes(store), allocates(store)`,
+  requiring `align >= align_ceiling(T)` and publishing the store's length on both
+  arms and its capacity unrouted, and
+  `fn heap_box<T>['s](store: &uniq Heap<'s>, value: own T) -> made: own Result<Box<'s, T>, T> reads(store), writes(store), allocates(store)`,
+  which publishes nothing, `Heap<'s>` having no measure. Each writes no argument
+  at all: the `value` operand supplies `T` and the `store` operand supplies `'s`
+  and, for the arena row, both constants.
+  The outcome is a `Result` and not an `Option` because these are the domain's
+  one pair that consumes an affine input: a refusal that dropped `value` would
+  destroy it [L3], so the `Err` arm hands it back. No `arena_box_proved` row is
+  added, no migrated program having needed one.
+  Reading a cell is `deref` over [TYPE-7]'s domain, and taking the value out is
+  the existing destructuring consume `let Box(value: v) = move b;`, which binds
+  the referent and releases the cell; no operation and no production is added for
+  either. [TYPE-2], [STOR-1], [STOR-3], [TYPE-7], [BLK-0], [BLK-1], [BLK-2] and
+  [PROV-6] are amended, and [META-5]'s compiler-owned nominal spellings go to
+  five and its kernel records to sixty-four.
 - CONSEQUENCE, WHAT DID NOT LAND (B7b): the retirement of `buffer<T>`,
   `box<T>`, `arena<'r, T>` and `array<T, N>` with their [OP-1] rows, the move of
   `slice_of` and `mut_slice_of` into the kernel IDENT domain that waits on it,
@@ -4119,8 +4146,8 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   them would leave this specification and the compiler disagreeing about several
   hundred accepted programs, which is the defect the branch rule forbids. Every
   one of those clauses keeps its DEFERRED entry and its stated delta.
-- CONFORMANCE BOUNDARY (B7b): ten added cases, no deleted case, no rename,
-  eight rewritten cases whose recorded expectations are unchanged, and 128
+- CONFORMANCE BOUNDARY (B7b): thirteen added cases, no deleted case, no rename,
+  eight rewritten cases whose recorded expectations are unchanged, and 129
   modified case sources whose expectations are unchanged.
   Added:
   `blk4-neg-a-unique-parameter-reaches-a-run`
@@ -4137,6 +4164,12 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`{"kind": "reject", "rule": "PROV-6"}`) and
   `prov6-pos-a-scope-holding-the-provider-takes-the-derived-release`
   (`{"kind": "run", "exit": 0}`),
+  `s39-pos-a-cell-holds-one-value-at-the-general-store`
+  (`{"kind": "run", "exit": 14}`),
+  `s39-pos-a-cell-at-a-bump-extent-reclaims-with-its-region`
+  (`{"kind": "run", "exit": 0}`),
+  `s39-neg-a-cell-reaches-an-exit-without-the-capability`
+  (`{"kind": "reject", "rule": "PROV-6"}`),
   `blk4-neg-a-field-branded-to-a-heap-the-unit-cannot-reach`
   (`{"kind": "reject", "rule": "BLK-4"}`),
   `prov6-pos-an-early-release-of-a-store-backed-run`
@@ -4159,7 +4192,7 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`{"kind": "reject", "rule": "FN-3"}`). Each now names a provider path over
   the general store in place of the atom, and each keeps its recorded kind,
   rule and status.
-  Modified, source only: 128 case sources. 125 lose the `allocates(heap)` entry
+  Modified, source only: 129 case sources. 125 lose the `allocates(heap)` entry
   the ambient heap no longer writes; `prov6-pos-a-region-argument-names-a-bump-extent`
   (`{"kind": "run", "exit": 0}`) gains the `allocates(store)` its `arena_vector`
   call exhibits; and `prov1-pos-a-store-branded-run-in-a-field`
@@ -4167,14 +4200,19 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`{"kind": "accept"}`) take [FN-7]'s `heap` row in their entries, which is the
   repair [BLK-4]'s `ConfinedTypeWithoutStore` refusal names for a field branded
   to a heap the unit cannot otherwise reach. No expectation, rule list or status
-  changed.
+  changed; and `x-enum-payload-give` (`{"kind": "run", "exit": 0}`) respells its
+  source `enum Box` to `Cell`, [S39]'s nominal being a [TYPE-2] spelling a source
+  declaration never displaces, which is the collision [S35]'s `Slice` made and the
+  same repair.
   Before this batch the corpus holds 667 cases with the native adapter
-  reporting Pass=663, Xfail=1, Skip=3; after it the corpus holds 677 with the
-  adapter reporting Pass=673, Xfail=1, Skip=3. The one xfail
+  reporting Pass=663, Xfail=1, Skip=3; after it the corpus holds 680 with the
+  adapter reporting Pass=676, Xfail=1, Skip=3. The one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the three skips are
   unchanged in id, expectation and status. Rule coverage stays complete at
   153/153, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0
-  over 148 modified sources, none of whose verdicts moved. No program of the
+  over 151 modified sources, none of whose verdicts moved; three of those sources
+  respell a source `struct Box` to `Cell` for the reason above. No program of the
   executable corpus changed behaviour or exit code; `tests/programs/heap_run.wf`
-  is added and runs to exit 12.
-ACTIVE-SPEC: v0.45 8359b110b2a41203e06e944505661ac97fd1af0c9e07d5ead8699736adc56748 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+  is added and runs to exit 12, and `tests/programs/recursive_tree.wf` is
+  migrated to `Box<'s, Tree<'s>>` and keeps its exit 0.
+ACTIVE-SPEC: v0.45 bfb264e05682523ba7cd33e44943e72dc5a1d8e7366017eca808dd6908ad0d21 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
