@@ -104,6 +104,22 @@ finding it is the writer's job and checking it is normalization. Search stays
 out, so the acceptance set remains a function of the written text and the
 [ENT-1] monotonicity obligation is discharged structurally rather than argued.
 
+## What shipped
+
+Three amendments, in the order the evidence ranked them, each landed with its
+own selection ground and merge-time record.
+
+| version | change | probes moved |
+| --- | --- | --- |
+| v0.45 | `[ENT-3.S14]` publishes the interval an admitted product already proved | 2 |
+| v0.46 | a clause states an affine relation, `len(P)` is an affine atom, and the affine route needs no L0 projection | 4 |
+| v0.47 | an integer-typed named const is an affine atom | 1 |
+
+Seven of the 186 constructed probes move, every one from refusal to
+acceptance, and the snapshot corpus holds at 491 pass with zero flips through
+all three. The levels below are as the evidence ordered them; L0 through L2's
+first three items are the three above.
+
 Ordered by what the evidence asked for:
 
 - **L0** — publish the interval product's proved bound on the result. No new
@@ -119,7 +135,15 @@ Ordered by what the evidence asked for:
   entailment one, and three separate converters into affine exist
   (`proofs.rs:531`, `flow.rs:8724`, `flow.rs:1337`).
 - **L2** — a non-literal `use` multiplier, `use n * (p <= k - 1);`. The
-  identical certificate with a literal factor already compiles.
+  identical certificate with a literal factor already compiles. Not taken. The
+  measured case is matrix multiply's inner index, where the residual after the
+  step cancels to `j < n`, an affine premise already held; what does not yet
+  exist is a representation for the polynomial the step passes through.
+  `AffineInequality` segregates its constant as `upper: i128`, and multiplying
+  a premise by a term makes that constant a polynomial, so the constant has to
+  fold into an empty monomial before any of this is expressible. The
+  nonnegativity of each written multiplier also becomes an obligation of its
+  own.
 - **L3** — premise products, which is where Handelman completeness comes from.
 
 L0 covers operands with constant bounds. It cannot reach a bound that is
