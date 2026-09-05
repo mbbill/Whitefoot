@@ -1,6 +1,24 @@
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
+}
+
 command fn main() -> status: own ExitStatus pure {
   doc "[INV-1] the one call an affine factor admits is a measure former over an admitted measure place. Any other call in that position is refused at the call node, carrying the four formers as what the position admits, so widening the production admits one closed set of factors rather than every runtime expression.";
-  let run = buffer_new(8_u64, 0_u8);
+  let run = filled::<u8, 8>(value: 0_u8);
   let seen = 0_u64;
   let limit = 4_u64;
   for (

@@ -3,9 +3,15 @@ command fn main() -> status: own ExitStatus pure {
   let low = 3_u8;
   let high = 5_u8;
   set (low, high) = high, low;
-  let first = buffer_new(1_u64, 0_u8);
-  let second = buffer_new(2_u64, 0_u8);
-  let third = buffer_new(3_u64, 0_u8);
+  let first_empty = fixed_vector::<u8, 3>();
+  let first = place_back(vector: move first_empty, value: 0_u8);
+  let second_empty = fixed_vector::<u8, 3>();
+  let second_one = place_back(vector: move second_empty, value: 0_u8);
+  let second = place_back(vector: move second_one, value: 0_u8);
+  let third_empty = fixed_vector::<u8, 3>();
+  let third_one = place_back(vector: move third_empty, value: 0_u8);
+  let third_two = place_back(vector: move third_one, value: 0_u8);
+  let third = place_back(vector: move third_two, value: 0_u8);
   set (first, second, third) = move third, move first, move second;
   return exit_status(code: low);
 }
