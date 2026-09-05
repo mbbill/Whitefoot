@@ -158,12 +158,7 @@ pub(super) fn build_gap_styles(
         // the one with children; a named premise is a bare identifier and
         // takes the ordinary inline space.
         if record.production == Production::UsePremise && record.child_count != 0 {
-            mark_before(
-                &mut gaps,
-                topology,
-                record.first_terminal,
-                GapStyle::Spaced,
-            )?;
+            mark_before(&mut gaps, topology, record.first_terminal, GapStyle::Spaced)?;
         }
 
         if !is_block_bearing(record) {

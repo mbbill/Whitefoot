@@ -1772,7 +1772,9 @@ command fn main() -> status: own ExitStatus pure {
             .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
             .collect::<Vec<_>>();
         let [product, sum] = domains.as_slice() else {
-            panic!("the multiplication and the addition each raise one OP-2 obligation: {domains:?}");
+            panic!(
+                "the multiplication and the addition each raise one OP-2 obligation: {domains:?}"
+            );
         };
         assert!(
             product.discharged,

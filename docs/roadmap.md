@@ -124,6 +124,38 @@ literal is byte-identical, including in a failure's rendered residual. A
 const-generic parameter is symbolic rather than closed and is not this
 admission.
 
+v0.48 adds and retires no rule (136 remain) and amends [GRAM-4] and [PRF-1] in
+place. A `proof_use` cites exactly one premise — the new `use_premise`
+production, an invariant name or a delimited relation — and states its
+multiplicity as `N times` before it, so `proof_use := "use" (("[0-9]+" | IDENT)
+"times")? use_premise ";"`. The multiplicity had been spelled with `*`, which
+claimed it was a multiplication whose right operand is a relation: the form
+read as `n * bool`, a term multiplicity was undecidable in the strong-LL(2)
+tables because after `use IDENT *` the token separating a certificate step from
+an affine relation source is arbitrarily far away, and the [FORM-2] stated
+space before `(` existed to carry that distinction where the parser could not
+see it. The whitespace rule becomes the ordinary keyword-paren space a
+`for_stmt` header already states, and parentheses become mandatory on the
+relation premise, which removes the second spelling split from the same
+ambiguity. Grammar productions go 84 to 85 and unique fixed lowercase atoms 54
+to 55.
+
+The multiplicity may now name an unsigned integer value. Scaling a normalized
+premise by a value makes the accumulated certificate sum a polynomial of degree
+at most two; every nonlinear monomial must fold to the value image an admitted
+exact multiplication [ENT-6] already bound, and a sum that keeps one rejects.
+The fold direction is what keeps it complete — folding the sum only removes
+monomials, while expanding the target would rewrite a proposition that is
+already affine — and what comes out reaches the same residual, integer
+tightenings and L0 route a bare-decimal certificate uses. No fact, published
+conclusion, invariant target, or `affine_expr` carries a nonlinear term. The
+unsigned restriction makes the scaling step sound without an obligation. The
+capability is a matrix multiply's inner index at a runtime stride, `n*p + j <
+n*k`, whose certificate is one term-scaled premise and one plain one and whose
+residual cancels to zero; the same certificate at a literal stride already
+compiled. The evidence is in `research/investigations/binary-arithmetic/`, with
+the design and its measured alternatives in its `PROOF-SURFACE.md`.
+
 ## How to read this outline
 
 This file is the owner-facing map of Whitefoot's live directions. It answers:

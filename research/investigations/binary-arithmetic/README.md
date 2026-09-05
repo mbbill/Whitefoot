@@ -114,11 +114,24 @@ own selection ground and merge-time record.
 | v0.45 | `[ENT-3.S14]` publishes the interval an admitted product already proved | 2 |
 | v0.46 | a clause states an affine relation, `len(P)` is an affine atom, and the affine route needs no L0 projection | 4 |
 | v0.47 | an integer-typed named const is an affine atom | 1 |
+| v0.48 | a `use` cites one premise, and its multiplicity may name an unsigned value | 2 new |
 
-Seven of the 186 constructed probes move, every one from refusal to
-acceptance, and the snapshot corpus holds at 491 pass with zero flips through
-all three. The levels below are as the evidence ordered them; L0 through L2's
-first three items are the three above.
+Seven of the 186 constructed probes move from refusal to acceptance through
+v0.45 to v0.47, and the snapshot corpus holds at 491 pass with zero flips
+through all four versions. v0.48 is counted differently and honestly: no
+existing probe becomes an accept, because the two that wrote the term
+multiplicity — `grid/G5_scaled_use_runtime_factor.wf` and the earlier
+`l2-probe/named_source_term_factor.wf` — were written to demonstrate the
+grammar's refusal and carry targets AUTO proves on its own. Both now parse,
+and the capability is measured by two probes in `evidence/l2-probe/` that
+state a real one: `matmul_term_stride_certificate.wf` and a rewritten
+`named_source_term_factor.wf`.
+
+The probe sources carry the current `use` spelling. The verdicts each report
+records were measured at the version that report names, and the v0.48
+migration from `use 3 * X;` to `use 3 times X;` is a mechanical rewrite of the
+same premises — it changes no probe's meaning and no recorded verdict except
+G5's, which `evidence/grid/VERDICTS.txt` re-measures in place.
 
 Ordered by what the evidence asked for:
 
@@ -134,23 +147,24 @@ Ordered by what the evidence asked for:
   `check/publication.rs` is a hand-rolled difference-bound closure beside the
   entailment one, and three separate converters into affine exist
   (`proofs.rs:531`, `flow.rs:8724`, `flow.rs:1337`).
-- **L2** — a non-literal `use` multiplier, `use n * (p <= k - 1);`. The
-  identical certificate with a literal factor already compiles. Not taken. The
-  measured case is matrix multiply's inner index, where the residual after the
-  step cancels to `j < n`, an affine premise already held; what does not yet
-  exist is a representation for the polynomial the step passes through.
-  `AffineInequality` segregates its constant as `upper: i128`, and multiplying
-  a premise by a term makes that constant a polynomial, so the constant has to
-  fold into an empty monomial before any of this is expressible. The
-  nonnegativity of each written multiplier also becomes an obligation of its
-  own.
+- **L2** — a non-literal `use` multiplicity, `use n times (p < k);`, shipped as
+  v0.48. The measured case is matrix multiply's inner index at a runtime
+  stride, where the residual after the step cancels to zero. The polynomial the
+  step passes through stays inside the certificate check: the accumulator
+  becomes degree two at the first term multiplicity and every nonlinear
+  monomial folds back to the value image an admitted exact multiplication
+  already bound, so `AffineInequality`'s segregated `upper: i128`, the fact
+  state, the kill and the join are all untouched. The nonnegativity of each
+  written multiplicity is structural rather than an obligation, because
+  [PRF-1] admits only an unsigned type there. The spelling was the actual
+  blocker and it is recorded in `PROOF-SURFACE.md`.
 - **L3** — premise products, which is where Handelman completeness comes from.
 
 L0 covers operands with constant bounds. It cannot reach a bound that is
 relative to another runtime value: with a runtime `k`, the interval of `p < k`
 is the type range, so `p * n <= (k - 1) * n` is outside it. That family —
 matrix multiply's inner index, a transpose's destination stride — is what L2
-is for.
+is for, and v0.48 admits it.
 
 The order matters and it is not the order the surface suggests. Widening a
 written surface before the fact base can hold what it states converts a clean

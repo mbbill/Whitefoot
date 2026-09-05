@@ -1,16 +1,22 @@
-fn probe(p: own u64, k: own u64, n: own u64) -> ok: own u64 pure contract {
+fn probe(p: own u64, k: own u64, j: own u64, n: own u64) -> at: own u64 pure contract {
+  requires n <= 1000_u64;
+  requires k <= 1000_u64;
   requires p < k;
+  requires j < n;
 } {
-  doc "probe";
-  let step = 0_u64;
+  doc "A term multiplicity over a NAMED premise rather than a written relation: the same inner index, with p < k stated once and then cited n times.";
+  let span = n * k;
+  let base = n * p;
+  let at = base + j;
   invariant lt: p < k;
-  invariant reach: step <= n {
+  invariant fits: base + j < span {
     use n times lt;
+    use (j < n);
   }
-  return step;
+  return at;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let v = probe(p: 1_u64, k: 2_u64, n: 3_u64);
+  let at = probe(p: 1_u64, k: 2_u64, j: 3_u64, n: 4_u64);
   return exit_status(code: 0_u8);
 }

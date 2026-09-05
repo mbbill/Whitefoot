@@ -29,8 +29,8 @@ use super::super::model::{
     CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
     CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMode, CheckedNominal,
     CheckedNominalKind, CheckedNumericType, CheckedProofMultiplicity, CheckedProofUseSource,
-    CheckedSetTarget,
-    CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, ValueInitializerKind,
+    CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
+    ValueInitializerKind,
 };
 use super::super::places::{BindingSummary, PlaceMap, ResolvedPlace};
 use super::super::postcondition::{
@@ -5447,9 +5447,11 @@ impl Analyzer<'_, '_> {
         ) {
             return None;
         }
-        let [GoalExpression::Datum(GoalDatum::Place {
-            root, projections, ..
-        })] = arguments
+        let [
+            GoalExpression::Datum(GoalDatum::Place {
+                root, projections, ..
+            }),
+        ] = arguments
         else {
             return None;
         };
@@ -7081,9 +7083,7 @@ impl Analyzer<'_, '_> {
         // [ENT-3.S14] publishes only what an admitted multiplication proved,
         // so the interval is retained exactly when this obligation discharged
         // through the interval-product route.
-        if discharged
-            && let Some(interval) = outcome.product_interval.clone()
-        {
+        if discharged && let Some(interval) = outcome.product_interval.clone() {
             self.product_intervals.insert(node_path.clone(), interval);
         }
         // What the exact multiplication equals, for [PRF-1] to fold a
@@ -7096,8 +7096,7 @@ impl Analyzer<'_, '_> {
             && outcome.route == Some(ProofRoute::Affine)
             && operation == CheckedIntegerOperation::MultiplyExact
             && let Some(product) = affine_product.as_ref()
-            && let (Some(left), Some(right)) =
-                (product.left.unit_term(), product.right.unit_term())
+            && let (Some(left), Some(right)) = (product.left.unit_term(), product.right.unit_term())
         {
             self.product_operands
                 .insert(node_path.clone(), (left.min(right), left.max(right)));
@@ -9490,8 +9489,8 @@ impl Analyzer<'_, '_> {
         let mut sum = CertificateSum::Empty;
         for (index, (inequality, multiplicity)) in premises.iter().enumerate() {
             let index = u32::try_from(index).expect("certificate capacity fits u32");
-            sum = Self::extend_certificate_sum(sum, inequality, multiplicity)
-                .map_err(|failure| {
+            sum =
+                Self::extend_certificate_sum(sum, inequality, multiplicity).map_err(|failure| {
                     (
                         Self::certificate_step_failure(failure, index, actual),
                         index,
@@ -9499,9 +9498,7 @@ impl Analyzer<'_, '_> {
                 })?;
         }
         match sum {
-            CertificateSum::Empty => {
-                Err((SourceProofCertificateFailure::FormationCapacity, 0))
-            }
+            CertificateSum::Empty => Err((SourceProofCertificateFailure::FormationCapacity, 0)),
             formed => Ok(formed),
         }
     }
@@ -9535,7 +9532,8 @@ impl Analyzer<'_, '_> {
                     )?));
                 }
                 CertificateSum::Nonlinear(previous) => {
-                    let scaled = CertificatePolynomial::from_inequality(inequality)?.scale(factor)?;
+                    let scaled =
+                        CertificatePolynomial::from_inequality(inequality)?.scale(factor)?;
                     return Ok(CertificateSum::Nonlinear(previous.add(&scaled)?));
                 }
             }
@@ -9559,17 +9557,13 @@ impl Analyzer<'_, '_> {
         actual: u32,
     ) -> SourceProofCertificateFailure {
         match failure {
-            CertificateStepFailure::Overflow => {
-                SourceProofCertificateFailure::ArithmeticOverflow
-            }
+            CertificateStepFailure::Overflow => SourceProofCertificateFailure::ArithmeticOverflow,
             CertificateStepFailure::UseCapacity => SourceProofCertificateFailure::UseCapacity {
                 maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
                     .expect("certificate capacity fits u32"),
                 actual,
             },
-            CertificateStepFailure::Formation => {
-                SourceProofCertificateFailure::FormationCapacity
-            }
+            CertificateStepFailure::Formation => SourceProofCertificateFailure::FormationCapacity,
             CertificateStepFailure::InvalidFactor => {
                 SourceProofCertificateFailure::InvalidFactor { use_index: index }
             }
@@ -10674,17 +10668,10 @@ impl Analyzer<'_, '_> {
                         self.certificate_multiplicity(written_use.multiplicity, &mut state.affine)
                     })
                     .collect::<Vec<_>>();
-                let certificate_premises = proof
-                    .uses
+                let certificate_premises = premises
                     .iter()
-                    .zip(&premises)
                     .zip(&multiplicities)
-                    .map(|((_, premise), multiplicity)| {
-                        premise
-                            .clone()
-                            .zip(multiplicity.clone())
-                            .map(|(premise, multiplicity)| (premise, multiplicity))
-                    })
+                    .map(|(premise, multiplicity)| premise.clone().zip(multiplicity.clone()))
                     .collect::<Option<Vec<_>>>();
 
                 // AUTO is exactly the unified zero-, one-, and exhaustive
@@ -10748,14 +10735,12 @@ impl Analyzer<'_, '_> {
                         target.as_ref(),
                         certificate_sum.as_ref().and_then(|sum| sum.as_ref().ok()),
                     ) {
-                        (Some(target), Some(sum)) => {
-                            self.source_proof_certificate_residual(
-                                target,
-                                sum,
-                                &state.affine,
-                                &state.facts,
-                            )
-                        }
+                        (Some(target), Some(sum)) => self.source_proof_certificate_residual(
+                            target,
+                            sum,
+                            &state.affine,
+                            &state.facts,
+                        ),
                         _ => Err(SourceProofCertificateFailure::FormationCapacity),
                     }
                 };

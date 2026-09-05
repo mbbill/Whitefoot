@@ -306,7 +306,9 @@ fn classify_node(
             };
             match names.as_slice() {
                 [] => {}
-                [name] if name_predicate(classified, *name) == Some(TerminalPredicate::Identifier) => {
+                [name]
+                    if name_predicate(classified, *name) == Some(TerminalPredicate::Identifier) =>
+                {
                     add_complete(
                         classified,
                         owner,

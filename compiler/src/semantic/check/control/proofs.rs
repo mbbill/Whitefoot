@@ -13,8 +13,7 @@ use super::super::super::entailment::affine::{
 use super::super::super::model::{
     CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation, CheckedMode,
     CheckedProofMultiplicity, CheckedProofUse, CheckedProofUseSource, CheckedSourceProof,
-    CheckedStatement, CheckedType,
-    CheckedValue, IntegerType,
+    CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding};
 use super::StatementResult;

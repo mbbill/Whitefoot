@@ -1,8 +1,19 @@
-# L2 needs a spelling decision, not more machinery
+# L2 needed a spelling decision, not more machinery
 
-Measured 2026-09-05 against v0.47. The arithmetic works, the grammar does not,
-and the reason is a language-surface choice rather than an implementation
-limit. This records what is settled so the decision can be made on evidence.
+Measured 2026-09-05 against v0.47. **Settled: v0.48 shipped it.** The decision
+is recorded in `PROOF-SURFACE.md` and the amendment in
+`governance/APPROVALS.md`; this file is kept as the measurement that framed it,
+and its "what the decision is" section below names the four candidates as they
+stood before the choice.
+
+What shipped is none of the four verbatim. `times` was chosen, with the
+multiplicity moved *before* the premise and the premise delimited, which makes
+one spelling serve both the decimal and the term form — the fourth candidate's
+goal, reached by moving the marker rather than adding one to the literal form.
+Its cost, a break to every `use 3 * X;` already written, was paid by a
+mechanical migration of all 124 sites.
+
+The rest of this file is as measured against v0.47.
 
 ## The machinery is already right
 
@@ -103,11 +114,25 @@ The fourth is the only one that leaves the language with one way to say the
 thing, and it is the most disruptive. That trade is the decision, and it wants
 a writer trial rather than a preference.
 
-## What is not blocked on it
+**Resolved.** The fourth's goal was reached without its cost by rejecting the
+premise all four share: that the marker is an operator sitting where `*` sat.
+Moving it in front of the premise, as `N times X`, makes one spelling serve the
+decimal and the term alike, and mandatory parentheses on the relation premise
+remove the second spelling split at the same time. See `PROOF-SURFACE.md`.
 
-Everything else in L2 is understood and sized: the factor becomes a
-literal-or-value in `CheckedProofUse`, the multiplier is restricted to an
-unsigned type so its nonnegativity is structural rather than an obligation,
-the accumulator is local and degree-bounded by construction, and the residual
-must be affine. None of that is written, because writing it before the
-spelling is chosen would fix the spelling by default.
+## What was not blocked on it
+
+Everything else in L2 was understood and sized before the spelling was chosen,
+and all of it shipped as written here: the factor became a literal-or-value in
+`CheckedProofUse`, the multiplicity is restricted to an unsigned type so its
+nonnegativity is structural rather than an obligation, the accumulator is local
+and degree-bounded by construction, and the residual must be affine.
+
+One detail was decided during implementation and is worth recording, because it
+is the part this note got wrong by omission. The sum's nonlinear monomials are
+folded *down* to the value image of an admitted exact product, not expanded
+*up* from the target's product bindings. Expanding rewrites a target that is
+already affine and can turn a provable residual unprovable; folding only ever
+removes monomials, and what comes out is an ordinary affine inequality that
+reaches the existing residual, its integer tightenings, and the L0 route
+unchanged.

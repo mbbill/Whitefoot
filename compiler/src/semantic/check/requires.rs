@@ -12,8 +12,7 @@ use super::super::goal::{
 };
 use super::super::model::{
     BindingId, CheckedConst, CheckedExpression, CheckedFloatOperation, CheckedIntegerOperation,
-    CheckedMode,
-    CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
+    CheckedMode, CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
 };
 use super::super::postcondition::PostconditionConstantOrigin;
 use super::{CheckStop, Checker, ControlCounters, ControlScope, FunctionSignature, LocalBinding};
@@ -796,23 +795,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(false)
     }
 
-/// The exact rows a contract clause reads mathematically rather than as a
-/// runtime evaluation, matching the carve-out [INV-1] already gives an
-/// `affine_expr`. Addition, subtraction, and multiplication have a total
-/// meaning over the mathematical integers, so a clause written over them
-/// states a relation rather than requesting an operation, and [FN-9] erases
-/// every clause before lowering. Division, remainder, the shifts, negation,
-/// and absolute value stay inadmissible: each has an input a relation cannot
-/// state its way out of, so admitting them would put a partial operation in a
-/// position with no domain obligation to discharge it.
-const fn clause_affine_operation(operation: CheckedIntegerOperation) -> bool {
-    matches!(
-        operation,
-        CheckedIntegerOperation::AddExact
-            | CheckedIntegerOperation::SubtractExact
-            | CheckedIntegerOperation::MultiplyExact
-    )
-}
+    /// The exact rows a contract clause reads mathematically rather than as a
+    /// runtime evaluation, matching the carve-out [INV-1] already gives an
+    /// `affine_expr`. Addition, subtraction, and multiplication have a total
+    /// meaning over the mathematical integers, so a clause written over them
+    /// states a relation rather than requesting an operation, and [FN-9] erases
+    /// every clause before lowering. Division, remainder, the shifts, negation,
+    /// and absolute value stay inadmissible: each has an input a relation cannot
+    /// state its way out of, so admitting them would put a partial operation in a
+    /// position with no domain obligation to discharge it.
+    const fn clause_affine_operation(operation: CheckedIntegerOperation) -> bool {
+        matches!(
+            operation,
+            CheckedIntegerOperation::AddExact
+                | CheckedIntegerOperation::SubtractExact
+                | CheckedIntegerOperation::MultiplyExact
+        )
+    }
 
     /// Validates the infix spelling of a row against the same [FN-8] subset
     /// the named spelling faces.

@@ -10,8 +10,9 @@ symbols and the call-site `::` delimiter, v0.42 the canonical region spelling,
 v0.43 the loop-body region block and the associative join, v0.44 the fact
 machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]), v0.45 the interval an
 admitted product already proved ([ENT-3.S14]), v0.46 the clause relation
-and the measure atom that discharges it, and v0.47 the named const as an affine
-atom. Each superseded version is
+and the measure atom that discharges it, v0.47 the named const as an affine
+atom, and v0.48 the `use` premise and its named multiplicity. Each superseded
+version is
 archived at `spec/kernel-spec-vN.md` with its merge-time record in
 `governance/APPROVALS.md`. Nothing merges to `main` until the owner approves
 the exact revision and canonical `make check` passes on that revision. This
@@ -94,6 +95,25 @@ image, kill, or join changes, and the same relation over a const and over its
 literal is byte-identical, including in a failure's rendered residual. A
 const-generic parameter is symbolic rather than closed and is not this
 admission.
+
+v0.48 adds and retires no rule (136 remain) and amends [GRAM-4] and [PRF-1] in
+place. A `proof_use` cites exactly one premise — the new `use_premise`
+production, an invariant name or a delimited relation — and states its
+multiplicity as `N times` before it. The multiplicity was spelled with `*`,
+which claimed it was a multiplication whose right operand is a relation; the
+form read as `n * bool`, a term multiplicity was undecidable in strong-LL(2)
+because after `use IDENT *` the separating token is arbitrarily far away, and
+the [FORM-2] stated space before `(` existed to carry a distinction the parser
+could not see. Naming it removes all three, and the whitespace rule becomes the
+ordinary keyword-paren space a `for_stmt` header already states. The
+multiplicity may now name an unsigned integer value: the accumulated sum is
+then a polynomial of degree at most two, every nonlinear monomial must fold to
+the value image an admitted exact multiplication already bound, and a sum that
+keeps one rejects. Nothing else in the language carries a nonlinear term. The
+capability is a matrix multiply's inner index at a runtime stride, whose
+certificate is one term-scaled premise and one plain one; the evidence is in
+`research/investigations/binary-arithmetic/`, with the design in its
+`PROOF-SURFACE.md`.
 
 ## Outcome
 
@@ -306,9 +326,13 @@ snapshot entering the outer invariant. Earlier uses do not help later uses and
 none of them publishes a fact. After the weighted combination is checked, only
 the outer target is published.
 
-A written factor is a proof integer, not a machine arithmetic operation. Factor
-one must be omitted; factors begin at two. Repeating the same normalized
-premise is invalid, regardless of spelling or factor. The checker derives and
+A written bare-decimal multiplicity is a proof integer, not a machine
+arithmetic operation. Multiplicity one must be omitted; written decimals begin
+at two. A named multiplicity reads a live own unsigned integer value in the
+same entering snapshot, which is what makes scaling sound without a further
+obligation, and it makes the sum a degree-two polynomial that must fold back to
+affine against admitted exact products before the residual forms. Repeating the
+same normalized premise is invalid, regardless of spelling or multiplicity. The checker derives and
 checks the written combination in source order, and the target may be a direct
 weakening of that result. After each premise's ordinary AUTO check, certificate
 combination is linear in the written steps. The compiler does not search for a

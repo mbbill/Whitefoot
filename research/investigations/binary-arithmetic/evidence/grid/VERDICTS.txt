@@ -53,3 +53,10 @@ Q2_literal_factor_invariant.wf             exit=1  REJECT [INV-1] UndischargedLo
 Q3_probe_scaled_image.wf                   exit=1  REJECT [INV-1] UndischargedLocalInvariant 
 Q4_literal_factor_certificate.wf           exit=0  ACCEPT
 ref_grid_index.wf                          exit=0  ACCEPT
+
+v0.48 re-measurement (2026-09-05), rows that moved:
+G5_scaled_use_runtime_factor.wf            exit=1  REJECT [PRF-1] RedundantUseBlock
+  `use n times (p < k);` now parses. The probe still rejects, because its own
+  target `step <= bcap` is one AUTO proves without a certificate; the form it
+  was written to test is exercised in evidence/l2-probe. Every other row above
+  holds at the verdict recorded for it.

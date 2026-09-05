@@ -115,7 +115,11 @@ impl CertificatePolynomial {
         Ok(polynomial)
     }
 
-    fn add_monomial(&mut self, monomial: Monomial, coefficient: i128) -> Result<(), PolynomialError> {
+    fn add_monomial(
+        &mut self,
+        monomial: Monomial,
+        coefficient: i128,
+    ) -> Result<(), PolynomialError> {
         if coefficient == 0 {
             return Ok(());
         }
