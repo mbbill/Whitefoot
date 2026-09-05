@@ -980,6 +980,8 @@ fn plan_completion_slots(
         }
         system::CompletionFileOperation::Read
         | system::CompletionFileOperation::Write
+        | system::CompletionFileOperation::Receive
+        | system::CompletionFileOperation::Send
         | system::CompletionFileOperation::DirectoryNext => {}
     }
     if matches!(
@@ -1017,7 +1019,10 @@ fn plan_completion_slots(
         return Ok(());
     }
     match operation {
-        system::CompletionFileOperation::Read | system::CompletionFileOperation::Write => {
+        system::CompletionFileOperation::Read
+        | system::CompletionFileOperation::Write
+        | system::CompletionFileOperation::Receive
+        | system::CompletionFileOperation::Send => {
             add(CompletionSlot::Start, TargetStorageType::integer(64), None)?;
             add(CompletionSlot::Extent, TargetStorageType::integer(64), None)?;
         }
@@ -1191,7 +1196,32 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .completion_steps()
                     .iter()
                     .cloned()
-                    .map(|step| (step.call(), step))
+                    .map(|step| {
+                        // A step submits only where the typed adapter has a
+                        // hand-out form for that exact operation. Every other
+                        // permitted may-suspend call keeps its qualified
+                        // wrapper, which is the same one lowering — submit,
+                        // then join, through the frame's own record — and
+                        // differs only in holding one operation of that site
+                        // rather than several. Selecting the wrapper here is
+                        // an emission choice over one accepted program; it
+                        // changes no judgment, no outcome, and no published
+                        // byte (`backend/qualification.rs`, the [PAR-1]
+                        // review: "a may-suspend record selects completion
+                        // lowering only when the backend has a typed adapter
+                        // for the exact operation").
+                        let handed_out = matches!(
+                            definition_operation(function, step.call()),
+                            Some(IrOperation::SystemCall { operation, .. })
+                                if system::completion_file_operation(*operation).is_some()
+                        );
+                        let step = if handed_out {
+                            step
+                        } else {
+                            step.without_submission()
+                        };
+                        (step.call(), step)
+                    })
                     .collect()
             } else {
                 HashMap::new()

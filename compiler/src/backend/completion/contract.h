@@ -58,7 +58,65 @@ enum wf_file_operation_kind {
      * bytes it left behind. */
     WF_FILE_DIRECTORY_NEXT = 8,
 #endif
+    /* The six TCP request kinds [SYS-17, SYS-18].  Their values are fixed
+     * rather than following the enumerator above it, because the directory
+     * kind is compiled only on a family that has the facility and these are
+     * compiled on every family. */
+    /* Creates one socket of the address's family, binds it, and listens.  The
+     * backlog is the target's own maximum and is not a program's resource
+     * (`research/investigations/io-model/NETWORK.md` §2). */
+    WF_FILE_SOCKET_LISTEN = 9,
+    /* Takes one waiting connection from a listener and reports the peer's own
+     * address beside the descriptor. */
+    WF_FILE_SOCKET_ACCEPT = 10,
+    /* Creates one socket of the address's family and connects it. */
+    WF_FILE_SOCKET_CONNECT = 11,
+    /* One transfer attempt on one direction of one connection.  They are
+     * separate kinds from WF_FILE_READ and WF_FILE_WRITE because the ring
+     * carries them with different opcodes and the leaf makes different host
+     * calls, not because their request shape differs. */
+    WF_FILE_SOCKET_RECEIVE = 12,
+    WF_FILE_SOCKET_SEND = 13,
+    /* One direction's half-close, and the close of the target's object when
+     * it is the pair's second release [SYS-18]. */
+    WF_FILE_SOCKET_SHUTDOWN = 14,
 };
+
+/* Which direction of one connection a half-close releases [SYS-18]. */
+enum wf_socket_direction {
+    WF_SOCKET_DIRECTION_RECEIVE = 0,
+    WF_SOCKET_DIRECTION_SEND = 1
+};
+
+/* One internet address in exactly the form an emitted `SocketAddress` value
+ * carries [SYS-16].
+ *
+ * Sixteen address bytes in two 64-bit words, then the port in the low sixteen
+ * bits of a 32-bit word whose bit 16 selects the family.  Byte `i` of the
+ * address occupies bits `8 * (i % 8)` of word `i / 8`, so the same rule reads
+ * the value on either endianness and an IPv4 address simply leaves bytes 4
+ * through 15 zero.  The emitter builds this layout in `socket_address_v4` and
+ * `socket_address_v6` (`emitter/system.rs`); this is the same layout read and
+ * written by the runtime, and the two must stay one fact.
+ *
+ * The port is the number the program wrote, in host order; the leaf converts
+ * it to network order when it builds the native record. */
+typedef struct wf_socket_address {
+    uint64_t words[2];
+    uint32_t port_and_family;
+} wf_socket_address;
+
+#define WF_SOCKET_PORT_MASK 0xffffu
+#define WF_SOCKET_FAMILY_V6 (1u << 16)
+
+/* Storage for one native address record, sized for the two families this
+ * specification admits: 28 bytes holds a `struct sockaddr_in6`, which is the
+ * larger of the two, and the union's word gives it the alignment the host's
+ * own record needs. */
+typedef union wf_socket_native_address {
+    unsigned char bytes[28];
+    uint64_t alignment[4];
+} wf_socket_native_address;
 
 enum wf_file_expected_kind {
     WF_FILE_EXPECT_ANY = 0,
@@ -151,6 +209,55 @@ typedef struct wf_file_request {
             int64_t *position;
         } directory_next;
 #endif
+        /* One listen or one connect: both create their own socket from the
+         * address's family, so both name an address and no descriptor at
+         * submit.  The address arrives in the emitted value's own portable
+         * form and the engine that takes the operation converts it, in place,
+         * into the native record its host call or its ring entry names --
+         * which is why the two forms share one union arm rather than costing
+         * the record both.  A ring entry reads that native record after the
+         * submitting call returns, so it has to live in the record; a host
+         * call copies it and would not, and the shared arm costs nothing
+         * either way.  `descriptor` is -1 until the engine has created the
+         * socket, and `address_length` is the native record's own length. */
+        struct {
+            int descriptor;
+            unsigned address_length;
+            union {
+                wf_socket_address portable;
+                wf_socket_native_address native;
+            } address;
+        } endpoint;
+        /* One accept.  `peer` is the target's own answer about the connection
+         * it handed over: the kernel or the host call writes the native record
+         * and its length, and whichever engine completed the operation
+         * rewrites it in place as the portable form the accept join
+         * publishes.  It is in the request's union rather than in the result
+         * head because the head is shared by every kind, and twenty-four more
+         * bytes on every operation would put this record past the block an
+         * emitted frame reserves. */
+        struct {
+            int descriptor;
+            unsigned peer_length;
+            union {
+                wf_socket_address portable;
+                wf_socket_native_address native;
+            } peer;
+        } accept;
+        struct {
+            int descriptor;
+            void *buffer;
+            size_t count;
+        } receive;
+        struct {
+            int descriptor;
+            const void *buffer;
+            size_t count;
+        } send;
+        struct {
+            int descriptor;
+            enum wf_socket_direction direction;
+        } shutdown;
     } operation;
 } wf_file_request;
 
@@ -270,6 +377,18 @@ _Static_assert(
 _Static_assert(
     offsetof(wf_completion_record, sched) == 0,
     "the record's address is the address of its scheduler record"
+);
+/* The request union is where a new request kind grows this record, and the
+ * six TCP kinds are the first ones whose arms approach the open's.  Stating
+ * the bound here means an arm that outgrows it fails at the union that caused
+ * it, with the reason, rather than only in the whole-record assertion above.
+ * A kind needing more than this puts its extra bytes in the union with the
+ * fields it does not use, exactly as the accept's peer record does. */
+_Static_assert(
+    sizeof(((wf_file_request *)0)->operation)
+        == sizeof(((wf_file_request *)0)->operation.open_at),
+    "no request arm may be larger than the open's, which is the arm this "
+    "record was sized around"
 );
 
 /* The one publication.  Whichever engine finished the operation -- the CQE

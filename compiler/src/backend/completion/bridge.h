@@ -99,11 +99,73 @@ void wf__completion_directory_next_submit(
     void *record
 );
 
+/* The six TCP submits [SYS-17, SYS-18].
+ *
+ * A listen and a connect name one address and no descriptor, because each
+ * creates its own socket from the address's family; the address arrives as
+ * the three scalars an emitted `SocketAddress` value is (`contract.h`,
+ * `wf_socket_address`), so nothing here reads a layout the emitted module
+ * holds a pointer into.  A receive and a send are one descriptor, one buffer
+ * and one count, exactly as a stream read and a write are.  A half-close
+ * names the direction it releases; the runtime keeps the pair's own count and
+ * closes the target's object on the second of the two. */
+void wf__completion_socket_listen_submit(
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family,
+    void *record
+);
+
+void wf__completion_socket_accept_submit(
+    int listener,
+    void *record
+);
+
+void wf__completion_socket_connect_submit(
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family,
+    void *record
+);
+
+void wf__completion_socket_receive_submit(
+    int descriptor,
+    void *buffer,
+    uint64_t count,
+    void *record
+);
+
+void wf__completion_socket_send_submit(
+    int descriptor,
+    const void *buffer,
+    uint64_t count,
+    void *record
+);
+
+void wf__completion_socket_shutdown_submit(
+    int descriptor,
+    unsigned direction,
+    void *record
+);
+
 void wf__completion_file_open_join(
     const void *record,
     int64_t *value,
     int *error_code,
     unsigned *open_outcome
+);
+
+/* The accept's own join: the accepted descriptor, the host's refusal, and the
+ * three scalars of the peer's address.  Every other TCP kind is joined
+ * through `wf__completion_file_join`, because none of them publishes anything
+ * beyond the two the file join already carries. */
+void wf__completion_socket_accept_join(
+    const void *record,
+    int64_t *value,
+    int *error_code,
+    uint64_t *peer_low,
+    uint64_t *peer_high,
+    uint32_t *peer_tag
 );
 
 /* Every join runs the scheduler core's one rule over the record (design §2):

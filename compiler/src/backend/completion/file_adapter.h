@@ -199,7 +199,7 @@ int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter);
  * of the program's operations and not of one route's. */
 wf_file_result wf_file_execute_timed(
     wf_file_adapter *adapter,
-    const wf_file_request *request
+    wf_file_request *request
 );
 
 /* The one platform leaf of this adapter: executes one typed request against
@@ -214,12 +214,41 @@ wf_file_result wf_file_execute_timed(
  * outcome with the host's own refusal code, never as a terminated process: the
  * emitter can produce a shape a target refuses, and refusing it is an outcome
  * the program sees. */
-wf_file_result wf_file_execute_direct(const wf_file_request *request);
+wf_file_result wf_file_execute_direct(wf_file_request *request);
 
 /* Whether one typed request's shape is one this ABI can mean at all.  It is
  * the adapter's own check rather than a host's, so it is shared; the leaf runs
  * it before it makes any host call. */
 int wf_file_request_valid(const wf_file_request *request);
+
+/* Records one direction of one connection as released, and answers whether it
+ * was the pair's second release [SYS-18].
+ *
+ * The two directions of one connection are two Whitefoot places and the
+ * target's object behind them is one, so the runtime keeps the "both halves
+ * gone" fact: the first release is that direction's half-close and reports
+ * nothing, and the second releases the target's object.  The count is the
+ * runtime's alone -- no checked program can name it -- and it is exactly two
+ * states per descriptor, so it is one byte per descriptor in a table this
+ * unit owns.  Nothing is allocated: the table is fixed storage, zero at
+ * start, and touched only at the descriptors a program actually holds.
+ *
+ * Which direction releases first is the program's own ordinary release order
+ * and changes no outcome, so this answers the same way whichever comes first.
+ * A pair is always released exactly twice -- by `close_connection`, or by
+ * derived release of both halves -- so a descriptor's byte returns to zero
+ * before the host can hand that descriptor out again.
+ *
+ * The table covers every descriptor the [SYS-10] handle factory can produce:
+ * that factory's own capacity ceiling is this same number less the reserve it
+ * keeps for the runtime's descriptors (`backend/wf_floor.c`), and the host
+ * hands out the lowest free descriptor, so a connection's descriptor is
+ * always below this bound.  A descriptor outside it is half-closed and never
+ * closed here, because closing a descriptor whose pair this runtime cannot
+ * count could reach an object the program still owns. */
+#define WF_FILE_CONNECTION_DESCRIPTORS (1u << 20)
+
+int wf_file_connection_release(int descriptor);
 
 /* The monotonic clock in nanoseconds, or zero when the host would not answer.
  *

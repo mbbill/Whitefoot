@@ -5,8 +5,10 @@ Status: AMENDED. Slice 1 of §7 landed as specification v0.46 on
 `read_next`, and the types and operations of §4 are in `spec/kernel-spec.md`
 under [SYS-15] through [SYS-18], with the merge-time record in
 `governance/APPROVALS.md` and the derivation rows in
-`spec/derivation/derivation-ledger.md`. Slices 2 through 5 are open, and the
-owner decisions at the end are the ones the amendment implements. Where this
+`spec/derivation/derivation-ledger.md`. Slice 2 landed on the same branch on
+2026-09-05: every TCP operation lowers and runs on POSIX, on both the ring and
+the adapter routes §5 names. Slices 3 through 5 are open, and the owner
+decisions at the end are the ones the amendment implements. Where this
 document and the specification differ, the specification is the language.
 
 ## 1. Why the network first
@@ -166,6 +168,28 @@ receive, send, stream read, half-close) and the routes are:
   `IORING_OP_SEND`, and `IORING_OP_READ` at offset -1 for the stream, all on
   the ring, so a wait is a real ring wait for the first time; `listen` and
   `bind` are immediate host calls the adapter runs.
+
+  **Landed for POSIX, 2026-09-05 (slice 2).** The six kinds are
+  `WF_FILE_SOCKET_LISTEN`, `_ACCEPT`, `_CONNECT`, `_RECEIVE`, `_SEND` and
+  `_SHUTDOWN` in `compiler/src/backend/completion/contract.h`, submitted
+  through the six `wf__completion_socket_*_submit` entries and the accept's own
+  join in `bridge.c` and `bridge.h`. `linux_io_uring.c` carries accept,
+  connect, receive and send on the ring, found by the record's own address
+  exactly as the reads are; a connect's socket and its native address record
+  are made in that adapter's submit, because neither can wait and a second ring
+  round trip would cost more than the operation it wraps. `file_posix.c`
+  executes every kind against the host — `socket`, `bind`, `listen`, `accept4`,
+  `connect`, `recv`, `send`, `shutdown`, `close`, IPv4 and IPv6,
+  `SOCK_CLOEXEC`, and no `SO_REUSEADDR`, because [SYS-17] already fixes what a
+  second bind of one port means. The two conversions between the emitted
+  `SocketAddress` value and the host's own address record are `static inline`
+  in `file_posix.h`, so both POSIX engines state one contract. The pair's
+  two-count is `wf_file_connection_release` in `file_adapter.c`: the first
+  release of a direction half-closes it, the second releases the target's
+  object, and which comes first is the program's own release order.
+  `native_adapter_probe.c` runs a loopback connect, accept, send and receive on
+  the ring; `harness.c` runs the whole lifecycle and the pair's accounting at
+  the bridge's own ABI.
 - Windows: `AcceptEx`, `ConnectEx`, `WSARecv`, `WSASend` on the completion
   port; the standard input handle through the adapter (a console handle has
   no overlapped form).
@@ -218,6 +242,7 @@ now rather than later.
    refused at target qualification until slice 2 supplies its routes.
 2. POSIX runtime: adapter route for every kind, Linux ring route for accept,
    connect, receive, send and stream read; loopback tests in `tests/programs`.
+   Landed 2026-09-05; §5 names the routes and the units that carry them.
 3. Windows: the completion-port route; the io-hosts job proves it.
 4. The control benchmark against the io_uring and epoll references, in
    io-completion-bench.

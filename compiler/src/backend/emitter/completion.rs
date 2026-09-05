@@ -215,6 +215,23 @@ pub(super) const DIRECTORY_NEXT_SUBMIT: &str = "wf__completion_directory_next_su
 /// The join the record that enumeration filled is consumed through.
 pub(super) const FILE_JOIN: &str = "wf__completion_file_join";
 
+/// The runtime's six TCP submits and the accept's own join [SYS-17, SYS-18].
+///
+/// Like the enumeration submit above, these are the runtime's on every target
+/// rather than a target column: a socket is one object with one contract on
+/// every host this compiler qualifies, and the differences between the two
+/// engines that carry it — the Linux ring for accept, connect, receive and
+/// send, the shared file adapter for listen, bind and the half-close — are
+/// inside the runtime, behind these names.
+pub(super) const SOCKET_LISTEN_SUBMIT: &str = "wf__completion_socket_listen_submit";
+pub(super) const SOCKET_ACCEPT_SUBMIT: &str = "wf__completion_socket_accept_submit";
+pub(super) const SOCKET_CONNECT_SUBMIT: &str = "wf__completion_socket_connect_submit";
+pub(super) const SOCKET_RECEIVE_SUBMIT: &str = "wf__completion_socket_receive_submit";
+pub(super) const SOCKET_SEND_SUBMIT: &str = "wf__completion_socket_send_submit";
+pub(super) const SOCKET_SHUTDOWN_SUBMIT: &str = "wf__completion_socket_shutdown_submit";
+/// The join that publishes the accepted descriptor and the peer's address.
+pub(super) const SOCKET_ACCEPT_JOIN: &str = "wf__completion_socket_accept_join";
+
 /// The emitted call spellings of the seven submit entries.
 ///
 /// A module that contains one of these has handed an operation to the
@@ -223,7 +240,7 @@ pub(super) const FILE_JOIN: &str = "wf__completion_file_join";
 /// gone with the inline arm they selected, so a link without the runtime is an
 /// unresolved symbol rather than a program that silently runs the other arm
 /// (`research/investigations/io-model/PARK-ON-MISS.md` §8).
-const COMPLETION_SUBMIT_CALLS: [&str; 7] = [
+const COMPLETION_SUBMIT_CALLS: [&str; 13] = [
     "call void @wf__completion_file_read_submit(",
     "call void @wf__completion_file_pread_submit(",
     "call void @wf__completion_file_write_submit(",
@@ -231,6 +248,12 @@ const COMPLETION_SUBMIT_CALLS: [&str; 7] = [
     "call void @wf__completion_file_status_submit(",
     "call void @wf__completion_file_close_submit(",
     "call void @wf__completion_directory_next_submit(",
+    "call void @wf__completion_socket_listen_submit(",
+    "call void @wf__completion_socket_accept_submit(",
+    "call void @wf__completion_socket_connect_submit(",
+    "call void @wf__completion_socket_receive_submit(",
+    "call void @wf__completion_socket_send_submit(",
+    "call void @wf__completion_socket_shutdown_submit(",
 ];
 
 /// The completion ABI an emitted module names.
@@ -599,7 +622,10 @@ impl FunctionEmitter<'_, '_> {
                 return self
                     .emit_handed_out_directory_next(result, ty, operation, arguments, completion);
             }
-            CompletionFileOperation::Read | CompletionFileOperation::Write => {}
+            CompletionFileOperation::Read
+            | CompletionFileOperation::Write
+            | CompletionFileOperation::Receive
+            | CompletionFileOperation::Send => {}
         }
         let (resource, buffer, file_offset, start, end) = match arguments {
             [resource, buffer, start, end] => (resource, buffer, None, start, end),
@@ -650,6 +676,8 @@ impl FunctionEmitter<'_, '_> {
             (CompletionFileOperation::Read, None) => "wf__completion_file_read_submit",
             (CompletionFileOperation::Write, None) => "wf__completion_file_write_submit",
             (CompletionFileOperation::Write, Some(_)) => return Err(BackendFailure::InvalidIr),
+            (CompletionFileOperation::Receive, None) => SOCKET_RECEIVE_SUBMIT,
+            (CompletionFileOperation::Send, None) => SOCKET_SEND_SUBMIT,
             _ => return Err(BackendFailure::InvalidIr),
         };
         // The operation still has to be one this target qualifies, even though
@@ -793,6 +821,8 @@ impl FunctionEmitter<'_, '_> {
                 )?,
             CompletionFileOperation::Read
             | CompletionFileOperation::Write
+            | CompletionFileOperation::Receive
+            | CompletionFileOperation::Send
             | CompletionFileOperation::DirectoryNext => {
                 return Err(BackendFailure::InvalidIr);
             }

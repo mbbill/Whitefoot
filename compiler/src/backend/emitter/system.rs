@@ -18,11 +18,14 @@
 
 use super::super::qualification::{
     ApprovedImplementation, DirectoryEnumeration, EntryNameLength, ORIGIN_DESCRIPTOR_STATUS,
-    ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_WRITE, ProgramKind, Qualification,
-    ReleaseImplementation, ResourceRepresentation, SystemTarget, qualified_representation,
+    ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_SOCKET_ACCEPT, ORIGIN_SOCKET_CONNECT,
+    ORIGIN_SOCKET_LISTEN, ORIGIN_WRITE, ProgramKind, Qualification, ReleaseImplementation,
+    ResourceRepresentation, SystemTarget, qualified_representation,
 };
 use super::completion::{
-    CompletionRetirement, DIRECTORY_NEXT_SUBMIT, FILE_JOIN, WRAPPER_RAW_ERROR, WRAPPER_RAW_OUTCOME,
+    CompletionRetirement, DIRECTORY_NEXT_SUBMIT, FILE_JOIN, SOCKET_ACCEPT_JOIN,
+    SOCKET_ACCEPT_SUBMIT, SOCKET_CONNECT_SUBMIT, SOCKET_LISTEN_SUBMIT, SOCKET_RECEIVE_SUBMIT,
+    SOCKET_SEND_SUBMIT, SOCKET_SHUTDOWN_SUBMIT, WRAPPER_RAW_ERROR, WRAPPER_RAW_OUTCOME,
     WRAPPER_RAW_VALUE, WRAPPER_RECORD, completion_retirement, completion_submit_call,
     completion_transfer_target, completion_wrapper_reservation,
 };
@@ -76,6 +79,13 @@ const CLOSE_DIRECTORY_SOURCE: u8 = 18;
 const READ_NEXT: u8 = 19;
 const SOCKET_ADDRESS_V4: u8 = 20;
 const SOCKET_ADDRESS_V6: u8 = 21;
+const TCP_LISTEN: u8 = 22;
+const TCP_ACCEPT: u8 = 23;
+const TCP_CONNECT: u8 = 24;
+const RECEIVE_NEXT: u8 = 25;
+const SEND_ONCE: u8 = 26;
+const CLOSE_CONNECTION: u8 = 27;
+const CLOSE_LISTENER: u8 = 28;
 
 /// The finite system operations the first typed file adapter can actualize.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -87,6 +97,14 @@ pub(super) enum CompletionFileOperation {
     OpenDirectorySource,
     DirectoryNext,
     OpenFile,
+    /// One transfer attempt on one direction of one connection [SYS-18].
+    ///
+    /// They are their own members rather than `Read` and `Write` because the
+    /// request they submit is its own kind on both engines; what a completion
+    /// of one *means* is the same, which is why they share the two transfer
+    /// mappers below.
+    Receive,
+    Send,
 }
 
 pub(super) fn completion_file_operation(
@@ -103,6 +121,13 @@ pub(super) fn completion_file_operation(
         OPEN_LIST => Some(CompletionFileOperation::OpenDirectorySource),
         LIST_ONCE => Some(CompletionFileOperation::DirectoryNext),
         OPEN_FILE => Some(CompletionFileOperation::OpenFile),
+        RECEIVE_NEXT => Some(CompletionFileOperation::Receive),
+        SEND_ONCE => Some(CompletionFileOperation::Send),
+        // The five remaining TCP rows have no hand-out form: a listen, an
+        // accept, a connect and the two explicit closes keep their qualified
+        // wrapper, which is the same submit-then-join lowering through the
+        // frame's own record. Nothing weaker is substituted and no judgment
+        // changes; a site simply holds one such operation at a time.
         _ => None,
     }
 }
@@ -116,6 +141,11 @@ pub(super) const fn completion_mapper_symbol(operation: CompletionFileOperation)
         CompletionFileOperation::OpenDirectorySource => OPEN_LIST_COMPLETION_MAPPER,
         CompletionFileOperation::DirectoryNext => DIRECTORY_NEXT_COMPLETION_MAPPER,
         CompletionFileOperation::OpenFile => OPEN_FILE_COMPLETION_MAPPER,
+        // A receive publishes the same `ReadOutcome` from the same three raw
+        // scalars a read does, and a send the same `Result<u64, IoError>` a
+        // write does, so each shares that operation's one mapper [SYS-8].
+        CompletionFileOperation::Receive => READ_COMPLETION_MAPPER,
+        CompletionFileOperation::Send => WRITE_COMPLETION_MAPPER,
     }
 }
 
@@ -151,6 +181,9 @@ const OPEN_DIRECTORY_COMPLETION_MAPPER: &str = "wf.sys.open_directory.completion
 const OPEN_LIST_COMPLETION_MAPPER: &str = "wf.sys.open_directory_source.completion";
 const DIRECTORY_NEXT_COMPLETION_MAPPER: &str = "wf.sys.directory_next.completion";
 const OPEN_FILE_COMPLETION_MAPPER: &str = "wf.sys.open_file.completion";
+const LISTEN_COMPLETION_MAPPER: &str = "wf.sys.tcp_listen.completion";
+const ACCEPT_COMPLETION_MAPPER: &str = "wf.sys.tcp_accept.completion";
+const CONNECT_COMPLETION_MAPPER: &str = "wf.sys.tcp_connect.completion";
 pub(super) const OPEN_EXPECT_REGULAR: u32 = 1;
 pub(super) const OPEN_EXPECT_DIRECTORY: u32 = 2;
 pub(super) const WINDOWS_DESCRIPTOR_CLASS_READ_FILE: u32 = 1;
@@ -269,10 +302,16 @@ pub(super) fn emit_system_interface(
     // the module resolves the `IoError` type once from whichever outcome the
     // program actually uses.
     let mut io_error = None;
-    // `read_at` and `read_next` publish the same `ReadOutcome` through the one
-    // read completion mapper [SYS-8], so a program that uses both emits it
-    // once. The two shapes are the same interned type by construction.
+    // `read_at`, `read_next` and `receive_next` publish the same `ReadOutcome`
+    // through the one read completion mapper [SYS-8], and `write_once` and
+    // `send_once` the same `Result<u64, IoError>` through the one write
+    // mapper, so a program that uses several of them emits each mapper once.
+    // The shapes are the same interned types by construction.
     let mut read_mapper: Option<ReadOutcomeShape> = None;
+    let mut write_mapper: Option<(OutcomeShape, IoErrorClass)> = None;
+    // The one half-close every [SYS-18] direction release and
+    // `close_connection` reaches.
+    let mut needs_half_close = false;
     for (ordinal, implementation) in qualification.used_operations() {
         let result = results
             .get(usize::from(ordinal))
@@ -335,7 +374,9 @@ pub(super) fn emit_system_interface(
             WRITE_ONCE => {
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
+                let refused = write_zero_class(program, &shape)?;
                 definitions.push_str(&emit_write_once(program, implementation, &shape, target)?);
+                write_mapper = Some((shape, refused));
             }
             EXIT_STATUS => definitions.push_str(&emit_exit_status(implementation)),
             OPEN_DIRECTORY => {
@@ -420,6 +461,57 @@ pub(super) fn emit_system_interface(
                     SystemResourceType::DirectorySource,
                 ));
             }
+            TCP_LISTEN => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_socket_endpoint(
+                    program,
+                    implementation,
+                    &shape,
+                    SOCKET_LISTEN_SUBMIT,
+                    LISTEN_COMPLETION_MAPPER,
+                    ORIGIN_SOCKET_LISTEN,
+                )?);
+            }
+            TCP_ACCEPT => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_tcp_accept(program, implementation, &shape)?);
+            }
+            TCP_CONNECT => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_socket_endpoint(
+                    program,
+                    implementation,
+                    &shape,
+                    SOCKET_CONNECT_SUBMIT,
+                    CONNECT_COMPLETION_MAPPER,
+                    ORIGIN_SOCKET_CONNECT,
+                )?);
+            }
+            RECEIVE_NEXT => {
+                let shape = read_outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.failed_type)?;
+                definitions.push_str(&emit_receive_next(program, implementation, &shape)?);
+                read_mapper = Some(shape);
+            }
+            SEND_ONCE => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                let refused = write_zero_class(program, &shape)?;
+                definitions.push_str(&emit_send_once(program, implementation, &shape)?);
+                write_mapper = Some((shape, refused));
+            }
+            CLOSE_CONNECTION => {
+                needs_half_close = true;
+                let connection = system_call_parameter_type(program, ordinal, 0)?;
+                definitions.push_str(&emit_close_connection(program, implementation, connection)?);
+            }
+            CLOSE_LISTENER => {
+                needs_close = true;
+                definitions.push_str(&emit_close(implementation, SystemResourceType::TcpListener));
+            }
             _ => return Err(BackendFailure::InvalidIr),
         }
         for declaration in operation_declarations(ordinal, target)? {
@@ -428,6 +520,9 @@ pub(super) fn emit_system_interface(
     }
     if let Some(shape) = read_mapper.as_ref() {
         definitions.push_str(&emit_read_completion_mapper(shape));
+    }
+    if let Some((shape, refused)) = write_mapper.as_ref() {
+        definitions.push_str(&emit_write_completion_mapper(shape, refused));
     }
     if needs_validator {
         definitions.push_str(&emit_utf8_validator());
@@ -444,6 +539,15 @@ pub(super) fn emit_system_interface(
             declarations.insert(declaration);
         }
         definitions.push_str(&emit_close_helper(target));
+    }
+    if program_releases_with_direction_close(program, qualification)? {
+        needs_half_close = true;
+    }
+    if needs_half_close {
+        for declaration in half_close_declarations() {
+            declarations.insert(declaration);
+        }
+        definitions.push_str(&emit_half_close_helper());
     }
 
     let IrEntry::Command { inputs, .. } = program.entry();
@@ -615,8 +719,46 @@ fn operation_declarations(
         // The factory's credit count lives in the floor, linked into every
         // program [SYS-10].
         RESERVE_HANDLE => &["declare i32 @wf__handle_reserve()"],
-        CLOSE_READ | CLOSE_DIRECTORY | CLOSE_DIRECTORY_SOURCE => {
+        CLOSE_READ | CLOSE_DIRECTORY | CLOSE_DIRECTORY_SOURCE | CLOSE_LISTENER => {
             return Ok(close_declarations(target));
+        }
+        // The four TCP submits that reach a host object, and the two joins
+        // they retire through. None is a target column: a socket is one
+        // object with one contract on every host this compiler qualifies.
+        TCP_LISTEN => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_LISTEN_SUBMIT}(i64, i64, i32, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+            ]);
+        }
+        TCP_CONNECT => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_CONNECT_SUBMIT}(i64, i64, i32, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+            ]);
+        }
+        TCP_ACCEPT => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_ACCEPT_SUBMIT}(i32, ptr)"),
+                format!("declare void @{SOCKET_ACCEPT_JOIN}(ptr, ptr, ptr, ptr, ptr, ptr)"),
+            ]);
+        }
+        RECEIVE_NEXT => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_RECEIVE_SUBMIT}(i32, ptr, i64, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
+        }
+        SEND_ONCE => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_SEND_SUBMIT}(i32, ptr, i64, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
+        }
+        CLOSE_CONNECTION => {
+            return Ok(half_close_declarations());
         }
         _ => &[],
     };
@@ -633,6 +775,38 @@ fn close_declarations(target: SystemTarget) -> Vec<String> {
         ),
         completion_join_declaration(target),
     ]
+}
+
+/// The declarations one half-close needs: the runtime's own half-close submit
+/// and the join that consumes the record it fills.
+///
+/// Neither is a target column: a connection is one object with one contract on
+/// every host this compiler qualifies, and the two engines that carry a socket
+/// are inside the runtime behind these names.
+fn half_close_declarations() -> Vec<String> {
+    vec![
+        format!("declare void @{SOCKET_SHUTDOWN_SUBMIT}(i32, i32, ptr)"),
+        format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+    ]
+}
+
+/// Whether any release this program derives is a direction half-close
+/// [SYS-18].
+fn program_releases_with_direction_close(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+) -> Result<bool, BackendFailure> {
+    for nominal in program.nominals() {
+        let IrNominalKind::SystemResource(contract) = nominal.kind() else {
+            continue;
+        };
+        if qualification.resource(contract.resource)?.release()
+            == ReleaseImplementation::NativeDirectionClose
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Whether any release this program derives is a native close attempt.
@@ -695,6 +869,26 @@ fn system_call_results(
         }
     }
     Ok(results)
+}
+
+/// The exact IR type of one system operation's parameter.
+///
+/// One caller: `close_connection` takes the whole `TcpConnection`, and a
+/// system struct's emitted type is its own nominal rather than the fixed
+/// representation an opaque resource has [SYS-18]. Reading the catalog row and
+/// resolving it against the program's retained nominals is the same route
+/// every other exact type here takes, so no source name or signature reaches
+/// it [QUAL-1].
+fn system_call_parameter_type(
+    program: &IrProgram<'_, '_, '_>,
+    ordinal: u8,
+    parameter: usize,
+) -> Result<IrType, BackendFailure> {
+    let declared = crate::SYSTEM_OPERATIONS
+        .get(usize::from(ordinal))
+        .and_then(|row| row.parameters.get(parameter))
+        .ok_or(BackendFailure::InvalidIr)?;
+    catalog_ir_type(program, declared.ty)
 }
 
 /// Resolves one exact [SYS-2] table type against retained IR identities.
@@ -858,6 +1052,13 @@ struct OutcomeShape {
     /// The position of the permit an open outcome hands back beside its
     /// error [SYS-10]; `None` for a plain `Result<T, E>`.
     permit_index: Option<usize>,
+    /// The position and type of a second field on the succeeding variant.
+    ///
+    /// Exactly one outcome in the inventory has one: `Accepted(connection,
+    /// peer)` reports the address the target gave for the peer beside the
+    /// connection it created [SYS-17]. It is resolved from the program's own
+    /// IR like everything else here, and `None` everywhere else.
+    ok_extra: Option<(usize, String)>,
 }
 
 fn variants_of<'program>(
@@ -883,8 +1084,14 @@ fn outcome_shape(
     let [ok, err] = variants else {
         return Err(BackendFailure::InvalidIr);
     };
-    let [ok_field] = ok.fields() else {
-        return Err(BackendFailure::InvalidIr);
+    // A succeeding variant carries the fresh owner the operation created, and
+    // `Accepted` carries the peer's address beside it [SYS-17].
+    let (ok_field, ok_second) = match ok.fields() {
+        [ok_field] => (ok_field, None),
+        [ok_field, peer_field] if matches!(peer_field.ty(), IrType::Nominal(_)) => {
+            (ok_field, Some(peer_field))
+        }
+        _ => return Err(BackendFailure::InvalidIr),
     };
     // A plain `Result<T, E>` carries one field on its failed variant; an open
     // outcome [SYS-10] carries the error and, beside it, the permit it hands
@@ -897,16 +1104,27 @@ fn outcome_shape(
         _ => return Err(BackendFailure::InvalidIr),
     };
     let err_index = variant_field_base(variants, err.tag())?;
+    let ok_index = variant_field_base(variants, ok.tag())?;
+    let ok_extra = match ok_second {
+        Some(field) => Some((
+            ok_index
+                .checked_add(1)
+                .ok_or(BackendFailure::CounterOverflow)?,
+            llvm_type(program, field.ty())?,
+        )),
+        None => None,
+    };
     Ok(OutcomeShape {
         llvm: llvm_type(program, ty)?,
         ok_tag: ok.tag(),
-        ok_index: variant_field_base(variants, ok.tag())?,
+        ok_index,
         ok_llvm: llvm_type(program, ok_field.ty())?,
         err_tag: err.tag(),
         err_index,
         err_llvm: llvm_type(program, err_field.ty())?,
         err_type: err_field.ty(),
         permit_index: carries_permit.then(|| err_index.checked_add(1)).flatten(),
+        ok_extra,
     })
 }
 
@@ -1475,6 +1693,7 @@ fn read_outcome_shape(
 
 /// One [SYS-7] class's identity and payload positions in one program's
 /// `IoError` value.
+#[derive(Clone, Copy)]
 struct IoErrorClass {
     spelling: &'static str,
     tag: u32,
@@ -1603,7 +1822,15 @@ fn open_retirement(target: SystemTarget, llvm: &str, mapper: &str) -> String {
 /// The retirement a transferring wrapper renders: the join, the raw value and
 /// error it publishes, and the operation's own completion mapper over them and
 /// the wrapper's own proved endpoints.
+///
+/// `trailing` is empty for an operation whose mapper reads nothing but the two
+/// raw scalars — a listen and a connect, which carry no range.
 fn transfer_retirement(join: &str, llvm: &str, mapper: &str, trailing: &str) -> String {
+    let arguments = if trailing.is_empty() {
+        "i64 %completed.value, i32 %completed.error".to_owned()
+    } else {
+        format!("i64 %completed.value, i32 %completed.error, {trailing}")
+    };
     completion_retirement(&CompletionRetirement {
         join,
         record: WRAPPER_RECORD,
@@ -1613,7 +1840,7 @@ fn transfer_retirement(join: &str, llvm: &str, mapper: &str, trailing: &str) -> 
         value: "%completed.value",
         error: "%completed.error",
         mapper,
-        mapper_arguments: &format!("i64 %completed.value, i32 %completed.error, {trailing}"),
+        mapper_arguments: &arguments,
         result: "%outcome",
         result_type: llvm,
     })
@@ -1936,11 +2163,6 @@ fn emit_write_once(
     if shape.ok_llvm != "i64" {
         return Err(BackendFailure::InvalidIr);
     }
-    let classes = io_error_classes(program, shape.err_type)?;
-    let refused = classes
-        .iter()
-        .find(|class| class.spelling == "WriteZero")
-        .ok_or(BackendFailure::InvalidIr)?;
     let OutcomeShape { llvm, .. } = shape;
     // A host zero-length write is `Err(WriteZero())`, which no native error
     // code produced: [SYS-7] leaves both detail fields zero when the target
@@ -1954,7 +2176,9 @@ fn emit_write_once(
     // the bootstrap installed the ignored write-to-closed-pipe disposition
     // once, before entry [QUAL-3]; this path performs no per-call
     // signal-disposition operation.
-    let mapper = emit_write_completion_mapper(shape, refused);
+    //
+    // The mapper itself is emitted once by the caller, because `write_once`
+    // and `send_once` share it [SYS-8].
     let prepared = completion_transfer_target(&buffer, "%source", "%start", "%base", "%target");
     let submit = completion_submit_call(
         target.file_write_submit_symbol(),
@@ -1966,7 +2190,7 @@ fn emit_write_once(
         WRITE_COMPLETION_MAPPER,
         "i64 %start, i64 %extent",
     );
-    let wrapper = format!(
+    Ok(format!(
         "define private {llvm} @{symbol}({output} %output, {buffer} %source, i64 %start, \
          i64 %end) alwaysinline {{\n\
          entry:\n\
@@ -1977,8 +2201,22 @@ fn emit_write_once(
          }}\n\n",
         symbol = implementation.symbol(),
         reservation = completion_wrapper_reservation(false),
-    );
-    Ok(format!("{mapper}{wrapper}"))
+    ))
+}
+
+/// The [SYS-7] class one host write of zero bytes reports.
+///
+/// It is resolved from the program's own `IoError` and no native error code
+/// produced it: [SYS-7] leaves both detail fields zero when the target
+/// supplies no value for them.
+fn write_zero_class(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+) -> Result<IoErrorClass, BackendFailure> {
+    io_error_classes(program, shape.err_type)?
+        .into_iter()
+        .find(|class| class.spelling == "WriteZero")
+        .ok_or(BackendFailure::InvalidIr)
 }
 
 fn emit_write_completion_mapper(shape: &OutcomeShape, refused: &IoErrorClass) -> String {
@@ -2954,6 +3192,393 @@ fn emit_socket_address_v6(implementation: ApprovedImplementation) -> String {
     )
 }
 
+/// The three scalars one emitted `SocketAddress` value is, extracted so a
+/// submit can carry them.
+///
+/// The runtime reads an address as exactly these three and never as a pointer
+/// into an emitted value's storage (`completion/bridge.h`), so the layout is
+/// stated once here and once in `wf_socket_address`, and neither side holds a
+/// pointer into the other's.
+fn socket_address_scalars(value: &str, prefix: &str) -> String {
+    let address = ResourceRepresentation::InternetAddress.llvm();
+    format!(
+        "  %{prefix}.low = extractvalue {address} {value}, 0\n  \
+         %{prefix}.high = extractvalue {address} {value}, 1\n  \
+         %{prefix}.tag = extractvalue {address} {value}, 2\n"
+    )
+}
+
+/// Emits `tcp_listen` or `tcp_connect` [SYS-17].
+///
+/// Both take one address by shared loan and one permit the target ABI erases,
+/// both create their own socket inside the runtime, and both publish the same
+/// two-variant outcome: the fresh owner, or the host's error beside the very
+/// permit the operation took. So they are one wrapper with two submit entries
+/// and two outcomes, exactly as the four opens are one `emit_open_by_name`.
+fn emit_socket_endpoint(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    submit: &str,
+    mapper: &str,
+    origin: u8,
+) -> Result<String, BackendFailure> {
+    let address = ResourceRepresentation::InternetAddress.llvm();
+    let OutcomeShape { llvm, .. } = shape;
+    let mapper_text = emit_socket_endpoint_completion_mapper(program, shape, mapper, origin)?;
+    let scalars = socket_address_scalars("%address", "address");
+    let submit_call = completion_submit_call(
+        submit,
+        &format!("i64 %address.low, i64 %address.high, i32 %address.tag, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(FILE_JOIN, llvm, mapper, "");
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({address} %address) alwaysinline {{\n\
+         entry:\n\
+         {reservation}\
+         {scalars}{submit_call}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    );
+    Ok(format!("{mapper_text}{wrapper}"))
+}
+
+/// The mapper `tcp_listen` and `tcp_connect` publish through.
+///
+/// A descriptor the runtime hands back is the fresh owner; a negative value is
+/// the host's own refusal, and the permit comes back inside the failed variant
+/// because no handle was taken [SYS-10]. A connection is one descriptor and
+/// two owners, so `Connected` carries the pair built out of that one
+/// descriptor twice [SYS-18]; a listener is one owner and the pair is absent.
+fn emit_socket_endpoint_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+    symbol: &str,
+    origin: u8,
+) -> Result<String, BackendFailure> {
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        ok_llvm,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
+    let _ = io_error_classes(program, *err_type)?;
+    let created = socket_owner_value(ok_llvm, "%raw.descriptor", "fresh")?;
+    Ok(format!(
+        "define private {llvm} @{symbol}(i64 %raw.descriptor, i32 %error) alwaysinline {{\n\
+         entry:\n  \
+         %live = icmp sge i64 %raw.descriptor, 0\n  \
+         br i1 %live, label %created, label %refused\n\
+         created:\n\
+         {created}  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {ok_llvm} %fresh, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         refused:\n  \
+         %refused.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 {origin})\n  \
+         %refused.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %refused.tag = insertvalue {llvm} %refused.base, i32 {err_tag}, 0\n  \
+         %refused.result = insertvalue {llvm} %refused.tag, {err_llvm} %refused.error, \
+         {err_index}\n  \
+         ret {llvm} %refused.result\n\
+         }}\n\n"
+    ))
+}
+
+/// The instructions building one fresh socket owner out of the descriptor the
+/// runtime published.
+///
+/// A listener is that descriptor. A connection is the two-field system struct
+/// of [SYS-18], whose two directions name one target object, so both fields
+/// are that same descriptor and the runtime's own two-count is what decides
+/// which release closes it.
+fn socket_owner_value(owner: &str, raw: &str, name: &str) -> Result<String, BackendFailure> {
+    let descriptor = representation(SystemResourceType::TcpListener);
+    if owner == descriptor {
+        return Ok(format!("  %{name} = trunc i64 {raw} to {descriptor}\n"));
+    }
+    Ok(format!(
+        "  %{name}.descriptor = trunc i64 {raw} to {descriptor}\n  \
+         %{name}.receive = insertvalue {owner} zeroinitializer, {descriptor} \
+         %{name}.descriptor, 0\n  \
+         %{name} = insertvalue {owner} %{name}.receive, {descriptor} \
+         %{name}.descriptor, 1\n"
+    ))
+}
+
+/// Emits `tcp_accept` [SYS-17].
+///
+/// It is the endpoint wrapper with one thing added: the target's own answer
+/// about the peer, which the accept join publishes as the three scalars a
+/// `SocketAddress` value is, and which the mapper assembles into that value.
+fn emit_tcp_accept(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
+    let listener = representation(SystemResourceType::TcpListener);
+    let OutcomeShape { llvm, .. } = shape;
+    let mapper = emit_tcp_accept_completion_mapper(program, shape)?;
+    let submit = completion_submit_call(
+        SOCKET_ACCEPT_SUBMIT,
+        &format!("{listener} %listener, ptr {WRAPPER_RECORD}"),
+    );
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({listener} %listener) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %peer.low = alloca i64, align 8\n  \
+         %peer.high = alloca i64, align 8\n  \
+         %peer.tag = alloca i32, align 4\n\
+         {submit}  \
+         call void @{SOCKET_ACCEPT_JOIN}(ptr {WRAPPER_RECORD}, ptr {WRAPPER_RAW_VALUE}, \
+         ptr {WRAPPER_RAW_ERROR}, ptr %peer.low, ptr %peer.high, ptr %peer.tag)\n  \
+         %completed.value = load i64, ptr {WRAPPER_RAW_VALUE}\n  \
+         %completed.error = load i32, ptr {WRAPPER_RAW_ERROR}\n  \
+         %peer.low.value = load i64, ptr %peer.low\n  \
+         %peer.high.value = load i64, ptr %peer.high\n  \
+         %peer.tag.value = load i32, ptr %peer.tag\n  \
+         %outcome = call {llvm} @{ACCEPT_COMPLETION_MAPPER}(i64 %completed.value, \
+         i32 %completed.error, i64 %peer.low.value, i64 %peer.high.value, \
+         i32 %peer.tag.value)\n  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    );
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+fn emit_tcp_accept_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
+    let address = ResourceRepresentation::InternetAddress.llvm();
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        ok_llvm,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
+    let (peer_index, peer_llvm) = shape
+        .ok_extra
+        .as_ref()
+        .ok_or(BackendFailure::InvalidIr)?
+        .clone();
+    if peer_llvm != address {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let _ = io_error_classes(program, *err_type)?;
+    let taken = socket_owner_value(ok_llvm, "%raw.descriptor", "fresh")?;
+    Ok(format!(
+        "define private {llvm} @{ACCEPT_COMPLETION_MAPPER}(i64 %raw.descriptor, i32 %error, \
+         i64 %peer.low, i64 %peer.high, i32 %peer.tag) alwaysinline {{\n\
+         entry:\n  \
+         %live = icmp sge i64 %raw.descriptor, 0\n  \
+         br i1 %live, label %taken, label %refused\n\
+         taken:\n\
+         {taken}  \
+         %peer.0 = insertvalue {address} zeroinitializer, i64 %peer.low, 0\n  \
+         %peer.1 = insertvalue {address} %peer.0, i64 %peer.high, 1\n  \
+         %peer = insertvalue {address} %peer.1, i32 %peer.tag, 2\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok.connection = insertvalue {llvm} %ok.tag, {ok_llvm} %fresh, {ok_index}\n  \
+         %ok = insertvalue {llvm} %ok.connection, {address} %peer, {peer_index}\n  \
+         ret {llvm} %ok\n\
+         refused:\n  \
+         %refused.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
+         {ORIGIN_SOCKET_ACCEPT})\n  \
+         %refused.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %refused.tag = insertvalue {llvm} %refused.base, i32 {err_tag}, 0\n  \
+         %refused.result = insertvalue {llvm} %refused.tag, {err_llvm} %refused.error, \
+         {err_index}\n  \
+         ret {llvm} %refused.result\n\
+         }}\n\n"
+    ))
+}
+
+/// Emits `receive_next`: one transfer attempt on one direction of one
+/// connection [SYS-18].
+///
+/// It is `read_next`'s wrapper with the connection's receiving direction in
+/// place of the stream and the runtime's own receive request kind in place of
+/// the unpositioned read, and it publishes the same `ReadOutcome` through the
+/// same mapper, because a completion of one means exactly what a completion of
+/// the other does [SYS-8].
+fn emit_receive_next(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &ReadOutcomeShape,
+) -> Result<String, BackendFailure> {
+    let receive = representation(SystemResourceType::TcpReceive);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let ReadOutcomeShape { llvm, .. } = shape;
+    let prepared =
+        completion_transfer_target(&buffer, "%destination", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        SOCKET_RECEIVE_SUBMIT,
+        &format!("{receive} %receive, ptr %target, i64 %extent, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(
+        FILE_JOIN,
+        llvm,
+        READ_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    Ok(format!(
+        "define private {llvm} @{symbol}({receive} %receive, {buffer} %destination, \
+         i64 %start, i64 %end) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    ))
+}
+
+/// Emits `send_once`: one attempt on the sending direction [SYS-18].
+///
+/// It is `write_once`'s wrapper with the connection's sending direction in
+/// place of the output stream and the runtime's own send request kind in place
+/// of the write, publishing the same `Result<u64, IoError>` through the same
+/// mapper: `Ok(next)` means the local facility accepted `[start, next)`, a
+/// host write of zero is `WriteZero`, and a peer that has gone arrives as
+/// `BrokenPipe` through the same signal normalization [SYS-8].
+fn emit_send_once(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
+    let send = representation(SystemResourceType::TcpSend);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    if shape.ok_llvm != "i64" {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let OutcomeShape { llvm, .. } = shape;
+    let prepared = completion_transfer_target(&buffer, "%source", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        SOCKET_SEND_SUBMIT,
+        &format!("{send} %send, ptr %target, i64 %extent, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(
+        FILE_JOIN,
+        llvm,
+        WRITE_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    Ok(format!(
+        "define private {llvm} @{symbol}({send} %send, {buffer} %source, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    ))
+}
+
+/// The private symbol of the one half-close every [SYS-18] direction release
+/// and `close_connection` reaches.
+const HALF_CLOSE_HELPER: &str = "wf.sys.socket.half_close";
+
+/// The [SYS-18] direction one half-close releases, in the runtime's own
+/// spelling (`completion/contract.h`, `wf_socket_direction`).
+const DIRECTION_RECEIVE: u32 = 0;
+const DIRECTION_SEND: u32 = 1;
+
+/// Emits that one half-close.
+///
+/// It is the close helper with a direction: the record is reserved in this
+/// helper's own entry block, the descriptor and the direction are submitted,
+/// and the terminal completion is joined here — exactly one attempt, its
+/// diagnostic discarded, never retried [SYS-5]. The runtime keeps the pair's
+/// own two-count and releases the target's object on the second of the two
+/// releases, so nothing here decides which release closes.
+fn emit_half_close_helper() -> String {
+    let descriptor = representation(SystemResourceType::TcpReceive);
+    let submit = completion_submit_call(
+        SOCKET_SHUTDOWN_SUBMIT,
+        &format!("{descriptor} %descriptor, i32 %direction, ptr {WRAPPER_RECORD}"),
+    );
+    format!(
+        "define private void @{HALF_CLOSE_HELPER}({descriptor} %descriptor, i32 %direction) \
+         alwaysinline {{\n\
+         entry:\n\
+         {reservation}\
+         {submit}  \
+         call void @{FILE_JOIN}(ptr {WRAPPER_RECORD}, ptr {WRAPPER_RAW_VALUE}, \
+         ptr {WRAPPER_RAW_ERROR})\n  \
+         ret void\n\
+         }}\n\n",
+        reservation = completion_wrapper_reservation(false),
+    )
+}
+
+/// Emits `close_connection` [SYS-18].
+///
+/// It consumes the whole pair and performs the same two native attempts
+/// derived release of the two directions would perform, with the same
+/// discarded diagnostics: one half-close per direction, in field order. The
+/// second of them is the one the runtime's two-count turns into the close of
+/// the target's object, so the credit the pair held comes back as the one
+/// fresh permit this returns, which is the erased bit.
+fn emit_close_connection(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    connection: IrType,
+) -> Result<String, BackendFailure> {
+    let permit = representation(SystemResourceType::HandlePermit);
+    let descriptor = representation(SystemResourceType::TcpReceive);
+    let owner = llvm_type(program, connection)?;
+    Ok(format!(
+        "define private {permit} @{symbol}({owner} %connection) alwaysinline {{\n\
+         entry:\n  \
+         %receive = extractvalue {owner} %connection, 0\n  \
+         %send = extractvalue {owner} %connection, 1\n  \
+         call void @{HALF_CLOSE_HELPER}({descriptor} %receive, i32 {DIRECTION_RECEIVE})\n  \
+         call void @{HALF_CLOSE_HELPER}({descriptor} %send, i32 {DIRECTION_SEND})\n  \
+         ret {permit} true\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    ))
+}
+
 fn emit_exit_status(implementation: ApprovedImplementation) -> String {
     let status = representation(SystemResourceType::ExitStatus);
     // Total and pure: every `u8` is a valid command code, so there is no
@@ -3627,14 +4252,25 @@ pub(super) fn emit_resource_release(
             )
             .map_err(|_| BackendFailure::TextEmission)
         }
-        // A connection direction's half-close reaches the runtime through the
-        // route slice 2 of the streams-and-TCP batch supplies. No program can
-        // hold a `TcpReceive` or a `TcpSend` in this version, because every
-        // operation that produces one is an unmapped target row that stops
-        // compilation at qualification (`backend/qualification.rs`), so
-        // reaching this arm means a `TcpConnection` was produced by something
-        // other than `tcp_accept` or `tcp_connect` — an invariant of the
-        // qualified program, not a source condition.
-        ReleaseImplementation::NativeDirectionClose => Err(BackendFailure::InvalidIr),
+        // One direction's half-close [SYS-18]: exactly one attempt through the
+        // one half-close helper, whose diagnostic is discarded and which never
+        // retries. The runtime keeps the pair's own two-count, so this
+        // release does not decide whether it is the one that releases the
+        // target's object — and the release order of the two directions is
+        // the program's own and changes no outcome it can observe.
+        ReleaseImplementation::NativeDirectionClose => {
+            let direction = match contract.resource {
+                SystemResourceType::TcpReceive => DIRECTION_RECEIVE,
+                SystemResourceType::TcpSend => DIRECTION_SEND,
+                // No other resource carries this release row.
+                _ => return Err(BackendFailure::InvalidIr),
+            };
+            writeln!(
+                output,
+                "  call void @{HALF_CLOSE_HELPER}({} {operand}, i32 {direction})",
+                representation(contract.resource)
+            )
+            .map_err(|_| BackendFailure::TextEmission)
+        }
     }
 }

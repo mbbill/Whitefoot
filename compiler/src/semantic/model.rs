@@ -1985,6 +1985,18 @@ pub(crate) struct CheckedProgramData {
     /// size of the nominal-record block ahead of the constructor block.
     pub(crate) inventory: crate::Inventory,
     pub(crate) nominals: Vec<CheckedNominal>,
+    /// Which interned nominals are [SYS-2] system-declared structs, by catalog
+    /// index, in catalog order.
+    ///
+    /// A system struct is interned as an ordinary checked struct on purpose,
+    /// so field places, disjoint-field loans, partial moves and derived
+    /// release all take the one normal path [SYS-18]. That leaves nothing in
+    /// the nominal itself saying which catalog row it came from, and the
+    /// backend needs exactly that to resolve the operation-table type of an
+    /// operation taking one — `close_connection` takes the whole
+    /// `TcpConnection`. This side table carries the fact without giving the
+    /// struct a second checked form, and it is data the checker already had.
+    pub(crate) system_structs: Vec<(u8, NominalId)>,
     // Nominal instances discovered by the ordinary function path form this
     // prefix. Later instances exist only to type-check static metadata.
     pub(crate) executable_nominal_count: usize,

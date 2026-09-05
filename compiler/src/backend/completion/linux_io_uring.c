@@ -420,6 +420,26 @@ int wf_linux_io_uring_carries(const wf_completion_record *record) {
                 <= WF_FILE_EXPECT_DIRECTORY;
     case WF_FILE_CLOSE:
         return record->request.operation.close.descriptor >= 0;
+    /* The four TCP kinds the ring carries [SYS-17, SYS-18], which is where a
+     * program that waits on a peer first waits in the kernel rather than on a
+     * helper thread.  A listen, a bind and a half-close are immediate host
+     * calls with nothing to wait for, so they stay on the adapter and this
+     * answers no for them
+     * (`research/investigations/io-model/NETWORK.md` §5). */
+    case WF_FILE_SOCKET_ACCEPT:
+        return record->request.operation.accept.descriptor >= 0;
+    case WF_FILE_SOCKET_CONNECT:
+        return 1;
+    case WF_FILE_SOCKET_RECEIVE:
+        return record->request.operation.receive.descriptor >= 0
+            && record->request.operation.receive.count != 0
+            && record->request.operation.receive.count <= UINT32_MAX
+            && record->request.operation.receive.buffer != NULL;
+    case WF_FILE_SOCKET_SEND:
+        return record->request.operation.send.descriptor >= 0
+            && record->request.operation.send.count != 0
+            && record->request.operation.send.count <= UINT32_MAX
+            && record->request.operation.send.buffer != NULL;
     default:
         return 0;
     }
@@ -436,6 +456,14 @@ static int wf_linux_record_descriptor(const wf_completion_record *record) {
         return record->request.operation.pwrite.descriptor;
     case WF_FILE_OPEN_AT:
         return record->request.operation.open_at.directory;
+    case WF_FILE_SOCKET_ACCEPT:
+        return record->request.operation.accept.descriptor;
+    case WF_FILE_SOCKET_CONNECT:
+        return record->request.operation.endpoint.descriptor;
+    case WF_FILE_SOCKET_RECEIVE:
+        return record->request.operation.receive.descriptor;
+    case WF_FILE_SOCKET_SEND:
+        return record->request.operation.send.descriptor;
     case WF_FILE_CLOSE:
     default:
         return record->request.operation.close.descriptor;
@@ -444,7 +472,16 @@ static int wf_linux_record_descriptor(const wf_completion_record *record) {
 
 static int wf_linux_transfer_kind(enum wf_file_operation_kind kind) {
     return kind == WF_FILE_PREAD || kind == WF_FILE_PWRITE
-        || kind == WF_FILE_READ;
+        || kind == WF_FILE_READ || kind == WF_FILE_SOCKET_RECEIVE
+        || kind == WF_FILE_SOCKET_SEND;
+}
+
+/* Whether a re-armed operation waits to read or to write.  A receive waits
+ * for the same readiness a read does, and a send for the same a write
+ * does. */
+static int wf_linux_waits_readable(enum wf_file_operation_kind kind) {
+    return kind == WF_FILE_PREAD || kind == WF_FILE_READ
+        || kind == WF_FILE_SOCKET_RECEIVE;
 }
 
 /* Builds one SQE straight from the record and names the record's own address
@@ -468,10 +505,8 @@ static void wf_linux_stage_entry_locked(
     if (record->ring.waiting_readiness != 0) {
         submission->opcode = IORING_OP_POLL_ADD;
         submission->fd = wf_linux_record_descriptor(record);
-        submission->poll_events = (record->request.kind == WF_FILE_PREAD
-                                   || record->request.kind == WF_FILE_READ)
-            ? POLLIN
-            : POLLOUT;
+        submission->poll_events =
+            wf_linux_waits_readable(record->request.kind) ? POLLIN : POLLOUT;
     } else {
         switch (record->request.kind) {
         case WF_FILE_OPEN_AT:
@@ -513,6 +548,47 @@ static void wf_linux_stage_entry_locked(
             submission->addr =
                 (uint64_t)(uintptr_t)record->request.operation.read.buffer;
             submission->len = (uint32_t)record->request.operation.read.count;
+            break;
+        case WF_FILE_SOCKET_ACCEPT:
+            /* The peer record and its length are the request's own storage,
+             * so the kernel writes them where the accept join reads them; the
+             * length cell is `socklen_t` by the assertion in `file_posix.h`.
+             * The connection is closed on exec in the same step that takes
+             * it, exactly as `accept4` does it on the adapter. */
+            submission->opcode = IORING_OP_ACCEPT;
+            submission->fd = record->request.operation.accept.descriptor;
+            submission->addr = (uint64_t)(uintptr_t)
+                record->request.operation.accept.peer.native.bytes;
+            submission->off = (uint64_t)(uintptr_t)
+                &record->request.operation.accept.peer_length;
+            submission->accept_flags = (uint32_t)SOCK_CLOEXEC;
+            break;
+        case WF_FILE_SOCKET_CONNECT:
+            /* The socket was created and the address record built by the
+             * submit below, because the kernel reads that record after this
+             * call returns and it therefore has to be the record's. */
+            submission->opcode = IORING_OP_CONNECT;
+            submission->fd = record->request.operation.endpoint.descriptor;
+            submission->addr = (uint64_t)(uintptr_t)
+                record->request.operation.endpoint.address.native.bytes;
+            submission->off =
+                (uint64_t)record->request.operation.endpoint.address_length;
+            break;
+        case WF_FILE_SOCKET_RECEIVE:
+            submission->opcode = IORING_OP_RECV;
+            submission->fd = record->request.operation.receive.descriptor;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.receive.buffer;
+            submission->len =
+                (uint32_t)record->request.operation.receive.count;
+            break;
+        case WF_FILE_SOCKET_SEND:
+            submission->opcode = IORING_OP_SEND;
+            submission->fd = record->request.operation.send.descriptor;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.send.buffer;
+            submission->len = (uint32_t)record->request.operation.send.count;
+            submission->msg_flags = (uint32_t)WF_SOCKET_SEND_FLAGS;
             break;
         case WF_FILE_PREAD:
         default:
@@ -597,6 +673,34 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     }
     if (!wf_linux_io_uring_carries(record)) {
         return WF_LINUX_IO_URING_SUBMIT_INVALID;
+    }
+    if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
+        /* A connect needs a socket before the ring has anything to connect,
+         * and the host's own address record before the kernel has anything to
+         * read.  Both are made here, in the submitting call, for the same
+         * reason the completed open's kind check is made on the reaping
+         * thread: neither can wait on anything -- `socket` allocates a kernel
+         * object and the conversion touches no host at all -- so a second
+         * ring round trip would cost more than the operation it wraps.
+         *
+         * A host that refuses the socket leaves this record for the bounded
+         * adapter, which makes the same two host calls and produces the
+         * program's outcome from the host's own refusal.  Nothing is
+         * published here and nothing is left half-owned. */
+        wf_socket_address portable =
+            record->request.operation.endpoint.address.portable;
+        int descriptor = wf_socket_open(&portable);
+        if (descriptor < 0) {
+            return WF_LINUX_IO_URING_SUBMIT_INVALID;
+        }
+        /* The portable value is read out of the union before the native
+         * record is written back over it, because the two share the arm. */
+        record->request.operation.endpoint.address_length =
+            wf_socket_native_from_address(
+                &portable,
+                &record->request.operation.endpoint.address.native
+            );
+        record->request.operation.endpoint.descriptor = descriptor;
     }
 
     record->route = WF_COMPLETION_ROUTE_LINUX_IO_URING;
@@ -755,6 +859,30 @@ static void wf_linux_complete_record(
         result.open_outcome = (enum wf_file_open_outcome)record->open_outcome;
         result.error_code = record->open_error;
         result.value = record->opened_descriptor;
+    } else if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
+        /* The ring's connect answers zero, not the descriptor: the socket is
+         * the one this adapter created at submit, and a refusal disposes of
+         * it with the one close attempt the adapter's own leaf makes, because
+         * a connection that was never made holds no credit and the permit
+         * goes back to the program [SYS-10]. */
+        if (completion_result < 0) {
+            (void)close(record->request.operation.endpoint.descriptor);
+            result.value = -1;
+            result.error_code = -completion_result;
+        } else {
+            result.value = record->request.operation.endpoint.descriptor;
+        }
+    } else if (record->request.kind == WF_FILE_SOCKET_ACCEPT) {
+        if (completion_result < 0) {
+            result.value = -1;
+            result.error_code = -completion_result;
+        } else {
+            /* The kernel wrote the peer's own record and its length into the
+             * request; the same rewrite the adapter's leaf performs puts it
+             * in the form the accept join publishes. */
+            wf_socket_publish_peer(&record->request);
+            result.value = completion_result;
+        }
     } else if (completion_result < 0) {
         result.value = -1;
         result.error_code = -completion_result;

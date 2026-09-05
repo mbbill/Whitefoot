@@ -41,6 +41,27 @@ int wf_file_request_valid(const wf_file_request *request) {
     case WF_FILE_STATUS:
     case WF_FILE_CLOSE:
         return 1;
+    /* A listen and a connect name an address and create their own socket, so
+     * there is no descriptor and no buffer to check; the address is a value
+     * the emitter built and every combination of its operands is one address
+     * [SYS-16]. */
+    case WF_FILE_SOCKET_LISTEN:
+    case WF_FILE_SOCKET_CONNECT:
+        return 1;
+    case WF_FILE_SOCKET_ACCEPT:
+        return request->operation.accept.descriptor >= 0;
+    case WF_FILE_SOCKET_RECEIVE:
+        return request->operation.receive.buffer != NULL
+            || request->operation.receive.count == 0;
+    case WF_FILE_SOCKET_SEND:
+        return request->operation.send.buffer != NULL
+            || request->operation.send.count == 0;
+    case WF_FILE_SOCKET_SHUTDOWN:
+        return request->operation.shutdown.descriptor >= 0
+            && (request->operation.shutdown.direction
+                    == WF_SOCKET_DIRECTION_RECEIVE
+                || request->operation.shutdown.direction
+                    == WF_SOCKET_DIRECTION_SEND);
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     case WF_FILE_DIRECTORY_NEXT:
         /* The position cell is required on both families even though only
@@ -53,6 +74,43 @@ int wf_file_request_valid(const wf_file_request *request) {
     default:
         return 0;
     }
+}
+
+/* The two-count of every connection descriptor, one byte each: zero when
+ * neither direction has been released and one when exactly one has.  See
+ * `wf_file_connection_release` in the header for what it promises and why it
+ * is a table rather than something a record could carry.
+ *
+ * It is `_Atomic` because the two directions of one connection are two places
+ * that may be released on two threads, and because a helper and a joining
+ * scheduler both reach this from `wf_file_execute_direct`. */
+static _Atomic unsigned char
+    wf_file_connection_halves[WF_FILE_CONNECTION_DESCRIPTORS];
+
+int wf_file_connection_release(int descriptor) {
+    unsigned char previous;
+    if (descriptor < 0
+        || (unsigned)descriptor >= WF_FILE_CONNECTION_DESCRIPTORS) {
+        return 0;
+    }
+    previous = atomic_exchange_explicit(
+        &wf_file_connection_halves[descriptor],
+        1u,
+        memory_order_acq_rel
+    );
+    if (previous == 0u) {
+        return 0;
+    }
+    /* This release closes the target's object, so the byte goes back to zero
+     * before the close: the descriptor is still this program's until the
+     * close returns, and a host that hands the same number out afterwards
+     * finds the count where a fresh connection expects it. */
+    atomic_store_explicit(
+        &wf_file_connection_halves[descriptor],
+        0u,
+        memory_order_release
+    );
+    return 1;
 }
 
 /* The measured host-call time above which handing an operation to another
@@ -190,7 +248,7 @@ static void wf_file_finish_execution(
 
 wf_file_result wf_file_execute_timed(
     wf_file_adapter *adapter,
-    const wf_file_request *request
+    wf_file_request *request
 ) {
     int timed;
     uint64_t started;

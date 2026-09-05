@@ -26,6 +26,7 @@
 #include <limits.h>
 #include <poll.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -75,6 +76,14 @@ extern ssize_t WF_COMPLETION_GETDIRENTRIES64(
 #define WF_COMPLETION_GETDENTS64 getdents64
 #endif
 extern ssize_t WF_COMPLETION_GETDENTS64(int, void *, size_t);
+/* `accept4` is declared here rather than reached through <sys/socket.h> for
+ * exactly the reason the enumeration facility above is: the declaration is
+ * behind _GNU_SOURCE, which this unit does not ask for, and the prototype is
+ * fixed by the ABI.  It is the one call that takes a connection and marks it
+ * closed on exec in the same step; a family without it does the two steps
+ * separately below. */
+extern int accept4(int, struct sockaddr *, socklen_t *, int);
+#define WF_SOCKET_HAS_ACCEPT4 1
 #endif
 
 _Static_assert(
@@ -82,7 +91,41 @@ _Static_assert(
     "WF_FILE_STATUS_CAPACITY must hold the host stat record"
 );
 
-static wf_file_result wf_file_execute_once(const wf_file_request *request) {
+/* The listen backlog, which is the target's own maximum.
+ *
+ * It is not a resource on this API: the accept queue is a kernel queue the
+ * peer fills, and the program observes it only through accept's outcomes, so
+ * a full backlog refuses the peer and never the program
+ * (`research/investigations/io-model/NETWORK.md` §2).  Asking for the host's
+ * own maximum is therefore the only answer that adds no bound of the
+ * runtime's. */
+#if defined(SOMAXCONN)
+#define WF_SOCKET_BACKLOG SOMAXCONN
+#else
+#define WF_SOCKET_BACKLOG 128
+#endif
+
+/* One endpoint operation's two preparations: the host's own address record,
+ * and one socket of that address's family.
+ *
+ * Both endpoint kinds do exactly these two things before their own host call,
+ * and both dispose of the socket on any refusal, because a listener or a
+ * connection that was never created holds no credit and the permit goes back
+ * to the program [SYS-10].  Returns -1 with `errno` set when the host refused
+ * the socket. */
+static int wf_socket_endpoint(
+    const wf_file_request *request,
+    wf_socket_native_address *native,
+    unsigned *length
+) {
+    *length = wf_socket_native_from_address(
+        &request->operation.endpoint.address.portable,
+        native
+    );
+    return wf_socket_open(&request->operation.endpoint.address.portable);
+}
+
+static wf_file_result wf_file_execute_once(wf_file_request *request) {
     wf_file_result result;
     memset(&result, 0, sizeof(result));
     result.head.kind = request->kind;
@@ -133,6 +176,18 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         }
         break;
 #endif
+    case WF_FILE_SOCKET_RECEIVE:
+        if (request->operation.receive.count > (size_t)SSIZE_MAX) {
+            result.head.error_code = EINVAL;
+            return result;
+        }
+        break;
+    case WF_FILE_SOCKET_SEND:
+        if (request->operation.send.count > (size_t)SSIZE_MAX) {
+            result.head.error_code = EINVAL;
+            return result;
+        }
+        break;
     default:
         break;
     }
@@ -259,6 +314,105 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
 #endif
         break;
 #endif
+    /* The six socket kinds [SYS-17, SYS-18].  Each is exactly the host calls
+     * its operation names and nothing else; the descriptor accounting is the
+     * emitted program's, through the permit it holds. */
+    case WF_FILE_SOCKET_LISTEN: {
+        wf_socket_native_address native;
+        unsigned length = 0;
+        int endpoint = wf_socket_endpoint(request, &native, &length);
+        int refusal;
+        if (endpoint < 0) {
+            break;
+        }
+        if (bind(endpoint, (const struct sockaddr *)native.bytes,
+                 (socklen_t)length)
+                == 0
+            && listen(endpoint, WF_SOCKET_BACKLOG) == 0) {
+            result.head.value = endpoint;
+            break;
+        }
+        /* One close attempt on a socket the program never received, its
+         * diagnostic discarded, and the host's own refusal reported. */
+        refusal = errno;
+        (void)close(endpoint);
+        errno = refusal;
+        break;
+    }
+    case WF_FILE_SOCKET_ACCEPT: {
+        socklen_t length =
+            (socklen_t)sizeof(request->operation.accept.peer.native);
+        struct sockaddr *peer =
+            (struct sockaddr *)request->operation.accept.peer.native.bytes;
+#if defined(WF_SOCKET_HAS_ACCEPT4)
+        result.head.value = accept4(
+            request->operation.accept.descriptor,
+            peer,
+            &length,
+            SOCK_CLOEXEC
+        );
+#else
+        result.head.value =
+            accept(request->operation.accept.descriptor, peer, &length);
+        if (result.head.value >= 0) {
+            (void)fcntl((int)result.head.value, F_SETFD, FD_CLOEXEC);
+        }
+#endif
+        if (result.head.value >= 0) {
+            request->operation.accept.peer_length = (unsigned)length;
+            wf_socket_publish_peer(request);
+        }
+        break;
+    }
+    case WF_FILE_SOCKET_CONNECT: {
+        wf_socket_native_address native;
+        unsigned length = 0;
+        int endpoint = wf_socket_endpoint(request, &native, &length);
+        int refusal;
+        if (endpoint < 0) {
+            break;
+        }
+        if (connect(endpoint, (const struct sockaddr *)native.bytes,
+                    (socklen_t)length)
+            == 0) {
+            result.head.value = endpoint;
+            break;
+        }
+        refusal = errno;
+        (void)close(endpoint);
+        errno = refusal;
+        break;
+    }
+    case WF_FILE_SOCKET_RECEIVE:
+        result.head.value = recv(
+            request->operation.receive.descriptor,
+            request->operation.receive.buffer,
+            request->operation.receive.count,
+            0
+        );
+        break;
+    case WF_FILE_SOCKET_SEND:
+        result.head.value = send(
+            request->operation.send.descriptor,
+            request->operation.send.buffer,
+            request->operation.send.count,
+            WF_SOCKET_SEND_FLAGS
+        );
+        break;
+    case WF_FILE_SOCKET_SHUTDOWN: {
+        int descriptor = request->operation.shutdown.descriptor;
+        int direction =
+            request->operation.shutdown.direction == WF_SOCKET_DIRECTION_SEND
+            ? SHUT_WR
+            : SHUT_RD;
+        /* The count is taken first, so two directions released on two threads
+         * agree on which of them is the second whatever order the two host
+         * calls below land in. */
+        int last = wf_file_connection_release(descriptor);
+        (void)shutdown(descriptor, direction);
+        result.head.value = last ? close(descriptor) : 0;
+        break;
+    }
     default:
         result.head.error_code = EINVAL;
         return result;
@@ -288,8 +442,22 @@ static int wf_file_wait_ready(const wf_file_request *request) {
         descriptor.events = POLLIN;
         break;
 #endif
+    case WF_FILE_SOCKET_RECEIVE:
+        descriptor.fd = request->operation.receive.descriptor;
+        descriptor.events = POLLIN;
+        break;
+    /* A listener becomes readable when a connection is waiting, which is the
+     * same readiness a receive waits for. */
+    case WF_FILE_SOCKET_ACCEPT:
+        descriptor.fd = request->operation.accept.descriptor;
+        descriptor.events = POLLIN;
+        break;
     case WF_FILE_WRITE:
         descriptor.fd = request->operation.write.descriptor;
+        descriptor.events = POLLOUT;
+        break;
+    case WF_FILE_SOCKET_SEND:
+        descriptor.fd = request->operation.send.descriptor;
         descriptor.events = POLLOUT;
         break;
     case WF_FILE_PWRITE:
@@ -305,7 +473,7 @@ static int wf_file_wait_ready(const wf_file_request *request) {
     return waited > 0 ? 0 : errno;
 }
 
-wf_file_result wf_file_execute_direct(const wf_file_request *request) {
+wf_file_result wf_file_execute_direct(wf_file_request *request) {
     wf_file_result result;
     if (!wf_file_request_valid(request)) {
         memset(&result, 0, sizeof(result));
@@ -328,6 +496,16 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
         case WF_FILE_DIRECTORY_NEXT:
 #endif
+        /* A socket transfer absorbs interruption and readiness refusal the
+         * same way a file transfer does, and so does an accept: retrying it
+         * takes whichever connection is waiting and has no effect of its own.
+         * A connect does not, because an interrupted connect continues in the
+         * host and a second attempt would be answered `EALREADY` rather than
+         * the outcome the first one is about to produce; a listen does not,
+         * because retrying it would create a second socket. */
+        case WF_FILE_SOCKET_RECEIVE:
+        case WF_FILE_SOCKET_SEND:
+        case WF_FILE_SOCKET_ACCEPT:
             break;
         default:
             return result;

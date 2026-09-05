@@ -316,7 +316,7 @@ static wf_file_result wf_file_windows_directory_next(
 }
 #endif
 
-wf_file_result wf_file_execute_direct(const wf_file_request *request) {
+wf_file_result wf_file_execute_direct(wf_file_request *request) {
     if (!wf_file_request_valid(request)) {
         wf_file_result result;
         memset(&result, 0, sizeof(result));
@@ -342,13 +342,25 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
 #endif
     case WF_FILE_PWRITE:
     case WF_FILE_STATUS:
+    case WF_FILE_SOCKET_LISTEN:
+    case WF_FILE_SOCKET_ACCEPT:
+    case WF_FILE_SOCKET_CONNECT:
+    case WF_FILE_SOCKET_RECEIVE:
+    case WF_FILE_SOCKET_SEND:
+    case WF_FILE_SOCKET_SHUTDOWN:
     default:
-        /* Two shapes the Windows target row does not qualify: a positioned
+        /* The shapes the Windows target row does not qualify: a positioned
          * write (the row's write is `write_once`, which has the stream's own
-         * current position) and a status (the row reports no `stat` record).
-         * Each is refused as an outcome the program sees, because the emitter
-         * can name any submit entry on any target and a refusal is not a
-         * defect of the runtime. */
+         * current position), a status (the row reports no `stat` record), and
+         * the six TCP kinds, whose completion-port route is slice 3 of the
+         * streams-and-TCP batch
+         * (`research/investigations/io-model/NETWORK.md` §7).  Each is refused
+         * as an outcome the program sees, because the emitter can name any
+         * submit entry on any target and a refusal is not a defect of the
+         * runtime.  No Windows program reaches the six: `backend/
+         * qualification.rs` maps no TCP operation on the Windows column, so a
+         * Windows link is refused at qualification and this arm is the
+         * runtime's own honest answer rather than the program's stop. */
         return wf_file_windows_refused(request, ERROR_NOT_SUPPORTED);
     }
 }

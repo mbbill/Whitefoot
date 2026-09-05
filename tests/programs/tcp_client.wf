@@ -1,0 +1,221 @@
+fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
+  let room = len(deref(store));
+  let inside = index < room;
+  if inside {
+    let value = deref(store)[index];
+    return value;
+  }
+  return 0_u8;
+}
+
+fn parse_port(digits: &buffer<u8>, length: own u64) -> result: own u16 reads(digits) {
+  doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
+  let port = 0_u16;
+  let ended = 0_u8;
+  let index = 0_u64;
+  loop @scan {
+    let more = index < length;
+    if more {
+    } else {
+      break @scan;
+    }
+    let byte = byte_at(store: digits, index: index);
+    let low = byte >= 48_u8;
+    let high = byte <= 57_u8;
+    let digit = band(low, high);
+    if digit {
+      let value = byte -wrap 48_u8;
+      let widened = cvt::<u8, u16>(value);
+      let scaled = port *wrap 10_u16;
+      set port = scaled +wrap widened;
+    } else {
+      set ended = 1_u8;
+    }
+    if ended == 0_u8 {
+      set index = index +wrap 1_u64;
+    } else {
+      break @scan;
+    }
+  }
+  return port;
+}
+
+fn send_all(send: &uniq TcpSend, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(send, source), writes(send) contract {
+  define source_length = len(deref(source));
+  requires length <= source_length;
+} {
+  doc "Sends one prefix of the source buffer, reattempting until the connection has accepted every byte or refused it.";
+  let sent = 0_u64;
+  loop @sending {
+    let pending = sent < length;
+    if pending {
+    } else {
+      break @sending;
+    }
+    region {
+      match send_once(send: &uniq deref(send), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+  define source_length = len(deref(source));
+  requires length <= source_length;
+} {
+  doc "Publishes one prefix of the source buffer, reattempting until the host has accepted every byte or refused it.";
+  let sent = 0_u64;
+  loop @publish {
+    let pending = sent < length;
+    if pending {
+    } else {
+      break @publish;
+    }
+    region {
+      match write_once(output: &uniq deref(output), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+command fn main(command.args as args: own Args, command.stdout as out: own OutputStream, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, out, handles), writes(out, handles), allocates(heap) {
+  doc "Connects to the loopback port named by the invocation, sends eight bytes through the connection's sending direction, and publishes every byte the peer returns through its receiving direction until the peer stops sending [SYS-17, SYS-18].";
+  let digits = buffer_new(16_u64, 0_u8);
+  let payload = buffer_new(8_u64, 0_u8);
+  let chunk = buffer_new(4096_u64, 0_u8);
+  let port = 0_u16;
+  let arguments = 0_u64;
+  region {
+    set arguments = args_count(args: &args);
+  }
+  let named = arguments >= 2_u64;
+  if named {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let carried = 0_u64;
+  region {
+    match arg_get(args: &args, position: 1_u64) {
+      Ok(value: text) => {
+        region {
+          match host_copy_bytes(value: &text, destination: &uniq digits, start: 0_u64, end: 16_u64) {
+            Ok(value: written) => {
+              set carried = written;
+            }
+            Err(error: problem) => {
+              set carried = 0_u64;
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set carried = 0_u64;
+      }
+    }
+  }
+  if carried == 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  region {
+    set port = parse_port(digits: &digits, length: carried);
+  }
+  for (
+    position in 0_u64..8_u64,
+    invariant filled: position <= 8_u64
+  ) {
+    let step = cvt::<u64, u8>(position);
+    match step {
+      Ok(value: offset) => {
+        set payload[position] = 65_u8 +wrap offset;
+      }
+      Err(error: problem) => {
+        set payload[position] = 65_u8;
+      }
+    }
+  }
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+  let outcome = 0_u8;
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &address) {
+            Connected(connection: link) => {
+              let refused = 0_u8;
+              region {
+                match send_all(send: &uniq link.send, source: &payload, length: 8_u64) {
+                  Ok(value: delivered) => {
+                  }
+                  Err(error: problem) => {
+                    set refused = 5_u8;
+                  }
+                }
+              }
+              if refused == 0_u8 {
+                loop @chunks {
+                  let available = 0_u64;
+                  let ended = 0_u8;
+                  region {
+                    match receive_next(receive: &uniq link.receive, destination: &uniq chunk, start: 0_u64, end: 4096_u64) {
+                      ReadBytes(next: endpoint) => {
+                        set available = endpoint;
+                      }
+                      ReadEnd() => {
+                        set ended = 1_u8;
+                      }
+                      ReadFailed(error: problem) => {
+                        set outcome = 6_u8;
+                        set ended = 2_u8;
+                      }
+                    }
+                  }
+                  if ended == 0_u8 {
+                    region {
+                      match publish_all(output: &uniq out, source: &chunk, length: available) {
+                        Ok(value: published) => {
+                        }
+                        Err(error: problem) => {
+                          set outcome = 7_u8;
+                          set ended = 2_u8;
+                        }
+                      }
+                    }
+                  }
+                  if ended == 0_u8 {
+                  } else {
+                    break @chunks;
+                  }
+                }
+              } else {
+                set outcome = refused;
+              }
+              let credit = close_connection(connection: move link);
+            }
+            ConnectFailed(error: problem, permit: handed_back) => {
+              set outcome = 8_u8;
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set outcome = 9_u8;
+      }
+    }
+  }
+  return exit_status(code: outcome);
+}

@@ -228,6 +228,18 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // struct takes no [SYS-5] release row and releasing one is releasing its two
 // fields. Every v0.45 mapping therefore carries forward complete under the
 // v0.46 semantic-ID key.
+//
+// v0.46 slice 2 (POSIX TCP routes): the seven TCP rows above are now mapped on
+// the native target column and remain unmapped on the Windows one, whose
+// completion-port route is slice 3
+// (`research/investigations/io-model/NETWORK.md` §7). Nothing else in this
+// table moves: no signature, ordinal, representation, release action or entry
+// form changes, and the two direction resources keep the
+// `NativeDirectionClose` release row this version already carried. The rows
+// bind to the runtime's six added request kinds and their two engines — the
+// Linux ring for accept, connect, receive and send, the shared file adapter
+// for listen, bind and the half-close — which is a target column of the same
+// rows and not a second qualification path.
 const REVIEWED_FOR: &str = "v0.46";
 
 /// The number of [SYS-2] opaque resource types with a release row.
@@ -525,6 +537,16 @@ pub(crate) const ORIGIN_READ: u8 = 2;
 pub(crate) const ORIGIN_WRITE: u8 = 3;
 /// The target-owned `origin` discriminator of descriptor-status inspection.
 pub(crate) const ORIGIN_DESCRIPTOR_STATUS: u8 = 4;
+/// The target-owned `origin` discriminators of the three socket facilities
+/// that create or take a connection [SYS-17].
+///
+/// A receive and a send have none of their own: they are the read and the
+/// write facility applied to a connection, they publish their outcome through
+/// the same two completion mappers `read_at` and `write_once` publish theirs
+/// through, and one mapper carries one origin.
+pub(crate) const ORIGIN_SOCKET_LISTEN: u8 = 5;
+pub(crate) const ORIGIN_SOCKET_ACCEPT: u8 = 6;
+pub(crate) const ORIGIN_SOCKET_CONNECT: u8 = 7;
 /// The `origin` value used when no native facility produced the code.
 pub(crate) const ORIGIN_NONE: u8 = 0;
 
@@ -867,10 +889,12 @@ pub(crate) enum ReleaseImplementation {
     /// discarded and an ambiguous close is never retried.
     NativeClose,
     /// At most one native direction-close attempt: the half-close of one
-    /// direction of one connection [SYS-18]. The target's route for it is
-    /// slice 2 of the streams-and-TCP batch, so no operation that can produce
-    /// a connection is qualified in this version and no program reaches this
-    /// release.
+    /// direction of one connection [SYS-18], submitted and joined through the
+    /// runtime's own half-close entry, whose diagnostic is discarded and which
+    /// is never retried. The runtime keeps the pair's own two-count and
+    /// releases the target's object on the second of the two releases, which
+    /// is where the credit is spent; the checker sees only the two direction
+    /// places.
     NativeDirectionClose,
 }
 
@@ -1494,6 +1518,21 @@ fn operation_row(
     if matches!(operation, 12 | 13) && target.directory_enumeration().is_none() {
         return Err(QualificationFailure::MissingMapping(facility));
     }
+    // Ordinals 22 through 28 are `tcp_listen`, `tcp_accept`, `tcp_connect`,
+    // `receive_next`, `send_once`, `close_connection` and `close_listener`.
+    // The POSIX routes are the rows below; the Windows completion-port route
+    // is slice 3 of the streams-and-TCP batch
+    // (`research/investigations/io-model/NETWORK.md` §7), so the Windows
+    // column maps none of the seven and a Windows submission stops here.
+    // An unmapped row is a target-qualification stop, not a source-language
+    // rejection: it cites no language rule and nothing weaker is substituted
+    // for the unqualified operation [QUAL-1]. The runtime's Windows leaf
+    // refuses the six request kinds as an outcome too (`file_windows.c`), so
+    // a shape that reached it would be answered rather than aborted; no
+    // program does, because this stop comes first.
+    if matches!(operation, 22..=28) && target.is_windows() {
+        return Err(QualificationFailure::MissingMapping(facility));
+    }
     let symbol = match operation {
         0 => "wf.sys.args_count.v1",
         1 => "wf.sys.arg_get.v1",
@@ -1517,20 +1556,13 @@ fn operation_row(
         19 => "wf.sys.read_next.v1",
         20 => "wf.sys.socket_address_v4.v1",
         21 => "wf.sys.socket_address_v6.v1",
-        // Ordinals 22 through 28 are `tcp_listen`, `tcp_accept`,
-        // `tcp_connect`, `receive_next`, `send_once`, `close_connection` and
-        // `close_listener`. Each is a specified semantic identity the checker
-        // admits and lowering lowers, and no target row maps one: the request
-        // kinds and the ring, adapter and completion-port routes they submit
-        // to are slice 2 of the streams-and-TCP batch
-        // (`research/investigations/io-model/NETWORK.md` §7). Falling through
-        // to `MissingMapping` is the honest answer and the one this table
-        // already gives for a facility a target does not supply — it is a
-        // target-qualification stop, not a source-language rejection, it cites
-        // no language rule, and nothing weaker is substituted for the
-        // unqualified operation [QUAL-1]. Slice 2 replaces this comment with
-        // eight rows, not with a fallback.
-        22..=28 => return Err(QualificationFailure::MissingMapping(facility)),
+        22 => "wf.sys.tcp_listen.v1",
+        23 => "wf.sys.tcp_accept.v1",
+        24 => "wf.sys.tcp_connect.v1",
+        25 => "wf.sys.receive_next.v1",
+        26 => "wf.sys.send_once.v1",
+        27 => "wf.sys.close_connection.v1",
+        28 => "wf.sys.close_listener.v1",
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
     };

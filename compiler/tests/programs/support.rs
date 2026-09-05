@@ -2,7 +2,7 @@ use std::ffi::OsStr;
 use std::io::{Read, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Output, Stdio};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
@@ -476,6 +476,32 @@ impl CompiledProgram {
             None => command.env_remove("WF_WORKERS"),
         };
         command.output().expect("run compiled program")
+    }
+
+    /// Starts the program on one runtime route with raw invocation arguments,
+    /// and hands back the running child.
+    ///
+    /// A loopback case has to play the peer while the program runs, so it
+    /// needs the child rather than the finished output: the program is a
+    /// server the case connects to, or a client the case accepts from, and
+    /// either way both sides are alive at once. `native_ring` selects the
+    /// route exactly as the standard-input cases do — `true` is the shipped
+    /// default, `false` sets `WF_IO_NO_NATIVE_RING` so the same program runs
+    /// through the shared file adapter instead of the kernel completion ring.
+    pub fn spawn_on_route(&self, native_ring: bool, arguments: &[&[u8]]) -> Child {
+        let mut command = Command::new(&self.executable);
+        command
+            .current_dir(&self.directory)
+            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if native_ring {
+            command.env_remove("WF_IO_NO_NATIVE_RING");
+        } else {
+            command.env("WF_IO_NO_NATIVE_RING", "1");
+        }
+        command.spawn().expect("spawn compiled program")
     }
 
     /// Runs the program with standard output on a pipe whose read end this

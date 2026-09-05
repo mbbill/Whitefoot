@@ -1152,6 +1152,41 @@ void wf__completion_file_open_join(
     *open_outcome = (unsigned)held->result.open_outcome;
 }
 
+/* The accept's join.  The peer address is three scalars because that is what
+ * an emitted `SocketAddress` value is, so the emitted wrapper builds its own
+ * value out of them and neither side holds a pointer into the other's layout.
+ *
+ * A refused accept publishes the all-zero address, which the emitted mapper
+ * never reads: `AcceptFailed` carries the error and the permit and no peer
+ * [SYS-17]. */
+void wf__completion_socket_accept_join(
+    const void *record,
+    int64_t *value,
+    int *error_code,
+    uint64_t *peer_low,
+    uint64_t *peer_high,
+    uint32_t *peer_tag
+) {
+    wf_completion_record *held = wf_bridge_record_of(record);
+    if (value == NULL || error_code == NULL || peer_low == NULL
+        || peer_high == NULL || peer_tag == NULL) {
+        wf_bridge_fail(
+            "an accept join was given no place to publish its result"
+        );
+    }
+    wf_bridge_join(held);
+    if (held->result.kind != WF_FILE_SOCKET_ACCEPT) {
+        wf_bridge_fail(
+            "an accept join was given a record that is not an accept"
+        );
+    }
+    *value = held->result.value;
+    *error_code = held->result.error_code;
+    *peer_low = held->request.operation.accept.peer.portable.words[0];
+    *peer_high = held->request.operation.accept.peer.portable.words[1];
+    *peer_tag = held->request.operation.accept.peer.portable.port_and_family;
+}
+
 /* The status join copies nothing: the engine already wrote the bytes into the
  * destination the submit named, and the record carries how many (design §7). */
 void wf__completion_file_status_join(
@@ -1202,6 +1237,10 @@ static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
             return request->operation.write.count == 0;
         case WF_FILE_PREAD:
             return request->operation.pread.count == 0;
+        case WF_FILE_SOCKET_RECEIVE:
+            return request->operation.receive.count == 0;
+        case WF_FILE_SOCKET_SEND:
+            return request->operation.send.count == 0;
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
         case WF_FILE_DIRECTORY_NEXT:
             return request->operation.directory_next.count == 0;
@@ -1518,6 +1557,128 @@ void wf__completion_file_close_submit(
     wf_completion_record *held = wf_bridge_begin(record);
     held->request.kind = WF_FILE_CLOSE;
     held->request.operation.close.descriptor = descriptor;
+    wf_bridge_dispatch(held);
+}
+
+/* The six TCP submits.
+ *
+ * Each fills one arm of the request union and falls into the one routing
+ * `wf_bridge_dispatch` performs for every kind: the ring where it has a form,
+ * the bounded adapter otherwise, and the engine here when neither applies.
+ * The addresses arrive as the three scalars an emitted `SocketAddress` value
+ * is and are stored in the record in that form; whichever engine takes the
+ * operation converts them into the host's own record, because the shape of
+ * that record is the leaf's business and not this unit's. */
+static void wf_bridge_socket_endpoint(
+    wf_completion_record *held,
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family
+) {
+    held->request.operation.endpoint.descriptor = -1;
+    held->request.operation.endpoint.address_length = 0u;
+    held->request.operation.endpoint.address.portable.words[0] = address_low;
+    held->request.operation.endpoint.address.portable.words[1] = address_high;
+    held->request.operation.endpoint.address.portable.port_and_family =
+        port_and_family;
+}
+
+void wf__completion_socket_listen_submit(
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    held->request.kind = WF_FILE_SOCKET_LISTEN;
+    wf_bridge_socket_endpoint(held, address_low, address_high, port_and_family);
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_accept_submit(
+    int listener,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if (listener < 0) {
+        wf_bridge_fail(
+            "an accept was submitted with no listener"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_ACCEPT;
+    held->request.operation.accept.descriptor = listener;
+    /* The whole of the storage the host may write, so a peer of either family
+     * fits and the host reports back what it actually used. */
+    held->request.operation.accept.peer_length =
+        (unsigned)sizeof(held->request.operation.accept.peer.native);
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_connect_submit(
+    uint64_t address_low,
+    uint64_t address_high,
+    uint32_t port_and_family,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    held->request.kind = WF_FILE_SOCKET_CONNECT;
+    wf_bridge_socket_endpoint(held, address_low, address_high, port_and_family);
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_receive_submit(
+    int descriptor,
+    void *buffer,
+    uint64_t count,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a receive was submitted with a buffer and a count that do not describe a range"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_RECEIVE;
+    held->request.operation.receive.descriptor = descriptor;
+    held->request.operation.receive.buffer = buffer;
+    held->request.operation.receive.count = (size_t)count;
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_send_submit(
+    int descriptor,
+    const void *buffer,
+    uint64_t count,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
+        wf_bridge_fail(
+            "a send was submitted with a buffer and a count that do not describe a range"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_SEND;
+    held->request.operation.send.descriptor = descriptor;
+    held->request.operation.send.buffer = buffer;
+    held->request.operation.send.count = (size_t)count;
+    wf_bridge_dispatch(held);
+}
+
+void wf__completion_socket_shutdown_submit(
+    int descriptor,
+    unsigned direction,
+    void *record
+) {
+    wf_completion_record *held = wf_bridge_begin(record);
+    if (direction > (unsigned)WF_SOCKET_DIRECTION_SEND) {
+        wf_bridge_fail(
+            "a half-close was submitted with a direction this contract cannot mean"
+        );
+    }
+    held->request.kind = WF_FILE_SOCKET_SHUTDOWN;
+    held->request.operation.shutdown.descriptor = descriptor;
+    held->request.operation.shutdown.direction =
+        (enum wf_socket_direction)direction;
     wf_bridge_dispatch(held);
 }
 

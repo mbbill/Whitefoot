@@ -1133,6 +1133,22 @@ impl IrCompletionStep {
         self.submit
     }
 
+    /// The same step with its submission withdrawn.
+    ///
+    /// The permission judgment is target-independent and names no adapter, so
+    /// it can mark a call for hand-out that the selected backend has no
+    /// hand-out form for. Such a call keeps its qualified wrapper, which is
+    /// the same submit-then-join lowering through the frame's own record; only
+    /// the number of operations one site may hold at once differs. Its place
+    /// in the group is unchanged, so the group's later members still retire
+    /// what they were going to retire.
+    pub(crate) fn without_submission(self) -> Self {
+        Self {
+            submit: false,
+            ..self
+        }
+    }
+
     pub(crate) const fn finish(&self) -> bool {
         self.finish
     }

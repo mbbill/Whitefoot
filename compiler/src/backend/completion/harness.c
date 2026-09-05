@@ -28,7 +28,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <netinet/in.h>
 #include <sys/resource.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
@@ -2665,6 +2667,155 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     return 0;
 }
 
+/* One loopback connection through the submitted TCP kinds, and the accounting
+ * a connection's two directions carry [SYS-17, SYS-18].
+ *
+ * This is the whole socket lifecycle at the bridge's own ABI: listen, connect,
+ * accept, send, receive, and the two half-closes. The accounting under test is
+ * the pair's: a connection is one descriptor and two owners, so it takes
+ * exactly two releases, the first is that direction's half-close and leaves
+ * the target's object open, and the second releases it. That is the runtime's
+ * half of the [SYS-10] credit rule -- one connection costs the target one
+ * native handle, whichever way the pair is released -- and it is checked here
+ * by asking the host whether the descriptor is still this program's.
+ *
+ * The listener's own port is the kernel's choice, and no operation reports it,
+ * so this frame asks the host directly. That is the same thing the program
+ * corpus does from the other side, where the harness picks the port. */
+static int test_socket_lifecycle_and_the_pair_two_count(void) {
+    wf_harness_record record;
+    int64_t value = -1;
+    int error_code = -1;
+    uint64_t peer_low = 0;
+    uint64_t peer_high = 0;
+    uint32_t peer_tag = 0;
+    struct sockaddr_in local;
+    socklen_t local_length = (socklen_t)sizeof(local);
+    const unsigned char message[6] = {'s', 'o', 'c', 'k', 'e', 't'};
+    unsigned char received[6] = {0};
+    unsigned port;
+    int listener;
+    int connected;
+    int taken;
+
+    /* 127.0.0.1, port zero: the address value the emitted constructors build,
+     * in the three scalars the submit ABI carries (`contract.h`). */
+    wf__completion_socket_listen_submit(0x0100007fu, 0, 0, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value >= 0 && error_code == 0);
+    listener = (int)value;
+    CHECK(
+        getsockname(listener, (struct sockaddr *)&local, &local_length) == 0
+    );
+    port = (unsigned)ntohs(local.sin_port);
+    CHECK(port != 0u);
+
+    wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value >= 0 && error_code == 0);
+    connected = (int)value;
+
+    wf__completion_socket_accept_submit(listener, record.bytes);
+    wf__completion_socket_accept_join(
+        record.bytes,
+        &value,
+        &error_code,
+        &peer_low,
+        &peer_high,
+        &peer_tag
+    );
+    CHECK(value >= 0 && error_code == 0);
+    taken = (int)value;
+    /* The peer of a loopback connection is 127.0.0.1 on an ephemeral port,
+     * reported in the same portable form an emitted `SocketAddress` carries. */
+    CHECK(peer_low == 0x0100007fu && peer_high == 0);
+    CHECK((peer_tag & WF_SOCKET_FAMILY_V6) == 0u);
+    CHECK((peer_tag & WF_SOCKET_PORT_MASK) != 0u);
+
+    wf__completion_socket_send_submit(
+        connected,
+        message,
+        sizeof(message),
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == (int64_t)sizeof(message) && error_code == 0);
+
+    wf__completion_socket_receive_submit(
+        taken,
+        received,
+        sizeof(received),
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == (int64_t)sizeof(message) && error_code == 0);
+    CHECK(memcmp(received, message, sizeof(message)) == 0);
+
+    /* An empty receive has no external action at all and answers zero without
+     * a host call, exactly as an empty read does [SYS-8]. */
+    wf__completion_socket_receive_submit(taken, received, 0, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    /* The first release of a direction half-closes it and leaves the
+     * descriptor this program's. */
+    wf__completion_socket_shutdown_submit(
+        taken,
+        WF_SOCKET_DIRECTION_RECEIVE,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(fcntl(taken, F_GETFD) >= 0);
+
+    /* The second releases the target's object, which is the release that
+     * spends the credit. */
+    wf__completion_socket_shutdown_submit(
+        taken,
+        WF_SOCKET_DIRECTION_SEND,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    errno = 0;
+    CHECK(fcntl(taken, F_GETFD) < 0 && errno == EBADF);
+
+    /* The other connection takes exactly the same two releases, in the other
+     * order, because which direction is released first is the program's own
+     * ordinary release order and changes no outcome [SYS-18]. */
+    wf__completion_socket_shutdown_submit(
+        connected,
+        WF_SOCKET_DIRECTION_SEND,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    CHECK(fcntl(connected, F_GETFD) >= 0);
+    wf__completion_socket_shutdown_submit(
+        connected,
+        WF_SOCKET_DIRECTION_RECEIVE,
+        record.bytes
+    );
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+    errno = 0;
+    CHECK(fcntl(connected, F_GETFD) < 0 && errno == EBADF);
+
+    /* A listener is one owner and one credit, so its explicit close is the
+     * ordinary one every other descriptor-shaped resource takes. */
+    wf__completion_file_close_submit(listener, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value == 0 && error_code == 0);
+
+    /* A connect nobody is listening for takes no handle at all: the host
+     * refuses it and the runtime disposes of the socket it made, so the
+     * program's own permit comes back rather than a descriptor [SYS-10]. */
+    wf__completion_socket_connect_submit(0x0100007fu, 0, port, record.bytes);
+    wf__completion_file_join(record.bytes, &value, &error_code);
+    CHECK(value < 0 && error_code == ECONNREFUSED);
+    return 0;
+}
+
 static int test_native_contract_inventory(void) {
     wf_completion_target_contract darwin = wf_completion_target_contract_for(
         WF_TARGET_DARWIN_FILE_FALLBACK
@@ -2894,6 +3045,7 @@ int main(int argc, char **argv) {
     RUN_TEST(test_readiness_refusal_is_not_a_terminal_outcome());
     RUN_TEST(test_completion_window_answers_at_the_boundaries());
     RUN_TEST(test_a_submitted_operation_is_kicked_before_it_waits(argv[1]));
+    RUN_TEST(test_socket_lifecycle_and_the_pair_two_count());
     RUN_TEST(test_native_contract_inventory());
     RUN_TEST(test_directory_progress_is_internal());
     RUN_TEST(benchmark_record_roundtrip(&roundtrip_ns));

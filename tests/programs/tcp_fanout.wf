@@ -1,0 +1,195 @@
+fn byte_at(store: &buffer<u8>, index: own u64) -> result: own u8 reads(store) {
+  doc "Reads one stored byte, delivering zero for a position the buffer does not hold.";
+  let room = len(deref(store));
+  let inside = index < room;
+  if inside {
+    let value = deref(store)[index];
+    return value;
+  }
+  return 0_u8;
+}
+
+fn parse_port(digits: &buffer<u8>, length: own u64) -> result: own u16 reads(digits) {
+  doc "Reads one decimal port out of the argument bytes the invocation supplied; a byte that is not a digit ends the number.";
+  let port = 0_u16;
+  let ended = 0_u8;
+  let index = 0_u64;
+  loop @scan {
+    let more = index < length;
+    if more {
+    } else {
+      break @scan;
+    }
+    let byte = byte_at(store: digits, index: index);
+    let low = byte >= 48_u8;
+    let high = byte <= 57_u8;
+    let digit = band(low, high);
+    if digit {
+      let value = byte -wrap 48_u8;
+      let widened = cvt::<u8, u16>(value);
+      let scaled = port *wrap 10_u16;
+      set port = scaled +wrap widened;
+    } else {
+      set ended = 1_u8;
+    }
+    if ended == 0_u8 {
+      set index = index +wrap 1_u64;
+    } else {
+      break @scan;
+    }
+  }
+  return port;
+}
+
+fn send_all(send: &uniq TcpSend, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(send, source), writes(send) contract {
+  define source_length = len(deref(source));
+  requires length <= source_length;
+} {
+  doc "Sends one prefix of the source buffer, reattempting until the connection has accepted every byte or refused it.";
+  let sent = 0_u64;
+  loop @sending {
+    let pending = sent < length;
+    if pending {
+    } else {
+      break @sending;
+    }
+    region {
+      match send_once(send: &uniq deref(send), source: source, start: sent, end: length) {
+        Ok(value: next) => {
+          set sent = next;
+        }
+        Err(error: problem) => {
+          return Err<unit, IoError>(error: move problem);
+        }
+      }
+    }
+  }
+  return Ok<unit, IoError>(value: unit);
+}
+
+fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq buffer<u8>) -> result: own u8 reads(listener, permit, scratch), writes(permit, scratch) contract {
+  define room = len(deref(scratch));
+  requires 256_u64 <= room;
+} {
+  doc "Takes one connection from the listener, returns the first chunk the peer sent, and releases the pair, so the caller's fixed-trip loop serves one peer per iteration [SYS-17, SYS-18].";
+  let outcome = 0_u8;
+  region {
+    match tcp_accept(permit: move permit, listener: listener) {
+      Accepted(connection: link, peer: from) => {
+        let available = 0_u64;
+        let refused = 0_u8;
+        region {
+          match receive_next(receive: &uniq link.receive, destination: &uniq deref(scratch), start: 0_u64, end: 256_u64) {
+            ReadBytes(next: endpoint) => {
+              set available = endpoint;
+            }
+            ReadEnd() => {
+              set refused = 1_u8;
+            }
+            ReadFailed(error: problem) => {
+              set outcome = 3_u8;
+              set refused = 1_u8;
+            }
+          }
+        }
+        if refused == 0_u8 {
+          region {
+            match send_all(send: &uniq link.send, source: &deref(scratch), length: available) {
+              Ok(value: delivered) => {
+              }
+              Err(error: problem) => {
+                set outcome = 4_u8;
+              }
+            }
+          }
+        }
+        let credit = close_connection(connection: move link);
+      }
+      AcceptFailed(error: problem, permit: handed_back) => {
+        set outcome = 5_u8;
+      }
+    }
+  }
+  return outcome;
+}
+
+command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles), allocates(heap) {
+  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop, each with its own permit, so several peers reach one listener in one run [SYS-17].";
+  let digits = buffer_new(16_u64, 0_u8);
+  let scratch = buffer_new(256_u64, 0_u8);
+  let port = 0_u16;
+  let arguments = 0_u64;
+  region {
+    set arguments = args_count(args: &args);
+  }
+  let named = arguments >= 2_u64;
+  if named {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let carried = 0_u64;
+  region {
+    match arg_get(args: &args, position: 1_u64) {
+      Ok(value: text) => {
+        region {
+          match host_copy_bytes(value: &text, destination: &uniq digits, start: 0_u64, end: 16_u64) {
+            Ok(value: written) => {
+              set carried = written;
+            }
+            Err(error: problem) => {
+              set carried = 0_u64;
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set carried = 0_u64;
+      }
+    }
+  }
+  if carried == 0_u64 {
+    return exit_status(code: 2_u8);
+  }
+  region {
+    set port = parse_port(digits: &digits, length: carried);
+  }
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: port);
+  let outcome = 0_u8;
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: listen_permit) => {
+        region {
+          match tcp_listen(permit: move listen_permit, address: &address) {
+            Listening(listener: bound) => {
+              for (
+                served in 0_u64..4_u64,
+                invariant progress: served <= 4_u64
+              ) {
+                match reserve_handle(factory: &uniq handles) {
+                  Ok(value: accept_permit) => {
+                    let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
+                    if reported == 0_u8 {
+                    } else {
+                      set outcome = reported;
+                    }
+                  }
+                  Err(error: problem) => {
+                    set outcome = 6_u8;
+                  }
+                }
+              }
+              let listener_credit = close_listener(listener: move bound);
+            }
+            ListenFailed(error: problem, permit: handed_back) => {
+              set outcome = 7_u8;
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        set outcome = 8_u8;
+      }
+    }
+  }
+  return exit_status(code: outcome);
+}

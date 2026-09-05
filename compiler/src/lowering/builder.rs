@@ -228,8 +228,20 @@ fn lower_nominals(data: &CheckedProgramData) -> Result<Vec<IrNominal>, LoweringF
                     }
                     owner.map_or(IrNominalIdentity::Ordinary, IrNominalIdentity::System)
                 }
-                CheckedNominalKind::Struct { .. }
-                | CheckedNominalKind::Enum { .. }
+                // A system-declared struct is an ordinary checked struct, so
+                // the fact that it came from a catalog row is carried beside
+                // the nominals rather than inside one [SYS-18]. Keeping its
+                // system identity here is what lets the backend resolve the
+                // operation-table type of `close_connection`'s parameter by
+                // the same route every other exact system type takes.
+                CheckedNominalKind::Struct { .. } => data
+                    .system_structs
+                    .iter()
+                    .find(|(_, id)| id.0 as usize == index)
+                    .map_or(IrNominalIdentity::Ordinary, |(nominal, _)| {
+                        IrNominalIdentity::System(*nominal)
+                    }),
+                CheckedNominalKind::Enum { .. }
                 | CheckedNominalKind::Box { .. }
                 | CheckedNominalKind::Arena { .. }
                 | CheckedNominalKind::ArenaStorage => IrNominalIdentity::Ordinary,

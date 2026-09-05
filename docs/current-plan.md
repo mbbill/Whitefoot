@@ -866,6 +866,38 @@ cold read waits briefly and uniformly.
 
 ## Batch 3: streams and TCP (specification v0.46)
 
+**Status 2026-09-05, slice 2: landed on this branch.** Every TCP operation
+lowers and runs on POSIX. `backend/qualification.rs` maps ordinals 22 through
+28 on the native column and leaves them unmapped on the Windows one, whose
+completion-port route is slice 3, so a Windows submission is still refused at
+qualification rather than at run time. The emitter has the seven wrappers in
+the same submit-then-join shape as the opens and the reads —
+`@wf.sys.tcp_listen.v1`, `@wf.sys.tcp_accept.v1`, `@wf.sys.tcp_connect.v1`,
+`@wf.sys.receive_next.v1`, `@wf.sys.send_once.v1`,
+`@wf.sys.close_connection.v1` and `@wf.sys.close_listener.v1` — with the three
+outcome enums built exactly as `FileOpenOutcome` is. `wf_file_request` gains
+six kinds (listen, accept, connect, receive, send, half-close) inside the
+budget the record already had: the accept's peer record lives in the union
+arm the accept alone uses, because twenty-four more bytes on the shared result
+head would put the record past the 160-byte block an emitted frame reserves.
+`file_posix.c` executes every kind, `linux_io_uring.c` carries accept,
+connect, receive and send on the ring, and listen, bind and the half-close stay
+on the adapter. `file_adapter.c` keeps the connection pair's own two-count, so
+the second release of a pair is the one that closes the target's object and
+spends the credit. `tests/programs/` gains `tcp_echo.wf`, `tcp_client.wf`,
+`tcp_fanout.wf` and `tcp_refused.wf`, each run on both routes against a
+`std::net` peer, and the five `systcp-*` conformance cases that expected
+`unsupported` now expect `accept` — the subject moved from unsupported to
+supported and no expectation about the language changed.
+
+What the slice leaves open is the program shape, not the runtime: the fixed-trip
+accept loop of `tcp_fanout.wf` is denied both actualizations by the permission
+judgment ([PAR-1] condition 1, because the loop writes a status that outlives
+the iteration; [PAR-3] condition 1, because the per-iteration `reserve_handle`
+is neither before the submission on every path nor reached only through it), so
+four peers are served one at a time. Widening that shape to a real server loop
+is the language work §6 of NETWORK.md says this batch exposes.
+
 **Status 2026-09-05, slice 1: landed on this branch.** The amendment and
 everything derived from it are in the tree: `spec/kernel-spec.md` declares
 `Status: ACTIVE v0.46` over v0.45's text, the v0.45 bytes are archived, the
@@ -902,7 +934,7 @@ move kills the whole binding under [OWN-1], and no `split` or `join` exists.
    their runtime routes are slice 2.
 2. **POSIX runtime: adapter route for every TCP kind, Linux ring route for
    accept, connect, receive and send; loopback tests in `tests/programs`.**
-   This is where a wait becomes a real ring wait for the first time.
+   Done. This is where a wait becomes a real ring wait for the first time.
 3. **Windows: the completion-port route; the io-hosts job proves it.**
 4. **The control benchmark** against the io_uring and epoll references, in
    `io-completion-bench`, reported as a ratio to the io_uring reference.

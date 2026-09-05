@@ -488,6 +488,119 @@ static int probe_more_in_flight_than_the_ring_is_deep(
     return 0;
 }
 
+/* One loopback round trip on the ring: connect, accept, send, receive.
+ *
+ * This is the harness's own shape as a runtime probe -- the peer is the same
+ * process, so nothing here waits on anything outside it -- and it is the one
+ * place the four socket opcodes are exercised against the kernel without a
+ * compiled Whitefoot program in front of them.  The listener is bound and
+ * listened here rather than through the ring, exactly as the bridge does it:
+ * a bind and a listen are immediate host calls with nothing to wait for
+ * (`research/investigations/io-model/NETWORK.md` §5).
+ *
+ * The connect and the accept are submitted together, because a loopback
+ * connect completes only once something accepts, and the record is a block of
+ * this frame either way. */
+static int probe_loopback_round_trip(wf_linux_io_uring_adapter *adapter) {
+    wf_completion_record connecting;
+    wf_completion_record accepting;
+    wf_completion_record sending;
+    wf_completion_record receiving;
+    wf_socket_address address;
+    wf_socket_native_address bound;
+    struct sockaddr_in local;
+    socklen_t local_length = (socklen_t)sizeof(local);
+    const unsigned char message[5] = {'r', 'i', 'n', 'g', '!'};
+    unsigned char received[5] = {0};
+    unsigned length;
+    int listener;
+    int connected;
+    int taken;
+
+    memset(&address, 0, sizeof(address));
+    /* 127.0.0.1 with the port the kernel chooses, filled in below. */
+    address.words[0] = 0x0100007fu;
+    address.port_and_family = 0;
+    length = wf_socket_native_from_address(&address, &bound);
+    listener = wf_socket_open(&address);
+    PROBE_CHECK(listener >= 0);
+    PROBE_CHECK(
+        bind(listener, (const struct sockaddr *)bound.bytes, (socklen_t)length)
+        == 0
+    );
+    PROBE_CHECK(listen(listener, 8) == 0);
+    PROBE_CHECK(
+        getsockname(listener, (struct sockaddr *)&local, &local_length) == 0
+    );
+    address.port_and_family = (unsigned)ntohs(local.sin_port);
+
+    probe_record_init(&accepting, WF_FILE_SOCKET_ACCEPT);
+    accepting.request.operation.accept.descriptor = listener;
+    accepting.request.operation.accept.peer_length =
+        (unsigned)sizeof(accepting.request.operation.accept.peer.native);
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, &accepting)
+        == WF_LINUX_IO_URING_TARGET_OWNS
+    );
+
+    probe_record_init(&connecting, WF_FILE_SOCKET_CONNECT);
+    connecting.request.operation.endpoint.descriptor = -1;
+    connecting.request.operation.endpoint.address.portable = address;
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, &connecting)
+        == WF_LINUX_IO_URING_TARGET_OWNS
+    );
+
+    PROBE_CHECK(probe_drive_to_terminal(adapter, &connecting) == 0);
+    PROBE_CHECK(probe_drive_to_terminal(adapter, &accepting) == 0);
+    PROBE_CHECK(connecting.result.error_code == 0);
+    PROBE_CHECK(accepting.result.error_code == 0);
+    connected = (int)connecting.result.value;
+    taken = (int)accepting.result.value;
+    PROBE_CHECK(connected >= 0 && taken >= 0);
+    /* The accept published the peer's own address in the portable form the
+     * accept join reads, and a loopback peer is 127.0.0.1 with an ephemeral
+     * port the target chose. */
+    PROBE_CHECK(
+        accepting.request.operation.accept.peer.portable.words[0]
+        == 0x0100007fu
+    );
+    PROBE_CHECK(
+        (accepting.request.operation.accept.peer.portable.port_and_family
+         & WF_SOCKET_FAMILY_V6)
+        == 0u
+    );
+    PROBE_CHECK(
+        (accepting.request.operation.accept.peer.portable.port_and_family
+         & WF_SOCKET_PORT_MASK)
+        != 0u
+    );
+
+    probe_record_init(&sending, WF_FILE_SOCKET_SEND);
+    sending.request.operation.send.descriptor = connected;
+    sending.request.operation.send.buffer = message;
+    sending.request.operation.send.count = sizeof(message);
+    PROBE_CHECK(probe_run_one(adapter, &sending) == 0);
+    PROBE_CHECK(sending.result.value == (int64_t)sizeof(message));
+
+    probe_record_init(&receiving, WF_FILE_SOCKET_RECEIVE);
+    receiving.request.operation.receive.descriptor = taken;
+    receiving.request.operation.receive.buffer = received;
+    receiving.request.operation.receive.count = sizeof(received);
+    PROBE_CHECK(probe_run_one(adapter, &receiving) == 0);
+    PROBE_CHECK(receiving.result.value == (int64_t)sizeof(message));
+    PROBE_CHECK(memcmp(received, message, sizeof(message)) == 0);
+
+    /* This probe links the ring and nothing else, so the pair's own two-count
+     * -- which lives in the shared adapter and is what a half-close consults
+     * [SYS-18] -- is exercised by `harness.c` instead. Here the three
+     * descriptors are simply given back. */
+    PROBE_CHECK(close(connected) == 0);
+    PROBE_CHECK(close(taken) == 0);
+    PROBE_CHECK(close(listener) == 0);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     wf_completion_runtime runtime;
     wf_linux_io_uring_adapter adapter;
@@ -590,6 +703,8 @@ int main(int argc, char **argv) {
     PROBE_CHECK(
         probe_more_in_flight_than_the_ring_is_deep(&adapter, descriptor) == 0
     );
+
+    PROBE_CHECK(probe_loopback_round_trip(&adapter) == 0);
 
     /* An epoch change before sleep performs no explicit host wake while
      * nobody has announced one. The subsequent park observes the epoch and

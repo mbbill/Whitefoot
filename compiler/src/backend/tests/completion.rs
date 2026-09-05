@@ -2044,10 +2044,18 @@ fn a_join_waits_in_place_and_sleeps_on_the_one_primitive() {
     // rest). A thread on a pool stack parks instead, which is the whole of
     // this design; the arm stays because the harness and the probes call these
     // joins from plain threads.
+    // The four are the file join, the open join, the status join, and the
+    // accept join a TCP connection's peer address needs [SYS-17]; a join added
+    // for a new operation raises this number and must still enter here.
     assert_eq!(
         bridge.matches("wf_bridge_join(held)").count(),
-        3,
-        "each of the three joins enters the rule the same way"
+        bridge.matches("_join(\n    const void *record,").count(),
+        "every join enters the rule the same way"
+    );
+    assert_eq!(
+        bridge.matches("wf_bridge_join(held)").count(),
+        4,
+        "each of the four joins enters the rule the same way"
     );
     let dispatch = bridge
         .split_once("static void wf_bridge_join(wf_completion_record *record) {")
