@@ -13,7 +13,7 @@ in one shape, stated by two lenses in the same week. F1: **a fact computed at on
 and used at another, with the rule naming only the judgment and not the point.** F2: **a
 repair that relocates the defect to the key rather than removing it.** `[MSR-3]` keyed a
 declaration-domain operand's denotation on `writes` coverage instead of the parameter's
-mode, so `seq_place` published `len_of(P) = len_of(P) + 1` and every loop in the file proved
+mode, so `place_back` published `len_of(P) = len_of(P) + 1` and every loop in the file proved
 `false` from `[MSR-4]` step 1. `[CALL-6]` established a routed relation *at* the arm
 instead of restricting it *to* the arm, so a store's post-state outran its own kill.
 `[MSR-2]` drew an element-write consequence that `[MSR-1]`'s own subscripted measure
@@ -567,7 +567,7 @@ A language in which "can this inequality be derived?" depends on which construct
 asking has several provers and a writer can reason about none of them; probes `v25` and
 `v26` are the same proof asked twice with opposite verdicts. [ENT-1] 2648. **Keying the
 denotation on mode is round 7's**, which found the seventh draft keying a
-declaration-domain operand on `writes` coverage so that `seq_place`'s own relation read
+declaration-domain operand on `writes` coverage so that `place_back`'s own relation read
 `len_of(P) = len_of(P) + 1`; the establishment sentence is round 7's second, where a relation
 instantiated at a call and established at a later arm outran the kill meant to bound it.
 
@@ -754,17 +754,17 @@ Applied to every spelling in this file, the criterion and the text agree:
 ```text
 | occurrence                                                   | determined by an operand?      | spelling             |
 |--------------------------------------------------------------|--------------------------------|----------------------|
-| arena_frame<const bytes, const align>['s]()                  | no operands exist              | all three written    |
-| seq_fixed<T, const n>()                                      | no operands exist              | both written         |
-| seq_heap<T>['s](heap: &uniq Heap<'s>, count)                 | 's from heap; T from nothing   | seq_heap::<u8>(...)  |
-| seq_arena<T, const bytes, const align>['s](arena, count)     | 's, bytes, align from arena    | seq_arena::<u8>(...) |
-| seq_place(vector: own V, value: own T)                       | V and T from the operands      | seq_place(...)       |
+| arena_frame<const bytes, const align>['s]()                   | no operands exist              | all three written     |
+| fixed_vector<T, const n>()                                    | no operands exist              | both written          |
+| heap_vector<T>['s](store: &uniq Heap<'s>, count)              | 's from store; T from nothing  | heap_vector::<u8>(..) |
+| arena_vector<T, const bytes, const align>['s](store, count)   | 's, bytes, align from store    | arena_vector::<u8>(..)|
+| place_back(vector: own V, value: own T)                       | V and T from the operands      | place_back(...)       |
 | try_place<T, const n>(vector, value)  — a user generic       | always written [FN-2]          | try_place::<Task,32> |
 | a user fn's own region parameter list                        | supplied by the actuals        | elided at the call   |
 | render['s](block: move held, task: &task)                    | 's from the block operand      | render(...)          |
 | Some<Task>(value: move ready)                                | a construct: outside the rule  | T written            |
 | region 'a { ... arena_frame::<4096, 16, 'a>() ... }          | the block's own binder, named  | 'a written           |
-| region { let body = seq_slice(vector: &kept.v); ... }        | the block's binder, unnamed    | no name written      |
+| region { let body = slice_of(vector: &kept.v); ... }        | the block's binder, unnamed    | no name written      |
 | a borrow of an outer binding inside a loop body (D4)         | the implicit block's region    | bare                 |
 | struct BlockPool['s] { free: FixedVector<Lease<'s>, 8>; }    | a declaration mints its own    | 's written at both   |
 ```
@@ -973,7 +973,7 @@ borrow and not an own value.
 
 Two rows carry round 7's first BREAK and each has one reason. An `own` operand denotes
 the **call datum**, because an `own` parameter is a value the operation received and its
-post-state is not a thing; keyed on `writes` coverage instead, `seq_place`'s own relation
+post-state is not a thing; keyed on `writes` coverage instead, `place_back`'s own relation
 read `len_of(P) = len_of(P) + 1` and [MSR-4] step 1 discharged every goal in every loop in this
 file from a contradiction. And a `&uniq` **state** parameter denotes the post-state in a
 **declaration-domain** relation and is **inadmissible in a source-declared `fn`'s
@@ -998,7 +998,7 @@ nothing about that store's post-state* (Q17).
 > **Correction, decided 2026-09-04, from B7a3b's implementation: two more placements
 > landed, and the rebind is narrower than the list above.** The **entry** placement is
 > the one B7a2 measured missing, and it is what makes the ordinary shape of an operation
-> over an `own` parameter — `set vector = seq_place(vector: move vector, ...)` [LIV-2] —
+> over an `own` parameter — `set vector = place_back(vector: move vector, ...)` [LIV-2] —
 > leave every clause naming that parameter meaning what it read as at entry. Before it,
 > `try_place`'s five `ensures` were all unproved and 3.L.4 was unwritable; after it they
 > discharge and the same datum is what the caller substitutes as that call's call datum.
@@ -1118,7 +1118,7 @@ the affine index has to range over measure terms.
 > B2" — and B2 widened the affine *domain* without widening the *production*, so a measure
 > term became an automatic premise and stayed unwritable. The consequence B7a2 measured is
 > that `invariant grown: len_of(built) >= at` is a GRAM-4 parse rejection at the former,
-> which retires every filling loop in 3.L: without the header relation, `seq_place`'s
+> which retires every filling loop in 3.L: without the header relation, `place_back`'s
 > `room_of(vector) > 0_u64` has no backedge premise, and `vacant`, `filled`, `collect`,
 > `rebase` and `pool_new` do not parse at all. The paragraph above is therefore wrong as
 > written, and B7a3 lands the half it withheld: [GRAM-4]'s `affine_factor` admits a
@@ -1488,7 +1488,7 @@ per iteration`, which is the idiom [RES-10] recommends.
 > both are fixed grammar atoms, the `arena<'r, T>` type and `allocates(heap)`'s
 > allocation atom, which [FORM-3] excludes from IDENT. A kernel-domain call writes its
 > value arguments as a `fieldinit_list` whose IDENTs equal the declared parameter names
-> [BLK-0], so `seq_arena(arena: ...)` was a FORM-3 *parse* rejection and no call to any
+> [BLK-0], so `arena_vector(arena: ...)` was a FORM-3 *parse* rejection and no call to any
 > of the three acquiring rows could be written at all. The operand is `store` in all
 > three, which is [3.K.10]'s one name per concept, and one machine test holds every
 > declared spelling of the inventory to [FORM-3]'s IDENT class. **Nothing had caught it
@@ -1691,7 +1691,7 @@ where the reason is:
 > leaves no residual leaf, so the refusal does not reach it; every other consume of a
 > sub-place does.
 
-That admits `set (kept.v, total) = collect(...)`, `set block.run = seq_place(...)` inside
+That admits `set (kept.v, total) = collect(...)`, `set block.run = place_back(...)` inside
 a `linear Lease`, and `bs_reserve`'s drain, and keeps the refusal where the residual
 really is abandoned.
 
@@ -1839,9 +1839,9 @@ every row satisfies the six sentences below, the first-parameter ordering includ
 no operand of that row determines it [FORM-8], and writes each **type or const** argument
 exactly when no operand of that row supplies it — [TYPE-5] 370-394's own
 retained-argument sentence applied to a fourth callee class, not [FORM-8]'s criterion. So
-`seq_heap::<u8>(heap: ..., count: ...)` writes `T` and elides `'s`;
-`seq_arena::<u8>(arena: ..., count: ...)` writes `T` and elides `'s`, `bytes` and
-`align`, all three of which the `arena` operand supplies; and `seq_place(vector: ...,
+`heap_vector::<u8>(store: ..., count: ...)` writes `T` and elides `'s`;
+`arena_vector::<u8>(store: ..., count: ...)` writes `T` and elides `'s`, `bytes` and
+`align`, all three of which the `store` operand supplies; and `place_back(vector: ...,
 value: ...)` writes nothing. **A user `fn` generic is the other class and always writes
 its type and const arguments** [FN-2] 1093-1100, probes `q4` and `q5`.
 
@@ -1870,7 +1870,7 @@ shape for a symbolic `count`. `fits::<T>(n)` is **not** a term: it names [OP-9] 
 allocation-fit obligation, discharged by [OP-9]'s judgment.
 
 **Every acquiring row carries [OP-9]'s allocation-fit obligation** as
-`requires fits::<T>(count)` — probe `a4` is that judgment firing today — and `seq_fixed`
+`requires fits::<T>(count)` — probe `a4` is that judgment firing today — and `fixed_vector`
 carries none, because `n` is a type constant [STOR-6] 738-767 covers.
 
 **The readers are not in this domain.** `len_of`, `cap_of`, `room_of` and `head_of` are four [OP-1]
@@ -1967,13 +1967,13 @@ runs and the two views and whose obligation is against `len_of`. *Verified today
 **[BLK-2] Formation, one row per placement and one per store.** Four rows, and no fifth:
 
 ```text
-seq_fixed<T, const n: u64>()                          -> own FixedVector<T, n>   pure  // [S7]
-seq_arena<T, const bytes: u64, const align: u64>['s](
-      arena: &uniq Arena<'s, bytes, align>, count: own u64)
+fixed_vector<T, const n: u64>()                          -> own FixedVector<T, n>   pure  // [S7]
+arena_vector<T, const bytes: u64, const align: u64>['s](
+      store: &uniq Arena<'s, bytes, align>, count: own u64)
                                                       -> own Option<Vector<'s, T>>
-seq_arena_proved<T, const bytes, const align>['s](arena: ..., count: own u64)
+arena_vector_proved<T, const bytes, const align>['s](store: ..., count: own u64)
                                                       -> own Vector<'s, T>
-seq_heap<T>['s](heap: &uniq Heap<'s>, count: own u64)  -> own Option<Vector<'s, T>>
+heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)  -> own Option<Vector<'s, T>>
 ```
 
 Each acquiring row carries [OP-9]'s allocation-fit obligation over `(T, count)`, and each
@@ -1998,11 +1998,11 @@ L3, L4, L6, L8, L18. *History:* r7 F2-14, F2-20; r6 F2-6.
 type.
 
 ```text
-seq_place(vector: own V, value: own T)        -> own V   // [S8]  requires room_of(vector) > Z
-seq_place_front(vector: own V, value: own T)  -> own V           requires room_of(vector) > Z
-seq_take(vector: own V)                       -> (rest: own V, value: own T)
+place_back(vector: own V, value: own T)        -> own V   // [S8]  requires room_of(vector) > Z
+place_front(vector: own V, value: own T)  -> own V           requires room_of(vector) > Z
+take_back(vector: own V)                       -> (rest: own V, value: own T)
                                                                  requires len_of(vector) > Z
-seq_take_front(vector: own V)                 -> (rest: own V, value: own T)
+take_front(vector: own V)                 -> (rest: own V, value: own T)
                                                                  requires len_of(vector) > Z
 ```
 
@@ -2023,9 +2023,9 @@ run is refused by [LIV-2]'s non-overlap condition and is three statements over t
 above:
 
 ```wf-design
-let (rest, endv) = seq_take(vector: move vector);
+let (rest, endv) = take_back(vector: move vector);
 let old = replace rest[at] = move endv;
-let back = seq_place(vector: move rest, value: move old);
+let back = place_back(vector: move rest, value: move old);
 ```
 
 **What it costs is stated correctly**: the three statements kill and re-establish `len_of`
@@ -2086,7 +2086,7 @@ refused. **And the clause quantifies over a
 source-declared `fn`** and not over the compiler-owned domains, because a [BLK-0] or
 [SYS-2] row is a declaration record whose relations are complete over everything it writes
 and whose behaviour no body can vary — L11's second sentence — so
-`seq_mut_slice(vector: &uniq 'r v)` and `read_at(destination: &uniq MutSlice<u8>, ...)`
+`mut_slice_of(vector: &uniq 'r v)` and `read_at(destination: &uniq MutSlice<u8>, ...)`
 are unaffected.
 
 **A source nominal may declare region parameters** — `struct Chunk['s] { page:
@@ -2162,9 +2162,9 @@ to copy**, and [CONST-2] 546-559, [OP-7] 939-947 and [OP-1] 771-849's `slice_of`
 **[VIEW-2] Formation, the loan the view value holds, and the non-wrap premise.**
 
 ```text
-seq_slice['r, T](vector: &'r V)          -> own Slice<'r, T>      reads(vector)   // [S10]
+slice_of['r, T](vector: &'r V)          -> own Slice<'r, T>      reads(vector)   // [S10]
     requires head_of(vector) + len_of(vector) <= cap_of(vector)
-seq_mut_slice['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>  reads(vector)
+mut_slice_of['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>  reads(vector)
     requires head_of(vector) + len_of(vector) <= cap_of(vector)
 ```
 
@@ -2340,7 +2340,7 @@ into this rule and its id is not reused.
 ```wf-design
 set p = e;
 set p = f(vector: move p, value: byte);
-set (p, taken) = seq_take(vector: move p);
+set (p, taken) = take_back(vector: move p);
 set (p, q) = move q, move p;
 set (a, b, c) = move c, move a, move b;
 ```
@@ -2684,9 +2684,9 @@ this rule or [FN-9]'s existing [ENT-3.S12] route, and nothing else publishes any
 **The establishment sentence is round 7's second BREAK.** The seventh draft deferred a
 routed relation's establishment *to* the arm and killed it from the establishment point,
 so every write between the call and the arm happened "before" it and killed nothing. Round
-7 wrote the program: two checked `seq_arena` takes from one frame arena, the second
+7 wrote the program: two checked `arena_vector` takes from one frame arena, the second
 unmatched, then a `match` on the first whose `Some` arm re-establishes `len_of(scratch) <=
-256` after the second take advanced the cursor — and a `seq_arena_proved` on that arm
+256` after the second take advanced the cursor — and a `arena_vector_proved` on that arm
 discharges `room_of(scratch) >= 65008` and hands back a run running 64728 bytes past the
 extent, in a `pure`, heap-free, `resource_closed` program [RES-3] accepts. Instantiating
 at the call and **restricting** rather than **deferring** is the repair, and it is the
@@ -2703,7 +2703,7 @@ the resolved place of a `&uniq` state actual, for a relation
   over that state parameter's measures                         this rule
 ```
 
-**The last destination is the one a provider needs.** A refused `seq_arena` publishes
+**The last destination is the one a provider needs.** A refused `arena_vector` publishes
 `room_of(arena) < advance<T>(count)` and a successful one publishes the cursor's new value;
 [RES-6] requires the first, L8's second half rests on it, [RES-10] reads the second, and
 none contains a result datum, so [FN-9] 1313 admits none and [ENT-3.S12]'s four
@@ -2915,7 +2915,7 @@ every premise below is established from program text alone:
 compile-time constants, type-level constants and runtime-profile symbols** (L1). A
 per-domain figure that names a runtime value is not a bound, and premise 3 fails at the
 loop, the call **or the acquisition** that introduced it, `UnboundedStoreDemand`, with
-that value named: `seq_arena::<u8>(arena: &uniq scratch, count: wanted)` for a runtime
+that value named: `arena_vector::<u8>(store: &uniq scratch, count: wanted)` for a runtime
 `wanted` fails at that statement, in straight-line code. A marked program's runtime-sized
 take is written `requires count <= k` for a closed `k` and composed at `k` — and [RES-10]
 route (i) gives a loop's **trip count** the same `requires`-based route, which is round
@@ -3039,7 +3039,7 @@ may refuse declares its own nominal (3.L.5's `Grown`).
 Each covered-store acquisition with a measure comes in exactly two spellings, on the model
 of `+` and `+checked`: a proved form admitted only when [MSR-4] discharges its goal, and a
 checked form that is total. **The `Heap` has no proved form** (L6). A store with measures
-publishes more: a refused `seq_arena` establishes `room_of(arena) < advance<T>(count)`, which
+publishes more: a refused `arena_vector` establishes `room_of(arena) < advance<T>(count)`, which
 is L8's second half and which is a fact only because [CALL-6] gives a provider relation a
 source, an establishment point and a destination.
 
@@ -3658,23 +3658,25 @@ records each decision with the alternatives weighed). Nothing in it is proposed.
 | the brand's spelling       | written iff the       | 3.K.0's determination principle, over regions only;      |
 |                            | operands do not       | type and const arguments are always written [FN-2]       |
 |                            | determine it          |                                                          |
-| build an empty run [S7]    | seq_fixed, seq_arena, | the placement is in the name, because it decides which   |
-|                            | seq_arena_proved,     | item of E the run becomes (L6)                           |
-|                            | seq_heap              |                                                          |
+| build an empty run [S7,     | fixed_vector,         | the placement is in the name, because it decides which   |
+|   S38]                     |   arena_vector,       | item of E the run becomes (L6); the built type's own     |
+|                            |   arena_vector_proved,| spelling is the object [S38]                             |
+|                            |   heap_vector         |                                                          |
 | reserve a bump store [S9]  | arena_frame,          | as above; nothing else reserves                          |
 |                            | arena_extent          |                                                          |
-| append at either end [S8]  | seq_place,            | one name per end, whatever the backing                   |
-|                            | seq_place_front       |                                                          |
-| remove at either end [S8]  | seq_take,             | the window is two-sided, so L12's last clause is true    |
-|                            | seq_take_front        |                                                          |
+| append at either end [S8,   | place_back,           | one name per end, whatever the backing; no container     |
+|   S38]                     | place_front           | word, because the operand supplies it [S38]              |
+| remove at either end [S8,   | take_back,            | the window is two-sided, so L12's last clause is true    |
+|   S38]                     | take_front            |                                                          |
 | return a wrapped window    | a library drain,      | writable in wf, so L18 keeps it out of the kernel;       |
 |   to its origin            |   3.L.8               | [S29] is withdrawn and Q18 is the owner's question       |
-| read a measure [S11]       | len_of, cap_of, room_of, head_of  | one quantity, one name, term and reader alike            |
+| read a measure [S11, S36]  | len_of, cap_of,       | one quantity, one name, term and reader alike; the       |
+|                            |   room_of, head_of    | derivation half of S38's scheme                          |
 | a read-only view [S35]     | Slice<'r, T>          | copy [S27]; capitalized like every compiler-owned nominal |
 | a writable view [S35]      | MutSlice<'r, T>       | element writes only; affine, because [OWN-5] refuses two |
 |                            |                       | exclusive loans on one range                             |
-| form a view [S10]          | seq_slice,            | the two formers follow the two type names                |
-|                            | seq_mut_slice         |                                                          |
+| form a view [S10, S38]     | slice_of,             | the two formers follow the two type names; a view is a   |
+|                            |   mut_slice_of        | derivation, so it is `X_of` [S38]                        |
 | re-view a writable view    | no operation; the     | [S31]: a shared child reborrow of the exclusive loan,    |
 |                            |   ordinary child      | [OWN-6]'s own machinery with a view as the parent, so a  |
 |                            |   reborrow [OWN-6]    | fill-and-publish helper is writable [VIEW-6]             |
@@ -3702,7 +3704,9 @@ records each decision with the alternatives weighed). Nothing in it is proposed.
 `HeapBox`, `ArenaBox`, `PoolSlot`, `heap_take`, `arena_take`, `pool_take` as a kernel row,
 `on_propagate`, `Full<T>`, `TooSmall`, `OutOfMemory`, `PoolExhausted`, `NeedCapacity` and
 `NoRecord` are **not** in the kernel vocabulary. The first four are library names for
-kernel types (3.L.1); `update` and every swap spelling are [LIV-2]; `seq_frame`,
+kernel types (3.L.1) — `HeapVector` and `ArenaVector` are the *nominals* a writer calls a
+`Vector<'s, T>` at two regions, and are not the S38 operations `heap_vector` and
+`arena_vector`, which build one; `update` and every swap spelling are [LIV-2]; `seq_frame`,
 `seq_exchange` and `seq_rebase` are the fifth, sixth and seventh drafts' removals and
 `seq_reslice` is the eighth draft's, because forming a shared view over a writable one is
 [OWN-6]'s child reborrow [VIEW-6]; `Span` and `MutSpan` are the sixth draft's names;
@@ -4000,8 +4004,8 @@ here.
 its three atoms; its `Pool` store, `PoolSlot`, `PoolVector`, `seq_lease`, `pool_frame`,
 `pool_extent`, `pool_take`, `pool_release` and the pool seam; its `FixedRing` and four
 ring rows; its `HeapBox` and `ArenaBox`; its three failure structs and its `NoRecord`;
-its `seq_filled`, `seq_vacant`, `seq_take_at`, `seq_clear`, `seq_truncate`,
-`seq_reserve_heap`, `seq_reserve_arena`, `seq_shrink`, `seq_heap_filled`, `seq_push`,
+its `seq_filled`, `seq_vacant`, `take_back_at`, `seq_clear`, `seq_truncate`,
+`seq_reserve_heap`, `seq_reserve_arena`, `seq_shrink`, `heap_vector_filled`, `seq_push`,
 `seq_try_push`, `seq_pop` and every `try` row; the `&uniq buffer<T>` and
 `&uniq Container` prohibition **[CNT-7], whose effect [BLK-4]'s fourth clause restores
 as a rule**; the effect-row atoms `heap` and `arena`; `slice_of`, `box_new` and
@@ -4045,8 +4049,8 @@ proposed**.
 on a generic parameter [S32] and `ReserveOutcome` [S33] until 2026-09-04, and each is
 recorded below with the disposition the owner gave it.
 
-**The decided list.** Nine entries changed status across these rounds and are marked: four on
-2026-09-04, and S37 on 2026-09-05.
+**The decided list.** Twelve entries changed status across these rounds and are marked: four
+on 2026-09-04, and S37 and the three S38 supersedes on 2026-09-05.
 
 ```text
 | id  | spelling                                    | kind                    | status    |
@@ -4057,12 +4061,12 @@ recorded below with the disposition the owner gave it.
 | S4  | Arena<'s, bytes, align>                     | compiler-owned nominal  | ADOPTED   |
 | S5  | slice<'r, T> keeps its v0.41 name           | naming decision         | see S35   |
 | S6  | mut_slice<'r, T>                            | compiler-owned nominal  | see S35   |
-| S7  | seq_fixed, seq_arena, seq_arena_proved,     | operation names         | ADOPTED   |
-|     |   seq_heap                                  |                         |           |
-| S8  | seq_place, seq_place_front, seq_take,       | operation names         | ADOPTED   |
-|     |   seq_take_front                            |                         |           |
+| S7  | fixed_vector, arena_vector,                 | operation names         | see S38   |
+|     |   arena_vector_proved, heap_vector          |                         |           |
+| S8  | place_back, place_front, take_back,         | operation names         | see S38   |
+|     |   take_front                                |                         |           |
 | S9  | arena_frame, arena_extent                   | operation names         | ADOPTED   |
-| S10 | seq_slice, seq_mut_slice                    | operation names         | ADOPTED   |
+| S10 | slice_of, mut_slice_of                      | operation names         | see S38   |
 | S11 | cap, room, head                             | operation names         | see S36   |
 | S12 | dispose p;                                  | statement form          | ADOPTED   |
 | S13 | let N(f1: b1, ..., fk: bk) = move v;        | let alternative         | ADOPTED   |
@@ -4103,6 +4107,9 @@ recorded below with the disposition the owner gave it.
 |     |    v0.44 len row)                           |                         |           |
 | S37 | T: copy | affine | linear, one mandatory    | generics surface        | ADOPTED   |
 |     |   bound per type parameter                  |   (supersedes S32)      |           |
+| S38 | X_of(v) for a derivation, verb_object for   | naming decision         | ADOPTED   |
+|     |   a transformation; the operation names     |   (supersedes S7, S8    |           |
+|     |   follow the type names                     |    and S10's spellings) |           |
 ```
 
 **Two entries decided 2026-09-04, after B1 landed, when the owner asked why
@@ -4121,7 +4128,7 @@ discharges from `len_of = n`. One fixed run, one spelling. **S35**: every compil
 container, store and view nominal is capitalized — `Vector`, `FixedVector`, `Heap`,
 `Arena`, `Slice`, `MutSlice` — and only the primitive types stay lowercase. This
 supersedes S5's name (kept on 2026-09-03 because only semantics earn a rename) and S6's
-spelling; the operation names `seq_slice` and `seq_mut_slice` [S10] are unchanged. Every
+spelling; the operation names `slice_of` and `mut_slice_of` [S10] are unchanged. Every
 normative section of this file now writes `Slice` and `MutSlice`; section 6 quotes
 probes as they were run, in the old spelling.
 
@@ -4236,7 +4243,7 @@ smaller question of whether `propagate` should reach a multi-result call at all.
 **S29, `seq_rebase`. WITHDRAWN to the library.** It proposed one added [BLK-3] row
 publishing `head_of(result) = 0_u64` with `len_of`, `cap_of` and `room_of` unchanged. *Why it is
 withdrawn:* L18 asks whether a writer can express the effect, and **round 7 wrote the
-program** — drain the wrapped run front-to-back into a fresh `seq_fixed::<T, n>()` under
+program** — drain the wrapped run front-to-back into a fresh `fixed_vector::<T, n>()` under
 the `flat` invariant every construction loop already carries, and the result has
 `head_of = 0` with `len_of` and `cap_of` preserved. The seventh draft's own alternative (c),
 "keep the permanent staging run", *is* that program, so the entry priced its own
@@ -4267,7 +4274,7 @@ and **[S31] closes it without a row**.
 one (owner-decided 2026-09-04).** The proposal was one added [VIEW] row,
 `seq_reslice['r, T](window: &MutSlice<'r, T>) -> own Slice<'r, T>`. *The gap it was for*
 is real: a helper handed `&uniq MutSlice<u8>` can fill its destination and, under S30
-alone, could not publish it, because `write_once` wants a `&slice`, A.2's `seq_slice`
+alone, could not publish it, because `write_once` wants a `&slice`, A.2's `slice_of`
 forms a view from a **run** borrow and not from a view, and forming a second loan on the
 run itself is [OWN-5]'s ordinary conflict (probe `s6`). *The owner's ruling:* forming a
 shared `Slice<'r, T>` from a `MutSlice<'r, T>` is the **ordinary shared child reborrow of
@@ -4402,6 +4409,67 @@ one changed production, one changed instantiation check, one exception sentence 
 rules, and a mechanical respell of every unbounded generic declaration in the corpus.
 *Decided:* adopted.
 
+**S38, one naming scheme for the whole kernel vocabulary. ADOPTED (owner-decided
+2026-09-05), and it supersedes S7's, S8's and S10's spellings.** The owner's ground,
+recorded verbatim:
+
+> A non-consuming derivation from a value is spelled `X_of(v)` — that is the readers and
+> the view formers. A consuming transformation that hands a new value back is spelled
+> `verb_object`. Operation names follow the TYPE names I chose (`Vector` [S1],
+> `FixedVector` [S2]); the word *run* stays design-internal and never appears in a
+> spelling. The provider operand is spelled `store`.
+
+```text
+readers      len_of  cap_of  room_of  head_of                          unchanged
+views (B8)   seq_slice -> slice_of      seq_mut_slice -> mut_slice_of
+formation    seq_fixed -> fixed_vector<T, n>()
+             seq_arena -> arena_vector(store, count)
+             seq_arena_proved -> arena_vector_proved(store, count)
+             seq_heap -> heap_vector(store, count)
+reservation  arena_frame, arena_extent                                unchanged
+boundary     seq_place -> place_back      seq_place_front -> place_front
+             seq_take  -> take_back       seq_take_front  -> take_front
+```
+
+*What it settles that S7, S8, S10 and S36 did not.* S36 gave the four readers one rule —
+a measure is a quantity *of* its operand, so a reader is `X_of` and never `seq_len` — and
+stopped there, so the file carried **two** schemes at once: `len_of(v)` beside
+`seq_place(vector: v, ...)`, one keyed on the quantity and one on a `seq_` prefix naming
+a concept, *run*, that no writer can spell and no type is called. S38 states the single
+rule those two are halves of. **The derivation half** — `X_of` — is what the four readers
+already are and what `seq_slice` and `seq_mut_slice` should have been: forming a
+`Slice<'r, T>` over a run derives a value from it without consuming it, exactly as reading
+its `len_of` does, so the formers are `slice_of` and `mut_slice_of` and each follows its
+own type name [S35]. **The transformation half** — `verb_object` — is what the nine kernel
+rows are: each takes its operand by value and hands a new one back [BLK-3], and the object
+is the type it produces or the boundary it moves. `fixed_vector`, `arena_vector`,
+`arena_vector_proved` and `heap_vector` therefore read as *what is built* plus *where it is
+built from*, in the type's own spelling; `place_back`, `place_front`, `take_back` and
+`take_front` read as *what is done* plus *which end*, with no container word at all,
+because the operand supplies the container.
+
+*What the scheme deletes.* The `seq_` prefix, and with it the last place the design's
+internal word *run* reached the surface. 3.K.10's row for `seq_frame`, `seq_exchange`,
+`seq_rebase` and `seq_reslice` — four operations rejected or withdrawn in earlier drafts —
+is the register of that prefix's cost: every one of them had to be argued out of a
+vocabulary that made a new `seq_` row look like the cheap move. `arena_frame` and
+`arena_extent` [S9] are unchanged, because they already were `verb_object` read the other
+way round: the object is the `Arena` and the verb says where it is laid out.
+
+*Cost:* ten spellings, of which nine are declaration records [BLK-0] and one is A.2's
+second view row; no production, no atom, no rule, and no verdict. **And one thing the
+scheme decides that B8 must now act on.** `slice_of` is already a live [OP-1] table row —
+the v0.44 view former over `array<T, N>` and `buffer<T>` — and therefore already a member
+of `ReservedLowerNames`, while A.2 lists `seq_slice` as a *kernel* row of [BLK-0]'s IDENT
+domain. Renaming the kernel row to `slice_of` makes two domains claim one spelling, which
+is exactly the [TYPE-6] collision [BLK-0]'s own disjointness sentence forbids. The scheme
+does not choose between the two repairs and B8 must: either the run becomes a third
+admitted source of the existing [OP-1] `slice_of` family, which is what a family is for and
+costs A.2 its Views block, or the [OP-1] row retires with `array` and `buffer` [S34] and
+the spelling passes to the kernel domain. **This is recorded as an open item and not as a
+decision**; nothing in this batch lands either row. **What it does not settle:** nothing
+about the readers, which S36 decided and this scheme confirms rather than moves.
+
 ### 3.L The library, written in wf
 
 #### 3.L.0 How to read this section
@@ -4463,16 +4531,16 @@ a worked program may not call a function this file does not declare.
 | a ring, a queue, a deque      | a run used from both ends [BLK-1]   | nothing to write; no Option, no tag |
 | return a wrapped window to    | a drain into a fresh run, 3.L.8     | seven invariants; two runs live     |
 |   its origin                  |                                     | across the drain; [S29] withdrawn   |
-| vacant<T, const n>            | a counted loop of seq_place over    | three header invariants; the exit   |
+| vacant<T, const n>            | a counted loop of place_back over    | three header invariants; the exit   |
 |                               | None<T>(), 3.L.3 below              | ordering, not an equality; x1c, x1d |
 | filled<T, const n>            | the same, reusing one copy value    | as above; per element class (Q8)    |
-| the transposition of one      | seq_take, one element replace,      | three statements; below, and its    |
-|   element with the last       | seq_place                           | requires is at + 2 <= len_of           |
-| take_at                       | the transposition, then seq_take,   | the requires plus a dominating      |
+| the transposition of one      | take_back, one element replace,      | three statements; below, and its    |
+|   element with the last       | place_back                           | requires is at + 2 <= len_of           |
+| take_at                       | the transposition, then take_back,   | the requires plus a dominating      |
 |                               | with a branch for the last position | branch; NON-MEASURED T only         |
 | clear, truncate               | a counted drain, two invariants     | two bounded generics, T: affine and |
 |                               |                                     | T: linear [S32]; Q8's copy wall     |
-| growth policy, HeapVector     | seq_heap, drain from the front,     | seven invariants; the window is what|
+| growth policy, HeapVector     | heap_vector, drain from the front,     | seven invariants; the window is what|
 |                               | append at the back, construct       | makes order preservation free; 3.L.5|
 | block pool with a lease       | linear struct Lease['s] plus a      | a branch on len_of and on room_of, which  |
 |                               | FixedVector<Vector<'s,u8>, m> free  | needs [ENT-3.S6] over four measures;|
@@ -4501,19 +4569,19 @@ fn take_at<T: affine, const n: u64>(vector: own FixedVector<T, n>, at: own u64)
   ensures head_of(rest) == head_of(vector);
 } {
   doc "Removes the element at at, moving the last element into its place.";
-  let (short, endv) = seq_take(vector: move vector);
+  let (short, endv) = take_back(vector: move vector);
   let old = replace short[at] = move endv;
   return move short, move old;
 }
 ```
 
 **What it costs, priced against a program that compiles.** The `replace` at `short[at]`
-carries [OP-4]'s `at < len_of(short)`, and `seq_take` published
+carries [OP-4]'s `at < len_of(short)`, and `take_back` published
 `len_of(short) = len_of(vector) - 1`, so the caller must prove `at + 2_u64 <= len_of(vector)` —
 **not** `at + 1_u64 <= len_of(vector)`, which over `u64` is the same proposition as
 `at < len_of(vector)`. The consequence is real: this form cannot address the **last**
 position, where the transposition is the identity, so a caller that may remove the last
-element writes a dominating branch and a plain `seq_take` on the other arm. **And it is
+element writes a dominating branch and a plain `take_back` on the other arm. **And it is
 declarable only for a non-measured `T`**: `old` comes out of a `replace`, which publishes
 nothing, so at a measured `T` the `taken` result has no measures, no clause [CALL-7]
 admits exists for it, and the function is refused at its `fn_decl`. `cap_of` needs no clause
@@ -4528,7 +4596,7 @@ fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pu
   ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of n slots, every one holding None.";
-  let built = seq_fixed::<Option<T>, n>();
+  let built = fixed_vector::<Option<T>, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: len_of(built) >= at,
@@ -4536,19 +4604,19 @@ fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pu
     invariant flat: head_of(built) <= 0_u64
   ) {
     let empty = None<T>();
-    set built = seq_place(vector: move built, value: move empty);
+    set built = place_back(vector: move built, value: move empty);
   }
   return move built;
 }
 ```
 
-**Proof route.** `seq_fixed` publishes `len_of(built) = 0`, `cap_of(built) = n`,
+**Proof route.** `fixed_vector` publishes `len_of(built) = 0`, `cap_of(built) = n`,
 `room_of(built) = n` and `head_of(built) = 0` — all four exactly, which is [BLK-0]'s
-completeness sentence — and each denotes what it reads as, because `seq_fixed` has no
+completeness sentence — and each denotes what it reads as, because `fixed_vector` has no
 operands and every relation is over its result [MSR-3]. `grown`'s base is `0 >= 0`;
-`spare`'s is `n + 0 >= n`; `flat`'s is `0 <= 0`. `seq_place`'s own requirement
+`spare`'s is `n + 0 >= n`; `flat`'s is `0 <= 0`. `place_back`'s own requirement
 `room_of(built) > 0` discharges from `spare` and the counted loop's `at < n` ([ENT-3.S11])
-by [MSR-4] step 5. On the backedge `seq_place` declares `len_of(result) = len_of(vector) + 1`,
+by [MSR-4] step 5. On the backedge `place_back` declares `len_of(result) = len_of(vector) + 1`,
 `room_of(result) = room_of(vector) - 1` and `head_of(result) = head_of(vector)`, **each over that
 call's own call datum because `vector` is an `own` parameter** [MSR-3], reaching `built`
 through [CALL-6]'s S13 and [CALL-4]'s `set`-target destination; each invariant is
@@ -4574,14 +4642,14 @@ fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> 
   ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of n slots, every one holding a copy of value.";
-  let built = seq_fixed::<T, n>();
+  let built = fixed_vector::<T, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: len_of(built) >= at,
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = seq_place(vector: move built, value: value);
+    set built = place_back(vector: move built, value: value);
   }
   return move built;
 }
@@ -4620,7 +4688,7 @@ fn collect['s](out: own Vector<'s, u8>, source: own Slice<u8>)
     invariant flat: head_of(out) <= 0_u64
   ) {
     let byte = source[at];
-    set out = seq_place(vector: move out, value: byte);
+    set out = place_back(vector: move out, value: byte);
   }
   return move out, count;
 }
@@ -4635,7 +4703,7 @@ identifier per hand-back helper is R1's whole spelling cost.
 equalities over the live terms generalized to the four measures [BLK-0], and at that
 point each live term equals its entry datum [MSR-3], so the `requires` transports into
 the loop's base: `spare_lo` at `at = 0` is `room_of(out) >= before_room`, the equality.
-`seq_place`'s `room_of > 0` discharges from `spare_lo`, `before_room >= count` and
+`place_back`'s `room_of > 0` discharges from `spare_lo`, `before_room >= count` and
 `at < count` by [MSR-4] step 5 (probes `k21`, `k21b`). Each of the five invariants is
 preserved by exactly one published relation. At the exit `at = count` and the four
 two-sided invariants give the two exact `ensures`; `cap_of(rest) == cap_of(out)` follows from
@@ -4665,20 +4733,20 @@ fn pool_new['s](arena: &uniq Arena<'s, 65536, 16>) -> made: own Option<BlockPool
   ensures when Some(value: pool): head_of(pool.free) <= 0_u64;
 } {
   doc "Carves eight 256-byte runs out of the arena and holds them as a free list.";
-  let free = seq_fixed::<Vector<'s, u8>, 8>();
+  let free = fixed_vector::<Vector<'s, u8>, 8>();
   for @carve (
     at in 0_u64..8_u64,
     invariant grown: len_of(free) >= at,
     invariant spare: room_of(free) + at >= 8_u64,
     invariant flat: head_of(free) <= 0_u64
   ) {
-    let taken = seq_arena::<u8>(arena: &uniq deref(arena), count: 256_u64);
+    let taken = arena_vector::<u8>(store: &uniq deref(arena), count: 256_u64);
     match taken {
       None() => {
         return None<BlockPool<'s>>();
       }
       Some(value: run) => {
-        set free = seq_place(vector: move free, value: move run);
+        set free = place_back(vector: move free, value: move run);
       }
     }
   }
@@ -4708,7 +4776,7 @@ fn pool_take['s](pool: own BlockPool<'s>)
   let spare = len_of(pool.free);
   let any = spare > 0_u64;
   if any {
-    set (pool.free, one) = seq_take(vector: move pool.free);
+    set (pool.free, one) = take_back(vector: move pool.free);
     let ticket = Lease<'s>(run: move one);
     return move pool, Some<Lease<'s>>(value: move ticket);
   }
@@ -4725,7 +4793,7 @@ fn pool_release['s](pool: own BlockPool<'s>, lease: own Lease<'s>)
 } {
   doc "Returns one lease to the free list; the caller has proved there is room.";
   let Lease(run: back) = move lease;
-  set pool.free = seq_place(vector: move pool.free, value: move back);
+  set pool.free = place_back(vector: move pool.free, value: move back);
   return move pool;
 }
 ```
@@ -4762,7 +4830,7 @@ fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own 
   let spare = room_of(vector);
   let fits = spare > 0_u64;
   if fits {
-    set vector = seq_place(vector: move vector, value: move value);
+    set vector = place_back(vector: move vector, value: move value);
     return move vector, None<T>();
   }
   return move vector, Some<T>(value: move value);
@@ -4781,7 +4849,7 @@ fn try_take<T: affine, const n: u64>(vector: own FixedVector<T, n>)
   let held = len_of(vector);
   let any = held > 0_u64;
   if any {
-    set (vector, one) = seq_take(vector: move vector);
+    set (vector, one) = take_back(vector: move vector);
     return move vector, Some<T>(value: move one);
   }
   return move vector, None<T>();
@@ -4816,7 +4884,7 @@ fn bs_new(heap: &uniq Heap) -> made: own Option<Bytes>
   ensures when Some(value: fresh): head_of(fresh.v) <= 0_u64;
 } {
   doc "Builds one empty byte string over a zero-length backing run.";
-  let taken = seq_heap::<u8>(heap: &uniq deref(heap), count: 0_u64);
+  let taken = heap_vector::<u8>(store: &uniq deref(heap), count: 0_u64);
   match taken {
     None() => {
       return None<Bytes>();
@@ -4842,7 +4910,7 @@ fn bs_reserve(s: own Bytes, heap: &uniq Heap, total: own u64) -> grown: own Grow
 } {
   doc "Grows the backing run to total slots, preserving element order, or reports that the store refused.";
   let count = len_of(s.v);
-  let taken = seq_heap::<u8>(heap: &uniq deref(heap), count: total);
+  let taken = heap_vector::<u8>(store: &uniq deref(heap), count: total);
   match taken {
     None() => {
       return Refused(value: move s);
@@ -4859,8 +4927,8 @@ fn bs_reserve(s: own Bytes, heap: &uniq Heap, total: own u64) -> grown: own Grow
         invariant spare_hi: room_of(built) + at <= total,
         invariant flat: head_of(built) <= 0_u64
       ) {
-        set (s.v, byte) = seq_take_front(vector: move s.v);
-        set built = seq_place(vector: move built, value: byte);
+        set (s.v, byte) = take_front(vector: move s.v);
+        set built = place_back(vector: move built, value: byte);
       }
       let Bytes(v: old) = move s;
       dispose old;
@@ -4871,11 +4939,11 @@ fn bs_reserve(s: own Bytes, heap: &uniq Heap, total: own u64) -> grown: own Grow
 }
 ```
 
-**Proof route.** `seq_heap` publishes all four measures of `built` on its `Some` arm
+**Proof route.** `heap_vector` publishes all four measures of `built` on its `Some` arm
 [BLK-0], and they reach `built` through [CALL-6]'s S13 at the arm binder [CALL-4].
 `left` and `gone` bound the source, `made_*` and `spare_*` the destination, `flat` the
-head_of; each is preserved by exactly one published relation of `seq_take_front` or
-`seq_place`, whose `vector` operand is `own` and therefore denotes that call's call datum
+head_of; each is preserved by exactly one published relation of `take_front` or
+`place_back`, whose `vector` operand is `own` and therefore denotes that call's call datum
 [MSR-3]. At the exit `at = count`, so `len_of(built) = count = len_of(s.v)` at entry,
 `room_of(built) = total - count`, and `cap_of` falls out of [MSR-2]'s identity at `total`.
 **The tail constructs rather than replaces**, which routes `built`'s measures into the
@@ -4884,7 +4952,7 @@ result through [MSR-3]'s construct placement; a `replace` would publish nothing.
 `own` parameter and returned, which is [CALL-7]'s population verbatim, and all four are
 `== ...(s.v)` because nothing on that arm was written.
 
-**`set (s.v, byte) = seq_take_front(vector: move s.v);` is a consume of a proper
+**`set (s.v, byte) = take_front(vector: move s.v);` is a consume of a proper
 sub-place of `s`**, and it is legal for two reasons stated at their rules: under D3
 `Bytes` is **affine** in this scope, because `bs_reserve` holds `heap: &uniq Heap`; and
 even for a value linear in its scope, [PROV-6]'s partial-consume refusal excepts a
@@ -5049,36 +5117,36 @@ fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own Fix
     invariant spare_hi: room_of(built) + at <= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set (vector, one) = seq_take_front(vector: move vector);
-    set built = seq_place(vector: move built, value: move one);
+    set (vector, one) = take_front(vector: move vector);
+    set built = place_back(vector: move built, value: move one);
   }
   return move built;
 }
 ```
 
-**Proof route.** The caller's `spare` comes from `seq_fixed::<T, n>()`, which publishes
+**Proof route.** The caller's `spare` comes from `fixed_vector::<T, n>()`, which publishes
 `len_of = 0`, `cap_of = n`, `room_of = n` and `head_of = 0` exactly, so both `requires` discharge at
 the call. `left` and `gone` bound the source, `made_*` and `spare_*` the destination,
-`flat` the head_of; each is preserved by one published relation of `seq_take_front` or
-`seq_place`. `seq_take_front`'s `len_of(vector) > 0` discharges from `left` and `at <
-count`; `seq_place`'s `room_of(built) > 0` from `spare_lo` and `count <= n`, the standing
+`flat` the head_of; each is preserved by one published relation of `take_front` or
+`place_back`. `take_front`'s `len_of(vector) > 0` discharges from `left` and `at <
+count`; `place_back`'s `room_of(built) > 0` from `spare_lo` and `count <= n`, the standing
 `len_of <= cap_of` at entry. At the exit `at = count`, giving the two exact `len_of` clauses and
 the two exact `room_of` clauses, and `flat` exports the head. **`cap_of` needs no clause**
 [CALL-7]. **The drained `vector` is not handed back**, because after front removals its
 `head_of` is known only as the standing bound and no non-vacuous clause about it exists — so
 it dies at the return edge by its ordinary derived release, and a caller that wants to
-rebase again allocates a fresh `spare` with `seq_fixed`.
+rebase again allocates a fresh `spare` with `fixed_vector`.
 
 **What it costs, walked against a program (L18).** A ring driver that flushes a 256-byte
 `FixedVector<u8, 256>` writes
-`let fresh = seq_fixed::<u8, 256>(); set rx = rebase::<u8, 256>(vector: move rx, spare: move fresh);`
-before each `seq_slice`, and pays three things. **Memory**: two runs of `n` slots are live
+`let fresh = fixed_vector::<u8, 256>(); set rx = rebase::<u8, 256>(vector: move rx, spare: move fresh);`
+before each `slice_of`, and pays three things. **Memory**: two runs of `n` slots are live
 across the drain, so `E`'s `stack` item for that context carries `2n` where a kernel
 rotate would have carried `n` — 256 bytes for a driver with one ring, and for a
 `Vector<'s, u8>` version a second take the store's capacity must cover. **Time**: the same
 O(len) element copy the rotate would have performed, plus the fresh run's formation.
 **Proof**: seven header invariants at the library, once, and two `requires` at each call
-site, both discharged from `seq_fixed`'s own published relations.
+site, both discharged from `fixed_vector`'s own published relations.
 
 **And two things a writer should know that no arithmetic shows.** A rebase must be paid
 before **every** view of a run that has had a front removal, not once — `head_of` is
@@ -5166,7 +5234,7 @@ fn render['s](block: own Lease<'s>, task: &Task)
     invariant spare_hi: room_of(block.run) + at <= before_room,
     invariant flat: head_of(block.run) <= 0_u64
   ) {
-    set block.run = seq_place(vector: move block.run, value: mark);
+    set block.run = place_back(vector: move block.run, value: mark);
   }
   return move block, 8_u64;
 }
@@ -5194,7 +5262,7 @@ fn drain['s](ring: own FixedVector<u8, 256>, block: &Lease<'s>, count: own u64)
       invariant flat: head_of(ring) <= 0_u64
     ) {
       let byte = deref(block).run[at];
-      set ring = seq_place(vector: move ring, value: byte);
+      set ring = place_back(vector: move ring, value: byte);
     }
     return move ring, count;
   }
@@ -5203,8 +5271,8 @@ fn drain['s](ring: own FixedVector<u8, 256>, block: &Lease<'s>, count: own u64)
 
 resource_closed command fn main() -> status: own ExitStatus pure {
   doc "Runs a cooperative queue of state machines over a pooled block store and a transmit ring.";
-  let ring = seq_fixed::<u8, 256>();
-  let pending = seq_fixed::<Task, 32>();
+  let ring = fixed_vector::<u8, 256>();
+  let pending = fixed_vector::<Task, 32>();
   let first = Task(state: 0_u32, arg: 65_u64);
   set (pending, unplaced) = try_place::<Task, 32>(vector: move pending, value: move first);
   match unplaced {
@@ -5392,7 +5460,7 @@ statement's commit reinitialises — which is round 7's reconciliation of two ru
 otherwise refuse the design's own central statement. Its target names a binding in
 scope, so the root's [ENT-2] term survives [MSR-3]; the facts over `len_of`, `room_of` and
 `head_of` of `block.run` die by [MSR-2] because the commit writes that descriptor storage;
-and `seq_place`'s declared relations re-establish them on the same term through
+and `place_back`'s declared relations re-establish them on the same term through
 [CALL-6]'s S13 and [CALL-4]'s `set`-target destination. **Each of those relations reads
 `len_of(vector)` as that call's call datum, because `vector` is an `own` parameter**
 [MSR-3] — under the seventh draft's `writes`-keyed table it read the post-state,
@@ -5444,11 +5512,11 @@ command fn main(command.stdout as sink: own Output, command.heap as heap: own He
         Grew(value: ready) => {
           let kept = move ready;
           region {
-            let line = seq_slice(vector: &input);
+            let line = slice_of(vector: &input);
             set (kept.v, total) = collect(out: move kept.v, source: line);
           }
           region {
-            let body = seq_slice(vector: &kept.v);
+            let body = slice_of(vector: &kept.v);
             let outcome = write_once(output: &uniq sink, source: &body, start: 0_u64, end: total);
             match outcome {
               Ok(value: next) => {
@@ -5490,10 +5558,10 @@ non-overlapping. The relations reach both targets through [CALL-6]'s S13 and [CA
 `collect`'s `requires len_of(source) <= room_of(out)` discharges from `bs_reserve`'s
 `room_of(ready.v) + len_of(ready.v) == 4096_u64` and `len_of(ready.v) == len_of(holder.v)` with
 `bs_new`'s `len_of(fresh.v) <= 0_u64`, giving `room_of(kept.v) >= 4096`, against
-`seq_slice`'s published `len_of(result) = <call datum of len_of(input)>` and `filled`'s
+`slice_of`'s published `len_of(result) = <call datum of len_of(input)>` and `filled`'s
 `len_of(result) >= 4096`. All four links are published clauses of functions 3.L declares.
 
-**`let line = seq_slice(vector: &input);`** discharges [VIEW-2]'s
+**`let line = slice_of(vector: &input);`** discharges [VIEW-2]'s
 `head_of(input) + len_of(input) <= cap_of(input)` from `filled`'s `head_of(result) <= 0_u64` and the
 standing `len_of <= cap_of` — one clause and one standing fact, in the unordered-pair family.
 `line` is a `Slice` and is therefore **copy** [S27], so it is passed without `move`; its
@@ -5541,10 +5609,10 @@ back, which is the difference between a peak of `count + total` slots and a peak
 note: queue.wf is source-resource-closed; envelope written to queue.E
 note: collector.wf is not source-resource-closed
   [RES-4] main selects command.heap
-    heap-reaching path:  main -> bs_new -> seq_heap
+    heap-reaching path:  main -> bs_new -> heap_vector
   a general store cannot appear in an envelope [L6], so no envelope is computed
   still true of this program:
-    no covered-resource failure is a trap [RES-6]; seq_heap returns a value
+    no covered-resource failure is a trap [RES-6]; heap_vector returns a value
     the heap is reachable only through the parameter above [PROV-4]
     every release of heap-owned storage runs in a scope whose effect row names the
       heap [PROV-6, D3]
@@ -5557,7 +5625,7 @@ Six of the diagnostics the design owes a writer, each citing a rule that states 
 
 ```text
 Semantics/Source [BLK-0]: UndischargedOperationDomain
-  operation: seq_place
+  operation: place_back
   residual:  "0_u64 < room_of(block.run)"
   mechanical_fix: state a header invariant over room_of(block.run) [INV-1, MSR-5],
     dominate the place with a branch on room_of(block.run), take a larger run
@@ -5792,7 +5860,7 @@ it still forbids a write of the parent for exactly as long as the child lives.
 `room_of(factory) = 0` on that arm. The general form of the question stays open: **every
 covered store whose refusal a route must read needs its refusal to be a variant of the
 operation's own outcome, not a class of an error payload.** The arena has that shape
-already, because a refused `seq_arena` returns `None` and publishes over it, and the
+already, because a refused `arena_vector` returns `None` and publishes over it, and the
 handle table now has it. What remains is that the partition should be written **once as a
 rule about covered stores** rather than once per operation, and that rule is not drafted
 here.
@@ -7333,7 +7401,7 @@ Rules: [PROV-1], [BLK-0], [BLK-1], [BLK-2], [BLK-3], [BLK-4]. Retires `buffer<T>
 `box<T>` and `arena<'r, T>` from the writer surface, and carries monomorphization for a
 compiler-owned generic domain. Tests: a `FixedVector<Handle, 64>` with affine elements
 filled by 3.L.3's `vacant`, accepted, where probe `p9` is [OP-1] today; a queue built
-from `seq_place` and `seq_take_front` with no `Option` anywhere; **a `seq_slice` over a
+from `place_back` and `take_front` with no `Option` anywhere; **a `slice_of` over a
 run that has had a front removal rejected, and accepted over the same run drained to
 empty**, which is the non-wrap premise; **`bs_reserve` declared and compiling**, which is
 [PROV-1]'s brand resolution under test, and the same function with `Bytes` given a
@@ -7486,8 +7554,8 @@ share.** An `Arena`'s `len_of` was the second in the seventh draft and it is **e
 of `align` at every program point and the padding at a take is zero. Round 7 found the
 two statements disagreeing and the recommended per-iteration idiom refused as a
 consequence. Every formation row publishes `head_of = 0_u64` exactly, every back operation
-publishes `head_of(result) = head_of(vector)` exactly, and only `seq_place_front` and
-`seq_take_front` publish the two-sided `0_u64 <= head_of(result)`,
+publishes `head_of(result) = head_of(vector)` exactly, and only `place_front` and
+`take_front` publish the two-sided `0_u64 <= head_of(result)`,
 `head_of(result) <= cap_of(result)`.
 
 ```text
@@ -7521,12 +7589,15 @@ acquisition.
 ### A.2 The kernel operation inventory
 
 **Twelve rows**, plus the four readers, which are [OP-1] table rows and not this
-domain. `V` is either run type. Every row is complete over **every** measure it writes,
+domain. **Every spelling here is S38's**, decided 2026-09-05: the nine `seq_*` names of
+S7 and S8 and the two view formers of S10 are respelled, and nothing else about any row
+moves — not a parameter, a result, an effect row, a requirement, or a published relation.
+`V` is either run type. Every row is complete over **every** measure it writes,
 on every exit, as [BLK-0] requires — **read with [MSR-2]'s standing identity**: `room_of`
 is the complement `len_of + room_of = cap_of` already determines with empty support, so a
 row that publishes `len_of` and `cap_of` of a place has published its `room_of`, and
-`seq_arena`'s `Some` arm is complete as it stands. The boundary rows publish `room_of`
-explicitly because a caller of `seq_place` reads that measure directly and the extra
+`arena_vector`'s `Some` arm is complete as it stands. The boundary rows publish `room_of`
+explicitly because a caller of `place_back` reads that measure directly and the extra
 clause costs nothing; the formation rows do not, and both are complete under the same
 sentence. Every effect row is written in [EFF-1] 1369's
 canonical order; every relation is established by [CALL-6]'s S13; and **every operand
@@ -7536,10 +7607,10 @@ call's call datum and a `&uniq` state operand is the post-state — so the seven
 and absent on ten.
 
 ```text
-Formation                                                                          [S7]
-  seq_fixed<T, const n: u64>()                       -> own FixedVector<T, n>       pure
+Formation                                                                     [S7, S38]
+  fixed_vector<T, const n: u64>()               -> own FixedVector<T, n>       pure
       len_of(result) = 0, cap_of(result) = n, room_of(result) = n, head_of(result) = 0
-  seq_arena<T, const bytes: u64, const align: u64>['s](
+  arena_vector<T, const bytes: u64, const align: u64>['s](
         store: &uniq Arena<'s, bytes, align>, count: own u64)
       -> own Option<Vector<'s, T>>       reads(store), writes(store), allocates(arena)
       requires align >= align_ceiling(T)
@@ -7549,14 +7620,14 @@ Formation                                                                       
       None:           len_of(store) = len_of(store at the call),
                       room_of(store) < advance<T>(count)
       both:           cap_of(store) = cap_of(store at the call)
-  seq_arena_proved<T, const bytes: u64, const align: u64>['s](
+  arena_vector_proved<T, const bytes: u64, const align: u64>['s](
         store: &uniq Arena<'s, bytes, align>, count: own u64)
       -> own Vector<'s, T>               reads(store), writes(store), allocates(arena)
       requires align >= align_ceiling(T)
       requires fits::<T>(count)
       requires room_of(store) >= advance<T>(count)
       as the Some row above
-  seq_heap<T>['s](store: &uniq Heap<'s>, count: own u64)
+  heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)
       -> own Option<Vector<'s, T>>       reads(store), writes(store), allocates(heap)
       requires fits::<T>(count)
       Some(value: r): len_of(r) = 0, cap_of(r) = count, room_of(r) = count, head_of(r) = 0
@@ -7572,36 +7643,36 @@ Reservation                                                                     
       len_of(result) = 0, cap_of(result) = bytes, room_of(result) = bytes
                           its own region item, named by (instance, NodePath) [PROV-5]
 
-Per slot                                                                           [S8]
-  seq_place(vector: own V, value: own T)  -> own V     reads(vector), writes(vector)
+Per slot                                                                      [S8, S38]
+  place_back(vector: own V, value: own T) -> own V      reads(vector), writes(vector)
       requires room_of(vector) > 0
       len_of(result) = len_of(vector) + 1, room_of(result) = room_of(vector) - 1,
       cap_of(result) = cap_of(vector),     head_of(result) = head_of(vector)
-  seq_place_front(vector: own V, value: own T)
+  place_front(vector: own V, value: own T)
                                           -> own V     reads(vector), writes(vector)
       requires room_of(vector) > 0
       len_of(result) = len_of(vector) + 1, room_of(result) = room_of(vector) - 1,
       cap_of(result) = cap_of(vector),     0 <= head_of(result), head_of(result) <= cap_of(result)
-  seq_take(vector: own V)   -> (rest: own V, value: own T)
+  take_back(vector: own V)  -> (rest: own V, value: own T)
                                                        reads(vector), writes(vector)
       requires len_of(vector) > 0
       len_of(rest) = len_of(vector) - 1,   room_of(rest) = room_of(vector) + 1,
       cap_of(rest) = cap_of(vector),       head_of(rest) = head_of(vector)
-  seq_take_front(vector: own V) -> (rest: own V, value: own T)
+  take_front(vector: own V) -> (rest: own V, value: own T)
                                                        reads(vector), writes(vector)
       requires len_of(vector) > 0
       len_of(rest) = len_of(vector) - 1,   room_of(rest) = room_of(vector) + 1,
       cap_of(rest) = cap_of(vector),       0 <= head_of(rest), head_of(rest) <= cap_of(rest)
 
-Readers                       ([OP-1] table rows, not this domain)                 [S11]
+Readers                       ([OP-1] table rows, not this domain)            [S11, S36]
   len_of(p) / cap_of(p) / room_of(p) / head_of(p)                -> own u64                     pure
 
-Views                                                                             [S10]
-  seq_slice['r, T](vector: &'r V)          -> own Slice<'r, T>        reads(vector)
+Views                                                                        [S10, S38]
+  slice_of['r, T](vector: &'r V)          -> own Slice<'r, T>       reads(vector)
       requires head_of(vector) + len_of(vector) <= cap_of(vector)
       len_of(result) = len_of(vector), cap_of(result) = len_of(vector),
       room_of(result) = 0,          head_of(result) = 0
-  seq_mut_slice['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>    reads(vector)
+  mut_slice_of['r, T](vector: &uniq 'r V) -> own MutSlice<'r, T>    reads(vector)
       requires head_of(vector) + len_of(vector) <= cap_of(vector)
       as the row above
 ```
@@ -7609,7 +7680,7 @@ Views                                                                           
 Two statements are not rows and are stated in [PROV-6]: `dispose p;` [S12] and the
 destructuring consume `let N(f1: b1, ...) = move v;` [S13].
 
-Notes on the inventory. **`seq_place` is the operation the whole design exists for**:
+Notes on the inventory. **`place_back` is the operation the whole design exists for**:
 total under its requirement, allocation-free on every backing, one store plus one length
 increment — and its `vector` operand is `own`, so every occurrence of `len_of(vector)` in
 its relation is the length it was handed [MSR-3]. **The four per-slot rows are two-sided

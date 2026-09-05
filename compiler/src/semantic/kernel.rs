@@ -411,9 +411,9 @@ const REGION_SUPPLIED: KernelGenericParameter = KernelGenericParameter {
     supplied: true,
 };
 
-/// `seq_fixed<T, const n: u64>() -> result: own FixedVector<T, n> pure`.
+/// `fixed_vector<T, const n: u64>() -> result: own FixedVector<T, n> pure`.
 const SEQ_FIXED: KernelSignature = KernelSignature {
-    row: KernelRow::SeqFixed,
+    row: KernelRow::FixedVector,
     generics: &[TYPE_WRITTEN, CAPACITY_WRITTEN],
     parameters: &[],
     results: &[KernelResult {
@@ -500,10 +500,10 @@ const SEQ_ARENA_PAYLOAD: [KernelRelation; 4] = [
     ),
 ];
 
-/// `seq_arena<T, const bytes, const align>['s](store, count) -> made: own
+/// `arena_vector<T, const bytes, const align>['s](store, count) -> made: own
 /// Option<Vector<'s, T>>`.
 const SEQ_ARENA: KernelSignature = KernelSignature {
-    row: KernelRow::SeqArena,
+    row: KernelRow::ArenaVector,
     generics: &[
         TYPE_WRITTEN,
         BYTES_SUPPLIED,
@@ -586,10 +586,10 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
     fits: Some(1),
 };
 
-/// `seq_arena_proved<T, const bytes, const align>['s](store, count) ->
+/// `arena_vector_proved<T, const bytes, const align>['s](store, count) ->
 /// result: own Vector<'s, T>`.
 const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
-    row: KernelRow::SeqArenaProved,
+    row: KernelRow::ArenaVectorProved,
     generics: &[
         TYPE_WRITTEN,
         BYTES_SUPPLIED,
@@ -676,7 +676,7 @@ const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
     fits: Some(1),
 };
 
-/// `seq_heap<T>['s](store, count) -> made: own Option<Vector<'s, T>>`.
+/// `heap_vector<T>['s](store, count) -> made: own Option<Vector<'s, T>>`.
 ///
 /// A `Heap<'s>` operand reaches a call only as a written parameter of the
 /// enclosing declaration [PROV-6]: [FN-7]'s standard-input row, which is the
@@ -684,7 +684,7 @@ const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
 /// still that rule's DEFERRED entry, so this row is reachable at a checked
 /// declaration and by no executable path.
 const SEQ_HEAP: KernelSignature = KernelSignature {
-    row: KernelRow::SeqHeap,
+    row: KernelRow::HeapVector,
     generics: &[TYPE_WRITTEN, REGION_SUPPLIED],
     parameters: &[
         KernelParameter {
@@ -927,9 +927,9 @@ const PLACE_BACK: [KernelRelation; 3] = placement_relations(0);
 const PLACE_FRONT_HEAD: [KernelRelation; 2] = head_bounded(0);
 const TAKE_BACK: [KernelRelation; 3] = removal_relations();
 
-/// `seq_place(vector: own V, value: own T) -> result: own V`.
+/// `place_back(vector: own V, value: own T) -> result: own V`.
 const SEQ_PLACE: KernelSignature = KernelSignature {
-    row: KernelRow::SeqPlace,
+    row: KernelRow::PlaceBack,
     generics: &[TYPE_SUPPLIED],
     parameters: &PLACE_PARAMETERS,
     results: &[KernelResult {
@@ -947,9 +947,9 @@ const SEQ_PLACE: KernelSignature = KernelSignature {
     fits: None,
 };
 
-/// `seq_place_front(vector: own V, value: own T) -> result: own V`.
+/// `place_front(vector: own V, value: own T) -> result: own V`.
 const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
-    row: KernelRow::SeqPlaceFront,
+    row: KernelRow::PlaceFront,
     generics: &[TYPE_SUPPLIED],
     parameters: &PLACE_PARAMETERS,
     results: &[KernelResult {
@@ -968,9 +968,9 @@ const SEQ_PLACE_FRONT: KernelSignature = KernelSignature {
     fits: None,
 };
 
-/// `seq_take(vector: own V) -> (rest: own V, value: own T)`.
+/// `take_back(vector: own V) -> (rest: own V, value: own T)`.
 const SEQ_TAKE: KernelSignature = KernelSignature {
-    row: KernelRow::SeqTake,
+    row: KernelRow::TakeBack,
     generics: &[TYPE_SUPPLIED],
     parameters: &TAKE_PARAMETERS,
     results: &TAKE_RESULTS,
@@ -980,9 +980,9 @@ const SEQ_TAKE: KernelSignature = KernelSignature {
     fits: None,
 };
 
-/// `seq_take_front(vector: own V) -> (rest: own V, value: own T)`.
+/// `take_front(vector: own V) -> (rest: own V, value: own T)`.
 const SEQ_TAKE_FRONT: KernelSignature = KernelSignature {
-    row: KernelRow::SeqTakeFront,
+    row: KernelRow::TakeFront,
     generics: &[TYPE_SUPPLIED],
     parameters: &TAKE_PARAMETERS,
     results: &TAKE_RESULTS,

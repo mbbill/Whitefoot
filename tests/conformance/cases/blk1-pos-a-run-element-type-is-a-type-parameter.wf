@@ -2,8 +2,8 @@ fn only<T: affine>(value: own T) -> made: own FixedVector<T, 4> pure contract {
   ensures len_of(made) >= 1_u64;
 } {
   doc "Builds a run of one element at an unbounded element type.";
-  let empty = seq_fixed::<T, 4>();
-  let built = seq_place(vector: move empty, value: move value);
+  let empty = fixed_vector::<T, 4>();
+  let built = place_back(vector: move empty, value: move value);
   return move built;
 }
 
@@ -16,7 +16,7 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 1_u8);
   }
-  let (rest, taken) = seq_take(vector: move run);
+  let (rest, taken) = take_back(vector: move run);
   match taken {
     Some(value: got) => {
       if got == 5_u8 {

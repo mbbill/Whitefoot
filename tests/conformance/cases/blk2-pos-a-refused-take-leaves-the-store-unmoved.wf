@@ -3,7 +3,7 @@ command fn main() -> status: own ExitStatus pure {
   region 'a {
     let workspace = arena_frame::<32, 8, 'a>();
     region {
-      let refused = seq_arena::<u64>(store: &uniq workspace, count: 64_u64);
+      let refused = arena_vector::<u64>(store: &uniq workspace, count: 64_u64);
       match refused {
         Some(value: impossible) => {
           return exit_status(code: 1_u8);

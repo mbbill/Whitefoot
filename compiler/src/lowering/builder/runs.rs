@@ -261,16 +261,16 @@ impl IrBuilder<'_> {
     ) -> Result<IrValueId, LoweringFailure> {
         let result_type = lower_type(result)?;
         match row {
-            crate::KernelRow::SeqFixed => {
+            crate::KernelRow::FixedVector => {
                 if !arguments.is_empty() {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }
-                self.define(result_type, IrOperation::SeqFixed)
+                self.define(result_type, IrOperation::FixedVector)
             }
-            crate::KernelRow::SeqPlace
-            | crate::KernelRow::SeqPlaceFront
-            | crate::KernelRow::SeqTake
-            | crate::KernelRow::SeqTakeFront => {
+            crate::KernelRow::PlaceBack
+            | crate::KernelRow::PlaceFront
+            | crate::KernelRow::TakeBack
+            | crate::KernelRow::TakeFront => {
                 self.lower_boundary_row(row, instance, arguments, result)
             }
             crate::KernelRow::ArenaFrame => {
@@ -280,9 +280,11 @@ impl IrBuilder<'_> {
                 let (bytes, align) = extent_constants(instance)?;
                 self.define(result_type, IrOperation::ArenaFrame { bytes, align })
             }
-            crate::KernelRow::SeqArena
-            | crate::KernelRow::SeqArenaProved
-            | crate::KernelRow::SeqHeap => self.lower_store_take(row, instance, arguments, result),
+            crate::KernelRow::ArenaVector
+            | crate::KernelRow::ArenaVectorProved
+            | crate::KernelRow::HeapVector => {
+                self.lower_store_take(row, instance, arguments, result)
+            }
         }
     }
 
@@ -324,14 +326,14 @@ impl IrBuilder<'_> {
             }
         };
         let extent = match row {
-            crate::KernelRow::SeqHeap => None,
+            crate::KernelRow::HeapVector => None,
             _ => {
                 let (bytes, align) = extent_constants(instance)?;
                 Some(crate::IrExtentConstants { bytes, align })
             }
         };
         let refusal = match row {
-            crate::KernelRow::SeqArenaProved => None,
+            crate::KernelRow::ArenaVectorProved => None,
             _ => Some(self.refusal_of(result)?),
         };
         self.define(
@@ -394,10 +396,10 @@ impl IrBuilder<'_> {
         result: CheckedType,
     ) -> Result<IrValueId, LoweringFailure> {
         let boundary = match row {
-            crate::KernelRow::SeqPlace => IrBoundary::PlaceBack,
-            crate::KernelRow::SeqPlaceFront => IrBoundary::PlaceFront,
-            crate::KernelRow::SeqTake => IrBoundary::TakeBack,
-            crate::KernelRow::SeqTakeFront => IrBoundary::TakeFront,
+            crate::KernelRow::PlaceBack => IrBoundary::PlaceBack,
+            crate::KernelRow::PlaceFront => IrBoundary::PlaceFront,
+            crate::KernelRow::TakeBack => IrBoundary::TakeBack,
+            crate::KernelRow::TakeFront => IrBoundary::TakeFront,
             _ => return Err(LoweringFailure::InvalidCheckedProgram),
         };
         let run_type = lower_type(instance.run.ok_or(LoweringFailure::InvalidCheckedProgram)?)?;

@@ -166,7 +166,7 @@ inside the `region` block whose region it takes",
                 (CheckedSliceSource::Buffer(buffer.root), buffer.resolved)
             }
             // [OP-1] `slice_of` takes an array or a buffer; a view of a run
-            // is [BLK-0]'s own `seq_slice` row, which is DEFERRED with the
+            // is [BLK-0]'s own `slice_of` row, which is DEFERRED with the
             // views batch.
             CheckedIndexedPlace::Slice(_) | CheckedIndexedPlace::Container(_) => {
                 return self.issue_node(

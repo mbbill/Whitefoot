@@ -2,8 +2,8 @@ fn two_in_a_row(vector: own FixedVector<u8, 4>) -> result: own FixedVector<u8, 4
   requires room_of(vector) > 1_u64;
 } {
   doc "The first placement publishes room_of(result) + 1 == room_of(vector), which is the only premise the second placement's own requirement needs.";
-  let one = seq_place(vector: move vector, value: 1_u8);
-  return seq_place(vector: move one, value: 2_u8);
+  let one = place_back(vector: move vector, value: 1_u8);
+  return place_back(vector: move one, value: 2_u8);
 }
 
 command fn main() -> status: own ExitStatus pure {

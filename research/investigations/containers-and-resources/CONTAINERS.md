@@ -101,7 +101,7 @@ the same six sentences of `DESIGN.md` 3.K.
   element-position `replace` of a descriptor does.
 - **Every row publishes every measure it writes, exactly** [BLK-0]. This is the
   sentence round 5 found missing, and it is why each invariant below is preserved by
-  **one** published premise rather than by three: `seq_place` publishes
+  **one** published premise rather than by three: `place_back` publishes
   `room(result) = room(vector) - 1` itself instead of leaving `room` to be
   reconstructed from `len + room = cap`, which costs two premises before the goal is
   reached and which [ENT-6] 3015 does not admit. Probes `g3` and `g4` are the same
@@ -184,7 +184,7 @@ fn clear_bytes<const n: u64>(vector: own FixedVector<u8, n>) -> result: own Fixe
     invariant still_lo: head(vector) >= origin,
     invariant still_hi: head(vector) <= origin
   ) {
-    set (vector, dropped) = seq_take(vector: move vector);
+    set (vector, dropped) = take_back(vector: move vector);
   }
   invariant done: len(vector) <= 0_u64;
   return move vector;
@@ -193,9 +193,9 @@ fn clear_bytes<const n: u64>(vector: own FixedVector<u8, n>) -> result: own Fixe
 
 **Proof route.** `left` and `gone` have base `count + 0` against `count`; `still_lo` and
 `still_hi` have base `origin` against `origin`, `origin` being the [ENT-3.S6] equality
-`let origin = head(vector);` establishes over the live term. `seq_take`'s
+`let origin = head(vector);` establishes over the live term. `take_back`'s
 `len(vector) > 0` discharges from `left` and `at < count`. On the backedge `len` falls by
-one as `at` rises by one, each from `seq_take`'s own published
+one as `at` rises by one, each from `take_back`'s own published
 `len(rest) = len(vector) - 1`, and the two `still_*` invariants are preserved by its
 published `head(rest) = head(vector)`. `done` is the [INV-1] exact-exhaustion conclusion
 at the continuation — probes `x1c` and `x1d` are that shape accepted today. **The two
@@ -224,8 +224,8 @@ checked once, and an instantiation that does not satisfy the bound is refused at
 
 **There is nothing to write.** Under [BLK-1]'s window a run's initialized set is the
 `len` slots beginning at `head`, so a queue is a `FixedVector<T, n>` with
-`seq_place` at the back and `seq_take_front` at the front, a stack is the same run
-with `seq_take`, and a deque is all four rows. There is no `Option`, no tag, no head
+`place_back` at the back and `take_front` at the front, a stack is the same run
+with `take_back`, and a deque is all four rows. There is no `Option`, no tag, no head
 field, no fill field and no wrapping arithmetic in the writer's code, `v[i]` reaches
 the element at logical offset `i` directly, and `len` is exact.
 
@@ -420,7 +420,7 @@ of them needed a kernel rule.
 | seq_try_take(vector)                    | a library fn: branch on len, take or None         |
 | seq_try_push(view, value)               | the same, value in and value out                  |
 | seq_clear, seq_truncate                 | §3.1                                              |
-| seq_take_at                             | `DESIGN.md` 3.L.2                                 |
+| take_back_at                             | `DESIGN.md` 3.L.2                                 |
 | seq_exchange                            | `DESIGN.md` 3.L.2, in three statements            |
 | seq_filled, seq_vacant                  | `DESIGN.md` 3.L.3                                 |
 | seq_reserve_heap, seq_reserve_arena     | §3.3                                              |
@@ -448,7 +448,7 @@ for an affine value.
 
 Four walkthroughs, each ending at a program the rules accept.
 
-**A place without a capacity proof.** `set v = seq_place(vector: move v, value: b);`
+**A place without a capacity proof.** `set v = place_back(vector: move v, value: b);`
 with nothing known about `room(v)` reports `[BLK-0] UndischargedOperationDomain` with
 residual `0_u64 < room(v)` and four repairs: a header invariant over `room(v)`, a
 dominating branch on `room(v)`, a larger run before the loop, or §3.6's `try_place`.

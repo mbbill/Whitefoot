@@ -100,24 +100,24 @@ pub const CONTAINER_NOMINALS: [ContainerNominal; 4] = [
 /// a writer reaches it [BLK-0].
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum KernelRow {
-    /// `seq_fixed<T, const n: u64>() -> own FixedVector<T, n>` [BLK-2].
-    SeqFixed,
-    /// `seq_arena<T, const bytes, const align>['s](store, count)` [BLK-2].
-    SeqArena,
+    /// `fixed_vector<T, const n: u64>() -> own FixedVector<T, n>` [BLK-2].
+    FixedVector,
+    /// `arena_vector<T, const bytes, const align>['s](store, count)` [BLK-2].
+    ArenaVector,
     /// The proved arena take [BLK-2].
-    SeqArenaProved,
-    /// `seq_heap<T>['s](store, count)` [BLK-2].
-    SeqHeap,
+    ArenaVectorProved,
+    /// `heap_vector<T>['s](store, count)` [BLK-2].
+    HeapVector,
     /// `arena_frame<const bytes, const align>['s]()` [BLK-2].
     ArenaFrame,
-    /// `seq_place(vector, value)` [BLK-3].
-    SeqPlace,
-    /// `seq_place_front(vector, value)` [BLK-3].
-    SeqPlaceFront,
-    /// `seq_take(vector)` [BLK-3].
-    SeqTake,
-    /// `seq_take_front(vector)` [BLK-3].
-    SeqTakeFront,
+    /// `place_back(vector, value)` [BLK-3].
+    PlaceBack,
+    /// `place_front(vector, value)` [BLK-3].
+    PlaceFront,
+    /// `take_back(vector)` [BLK-3].
+    TakeBack,
+    /// `take_front(vector)` [BLK-3].
+    TakeFront,
 }
 
 /// One [BLK-0] operation record's lookup data.
@@ -139,26 +139,26 @@ pub struct KernelOperation {
 /// The nine operations of the inventory, in [BLK-2] then [BLK-3] order.
 pub const KERNEL_OPERATIONS: [KernelOperation; 9] = [
     KernelOperation {
-        spelling: "seq_fixed",
-        row: KernelRow::SeqFixed,
+        spelling: "fixed_vector",
+        row: KernelRow::FixedVector,
         parameters: &[],
         results: &["result"],
     },
     KernelOperation {
-        spelling: "seq_arena",
-        row: KernelRow::SeqArena,
+        spelling: "arena_vector",
+        row: KernelRow::ArenaVector,
         parameters: &["store", "count"],
         results: &["made"],
     },
     KernelOperation {
-        spelling: "seq_arena_proved",
-        row: KernelRow::SeqArenaProved,
+        spelling: "arena_vector_proved",
+        row: KernelRow::ArenaVectorProved,
         parameters: &["store", "count"],
         results: &["result"],
     },
     KernelOperation {
-        spelling: "seq_heap",
-        row: KernelRow::SeqHeap,
+        spelling: "heap_vector",
+        row: KernelRow::HeapVector,
         parameters: &["store", "count"],
         results: &["made"],
     },
@@ -169,26 +169,26 @@ pub const KERNEL_OPERATIONS: [KernelOperation; 9] = [
         results: &["result"],
     },
     KernelOperation {
-        spelling: "seq_place",
-        row: KernelRow::SeqPlace,
+        spelling: "place_back",
+        row: KernelRow::PlaceBack,
         parameters: &["vector", "value"],
         results: &["result"],
     },
     KernelOperation {
-        spelling: "seq_place_front",
-        row: KernelRow::SeqPlaceFront,
+        spelling: "place_front",
+        row: KernelRow::PlaceFront,
         parameters: &["vector", "value"],
         results: &["result"],
     },
     KernelOperation {
-        spelling: "seq_take",
-        row: KernelRow::SeqTake,
+        spelling: "take_back",
+        row: KernelRow::TakeBack,
         parameters: &["vector"],
         results: &["rest", "value"],
     },
     KernelOperation {
-        spelling: "seq_take_front",
-        row: KernelRow::SeqTakeFront,
+        spelling: "take_front",
+        row: KernelRow::TakeFront,
         parameters: &["vector"],
         results: &["rest", "value"],
     },

@@ -3,7 +3,7 @@
 Status: ACTIVE v0.45
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +12/-0 (148 remain), being [MSR-1], [MSR-2], [MSR-4], [MSR-6], [LIV-1], [LIV-2], [PROV-6], [PROV-1], [BLK-0], [BLK-1], [BLK-2] and [BLK-3]; grammar productions +4/-0 (88 remain), being `dispose_stmt`, `region_param`, `linearity_bound` and `clause_op`, the clause tail's Bool-valued operator set [MSR-5]; changed productions 13, being `affine_factor`, which admits an `atom`, a `call` and a `construct`, and through the `call` the four measure formers [INV-1], `clause_expr`, which is one `affine_expr` or two around one `clause_op`, so a clause side is the affine expression an invariant already writes and `+`, `-` and `*` are consumed inside it [MSR-5], `fn_decl`, which takes an ordered result list, `result_route`, which takes an optional ordinal binder, `let_stmt`, which takes a parenthesized binder list over a `call` and a destructuring consume over a nominal, `set_stmt`, whose parenthesized target list takes one `call` or a value list of one expression per target, `return_stmt`, which takes one expression per declared result, `stmt`, which gains `dispose_stmt`, `struct_decl` and `enum_decl`, each of which takes an optional `linear` modifier and an optional `region_params`, `gparam`, whose bound is mandatory and takes one of the three linearity classes beside a marker TYPEID [S37], `linearity_bound`, whose alternatives are `copy`, `affine` and `linear`, and `region_params`, whose members are `region_param`; unique fixed lowercase grammar atoms +5/-0 (59 remain), being `is`, `linear`, `affine`, `copy` and `dispose`, which [FORM-3] therefore excludes from IDENT, so no source declaration, contract member, or callee may be spelled `linear`, `affine`, `copy`, or `dispose` any more; compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +12/-1, being the four readers `len_of`, `cap_of`, `room_of` and `head_of`, which supersede v0.44's `len` [S36] and are dotless and IDENT-shaped, so `ReservedLowerNames` [OP-1] gains those four and loses `len`, and `len`, `cap`, `room` and `head` are ordinary identifiers a source declaration may use, and the nine kernel-domain operations `seq_fixed`, `seq_arena`, `seq_arena_proved`, `seq_heap`, `arena_frame`, `seq_place`, `seq_place_front`, `seq_take` and `seq_take_front`, which are declaration records rather than [OP-1] table rows and therefore add nothing to `ReservedLowerNames`, a source declaration spelling one of them being the ordinary [DIAG-1] collision a system-operation spelling already is; compiler-owned nominal type spellings +4/-0, being `Vector`, `FixedVector`, `Heap` and `Arena`, which are [TYPE-2] types and not entries of any operation or system domain; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains), whose closed standard-input table keeps its five rows; contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); kernel declaration records +44/-0 (44 remain), being nine operations, twenty-three type, const and region parameters, and twelve value parameters in [BLK-0]'s preorder, whose one provider operand is spelled `store` in each of the three acquiring rows rather than after the store's own nominal, `arena` and `heap` being fixed grammar atoms [FORM-3] excludes from IDENT and therefore spellings no call could write; exception clauses +0/-1, being [ENT-5]'s element-position carve-out, removed rather than narrowed. [ENT-3] gains no source label and retires none. [FORM-2], [GRAM-6], [TYPE-2], [TYPE-3], [TYPE-5], [SET-1], [FN-1], [FN-2], [FN-7], [FN-8], [FN-9], [CALL-4], [CALL-6], [ENT-3], [ENT-3.S13], [OP-1], [OP-4], [OP-7], [OP-9], [TYPE-6], [ENT-2], [ENT-5], [ENT-6], [INV-1], [MSR-1], [MSR-2], [MSR-3], [MSR-5], [OWN-1], [OWN-11], [LIV-1], [SET-2], [CONST-1], [DIAG-1], [PROG-1], [PROV-6], [STOR-1], [STOR-3], [STOR-5], [SYS-3] and [EFF-2] are amended; twelve rule ids are added and none is retired. Six clauses are DEFERRED with stated deltas: [CALL-4]'s remaining v0.44 admissions — a measure over a result place formed with field-selection `psuffix`es, `deref` wrappings or subscripts, and a route over any variant of any returned enum — each numbered rules +0 and grammar productions +0, the first two of that rule's three admissions, a result of measured type and a measure over a bare result place, having landed with the kernel rows that first produce a measured result; [FN-7]'s `command.heap` standard-input row, whose delta is entry standard-input rows +1 and which cannot be written until [EFF-1]'s `heap` allocation atom retires; the `arena_extent` reservation row together with the per-activation refusal its soundness needs, numbered rules +0, grammar productions +0, records +1; the confinement position closure and the `&uniq` parameter refusal over a container, a loan-bearing type, or a type parameter, numbered rules +1 and grammar productions +0; the retirement of `array<T, N>` with its `array_new` row in favour of the `FixedVector<T, n>` const form, numbered rules +0, grammar productions -1, writer operation spellings -1; and [MSR-3]'s four remaining measure-datum placements — construct, [LIV-2] `set` target, enum-payload binder and destructuring binder — numbered rules +0 and grammar productions +0, the entry placement and the `let` rebind placement having landed beside the call placement.
+META-5 delta declaration: numbered rules +12/-0 (148 remain), being [MSR-1], [MSR-2], [MSR-4], [MSR-6], [LIV-1], [LIV-2], [PROV-6], [PROV-1], [BLK-0], [BLK-1], [BLK-2] and [BLK-3]; grammar productions +4/-0 (88 remain), being `dispose_stmt`, `region_param`, `linearity_bound` and `clause_op`, the clause tail's Bool-valued operator set [MSR-5]; changed productions 13, being `affine_factor`, which admits an `atom`, a `call` and a `construct`, and through the `call` the four measure formers [INV-1], `clause_expr`, which is one `affine_expr` or two around one `clause_op`, so a clause side is the affine expression an invariant already writes and `+`, `-` and `*` are consumed inside it [MSR-5], `fn_decl`, which takes an ordered result list, `result_route`, which takes an optional ordinal binder, `let_stmt`, which takes a parenthesized binder list over a `call` and a destructuring consume over a nominal, `set_stmt`, whose parenthesized target list takes one `call` or a value list of one expression per target, `return_stmt`, which takes one expression per declared result, `stmt`, which gains `dispose_stmt`, `struct_decl` and `enum_decl`, each of which takes an optional `linear` modifier and an optional `region_params`, `gparam`, whose bound is mandatory and takes one of the three linearity classes beside a marker TYPEID [S37], `linearity_bound`, whose alternatives are `copy`, `affine` and `linear`, and `region_params`, whose members are `region_param`; unique fixed lowercase grammar atoms +5/-0 (59 remain), being `is`, `linear`, `affine`, `copy` and `dispose`, which [FORM-3] therefore excludes from IDENT, so no source declaration, contract member, or callee may be spelled `linear`, `affine`, `copy`, or `dispose` any more; compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +12/-1, being the four readers `len_of`, `cap_of`, `room_of` and `head_of`, which supersede v0.44's `len` [S36] and are dotless and IDENT-shaped, so `ReservedLowerNames` [OP-1] gains those four and loses `len`, and `len`, `cap`, `room` and `head` are ordinary identifiers a source declaration may use, and the nine kernel-domain operations `fixed_vector`, `arena_vector`, `arena_vector_proved`, `heap_vector`, `arena_frame`, `place_back`, `place_front`, `take_back` and `take_front`, which are declaration records rather than [OP-1] table rows and therefore add nothing to `ReservedLowerNames`, a source declaration spelling one of them being the ordinary [DIAG-1] collision a system-operation spelling already is; compiler-owned nominal type spellings +4/-0, being `Vector`, `FixedVector`, `Heap` and `Arena`, which are [TYPE-2] types and not entries of any operation or system domain; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains), whose closed standard-input table keeps its five rows; contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); kernel declaration records +44/-0 (44 remain), being nine operations, twenty-three type, const and region parameters, and twelve value parameters in [BLK-0]'s preorder, whose one provider operand is spelled `store` in each of the three acquiring rows rather than after the store's own nominal, `arena` and `heap` being fixed grammar atoms [FORM-3] excludes from IDENT and therefore spellings no call could write; exception clauses +0/-1, being [ENT-5]'s element-position carve-out, removed rather than narrowed. [ENT-3] gains no source label and retires none. [FORM-2], [GRAM-6], [TYPE-2], [TYPE-3], [TYPE-5], [SET-1], [FN-1], [FN-2], [FN-7], [FN-8], [FN-9], [CALL-4], [CALL-6], [ENT-3], [ENT-3.S13], [OP-1], [OP-4], [OP-7], [OP-9], [TYPE-6], [ENT-2], [ENT-5], [ENT-6], [INV-1], [MSR-1], [MSR-2], [MSR-3], [MSR-5], [OWN-1], [OWN-11], [LIV-1], [SET-2], [CONST-1], [DIAG-1], [PROG-1], [PROV-6], [STOR-1], [STOR-3], [STOR-5], [SYS-3] and [EFF-2] are amended; twelve rule ids are added and none is retired. Six clauses are DEFERRED with stated deltas: [CALL-4]'s remaining v0.44 admissions — a measure over a result place formed with field-selection `psuffix`es, `deref` wrappings or subscripts, and a route over any variant of any returned enum — each numbered rules +0 and grammar productions +0, the first two of that rule's three admissions, a result of measured type and a measure over a bare result place, having landed with the kernel rows that first produce a measured result; [FN-7]'s `command.heap` standard-input row, whose delta is entry standard-input rows +1 and which cannot be written until [EFF-1]'s `heap` allocation atom retires; the `arena_extent` reservation row together with the per-activation refusal its soundness needs, numbered rules +0, grammar productions +0, records +1; the confinement position closure and the `&uniq` parameter refusal over a container, a loan-bearing type, or a type parameter, numbered rules +1 and grammar productions +0; the retirement of `array<T, N>` with its `array_new` row in favour of the `FixedVector<T, n>` const form, numbered rules +0, grammar productions -1, writer operation spellings -1; and [MSR-3]'s four remaining measure-datum placements — construct, [LIV-2] `set` target, enum-payload binder and destructuring binder — numbered rules +0 and grammar productions +0, the entry placement and the `let` rebind placement having landed beside the call placement.
 This version lands multi-return, the proof surface, the commit rule, the linearity half and the container half of the containers design: the ordered result list and the two writer forms that name its ordinals again at a caller, then the four measure terms, descriptor-precise support, one numeric goal disposition, the const generic as a value, then join-checked liveness with the one `set` commit that reinitializes a place, and finally linearity read against the scope with the release graph, the `linear` modifier, the early release and the destructuring consume.
 The first amendment is the grammar, which gives a `fn_decl` a parenthesized list of two or more `result_binding`s, a `let_stmt` a parenthesized binder list whose right-hand side is a `call`, a `set_stmt` a parenthesized target list over the same or over a written value list [LIV-2], and a `return_stmt` one expression per declared result. [FORM-2] states the one space each of the three lists keeps before its `(`, overriding the generic right attachment of `(` exactly as the `for` header does, and makes a destructuring `let` line-bearing.
 The second amendment, [FN-1], states what a result list is: each `result_binding` is one result ordinal, numbered from zero in written order, every result judgment reads per ordinal, and a caller names the ordinals again only through the binder list or the target list, because no expression position produces a result list. [TYPE-5] derives binder i and target i from result ordinal i, and [SET-1] commits a target list in written order under the ordinary commit judgment, over the targets [LIV-2]'s second condition admits.
@@ -934,7 +934,7 @@ The inventory is [BLK-2]'s and [BLK-3]'s rows, and this rule is that the domain 
 
 Written arguments are decided per argument, not per callee.
 A call to a kernel-domain operation writes each region argument exactly where [FORM-8] writes it — that is, exactly when no operand of that row determines it — and writes each type or const argument exactly when no operand of that row supplies it, which is [TYPE-5]'s retained-argument sentence applied to a fourth callee class.
-So `seq_heap::<u8>(store: heap, count: n)` writes `T` and elides `'s`, which its `store` operand supplies; `seq_arena::<u8>(store: arena, count: n)` writes `T` and elides `'s`, `bytes`, and `align`, all three of which its `store` operand supplies; and `seq_place(vector: v, value: e)` writes nothing.
+So `heap_vector::<u8>(store: heap, count: n)` writes `T` and elides `'s`, which its `store` operand supplies; `arena_vector::<u8>(store: arena, count: n)` writes `T` and elides `'s`, `bytes`, and `align`, all three of which its `store` operand supplies; and `place_back(vector: v, value: e)` writes nothing.
 A written argument this criterion does not require, or a missing one it does, is a hard error citing BLK-0 at the `call`, naming the operation.
 A user `fn` generic remains the other class and always writes its type and const arguments [FN-2].
 
@@ -958,7 +958,7 @@ A row's operands are [ENT-2] terms, constants, and exactly the compiler-owned fo
 The quantity is the stride and not the size because a run's slots are stride-spaced [BLK-1]: `count` of them occupy `stride_ceiling(T) * count` bytes, and a take of `size_ceiling(T) * count` would hand out a run whose last slots lie outside what the store gave it.
 A row's declared requirement is one obligation its caller discharges [MSR-4], so a requirement naming `advance<T>(count)` at an open count states a bound over an opaque term the caller has no source spelling for; a caller in that position discharges nothing and the acquisition is the refusing row's.
 `fits::<T>(count)` is not a term: it is the record-notation spelling of [OP-9]'s allocation-fit obligation over `(T, count)`, discharged by [OP-9]'s own judgment under [MSR-4].
-Every acquiring row carries that obligation and `seq_fixed` carries none, because its count is a type constant [STOR-6] governs.
+Every acquiring row carries that obligation and `fixed_vector` carries none, because its count is a type constant [STOR-6] governs.
 
 The readers are not in this domain.
 `len_of`, `cap_of`, `room_of`, and `head_of` are four [OP-1] table operations over a bare non-consuming place operand, returning `own u64`, and `pure`; a caller reading a measure of a borrowed place exhibits `reads` of it by [EFF-2]'s ordinary attribution, and a `let` binding one of them establishes the ordinary [ENT-3.S6] equality over that measure term.
@@ -986,13 +986,13 @@ The constructor entry exists to be refused: no `construct` produces a run, a pro
 Four formation rows and one reservation row, in this preorder, each one complete signature record in the [GRAM-2] `fn_sig` shape extended by this domain's requirement and relation lists [BLK-0]:
 
 ```
-fn seq_fixed<T, const n: u64>() -> result: own FixedVector<T, n> pure
+fn fixed_vector<T, const n: u64>() -> result: own FixedVector<T, n> pure
   ensures len_of(result) == 0_u64;
   ensures cap_of(result) == n;
   ensures room_of(result) == n;
   ensures head_of(result) == 0_u64;
 
-fn seq_arena<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, count: own u64)
+fn arena_vector<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, count: own u64)
     -> made: own Option<Vector<'s, T>> reads(store), writes(store), allocates(arena 's)
   requires align >= align_ceiling(T);
   requires fits::<T>(count);
@@ -1005,7 +1005,7 @@ fn seq_arena<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, b
   ensures when made is None(): room_of(store) < advance<T>(count);
   ensures cap_of(store) == cap_of(store at the call);
 
-fn seq_arena_proved<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, count: own u64)
+fn arena_vector_proved<T, const bytes: u64, const align: u64>['s](store: &uniq Arena<'s, bytes, align>, count: own u64)
     -> result: own Vector<'s, T> reads(store), writes(store), allocates(arena 's)
   requires align >= align_ceiling(T);
   requires fits::<T>(count);
@@ -1017,7 +1017,7 @@ fn seq_arena_proved<T, const bytes: u64, const align: u64>['s](store: &uniq Aren
   ensures len_of(store) == len_of(store at the call) + advance<T>(count);
   ensures cap_of(store) == cap_of(store at the call);
 
-fn seq_heap<T>['s](store: &uniq Heap<'s>, count: own u64)
+fn heap_vector<T>['s](store: &uniq Heap<'s>, count: own u64)
     -> made: own Option<Vector<'s, T>> reads(store), writes(store), allocates(heap)
   requires fits::<T>(count);
   ensures when made is Some(value: r): len_of(r) == 0_u64;
@@ -1031,7 +1031,7 @@ fn arena_frame<const bytes: u64, const align: u64>['s]() -> result: own Arena<'s
   ensures room_of(result) == bytes;
 ```
 
-`seq_fixed` needs no store and is `pure`; each of the three acquiring rows takes its store's provider as a `&uniq` parameter and publishes that store's post-state measures.
+`fixed_vector` needs no store and is `pure`; each of the three acquiring rows takes its store's provider as a `&uniq` parameter and publishes that store's post-state measures.
 Each arena row additionally requires `align >= align_ceiling(T)` as a compile-time comparison of two constants, which is what makes the bump cursor a multiple of `align` at every program point, the padding at a take zero, and `len_of(arena)` exact [MSR-1].
 Every failure of a kernel acquisition is an `Option` and this domain declares no failure nominal, because no kernel acquisition takes an affine input: a count is copy and a provider is borrowed, so a refusal has nothing to hand back.
 The general store has no proved form, because no honest compile-time domain predicate exists for it; the arena has one, whose `room_of` requirement [MSR-4] discharges and whose failure is therefore a static rejection with no runtime fallback.
@@ -1051,14 +1051,14 @@ It is deferred because the refusal quantifies over call-graph components and exe
 Four rows, in this preorder, continuing [BLK-2]'s inventory:
 
 ```
-fn seq_place(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
+fn place_back(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
   requires room_of(vector) > 0_u64;
   ensures len_of(result) == len_of(vector) + 1_u64;
   ensures room_of(result) + 1_u64 == room_of(vector);
   ensures cap_of(result) == cap_of(vector);
   ensures head_of(result) == head_of(vector);
 
-fn seq_place_front(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
+fn place_front(vector: own V, value: own T) -> result: own V reads(vector), writes(vector)
   requires room_of(vector) > 0_u64;
   ensures len_of(result) == len_of(vector) + 1_u64;
   ensures room_of(result) + 1_u64 == room_of(vector);
@@ -1066,14 +1066,14 @@ fn seq_place_front(vector: own V, value: own T) -> result: own V reads(vector), 
   ensures head_of(result) >= 0_u64;
   ensures head_of(result) <= cap_of(result);
 
-fn seq_take(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
+fn take_back(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
   requires len_of(vector) > 0_u64;
   ensures len_of(rest) + 1_u64 == len_of(vector);
   ensures room_of(rest) == room_of(vector) + 1_u64;
   ensures cap_of(rest) == cap_of(vector);
   ensures head_of(rest) == head_of(vector);
 
-fn seq_take_front(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
+fn take_front(vector: own V) -> (rest: own V, value: own T) reads(vector), writes(vector)
   requires len_of(vector) > 0_u64;
   ensures len_of(rest) + 1_u64 == len_of(vector);
   ensures room_of(rest) == room_of(vector) + 1_u64;
@@ -1082,10 +1082,10 @@ fn seq_take_front(vector: own V) -> (rest: own V, value: own T) reads(vector), w
   ensures head_of(rest) <= cap_of(rest);
 ```
 
-`seq_place` and `seq_take` move the back boundary and leave `head_of` where it was; `seq_place_front` and `seq_take_front` move the front boundary, and `head_of` is the one measure whose cell is bounded [MSR-1], so those two rows publish it two-sidedly and no row re-establishes it exactly.
+`place_back` and `take_back` move the back boundary and leave `head_of` where it was; `place_front` and `take_front` move the front boundary, and `head_of` is the one measure whose cell is bounded [MSR-1], so those two rows publish it two-sidedly and no row re-establishes it exactly.
 Each row takes the run by value and returns it, so every occurrence of a measure of `vector` in its published relations denotes that call's call datum [MSR-3] and no relation of this domain reads as a fixed point of itself.
 Element access is the ordinary surface over the initialized window and needs no row: `v[i]` reads, `set v[i] = e;` writes a copy element [LIV-2], and `let old = replace v[i] = e;` exchanges an affine one [SET-2].
-There is no swap, exchange, rebase, growth, clear, truncate, removal from the middle, filled construction, or vacant construction anywhere in this domain: a swap of two whole non-overlapping places is `set (p, q) = move q, move p;` [LIV-2], a swap of two elements of one run is `seq_take`, one element `replace`, and `seq_place`, and each remaining item is an ordinary source function over these rows.
+There is no swap, exchange, rebase, growth, clear, truncate, removal from the middle, filled construction, or vacant construction anywhere in this domain: a swap of two whole non-overlapping places is `set (p, q) = move q, move p;` [LIV-2], a swap of two elements of one run is `take_back`, one element `replace`, and `place_back`, and each remaining item is an ordinary source function over these rows.
 Nothing here is total at a capacity or an emptiness boundary, because an overwriting or an empty-take form would have to publish a displacement or a refusal this domain declares no value for.
 
 ## 6. Storage
@@ -3323,7 +3323,7 @@ An **entry datum** is the same former at the second placement, body entry.
 For each parameter of measured type and each [MSR-1] measure of it that a declared relation of that function names, one compiler-owned immutable term is identified by `(the formal ordinal, that operand's ordered projections, which measure it denotes)` and established equal to that measure at body entry.
 It is the same kind of term as a call datum and carries the same closure: no place occurs in it, no [ENT-5] event kills it, and no later write retargets it.
 That is what the two `entry image` rows of the table above denote.
-A body that writes its own parameter back — `set vector = seq_place(vector: move vector, ...)`, the ordinary shape a [LIV-2] commit gives an operation over an `own` parameter — therefore leaves every clause naming that parameter's measure meaning exactly what it read as at entry, and the caller reading the same clause after substitution reads that call's call datum, which the same statement's consume cannot kill either.
+A body that writes its own parameter back — `set vector = place_back(vector: move vector, ...)`, the ordinary shape a [LIV-2] commit gives an operation over an `own` parameter — therefore leaves every clause naming that parameter's measure meaning exactly what it read as at entry, and the caller reading the same clause after substitution reads that call's call datum, which the same statement's consume cannot kill either.
 An entry datum is formed, never proved, and it is not a second fact source: its standing orderings [MSR-2] reach it through the equality it is established with, exactly as they reach any other term.
 A parameter operand that is not a measure keeps the entry-image judgment [FN-9] states over the live place, since a value of fragment type is not a measured value and has no measure datum.
 A **rebind datum** is the same former at the third placement, a rebind.

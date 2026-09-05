@@ -3,14 +3,14 @@ fn filled<const n: u64>(value: own u8) -> result: own FixedVector<u8, n> pure co
   ensures room_of(result) <= 0_u64;
 } {
   doc "Fills a run of n slots, stating its own capacity bound as the const generic itself rather than as a bound local.";
-  let built = seq_fixed::<u8, n>();
+  let built = fixed_vector::<u8, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: len_of(built) >= at,
     invariant spare: room_of(built) + at >= n,
     invariant flat: head_of(built) <= 0_u64
   ) {
-    set built = seq_place(vector: move built, value: value);
+    set built = place_back(vector: move built, value: value);
   }
   return move built;
 }

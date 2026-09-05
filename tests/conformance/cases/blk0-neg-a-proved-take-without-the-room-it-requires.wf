@@ -3,7 +3,7 @@ command fn main() -> status: own ExitStatus pure {
   region 'a {
     let workspace = arena_frame::<16, 8, 'a>();
     region {
-      let page = seq_arena_proved::<u64>(store: &uniq workspace, count: 8_u64);
+      let page = arena_vector_proved::<u64>(store: &uniq workspace, count: 8_u64);
       let held = len_of(page);
     }
   }

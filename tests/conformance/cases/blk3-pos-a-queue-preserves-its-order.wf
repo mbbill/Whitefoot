@@ -1,20 +1,20 @@
 command fn main() -> status: own ExitStatus pure {
   doc "BLK-3: places at the back and takes at the front, so the run is a queue and no Option is written anywhere.";
-  let empty = seq_fixed::<u8, 4>();
-  let one = seq_place(vector: move empty, value: 1_u8);
-  let two = seq_place(vector: move one, value: 2_u8);
-  let three = seq_place(vector: move two, value: 3_u8);
-  let (rest0, first) = seq_take_front(vector: move three);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 1_u8);
+  let two = place_back(vector: move one, value: 2_u8);
+  let three = place_back(vector: move two, value: 3_u8);
+  let (rest0, first) = take_front(vector: move three);
   if first == 1_u8 {
   } else {
     return exit_status(code: 1_u8);
   }
-  let (rest1, second) = seq_take_front(vector: move rest0);
+  let (rest1, second) = take_front(vector: move rest0);
   if second == 2_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
-  let (rest2, third) = seq_take_front(vector: move rest1);
+  let (rest2, third) = take_front(vector: move rest1);
   if third == 3_u8 {
   } else {
     return exit_status(code: 3_u8);

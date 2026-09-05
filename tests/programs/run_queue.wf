@@ -5,9 +5,9 @@ fn pair() -> result: own FixedVector<u8, 4> pure contract {
   ensures head_of(result) <= 0_u64;
 } {
   doc "Builds a run of two values and publishes what its window then holds.";
-  let empty = seq_fixed::<u8, 4>();
-  let one = seq_place(vector: move empty, value: 7_u8);
-  let two = seq_place(vector: move one, value: 9_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  let two = place_back(vector: move one, value: 9_u8);
   return move two;
 }
 
@@ -15,7 +15,7 @@ fn append(vector: own FixedVector<u8, 4>, value: own u8) -> result: own FixedVec
   requires room_of(vector) > 0_u64;
 } {
   doc "Places one value at the back boundary of a run.";
-  return seq_place(vector: move vector, value: value);
+  return place_back(vector: move vector, value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -32,38 +32,38 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 9_u8);
   }
-  let empty = seq_fixed::<u8, 4>();
-  let one = seq_place(vector: move empty, value: 1_u8);
-  let two = seq_place(vector: move one, value: 2_u8);
-  let three = seq_place(vector: move two, value: 3_u8);
-  let (rest0, taken1) = seq_take_front(vector: move three);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 1_u8);
+  let two = place_back(vector: move one, value: 2_u8);
+  let three = place_back(vector: move two, value: 3_u8);
+  let (rest0, taken1) = take_front(vector: move three);
   if taken1 == 1_u8 {
   } else {
     return exit_status(code: 2_u8);
   }
-  let (rest1, taken2) = seq_take_front(vector: move rest0);
+  let (rest1, taken2) = take_front(vector: move rest0);
   if taken2 == 2_u8 {
   } else {
     return exit_status(code: 3_u8);
   }
-  let four = seq_place(vector: move rest1, value: 4_u8);
-  let five = seq_place(vector: move four, value: 5_u8);
+  let four = place_back(vector: move rest1, value: 4_u8);
+  let five = place_back(vector: move four, value: 5_u8);
   let wrapped = five[1_u64];
   if wrapped == 4_u8 {
   } else {
     return exit_status(code: 4_u8);
   }
-  let (rest2, taken3) = seq_take_front(vector: move five);
+  let (rest2, taken3) = take_front(vector: move five);
   if taken3 == 3_u8 {
   } else {
     return exit_status(code: 5_u8);
   }
-  let (rest3, taken4) = seq_take_front(vector: move rest2);
+  let (rest3, taken4) = take_front(vector: move rest2);
   if taken4 == 4_u8 {
   } else {
     return exit_status(code: 6_u8);
   }
-  let (rest4, taken5) = seq_take_front(vector: move rest3);
+  let (rest4, taken5) = take_front(vector: move rest3);
   if taken5 == 5_u8 {
   } else {
     return exit_status(code: 7_u8);

@@ -163,7 +163,7 @@ rebind its own, lands the element-position window store over both runs, and
 opens a run's element domain to [BLK-1]'s, which together are what let the
 design's own fixed-run library prove its contracts and run. B7a4 makes the bump
 extent execute: `arena_frame` reserves one in the reserving activation's own
-frame, `seq_arena_proved` and `seq_arena` take a run of slots from it, the
+frame, `arena_vector_proved` and `arena_vector` take a run of slots from it, the
 placement judgment and [PROV-1]'s one-store-per-region refusal are enforced,
 and the extent's release action is deleted because the reservation establishes
 its state at every activation of its block. The same batch makes an in-scope

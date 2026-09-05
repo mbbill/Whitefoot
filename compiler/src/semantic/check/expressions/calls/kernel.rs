@@ -76,7 +76,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // has no source route at all while [FN-7]'s own row is DEFERRED. It is
         // an explicit unsupported capability and never a source rejection
         // [BLK-0].
-        if matches!(record.row, KernelRow::SeqHeap) {
+        if matches!(record.row, KernelRow::HeapVector) {
             return self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, node);
         }
         let mut instance = self.kernel_written_arguments(node, signature, record, function)?;

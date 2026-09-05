@@ -835,7 +835,7 @@ fn try_place(vector: own FixedVector<u8, 4>, value: own u8)
     reads(vector), writes(vector) contract {
   ensures len_of(rest) <= len_of(vector) + 1_u64;
 } {
-  set vector = seq_place(vector: move vector, value: value);
+  set vector = place_back(vector: move vector, value: value);
 ```
 
 Before this version the `set` killed `len_of(vector)` and the clause was
@@ -1310,8 +1310,8 @@ the run's uses inside it too:
 region 'a {
   let workspace = arena_frame::<256, 8, 'a>();
   region {
-    let page = seq_arena_proved::<u64>(store: &uniq workspace, count: 4_u64);
-    let one = seq_place(vector: move page, value: 11_u64);
+    let page = arena_vector_proved::<u64>(store: &uniq workspace, count: 4_u64);
+    let one = place_back(vector: move page, value: 11_u64);
   }
 }
 ```

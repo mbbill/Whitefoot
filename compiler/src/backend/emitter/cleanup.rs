@@ -368,7 +368,7 @@ fn emit_cleanup_jobs(
                 // release at its region's scope exit reclaims the whole
                 // extent [PROV-6], so the run's action is empty and the
                 // reclamation is not performed twice. The general store's
-                // free lands with `seq_heap`, which is the row that first
+                // free lands with `heap_vector`, which is the row that first
                 // makes such a run. A run whose element type derives a
                 // release action of its own is an explicit unsupported
                 // capability, refused at its type before lowering.

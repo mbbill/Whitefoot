@@ -3327,4 +3327,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no other verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 1e87817bcbd7c87354dc68a1c0fa5d92c6bac5fb2343d82c16eb61dd9491b92b 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 1579930afd8bdf7c76730c045c39a6660d45ef3a08ed4a629df5ab69dd2b130e 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

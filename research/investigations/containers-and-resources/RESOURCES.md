@@ -146,13 +146,13 @@ The rewrite is a frame-placed run at the size the program can prove it needs:
 ```wf-design
 resource_closed command fn main() -> status: own ExitStatus pure {
   doc "Collects a bounded line and reports its length.";
-  let line = seq_fixed::<u8, 4096>();
+  let line = fixed_vector::<u8, 4096>();
   ...
 }
 ```
 
 What the writer gives up is the unbounded case, and gets back the reason: `cap` is a
-constant the formation publishes, so `room` is a standing fact, every `seq_place` is
+constant the formation publishes, so `room` is a standing fact, every `place_back` is
 discharged from a header invariant with no runtime branch, and the run is one
 contribution to `stack(entry)` rather than an item of its own. What the writer must
 now decide, and could previously avoid deciding, is the ceiling — which is the whole
@@ -180,7 +180,7 @@ because neither bounds the frame chain.
 The rewrite is a bounded work list, which is what a kernel writes anyway:
 
 ```wf-design
-  let work = seq_fixed::<Entry, 64>();
+  let work = fixed_vector::<Entry, 64>();
   set (work, seeded) = try_place(vector: move work, value: move root);
   loop @walk {
     set (work, next) = try_take(vector: move work);
@@ -253,7 +253,7 @@ the region block inside the loop —
   loop @serve {
     region 'a {
       let scratch = arena_frame::<4096, 16, 'a>();
-      let staging = seq_arena_proved::<u8>(arena: &uniq scratch, count: 256_u64);
+      let staging = arena_vector_proved::<u8>(arena: &uniq scratch, count: 256_u64);
       ...
     }
   }

@@ -251,14 +251,14 @@ This list is an implementation map, not a second language specification. The
 compiler deliberately reports remaining active-spec gaps as unsupported and
 keeps conservative LLVM when no specification-backed optimization fact exists.
 The largest such gap today is the general store. Both runs execute:
-`seq_fixed` forms a frame-resident one, `arena_frame` reserves one bump extent
-in the reserving activation's own frame and `seq_arena_proved` and `seq_arena`
+`fixed_vector` forms a frame-resident one, `arena_frame` reserves one bump extent
+in the reserving activation's own frame and `arena_vector_proved` and `arena_vector`
 take a store-resident one from it, [BLK-3]'s four boundary operations move
 either run's boundaries, `len_of`, `cap_of`, `room_of` and `head_of` read the
 measures of a run and of a store, a subscript reads the window at
 `(head_of + i) mod cap_of`, each row's requirement is discharged at the call
 under [MSR-4] and each row's declared relations are published at the caller
-under [CALL-6]. What is not implemented is `seq_heap`, which stops as an
+under [CALL-6]. What is not implemented is `heap_vector`, which stops as an
 explicit unsupported capability, now for one reason rather than two: [FN-7]'s
 `command.heap` row is DEFERRED, so no program can obtain a `Heap<'s>` value at
 all. The second reason is gone — a run's release class is decided from its

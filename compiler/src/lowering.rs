@@ -927,10 +927,10 @@ pub enum IrOperation {
     BufferMeasure {
         buffer: IrValueId,
     },
-    /// [BLK-2] `seq_fixed`: one frame-resident run of the defined type's own
+    /// [BLK-2] `fixed_vector`: one frame-resident run of the defined type's own
     /// capacity, whose window is empty. Every slot is raw and the two
     /// descriptor words are zero.
-    SeqFixed,
+    FixedVector,
     /// [BLK-2] `arena_frame`: one bump extent reserved in the reserving
     /// activation's own frame. The provider value is that reservation's base
     /// address and its cursor, and the reservation establishes the extent's

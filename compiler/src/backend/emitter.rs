@@ -1650,7 +1650,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 maximum_length,
             } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
             IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
-            IrOperation::SeqFixed => self.emit_seq_fixed(result, ty),
+            IrOperation::FixedVector => self.emit_fixed_vector(result, ty),
             IrOperation::ArenaFrame { bytes, align } => {
                 self.emit_arena_frame(result, ty, *bytes, *align)
             }

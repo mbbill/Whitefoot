@@ -57,11 +57,11 @@ impl RunShape {
 }
 
 impl<'program, 'state> FunctionEmitter<'program, 'state> {
-    /// [BLK-2] `seq_fixed`: the empty window over `n` raw slots.
+    /// [BLK-2] `fixed_vector`: the empty window over `n` raw slots.
     ///
     /// The value is the zero aggregate, so both descriptor words start at
     /// zero, which is exactly the row's four published relations.
-    pub(super) fn emit_seq_fixed(
+    pub(super) fn emit_fixed_vector(
         &mut self,
         result: IrValueId,
         ty: IrType,
