@@ -1136,7 +1136,7 @@ Two consequences other rules read. A copy view is consumed by nothing, so its lo
 Neither view is ever stored in a nominal field, an enum payload, or a run slot [STOR-5], and neither is a generic type argument [FN-2]; a view crosses a function boundary only as one direct parameter or one direct `own` result whose origins [FN-1] bounds.
 
 [VIEW-2] Formation, and the loan the formed value holds.
-Exactly two operations form a view, and both are [OP-1] table rows over one borrowed place:
+Exactly two operations form a view, each written as one [OP-1] table row over one borrowed place and each declared as one [BLK-0] record, as the last paragraph of this rule states:
 `slice_of` takes `&'r place` and produces `own Slice<'r, T>`; `mut_slice_of` takes `&uniq 'r place` and produces `own MutSlice<'r, T>`.
 The written borrow decides the row: a `&uniq` operand to `slice_of` and a shared operand to `mut_slice_of` are each a hard error citing TYPE-5 at that operand's `atom`, naming the borrow the written row takes.
 `'r` is the region the operand's borrow takes, written or elided exactly as [FORM-8] states, and `T` is the viewed place's element type; neither is a written type argument, and a written argument list on either row is a hard error citing OP-1 at the `call`.
