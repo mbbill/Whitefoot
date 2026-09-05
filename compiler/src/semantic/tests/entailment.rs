@@ -473,7 +473,8 @@ fn term_integer_range(kind: &TermKind) -> Option<(i128, i128)> {
         TermKind::Place(_, ty) | TermKind::ProjectedPlace(_, ty) => Some(type_range(*ty)),
         TermKind::Measure(..)
         | TermKind::ProjectedMeasure(..)
-        | TermKind::CountedCapture { .. } => Some(type_range(IntegerType::U64)),
+        | TermKind::CountedCapture { .. }
+        | TermKind::EntryDatum { .. } => Some(type_range(IntegerType::U64)),
         TermKind::CommitValue { ty, .. } | TermKind::CallDatum { ty, .. } => Some(type_range(*ty)),
         TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => None,
     }

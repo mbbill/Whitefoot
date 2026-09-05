@@ -213,6 +213,9 @@ pub(crate) enum FlowEventKind {
     S11,
     /// [ENT-3.S13] one declared relation instantiated at its call.
     S13,
+    /// [MSR-3] one entry datum minted at body entry, per parameter measure a
+    /// declared relation names.
+    Entry,
     Join,
     Snapshot,
     PostconditionEntryImageInvalidation,
@@ -3003,6 +3006,15 @@ fn for_each_implicit_bound(
         // table adds is the value a fixed cell has and the ordering between
         // two measures of one place. Each has empty support and no event
         // kills it, which is exactly what an implicit bound is.
+        // [MSR-3] an entry datum is one measure's value at body entry, of
+        // fragment type u64 and with empty support. Its standing orderings
+        // reach it through the equality this datum is established with at
+        // entry; what it carries of its own is the type range.
+        TermKind::EntryDatum { .. } => {
+            let (minimum, maximum) = type_range(IntegerType::U64);
+            emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);
+            emit(ZERO, id, -minimum, ImplicitBoundKind::TypeMinimum);
+        }
         TermKind::Measure(measure, _) | TermKind::ProjectedMeasure(measure, _) => {
             let (minimum, maximum) = type_range(IntegerType::U64);
             emit(id, ZERO, maximum, ImplicitBoundKind::TypeMaximum);

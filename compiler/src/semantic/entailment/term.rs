@@ -80,6 +80,19 @@ pub(crate) enum TermKind {
         measure: Option<CheckedMeasure>,
         ty: IntegerType,
     },
+    /// One immutable compiler-owned entry datum [MSR-3]: the value one
+    /// [MSR-1] measure of an `own` or shared-borrow parameter had at body
+    /// entry. The formal ordinal, the operand's ordered projections and which
+    /// measure of it the datum denotes are its complete function-local
+    /// identity. No place occurs in it, so no [ENT-5] event kills it: that is
+    /// what makes an `ensures` naming a parameter's measure mean the entry
+    /// value even where the body writes that parameter back [LIV-2], and it
+    /// is the same datum a caller substitutes as that call's call datum.
+    EntryDatum {
+        formal: u32,
+        projections: Vec<CallDatumProjection>,
+        measure: CheckedMeasure,
+    },
 }
 
 /// Ordered projection identity inside one call datum's operand place.

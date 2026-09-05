@@ -116,6 +116,9 @@ impl KillEvent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct EntryImageRecord {
     datum: PostconditionEntryImage,
+    /// The selected type of the operand's place, which [MSR-1]'s measure
+    /// former reads to know what it is measuring.
+    ty: CheckedType,
     place: ResolvedPlace,
     holders: Vec<BindingId>,
 }
@@ -761,6 +764,10 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         ..ProofFlowState::default()
     };
     analyzer.initialize_affine_parameters(&mut state.affine);
+    // [MSR-3] the entry placement, before every other source: one immutable
+    // datum per measure of a parameter any declared relation names, equal to
+    // that measure at body entry.
+    analyzer.establish_entry_datums(&mut state.facts);
     analyzer
         .scopes
         .push(function.parameters.iter().map(|p| p.binding).collect());
@@ -1543,7 +1550,16 @@ impl Analyzer<'_, '_> {
             } => self.postcondition_named_const_term(*declaration, projections, *ty),
             RelationDatum::Literal { value, .. } => self.postcondition_constant_term(value),
             RelationDatum::Measure(measure, place) => match place.root {
+                // [MSR-3] an `own` or shared-borrow parameter's measure in an
+                // `ensures` denotes that parameter's entry datum, which the
+                // entry placement minted and which nothing kills. The live
+                // term is not read here: a body that writes the parameter
+                // back still means the entry value.
                 PostconditionPlaceRoot::Parameter { ordinal } => {
+                    let kind = Self::entry_datum_kind(ordinal, &place.projections, *measure);
+                    if let Some(datum) = self.terms.interned(&kind) {
+                        return Some(datum);
+                    }
                     let binding = self.function.parameters.get(ordinal as usize)?.binding;
                     self.postcondition_measure_term(
                         *measure,
@@ -1908,7 +1924,8 @@ impl Analyzer<'_, '_> {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => {}
             TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
-            | TermKind::CallDatum { .. } => {}
+            | TermKind::CallDatum { .. }
+            | TermKind::EntryDatum { .. } => {}
         }
         holders
     }
@@ -3404,20 +3421,24 @@ impl Analyzer<'_, '_> {
                     RelationDatum::Parameter {
                         ordinal,
                         projections,
-                        ..
-                    } => Some(PostconditionEntryImage {
-                        parameter: *ordinal,
-                        projections: projections.clone(),
-                        measure: None,
-                    }),
+                        ty,
+                    } => Some((
+                        PostconditionEntryImage {
+                            parameter: *ordinal,
+                            projections: projections.clone(),
+                            measure: None,
+                        },
+                        *ty,
+                    )),
                     RelationDatum::Measure(measure, place) => match place.root {
-                        PostconditionPlaceRoot::Parameter { ordinal } => {
-                            Some(PostconditionEntryImage {
+                        PostconditionPlaceRoot::Parameter { ordinal } => Some((
+                            PostconditionEntryImage {
                                 parameter: ordinal,
                                 projections: place.projections.clone(),
                                 measure: Some(*measure),
-                            })
-                        }
+                            },
+                            place.ty,
+                        )),
                         // A result place is not a parameter entry image.
                         PostconditionPlaceRoot::Result { .. } => None,
                     },
@@ -3428,7 +3449,9 @@ impl Analyzer<'_, '_> {
                 if let Some(datum) = datum {
                     let index = data
                         .iter()
-                        .position(|existing| existing == &datum)
+                        .position(|existing: &(PostconditionEntryImage, CheckedType)| {
+                            existing.0 == datum.0
+                        })
                         .unwrap_or_else(|| {
                             let index = data.len();
                             data.push(datum);
@@ -3443,7 +3466,7 @@ impl Analyzer<'_, '_> {
         }
         self.entry_images = data
             .into_iter()
-            .map(|datum| {
+            .map(|(datum, ty)| {
                 let parameter = self
                     .function
                     .parameters
@@ -3457,12 +3480,83 @@ impl Analyzer<'_, '_> {
                 let (place, holders) = self.resolve_goal_support(&support);
                 EntryImageRecord {
                     datum,
+                    ty,
                     place,
                     holders,
                 }
             })
             .collect();
         self.postcondition_entry_images = relation_images;
+    }
+
+    /// [MSR-3] the entry placement: at body entry, per parameter of measured
+    /// type and per measure any declared relation names, one compiler-owned
+    /// immutable datum established equal to that measure.
+    ///
+    /// The datum contains no place, so no [ENT-5] event kills it. That is
+    /// what makes an `ensures` naming an `own` parameter's measure denote the
+    /// entry value even where the body writes that parameter back with a
+    /// [LIV-2] `set`, and it is the callee-side half of the denotation
+    /// [MSR-3]'s table gives the same operand at a caller.
+    fn establish_entry_datums(&mut self, state: &mut FactState) {
+        if self.entry_images.is_empty() {
+            return;
+        }
+        let event = self.proof_event(FlowEventKind::Entry, None);
+        for index in 0..self.entry_images.len() {
+            let image = self.entry_images[index].datum.clone();
+            let ty = self.entry_images[index].ty;
+            let Some(measure) = image.measure else {
+                continue;
+            };
+            let Some(parameter) = self.function.parameters.get(image.parameter as usize) else {
+                continue;
+            };
+            let binding = parameter.binding;
+            let Some(live) = self.postcondition_measure_term(
+                measure,
+                PlaceRoot::Binding(binding),
+                &image.projections,
+                ty,
+            ) else {
+                continue;
+            };
+            let datum = self.terms.intern(Self::entry_datum_kind(
+                image.parameter,
+                &image.projections,
+                measure,
+            ));
+            state.establish(
+                &Relation::Equal {
+                    left: datum,
+                    right: live,
+                    difference: 0,
+                },
+                &mut self.derivations,
+                event,
+            );
+        }
+    }
+
+    /// [MSR-3] the identity of one entry datum: the formal ordinal, the
+    /// operand's ordered projections, and which [MSR-1] measure of it the
+    /// datum denotes.
+    fn entry_datum_kind(
+        formal: u32,
+        projections: &[GoalProjection],
+        measure: CheckedMeasure,
+    ) -> TermKind {
+        TermKind::EntryDatum {
+            formal,
+            projections: projections
+                .iter()
+                .map(|projection| match projection {
+                    GoalProjection::Deref => CallDatumProjection::Deref,
+                    GoalProjection::Field(field) => CallDatumProjection::Field(*field),
+                })
+                .collect(),
+            measure,
+        }
     }
 
     fn is_holder(&self, binding: BindingId) -> bool {
@@ -3497,7 +3591,8 @@ impl Analyzer<'_, '_> {
             // evaluated value that no later event can change.
             TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
-            | TermKind::CallDatum { .. } => false,
+            | TermKind::CallDatum { .. }
+            | TermKind::EntryDatum { .. } => false,
             TermKind::Place(place, _) => match event {
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
@@ -3567,7 +3662,8 @@ impl Analyzer<'_, '_> {
             TermKind::Zero | TermKind::Constant(_) | TermKind::ConstParameter(_) => false,
             TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
-            | TermKind::CallDatum { .. } => false,
+            | TermKind::CallDatum { .. }
+            | TermKind::EntryDatum { .. } => false,
             TermKind::Place(place, _) | TermKind::Measure(_, place) => match place.root {
                 PlaceRoot::Binding(binding) => exited.contains(&binding),
                 PlaceRoot::Constant(_) => false,
@@ -3768,7 +3864,11 @@ impl Analyzer<'_, '_> {
                 .iter()
                 .enumerate()
                 .filter_map(|(index, image)| {
-                    (states.entry_images[index].is_none()
+                    // [MSR-3] a measure operand denotes the entry datum, and
+                    // no [ENT-5] event kills a datum. Only a non-measure
+                    // operand still reads the live place and can lose it.
+                    (image.datum.measure.is_none()
+                        && states.entry_images[index].is_none()
                         && self.event_kills_entry_image(image, event))
                     .then_some(index)
                 })
@@ -7492,7 +7592,8 @@ impl Analyzer<'_, '_> {
             | TermKind::ProjectedPlace(_, _)
             | TermKind::CountedCapture { .. }
             | TermKind::CommitValue { .. }
-            | TermKind::CallDatum { .. } => None,
+            | TermKind::CallDatum { .. }
+            | TermKind::EntryDatum { .. } => None,
         }
     }
 
@@ -12701,6 +12802,28 @@ impl Analyzer<'_, '_> {
                 || "<argument value at the call>".to_owned(),
                 |measure| format!("<argument {} at the call>", measure.spelling()),
             ),
+            // [MSR-3] an entry datum is what the writer wrote: a measure of
+            // the parameter, at the one state an `ensures` gives it.
+            TermKind::EntryDatum {
+                formal,
+                projections,
+                measure,
+            } => {
+                let mut place = self
+                    .function
+                    .parameters
+                    .get(*formal as usize)
+                    .map_or_else(|| "?".to_owned(), |parameter| parameter.name.clone());
+                for projection in projections {
+                    match projection {
+                        CallDatumProjection::Deref => place = format!("deref({place})"),
+                        CallDatumProjection::Field(field) => {
+                            place = format!("{place}.{field}");
+                        }
+                    }
+                }
+                format!("{}({place})", measure.spelling())
+            }
         }
     }
 

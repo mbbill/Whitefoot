@@ -1,0 +1,27 @@
+fn try_place(vector: own FixedVector<u8, 4>, value: own u8) -> (rest: own FixedVector<u8, 4>, unplaced: own Option<u8>) reads(vector), writes(vector) contract {
+  ensures head_of(rest) == head_of(vector);
+  ensures len_of(rest) <= len_of(vector) + 1_u64;
+  ensures len_of(rest) >= len_of(vector);
+  ensures room_of(rest) <= room_of(vector);
+  ensures room_of(rest) + 1_u64 >= room_of(vector);
+} {
+  doc "Appends one value, handing it back when the run is full.";
+  let spare = room_of(vector);
+  let fits = spare > 0_u64;
+  if fits {
+    set vector = seq_place(vector: move vector, value: value);
+    return move vector, None<u8>();
+  }
+  return move vector, Some<u8>(value: value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "MSR-3: an own parameter's measure in an ensures denotes its entry datum, so the ordinary shape of an operation over an own parameter -- write the result back to the parameter's own binding -- leaves every clause naming that parameter meaning what it read as at entry.";
+  let empty = seq_fixed::<u8, 4>();
+  let (one, spare) = try_place(vector: move empty, value: 7_u8);
+  let held = len_of(one);
+  if held == 1_u64 {
+    return exit_status(code: 0_u8);
+  }
+  return exit_status(code: 1_u8);
+}

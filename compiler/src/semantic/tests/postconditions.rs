@@ -672,8 +672,21 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
+/// [MSR-3] a measure of a parameter is that parameter's entry datum, which
+/// contains no place and which no [ENT-5] event kills, so neither an element
+/// write nor the consume of the parameter's own root takes it away. What the
+/// second half of this case pinned before the entry placement landed — an
+/// unproved relation after the root was consumed — was the cost of reading
+/// the live term where the rule says the entry value; the relation is now
+/// discharged, and it is the same relation the writer stated.
+///
+/// A parameter of fragment type is not a measured value and has no measure
+/// datum, so its entry image still invalidates; the third half is that
+/// boundary, and the conformance case
+/// `msr3-neg-a-parameter-value-written-back-loses-its-entry-image` carries
+/// the same judgment as a source verdict.
 #[test]
-fn length_entry_images_ignore_element_writes_but_not_root_replacement() {
+fn measure_entry_datums_survive_element_writes_and_root_replacement() {
     let element = br#"fn kept(values: own array<u8, 2>) -> result: own u64 pure contract {
   define size = len_of(values);
   ensures result == size;
@@ -716,7 +729,33 @@ command fn main() -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
+    assert_complete(replacement);
     let proof = postcondition_proof(replacement, "replaced");
+    assert_eq!(
+        dispositions(&proof),
+        vec![PostconditionDisposition::Discharged]
+    );
+    assert!(
+        proof.exits[0]
+            .entry_images
+            .iter()
+            .all(|image| image.invalidation.is_none())
+    );
+
+    // A fragment parameter has no measure and therefore no entry datum: its
+    // entry image is the live place, and writing the parameter back takes it.
+    let fragment = br#"fn shifted(count: own u64) -> result: own u64 pure contract {
+  ensures result == count;
+} {
+  set count = 1_u64;
+  return count;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    let proof = postcondition_proof(fragment, "shifted");
     assert_eq!(
         dispositions(&proof),
         vec![PostconditionDisposition::Unproved]
