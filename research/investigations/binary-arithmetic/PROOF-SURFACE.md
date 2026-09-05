@@ -163,10 +163,22 @@ though `times` were a binary operator binding looser than `*`, and that
 reading is a lie: its right operand must be a premise, not a value. Mandatory
 parentheses reduce the pose — after `times` the next token is always `IDENT`
 or `(`, never the start of an arbitrary expression — but they do not remove
-it. Three plausible-but-wrong writings follow from the pose and each needs a
-clean rejection: `use 3 times x;` where `x` is a value, `use 3 times 4 times
-(a<=b);`, and `use a + 3 times (b <= c);`. Only the middle one becomes a parse
-error; the other two must be caught and explained after parsing.
+it. Three plausible-but-wrong writings follow from the pose. All three were
+compiled against v0.48, and the pose costs less than this note first claimed:
+two are parse errors and the third is a resolution failure that names the
+right domain.
+
+| written | rejection |
+| --- | --- |
+| `use a + 3 times (b <= c);` | `[GRAM-4]` at the `+`, `expected: [";", "times"]` |
+| `use 3 times 4 times (a <= b);` | `[GRAM-4]` at the second decimal, `expected: ["IDENT", "("]` |
+| `use 3 times x;` where `x` is a value | `[INV-1] UnresolvedUse { spelling: "x", role: InvariantFact, admissible: [Invariant] }` |
+
+The third is the one the pose actually reaches, and it is not a confusing
+message: a premise IDENT queries only the invariant-name domain, so a value
+spelling cannot resolve there however plausibly it reads. What no diagnostic
+says today is *why* — that this position wants an invariant name and `x` is a
+value — and that is the residue worth watching if a writer trial hits it.
 
 **Parentheses carry two roles.** Inside a relation they group an
 `affine_expr`; around a relation in `use` they delimit a premise. This is the
