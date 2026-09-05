@@ -1,0 +1,16 @@
+fn probe(p: own u64, k: own u64, n: own u64) -> ok: own u64 pure contract {
+  requires p < k;
+} {
+  doc "probe";
+  let step = 0_u64;
+  invariant lt: p < k;
+  invariant reach: step <= n {
+    use n * lt;
+  }
+  return step;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = probe(p: 1_u64, k: 2_u64, n: 3_u64);
+  return exit_status(code: 0_u8);
+}
