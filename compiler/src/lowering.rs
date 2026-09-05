@@ -104,6 +104,43 @@ impl IrFlatElement {
     }
 }
 
+/// One [BLK-2] take from a store, in the shape its emission reads.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrStoreTake {
+    /// The address of the `&uniq` provider operand: the take reads the
+    /// store's state and writes it back through the same borrow.
+    pub store: IrValueId,
+    pub count: IrValueId,
+    /// The stride one slot occupies [OP-9], which is the spacing a run's
+    /// window is laid out at [BLK-1].
+    pub stride: u64,
+    /// The bump extent's own byte extent and alignment. A general store has
+    /// neither and asks its host instead.
+    pub extent: Option<IrExtentConstants>,
+    /// The `Option` the row hands back when the store has nothing to give; a
+    /// row whose domain requirement is proved carries none.
+    pub refusal: Option<IrRefusal>,
+}
+
+/// The two type constants of one bump extent [BLK-2]: its byte extent and
+/// its alignment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrExtentConstants {
+    pub bytes: u64,
+    pub align: u64,
+}
+
+/// The `Option` a refusing [BLK-2] row hands back, by the tags [PRE-1] gives
+/// its two variants.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct IrRefusal {
+    pub nominal: IrNominalId,
+    /// The tag of the variant carrying the run.
+    pub made: u32,
+    /// The tag of the empty variant.
+    pub refused: u32,
+}
+
 /// The referent of an [`IrType::Address`]: directly stored content that a
 /// borrow addresses.
 ///
@@ -113,9 +150,19 @@ impl IrFlatElement {
 pub enum IrAddressed {
     Unit,
     Bool,
-    Integer { width: u8, signed: bool },
-    Float { width: u8 },
+    Integer {
+        width: u8,
+        signed: bool,
+    },
+    Float {
+        width: u8,
+    },
     Nominal(IrNominalId),
+    /// One provider value [PROV-1]. A provider is the one operand a [BLK-0]
+    /// acquiring row takes by `&uniq`, and a bump take advances its cursor
+    /// through that borrow, so its binding carries a stable address exactly
+    /// as a stored scalar's does.
+    Provider,
 }
 
 impl IrAddressed {
@@ -126,6 +173,7 @@ impl IrAddressed {
             Self::Integer { width, signed } => IrType::Integer { width, signed },
             Self::Float { width } => IrType::Float { width },
             Self::Nominal(id) => IrType::Nominal(id),
+            Self::Provider => IrType::Provider,
         }
     }
 
@@ -136,13 +184,13 @@ impl IrAddressed {
             IrType::Integer { width, signed } => Self::Integer { width, signed },
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
+            IrType::Provider => Self::Provider,
             IrType::Address(_)
             | IrType::Array { .. }
             | IrType::Buffer { .. }
             | IrType::Slice { .. }
             | IrType::FixedVector { .. }
-            | IrType::Vector { .. }
-            | IrType::Provider => return None,
+            | IrType::Vector { .. } => return None,
         })
     }
 }
@@ -862,6 +910,24 @@ pub enum IrOperation {
     /// capacity, whose window is empty. Every slot is raw and the two
     /// descriptor words are zero.
     SeqFixed,
+    /// [BLK-2] `arena_frame`: one bump extent reserved in the reserving
+    /// activation's own frame. The provider value is that reservation's base
+    /// address and its cursor, and the reservation establishes the extent's
+    /// initial state — the cursor at zero — at every activation of the region
+    /// block naming its store region.
+    ArenaFrame {
+        bytes: u64,
+        align: u64,
+    },
+    /// [BLK-2] one take from a store: the run of `count` slots the store
+    /// hands out, and the store's own advanced state.
+    ///
+    /// `store` is the address of the `&uniq` provider operand, so the take
+    /// reads the store's state and writes it back through the same borrow.
+    /// A `refusal` names the `Option` the row hands back when the store has
+    /// nothing to give; a row whose domain requirement is proved carries
+    /// none and always succeeds.
+    StoreTake(IrStoreTake),
     /// [MSR-1] one measure of a run or a bump extent, read as its [OP-1]
     /// reader row loads it. A cell the measure table fixes as a constant
     /// never reaches here.

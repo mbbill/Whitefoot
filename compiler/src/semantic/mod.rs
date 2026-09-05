@@ -107,6 +107,9 @@ pub enum SemanticRule {
     /// The one `set` commit: the read-out, the three admission conditions,
     /// and the simultaneous reinitialization of every target.
     Liv2,
+    /// A store's identity is a region: brand resolution at every elided
+    /// store-region position, and the one reserving occurrence per region.
+    Prov1,
     /// Linearity read against the scope: the release graph, the `linear`
     /// modifier, `dispose`, the destructuring consume, the partial-consume
     /// refusal, and the linearity bound on a generic parameter.
@@ -117,6 +120,8 @@ pub enum SemanticRule {
     Blk0,
     /// The two runs, the one window, and what a slot may hold.
     Blk1,
+    /// Formation and reservation: where a reserving occurrence may stand.
+    Blk2,
     /// Explicit dereference of a borrow holder.
     Type7,
     /// Storage-class and affine replacement restrictions.
@@ -221,9 +226,11 @@ impl SemanticRule {
             Self::Own14 => "OWN-14",
             Self::Liv1 => "LIV-1",
             Self::Liv2 => "LIV-2",
+            Self::Prov1 => "PROV-1",
             Self::Prov6 => "PROV-6",
             Self::Blk0 => "BLK-0",
             Self::Blk1 => "BLK-1",
+            Self::Blk2 => "BLK-2",
             Self::Type7 => "TYPE-7",
             Self::Stor1 => "STOR-1",
             Self::Stor4 => "STOR-4",
@@ -306,10 +313,12 @@ impl SemanticRule {
             Self::Own12 => Self::Own14,
             Self::Own14 => Self::Liv1,
             Self::Liv1 => Self::Liv2,
-            Self::Liv2 => Self::Prov6,
+            Self::Liv2 => Self::Prov1,
+            Self::Prov1 => Self::Prov6,
             Self::Prov6 => Self::Blk0,
             Self::Blk0 => Self::Blk1,
-            Self::Blk1 => Self::Stor1,
+            Self::Blk1 => Self::Blk2,
+            Self::Blk2 => Self::Stor1,
             Self::Stor1 => Self::Stor4,
             Self::Stor4 => Self::Stor5,
             Self::Stor5 => Self::Op1,
@@ -379,38 +388,40 @@ impl SemanticRule {
             Self::Own14 => 23,
             Self::Liv1 => 24,
             Self::Liv2 => 25,
-            Self::Prov6 => 26,
-            Self::Blk0 => 27,
-            Self::Blk1 => 28,
-            Self::Stor1 => 29,
-            Self::Stor4 => 30,
-            Self::Stor5 => 31,
-            Self::Op1 => 32,
-            Self::Op2 => 33,
-            Self::Op4 => 34,
-            Self::Op5 => 35,
-            Self::Op6 => 36,
-            Self::Op9 => 37,
-            Self::Fn1 => 38,
-            Self::Fn2 => 39,
-            Self::Fn3 => 40,
-            Self::Fn4 => 41,
-            Self::Fn6 => 42,
-            Self::Fn7 => 43,
-            Self::Fn8 => 44,
-            Self::Fn9 => 45,
-            Self::Call4 => 46,
-            Self::Eff1 => 47,
-            Self::Eff2 => 48,
-            Self::Err2 => 49,
-            Self::Err3 => 50,
-            Self::Sys2 => 51,
-            Self::Sys8 => 52,
-            Self::Ent2 => 53,
-            Self::Msr3 => 54,
-            Self::Call6 => 55,
-            Self::Inv1 => 56,
-            Self::Prf1 => 57,
+            Self::Prov1 => 26,
+            Self::Prov6 => 27,
+            Self::Blk0 => 28,
+            Self::Blk1 => 29,
+            Self::Blk2 => 30,
+            Self::Stor1 => 31,
+            Self::Stor4 => 32,
+            Self::Stor5 => 33,
+            Self::Op1 => 34,
+            Self::Op2 => 35,
+            Self::Op4 => 36,
+            Self::Op5 => 37,
+            Self::Op6 => 38,
+            Self::Op9 => 39,
+            Self::Fn1 => 40,
+            Self::Fn2 => 41,
+            Self::Fn3 => 42,
+            Self::Fn4 => 43,
+            Self::Fn6 => 44,
+            Self::Fn7 => 45,
+            Self::Fn8 => 46,
+            Self::Fn9 => 47,
+            Self::Call4 => 48,
+            Self::Eff1 => 49,
+            Self::Eff2 => 50,
+            Self::Err2 => 51,
+            Self::Err3 => 52,
+            Self::Sys2 => 53,
+            Self::Sys8 => 54,
+            Self::Ent2 => 55,
+            Self::Msr3 => 56,
+            Self::Call6 => 57,
+            Self::Inv1 => 58,
+            Self::Prf1 => 59,
         }
     }
 }
@@ -638,6 +649,24 @@ pub enum SemanticIssueKind {
         /// The operand's exact type.
         ty: String,
         /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [BLK-2] a reservation whose written store region is not one an
+    /// enclosing `region_stmt` of this function introduced, or whose
+    /// occurrence is not a statement of that region block and of no loop
+    /// inside it.
+    ReservationPlacement {
+        /// The written store region.
+        region: String,
+        /// Exact restructuring required by BLK-2.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-1] a second reserving occurrence naming a region an earlier one
+    /// already named.
+    SecondStoreInOneRegion {
+        /// The written store region.
+        region: String,
+        /// Exact restructuring required by PROV-1.
         mechanical_fix: &'static str,
     },
     /// [PROV-6, S32] an instantiation whose argument's linearity class is not

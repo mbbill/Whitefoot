@@ -22,6 +22,32 @@ fn a_run_is_a_queue_whose_window_wraps() {
     assert!(output.stderr.is_empty());
 }
 
+/// [BLK-2, PROV-1, MSR-1] the store-backed half of the two runs at execution:
+/// one bump extent reserved in the entry's own frame, the proved take and the
+/// checked take over it, and the refusal a take the extent cannot hold gets.
+///
+/// The program checks the store as well as the runs it hands out. It reads the
+/// extent's own measures before and after each take, so a cursor that advanced
+/// by the wrong `advance<T>(count)` reports a nonzero code; it observes that a
+/// refused take leaves the cursor exactly where it was, which is the relation
+/// the `None` arm publishes; and it fills a taken run through the boundary row
+/// and reads the window back, so a descriptor pointing at the wrong byte of the
+/// extent is visible rather than silent.
+#[test]
+fn a_bump_extent_hands_out_runs_and_refuses_the_one_it_cannot_hold() {
+    let llvm = compile_program("arena_workspace.wf");
+    // The extent is one frame reservation at its own written alignment, and
+    // the take is pointer arithmetic inside it: no allocation call is emitted
+    // [BLK-2, STOR-1].
+    assert!(llvm.contains("getelementptr inbounds i8, ptr"));
+    assert!(!llvm.contains("call ptr @malloc"));
+
+    let output = compile_and_run(&llvm);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(output.stdout.is_empty());
+    assert!(output.stderr.is_empty());
+}
+
 /// [BLK-1, MSR-3, MSR-5, SET-2] the fixed-run half of the container design's
 /// own library, executing: the two constructions, the transposing removal, the
 /// two checked boundary forms, and the drain that returns a wrapped window to

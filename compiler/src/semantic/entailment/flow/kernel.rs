@@ -186,7 +186,7 @@ impl Analyzer<'_, '_> {
             let displacement = |offset: KernelOffset| match offset {
                 KernelOffset::Constant(value) => Some(i128::from(value)),
                 KernelOffset::Advance(ordinal) => {
-                    kernel_advance(&instance, &goal_arguments, ordinal)
+                    super::super::super::kernel::kernel_advance(&instance, &goal_arguments, ordinal)
                 }
             };
             let Some(bounds) = relation.bounds(displacement) else {
@@ -388,35 +388,4 @@ const fn kernel_constant(
         super::super::super::kernel::KernelConst::Bytes => instance.bytes,
         super::super::super::kernel::KernelConst::Align => instance.align,
     }
-}
-
-/// `advance<T>(count)` at this instance [BLK-0].
-///
-/// It is `round_up(size_ceiling(T) * count, align)` and is a symbolic
-/// constant exactly when `count` is closed; an open count leaves the
-/// displacement unresolved and the relation over it unavailable.
-fn kernel_advance(
-    instance: &CheckedKernelInstance,
-    goal_arguments: &[super::super::super::goal::GoalExpression],
-    ordinal: u32,
-) -> Option<i128> {
-    let super::super::super::goal::GoalExpression::Datum(
-        super::super::super::goal::GoalDatum::Literal(
-            super::super::super::model::CheckedValue::Integer { bits, .. },
-        ),
-    ) = goal_arguments.get(ordinal as usize)?
-    else {
-        return None;
-    };
-    let CheckedConst::Value(align) = instance.align? else {
-        return None;
-    };
-    let super::super::super::model::CheckedLayoutMagnitude::Finite(size) =
-        instance.element_ceiling.size
-    else {
-        return None;
-    };
-    let bytes = size.checked_mul(*bits)?;
-    let rounded = bytes.checked_add(align.checked_sub(1)?)? / align * align;
-    Some(i128::from(rounded))
 }

@@ -15,6 +15,16 @@ use crate::{IrBoundary, IrMeasure};
 
 use super::*;
 
+/// The two written constants of one bump extent at this instance [BLK-2].
+fn extent_constants(instance: &CheckedKernelInstance) -> Result<(u64, u64), LoweringFailure> {
+    let value = |constant: Option<crate::semantic::CheckedConst>| {
+        constant
+            .and_then(|constant| constant.value())
+            .ok_or(LoweringFailure::InvalidCheckedProgram)
+    };
+    Ok((value(instance.bytes)?, value(instance.align)?))
+}
+
 /// The IR spelling of one [MSR-1] measure.
 const fn lower_measure(measure: CheckedMeasure) -> IrMeasure {
     match measure {
@@ -55,6 +65,29 @@ impl IrBuilder<'_> {
             }
             MeasureCell::ExactExtent | MeasureCell::ExactRuntime | MeasureCell::Bounded => {
                 let container = self.container_root_value(root)?;
+                // A bump extent carries one measure word, its cursor: its
+                // `room_of` is the complement [MSR-2] relates to the byte
+                // extent its type already fixes, so it is formed here rather
+                // than loaded [MSR-1].
+                if measure == CheckedMeasure::Room
+                    && root.measured() == Some(crate::semantic::MeasuredKind::Extent)
+                {
+                    let bytes = root
+                        .type_constant()
+                        .and_then(|constant| constant.value())
+                        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    let cursor = self.define(
+                        IrType::Integer {
+                            width: 64,
+                            signed: false,
+                        },
+                        IrOperation::ContainerMeasure {
+                            measure: IrMeasure::Length,
+                            container,
+                        },
+                    )?;
+                    return self.lower_measure_complement(bytes, cursor);
+                }
                 self.define(
                     IrType::Integer {
                         width: 64,
@@ -240,14 +273,111 @@ impl IrBuilder<'_> {
             | crate::KernelRow::SeqTakeFront => {
                 self.lower_boundary_row(row, instance, arguments, result)
             }
-            // [BLK-2]'s store-backed rows and the reservation row are the
-            // capability this version does not lower; the checker stops a
-            // call to one before it reaches here.
+            crate::KernelRow::ArenaFrame => {
+                if !arguments.is_empty() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                let (bytes, align) = extent_constants(instance)?;
+                self.define(result_type, IrOperation::ArenaFrame { bytes, align })
+            }
             crate::KernelRow::SeqArena
             | crate::KernelRow::SeqArenaProved
-            | crate::KernelRow::SeqHeap
-            | crate::KernelRow::ArenaFrame => Err(LoweringFailure::InvalidCheckedProgram),
+            | crate::KernelRow::SeqHeap => self.lower_store_take(row, instance, arguments, result),
         }
+    }
+
+    /// One of [BLK-2]'s three acquiring rows.
+    ///
+    /// Each takes its store's provider by `&uniq` and hands back the run the
+    /// store gave it: the bump rows advance a cursor inside the extent this
+    /// activation reserved, and the general-store row asks its host. A row
+    /// whose refusal is a value carries the `Option` [PRE-1] declares; the
+    /// proved arena row carries none, its domain requirement having been
+    /// discharged at the call [MSR-4].
+    fn lower_store_take(
+        &mut self,
+        row: crate::KernelRow,
+        instance: &CheckedKernelInstance,
+        arguments: &[CheckedExpression],
+        result: CheckedType,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let [store, count] = arguments else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let store = self.expression(store)?;
+        if self.value_type(store)? != IrType::Address(crate::IrAddressed::Provider) {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let count = self.expression(count)?;
+        if self.value_type(count)?
+            != (IrType::Integer {
+                width: 64,
+                signed: false,
+            })
+        {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
+        let stride = match instance.element_ceiling.stride {
+            crate::semantic::CheckedLayoutMagnitude::Finite(stride) => stride,
+            crate::semantic::CheckedLayoutMagnitude::AboveU64 => {
+                return Err(LoweringFailure::InvalidCheckedProgram);
+            }
+        };
+        let extent = match row {
+            crate::KernelRow::SeqHeap => None,
+            _ => {
+                let (bytes, align) = extent_constants(instance)?;
+                Some(crate::IrExtentConstants { bytes, align })
+            }
+        };
+        let refusal = match row {
+            crate::KernelRow::SeqArenaProved => None,
+            _ => Some(self.refusal_of(result)?),
+        };
+        self.define(
+            lower_type(result)?,
+            IrOperation::StoreTake(crate::IrStoreTake {
+                store,
+                count,
+                stride,
+                extent,
+                refusal,
+            }),
+        )
+    }
+
+    /// The `Option` a refusing row hands back, by the tags [PRE-1] gives its
+    /// two variants: exactly one carries the run and exactly one is empty.
+    fn refusal_of(&self, result: CheckedType) -> Result<crate::IrRefusal, LoweringFailure> {
+        let CheckedType::Nominal(id) = result else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let nominal = IrNominalId(id.0);
+        let IrNominalKind::Enum { variants } = &self
+            .nominals
+            .get(nominal.index())
+            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .kind
+        else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        let mut made = None;
+        let mut refused = None;
+        for variant in variants {
+            match variant.fields().len() {
+                0 => refused = refused.xor(Some(variant.tag())),
+                1 => made = made.xor(Some(variant.tag())),
+                _ => return Err(LoweringFailure::InvalidCheckedProgram),
+            }
+        }
+        let (Some(made), Some(refused)) = (made, refused) else {
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        };
+        Ok(crate::IrRefusal {
+            nominal,
+            made,
+            refused,
+        })
     }
 
     /// One of [BLK-3]'s four boundary operations.

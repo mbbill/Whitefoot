@@ -749,6 +749,31 @@ impl<'program> IrBuilder<'program> {
         )
     }
 
+    /// `cap_of - len_of`, the complement [MSR-2]'s standing identity fixes,
+    /// over a measured type whose capacity is its own type constant.
+    ///
+    /// The subtraction cannot go below zero: the identity holds at every
+    /// program point, so the loaded measure never exceeds the constant.
+    fn lower_measure_complement(
+        &mut self,
+        capacity: u64,
+        length: IrValueId,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let ty = IrType::Integer {
+            width: 64,
+            signed: false,
+        };
+        let capacity = self.lower_fixed_measure(capacity)?;
+        self.define(
+            ty,
+            IrOperation::Integer {
+                operation: IrIntegerOperation::SubtractExact,
+                operand_type: ty,
+                arguments: vec![capacity, length],
+            },
+        )
+    }
+
     fn define(&mut self, ty: IrType, operation: IrOperation) -> Result<IrValueId, LoweringFailure> {
         let result = self.new_value(ty)?;
         self.current_block_mut()?

@@ -22,8 +22,8 @@ use crate::{
 
 use super::super::super::super::goal::{ConcreteGoal, GoalDatum, GoalExpression, GoalOperation};
 use super::super::super::super::kernel::{
-    KernelComparison, KernelConst, KernelGenericKind, KernelMode, KernelOperand, KernelPlace,
-    KernelShape, KernelSignature, kernel_signature,
+    KernelComparison, KernelConst, KernelGenericKind, KernelMode, KernelOffset, KernelOperand,
+    KernelPlace, KernelShape, KernelSignature, kernel_signature,
 };
 use super::super::super::super::model::{
     CheckedConst, CheckedExpression, CheckedIntegerOperation, CheckedKernelInstance,
@@ -70,21 +70,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(usize::from(operation_index))
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let signature = kernel_signature(record.row);
-        // TEMPORARY capability stop, judged before any operand is read: the
-        // four store-backed rows of [BLK-2] need the bump take, the extent
-        // reservation and the general store's provider value, none of which
-        // this version lowers. It is an explicit unsupported capability and
-        // never a source rejection [BLK-0].
-        if matches!(
-            record.row,
-            KernelRow::SeqArena
-                | KernelRow::SeqArenaProved
-                | KernelRow::SeqHeap
-                | KernelRow::ArenaFrame
-        ) {
+        // TEMPORARY capability stop, judged before any operand is read: a
+        // general-store take needs the release action of a heap-backed run,
+        // which this version does not lower, and the general store's provider
+        // has no source route at all while [FN-7]'s own row is DEFERRED. It is
+        // an explicit unsupported capability and never a source rejection
+        // [BLK-0].
+        if matches!(record.row, KernelRow::SeqHeap) {
             return self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, node);
         }
         let mut instance = self.kernel_written_arguments(node, signature, record, function)?;
+        if record.row == KernelRow::ArenaFrame {
+            self.check_reservation_placement(node, &instance)?;
+        }
 
         let fields = if let Some(list) = self
             .tree
@@ -225,7 +223,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             &mut effects,
         )?;
 
-        let instance = self.complete_kernel_instance(node, record, instance)?;
+        let instance = self.complete_kernel_instance(node, record, signature, instance)?;
+        if !self.kernel_requirements_are_expressible(signature, &instance, &goal_arguments) {
+            return self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, node);
+        }
         let result = self.kernel_result_type(node, record, signature, &instance)?;
         let requirements = self.kernel_requirements(signature, &instance, &goal_arguments)?;
 
@@ -243,6 +244,143 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             },
             effects,
         ))
+    }
+
+    /// [BLK-2, PROV-1] where a reserving occurrence may stand.
+    ///
+    /// A frame reservation lays its extent out in the reserving activation's
+    /// own frame, so its written `'s` must be a region an enclosing
+    /// `region_stmt` of this function introduced — a caller-supplied region
+    /// parameter is not admitted — and the occurrence must be a statement of
+    /// that region block and of no loop inside it: one occurrence inside a
+    /// loop whose region block is outside it has one activation and executes
+    /// on every trip, which would make the row's published `len_of(result)
+    /// == 0_u64` false from the second. [PROV-1] additionally admits at most
+    /// one reserving occurrence per region.
+    fn check_reservation_placement(
+        &self,
+        node: NodeId,
+        instance: &PartialInstance,
+    ) -> Result<(), CheckStop> {
+        let targ = self
+            .tree
+            .first_child_with(node, Production::Targs)?
+            .map(|targs| self.tree.children_with(targs, Production::Targ))
+            .transpose()?
+            .and_then(|arguments| arguments.last().copied())
+            .unwrap_or(node);
+        let Some(region) = instance.region else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let spelling = self
+            .resolved
+            .declarations()
+            .iter()
+            .find(|declaration| declaration.id() == region)
+            .map_or_else(String::new, |declaration| declaration.spelling().to_owned());
+        let mut block = None;
+        let mut through_loop = false;
+        let mut current = self.tree.parent(node)?;
+        while let Some(ancestor) = current {
+            match self.tree.production(ancestor)? {
+                Production::LoopStmt | Production::ForStmt => through_loop = true,
+                Production::RegionStmt
+                    if self
+                        .declaration_at(ancestor, crate::DeclarationRole::LocalRegion)
+                        .is_ok_and(|declaration| declaration.id() == region) =>
+                {
+                    block = Some(ancestor);
+                    break;
+                }
+                Production::FnDecl => break,
+                _ => {}
+            }
+            current = self.tree.parent(ancestor)?;
+        }
+        let Some(block) = block.filter(|_| !through_loop) else {
+            return self.issue_node(
+                SemanticRule::Blk2,
+                targ,
+                SemanticIssueKind::ReservationPlacement {
+                    region: spelling,
+                    mechanical_fix: "move the region block inside the loop, so the store is \
+                         reserved and reset per iteration",
+                },
+            );
+        };
+        // [PROV-1] a region may be named by at most one reserving occurrence,
+        // and [OWN-3] already makes every REGIONID unique within one function
+        // declaration, so this reaches exactly the case of two occurrences of
+        // one function naming one region.
+        let occurrence = self.tree.path(node)?;
+        for call in self.tree.descendants_with(block, Production::Call)? {
+            if self.tree.path(call)? == occurrence {
+                continue;
+            }
+            if !self.reserving_occurrence_names(call, region)? {
+                continue;
+            }
+            return self.issue_node(
+                SemanticRule::Prov1,
+                targ,
+                SemanticIssueKind::SecondStoreInOneRegion {
+                    region: spelling,
+                    mechanical_fix: "open one region per store",
+                },
+            );
+        }
+        Ok(())
+    }
+
+    /// Whether one `call` is a reserving occurrence naming this region.
+    ///
+    /// The judgment reads the resolved row and the resolved region argument,
+    /// never a source spelling, so shadowing cannot select it.
+    fn reserving_occurrence_names(
+        &self,
+        call: NodeId,
+        region: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(callee) = self.tree.first_child_with(call, Production::Callee)? else {
+            return Ok(false);
+        };
+        let Ok(usage) = self.use_at_roles(
+            callee,
+            &[
+                crate::LexicalUseRole::IdentifierCallee,
+                crate::LexicalUseRole::OperationCallee,
+            ],
+        ) else {
+            return Ok(false);
+        };
+        let crate::ResolvedTarget::Kernel(operation) = usage.target() else {
+            return Ok(false);
+        };
+        let Some(record) = crate::kernel_operation(operation) else {
+            return Ok(false);
+        };
+        if record.row != KernelRow::ArenaFrame {
+            return Ok(false);
+        }
+        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            return Ok(false);
+        };
+        let Some(last) = self
+            .tree
+            .children_with(targs, Production::Targ)?
+            .last()
+            .copied()
+        else {
+            return Ok(false);
+        };
+        let Ok(argument) = self.use_at(last, crate::LexicalUseRole::TypeArgumentRegion) else {
+            return Ok(false);
+        };
+        Ok(argument.target()
+            == crate::ResolvedTarget::Source {
+                declaration: region,
+                class: crate::DeclarationClass::Region,
+            })
     }
 
     /// [BLK-0]'s per-argument written-argument judgment.
@@ -448,11 +586,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         record: &crate::KernelOperation,
+        signature: &KernelSignature,
         instance: PartialInstance,
     ) -> Result<CheckedKernelInstance, CheckStop> {
-        let element = instance
-            .element
-            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        // A reservation row declares no element type: it produces a store
+        // rather than a run, and no shape of its record names `T` [BLK-2].
+        let declares_element = signature
+            .generics
+            .iter()
+            .any(|generic| matches!(generic.kind, KernelGenericKind::Type));
+        let element = if declares_element {
+            instance
+                .element
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?
+        } else {
+            CheckedType::Unit
+        };
         let element_ceiling = self.layout_ceiling(element, node)?;
         // [BLK-2] each arena row requires `align >= align_ceiling(T)` as a
         // compile-time comparison of two constants, which is what makes the
@@ -600,8 +749,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // the comparison `complete_kernel_instance` already judged; it
             // submits no runtime obligation.
             let (Some(left), Some(right)) = (
-                self.kernel_goal_operand(clause.left.operand, instance, goal_arguments)?,
-                self.kernel_goal_operand(clause.right.operand, instance, goal_arguments)?,
+                self.kernel_requirement_operand(clause.left, instance, goal_arguments)?,
+                self.kernel_requirement_operand(clause.right, instance, goal_arguments)?,
             ) else {
                 continue;
             };
@@ -624,6 +773,81 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }));
         }
         Ok(goals)
+    }
+
+    /// One requirement side — its operand displaced by its written offset —
+    /// as a caller-side goal expression.
+    ///
+    /// Every displaced requirement side of the inventory carries its
+    /// displacement on the zero term, so the displacement is the whole
+    /// operand there and no arithmetic node enters the goal;
+    /// `every_displaced_requirement_side_is_the_zero_term` holds the record
+    /// data to that shape. A displacement that does not resolve to a constant
+    /// leaves the requirement unbuildable, which
+    /// [`Self::kernel_requirements_are_expressible`] turns into an explicit
+    /// unsupported capability rather than into a skipped obligation.
+    fn kernel_requirement_operand(
+        &self,
+        term: super::super::super::super::kernel::KernelTerm,
+        instance: &CheckedKernelInstance,
+        goal_arguments: &[GoalExpression],
+    ) -> Result<Option<GoalExpression>, CheckStop> {
+        let displacement = match term.offset {
+            KernelOffset::Constant(value) => Some(i128::from(value)),
+            KernelOffset::Advance(ordinal) => super::super::super::super::kernel::kernel_advance(
+                instance,
+                goal_arguments,
+                ordinal,
+            ),
+        };
+        if !matches!(term.operand, KernelOperand::Zero) {
+            return match displacement {
+                Some(0) => self.kernel_goal_operand(term.operand, instance, goal_arguments),
+                _ => Err(SemanticCompilerFailure::InvalidResolution.into()),
+            };
+        }
+        let Some(displacement) = displacement else {
+            return Ok(None);
+        };
+        let Ok(bits) = u64::try_from(displacement) else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        Ok(Some(GoalExpression::Datum(GoalDatum::Literal(
+            CheckedValue::Integer {
+                ty: IntegerType::U64,
+                bits,
+            },
+        ))))
+    }
+
+    /// Whether every declared requirement of this row can be built at this
+    /// call [BLK-0].
+    ///
+    /// A requirement whose `advance<T>(count)` displacement is an opaque term
+    /// — a count that is not a closed expression — has no difference-bound
+    /// form a caller could discharge, and skipping it would admit an
+    /// unproved partial operation. It is an explicit unsupported capability.
+    fn kernel_requirements_are_expressible(
+        &self,
+        signature: &KernelSignature,
+        instance: &CheckedKernelInstance,
+        goal_arguments: &[GoalExpression],
+    ) -> bool {
+        signature.requires.iter().all(|clause| {
+            [clause.left, clause.right]
+                .iter()
+                .all(|term| match term.offset {
+                    KernelOffset::Constant(_) => true,
+                    KernelOffset::Advance(ordinal) => {
+                        super::super::super::super::kernel::kernel_advance(
+                            instance,
+                            goal_arguments,
+                            ordinal,
+                        )
+                        .is_some()
+                    }
+                })
+        })
     }
 
     /// One requirement operand as a caller-side goal expression.

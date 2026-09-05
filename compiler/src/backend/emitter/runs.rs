@@ -79,6 +79,246 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
+    /// [BLK-2] `arena_frame`: one bump extent reserved in this activation's
+    /// own frame.
+    ///
+    /// The provider value is the reservation's base address and its cursor,
+    /// and the reservation is where the extent's initial state is
+    /// established: the cursor is zero at every activation of the region
+    /// block naming its store region, which is the state [BLK-2] gives a
+    /// freshly reserved extent.
+    pub(super) fn emit_arena_frame(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        bytes: u64,
+        align: u64,
+    ) -> Result<(), BackendFailure> {
+        if ty != IrType::Provider {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let _ = (bytes, align);
+        let provider = llvm_type(self.program, ty)?;
+        let storage = self.entry_slot(FunctionSlot::ExtentStorage(result))?;
+        let based = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{based} = insertvalue {provider} zeroinitializer, ptr {storage}, 0\n  {} = insertvalue {provider} %{based}, i64 0, 1",
+            self.value_name(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// [BLK-2] one take from a store: the run the store hands out, and the
+    /// store's own advanced state written back through the `&uniq` borrow.
+    ///
+    /// A bump take is `advance<T>(count)` bytes at the extent's cursor
+    /// [BLK-0]; the take succeeds exactly when `room_of(store) >=
+    /// advance<T>(count)`, which is the relation the refusing row publishes on
+    /// its `None` arm. There is no branch: the refusal is a value, so both
+    /// arms are computed and the outcome selects between them, and a refused
+    /// take leaves the cursor where it was.
+    pub(super) fn emit_store_take(
+        &mut self,
+        result: IrValueId,
+        ty: IrType,
+        take: crate::IrStoreTake,
+    ) -> Result<(), BackendFailure> {
+        let crate::IrStoreTake {
+            store,
+            count,
+            stride,
+            extent,
+            refusal,
+        } = take;
+        if self.value_type(store) != Some(IrType::Address(crate::IrAddressed::Provider))
+            || self.value_type(count)
+                != Some(IrType::Integer {
+                    width: 64,
+                    signed: false,
+                })
+        {
+            return Err(BackendFailure::InvalidIr);
+        }
+        let run_type = match (ty, refusal) {
+            (IrType::Vector { .. }, None) => ty,
+            (IrType::Nominal(nominal), Some(refusal)) if nominal == refusal.nominal => {
+                self.refusal_payload_type(refusal)?
+            }
+            _ => return Err(BackendFailure::InvalidIr),
+        };
+        let provider = llvm_type(self.program, IrType::Provider)?;
+        let count = self.value_name(count);
+        let address = self.value_name(store);
+        let (pointer, capacity, taken) = match extent {
+            Some(extent) => self.emit_bump_take(&address, &provider, &count, stride, extent)?,
+            None => self.emit_general_take(&address, &count, stride)?,
+        };
+        // The run itself: the storage the store handed out, `count` slots of
+        // capacity, and the empty window [BLK-2] publishes.
+        let run_llvm = llvm_type(self.program, run_type)?;
+        let based = self.next_temporary()?;
+        let run = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{based} = insertvalue {run_llvm} zeroinitializer, ptr {pointer}, 0\n  %{run} = insertvalue {run_llvm} %{based}, i64 {capacity}, 1",
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let Some(refusal) = refusal else {
+            writeln!(
+                self.output,
+                "  {} = insertvalue {run_llvm} %{run}, i64 0, 2",
+                self.value_name(result),
+            )
+            .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        };
+        let complete = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{complete} = insertvalue {run_llvm} %{run}, i64 0, 2",
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let outcome = llvm_type(self.program, ty)?;
+        let variants = self.refusal_variants(refusal)?;
+        let payload = variant_field_base(&variants, refusal.made)?;
+        let tag = self.next_temporary()?;
+        let tagged = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{tag} = select i1 {taken}, i32 {}, i32 {}\n  %{tagged} = insertvalue {outcome} zeroinitializer, i32 %{tag}, 0\n  {} = insertvalue {outcome} %{tagged}, {run_llvm} %{complete}, {payload}",
+            refusal.made,
+            refusal.refused,
+            self.value_name(result),
+        )
+        .map_err(|_| BackendFailure::TextEmission)
+    }
+
+    /// The bump take: the cursor advance, the refusal condition, and the
+    /// store's own new state.
+    ///
+    /// `advance<T>(count)` is `round_up(size_ceiling(T) * count, align)`
+    /// [BLK-0]. The product cannot overflow, `fits::<T>(count)` having been
+    /// discharged at the call [OP-9]; the rounding is guarded anyway, so an
+    /// unrepresentable advance refuses instead of wrapping into an accepted
+    /// take.
+    fn emit_bump_take(
+        &mut self,
+        address: &str,
+        provider: &str,
+        count: &str,
+        stride: u64,
+        extent: crate::IrExtentConstants,
+    ) -> Result<(String, String, String), BackendFailure> {
+        let align = extent.align.max(1);
+        let mask = (!(align - 1)) as i64;
+        let state = self.next_temporary()?;
+        let base = self.next_temporary()?;
+        let cursor = self.next_temporary()?;
+        let raw = self.next_temporary()?;
+        let padded = self.next_temporary()?;
+        let advance = self.next_temporary()?;
+        let representable = self.next_temporary()?;
+        let room = self.next_temporary()?;
+        let fits = self.next_temporary()?;
+        let taken = self.next_temporary()?;
+        let pointer = self.next_temporary()?;
+        let next = self.next_temporary()?;
+        let moved = self.next_temporary()?;
+        let advanced = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{state} = load {provider}, ptr {address}\n  \
+             %{base} = extractvalue {provider} %{state}, 0\n  \
+             %{cursor} = extractvalue {provider} %{state}, 1\n  \
+             %{raw} = mul nuw i64 {count}, {stride}\n  \
+             %{padded} = add i64 %{raw}, {}\n  \
+             %{advance} = and i64 %{padded}, {mask}\n  \
+             %{representable} = icmp uge i64 %{padded}, %{raw}\n  \
+             %{room} = sub i64 {}, %{cursor}\n  \
+             %{fits} = icmp uge i64 %{room}, %{advance}\n  \
+             %{taken} = and i1 %{representable}, %{fits}\n  \
+             %{pointer} = getelementptr inbounds i8, ptr %{base}, i64 %{cursor}\n  \
+             %{next} = add i64 %{cursor}, %{advance}\n  \
+             %{moved} = select i1 %{taken}, i64 %{next}, i64 %{cursor}\n  \
+             %{advanced} = insertvalue {provider} %{state}, i64 %{moved}, 1\n  \
+             store {provider} %{advanced}, ptr {address}",
+            align - 1,
+            extent.bytes,
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        let capacity = self.next_temporary()?;
+        let handed = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{capacity} = select i1 %{taken}, i64 {count}, i64 0\n  %{handed} = select i1 %{taken}, ptr %{pointer}, ptr null",
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok((
+            format!("%{handed}"),
+            format!("%{capacity}"),
+            format!("%{taken}"),
+        ))
+    }
+
+    /// The general-store take: the host is asked for the run's bytes and its
+    /// refusal is the row's `None` arm [BLK-2, L6].
+    fn emit_general_take(
+        &mut self,
+        _address: &str,
+        count: &str,
+        stride: u64,
+    ) -> Result<(String, String, String), BackendFailure> {
+        let bytes = self.next_temporary()?;
+        let pointer = self.next_temporary()?;
+        let empty = self.next_temporary()?;
+        let supplied = self.next_temporary()?;
+        let taken = self.next_temporary()?;
+        let capacity = self.next_temporary()?;
+        let handed = self.next_temporary()?;
+        writeln!(
+            self.output,
+            "  %{bytes} = mul nuw i64 {count}, {stride}\n  \
+             %{pointer} = call ptr @malloc(i64 %{bytes})\n  \
+             %{empty} = icmp eq i64 %{bytes}, 0\n  \
+             %{supplied} = icmp ne ptr %{pointer}, null\n  \
+             %{taken} = or i1 %{empty}, %{supplied}\n  \
+             %{capacity} = select i1 %{taken}, i64 {count}, i64 0\n  \
+             %{handed} = select i1 %{taken}, ptr %{pointer}, ptr null",
+        )
+        .map_err(|_| BackendFailure::TextEmission)?;
+        Ok((
+            format!("%{handed}"),
+            format!("%{capacity}"),
+            format!("%{taken}"),
+        ))
+    }
+
+    fn refusal_variants(
+        &self,
+        refusal: crate::IrRefusal,
+    ) -> Result<Vec<crate::IrVariant>, BackendFailure> {
+        let IrNominalKind::Enum { variants } = self.nominal(refusal.nominal)?.kind() else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        Ok(variants.to_vec())
+    }
+
+    fn refusal_payload_type(&self, refusal: crate::IrRefusal) -> Result<IrType, BackendFailure> {
+        let variants = self.refusal_variants(refusal)?;
+        let made = variants
+            .iter()
+            .find(|variant| variant.tag() == refusal.made)
+            .ok_or(BackendFailure::InvalidIr)?;
+        let [field] = made.fields() else {
+            return Err(BackendFailure::InvalidIr);
+        };
+        match field.ty() {
+            ty @ IrType::Vector { .. } => Ok(ty),
+            _ => Err(BackendFailure::InvalidIr),
+        }
+    }
+
     /// [MSR-1] one measure of a run or a bump extent, read at run time.
     pub(super) fn emit_container_measure(
         &mut self,
@@ -98,11 +338,26 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let container_type = self
             .value_type(container)
             .ok_or(BackendFailure::InvalidIr)?;
+        let llvm = llvm_type(self.program, container_type)?;
+        let operand = self.value_name(container);
+        // A bump extent has one measure word, its cursor [MSR-1]: its byte
+        // extent is the type constant and its `room_of` is the complement the
+        // lowering already formed, so neither reaches emission, and it has no
+        // window at all.
+        if container_type == IrType::Provider {
+            if measure != IrMeasure::Length {
+                return Err(BackendFailure::InvalidIr);
+            }
+            return writeln!(
+                self.output,
+                "  {} = extractvalue {llvm} {operand}, 1",
+                self.value_name(result),
+            )
+            .map_err(|_| BackendFailure::TextEmission);
+        }
         let Some(shape) = RunShape::of(container_type) else {
             return Err(BackendFailure::InvalidIr);
         };
-        let llvm = llvm_type(self.program, container_type)?;
-        let operand = self.value_name(container);
         match measure {
             IrMeasure::Length => writeln!(
                 self.output,

@@ -1,0 +1,11 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-0: the proved take's third requirement is room_of(store) >= advance<T>(count), and a store this small cannot discharge it; the general store has no proved form because no honest compile-time domain predicate exists for it.";
+  region 'a {
+    let workspace = arena_frame::<16, 8, 'a>();
+    region {
+      let page = seq_arena_proved::<u64>(store: &uniq workspace, count: 8_u64);
+      let held = len_of(page);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

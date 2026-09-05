@@ -500,7 +500,7 @@ const SEQ_ARENA_PAYLOAD: [KernelRelation; 4] = [
     ),
 ];
 
-/// `seq_arena<T, const bytes, const align>['s](arena, count) -> made: own
+/// `seq_arena<T, const bytes, const align>['s](store, count) -> made: own
 /// Option<Vector<'s, T>>`.
 const SEQ_ARENA: KernelSignature = KernelSignature {
     row: KernelRow::SeqArena,
@@ -512,7 +512,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
     ],
     parameters: &[
         KernelParameter {
-            name: "arena",
+            name: "store",
             mode: KernelMode::Unique,
             shape: KernelShape::Extent,
         },
@@ -586,7 +586,7 @@ const SEQ_ARENA: KernelSignature = KernelSignature {
     fits: Some(1),
 };
 
-/// `seq_arena_proved<T, const bytes, const align>['s](arena, count) ->
+/// `seq_arena_proved<T, const bytes, const align>['s](store, count) ->
 /// result: own Vector<'s, T>`.
 const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
     row: KernelRow::SeqArenaProved,
@@ -676,17 +676,19 @@ const SEQ_ARENA_PROVED: KernelSignature = KernelSignature {
     fits: Some(1),
 };
 
-/// `seq_heap<T>['s](heap, count) -> made: own Option<Vector<'s, T>>`.
+/// `seq_heap<T>['s](store, count) -> made: own Option<Vector<'s, T>>`.
 ///
-/// The row is complete record data; the one route by which a program would
-/// obtain the `Heap<'s>` operand is [FN-7]'s `heap` standard input, which that
-/// rule carries as DEFERRED, so no call to this row can be written yet.
+/// A `Heap<'s>` operand reaches a call only as a written parameter of the
+/// enclosing declaration [PROV-6]: [FN-7]'s standard-input row, which is the
+/// one route by which a program *obtains* the general store's provider, is
+/// still that rule's DEFERRED entry, so this row is reachable at a checked
+/// declaration and by no executable path.
 const SEQ_HEAP: KernelSignature = KernelSignature {
     row: KernelRow::SeqHeap,
     generics: &[TYPE_WRITTEN, REGION_SUPPLIED],
     parameters: &[
         KernelParameter {
-            name: "heap",
+            name: "store",
             mode: KernelMode::Unique,
             shape: KernelShape::Heap,
         },
@@ -1010,6 +1012,40 @@ pub(crate) const KERNEL_SIGNATURES: [KernelSignature; 9] = [
     SEQ_TAKE_FRONT,
 ];
 
+/// `advance<T>(count)`, the bump domain's acquire quantity [BLK-0].
+///
+/// It is `round_up(stride_ceiling(T) * count, align)`: a run's slots are
+/// stride-spaced, so `count` of them occupy `stride * count` bytes, and the
+/// store's own alignment constant rounds that up so the cursor stays a
+/// multiple of it at every program point [MSR-1].
+///
+/// The term is a symbolic constant when `count` is a closed expression and an
+/// opaque term otherwise; this reader answers for the first case and hands
+/// back `None` for the second, where a relation over it is simply unavailable
+/// and a requirement over it cannot be built.
+pub(in crate::semantic) fn kernel_advance(
+    instance: &super::model::CheckedKernelInstance,
+    goal_arguments: &[super::goal::GoalExpression],
+    ordinal: u32,
+) -> Option<i128> {
+    let super::goal::GoalExpression::Datum(super::goal::GoalDatum::Literal(
+        super::model::CheckedValue::Integer { bits, .. },
+    )) = goal_arguments.get(ordinal as usize)?
+    else {
+        return None;
+    };
+    let super::model::CheckedConst::Value(align) = instance.align? else {
+        return None;
+    };
+    let super::model::CheckedLayoutMagnitude::Finite(stride) = instance.element_ceiling.stride
+    else {
+        return None;
+    };
+    let bytes = stride.checked_mul(*bits)?;
+    let rounded = bytes.checked_add(align.checked_sub(1)?)? / align * align;
+    Some(i128::from(rounded))
+}
+
 /// The signature record of one resolved kernel row.
 pub(crate) fn kernel_signature(row: KernelRow) -> &'static KernelSignature {
     KERNEL_SIGNATURES
@@ -1182,6 +1218,36 @@ mod tests {
                     "{:?} is incomplete over its state operand on {route:?}",
                     signature.row
                 );
+            }
+        }
+    }
+
+    /// [BLK-0]: every displaced requirement side is the zero term.
+    ///
+    /// A requirement is one obligation the caller discharges, so its written
+    /// displacement has to reach the caller's goal. Where the displacement
+    /// sits on the zero term it *is* the whole operand and the goal carries
+    /// one literal; where it sat on a measure or a value it would need an
+    /// arithmetic node the goal language does not admit here. The inventory
+    /// writes only the first shape — `room_of(store) >= advance<T>(count)`
+    /// and `room_of(vector) > 0_u64` — and this test is what keeps a later
+    /// row from writing the second and having its displacement silently
+    /// dropped.
+    #[test]
+    fn every_displaced_requirement_side_is_the_zero_term() {
+        for signature in KERNEL_SIGNATURES {
+            for clause in signature.requires {
+                for term in [clause.left, clause.right] {
+                    if matches!(term.operand, KernelOperand::Zero) {
+                        continue;
+                    }
+                    assert_eq!(
+                        term.offset,
+                        super::KernelOffset::Constant(0),
+                        "{:?} displaces a requirement operand that is not the zero term",
+                        signature.row
+                    );
+                }
             }
         }
     }

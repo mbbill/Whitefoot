@@ -102,11 +102,11 @@ pub const CONTAINER_NOMINALS: [ContainerNominal; 4] = [
 pub enum KernelRow {
     /// `seq_fixed<T, const n: u64>() -> own FixedVector<T, n>` [BLK-2].
     SeqFixed,
-    /// `seq_arena<T, const bytes, const align>['s](arena, count)` [BLK-2].
+    /// `seq_arena<T, const bytes, const align>['s](store, count)` [BLK-2].
     SeqArena,
     /// The proved arena take [BLK-2].
     SeqArenaProved,
-    /// `seq_heap<T>['s](heap, count)` [BLK-2].
+    /// `seq_heap<T>['s](store, count)` [BLK-2].
     SeqHeap,
     /// `arena_frame<const bytes, const align>['s]()` [BLK-2].
     ArenaFrame,
@@ -147,19 +147,19 @@ pub const KERNEL_OPERATIONS: [KernelOperation; 9] = [
     KernelOperation {
         spelling: "seq_arena",
         row: KernelRow::SeqArena,
-        parameters: &["arena", "count"],
+        parameters: &["store", "count"],
         results: &["made"],
     },
     KernelOperation {
         spelling: "seq_arena_proved",
         row: KernelRow::SeqArenaProved,
-        parameters: &["arena", "count"],
+        parameters: &["store", "count"],
         results: &["result"],
     },
     KernelOperation {
         spelling: "seq_heap",
         row: KernelRow::SeqHeap,
-        parameters: &["heap", "count"],
+        parameters: &["store", "count"],
         results: &["made"],
     },
     KernelOperation {
@@ -259,6 +259,32 @@ mod tests {
         }
     }
 
+    /// [BLK-0]: a row is reachable only if a writer can spell its call.
+    ///
+    /// A kernel-domain call writes its value arguments as a `fieldinit_list`
+    /// whose IDENTs equal the declared parameter names, and a result binder
+    /// list binds the declared result spellings, so every declared spelling
+    /// of this table must satisfy [FORM-3]'s IDENT class. A spelling that a
+    /// fixed grammar atom already produces makes its row unwritable, which is
+    /// a defect in this record data and not a language decision.
+    #[test]
+    fn every_declared_spelling_is_writable() {
+        for operation in KERNEL_OPERATIONS {
+            for name in operation
+                .parameters
+                .iter()
+                .chain(operation.results)
+                .chain(std::iter::once(&operation.spelling))
+            {
+                assert!(
+                    crate::syntax::terminal::is_identifier(name.as_bytes()),
+                    "{} declares the unwritable spelling {name}",
+                    operation.spelling
+                );
+            }
+        }
+    }
+
     /// [TYPE-6]: spellings are unique within each domain and disjoint from
     /// the system inventory's spellings of the same domain.
     #[test]
@@ -301,7 +327,7 @@ mod tests {
                 continue;
             };
             assert!(
-                matches!(*first, "vector" | "arena" | "heap"),
+                matches!(*first, "vector" | "store"),
                 "{} names {first} first",
                 operation.spelling
             );

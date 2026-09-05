@@ -672,6 +672,10 @@ enum FunctionSlot {
     /// [BLK-1]: a frame-resident run's slots are inline, so indexing one at a
     /// computed offset goes through storage.
     RunStorage(IrValueId),
+    /// The bump extent one [BLK-2] reservation lays out in the reserving
+    /// activation's own frame, at the byte extent and alignment its two type
+    /// constants fix.
+    ExtentStorage(IrValueId),
     ArrayFillValue(IrValueId),
     ArrayFillIndex(IrValueId),
     ArrayRoot(IrValueId),
@@ -814,6 +818,19 @@ impl FunctionFramePlan {
                         FunctionSlot::ArenaList(*result),
                         TargetStorageType::pointer(),
                     )?,
+                    // [BLK-2] the reserved extent itself. Its alignment is
+                    // the store's own type constant, which is what makes the
+                    // bump cursor a multiple of it at every program point.
+                    IrOperation::ArenaFrame { bytes, align } => {
+                        if ordered.contains(&FunctionSlot::ExtentStorage(*result)) {
+                            return Err(BackendFailure::InvalidIr);
+                        }
+                        specifications.push(TargetFrameSlot::aligned(
+                            TargetStorageType::bytes(*bytes),
+                            *align,
+                        ));
+                        ordered.push(FunctionSlot::ExtentStorage(*result));
+                    }
                     IrOperation::SystemCall {
                         operation,
                         arguments,
@@ -1634,6 +1651,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             } => self.emit_buffer_fits(result, ty, *length, *maximum_length),
             IrOperation::BufferMeasure { buffer } => self.emit_buffer_length(result, ty, *buffer),
             IrOperation::SeqFixed => self.emit_seq_fixed(result, ty),
+            IrOperation::ArenaFrame { bytes, align } => {
+                self.emit_arena_frame(result, ty, *bytes, *align)
+            }
+            IrOperation::StoreTake(take) => self.emit_store_take(result, ty, *take),
             IrOperation::ContainerMeasure { measure, container } => {
                 self.emit_container_measure(result, ty, *measure, *container)
             }

@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-2: one frame reservation, one proved take from it, and the two measures the take publishes about the store and about the run.";
+  region 'a {
+    let workspace = arena_frame::<128, 8, 'a>();
+    region {
+      let page = seq_arena_proved::<u64>(store: &uniq workspace, count: 4_u64);
+      let capacity = cap_of(page);
+      if capacity == 4_u64 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      let cursor = len_of(workspace);
+      if cursor == 32_u64 {
+      } else {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

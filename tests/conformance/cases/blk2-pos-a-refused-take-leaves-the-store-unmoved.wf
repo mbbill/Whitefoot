@@ -1,0 +1,22 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "BLK-2: the checked take's None arm publishes that the store has no room for the advance and that its cursor is exactly what it was at the call.";
+  region 'a {
+    let workspace = arena_frame::<32, 8, 'a>();
+    region {
+      let refused = seq_arena::<u64>(store: &uniq workspace, count: 64_u64);
+      match refused {
+        Some(value: impossible) => {
+          return exit_status(code: 1_u8);
+        }
+        None() => {
+        }
+      }
+      let cursor = len_of(workspace);
+      if cursor == 0_u64 {
+      } else {
+        return exit_status(code: 2_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -79,7 +79,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             IrAddressed::Unit
             | IrAddressed::Bool
             | IrAddressed::Integer { .. }
-            | IrAddressed::Float { .. } => true,
+            | IrAddressed::Float { .. }
+            // A provider is stored content: its cursor is the state a bump
+            // take advances through the `&uniq` borrow [PROV-1, BLK-2].
+            | IrAddressed::Provider => true,
         })
     }
 
