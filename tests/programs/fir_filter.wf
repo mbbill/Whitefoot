@@ -1,16 +1,32 @@
 struct DelayLine {
-  samples: array<f64, 8>;
+  samples: FixedVector<f64, 8>;
   cursor: u64;
 }
 
 struct FirFilter {
-  taps: array<f64, 8>;
+  taps: FixedVector<f64, 8>;
   delay: DelayLine;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let taps = array_new::<f64, 8>(0.125_f64);
-  let samples = array_new::<f64, 8>(0.0_f64);
+  let taps = fixed_vector::<f64, 8>();
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  set taps = place_back(vector: move taps, value: 0.125_f64);
+  let samples = fixed_vector::<f64, 8>();
+  set samples = place_back(vector: move samples, value: 0.0_f64);
+  set samples = place_back(vector: move samples, value: 0.0_f64);
+  set samples = place_back(vector: move samples, value: 0.0_f64);
+  set samples = place_back(vector: move samples, value: 0.0_f64);
+  set samples = place_back(vector: move samples, value: 0.0_f64);
+  set samples = place_back(vector: move samples, value: 0.0_f64);
+  set samples = place_back(vector: move samples, value: 0.0_f64);
+  set samples = place_back(vector: move samples, value: 0.0_f64);
   let delay = DelayLine(samples: move samples, cursor: 0_u64);
   let filter = FirFilter(taps: move taps, delay: move delay);
   let tap_count = len_of(filter.taps);
@@ -22,7 +38,8 @@ command fn main() -> status: own ExitStatus pure {
     } else {
       give 0.0_f64;
     }
-    let write_ok = filter.delay.cursor < 8_u64;
+    let sample_count = len_of(filter.delay.samples);
+    let write_ok = filter.delay.cursor < sample_count;
     if write_ok {
     } else {
       return exit_status(code: 1_u8);
@@ -32,7 +49,7 @@ command fn main() -> status: own ExitStatus pure {
     let output = 0.0_f64;
     for (tap in 0_u64..tap_count) {
       let coefficient = filter.taps[tap];
-      let read_ok = read_cursor < 8_u64;
+      let read_ok = read_cursor < sample_count;
       if read_ok {
       } else {
         return exit_status(code: 1_u8);

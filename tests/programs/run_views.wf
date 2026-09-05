@@ -62,21 +62,29 @@ command fn main() -> status: own ExitStatus pure {
       }
     }
   }
-  let table = buffer_new(3_u64, 7_u8);
-  region {
-    let writer = mut_slice_of(&uniq table);
-    set writer[0_u64] = 9_u8;
-    let reader = slice_of(&table);
-    let seen = reader[0_u64];
-    if seen == 9_u8 {
-    } else {
-      return exit_status(code: 26_u8);
-    }
-    set writer[1_u64] = 11_u8;
-    let written = writer[1_u64];
-    if written == 11_u8 {
-    } else {
-      return exit_status(code: 27_u8);
+  region 'a {
+    let workspace = arena_frame::<3, 1, 'a>();
+    region {
+      let table = arena_vector_proved::<u8>(store: &uniq workspace, count: 3_u64);
+      set table = place_back(vector: move table, value: 7_u8);
+      set table = place_back(vector: move table, value: 7_u8);
+      set table = place_back(vector: move table, value: 7_u8);
+      region {
+        let writer = mut_slice_of(&uniq table);
+        set writer[0_u64] = 9_u8;
+        let reader = slice_of(&table);
+        let seen = reader[0_u64];
+        if seen == 9_u8 {
+        } else {
+          return exit_status(code: 26_u8);
+        }
+        set writer[1_u64] = 11_u8;
+        let written = writer[1_u64];
+        if written == 11_u8 {
+        } else {
+          return exit_status(code: 27_u8);
+        }
+      }
     }
   }
   return exit_status(code: 0_u8);
