@@ -1,7 +1,7 @@
-fn find_byte(input: &buffer<u8>, needle: own u8) -> function_result: own Option<u64> reads(input) {
-  let length = len_of(deref(input));
+fn find_byte(input: own Slice<u8>, needle: own u8) -> function_result: own Option<u64> reads(input) {
+  let length = len_of(input);
   for (offset in 0_u64..length) {
-    let byte = deref(input)[offset];
+    let byte = input[offset];
     let found = byte == needle;
     if found {
       return Some<u64>(value: offset);
@@ -11,15 +11,15 @@ fn find_byte(input: &buffer<u8>, needle: own u8) -> function_result: own Option<
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let bytes = buffer_new(6_u64, 0_u8);
-  set bytes[0_u64] = 10_u8;
-  set bytes[1_u64] = 20_u8;
-  set bytes[2_u64] = 30_u8;
-  set bytes[3_u64] = 40_u8;
-  set bytes[4_u64] = 50_u8;
-  set bytes[5_u64] = 60_u8;
+  let bytes = fixed_vector::<u8, 6>();
+  set bytes = place_back(vector: move bytes, value: 10_u8);
+  set bytes = place_back(vector: move bytes, value: 20_u8);
+  set bytes = place_back(vector: move bytes, value: 30_u8);
+  set bytes = place_back(vector: move bytes, value: 40_u8);
+  set bytes = place_back(vector: move bytes, value: 50_u8);
+  set bytes = place_back(vector: move bytes, value: 60_u8);
   region {
-    let view = &bytes;
+    let view = slice_of(&bytes);
     let present = find_byte(input: view, needle: 40_u8);
     match move present {
       None() => {

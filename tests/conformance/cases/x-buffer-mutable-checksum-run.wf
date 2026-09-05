@@ -1,18 +1,35 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "A runtime-length buffer is allocated, filled, folded, and released; counted-loop range facts discharge every indexed access.";
-  let values = buffer_new(8_u64, 0_u64);
-  let length = len_of(values);
-  for (fill_index in 0_u64..length) {
-    set values[fill_index] = fill_index +wrap 1_u64;
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "A runtime-length store-backed run is taken, filled, folded, and released; counted-loop range facts discharge every indexed access.";
+  region {
+    match heap_vector::<u64>(store: &uniq heap, count: 8_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let values = move fresh;
+        for @build (
+          at in 0_u64..8_u64,
+          invariant grown: len_of(values) >= at,
+          invariant spare: room_of(values) + at >= 8_u64,
+          invariant flat: head_of(values) <= 0_u64
+        ) {
+          set values = place_back(vector: move values, value: 0_u64);
+        }
+        let length = len_of(values);
+        for (fill_index in 0_u64..length) {
+          set values[fill_index] = fill_index +wrap 1_u64;
+        }
+        let total = 0_u64;
+        for (fold_index in 0_u64..length) {
+          let value = values[fold_index];
+          set total = total +wrap value;
+        }
+        if total == 36_u64 {
+        } else {
+          return exit_status(code: 201_u8);
+        }
+        return exit_status(code: 0_u8);
+      }
+    }
   }
-  let total = 0_u64;
-  for (fold_index in 0_u64..length) {
-    let value = values[fold_index];
-    set total = total +wrap value;
-  }
-  if total == 36_u64 {
-  } else {
-    return exit_status(code: 201_u8);
-  }
-  return exit_status(code: 0_u8);
 }
