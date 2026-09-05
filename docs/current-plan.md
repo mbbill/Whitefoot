@@ -816,14 +816,24 @@ before the code lands.
    answer to the item — the fallback it asks for is still the colouring
    question above — but it is most of the gap, taken without one.
 
-   **The real judge is the Windows job**, and it has not run this. Every number
-   here is a Linux VM whose park-and-wake is 16.2 µs; the failing bar is a
-   Windows VM whose wake is a completion-port round trip, which is the case the
-   spin exists for and the case this host cannot produce. Both constants are
+   **The real judge is the Windows job**, because every number here is a
+   Linux VM whose park-and-wake is 16.2 µs and the failing bar is a Windows VM
+   whose wake is a completion-port round trip, which is the case the spin
+   exists for and the case this host cannot produce. Both constants are
    `#if !defined` overrides so the bench can sweep them where the bar is, and
    `sched-enumerate` pins them to one round and no yields — a spin round is a
    step there, not a delay, and the §11 search costs 9.4 times the states at
    (T=2,S=4) with one round and 24 times at (T=2,S=3) with two.
+
+   **The judge ran on 6311482.** `bench-windows-qualified` met every bar:
+   mixed-full 0.6920 and mixed-total 0.6878 against 0.95, with p10..p90 under
+   0.70, io-warm 0.9502, compute 0.2820, `grants=1023`. That is the ratio this
+   host gives. The run just before the spin, 2d455e5 on another runner, also
+   met the bars without it at 0.86, with the completion-only reference itself
+   12 percent slower than in the 1.06 record and in the spin's run, so the
+   Windows VM moves between runners by more than the bar's margin; the spin's
+   evidence is its 0.69 beside the 0.86 and 1.06 of the runs without it. The
+   addendum's closing section holds both tables.
 
 ### Decided 2026-09-05: measured before chosen
 

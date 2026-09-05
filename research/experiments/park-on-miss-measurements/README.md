@@ -1055,6 +1055,30 @@ bench can sweep them where the bar is, and if that sweep names another point of
 this grid, the number to change is one define and the record to update is this
 section.
 
+**The judge ran, 2026-09-05, on 6311482** (`bench-windows-qualified`, run
+33998108257, a four-vCPU AMD EPYC 7763 Windows Server 2025 VM, 15 recorded
+alternating pairs after 2 warm-ups), with the chosen 256 and 16:
+
+| cohort | reference median ms | candidate median ms | paired candidate/reference | MAD | p10..p90 |
+|---|---:|---:|---:|---:|---:|
+| compute | 4720.349 | 1331.076 | 0.2820 | 0.68% | 0.2790..0.2853 |
+| io-warm | 208.083 | 198.221 | 0.9502 | 2.18% | 0.9116..0.9767 |
+| mixed-iocp | 274.971 | 275.100 | 1.0006 | 0.42% | 0.9942..1.0075 |
+| mixed-full | 274.822 | 190.109 | 0.6920 | 0.40% | 0.6867..0.6976 |
+| mixed-total | 275.373 | 190.010 | 0.6878 | 0.66% | 0.6820..0.6974 |
+
+Every bar met, and the two that were missing are met with the whole p10..p90
+band under 0.70: the unified build is 31 percent faster than its
+completion-only build on that host, which is the ratio this host gives (0.637
+at 256-16 in table 5). One caution on reading the motivating record against
+this one. The run that immediately preceded the spin (2d455e5, run
+33996963197, an EPYC 9V74 runner) also met the bars without it, at mixed-full
+0.8603 and mixed-total 0.8582, with the completion-only reference itself at
+307 ms against the 274 ms of the record above and the 274 ms of this run; so
+the Windows VM's numbers move between runners by more than the bar's margin,
+and the spin's own evidence is the 0.69 of its own run beside the 0.86 and the
+1.06 of the two runs without it, not the bar alone.
+
 ### What this measurement says the next work is
 
 The cost of a spin round here is a global mutex: every round takes the core's
