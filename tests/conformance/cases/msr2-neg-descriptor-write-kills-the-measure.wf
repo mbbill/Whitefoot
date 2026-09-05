@@ -1,7 +1,27 @@
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
+}
+
 command fn main() -> status: own ExitStatus pure {
-  doc "[MSR-2] a write to P's own descriptor storage kills every measure of P. The [SET-2] replace exchanges the whole run for a two-slot allocation, which overlaps the descriptor storage the length fact is supported by, so `len_of(run) = 10` does not survive it and the later subscript of offset nine has nothing to discharge against. This is the other side of the element-position sentence: descriptor storage and element storage are disjoint parts of one value, and a write kills exactly the measures whose support it overlaps.";
-  let run = buffer_new(10_u64, 0_u8);
-  let smaller = buffer_new(2_u64, 0_u8);
+  doc "[MSR-2] a write to P's own descriptor storage kills every measure of P. The [SET-2] replace exchanges the whole run for one whose window holds two slots, which overlaps the descriptor storage the length fact is supported by, so `len_of(run) = 10` does not survive it and the later subscript of offset nine has nothing to discharge against. This is the other side of the element-position sentence: descriptor storage and element storage are disjoint parts of one value, and a write kills exactly the measures whose support it overlaps.";
+  let run = filled::<u8, 10>(value: 0_u8);
+  let empty = fixed_vector::<u8, 10>();
+  let one = place_back(vector: move empty, value: 0_u8);
+  let smaller = place_back(vector: move one, value: 0_u8);
   let old = replace run = move smaller;
   let tail = run[9_u64];
   return exit_status(code: 0_u8);

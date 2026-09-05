@@ -1,54 +1,89 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "[MSR-1] the four measures are one quantity read two ways, a term and an [OP-1] reader. This version's measure table gives every cell of every measured type an exact value: an array's len and cap are its N, a buffer's and a slice's cap is its own extent, and room and head are zero everywhere because each of the three is completely initialized over its whole capacity at its formation. The program reads all four over a buffer, an array and a slice and observes those values.";
-  let run = buffer_new(8_u64, 0_u8);
-  let fixed = array_new::<u8, 4>(0_u8);
-  let run_length = len_of(run);
-  let run_capacity = cap_of(run);
-  let run_room = room_of(run);
-  let run_head = head_of(run);
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "[MSR-1] the four measures are one quantity read two ways, a term and an [OP-1] reader. A run's cap is the capacity it was formed with - the type constant for a fixed run, the count for a store run - and its len, room and head describe the window inside that capacity, so a run filled to its capacity reads room and head at zero. The program reads all four over a fixed run, over a store run and over a slice, and observes those values.";
+  let fixed = filled::<u8, 4>(value: 0_u8);
   let fixed_length = len_of(fixed);
   let fixed_capacity = cap_of(fixed);
   let fixed_room = room_of(fixed);
   let fixed_head = head_of(fixed);
   region {
-    let view = slice_of(&run);
-    let view_length = len_of(view);
-    let view_capacity = cap_of(view);
-    let view_room = room_of(view);
-    let view_head = head_of(view);
-    if view_length == 8_u64 {
-      if view_capacity == 8_u64 {
-        if view_room == 0_u64 {
-          if view_head == 0_u64 {
-          } else {
-            return exit_status(code: 4_u8);
-          }
-        } else {
-          return exit_status(code: 3_u8);
-        }
-      } else {
-        return exit_status(code: 2_u8);
+    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
+      None() => {
+        return exit_status(code: 6_u8);
       }
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  if run_length == 8_u64 {
-    if run_capacity == 8_u64 {
-      if run_room == 0_u64 {
-        if run_head == 0_u64 {
-          if fixed_length == 4_u64 {
-            if fixed_capacity == 4_u64 {
-              if fixed_room == 0_u64 {
-                if fixed_head == 0_u64 {
-                  return exit_status(code: 0_u8);
+      Some(value: fresh) => {
+        let built = move fresh;
+        for @fill (
+          at in 0_u64..8_u64,
+          invariant grown: len_of(built) >= at,
+          invariant spare: room_of(built) + at >= 8_u64,
+          invariant flat: head_of(built) <= 0_u64
+        ) {
+          set built = place_back(vector: move built, value: 0_u8);
+        }
+        let run_length = len_of(built);
+        let run_capacity = cap_of(built);
+        let run_room = room_of(built);
+        let run_head = head_of(built);
+        region {
+          let view = slice_of(&built);
+          let view_length = len_of(view);
+          let view_capacity = cap_of(view);
+          let view_room = room_of(view);
+          let view_head = head_of(view);
+          if view_length == 8_u64 {
+            if view_capacity == 8_u64 {
+              if view_room == 0_u64 {
+                if view_head == 0_u64 {
+                } else {
+                  return exit_status(code: 4_u8);
+                }
+              } else {
+                return exit_status(code: 3_u8);
+              }
+            } else {
+              return exit_status(code: 2_u8);
+            }
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+        if run_length == 8_u64 {
+          if run_capacity == 8_u64 {
+            if run_room == 0_u64 {
+              if run_head == 0_u64 {
+                if fixed_length == 4_u64 {
+                  if fixed_capacity == 4_u64 {
+                    if fixed_room == 0_u64 {
+                      if fixed_head == 0_u64 {
+                        return exit_status(code: 0_u8);
+                      }
+                    }
+                  }
                 }
               }
             }
           }
         }
+        return exit_status(code: 5_u8);
       }
     }
   }
-  return exit_status(code: 5_u8);
 }

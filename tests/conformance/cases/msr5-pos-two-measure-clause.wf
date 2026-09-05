@@ -1,4 +1,22 @@
-fn read_shared(short: own buffer<u8>, long: own buffer<u8>) -> value: own u8 reads(long) contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
+}
+
+fn read_shared(short: own FixedVector<u8, 4>, long: own FixedVector<u8, 8>) -> value: own u8 reads(long) contract {
   requires len_of(short) <= len_of(long);
   requires 3_u64 < len_of(short);
 } {
@@ -8,8 +26,8 @@ fn read_shared(short: own buffer<u8>, long: own buffer<u8>) -> value: own u8 rea
 
 command fn main() -> status: own ExitStatus pure {
   doc "MSR-5: a clause names a measure of a place directly on either side of its comparison.";
-  let small = buffer_new(4_u64, 0_u8);
-  let large = buffer_new(8_u64, 0_u8);
+  let small = filled::<u8, 4>(value: 0_u8);
+  let large = filled::<u8, 8>(value: 0_u8);
   let value = read_shared(short: move small, long: move large);
   if value == 0_u8 {
   } else {

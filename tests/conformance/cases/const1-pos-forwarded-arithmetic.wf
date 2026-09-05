@@ -1,6 +1,24 @@
-fn doubled<const n: u64>(fill: own u64) -> result: own array<u64, n * 2> pure {
-  doc "CONST-1 one-operation const arithmetic: a const-expression is at most one operation over two terms, exactly the shape GRAM-6 fixes for expressions. `n * 2` is usable as an array<T, N> size and forwardable as a const targ, and each concrete instantiation evaluates it to one u64 value at monomorphization.";
-  return array_new::<u64, n * 2>(fill);
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
+}
+
+fn doubled<const n: u64>(fill: own u64) -> result: own FixedVector<u64, n * 2> pure {
+  doc "CONST-1 one-operation const arithmetic: a const-expression is at most one operation over two terms, exactly the shape GRAM-6 fixes for expressions. `n * 2` is usable as a FixedVector<T, n> capacity and forwardable as a const targ, and each concrete instantiation evaluates it to one u64 value at monomorphization.";
+  return filled::<u64, n * 2>(value: fill);
 }
 
 command fn main() -> status: own ExitStatus pure {
