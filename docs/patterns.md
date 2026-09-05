@@ -1326,10 +1326,56 @@ Two takes share one inner block. A second reservation for the same region is a
 [PROV-1] rejection — one region names one store — so a program that wants two
 extents opens two region blocks.
 
-Replaces: threading the provider into a helper generic over its store, which
-this version cannot spell: a region argument is not substituted into a
-container type at a call, so `Arena<'s, bytes, align>` at a parameter never
-matches the actual.
+Replaces: keeping every take at the reservation. A helper generic over its
+store is spellable now — a parameter type naming a formal region determines
+that region from its actual — so `fn carve['s: affine](store: &uniq Arena<'s,
+256, 16>) -> made: own Option<Vector<'s, u64>>` is a legal declaration and the
+`region { ... }` above is what the caller writes around the call.
+
+## P27. Choose a type parameter's bound from what the body does with the value
+
+A type parameter carries exactly one bound, always written, never inferred,
+with no default. Read it off the body, not off the types you expect to
+instantiate at:
+
+| the body ...                                    | write     |
+|-------------------------------------------------|-----------|
+| uses the value bare, or more than once           | `T: copy` |
+| writes `move value` and may let it reach an exit | `T: affine` |
+| must hand the value on, and may never drop it    | `T: linear` |
+| does integer arithmetic on it                    | `T: Int`  |
+| does float arithmetic on it                      | `T: Float`|
+
+The three linearity classes form the chain `copy < affine < linear`, and
+satisfaction is that chain read left to right: an argument of class C
+instantiates a bound B exactly when `C <= B`. So the bound is a **ceiling on
+what the body assumes**, not a claim about the argument. `T: linear` accepts
+every type; `T: affine` accepts copy and affine; `T: copy` accepts copy alone.
+Writing a tighter bound than the body needs is the mistake this table exists to
+prevent — `filled` writes `T: copy` because it uses `value` bare in a loop, and
+`try_place` writes `T: affine` because it writes `move value`, and neither
+would gain anything from a tighter one.
+
+The bound is also what the body is *checked* under, once, and the concrete
+instances do not re-judge its spelling. That is why one `affine`-bounded body
+serves `u8` and `Option<u8>`: at `u8` the `move` denotes a copy. So write
+`move` wherever the body needs the affine discipline and do not split the
+function per element class.
+
+`Int` and `Float` are the two prelude markers and each implies `copy`, so a
+numeric body needs no second bound; a source contract is not a bound at all
+[FN-3]. A `const` parameter carries none.
+
+A region parameter's bound is optional and means something else: `'s: affine`
+declares that `'s` names a bump extent and `'s: linear` that it names a general
+store, while an unbounded `['s]` is any region at all, a loan region included,
+and a body that assumes no store. A region argument that names no store — a
+loan region, or a `region { }` region no reserving occurrence names — satisfies
+neither bound, so write the bound only on a region a store is actually reserved
+in.
+
+Replaces: two functions with two signatures where one body would do, and
+`let limit = ...;`-style workarounds for a bound a declaration could not state.
 
 ## Known gaps (findings, not yet patterns)
 

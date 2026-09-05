@@ -259,22 +259,27 @@ measures of a run and of a store, a subscript reads the window at
 `(head_of + i) mod cap_of`, each row's requirement is discharged at the call
 under [MSR-4] and each row's declared relations are published at the caller
 under [CALL-6]. What is not implemented is `seq_heap`, which stops as an
-explicit unsupported capability for two reasons at once: [FN-7]'s
+explicit unsupported capability, now for one reason rather than two: [FN-7]'s
 `command.heap` row is DEFERRED, so no program can obtain a `Heap<'s>` value at
-all, and a heap-backed run's release action is a free that this compiler's
-region-erased `IrType::Vector` cannot select from an arena-backed run's empty
-one. Two further stops are worth naming. A source function cannot be generic
-over a store: a region argument is not substituted into a container type at a
-call, so `Arena<'s, bytes, align>` at a parameter never matches the actual, and
-every take must be written where its extent is reserved. And a proved take
-whose count is not a closed expression stops, because `advance<T>(count)` is
-then an opaque term with no source spelling and its requirement has no
-difference-bound form a caller could discharge; the refusing row is the one for
-that position. A run whose element type
-is itself a run is the one further stop, and it is explicit: a run's element
-type is otherwise every type [BLK-1] states — every copy element, one
-region-free affine nominal stored by value, and an unbounded type parameter,
-which [FN-2] resolves at every concrete instance. Element-position writes into
+all. The second reason is gone — a run's release class is decided from its
+store region's declaration alone and travels on `CheckedType::Vector` and
+`IrType::Vector`, so a region-erased lowering can select a heap-backed run's
+free from an arena-backed run's empty action; nothing spends one yet, and a
+unit test pins the four classifications. A source function is generic over a
+store now: a parameter type naming a formal region determines that region from
+its actual and is substituted with it, so `fn carve['s: affine](store: &uniq
+Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u64>>` declares, checks and
+runs. Two stops remain. A proved take whose count is not a closed expression
+stops, because `advance<T>(count)` is then an opaque term with no source
+spelling and its requirement has no difference-bound form a caller could
+discharge; the refusing row is the one for that position. And a run whose
+element type is itself a run stops, explicitly: the element domain is a
+non-recursive flat one, so an element carrying its own descriptor needs a
+representation lift in the checked type, the IR type, the layout ceilings and
+the lowering. A run's element type is otherwise every type [BLK-1] states —
+every copy element, one region-free affine nominal stored by value, and a type
+parameter under any of its three bounds, which [FN-2] resolves at every
+concrete instance. Element-position writes into
 a run execute: `set v[i] = e;` and `replace v[i] = e;` commit at the window's
 logical offset `(head_of + i) mod cap_of`, under [OP-4]'s ordinary subscript
 obligation judged at the target place and [MSR-2]'s storage-granular kill, so
@@ -289,7 +294,14 @@ affine atom [MSR-6, INV-1], which together are what let the container
 design's own fixed-run library — `vacant`, `filled`, `take_at`, `try_place`,
 `try_take` and `rebase` — prove its contracts and execute
 (`tests/programs/fixed_run_library.wf`), each capacity-parametric loop stating
-its bound as the const generic itself.
+its bound as the const generic itself. All six are generic in their element
+type again: a type parameter carries exactly one written bound [S37], the
+three classes form the chain `copy < affine < linear` whose satisfaction is
+that chain read left to right, and the template is the spelling authority, so
+one `affine`-bounded body serves `u8` and `Option<u8>` and the program
+exercises each at both. `rebase` is what needed [LIV-2]'s declaring `set`
+target, which the resolver mints by its own lookup: a bare identifier target
+that resolves to no binding becomes an ordinary `let` declaration there.
 `tests/programs/arena_workspace.wf` is the store-backed companion: it reserves
 an extent, reads the store's own cursor across each take, fills a taken run and
 observes that a refused take leaves the cursor where it was.

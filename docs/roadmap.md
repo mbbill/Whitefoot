@@ -112,10 +112,20 @@ declared `linear`, and affine there otherwise. One release graph is what the
 compiler-derived release and the added `dispose p;` both walk; `let N(f: a,
 ...) = move v;` consumes a value of nominal struct type whole; a consume of a
 proper sub-place of a linear value is refused unless the same statement's
-commit reinitialises it; and a written `affine` or `linear` bound on a generic
-or region parameter states the class a declaration was written for, checked at
-every instantiation. Three grammar atoms arrive with it -- `dispose`, `linear`
-and `affine` -- and [FORM-3] excludes all three from IDENT. In this version the
+commit reinitialises it; and a written bound on a generic or region parameter
+states the class a declaration was written for, checked at every
+instantiation. The bound is one closed class and never a user trait: the three
+classes form the chain `copy < affine < linear`, ordered by what the body may
+do with the value, and satisfaction is that chain read left to right, so a
+bound is a ceiling on what the body assumes rather than a partition of the
+argument types. A type parameter carries exactly one, always written and never
+inferred, with no default -- `copy`, `affine`, `linear`, or a marker TYPEID
+whose numeric row implies `copy` -- while a region parameter's stays optional
+and says which kind of store its region names. The body is checked once under
+that bound and its concrete instances do not re-judge the spellings [FORM-1]
+keys on a value's class, which is what lets one generic body serve a copy type
+and an affine one. Four grammar atoms arrive with it -- `dispose`, `linear`,
+`affine` and `copy` -- and [FORM-3] excludes all four from IDENT. In this version the
 ambient heap is the only store whose reclamation is a release and it is not a
 value, so every scope holds it and nothing is linear here by the capability
 criterion. The batch that carried it is B5 of the same design.
@@ -158,13 +168,16 @@ placement judgment and [PROV-1]'s one-store-per-region refusal are enforced,
 and the extent's release action is deleted because the reservation establishes
 its state at every activation of its block. The same batch makes an in-scope
 const generic an [INV-1] affine atom [MSR-6], so a capacity-parametric loop
-states its own bound. **The general store is what remains of the store half:**
-[FN-7]'s `command.heap` row is still unwritable, because `heap` is the atom
-[EFF-1] fixes for `allocates(heap)` and [FORM-3] therefore excludes it from
-IDENT, and a heap-backed run's release action is a free the compiler's
-region-erased run type cannot select. Beside it stand the confinement rule, a
-run of runs, a source function generic over a store -- which needs the region
-axis in generic substitution -- and the retirement of the old container types.
+states its own bound. B7a5 lands the owner's S37 ruling on generic bounds, makes
+the template the spelling authority so the fixed-run library is generic in its
+element type again, mints [LIV-2]'s declaring `set` target in the resolver,
+puts a run's release class on its type, and substitutes a region argument into
+a call's container types. **The general store is what remains of the store
+half:** [FN-7]'s `command.heap` row is still unwritable, because `heap` is the
+atom [EFF-1] fixes for `allocates(heap)` and [FORM-3] therefore excludes it
+from IDENT. Beside it stand the confinement rule, a run of runs -- which the
+block pool waits on, and which needs an element domain that can carry a
+descriptor -- and the retirement of the old container types.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

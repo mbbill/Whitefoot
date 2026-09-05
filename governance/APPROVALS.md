@@ -3229,4 +3229,95 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 5afec1348d18049b9aa4b8c7759cb40091a969a4982b510d6d86b80acd3d54c9 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B7a5, S37's bound, the template's spelling authority, and the
+  declaring `set` target): no numbered rule is added and none is retired (148
+  remain); grammar productions +0/-0, with `gparam` and `linearity_bound`
+  changed; unique fixed lowercase grammar atoms +1 relative to the B7a4 state
+  (59 remain), being `copy`, which [FORM-3] therefore excludes from IDENT;
+  entry forms +0/-0; kernel declaration records +0/-0 (44 remain). [PROV-6],
+  [FN-2], [OWN-1], [SET-2], [BLK-1] and [LIV-2] are amended in place, and one
+  DEFERRED clause is retired by landing, so six clauses remain DEFERRED.
+  [PROV-6] states the owner's 2026-09-05 ruling: a bound is a closed class the
+  argument must fall into and never a user trait; the three classes form the
+  strict chain `copy < affine < linear`, ordered by what the body may do; and
+  satisfaction is that chain read left to right, an argument of class C
+  instantiating a bound B exactly when C <= B. That corrects the equal-class
+  check the same rule carried under [S32]. [FN-2] and [GRAM-2] make a type
+  parameter's bound mandatory -- exactly one, always written, never inferred,
+  no default, a marker TYPEID implying `copy` -- while a region parameter's
+  stays optional. [FN-2] and [OWN-1] state that the template is the spelling
+  authority: a generic body is checked once at the symbolic instance under its
+  written bound and the concrete-instance recheck does not re-judge the
+  spellings [FORM-1] keys on a value's class, so at a copy instance a `move` of
+  a value whose parameter was bounded `affine` or `linear` denotes a copy.
+  [SET-2] carries the same sentence as a cross-reference, because `replace`
+  against `set` is the second such spelling and `take_at`'s own body is what
+  measured it. [LIV-2] states the declaring `set` target: a bare identifier
+  target that resolves to no binding declares one exactly as a `let` binder
+  does, in the enclosing block, visible after the complete statement, with the
+  mode and type of its own ordinal; only a bare identifier target declares.
+  [BLK-1]'s element admission drops the word *unbounded*, which named a class
+  of parameter this ruling deletes.
+- CONSEQUENCE OF THE ADDED ATOM: `copy` is a fixed lowercase grammar atom, so
+  [FORM-3] excludes it from IDENT and no source declaration may be spelled
+  `copy` any more. Two corpus bindings were: one `let copy = maximum;` in
+  `tests/conformance/cases/x-const-scalar-u64-width.wf` and one `let copy = i;`
+  in two embedded sources of `compiler/src/semantic/tests/loop_permission.rs`.
+  Both are respelled with no other change, and no verdict moved: the
+  conformance case keeps its id, its expectation and its status. The LABEL and
+  REGIONID classes carry their own sigils, so the corpus's `@copy` labels and
+  `'copy` regions are untouched.
+- CONSEQUENCE OF THE MANDATORY BOUND: every generic type parameter written
+  without a bound is now a GRAM-2 parse rejection, so 61 declarations across
+  both corpora are respelled with the bound their bodies need -- 12 in `.wf`
+  sources and 49 in the compiler's embedded test sources. Every one takes
+  `affine`, which is exactly the class an unbounded parameter had before, so no
+  verdict moves for any of them; the two new type parameters of
+  `tests/programs/fixed_run_library.wf` (`filled<T: copy, const n>` and
+  `rebase<T: affine, const n>`) are additions rather than respells and are
+  counted separately.
+- CONFORMANCE BOUNDARY (B7a5): this batch ADDS nine conformance cases and their
+  nine manifest rows, RENAMES and MODIFIES one case, MODIFIES the source of
+  eight more, and deletes none; it changes no adapter, runner, or collection
+  wiring, and no manifest row but the renamed one. The nine added ids are
+  `prov6-pos-the-bound-chain-admits-every-lower-class` (run, exit 0),
+  `prov6-neg-a-copy-bound-refuses-an-affine-argument` (reject, PROV-6),
+  `fn2-pos-the-template-is-the-spelling-authority` (run, exit 0),
+  `own1-pos-a-copy-bounded-body-duplicates-its-value` (run, exit 0),
+  `prov6-neg-a-linear-bounded-body-drops-its-value` (reject, PROV-6),
+  `gram2-neg-a-type-parameter-writes-no-bound` (reject, GRAM-2),
+  `prov6-pos-a-region-argument-names-a-bump-extent` (run, exit 0),
+  `liv2-pos-a-set-target-that-declares-its-binding` (run, exit 0) and
+  `liv2-neg-a-projected-set-target-declares-nothing` (reject, TYPE-5).
+  The renamed and modified case is the one intended verdict flip.
+  BEFORE: id `prov6-pos-linearity-bound-on-a-region-parameter`, rules
+  ["PROV-6", "FN-2", "FORM-8"], expectation `{"kind": "run", "exit": 0}`,
+  status runnable, whose source declared `fn wider['s: affine](left: &'s u64,
+  right: &'s u64)` and called it from inside a plain `region { }` block, and
+  whose doc said that every store a region names in this version is reclaimed
+  by its own region release, so no region argument fails the bound.
+  AFTER: id `prov6-neg-a-region-argument-that-names-no-store`, the same three
+  rules, expectation `{"kind": "reject", "rule": "PROV-6"}`, status runnable,
+  the same two declarations with their docs rewritten to say what the case now
+  demonstrates -- a region that no reserving occurrence names has no store
+  class and satisfies neither bound. The source's declarations, call and
+  control flow are unchanged apart from the two `doc` strings.
+  The eight cases whose source is MODIFIED and whose id, rules, expectation and
+  status are all unchanged are the seven that write an unbounded type parameter
+  and now write `: affine`, which is the class that parameter already had --
+  `blk1-pos-a-run-element-type-is-a-type-parameter`,
+  `fn2-neg-eeq-implicit-type`, `fn2-neg-function-region-bearing-targ`,
+  `fn2-neg-nominal-region-bearing-targ`,
+  `fn2-neg-wrong-kind-instantiation-argument`, `fn3-neg-generic-contract` and
+  `fn6-neg-polymorphic-recursion` -- and `x-const-scalar-u64-width`, whose one
+  binding was spelled `copy` and is now spelled `held`. Each of the eight
+  reaches the same verdict through the same rule as before. The flip is
+  intended and is the whole point of landing the region axis: under [S32] the
+  instantiation check had no region axis at all, so nothing looked at what `'s`
+  was bound to. Before this batch the corpus holds 597 cases with the native
+  adapter reporting Pass=595, Xfail=1, Skip=1; after it the corpus holds 606
+  with the adapter reporting Pass=604, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, and the recorded-verdict snapshot
+  corpus reports Pass=491, Flip=0: no other verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 72d53b4764ad5cf36a374baf8db45b82e3a7db2f8adb920df3288ac24400ca35 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

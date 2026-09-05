@@ -1729,6 +1729,30 @@ at every one. **`propagate` is [LIV-1]'s judgment and
 this rule does not restate it**; the seventh draft's second, wider sentence here refused a
 `propagate` on account of a binding it had nothing to do with, and is deleted.
 
+> **Correction, decided 2026-09-05, by the owner (S37), and it corrects [PROV-6], [FN-2]
+> and [OWN-1] together.** [S32]'s bound above is superseded on three points.
+> **(a) The bound is a ceiling, not a partition.** The three classes form the strict chain
+> `copy < affine < linear`, ordered by what the body may do — duplicate, use bare and drop;
+> `move` at most once and drop; consume exactly once and never drop — and satisfaction is
+> that chain read left to right: an argument of class C instantiates a bound B iff
+> `C <= B`. S32's equal-class check refused `hold::<u64>` at `T: linear` for no reason a
+> writer can state, because *consume exactly once* is what a copy value satisfies
+> vacuously. **(b) A type parameter's bound is mandatory**, one per parameter, always
+> written, never inferred, with no default: `copy`, `affine`, `linear`, or a marker TYPEID
+> whose numeric row implies `copy`. The unwritten case was a fourth, unnamed class meaning
+> *fail closed*, which is exactly what [FN-2] 1124's always-written discipline exists to
+> prevent. A region parameter's bound stays optional, and unbounded there keeps its
+> meaning: any region, including a loan region, and a body that assumes no store.
+> **(c) The template is the spelling authority [FN-2, OWN-1].** The body is checked once
+> at the symbolic instance under its bound, and the concrete-instance recheck does not
+> re-judge the spellings [FORM-1] keys on a value's class — `move p` against a bare `p`
+> [OWN-1] and `replace` against `set` [SET-1, SET-2]. Without it no generic body serves a
+> copy type and an affine type: `fn pass<T: affine>(x: own T) -> r: own T { return move x; }`
+> was an [OWN-1] rejection at `u64`, and 3.L's `filled`, `take_at`, `try_place`, `try_take`
+> and `rebase` were instantiated only at affine types to dodge it. The exception reaches
+> both spellings or `take_at`'s own `replace short[at] = move endv;` does not compile at a
+> copy instance. Q8's copy/affine half closes here.
+
 > **Landed 2026-09-04 (B5), with five halves not exercised and one clause deferred.**
 > [PROV-6] is in the active specification and in the compiler. The criterion, the release
 > graph and its walk, the modifier and its admission condition, the two routes, `dispose`
@@ -1916,6 +1940,13 @@ touching six fields pays it six times; the repair is to borrow the element once,
 window is what makes an affine element sound: an element enters and leaves only through an
 operation that moves a boundary. A run over a `T` linear in some scope **owns** its
 elements, so it is linear there too and the release walk visits its window.
+
+> **Correction, decided 2026-09-05, from B7a5's implementation (S37).** This rule's
+> element-position admission said *one unbounded type parameter*, which named a class of
+> parameter [S37] deletes: a type parameter now carries exactly one bound and none is
+> unbounded. The admission is over the parameter, not over its bound — a run's element type
+> is any nameable type under any of the three bounds — and nothing else changes, because a
+> symbolic element is erased at every concrete instance [FN-2] and reaches no layout.
 
 *Judgment:* the ordinary nominal-resolution and construction judgments; a `construct`
 naming a container nominal is a hard error citing BLK-1; [OP-4] at every subscript against
@@ -2372,6 +2403,21 @@ undefined at the two shapes its own repairs created:
 > backing: [EFF-1] 1386 as [PROV-3] amends it governs an effect **path** through a view
 > **parameter**, not a target place. That is what makes [MSR-2]'s kill fire at a view
 > target, which is half of [VIEW-4]'s repair.
+
+> **Correction, decided 2026-09-05, from B7a5's implementation.** The declaring target
+> above landed and is no longer DEFERRED. It is not a checker change and B7a4 said so: the
+> target identifier is an *unresolved use* before the checker runs, so nothing downstream
+> can mint the binding. The declaration is minted in the resolver, by the ordinary lookup
+> it already performs — a bare identifier target of a `set_stmt` whose lookup finds no
+> visible binding becomes an ordinary `let` declaration owned by its own `pbase`, visible
+> after the complete statement, and the pass runs again until every use resolves. Only a
+> bare identifier declares: a projected, dereferenced or subscripted target selects one
+> component of a value that must already exist, so an unresolved base there keeps its
+> ordinary lookup rejection. Such a target reads no previous value out and overlaps
+> nothing, so conditions 1 and 2 are over the targets that name existing places and
+> condition 3 fixes the new binding's type. `rebase<T: affine, const n>` is what needed
+> it: at an affine element type, `let one = ...;` before the loop makes `one` a live
+> affine target the right-hand side does not read out, which is [STOR-1]'s refusal.
 
 Deriving a field-precise footprint from a callee's row would be wrong, because the value
 written back is a whole new value of the target's type.
@@ -3993,8 +4039,8 @@ proposed**.
 on a generic parameter [S32] and `ReserveOutcome` [S33] until 2026-09-04, and each is
 recorded below with the disposition the owner gave it.
 
-**The decided list.** Eight entries changed status this round and are marked, the last
-four of them on 2026-09-04.
+**The decided list.** Nine entries changed status across these rounds and are marked: four on
+2026-09-04, and S37 on 2026-09-05.
 
 ```text
 | id  | spelling                                    | kind                    | status    |
@@ -4040,7 +4086,7 @@ four of them on 2026-09-04.
 |     |   take mut_slice and slice                  |                         |           |
 | S31 | seq_reslice                                 | operation row           | REJECTED  |
 |     |   (the reborrow is [OWN-6]'s, [VIEW-6])     |                         |           |
-| S32 | a linearity bound on a generic parameter    | generics surface        | ADOPTED   |
+| S32 | a linearity bound on a generic parameter    | generics surface        | see S37   |
 | S33 | reserve_file -> own ReserveOutcome          | system-row change       | ADOPTED   |
 | S34 | array<T, n> retires; FixedVector<T, n> is   | type retirement         | ADOPTED   |
 |     |   the one fixed run, const-eligible full    |                         |           |
@@ -4049,6 +4095,8 @@ four of them on 2026-09-04.
 | S36 | len_of, cap_of, room_of, head_of            | naming decision         | ADOPTED   |
 |     |   (supersede S11's spellings and the        |                         |           |
 |     |    v0.44 len row)                           |                         |           |
+| S37 | T: copy | affine | linear, one mandatory    | generics surface        | ADOPTED   |
+|     |   bound per type parameter                  |   (supersedes S32)      |           |
 ```
 
 **Two entries decided 2026-09-04, after B1 landed, when the owner asked why
@@ -4230,7 +4278,8 @@ call site stays where it is instead of moving back inside `search_file` and `wal
 A.2 keeps twelve rows. *What it does not settle:* Q19's alternation cost, because a shared
 child still forbids a write of the parent while it lives.
 
-**S32, a linearity bound on a generic parameter. ADOPTED (owner-decided 2026-09-04).**
+**S32, a linearity bound on a generic parameter. ADOPTED (owner-decided 2026-09-04), and
+superseded on three points by S37 on 2026-09-05.**
 `fn f<T: affine>(...)`, `fn f<T: linear>(...)` and `fn f['s: affine](...)`, read at the
 declaration and checked at the instantiation. *Needed because* a value's release
 disposition depends on its type and region arguments, and the language has no position at
@@ -4288,6 +4337,64 @@ a store we account for is a variant with a published post-state. **What it settl
 [RES-6] publishes `room_of(factory) = 0` on the `Exhausted` arm through [CALL-4]'s existing
 per-variant route, L8's second half is readable for that store, and Q20 keeps only the
 general question of writing the partition once as a rule about covered stores.
+
+**S37, generic parameter bounds as one feature. ADOPTED (owner-decided 2026-09-05), and it
+supersedes S32.** The owner's ruling, recorded verbatim:
+
+> 1. **A bound is a closed class** the argument must fall into, derived from the language's
+>    existing classifications ([OWN-1]'s copy class, [PROV-6]'s linearity classes, [OP-1]'s
+>    numeric rows), never a user trait; it selects no behavior.
+> 2. **Type parameters carry exactly one bound, always written, never inferred, no
+>    default**: one of `copy`, `affine`, `linear`, `Int`, `Float` (`Int`/`Float` are the
+>    existing prelude markers and imply `copy`). `gparam := TYPEID ":" (TYPEID | "copy" |
+>    "affine" | "linear") | "const" IDENT ":" type`; the optional bound becomes mandatory
+>    for a type parameter of a function or a nominal. New spelling: `copy` (a fixed
+>    lowercase atom).
+> 3. **The three classes form a strict chain `copy < affine < linear`, ordered by what the
+>    body may do**: under `copy` the body may duplicate, use bare, and drop the value;
+>    under `affine` it may `move` it at most once and may drop it; under `linear` it must
+>    consume it exactly once and may never drop it. **Satisfaction is the chain read left
+>    to right**: an argument of class C instantiates a bound B iff C <= B — bound `copy`
+>    accepts copy arguments only; `affine` accepts copy and affine; `linear` accepts copy,
+>    affine and linear. The reverse direction is a hard error citing PROV-6 at the
+>    instantiation, naming the parameter, the bound, and the argument's class. This
+>    corrects S32's "class must equal the bound" to the chain.
+> 4. **The template is the spelling authority.** The body is checked once at the symbolic
+>    instance under its bound: `affine`/`linear` bodies write `move`, `copy` bodies write
+>    bare use, per [OWN-1]/[FORM-1]. The concrete-instance recheck under [FN-2] does NOT
+>    re-judge the [OWN-1]/[FORM-1] spelling: `move` of a template-affine value at a copy
+>    instance denotes a copy. State this as an explicit exception in [FN-2] and [OWN-1].
+> 5. **Region parameters keep an optional bound**: `['s]` unbounded means any region
+>    including a loan region, and the body assumes no store; `'s: affine` (a bump store,
+>    `Arena`) / `'s: linear` (a general store, `Heap`) declares a store region. A region
+>    argument that names no store satisfies neither bound.
+> 6. `T: <source contract>` stays as today (prelude markers only; source contracts rejected
+>    by [FN-3]); behavior abstraction is out of scope. Const parameters carry no bound.
+>    Nominal generics use the same `gparam`.
+
+*What it settles that S32 did not.* S32 left three things open and each cost a program.
+The **equal-class** check made a bound a partition rather than a ceiling, so `T: linear`
+refused a `u64` argument for no reason a writer can state — the body's obligation is
+*consume exactly once*, which a copy value satisfies vacuously. The **optional** bound made
+the unwritten case a fourth, unnamed class whose meaning was "fail closed", which
+[FN-2] 1124's always-written discipline exists to prevent. And the **instance recheck**
+re-judged the spelling, so `fn pass<T: affine>(x: own T) -> r: own T { return move x; }` was an
+[OWN-1] rejection at `u64`: no generic body could serve a copy type and an affine type, and
+3.L dodged it by instantiating `filled`, `take_at`, `try_place`, `try_take` and `rebase`
+only at affine types. Q8's copy/affine half is what that was, and S37 closes it.
+
+*The one thing that grew.* The exception in (4) is stated over the spellings [FORM-1] keys
+on a value's class, and there are two, not one: `move p` against a bare `p` [OWN-1] and
+`replace` against `set` [SET-1, SET-2]. `take_at` writes `replace short[at] = move endv;`,
+which at a copy instance is [SET-2]'s copy-target refusal for exactly the reason the `move`
+was [OWN-1]'s, so the exception reaches both or the ruling's own example does not compile.
+[SET-2] carries the same sentence [FN-2] does, as a cross-reference rather than a second
+statement of the fact.
+
+*Cost:* one fixed lowercase atom (`copy`, which [FORM-3] therefore excludes from IDENT),
+one changed production, one changed instantiation check, one exception sentence in three
+rules, and a mechanical respell of every unbounded generic declaration in the corpus.
+*Decided:* adopted.
 
 ### 3.L The library, written in wf
 
@@ -4379,7 +4486,7 @@ a worked program may not call a function this file does not declare.
 **The transposition, written out, because it is the fifth draft's removal.**
 
 ```wf-design
-fn take_at<T, const n: u64>(vector: own FixedVector<T, n>, at: own u64)
+fn take_at<T: affine, const n: u64>(vector: own FixedVector<T, n>, at: own u64)
     -> (rest: own FixedVector<T, n>, taken: own T)
     reads(vector), writes(vector) contract {
   requires at + 2_u64 <= len_of(vector);
@@ -4409,7 +4516,7 @@ because it is the type constant [CALL-7] excludes.
 #### 3.L.3 Construction and appending, written out
 
 ```wf-design
-fn vacant<T, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
+fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
   ensures len_of(result) >= n;
   ensures room_of(result) <= 0_u64;
   ensures head_of(result) <= 0_u64;
@@ -4455,7 +4562,7 @@ and backedge each one published premise. A run that is never viewed omits both.
 iteration. `filled` is not, because it reuses one `value`:
 
 ```wf-design
-fn filled<T, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
   ensures len_of(result) >= n;
   ensures room_of(result) <= 0_u64;
   ensures head_of(result) <= 0_u64;
@@ -4636,7 +4743,7 @@ per lease. That is the honest price of the pool being library data, and 4.1 pays
 the open.
 
 ```wf-design
-fn try_place<T, const n: u64>(vector: own FixedVector<T, n>, value: own T)
+fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own T)
     -> (rest: own FixedVector<T, n>, unplaced: own Option<T>)
     reads(vector), writes(vector) contract {
   ensures head_of(rest) == head_of(vector);
@@ -4655,7 +4762,7 @@ fn try_place<T, const n: u64>(vector: own FixedVector<T, n>, value: own T)
   return move vector, Some<T>(value: move value);
 }
 
-fn try_take<T, const n: u64>(vector: own FixedVector<T, n>)
+fn try_take<T: affine, const n: u64>(vector: own FixedVector<T, n>)
     -> (rest: own FixedVector<T, n>, taken: own Option<T>)
     reads(vector), writes(vector) contract {
   ensures head_of(rest) == head_of(vector);
@@ -4676,8 +4783,9 @@ fn try_take<T, const n: u64>(vector: own FixedVector<T, n>)
 ```
 
 Both rest on [ENT-3.S6]'s generalization over the four measures [BLK-0], and both are
-written per element class where the body moves a `T` (probes `x14`, `x15`; [S32] is
-adopted and relieves the linearity axis, and Q8 keeps the copy/affine half). **Their
+written once, under the bound their bodies need (probes `x14`, `x15`; [S32] relieved the
+linearity axis and [S37] closes Q8's copy/affine half, so one `affine`-bounded body serves
+a copy element type and an affine one). **Their
 `len_of` and `room_of` bounds are two-sided**, which is round 7's addition:
 the seventh draft published one side of each, which satisfies no caller and, under
 [CALL-7] as stated, no longer satisfies the rule either.
@@ -4911,7 +5019,7 @@ This is the item [S29] proposed as a kernel row and round 7 wrote in wf, and it 
 L18's addition clause is discharged.
 
 ```wf-design
-fn rebase<T, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>)
+fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>)
     -> rebased: own FixedVector<T, n>
     reads(vector, spare), writes(vector, spare) contract {
   requires len_of(spare) <= 0_u64;
@@ -6503,6 +6611,80 @@ operand was read. A record whose spelling no program can write is not a record.
   target identifier that resolves to no binding is an unresolved use before the checker
   sees it, so the declaration has to be minted in the resolver's own scope walk.
   `rebase<T, const n>` therefore stays at a copy element type.
+
+### 6.0k B7a5 landed (v0.45)
+
+**A generic parameter's bound is one closed class, the template is the spelling authority,
+and a `set` target can declare its own binding.** Three of the batch's items landed whole,
+one landed in the half that is not blocked, and the largest did not land at all; the last
+is recorded here with what it actually costs.
+
+- **[S37] is in the specification and in the compiler.** The bound is a closed class and
+  never a user trait, a type parameter carries exactly one and always writes it, and the
+  three classes form the chain `copy < affine < linear` whose satisfaction is the chain
+  read left to right. `copy` is the batch's one added atom, and [FORM-3] therefore
+  excludes it from IDENT: two corpus bindings were spelled `copy` and are respelled.
+  The `gparam` production loses its optional bound; `linearity_bound` gains `copy`.
+  [PROV-6], [FN-2], [OWN-1], [SET-2] and [BLK-1] are amended.
+- **The template is the spelling authority, and it reaches two spellings and not one.**
+  A generic body is checked once at the symbolic instance under its written bound, and the
+  concrete-instance recheck no longer re-judges the spellings [FORM-1] keys on a value's
+  class. The ruling names `move p` against a bare `p`; `take_at` measured the other one on
+  its first copy instance — `replace short[at] = move endv;` is [SET-2]'s copy-target
+  refusal for exactly the reason the `move` was [OWN-1]'s — so the exception is stated over
+  both. **`tests/programs/fixed_run_library.wf` is the evidence**: all six functions are
+  generic again and each affine-bounded one runs at `u8` and at `Option<u8>` in one
+  program.
+- **[LIV-2]'s declaring `set` target landed, in the resolver.** B7a4's reading was right:
+  the target identifier is an unresolved use before the checker runs. The promotion is one
+  pass of the resolver's own lookup, repeated until every use resolves, so a declared
+  target is judged by the rules a `let` binder is judged by and the checker sees an
+  ordinary dead binding that this commit revives. `rebase<T: affine, const n>` is what
+  needed it.
+- **A run's release class is on its type.** `CheckedType::Vector` and `IrType::Vector`
+  carry it, read off the store region's declaration alone: an `affine`-bounded region
+  parameter and a `region_stmt` region are extents, and the entry heap, an unbounded
+  region parameter and a `linear`-bounded one are general stores. No heap value exists
+  yet, so nothing releases through a free in this version; a unit test pins the four
+  classifications so the version that first spends one inherits a decision rather than
+  making it.
+- **The region axis reaches a call's container types.** A parameter type naming a formal
+  region — `Vector<'s, T>`, `Arena<'s, b, a>`, `Heap<'s>` beside the `Slice<'r, T>` that
+  already worked — determines that region from its actual and is substituted with it, so
+  `fn carve['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector<'s,
+  u64>>` declares, checks, lowers and runs. That is what 6.0j recorded as the missing
+  axis, and it is also what makes the region-axis bound check reachable.
+
+**The one intended verdict flip.** `prov6-pos-linearity-bound-on-a-region-parameter` was a
+branch-new case whose whole content was that a declaration writing `'s: affine` is
+accepted; the region axis had no instantiation check, so nothing looked at what `'s` was
+bound to. With the axis landed, its own caller passes a plain `region { }` region — a
+region no reserving occurrence names, so a region that names no store — to `'s: affine`,
+which satisfies neither bound. The case is now
+`prov6-neg-a-region-argument-that-names-no-store`, expecting `reject PROV-6`, and its
+doc says what it now demonstrates. No other corpus verdict moved.
+
+**What this batch did not reach, and what it costs.**
+
+- **Runs of runs did not land, and the block pool depends on them.** A run whose element
+  type is itself a run is still `CompositeValues`. The obstacle is representation and not
+  judgment: `CheckedFlatElement` is a non-recursive `Copy` element domain embedded in
+  `CheckedType`, so an element that carries a full type — a descriptor included — needs
+  either an interned element table travelling with the checked program or a boxed element
+  that costs `CheckedType` its `Copy`, and then the same lift in `IrType`, in A.1's layout
+  and ceilings, in the run-element read and write of the lowering, and in the release
+  walk. **A one-level lift is the cheaper shape** — an element that is a run of a *flat*
+  element, which is exactly `FixedVector<FixedVector<u8, 4>, 4>` and
+  `FixedVector<Vector<'s, u8>, 8>` — and it is what a later batch should price first.
+  Because 3.L.4's `BlockPool['s]` holds `FixedVector<Vector<'s, u8>, 8>`, the pool, its
+  `Lease`, and its three operations wait on that lift; so do [MSR-1]'s `len_of(P[i])` over
+  a run of runs, [MSR-2]'s element-position kill at that granularity, [LIV-2] condition
+  2's `grid[k]` against `grid[i][j]`, and B4's affine element read-out.
+- **`filled` is exercised at two copy types and not at an affine one.** Its bound is
+  `copy`, so an affine instance is what the bound refuses; `u8` and `u64` are what it has.
+- **[S22] and `seq_heap` are unchanged.** Both keep the two blockers 6.0j named, and the
+  release class this batch landed removes the second of them for the version that retires
+  the `heap` atom.
 
 ### 6.1 What the compiler did in this session
 
