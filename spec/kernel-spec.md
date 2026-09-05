@@ -1126,6 +1126,30 @@ Element access is the ordinary surface over the initialized window and needs no 
 There is no swap, exchange, rebase, growth, clear, truncate, removal from the middle, filled construction, or vacant construction anywhere in this domain: a swap of two whole non-overlapping places is `set (p, q) = move q, move p;` [LIV-2], a swap of two elements of one run is the same one commit over its two subscripts, `set (v[i], v[j]) = move v[j], move v[i];`, whose offsets [LIV-2]'s second condition requires to be provably distinct and whose read-outs that rule's own sentence admits, and each remaining item is an ordinary source function over these rows.
 Nothing here is total at a capacity or an emptiness boundary, because an overwriting or an empty-take form would have to publish a displacement or a refusal this domain declares no value for.
 
+[BLK-4] Confinement: the one position closure, and the `&uniq` parameter refusal.
+A type is confined when its complete type after substitution names a region, and the confinement of a value is the set of regions its complete type names.
+A confined value may be moved, returned, or bound to a destination that every member of that set outlives or equals [OWN-3]; the quantifier is the whole of it, because [OWN-3] makes two caller-supplied regions incomparable and fail-closed is the answer there.
+
+A confined value may occupy any position whose owning value's own complete type names the same region, so the position is itself confined and [STOR-4] governs it.
+That is what admits a store-branded run into a field, an enum variant payload, and a run element: the store's identity travels in the type [PROV-1], and nothing about the value outlives, hides, or strands anything.
+A loan-bearing type [VIEW-1] may occupy no position from which a value could outlive or hide its origin set — no field, no enum variant payload, no run element, no written generic type argument, and no result outside [VIEW-6]'s ceiling — and a provider type may occupy none of the same positions, for [PROV-2]'s reason.
+Rule [STOR-5] states that closure over the stored positions and [FN-2] over the written type argument; this rule is where the two are one judgment, and its own refusals are the two below.
+
+In the parameter list of a source-declared `fn`, a parameter of mode `&uniq` is a hard error citing BLK-4 at the complete `param`, `UniqueParameterReachesContainer`, when its referent type is, or reaches at any depth, a container nominal, a loan-bearing type, or a generic type parameter carrying no bound that excludes both.
+Depth is the reachability closure over fields, enum variant payloads, run elements, and written type arguments [EFF-1], the same closure [PROV-6]'s release graph reads.
+The restructuring is `take the run by value and return it, or take a view of it`.
+The container nominals of this refusal are the two runs [BLK-1] and no other: what the refusal is for is a measure a callee moves while its caller retains it [MSR-3], and exactly the four boundary operations [BLK-3] move one.
+Both of `array<T, N>` and `buffer<T>` carry one measure fixed at formation that no operation moves, so neither is a container nominal here; both retire into the runs, and this sentence retires with them.
+The type-parameter clause is decided at the declaration, where a type parameter is opaque: under [S37] the three linearity classes are `copy`, `affine` and `linear`, the two runs and `MutSlice<'r, T>` are affine and `Slice<'r, T>` is copy [OWN-1, VIEW-1], so no written bound excludes both a container nominal and a loan-bearing argument and every such referent is refused.
+A provider parameter is the one `&uniq` this rule does not refuse [PROV-2]: no operation changes a provider's identity, only its measures, and every row that hands a provider's post-state back is a [BLK-0] or [SYS-2] record whose relations are complete over what it writes.
+The clause quantifies over a source-declared `fn` and over no compiler-owned domain, for the same reason: a record's behaviour no body can vary, so `mut_slice_of(vector: &uniq 'r v)` and `read_at(destination: &uniq MutSlice<u8>, ...)` are unaffected.
+
+A stored position whose brand resolves to the entry heap's store region in a unit whose entry selects no `command.heap` row [FN-7] is a hard error citing BLK-4 at the complete contained `type`, `ConfinedTypeWithoutStore`, with the restructuring `give this nominal a region parameter and confine the field to it, or let the entry receive the general store`.
+The entry heap's store region is minted before `main` in every unit whether or not that unit's entry holds the provider [PROV-1], so this refusal is about reachability of a provider and not existence of a region: a unit with the whole-program fact `heap-unreachable` can form no value of such a type, and the declaration is refused where it is written rather than at every use.
+
+The judgment of this rule is the `&uniq` parameter refusal over that closure, the `ConfinedTypeWithoutStore` refusal above, and the destination check over a confined value's region set; the stored-position half is [STOR-5]'s own judgment and is not repeated here.
+The checked program retains, before lowering [DIAG-2], each value's confinement set and the fact that no source-declared `&uniq` parameter reaches a run, a view, or a type parameter.
+
 [VIEW-1] Two views, one shape, two loan strengths.
 A **view** is a value that reaches storage it does not own [OWN-5]: `Slice<'r, T>` holds a **shared** loan on the range it reaches and reads it, and `MutSlice<'r, T>` holds an **exclusive** loan on the same range and additionally writes its elements.
 Each is an `own` value carrying one loan region `'r` [TYPE-2, PROV-1], each is loan-bearing and owns nothing [OWN-1, STOR-5], and the strength is a component of the type's name, so the two are distinct types under the exact identity [TYPE-5] performs and neither is admitted where the other is required.

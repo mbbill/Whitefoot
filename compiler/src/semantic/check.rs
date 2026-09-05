@@ -1,5 +1,6 @@
 mod borrows;
 mod cleanup;
+mod confinement;
 mod contracts;
 mod control;
 mod ensures;

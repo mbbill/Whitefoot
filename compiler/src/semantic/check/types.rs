@@ -105,6 +105,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .first_child_with(node, Production::Type)?
                 .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
             let ty = self.parse_type_with(ty_node, substitution)?;
+            // [BLK-4] the `&uniq` parameter refusal is a source rejection and
+            // is asked before the capability stop below, because an
+            // unsupported compiler capability may never mask one [DIAG-1].
+            // It quantifies over a source-declared `fn` and not over a
+            // contract member's `fn_sig`.
+            if self.tree.production(function)? == Production::FnDecl {
+                self.check_unique_parameter_confinement(
+                    mode,
+                    ty,
+                    declaration.spelling(),
+                    node,
+                )?;
+            }
             if mode != CheckedMode::Own && !self.borrowable_type(ty)? {
                 return self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node);
             }
