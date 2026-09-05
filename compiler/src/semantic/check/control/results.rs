@@ -167,7 +167,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<StatementResult, CheckStop> {
         let usage = self.use_at(node, LexicalUseRole::Construct)?;
         let written = usage.spelling().to_owned();
-        // [S39] the one compiler-owned nominal this statement takes apart is
+        // S39 the one compiler-owned nominal this statement takes apart is
         // the cell, whose one field is its referent: the destructuring is
         // what takes the value out and releases the cell, and it is the
         // existing statement rather than a new operation.

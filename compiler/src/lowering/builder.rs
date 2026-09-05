@@ -1074,7 +1074,7 @@ impl<'program> IrBuilder<'program> {
                     if self.value_type(aggregate)? != IrType::Nominal(erased) {
                         return Err(LoweringFailure::InvalidCheckedProgram);
                     }
-                    // [S39] a cell's one binder is its referent, loaded out
+                    // S39 a cell's one binder is its referent, loaded out
                     // while the cell's own storage is released.
                     if let Some(IrNominalKind::Box { .. }) =
                         self.nominals.get(erased.index()).map(IrNominal::kind)

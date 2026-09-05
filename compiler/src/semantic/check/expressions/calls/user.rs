@@ -668,7 +668,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
     ) -> Result<Option<DeclarationId>, CheckStop> {
         if let CheckedType::Nominal(id) = ty {
-            // [S39] a cell's store region is a component of its type exactly
+            // S39 a cell's store region is a component of its type exactly
             // as a run's is, so a field of cell type determines the enclosing
             // nominal's region and a parameter of cell type determines a
             // formal at a call.
@@ -740,7 +740,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return Ok(ty);
         };
-        // [S39] a cell is a compiler-owned nominal keyed on its store region
+        // S39 a cell is a compiler-owned nominal keyed on its store region
         // and its referent, so the substituted type is read off the actual
         // exactly as a source instance's is: the actual's own cell when the
         // region and the referent agree, and the formal unchanged when they

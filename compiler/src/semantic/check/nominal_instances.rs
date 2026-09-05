@@ -390,7 +390,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(());
         }
         let usage = self.use_at(node, LexicalUseRole::Type)?;
-        // [S39] a written `Box<'s, T>` is interned here, exactly as a written
+        // S39 a written `Box<'s, T>` is interned here, exactly as a written
         // `box<T>` is: the parse path is `&self` and cannot intern, and a
         // nominal's own field types are parsed there.
         if let ResolvedTarget::Container(id) = usage.target()
@@ -1262,7 +1262,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(CheckedType::Nominal(existing));
         }
         match &self.nominal(id)?.kind {
-            // [S39] a store-branded cell substitutes both halves of its own
+            // S39 a store-branded cell substitutes both halves of its own
             // identity: its store region and its referent.
             CheckedNominalKind::Box {
                 referent,
@@ -1364,7 +1364,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if left == right {
             return Ok(true);
         }
-        // [S39] a type whose release graph has a cycle — a cell-linked tree —
+        // S39 a type whose release graph has a cycle — a cell-linked tree —
         // compares against its own instance at another store, so the walk
         // assumes the pair it is already deciding. Without it the comparison
         // is the infinite one the depth cap used to cut off, and cutting it

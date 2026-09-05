@@ -68,7 +68,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             CheckedType::Vector { release, .. } => {
                 release == super::super::model::CheckedReleaseClass::General
             }
-            // A cell is released to the store its own region names [S39]: a
+            // A cell is released to the store its own region names S39: a
             // general store's cell frees, a bump extent's is reclaimed by
             // its region's own reset, and the ambient heap's `box<T>` is
             // released to a store that is not a value at all.
@@ -240,7 +240,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     release: super::super::model::CheckedReleaseClass::General,
                     ..
                 } => Some(region),
-                // [S39] a cell branded to a general store spends that
+                // S39 a cell branded to a general store spends that
                 // store's capability exactly as a run branded to it does.
                 CheckedType::Nominal(id) => match self.nominal(id)?.kind {
                     CheckedNominalKind::Box {

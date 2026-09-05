@@ -162,7 +162,7 @@ pub struct IrExtentConstants {
     pub align: u64,
 }
 
-/// [S39] one cell formation: the store's own take, the value the cell takes,
+/// S39 one cell formation: the store's own take, the value the cell takes,
 /// and the outcome that carries either.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IrStoreBox {
@@ -1046,7 +1046,7 @@ pub enum IrOperation {
     /// nothing to give; a row whose domain requirement is proved carries
     /// none and always succeeds.
     StoreTake(IrStoreTake),
-    /// [S39] one cell formation over a store.
+    /// S39 one cell formation over a store.
     StoreBox(IrStoreBox),
     /// [MSR-1] one measure of a run or a bump extent, read as its [OP-1]
     /// reader row loads it. A cell the measure table fixes as a constant
@@ -1136,7 +1136,7 @@ pub enum IrOperation {
         nominal: IrNominalId,
         value: IrValueId,
     },
-    /// [S39] the destructuring consume of a cell: its referent is loaded out
+    /// S39 the destructuring consume of a cell: its referent is loaded out
     /// and its own storage is released, which is a free on a general store
     /// and nothing on a bump extent.
     BoxTake {

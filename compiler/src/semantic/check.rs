@@ -352,7 +352,7 @@ struct ConstructorShape {
 enum PendingNominal {
     /// [STOR-2] a box over this referent.
     Box(CheckedType),
-    /// [S39] a `Box<'s, T>` over this store region and referent.
+    /// S39 a `Box<'s, T>` over this store region and referent.
     StoreBox(DeclarationId, CheckedType),
     /// The compiler-owned result-list nominal of a [BLK-0] row that declares
     /// an ordered result list [CALL-4]. A row's list is fixed by its own
@@ -666,7 +666,7 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     nominal_states: Vec<u8>,
     source_nominal_instances: Vec<Option<(usize, GenericSubstitution)>>,
     box_nominals: HashMap<CheckedType, NominalId>,
-    /// [S39] one `Box<'s, T>` nominal per (store region, referent).
+    /// S39 one `Box<'s, T>` nominal per (store region, referent).
     store_box_nominals: HashMap<(DeclarationId, CheckedType), NominalId>,
     /// `arena<'r, T>` instances by (region declaration, content type): the
     /// region is part of the type's identity [OWN-3, STOR-4].

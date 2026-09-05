@@ -71,7 +71,7 @@ pub enum ContainerShape {
     Heap,
     /// `Arena<'s, bytes, align>`: a bump extent's provider [PROV-1].
     Arena,
-    /// `Box<'s, T>`: one store-resident value [S39]. It is store-branded
+    /// `Box<'s, T>`: one store-resident value S39. It is store-branded
     /// exactly as `Vector<'s, T>` is and carries no measure at all, a cell
     /// being never empty.
     Box,

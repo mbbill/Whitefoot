@@ -2445,7 +2445,7 @@ fn drain_all_completions_except(
 
 /// The label one ordinary instruction's own emission leaves the block at, for
 /// the operations whose lowering opens a further LLVM block.
-/// The block one cell formation joins at [S39].
+/// The block one cell formation joins at S39.
 pub(super) fn store_box_join_label(result: IrValueId) -> String {
     format!("box.join.v{}", result.ordinal())
 }
@@ -2477,7 +2477,7 @@ fn definition_exit_label(
             operation: IrOperation::BoxNew { .. },
             ..
         } => *label = box_new_ready_label(*result),
-        // [S39] a cell formation branches on the store's answer and joins,
+        // S39 a cell formation branches on the store's answer and joins,
         // so the block a successor's phi names is that join.
         IrInstruction::Define {
             result,

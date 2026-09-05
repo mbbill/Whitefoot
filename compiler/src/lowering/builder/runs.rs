@@ -367,7 +367,7 @@ impl IrBuilder<'_> {
         }
     }
 
-    /// [S39] one of the two cell formations.
+    /// S39 one of the two cell formations.
     ///
     /// The store hands out one cell's worth of storage and the row moves
     /// `value` into it; the outcome is a `Result<Box<'s, T>, T>` whose

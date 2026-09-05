@@ -310,7 +310,7 @@ pub(super) fn type_requires_cleanup(
                 pending.push(element.ty());
             }
             IrType::Provider => {}
-            // [S39] a cell needs a release exactly when its own storage or
+            // S39 a cell needs a release exactly when its own storage or
             // its referent does: a bump extent's cell whose referent derives
             // nothing needs no walk at all.
             IrType::Nominal(id)

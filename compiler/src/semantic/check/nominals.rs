@@ -155,7 +155,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Err(CheckStop::DeferredNominal)
     }
 
-    /// [S39] the `Box<'s, T>` nominal for one (store region, referent), or
+    /// S39 the `Box<'s, T>` nominal for one (store region, referent), or
     /// the deferral that interns it.
     pub(super) fn store_box_nominal(
         &self,
@@ -203,7 +203,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(id)
     }
 
-    /// [S39] one `Box<'s, T>` instance, interned per (store region, referent).
+    /// S39 one `Box<'s, T>` instance, interned per (store region, referent).
     ///
     /// The region is a component of the type's name exactly as a run's is
     /// [PROV-1], so two stores give two nominals, and the release class the

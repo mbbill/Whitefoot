@@ -194,7 +194,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         .map_err(|_| BackendFailure::TextEmission)
     }
 
-    /// [S39] one cell formation: the store's take of one cell's bytes, the
+    /// S39 one cell formation: the store's take of one cell's bytes, the
     /// move of the value into it, and the outcome that carries either.
     ///
     /// The store's answer decides the arm, so this is the one kernel row

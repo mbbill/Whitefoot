@@ -169,7 +169,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                                 }),
                             );
                         }
-                        // [S39] a cell branded to the entry heap is the same
+                        // S39 a cell branded to the entry heap is the same
                         // position a run branded to it is.
                         CheckedNominalKind::Box {
                             referent,

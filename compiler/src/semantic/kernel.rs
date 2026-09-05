@@ -41,7 +41,7 @@ pub(crate) enum KernelShape {
     Vector,
     /// `Option<Vector<'s, T>>`.
     OptionVector,
-    /// `Result<Box<'s, T>, T>` [S39]: the outcome of a cell formation, whose
+    /// `Result<Box<'s, T>, T>` S39: the outcome of a cell formation, whose
     /// refusal arm hands the value back because the row consumed it.
     ResultBox,
     /// `Arena<'s, bytes, align>`.
@@ -179,7 +179,7 @@ pub(crate) enum KernelOffset {
     Constant(i64),
     /// `advance<T>(count)` over the named value parameter [BLK-0].
     Advance(u32),
-    /// `advance<T>(1)`: the bytes one cell occupies [S39]. A cell row has no
+    /// `advance<T>(1)`: the bytes one cell occupies S39. A cell row has no
     /// count operand, so its advance names no parameter; the quantity is the
     /// same stride rounded up to the store's own alignment constant.
     AdvanceCell,
@@ -233,7 +233,7 @@ impl KernelTerm {
         }
     }
 
-    /// `<operand> + advance<T>(1)` [S39].
+    /// `<operand> + advance<T>(1)` S39.
     pub(crate) const fn advanced_by_a_cell(operand: KernelOperand) -> Self {
         Self {
             operand,
@@ -241,7 +241,7 @@ impl KernelTerm {
         }
     }
 
-    /// The bare `advance<T>(1)` term [S39].
+    /// The bare `advance<T>(1)` term S39.
     pub(crate) const fn advance_cell() -> Self {
         Self {
             operand: KernelOperand::Zero,
@@ -268,9 +268,9 @@ pub(crate) enum KernelRoute {
     Some,
     /// `when made is None():`.
     None,
-    /// `when made is Ok(value: b):` [S39].
+    /// `when made is Ok(value: b):` S39.
     Ok,
-    /// `when made is Err(error: back):` [S39].
+    /// `when made is Err(error: back):` S39.
     Err,
 }
 
@@ -772,7 +772,7 @@ const SEQ_HEAP: KernelSignature = KernelSignature {
 };
 
 /// `arena_box<T, const bytes, const align>['s](store: &uniq Arena<'s, bytes,
-/// align>, value: own T) -> made: own Result<Box<'s, T>, T>` [S39].
+/// align>, value: own T) -> made: own Result<Box<'s, T>, T>` S39.
 ///
 /// The refusal hands `value` back, because unlike every run formation this
 /// row **consumes** an affine input: a take of a run has nothing to return on
@@ -850,7 +850,7 @@ const ARENA_BOX: KernelSignature = KernelSignature {
 };
 
 /// `heap_box<T>['s](store: &uniq Heap<'s>, value: own T) -> made: own
-/// Result<Box<'s, T>, T>` [S39].
+/// Result<Box<'s, T>, T>` S39.
 ///
 /// `Heap<'s>` carries no measure, so this row publishes nothing: what it
 /// hands back is decided by its own outcome and not by a store's state.
@@ -1370,7 +1370,7 @@ pub(crate) fn kernel_signature_at(ordinal: u8) -> Option<&'static KernelSignatur
 /// opaque term otherwise; this reader answers for the first case and hands
 /// back `None` for the second, where a relation over it is simply unavailable
 /// and a requirement over it cannot be built.
-/// `advance<T>(1)` [S39]: the bytes one cell occupies, which is the stride
+/// `advance<T>(1)` S39: the bytes one cell occupies, which is the stride
 /// rounded up to the store's own alignment constant exactly as a take of one
 /// slot would be.
 pub(in crate::semantic) fn kernel_cell_advance(
@@ -1559,7 +1559,7 @@ mod tests {
                     KernelShape::Run => MeasuredKind::FixedVector,
                     // The measure table gives both views one row [MSR-1].
                     KernelShape::Slice | KernelShape::MutSlice => MeasuredKind::Slice,
-                    // [S39] a cell carries no measure at all, so neither it
+                    // S39 a cell carries no measure at all, so neither it
                     // nor the outcome that carries one has a row here.
                     KernelShape::U64
                     | KernelShape::Element

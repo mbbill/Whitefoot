@@ -629,7 +629,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// heap's store region otherwise. A bump extent's region is one the
     /// caller must choose and is therefore written at every position
     /// [FORM-8].
-    /// [S39] the store region and referent of one written `Box<'s, T>`, read
+    /// S39 the store region and referent of one written `Box<'s, T>`, read
     /// the way [`Self::parse_container_type`] reads them.
     pub(super) fn store_box_arguments(
         &self,
@@ -830,7 +830,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     region: written_region.unwrap_or(crate::DeclarationId::ENTRY_HEAP_REGION),
                 })
             }
-            // [S39] one store-resident cell. Its referent is any nameable
+            // S39 one store-resident cell. Its referent is any nameable
             // type — the element domain's flat restriction is [BLK-1]'s and
             // belongs to a run's slots, not to a cell — and its region is the
             // store brand [PROV-1] resolves exactly as a run's.

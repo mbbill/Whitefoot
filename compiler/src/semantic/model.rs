@@ -785,7 +785,7 @@ pub(crate) enum CheckedNominalKind {
         variants: Vec<CheckedVariant>,
     },
     /// One boxed cell. `region` is `None` for the ambient-heap `box<T>`
-    /// [STOR-2] and `Some(store)` for the store-branded `Box<'s, T>` [S39],
+    /// [STOR-2] and `Some(store)` for the store-branded `Box<'s, T>` S39,
     /// whose region is a component of its type exactly as a run's is
     /// [PROV-1] and whose release class that region decides [PROV-6].
     Box {
