@@ -303,7 +303,9 @@ pub enum IrType {
     Provider,
 }
 
-pub(crate) const fn lower_release_class(value: crate::semantic::CheckedReleaseClass) -> IrReleaseClass {
+pub(crate) const fn lower_release_class(
+    value: crate::semantic::CheckedReleaseClass,
+) -> IrReleaseClass {
     match value {
         crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
         crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,

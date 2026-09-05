@@ -383,7 +383,7 @@ pub(crate) fn kernel_row_is_contradictory(
     };
     let displacement = |offset: KernelOffset| match offset {
         KernelOffset::Constant(value) => Some(i128::from(value)),
-        KernelOffset::Advance(_) => Some(advance),
+        KernelOffset::Advance(_) | KernelOffset::AdvanceCell => Some(advance),
     };
     let carried = |relation: &&KernelRelation| relation.route.is_none() || relation.route == exit;
     for relation in signature

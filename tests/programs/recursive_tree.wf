@@ -1,19 +1,40 @@
-enum Tree {
+enum Tree['s] {
   Leaf();
-  Branch(left: box<Tree>, right: box<Tree>);
+  Branch(left: Box<'s, Tree<'s>>, right: Box<'s, Tree<'s>>);
 }
 
-fn boxed_leaf() -> result: own box<Tree> pure {
-  let leaf = Leaf();
-  return box_new(move leaf);
+fn boxed_leaf['s](store: &uniq Heap<'s>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
+  doc "S39: one leaf in a cell of the store the caller's provider names.";
+  let leaf = Leaf<'s>();
+  region {
+    match heap_box(store: &uniq deref(store), value: move leaf) {
+      Ok(value: cell) => {
+        return Some<Box<'s, Tree<'s>>>(value: move cell);
+      }
+      Err(error: back) => {
+        return None<Box<'s, Tree<'s>>>();
+      }
+    }
+  }
 }
 
-fn boxed_branch(left: own box<Tree>, right: own box<Tree>) -> result: own box<Tree> pure {
+fn boxed_branch['s](store: &uniq Heap<'s>, left: own Box<'s, Tree<'s>>, right: own Box<'s, Tree<'s>>) -> made: own Option<Box<'s, Tree<'s>>> reads(store), writes(store), allocates(store) {
+  doc "The refusal arm hands the branch back, and dropping it releases both children: the release walk visits a cell's referent before the cell itself.";
   let branch = Branch(left: move left, right: move right);
-  return box_new(move branch);
+  region {
+    match heap_box(store: &uniq deref(store), value: move branch) {
+      Ok(value: cell) => {
+        return Some<Box<'s, Tree<'s>>>(value: move cell);
+      }
+      Err(error: back) => {
+        return None<Box<'s, Tree<'s>>>();
+      }
+    }
+  }
 }
 
-fn count(tree: &box<Tree>) -> result: own Result<u64, Overflow> reads(tree) {
+fn count['s](tree: &Box<'s, Tree<'s>>) -> result: own Result<u64, Overflow> reads(tree) {
+  doc "The recursive walk over a cell-linked tree. PROV-6 admits a release graph with a cycle, and this is the type whose release is one action per node entering itself.";
   match deref(deref(tree)) {
     Leaf() => {
       return Ok<u64, Overflow>(value: 1_u64);
@@ -27,26 +48,41 @@ fn count(tree: &box<Tree>) -> result: own Result<u64, Overflow> reads(tree) {
   }
 }
 
-command fn main() -> status: own ExitStatus pure {
-  let leaf0 = boxed_leaf();
-  let leaf1 = boxed_leaf();
-  let leaf2 = boxed_leaf();
-  let leaf3 = boxed_leaf();
-  let branch0 = boxed_branch(left: move leaf0, right: move leaf1);
-  let branch1 = boxed_branch(left: move leaf2, right: move leaf3);
-  let root = boxed_branch(left: move branch0, right: move branch1);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   region {
-    match count(tree: &root) {
-      Ok(value: nodes) => {
-        if nodes == 7_u64 {
-        } else {
-          return exit_status(code: 1_u8);
-        }
+    match boxed_leaf(store: &uniq heap) {
+      None() => {
+        return exit_status(code: 2_u8);
       }
-      Err(error: overflow) => {
-        return exit_status(code: 1_u8);
+      Some(value: leaf0) => {
+        match boxed_leaf(store: &uniq heap) {
+          None() => {
+            return exit_status(code: 2_u8);
+          }
+          Some(value: leaf1) => {
+            match boxed_branch(store: &uniq heap, left: move leaf0, right: move leaf1) {
+              None() => {
+                return exit_status(code: 2_u8);
+              }
+              Some(value: root) => {
+                region {
+                  match count(tree: &root) {
+                    Ok(value: nodes) => {
+                      if nodes == 3_u64 {
+                        return exit_status(code: 0_u8);
+                      }
+                      return exit_status(code: 1_u8);
+                    }
+                    Err(error: overflow) => {
+                      return exit_status(code: 1_u8);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
   }
-  return exit_status(code: 0_u8);
 }

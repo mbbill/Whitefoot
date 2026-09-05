@@ -629,6 +629,71 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// heap's store region otherwise. A bump extent's region is one the
     /// caller must choose and is therefore written at every position
     /// [FORM-8].
+    /// [S39] the store region and referent of one written `Box<'s, T>`, read
+    /// the way [`Self::parse_container_type`] reads them.
+    pub(super) fn store_box_arguments(
+        &self,
+        node: NodeId,
+        substitution: &GenericSubstitution,
+    ) -> Result<(crate::DeclarationId, CheckedType), CheckStop> {
+        let arguments = match self.tree.first_child_with(node, Production::Targs)? {
+            Some(targs) => self.tree.children_with(targs, Production::Targ)?,
+            None => Vec::new(),
+        };
+        let mut written_region = None;
+        let mut rest = arguments.as_slice();
+        if let Some(first) = arguments.first()
+            && self
+                .tree
+                .first_child_with(*first, Production::Type)?
+                .is_none()
+            && self
+                .tree
+                .first_child_with(*first, Production::Const)?
+                .is_none()
+        {
+            let usage = self.use_at(*first, LexicalUseRole::TypeArgumentRegion)?;
+            let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::Region,
+            } = usage.target()
+            else {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            };
+            written_region = Some(
+                substitution
+                    .region_argument(declaration)
+                    .unwrap_or(declaration),
+            );
+            rest = &arguments[1..];
+        }
+        let [referent] = rest else {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "Box<'s, T> with one referent type",
+                    "a Box type-argument list of a different length",
+                ),
+            );
+        };
+        let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)? else {
+            return self.issue_node(
+                SemanticRule::Type5,
+                node,
+                SemanticIssueKind::type_mismatch(
+                    "Box<'s, T> with one referent type",
+                    "a const argument in the Box referent position",
+                ),
+            );
+        };
+        let referent = self.parse_type_with(referent_node, substitution)?;
+        Ok((
+            written_region.unwrap_or_else(|| self.elided_store_region()),
+            referent,
+        ))
+    }
+
     fn parse_container_type(
         &self,
         node: NodeId,
@@ -773,10 +838,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let [referent] = rest else {
                     return mismatch("a Box type-argument list of a different length");
                 };
-                let Some(referent_node) = self.tree.first_child_with(*referent, Production::Type)?
+                let Some(referent_node) =
+                    self.tree.first_child_with(*referent, Production::Type)?
                 else {
                     return mismatch("a const argument in the Box referent position");
                 };
+                self.reject_region_bearing_storage_type(referent_node, substitution)?;
                 let referent = self.parse_type_with(referent_node, substitution)?;
                 let region = written_region.unwrap_or_else(|| self.elided_store_region());
                 self.store_box_nominal(region, referent)

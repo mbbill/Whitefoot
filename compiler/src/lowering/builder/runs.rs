@@ -402,11 +402,13 @@ impl IrBuilder<'_> {
         // The take is one stride, rounded up to the store's own alignment
         // where it has one, so a bump cursor stays a multiple of it [BLK-2].
         let bytes = match extent {
-            Some(crate::IrExtentConstants { align, .. }) if align > 0 => stride
-                .checked_add(align - 1)
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?
-                / align
-                * align,
+            Some(crate::IrExtentConstants { align, .. }) if align > 0 => {
+                stride
+                    .checked_add(align - 1)
+                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    / align
+                    * align
+            }
             _ => stride,
         };
         let outcome = self.outcome_of(result)?;

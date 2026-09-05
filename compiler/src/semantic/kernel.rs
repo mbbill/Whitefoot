@@ -41,8 +41,6 @@ pub(crate) enum KernelShape {
     Vector,
     /// `Option<Vector<'s, T>>`.
     OptionVector,
-    /// `Box<'s, T>` [S39]: one store-resident cell, carrying no measure.
-    Box,
     /// `Result<Box<'s, T>, T>` [S39]: the outcome of a cell formation, whose
     /// refusal arm hands the value back because the row consumed it.
     ResultBox,
@@ -1561,9 +1559,12 @@ mod tests {
                     KernelShape::Run => MeasuredKind::FixedVector,
                     // The measure table gives both views one row [MSR-1].
                     KernelShape::Slice | KernelShape::MutSlice => MeasuredKind::Slice,
+                    // [S39] a cell carries no measure at all, so neither it
+                    // nor the outcome that carries one has a row here.
                     KernelShape::U64
                     | KernelShape::Element
                     | KernelShape::Heap
+                    | KernelShape::ResultBox
                     | KernelShape::Viewable => continue,
                 };
                 let place = if matches!(result.shape, KernelShape::OptionVector) {

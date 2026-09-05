@@ -504,8 +504,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             KernelShape::Viewable
             | KernelShape::Slice
             | KernelShape::MutSlice
-            // No row takes a cell or an outcome as an operand [S39].
-            | KernelShape::Box
+            // No row takes an outcome as an operand [S39].
             | KernelShape::ResultBox => Err(SemanticCompilerFailure::InvalidResolution.into()),
             KernelShape::U64 => Ok(CheckedType::Integer(IntegerType::U64)),
             // `T` is written on every row that has no operand of this shape,
@@ -735,12 +734,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.prelude_nominal(super::super::super::PreludeType::Option(payload))?,
                 )
             }
-            // [S39] one store-resident cell, and the outcome of forming one.
-            // The refusal arm carries the value the row consumed, so the
-            // outcome is a `Result<Box<'s, T>, T>` rather than an `Option`.
-            KernelShape::Box => {
-                CheckedType::Nominal(self.store_box_nominal(region()?, instance.element)?)
-            }
+            // [S39] the outcome of forming one store-resident cell. The
+            // refusal arm carries the value the row consumed, so the outcome
+            // is a `Result<Box<'s, T>, T>` rather than an `Option`.
             KernelShape::ResultBox => {
                 let cell =
                     CheckedType::Nominal(self.store_box_nominal(region()?, instance.element)?);

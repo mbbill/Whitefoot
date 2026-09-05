@@ -1,4 +1,4 @@
-enum Box {
+enum Cell {
   Item(n: i32);
   Empty();
 }

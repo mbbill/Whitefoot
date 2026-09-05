@@ -1,0 +1,8 @@
+fn peek(cell: own Box<u8>) -> code: own u8 pure {
+  doc "S39, D3: a cell branded to a general store is linear in every scope holding no binding of that store's provider, exactly as a run branded to it is. This scope holds none, so the cell may not reach the return edge.";
+  return 0_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

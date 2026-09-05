@@ -390,6 +390,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(());
         }
         let usage = self.use_at(node, LexicalUseRole::Type)?;
+        // [S39] a written `Box<'s, T>` is interned here, exactly as a written
+        // `box<T>` is: the parse path is `&self` and cannot intern, and a
+        // nominal's own field types are parsed there.
+        if let ResolvedTarget::Container(id) = usage.target()
+            && crate::container_nominal(id)
+                .is_some_and(|entry| entry.shape == crate::ContainerShape::Box)
+        {
+            let (region, referent) = self.store_box_arguments(node, substitution)?;
+            self.intern_store_box_nominal(region, referent)?;
+            return Ok(());
+        }
         match usage.target() {
             ResolvedTarget::Prelude(id) if id == PreludeDeclarationId::new(3) => {
                 let value = self.option_type_argument_with(node, substitution)?;
@@ -1251,6 +1262,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(CheckedType::Nominal(existing));
         }
         match &self.nominal(id)?.kind {
+            // [S39] a store-branded cell substitutes both halves of its own
+            // identity: its store region and its referent.
+            CheckedNominalKind::Box {
+                referent,
+                region: Some(region),
+                ..
+            } => {
+                let substituted_region = Self::substituted_region(regions, *region);
+                let substituted = self.substitute_type_regions(*referent, regions)?;
+                if substituted == *referent && substituted_region == *region {
+                    return Ok(CheckedType::Nominal(id));
+                }
+                let Some(existing) = self
+                    .store_box_nominals
+                    .get(&(substituted_region, substituted))
+                    .copied()
+                else {
+                    self.pending_nominals
+                        .borrow_mut()
+                        .push(super::PendingNominal::StoreBox(
+                            substituted_region,
+                            substituted,
+                        ));
+                    return Err(CheckStop::DeferredNominal);
+                };
+                Ok(CheckedType::Nominal(existing))
+            }
             CheckedNominalKind::Box { referent, .. } => {
                 let substituted = self.substitute_type_regions(*referent, regions)?;
                 if substituted == *referent {
@@ -1313,7 +1351,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if left == right {
             return Ok(false);
         }
-        self.nominals_are_region_blind_equal(left, right, 0)
+        self.nominals_are_region_blind_equal(left, right, 0, &mut Vec::new())
     }
 
     fn nominals_are_region_blind_equal(
@@ -1321,26 +1359,55 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         left: NominalId,
         right: NominalId,
         depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
     ) -> Result<bool, CheckStop> {
         if left == right {
             return Ok(true);
         }
-        if depth > 16 {
+        // [S39] a type whose release graph has a cycle — a cell-linked tree —
+        // compares against its own instance at another store, so the walk
+        // assumes the pair it is already deciding. Without it the comparison
+        // is the infinite one the depth cap used to cut off, and cutting it
+        // off answered `false` for two instances that differ only in region.
+        if assumed.contains(&(left, right)) {
+            return Ok(true);
+        }
+        if depth > 64 {
             return Ok(false);
         }
+        assumed.push((left, right));
+        let outcome = self.nominals_are_region_blind_equal_assuming(left, right, depth, assumed);
+        assumed.pop();
+        outcome
+    }
+
+    fn nominals_are_region_blind_equal_assuming(
+        &self,
+        left: NominalId,
+        right: NominalId,
+        depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
+    ) -> Result<bool, CheckStop> {
         // [STOR-2] a box and an arena carry their whole content in the kind
         // rather than in fields, so the content comparison below has nothing
         // to read for them.
         match (&self.nominal(left)?.kind, &self.nominal(right)?.kind) {
             (
                 CheckedNominalKind::Box { referent: left, .. },
-                CheckedNominalKind::Box { referent: right, .. },
+                CheckedNominalKind::Box {
+                    referent: right, ..
+                },
             )
             | (
                 CheckedNominalKind::Arena { content: left, .. },
                 CheckedNominalKind::Arena { content: right, .. },
             ) => {
-                return self.types_are_region_blind_equal(*left, *right, depth.saturating_add(1));
+                return self.types_are_region_blind_equal(
+                    *left,
+                    *right,
+                    depth.saturating_add(1),
+                    assumed,
+                );
             }
             (CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }, _)
             | (_, CheckedNominalKind::Box { .. } | CheckedNominalKind::Arena { .. }) => {
@@ -1348,10 +1415,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
             _ => {}
         }
-        if !self.nominal_names_are_region_blind_equal(left, right, depth)? {
+        if !self.nominal_names_are_region_blind_equal(left, right, depth, assumed)? {
             return Ok(false);
         }
-        self.nominal_content_is_region_blind_equal(left, right, depth)
+        self.nominal_content_is_region_blind_equal(left, right, depth, assumed)
     }
 
     /// Whether two nominals name the same shape once every region is erased:
@@ -1361,6 +1428,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         left: NominalId,
         right: NominalId,
         depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
     ) -> Result<bool, CheckStop> {
         let (left_source, right_source) = (
             self.source_nominal_instance_entry(left)?,
@@ -1378,7 +1446,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let (left_prelude, right_prelude) = (self.prelude_type(left), self.prelude_type(right));
         if let (Some(left_prelude), Some(right_prelude)) = (left_prelude, right_prelude) {
-            return self.prelude_types_are_region_blind_equal(left_prelude, right_prelude, depth);
+            return self.prelude_types_are_region_blind_equal(
+                left_prelude,
+                right_prelude,
+                depth,
+                assumed,
+            );
         }
         if left_prelude.is_some() || right_prelude.is_some() {
             return Ok(false);
@@ -1399,21 +1472,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         left: PreludeType,
         right: PreludeType,
         depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
     ) -> Result<bool, CheckStop> {
         Ok(match (left, right) {
             (PreludeType::Option(left), PreludeType::Option(right)) => {
-                self.types_are_region_blind_equal(left, right, depth.saturating_add(1))?
+                self.types_are_region_blind_equal(left, right, depth.saturating_add(1), assumed)?
             }
             (
                 PreludeType::Result(left_ok, left_error),
                 PreludeType::Result(right_ok, right_error),
             ) => {
-                self.types_are_region_blind_equal(left_ok, right_ok, depth.saturating_add(1))?
-                    && self.types_are_region_blind_equal(
-                        left_error,
-                        right_error,
-                        depth.saturating_add(1),
-                    )?
+                self.types_are_region_blind_equal(
+                    left_ok,
+                    right_ok,
+                    depth.saturating_add(1),
+                    assumed,
+                )? && self.types_are_region_blind_equal(
+                    left_error,
+                    right_error,
+                    depth.saturating_add(1),
+                    assumed,
+                )?
             }
             (left, right) => left == right,
         })
@@ -1435,6 +1514,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         left: NominalId,
         right: NominalId,
         depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
     ) -> Result<bool, CheckStop> {
         if depth > 16 {
             return Ok(false);
@@ -1454,7 +1534,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Ok(false);
         }
         for (left_type, right_type) in left_types.into_iter().zip(right_types) {
-            if !self.types_are_region_blind_equal(left_type, right_type, depth)? {
+            if !self.types_are_region_blind_equal(left_type, right_type, depth, assumed)? {
                 return Ok(false);
             }
         }
@@ -1483,10 +1563,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         left: CheckedElement,
         right: CheckedElement,
         depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
     ) -> Result<bool, CheckStop> {
         Ok(match (left, right) {
             (CheckedElement::Flat(left), CheckedElement::Flat(right)) => {
-                self.flat_elements_are_region_blind_equal(left, right, depth)?
+                self.flat_elements_are_region_blind_equal(left, right, depth, assumed)?
             }
             (
                 CheckedElement::FixedVector {
@@ -1503,6 +1584,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         left_element,
                         right_element,
                         depth,
+                        assumed,
                     )?
             }
             (
@@ -1522,6 +1604,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         left_element,
                         right_element,
                         depth,
+                        assumed,
                     )?
             }
             _ => false,
@@ -1533,6 +1616,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         left: CheckedFlatElement,
         right: CheckedFlatElement,
         depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
     ) -> Result<bool, CheckStop> {
         Ok(match (left, right) {
             (CheckedFlatElement::Nominal(left), CheckedFlatElement::Nominal(right))
@@ -1543,6 +1627,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Nominal(left),
                 CheckedType::Nominal(right),
                 depth,
+                assumed,
             )?,
             _ => left == right,
         })
@@ -1553,10 +1638,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         left: CheckedType,
         right: CheckedType,
         depth: usize,
+        assumed: &mut Vec<(NominalId, NominalId)>,
     ) -> Result<bool, CheckStop> {
         Ok(match (left, right) {
             (CheckedType::Nominal(left), CheckedType::Nominal(right)) => {
-                self.nominals_are_region_blind_equal(left, right, depth.saturating_add(1))?
+                self.nominals_are_region_blind_equal(left, right, depth.saturating_add(1), assumed)?
             }
             (
                 CheckedType::Vector {
@@ -1571,7 +1657,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             ) => {
                 left_release == right_release
-                    && self.elements_are_region_blind_equal(left_element, right_element, depth)?
+                    && self.elements_are_region_blind_equal(
+                        left_element,
+                        right_element,
+                        depth,
+                        assumed,
+                    )?
             }
             (
                 CheckedType::FixedVector {
@@ -1584,7 +1675,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             ) => {
                 left_length == right_length
-                    && self.elements_are_region_blind_equal(left_element, right_element, depth)?
+                    && self.elements_are_region_blind_equal(
+                        left_element,
+                        right_element,
+                        depth,
+                        assumed,
+                    )?
             }
             (
                 CheckedType::Slice {

@@ -668,6 +668,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ty: CheckedType,
     ) -> Result<Option<DeclarationId>, CheckStop> {
         if let CheckedType::Nominal(id) = ty {
+            // [S39] a cell's store region is a component of its type exactly
+            // as a run's is, so a field of cell type determines the enclosing
+            // nominal's region and a parameter of cell type determines a
+            // formal at a call.
+            if let super::super::super::super::model::CheckedNominalKind::Box {
+                region: Some(region),
+                ..
+            } = self.nominal(id)?.kind
+            {
+                return Ok(Some(region));
+            }
             return Ok(match self.nominal_region_axis(id)? {
                 Some([(_, region)]) => Some(*region),
                 _ => None,
@@ -729,6 +740,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return Ok(ty);
         };
+        // [S39] a cell is a compiler-owned nominal keyed on its store region
+        // and its referent, so the substituted type is read off the actual
+        // exactly as a source instance's is: the actual's own cell when the
+        // region and the referent agree, and the formal unchanged when they
+        // do not, which is the ordinary [TYPE-5] mismatch below.
+        if let (
+            super::super::super::super::model::CheckedNominalKind::Box {
+                referent: formal_referent,
+                region: Some(_),
+                ..
+            },
+            super::super::super::super::model::CheckedNominalKind::Box {
+                referent: actual_referent,
+                region: Some(actual_region),
+                ..
+            },
+        ) = (
+            &self.nominal(formal_id)?.kind,
+            &self.nominal(actual_id)?.kind,
+        ) {
+            let (formal_referent, actual_referent, actual_region) =
+                (*formal_referent, *actual_referent, *actual_region);
+            if actual_region != region {
+                return Ok(ty);
+            }
+            let substituted = if matches!(formal_referent, CheckedType::Nominal(_)) {
+                self.with_nominal_type_region(formal_referent, region, actual_referent)?
+            } else {
+                Self::with_type_region(formal_referent, region)
+            };
+            if substituted != actual_referent {
+                return Ok(ty);
+            }
+            return Ok(CheckedType::Nominal(actual_id));
+        }
         let (Some((_, formal)), Some((_, actual))) = (
             self.source_nominal_instance_entry(formal_id)?,
             self.source_nominal_instance_entry(actual_id)?,

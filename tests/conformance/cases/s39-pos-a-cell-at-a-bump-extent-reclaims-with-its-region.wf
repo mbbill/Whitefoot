@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "S39: the same cell at a bump extent. Its release class is read off its region alone, so this cell derives no action of its own: the reservation's region reset reclaims the whole extent [BLK-2].";
+  region 'a {
+    let workspace = arena_frame::<256, 16, 'a>();
+    region {
+      match arena_box(store: &uniq workspace, value: 9_u8) {
+        Err(error: back) => {
+          return exit_status(code: 1_u8);
+        }
+        Ok(value: cell) => {
+          let seen = deref(cell);
+          if seen == 9_u8 {
+            return exit_status(code: 0_u8);
+          }
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
+}

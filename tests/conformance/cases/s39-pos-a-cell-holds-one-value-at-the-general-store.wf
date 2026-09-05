@@ -1,0 +1,16 @@
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "S39: `Box<'s, T>` is one value of T at the store `'s` names. It carries no measure at all  -  a cell is never empty, so a read of one needs no proof  -  and the destructuring consume takes the value out and releases the cell in one statement.";
+  region {
+    match heap_box(store: &uniq heap, value: 7_u8) {
+      Err(error: back) => {
+        return exit_status(code: back);
+      }
+      Ok(value: cell) => {
+        let seen = deref(cell);
+        let Box(value: taken) = move cell;
+        let total = seen +wrap taken;
+        return exit_status(code: total);
+      }
+    }
+  }
+}

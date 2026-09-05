@@ -27,7 +27,8 @@ fn box_creation_dereference_and_cleanup_are_explicit() {
         assert!(matches!(
             checked.data.nominals[nominal.0 as usize].kind,
             CheckedNominalKind::Box {
-                referent: CheckedType::Integer(_)
+                referent: CheckedType::Integer(_),
+                ..
             }
         ));
         assert!(matches!(
@@ -292,7 +293,8 @@ command fn main() -> status: own ExitStatus pure {
                     matches!(
                         nominal.kind,
                         CheckedNominalKind::Box {
-                            referent: CheckedType::Integer(_)
+                            referent: CheckedType::Integer(_),
+                            ..
                         }
                     )
                 })
