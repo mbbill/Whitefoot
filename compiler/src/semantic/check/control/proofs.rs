@@ -382,6 +382,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// The closed integer value of one named const named by a proof relation.
+    ///
+    /// A const-generic parameter is symbolic rather than closed, so it is not
+    /// this and stays inadmissible: an affine factor is a number, and a
+    /// symbolic constant would need an atom of its own.
+    fn affine_named_const(
+        &self,
+        declaration: DeclarationId,
+        node: NodeId,
+        owner: AffineProofOwner,
+    ) -> Result<(i128, IntegerType), CheckStop> {
+        let Some(constant) = self.constants.get(&declaration).copied() else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let constant = self.constant(constant)?;
+        let CheckedValue::Integer { ty, bits } = &constant.value else {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor names a const that is not an integer",
+                "name an integer const, an integer literal, or a live own integer local",
+            );
+        };
+        Ok((affine_integer_value(*ty, *bits), *ty))
+    }
+
     fn check_affine_factor(
         &self,
         node: NodeId,
@@ -422,6 +448,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         if !self.tree.direct_identifiers(node)?.is_empty() {
             let usage = self.use_at(node, owner.value_role())?;
+            // A named integer const denotes one closed value, so it folds to
+            // the constant it is. It reads the same in a relation as it does
+            // in the body, which is the whole reason to admit it: a limit
+            // written once is stated once.
+            if let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::NamedConst,
+            } = usage.target()
+            {
+                let (value, ty) = self.affine_named_const(declaration, node, owner)?;
+                return Ok((
+                    CheckedAffineExpression {
+                        node_path: self.tree.path(node)?.clone(),
+                        kind: CheckedAffineExpressionKind::Constant { value, ty },
+                    },
+                    Some((value, ty)),
+                ));
+            }
             let ResolvedTarget::Source {
                 declaration,
                 class: DeclarationClass::Value,

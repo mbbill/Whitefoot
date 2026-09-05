@@ -9,8 +9,9 @@ of the v0.40 proof surface this plan delivered, v0.41 added the comparison
 symbols and the call-site `::` delimiter, v0.42 the canonical region spelling,
 v0.43 the loop-body region block and the associative join, v0.44 the fact
 machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]), v0.45 the interval an
-admitted product already proved ([ENT-3.S14]), and v0.46 the clause relation
-and the measure atom that discharges it. Each superseded version is
+admitted product already proved ([ENT-3.S14]), v0.46 the clause relation
+and the measure atom that discharges it, and v0.47 the named const as an affine
+atom. Each superseded version is
 archived at `spec/kernel-spec-vN.md` with its merge-time record in
 `governance/APPROVALS.md`. Nothing merges to `main` until the owner approves
 the exact revision and canonical `make check` passes on that revision. This
@@ -80,6 +81,19 @@ evidence names rather than what the route requires. Together they make
 `requires len(out) >= 2 * len(src)` — the precondition of every expansion
 codec — writable and dischargeable; each alone leaves it refused. The evidence
 is in `research/investigations/binary-arithmetic/`.
+
+v0.47 adds and retires no rule (136 remain) and amends [INV-1] in place. An
+integer-typed named const is an affine atom, folded at formation to the one
+closed value it declares. It was already an [ENT-2] constant term, so the
+exclusion made one declared value mean a number everywhere except in the
+relations written about it: a limit declared once had its digits rewritten
+inline in every invariant and every `use` that named it, and a stale digit is
+a silent divergence between what the code enforces and what the proof states.
+Folding at formation keeps the admission free of consequence — no atom kind,
+image, kill, or join changes, and the same relation over a const and over its
+literal is byte-identical, including in a failure's rendered residual. A
+const-generic parameter is symbolic rather than closed and is not this
+admission.
 
 ## Outcome
 

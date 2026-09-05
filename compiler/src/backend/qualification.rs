@@ -226,7 +226,15 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // qualifies. No system operation, resource representation, release row,
 // result shape, entry form, or host ABI mapping changes, so the v0.45
 // mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.46";
+// v0.47 named-const atom review (2026-09-05): the amendment admits an
+// integer-typed named const as an affine atom and folds it at formation to
+// the value it declares, so nothing downstream sees a new atom kind and a
+// relation naming a const renders exactly as the same relation naming its
+// literal. It lives entirely in the affine proof domain, which ENT-1 erases
+// before lowering. No system operation, resource representation, release
+// row, result shape, entry form, or host ABI mapping changes, so the v0.46
+// mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.47";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

@@ -111,6 +111,19 @@ evidence names rather than what the route requires. Together they make
 codec — writable and dischargeable; each alone leaves it refused. The evidence
 is in `research/investigations/binary-arithmetic/`.
 
+v0.47 adds and retires no rule (136 remain) and amends [INV-1] in place. An
+integer-typed named const is an affine atom, folded at formation to the one
+closed value it declares. It was already an [ENT-2] constant term, so the
+exclusion made one declared value mean a number everywhere except in the
+relations written about it: a limit declared once had its digits rewritten
+inline in every invariant and every `use` that named it, and a stale digit is
+a silent divergence between what the code enforces and what the proof states.
+Folding at formation keeps the admission free of consequence — no atom kind,
+image, kill, or join changes, and the same relation over a const and over its
+literal is byte-identical, including in a failure's rendered residual. A
+const-generic parameter is symbolic rather than closed and is not this
+admission.
+
 ## How to read this outline
 
 This file is the owner-facing map of Whitefoot's live directions. It answers:

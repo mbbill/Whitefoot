@@ -4,7 +4,7 @@ The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
 are the chain tail in `governance/APPROVALS.md`; each superseded version is
-archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.46 amendments
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.47 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -14,7 +14,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 through v0.46 amendments below and the active
+the v0.40 through v0.47 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -23,6 +23,9 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
+**v0.47 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.47 adds and retires no rule and moves no row's status. It
+amends [INV-1] in place, so every derivation status carries over from v0.46.)
 **v0.46 statistics: 81 derived · 55 existence-only · 0 underived**
 (136 rules: v0.46 adds and retires no rule and moves no row's status. It
 amends [FN-8], [ENT-3] and [ENT-6] in place, so every derivation status
@@ -1942,3 +1945,20 @@ v0.45's unchanged.
 | FN-8 clause rows | Exact addition, subtraction and multiplication are admitted in a clause and read over the mathematical integers; every other exact row stays inadmissible | 🟢 derived | Derived from what a clause is. FN-9 erases every clause before lowering, so a clause evaluates nothing and requests no operation; the ban existed because a clause is runtime-typed while an `affine_expr` is not, and [INV-1] already carries the carve-out that difference calls for. The three admitted rows are exactly those total over the mathematical integers, so reading them mathematically is a statement about values rather than a partial operation with no obligation to discharge. Division, remainder, negation, absolute value and the shifts are excluded by the same criterion, each having an input its own relation cannot state its way out of. R1 supplies the necessity: without this a size precondition is unwritable, so an expansion function's caller cannot be held to anything the function actually needs. | Registered: the arity of `clause_expr` is unchanged, so a relation still carries one operator and a second is written through a `contract_define`. |
 | ENT-3 measure atom | A measure term is an affine atom: one atom per measured place, identified by that place's root binding, minted at its full u64 range, with the L0-to-affine index ranging over measure terms | 🟢 derived | This is the admission v0.44 recorded as DEFERRED, taken on the evidence that named it. Soundness is [ENT-5]'s own support rule rather than a new one: a measure is fixed at its object's creation and an element write never moves it, so the atom is stable exactly while the object is, and the write that removes it is the write to the root binding. The join keeps the atom only where every input agrees; a measure is not arithmetic-updated, so there is no spread for a join delta to stand for, and disagreement means a branch replaced the object. Identity by root binding rather than by an interned measure term is what lets a proof read the atom without interning, which keeps the read path free of the mutation the mint needs. | Registered: a measure of a projected place is not this atom and stays an ordinary clause operand; the projected case awaits a program that needs it. |
 | ENT-6 affine route | The affine route discharges a comparison goal whose normalization is affine, whether or not that goal also projects to L0 | 🟢 derived | Derived from what the route proves. The affine target is the goal's own comparison normalized by [ENT-6], so proving the target proves the goal; the L0 projection was a property of the evidence record, not a premise of the proof. Requiring it was sound but incomplete, and the incompleteness was invisible while every affine-provable call goal also had a unit-coefficient projection — which is every such goal a version before this one could state. Without a projection the retained derivation is the affine consequence alone, the shape [ENT-6]'s interval-product rule already uses for its endpoint proofs, so no new evidence kind is introduced. Monotonicity moves in the permitted direction: the change only admits. | Registered: the route now reaches goals no corpus program wrote before this version, so the diagnostic for an unproved affine goal without a projection has no field evidence yet. |
+
+## v0.47 amendment — the named const is the number it names (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.47, at
+SHA-256 `8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`,
+superseding v0.46
+(`b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65`), whose
+bytes are archived at `spec/kernel-spec-v0.46.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [INV-1] in place and
+moves no row's status.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| INV-1 named const atom | An integer-typed named const is an affine atom, folded at formation to the one closed value it declares; a const-generic parameter is symbolic and is not this admission | 🟢 derived | Derived from R3 and from [ENT-2] clause (c), which already names the mathematical value of an integer literal and of an integer-typed named const in the same breath. The const was therefore a constant term everywhere except in the relations written about it, which made one value have two spellings — the declared name in the body, the repeated digits in every invariant and every `use` — and R3 admits one way to say anything. W1 supplies the cost: the surviving spelling was the worse one, since a limit declared once had to be maintained in every site that reasoned about it, and a stale digit is a silent divergence between what the code enforces and what the proof states. Folding at formation is what keeps the admission free of consequence: no atom kind, image, kill, or join changes, and the same relation over a const and over its literal is byte-identical, including in a failure's rendered residual. The const-generic exclusion is the same sentence read from the other side: an affine factor is a number, and a symbolic constant has no number to fold to. | Registered: a const-generic parameter would need an atom of its own with the [ENT-2] symbolic-constant identity carried into the affine domain; no corpus program has asked for it. |

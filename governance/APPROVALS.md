@@ -2835,3 +2835,39 @@ ACTIVE-SPEC: v0.45 07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c9
   literal factor and the caller discharges it. Rule coverage is 136/136 before
   and after.
 ACTIVE-SPEC: v0.46 b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65 07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd
+
+## 2026-09-05 — merge-time approval content: activate v0.47 (an integer-typed named const is an affine atom; no rule id added or retired, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.47 at exact SHA-256
+  `8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`.
+  It supersedes active v0.46 at SHA-256
+  `b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.46.md`. [INV-1] admits an integer-typed named const as
+  an affine atom, folded at formation to the one closed value it declares. It
+  was already an [ENT-2] constant term — clause (c) names the mathematical
+  value of an integer literal or of an integer-typed named const in the same
+  breath — so the exclusion made one declared value mean a number everywhere
+  except in the relations written about it. A const-generic parameter is
+  symbolic rather than closed and is not this admission. No numbered rule is
+  added or retired, no grammar production, atom, or token changes, and
+  [ENT-3] gains no source.
+- SELECTION GROUND: evidence-selected, recorded in
+  `research/investigations/binary-arithmetic/`. The accumulator sweep measured
+  this as a writer-form defect rather than a proof gap: a named const in a
+  header relation was an [INV-1] unresolved use, and binding it to a local
+  turned the relation non-affine again, so the only surviving spelling
+  duplicated the digits at every site. The check is that the two spellings now
+  agree — the same loop written over `cap` and over `255_u64` produces the
+  same required relation byte for byte, including its rendering in a failure.
+- CONFORMANCE BOUNDARY: this merge adds one conformance case and modifies,
+  deletes, or renames none; it changes no manifest schema, adapter, runner, or
+  collection wiring. ADDED `tests/conformance/cases/inv1-pos-named-const-atom.wf`,
+  manifest id `inv1-pos-named-const-atom`, rules INV-1, ENT-2, expect run
+  exit 0: a header relation names a declared limit instead of repeating its
+  digits. Rule coverage is 136/136 before and after.
+ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5 b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65
