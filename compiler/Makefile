@@ -72,25 +72,8 @@ COMPLETION_DEFINES := \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
 	-DWF_COMPLETION_GETDENTS64=wf_completion_test_getdents64 \
 	-DWF_COMPLETION_POLL=wf_completion_test_poll
-# The scheduler core's measurement variants (design §12,
-# `research/experiments/park-on-miss-measurements/`). Empty in every gate run,
-# so `check` compiles the shipped form and nothing else; the experiment's
-# runner sets it to one variant's `-D` so that `completion-test` and the §11
-# enumerator judge that form on the same terms. It is removed with the losing
-# variants in slice 4b.
-SCHED_VARIANT_DEFINES ?=
-# The §11 enumerator names the lane slot count itself, because its search is
-# sized to two slots. The experiment's lane-slot sweep is a runtime constant
-# that changes no protocol the enumerator judges, so it is dropped from the
-# enumerator's own build rather than colliding with the count that build pins;
-# every behavioural variant reaches the enumerator unchanged.
-SCHED_ENUMERATE_VARIANT_DEFINES := \
-	$(filter-out -DWF_SCHED_LANE_SLOTS=%,$(SCHED_VARIANT_DEFINES))
-COMPLETION_WARNING_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+COMPLETION_BASE_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
 	-pthread
-COMPLETION_BASE_CFLAGS := $(COMPLETION_WARNING_CFLAGS) $(SCHED_VARIANT_DEFINES)
-COMPLETION_ENUMERATE_CFLAGS := $(COMPLETION_WARNING_CFLAGS) \
-	$(SCHED_ENUMERATE_VARIANT_DEFINES)
 COMPLETION_CFLAGS := $(COMPLETION_BASE_CFLAGS) $(COMPLETION_DEFINES)
 # The harness names the WF_IO_NOCACHE application so it can count it. The
 # named function performs the same host call the shipped policy performs, so
@@ -342,7 +325,7 @@ sched-smoke:
 # once at the end. Two lane slots because I4's second half wants a power of two.
 sched-enumerate:
 	@mkdir -p "$(COMPLETION_TMP)"
-	$(CC) $(COMPLETION_ENUMERATE_CFLAGS) -DWF_SCHED_ENUMERATE -DWF_SCHED_LANE_SLOTS=2u \
+	$(CC) $(COMPLETION_BASE_CFLAGS) -DWF_SCHED_ENUMERATE -DWF_SCHED_LANE_SLOTS=2u \
 		-DWF_SCHED_MAX_THREADS=4u -DWF_SCHED_MAX_STACKS=8u \
 		$(SCHED_DIR)/core.c $(SCHED_DIR)/enumerate.c $(SCHED_DIR)/schedules.c \
 		-o "$(COMPLETION_TMP)/sched-enumerate"
@@ -621,14 +604,17 @@ completion-windows-wine: completion-windows-cross
 # builds the compiler, generates a tree, runs for many minutes, and reports
 # timings that no build may depend on. It is here rather than in the
 # experiment's own Makefile because everything it measures is built out of this
-# directory -- the scheduler core's variant defines are this file's
-# SCHED_VARIANT_DEFINES, and its `gates` section runs this file's `format`,
-# `lint` and `completion-test` once per variant.
+# directory: every program it times is linked against this file's runtime, and
+# the lane-slot sweep is a define of `sched/core.h`. Slice 4b removed the
+# compile-time variants it swept, and with them the two sections that ran this
+# file's `format`, `lint` and `completion-test` once per variant, so what
+# remains measures the shipped form.
 #
 #   make -C compiler park-on-miss-measurements
 #   make -C compiler park-on-miss-measurements SECTIONS="park compute"
 #
-# It is removed with the experiment, in slice 4b.
+# It is removed when design section 12's remaining items are answered or
+# retired.
 PARK_ON_MISS_MEASUREMENTS := \
 	../research/experiments/park-on-miss-measurements/run.sh
 SECTIONS ?=

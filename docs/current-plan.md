@@ -15,6 +15,42 @@ revision and canonical `make check` passes on that revision. This document
 records technical direction and sequencing; it grants no permission and adds
 no workflow gate.
 
+## Rules the owner has stated for this work
+
+Folded here on 2026-09-05 from `docs/ongoing/HANDOFF-2026-09-04.md`, which is
+deleted with batch 2's record: these are the standing rules for this branch
+that `CLAUDE.md` does not already carry. They are technical direction, not a
+workflow gate.
+
+- **Keep implementing on PR #13 and do not merge until the owner approves the
+  exact revision.** Merging a half-product is worse than a longer branch.
+  Expect the design documents to be revised as the implementation reveals
+  problems; fold each finding into this plan and into the batch record, the way
+  `docs/done/0106-backed-file-permit.md` §7 does, and never edit a conformance
+  verdict or delete a test to go green.
+- **T4 is the test for every device API.** If overlap can invent an outcome the
+  sequential program never produces, a resource is missing from the API, and
+  the answer is on the API and never in the scheduler. The error is the
+  system's, so the operation keeps it; the resource is ours, so it comes back
+  where the checker can see it.
+- **The runtime allocates nothing at run time.** Fixed capacities, one
+  reservation at entry, deterministic refusal: no growth, and no per-operation
+  blocking fallback.
+- **Judge a runtime paradox by one observable:** no completed operation's
+  continuation is ever buried. The state machine gets its exhaustive tests
+  before it merges, not after.
+- **Tests:** never plain `cargo test`; always `cargo test --profile gate`. The
+  whole gate stays under five minutes per host, and its cost is cut by
+  structure and never by weakening a check. Background a long run and read its
+  log; a foreground wait stalls the session.
+- **Wording:** repository text and replies say what is being done — walk the
+  schedule, check the case, review — and never reach for hostile framing for
+  any of them.
+- **Reporting to the owner:** Chinese, code first. A concrete example with the
+  real lines quoted verbatim and the file named, then the rule; no invented
+  terminology, no em-dashes; and say what was verified by running against what
+  was only read or compiled.
+
 ## Outcome
 
 Two batches, in this order, both on the one branch so the design documents
@@ -137,6 +173,12 @@ no count changes on a failure, and `propagate` no longer applies to an open.
 Landed on the branch (`docs/done/0106-backed-file-permit.md` §7).
 
 ## Batch 2: park on miss
+
+**Status 2026-09-05: done on this branch except the one open decision below.**
+All four slices landed; the record is
+[`docs/done/0107-park-on-miss.md`](done/0107-park-on-miss.md). What is not
+settled is design §12 item 1, the compute-miss regression and its fallback,
+which is the owner's decision and is stated at slice 4's status.
 
 Sequenced after batch 1. The plan file is the specification of the work; its
 §11 enumeration harness is the merge gate and the replay tool. The plan's
@@ -628,6 +670,59 @@ before the code lands.
    `mandelbrot_grid.wf` is a `loop` and not a counted `for`, so [PAR-2] grants
    it nothing — so the bundle supplies `programs/grid_split.wf` for the
    comparison item 1 asks for.
+
+   **Status 2026-09-05, slice 4b. Slice 4 is closed except design §12 item 1.**
+   The record is [`docs/done/0107-park-on-miss.md`](done/0107-park-on-miss.md).
+   What closed here:
+
+   - *The variants the measurement could not separate are deleted.* Under the
+     rule below, `WF_SCHED_NESTED_NEVER_SUSPENDS`, `WF_SCHED_LOCKED_PARK`,
+     `WF_SCHED_NO_CLAIM`, `WF_SCHED_PARK_AT_ONCE`, `WF_SCHED_WEAK_ORDERS` and
+     `WF_SCHED_THREAD_READY` leave `core.c`, `core.h` and `bridge.c` with every
+     `#if` and every field they added, and `compiler/Makefile` loses
+     `SCHED_VARIANT_DEFINES`, `SCHED_ENUMERATE_VARIANT_DEFINES` and
+     `COMPLETION_ENUMERATE_CFLAGS`; the shipped form is the only text again.
+     `WF_SCHED_LANE_SLOTS` stays the `#if !defined` override of `core.h` it was
+     before slice 4a, which the enumerator pins to 2. The experiment keeps
+     every table as the record of 2026-09-05, each retired section opening with
+     one sentence on why its form went, and `run.sh` keeps the lines it can
+     still reproduce.
+   - *Design §11 item 24, the recorder and the replay.* The enumerator records
+     one walk of every schedule it sweeps — per step the process that stepped,
+     and at a device step which record completed, in what order, and with what
+     result head the stub delivered — and replays it from a fresh core, feeding
+     the recorded picks and heads back and comparing the whole ordered sequence
+     of the core's own transitions (every stack phase change and every lane
+     free-list pop and push, each with the thread that made it), the statistics
+     at the end, and the transition count. A fed head is checked at the join,
+     so the wrong datum fails there. The pair runs before the search on every
+     schedule and is reported in the `enumerate:` line as `replay_steps`,
+     `replay_completions` and `replay_transitions`. Two perturbations of a
+     scratch copy show the check is not vacuous: a head one greater than the
+     stub's fails at the join, and a hidden static in `wf_sched_take_target`
+     that alternates its preference across executions fails at the pick.
+   - *One gate repaired.* `repository-invariants` had been red since slice 4a,
+     because the experiment's `run.sh` named a home directory in its `ROOT`
+     default; `ROOT` is derived from the script's own location now.
+   - *Docs in place.* `LOOP-PIPELINE.md` §3.4 corrected for what the shipped
+     emitter does now; `docs/roadmap.md`'s two stackless items and its Windows
+     line rewritten to name what replaced them; and
+     `docs/ongoing/HANDOFF-2026-09-04.md` deleted, its removal condition met,
+     with what was still live in it folded into this file.
+
+   **Open, and the owner's to decide: design §12 item 1, the compute-miss
+   regression.** `par_layout` is 45 percent slower at four workers and 103
+   percent at eight than before park on miss, and the bar is "within noise".
+   The design's stated fallback is nested runs of never-suspends jobs at a
+   miss, which needs the target-action bit at the hand-out; today's emitter
+   marks none, and the variant built for slice 4a had to assume every compute
+   hand-out never suspends, which S23 falsifies — it is a live-lock at one
+   thread. So the fallback is not measurable until the emitter marks hand-outs,
+   nothing here chooses between the two, and the grid loop-split program says
+   the regression is the cost of a miss and not of the scheduler: it pays 4 ms
+   of system time at four and eight workers against `par_layout`'s 239 and
+   702 ms, because its loop split hands out large chunks and almost never
+   misses.
 
 ### Decided 2026-09-05: measured before chosen
 

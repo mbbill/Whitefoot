@@ -12,6 +12,24 @@ numbers.
 the numbers are reported. The coordinator takes them to the owner; slice 4b
 deletes what loses and removes the switches with it.
 
+**Status 2026-09-05, slice 4b: the switches are gone; every table below stands
+as the record of the run of 2026-09-05.** Under the plan's rule that a choice
+the measurement cannot separate keeps the form the §11 enumerator checked, the
+six behavioural switches were deleted from `core.c`, `core.h` and `bridge.c`
+with every `#if` and every field they added, and `compiler/Makefile` lost the
+`SCHED_VARIANT_DEFINES` plumbing that carried them: five of them the enumerator
+rejected — one of those, the claim-protocol variant, measured anyway under the
+exception the plan states — `WF_SCHED_WEAK_ORDERS` passed every gate and hangs
+`par_layout`, and the lane-slot sweep separated nothing between 4 and 64.
+`WF_SCHED_LANE_SLOTS` remains what it was before the sweep, the `#if !defined`
+override of `core.h`, so its sweep still runs. No number below was rewritten; each retired section
+opens with one sentence saying that its form was removed at that change and
+why, so the numbers stay readable. `run.sh` keeps every line it can still
+reproduce and has lost the per-form gate table and the per-form liveness probe,
+which were sweeps of forms that no longer exist. What is still open is design
+§12 item 1, the compute-miss regression and its fallback, which is the owner's
+decision (`docs/current-plan.md`, Batch 2).
+
 ## The rule this bundle was taken under
 
 Every variant must pass `make completion-test`, including the §11 enumerator
@@ -70,11 +88,17 @@ item.
 | `WF_SCHED_THREAD_READY` | 6 | `compiler/src/backend/sched/core.c`, `core.h` |
 | `WF_SCHED_LANE_SLOTS` | 6 | `compiler/src/backend/sched/core.h` (already a constant of the core) |
 
-`compiler/Makefile`'s `SCHED_VARIANT_DEFINES` carries one of them into every C
-build the gate makes, so `completion-test` and the enumerator judge a form on
+**Slice 4b removed every switch in that table but the last**, with the `#if`s
+and the fields they added, for the verdicts recorded below; `WF_SCHED_LANE_SLOTS`
+stays because it was a constant of `core.h` before the sweep and still is. The
+table is kept as the record of what was built and where each form was read.
+
+`compiler/Makefile`'s `SCHED_VARIANT_DEFINES` carried one of them into every C
+build the gate made, so `completion-test` and the enumerator judged a form on
 exactly the terms they judge the shipped one. The enumerator pins its own lane
-slot count, so `SCHED_ENUMERATE_VARIANT_DEFINES` drops a lane-slot define from
-that one build and from nothing else.
+slot count, so `SCHED_ENUMERATE_VARIANT_DEFINES` dropped a lane-slot define from
+that one build and from nothing else. Both variables went with the switches;
+the gate now compiles one form, which is the shipped one.
 
 ## Method
 
@@ -100,6 +124,13 @@ Everything below is one run of
 on the host above, on 2026-09-05.
 
 ## 0. The gate, per form
+
+*Retired at slice 4b: every form in this table but the shipped one and the lane
+slot counts was deleted from the core: five of them for the enumerator verdict
+this table records, and `WF_SCHED_WEAK_ORDERS` for the hang section 1 records.
+The table stands as what the enumerator said on 2026-09-05; the per-form gate
+run that produced it is no longer in `run.sh`, because there is one form left
+to run it on and `make completion-test` runs it.*
 
 `make -C compiler SCHED_VARIANT_DEFINES=<define> format lint` and
 `make -C compiler SCHED_VARIANT_DEFINES=<define> completion-test`, which runs
@@ -143,6 +174,11 @@ matters to whoever reads them:
 
 ## 1. Liveness, per form
 
+*Retired at slice 4b with the forms it probes: this table is the reason
+`WF_SCHED_WEAK_ORDERS`, which passes every gate, was deleted rather than kept,
+and the reason `WF_SCHED_NO_CLAIM`'s fault is recorded as reproduced on a real
+host. The probe is gone from `run.sh` with the forms.*
+
 Each behavioural form, both compute programs, three worker counts, one run
 each, under a ten-second timeout. This is not a timing; it is whether a number
 could be taken at all.
@@ -181,6 +217,13 @@ counts.** Every other §12 item is reported as one column with its bar, and with
 the reason its second column is absent.
 
 ## 2. §12 item 1 — park and resume at a compute miss
+
+*The shipped column below is still measured by `run.sh`'s `compute` section.
+The second column's form, `WF_SCHED_NESTED_NEVER_SUSPENDS`, was deleted at
+slice 4b: the enumerator finds it a live-lock at one thread, for the reason
+this section gives. §12 item 1 stays open in `docs/current-plan.md` as the
+owner's decision, and what it needs is the target-action bit at the hand-out,
+not this variant.*
 
 The design's bar: within noise of nested helping. The plan records the
 regression this item exists for: `par_layout` W=4 0.4067 s before park-on-miss
@@ -228,6 +271,13 @@ not a close call: the form as built is a live-lock at one thread.
 
 ## 3. §12 item 2 — the lock-free handshake, and the locked form of §6
 
+*Retired in part at slice 4b: the shipped row is still measured by `run.sh`'s
+`park` section, and the `WF_SCHED_WEAK_ORDERS` and `WF_SCHED_NO_CLAIM` rows are
+the record of forms the change deleted -- the first for the hang of section 1,
+the second for the enumerator's verdict of section 0. `WF_SCHED_LOCKED_PARK`
+was deleted with them, having never had a row; what §12 item 2 needs is a
+second invariant set in `enumerate.c`, which this slice did not write.*
+
 One park and one publish through `sched/core.c` over the real host primitives,
 timed by `park_publish.c`: one thread joins an I/O record and misses, parks its
 stack and switches to a free one; another thread publishes; the parked stack is
@@ -269,6 +319,11 @@ table, so the work that remains is the enumerator's and not the form's.
 
 ## 4. §12 item 3 — the claim protocol
 
+*Retired at slice 4b with `WF_SCHED_NO_CLAIM`, which the enumerator rejects on
+every schedule at all four configurations and which faults on a real host. The
+answer it was built for is in the table below and does not need the form again:
+the claim protocol's price is not visible at this host's spread.*
+
 `WF_SCHED_NO_CLAIM` removes the COMPLETING store and the compare-exchange on
 `record->waiter`. The enumerator rejects it on every schedule at all four
 configurations, with "a record was stored DONE from state 1, not COMPLETING",
@@ -293,6 +348,11 @@ SUSPENDING`, and on `par_layout` at `WF_WORKERS=4` it aborts with the same line
 
 ## 5. §12 item 4 — the in-place wait of the idle window
 
+*Retired at slice 4b with `WF_SCHED_PARK_AT_ONCE`, which fails S23's coverage
+assertion at (T=2,S=3) -- the arm the variant removes is the arm that assertion
+requires. The shipped form's own two rows below are still measured by `run.sh`'s
+`io` section.*
+
 `WF_SCHED_PARK_AT_ONCE` removes the idle window's look at the ready list and
 the bridge's bounded spin, so the window sleeps at once. The enumerator fails
 it at (T=2,S=3) on S23's coverage assertion — "no execution found a READY stack
@@ -315,6 +375,12 @@ program and takes no `-D` of the core's, so the in-place wait cannot be varied
 in it either.
 
 ## 6. §12 item 5 — the memory orders
+
+*Retired at slice 4b with `WF_SCHED_WEAK_ORDERS`. It is the one form here that
+passed every gate, and it is deleted for the hang this section records rather
+than for a verdict: §6's store-then-load pair on both sides needs the
+sequentially consistent orders the shipped form has. The GenMC run the plan
+defers is still worth taking, and it has one fewer question to answer.*
 
 `WF_SCHED_WEAK_ORDERS` replaces the sequentially consistent orders at the
 record's state and waiter and at the stack's phase with acquire and release.
@@ -443,6 +509,13 @@ the floor to 18 242 at sixteen stacks with no change in wall time either way.
 
 ## 9. §12 item 6 — the lane slot count and the ready list
 
+*The lane slot counts below are still measured by `run.sh`'s `lanes` section:
+`WF_SCHED_LANE_SLOTS` survived slice 4b as the `#if !defined` override of
+`core.h` it was before the sweep, because the measurement separates nothing
+between 4 and 64 and the shipped 64 is the count the enumerator checked.
+`WF_SCHED_THREAD_READY` was deleted for the verdict recorded at the foot of
+this section.*
+
 `WF_SCHED_LANE_SLOTS` at 2, 4, 8 and 16 against the shipped 64, at the worker
 counts where a lane is contended. Interleaved with the shipped form in one plan.
 
@@ -557,8 +630,10 @@ whole population fits inside a single small class and the frames that are large
 ## What this bundle holds
 
 - `README.md` — this file: the method, every table, the commands and the bars.
-- `run.sh` — every line above that a script can produce, in eight sections
-  (`gates liveness park compute lanes io chain stacks ledger`).
+- `run.sh` — every line above that a script can still produce, in seven
+  sections (`park compute lanes io chain stacks ledger`). The two sections that
+  swept the compile-time forms, `gates` and `liveness`, went with the forms at
+  slice 4b; their tables are sections 0 and 1 above.
 - `park_publish.c` — the park and publish micro-benchmark of sections 3 to 6.
 - `statistics_observer.c` — the core's counters at exit, for section 8. Linked
   beside an emitted module by `run.sh` and by nothing the driver stages.
@@ -591,9 +666,12 @@ file-name format.
 - **The chain's stack-switch shape is the real core over the fallback park.**
   See section 7. It is the shipped `core.c` and the shipped `prim_host.c`, and
   it is not the shipped park, because the shipped park is the bridge's.
-- **Nothing here was chosen.** No default moved, no losing form was deleted, and
-  the shipped build compiles exactly the form the §11 enumerator checked:
-  `SCHED_VARIANT_DEFINES` is empty in every gate run.
+- **Nothing was chosen when these numbers were taken, and the choosing came
+  after them.** No default moved on 2026-09-05, and the shipped build compiled
+  exactly the form the §11 enumerator checked. Slice 4b then applied the plan's
+  rule to this record: every losing form is deleted, `WF_SCHED_LANE_SLOTS` and
+  the shipped 64 stay, and one item is left open for the owner — §12 item 1's
+  compute-miss regression and its fallback.
 
 ## Reproducing
 
@@ -605,10 +683,9 @@ or the script directly, from anywhere:
     sh research/experiments/park-on-miss-measurements/run.sh
     sh research/experiments/park-on-miss-measurements/run.sh chain ledger
 
-One form's gate, by hand:
-
-    make -C compiler SCHED_VARIANT_DEFINES=-DWF_SCHED_WEAK_ORDERS format lint
-    make -C compiler SCHED_VARIANT_DEFINES=-DWF_SCHED_WEAK_ORDERS completion-test
+Sections 0 and 1 were taken with `SCHED_VARIANT_DEFINES`, which no longer
+exists; the one form the tree now has is gated by `make -C compiler format
+lint` and `make -C compiler completion-test` like any other change to the core.
 
 The chain alone:
 
@@ -619,7 +696,10 @@ what it prints.
 
 ## Removal condition
 
-This bundle is removed in slice 4b, with the compile-time switches it measures,
-once the owner has chosen from these numbers. `programs/grid_split.wf` goes with
-it unless the corpus adopts it; `chain.c` goes when §12's fourth item is
-answered or retired.
+Slice 4b removed the compile-time switches; the bundle stays for what it still
+measures and for the record of what was measured. It is removed when §12 item 1
+is answered — the owner's open decision on the compute-miss regression and its
+fallback, which needs the target-action bit at the hand-out — and §12 item 4's
+chain bar is answered or retired, since those are the two items whose numbers
+are not yet a conclusion. `programs/grid_split.wf` goes with it unless the
+corpus adopts it; `chain.c` goes with §12's fourth item.

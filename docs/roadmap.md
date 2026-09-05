@@ -1021,8 +1021,14 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   dynamic per-iteration paths, an odd final batch, the ordinary result/error
   arm, LLVM emission, linking, and execution. Two staged loops in one function
   deliberately stay ordinary. Completion drain still precedes
-  dependent-frame readiness, the first tail-wrapper stackless slice can resume
-  on any scheduler lane, and pure compute links no completion runtime.
+  dependent-frame readiness and pure compute links no completion runtime. The
+  tail-wrapper stackless continuation lowering that stood here is superseded:
+  `emitter/stackless.rs` and `tests/stackless.rs` were deleted on
+  `io/t4-resource-relations` and the stack park of the park-on-miss scheduler
+  replaced them — a join that misses parks its own stack on a pool stack of a
+  fixed start-time reservation and switches, so any thread may resume the
+  continuation and no emitter transform lowers one
+  ([batch 0107](done/0107-park-on-miss.md)).
   The exact `x86_64-pc-windows-msvc` row now adds a compiler-owned UTF-16
   bootstrap, direct and bounded blocking file operations, an IOCP bridge with
   bounded wake and full-capacity recovery, and a mandatory `--par` compute
@@ -1038,9 +1044,8 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   is better, were compute `0.2750`, warm IOCP `0.9765`, mixed IOCP control
   `1.0092`, mixed versus IOCP-only `0.6008`, and mixed versus fully serial
   `0.6064`.
-- **Missing / next:** generalize selective stackless continuation lowering to
-  branches, loops, multiple suspension points, and non-tail children; widen
-  the two-slot completion driver to additional control-flow shapes, operation
+- **Missing / next:** widen the two-slot completion driver to additional
+  control-flow shapes, operation
   families, and deliberate multi-loop selection; and measure cold/high-latency
   or materially changed target workloads. Any widening keeps the same bounded
   ownership and soundness gates. The final source-language model for host
@@ -1089,8 +1094,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   permit back in its outcome enum, and the ledger, its award order, the
   thread-holding retry wait, and their Windows twins are deleted. Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
-  io_uring work, Windows IOCP runtime, selective stackless slice, and component
-  measurements were retained while the rejected group machinery was removed.
+  io_uring work and component measurements were retained while the rejected
+  group machinery was removed. The Windows runtime is no longer a second copy:
+  batch 2's step (iv) made it the shared runtime with platform leaves — one
+  scheduler core, one bridge over one record, with `sched/prim_windows.c`,
+  `completion/windows_iocp.c`, `completion/file_windows.c`,
+  `completion/wait_windows.c` and `wf_floor_windows.c` as the only Windows
+  code, and the park and the wake on the completion port
+  ([batch 0107](done/0107-park-on-miss.md)).
   The current branch also has one source-derived fixed two-slot bounded batch
   for the narrow direct staged counted-loop shape. Its native POSIX completion
   window is `1..2`; qualified non-completion targets preserve the generated
@@ -1145,8 +1156,11 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   compiler-side signatures, conformance cases and verdicts, and the runtime,
   where the retirement ledger, its award order, and the thread-holding retry
   wait are deleted rather than ported (the park-on-miss design's §7 depends on
-  this deletion). Then widen stackless lowering beyond single-instruction tail
-  chains; add a clock reading, keyed directory places, namespace mutation, and
+  this deletion). The stackless lowering this line asked to widen beyond
+  single-instruction tail chains is gone instead: batch 2 deleted it and the
+  park-on-miss stack park carries every suspension
+  ([batch 0107](done/0107-park-on-miss.md)). Then add a clock reading, keyed
+  directory places, namespace mutation, and
   network, timer, cancellation, deadline, and finish-required output APIs only
   with complete ordinary ownership and target contracts. The remaining
   completion-width question is how to extend the implemented direct

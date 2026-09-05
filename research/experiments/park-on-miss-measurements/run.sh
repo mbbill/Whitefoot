@@ -16,10 +16,21 @@
 #   sh run.sh              every section
 #   sh run.sh park compute one or more sections by name
 #
-# Sections: gates liveness park compute lanes io chain stacks ledger
+# Sections: park compute lanes io chain stacks ledger
+#
+# Slice 4b deleted the compile-time variants of the scheduler core, so the
+# sections that swept them -- the per-form gate table and the per-form liveness
+# probe -- are gone with the forms, and every section below measures the
+# shipped core. The lane slot count survives as the `#if !defined` override of
+# `core.h` that it was before the sweep, so the lane sweep still runs.
 set -e
 
-ROOT=${ROOT:-/home/user/Whitefoot}
+# The repository root, derived from this script's own location so that no
+# tracked file names anyone's home directory (the `repository-invariants` gate
+# of the root Makefile). It is still overridable for a tree checked out
+# elsewhere.
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=${ROOT:-$(cd "$HERE/../../.." && pwd)}
 WHITEFOOT_SCRATCH_ROOT=${WHITEFOOT_SCRATCH_ROOT:-$HOME/do_not_scan}
 WORK=${WORK:-$WHITEFOOT_SCRATCH_ROOT/whitefoot-park-on-miss-measurements}
 BUILD=$WORK/build
@@ -51,34 +62,17 @@ CHAIN_THREADS=${CHAIN_THREADS:-8}
 CHAIN_SLOTS=${CHAIN_SLOTS:-32}
 CHAIN_STACKS=${CHAIN_STACKS:-72}
 
-# The forms measured, as the define each is built with. The empty name is the
-# shipped form. `gates` prints which of the experiment's switches the section 11
-# enumerator admits; only an admitted one belongs in a table beside the shipped
-# form, and the README says for each rejected one what the enumerator found.
-# The forms a table may stand a column of. `gates` says which the section 11
-# enumerator admits and `liveness` says which of those a corpus program
-# actually survives; a form that fails either is reported there and is not
-# timed, because a number for a form that hangs or faults is not a number about
-# a choice.
+# The forms measured, as the define each is built with. `shipped` is the core
+# as it is compiled everywhere else and takes no define at all; the lane slot
+# counts are the one remaining alternative, and they are a constant of `core.h`
+# rather than a protocol the section 11 enumerator judges.
 ADMITTED_FORMS=${ADMITTED_FORMS:-"shipped"}
-# The behavioural switches, for the liveness probe. The lane slot count is not
-# among them: it is a constant and not a protocol.
-BEHAVIOURAL_FORMS=${BEHAVIOURAL_FORMS:-"nested-never-suspends locked-park no-claim park-at-once weak-orders thread-ready"}
-LIVENESS_TIMEOUT=${LIVENESS_TIMEOUT:-10}
-# The park table adds the claim-protocol variant, which the enumerator rejects
-# and which the plan asks for anyway as the price of the protocol.
-PARK_FORMS=${PARK_FORMS:-"shipped weak-orders no-claim"}
+PARK_FORMS=${PARK_FORMS:-"shipped"}
 LANE_SLOT_COUNTS=${LANE_SLOT_COUNTS:-"2 4 8 16"}
 
 define_of() {
     case $1 in
     shipped) printf '' ;;
-    nested-never-suspends) printf -- '-DWF_SCHED_NESTED_NEVER_SUSPENDS' ;;
-    locked-park) printf -- '-DWF_SCHED_LOCKED_PARK' ;;
-    no-claim) printf -- '-DWF_SCHED_NO_CLAIM' ;;
-    park-at-once) printf -- '-DWF_SCHED_PARK_AT_ONCE' ;;
-    weak-orders) printf -- '-DWF_SCHED_WEAK_ORDERS' ;;
-    thread-ready) printf -- '-DWF_SCHED_THREAD_READY' ;;
     lane-slots-*) printf -- '-DWF_SCHED_LANE_SLOTS=%su' "${1#lane-slots-}" ;;
     *) echo "run.sh: unknown form $1" >&2; exit 2 ;;
     esac
@@ -120,42 +114,14 @@ prepare() {
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror "$IOBENCH/gen.c" -o "$BUILD/gen"
 }
 
-# ---------------------------------------------------------------- gates
-
-# Which forms the section 11 enumerator admits. A form it rejects is reported
-# as rejected, with what it found, and is not measured; the shipped form's own
-# column is still taken, because it is the one the design's bar is stated for.
-section_gates() {
-    echo "== gates: make format lint and make completion-test per form =="
-    for form in shipped nested-never-suspends locked-park no-claim park-at-once \
-                weak-orders thread-ready lane-slots-2 lane-slots-4 lane-slots-8 \
-                lane-slots-16; do
-        define=$(define_of "$form")
-        log=$WORK/gate-$form.log
-        mkdir -p "$WORK"
-        if make -C "$ROOT/compiler" SCHED_VARIANT_DEFINES="$define" format lint \
-            > "$log" 2>&1; then
-            static=PASS
-        else
-            static=FAIL
-        fi
-        if make -C "$ROOT/compiler" SCHED_VARIANT_DEFINES="$define" completion-test \
-            >> "$log" 2>&1; then
-            gate=PASS
-        else
-            gate=FAIL
-        fi
-        printf '%-24s format+lint=%s completion-test=%s\n' "$form" "$static" "$gate"
-        grep -o 'enumerate: FAIL [^\\]*' "$log" | sort -u | head -4 | sed 's/^/    /' || true
-    done
-}
-
 # ----------------------------------------------------------------- park
 
-# Design section 12 item 2 and the plan's claim-protocol and memory-order
-# lines: one park and one publish, in nanoseconds, beside this host's own
-# condition-variable park-and-wake, which is the figure the design's 2.2
-# microsecond number names on another machine.
+# Design section 12 item 2: one park and one publish through the shipped core,
+# in nanoseconds, beside this host's own condition-variable park-and-wake,
+# which is the figure the design's 2.2 microsecond number names on another
+# machine. The locked form of section 6, the claim-protocol variant and the
+# weak-order variant stood beside it here until slice 4b removed them; the
+# README's section 3 records what each was and why it went.
 section_park() {
     echo "== park: one park and one publish through the core, nanoseconds =="
     for form in $PARK_FORMS; do
@@ -219,42 +185,6 @@ section_park() {
 }
 
 
-# -------------------------------------------------------------- liveness
-
-# Whether a form runs a corpus program at all.
-#
-# The section 11 enumerator's model is sequentially consistent and its
-# schedules are the ones `schedules.c` names, so admitting a form there is not
-# the same as the form working on this host. This probe is the other half: each
-# behavioural switch, each program, each worker count, once, under a timeout. A
-# form that does not finish, or that ends in `wf_prim_fail`, is reported here
-# and is not timed anywhere.
-section_liveness() {
-    echo "== liveness: does each form run par_layout and the grid at all? =="
-    build_compute shipped $BEHAVIOURAL_FORMS
-    printf '%-24s %-12s %6s %8s\n' form program W outcome
-    for form in shipped $BEHAVIOURAL_FORMS; do
-        for program in par_layout grid; do
-            for workers in 1 2 4; do
-                if WF_WORKERS=$workers timeout "$LIVENESS_TIMEOUT" \
-                    "$BUILD/$program-$form" > /dev/null 2>"$WORK/liveness.err"; then
-                    outcome=ran
-                else
-                    status=$?
-                    if [ "$status" -eq 124 ]; then
-                        outcome=hung
-                    else
-                        outcome="exit$status"
-                    fi
-                fi
-                printf '%-24s %-12s %6s %8s %s\n' "$form" "$program" "$workers" \
-                    "$outcome" \
-                    "$(grep -m1 'whitefoot scheduler' "$WORK/liveness.err" || true)"
-                outcome=ran
-            done
-        done
-    done
-}
 # -------------------------------------------------------------- compute
 
 # Design section 12 item 1's first half: park and resume at a compute miss on a
@@ -461,13 +391,11 @@ section_ledger() {
     done
 }
 
-sections=${*:-gates liveness park compute lanes io chain stacks ledger}
+sections=${*:-park compute lanes io chain stacks ledger}
 prepare
 for section in $sections; do
     case $section in
-    gates) section_gates ;;
     park) section_park ;;
-    liveness) section_liveness ;;
     compute) section_compute ;;
     lanes) section_lanes ;;
     io) section_io ;;

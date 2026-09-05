@@ -55,6 +55,9 @@
 #define ENUM_MAX_WORDS 160u
 #define ENUM_HOST_STACK_BYTES (256u * 1024u)
 #define ENUM_POOL_STACK_BYTES (256u * 1024u)
+/* The stub's result head for submission 0; the nth submission's is this plus
+ * n. A datum, not a state: see `io_record`. */
+#define ENUM_RESULT_HEAD 0x51ED0000ull
 
 _Static_assert(ENUM_MAX_PROCS <= 32u, "process sets are one unsigned");
 _Static_assert(WF_SCHED_MAX_THREADS >= ENUM_MAX_THREADS, "the core admits the threads");
@@ -145,6 +148,14 @@ typedef struct io_record {
     wf_sched_record *record;   /* NULL once retired: its frame may be gone */
     enum record_state state;
     unsigned long long completed_at;
+    /* The result head this operation's stub answers with, and the head the
+     * device actually delivered at the completion step. The stub's answer is
+     * fixed by the record's submission index, so it is the same datum on
+     * every path and no state splits on it; the recorder below carries it as
+     * this execution's external data and a replay feeds it back here (§11
+     * item 24). */
+    unsigned long long head;
+    unsigned long long delivered;
     int retired;
 } io_record;
 
@@ -488,6 +499,127 @@ unsigned wf_enum_parked_count(void) {
     return count;
 }
 
+/* ------------------------------------------- the recorder and the replay */
+
+/* §11 item 24. The controlled scheduler is also the replay harness: it
+ * records the external inputs of one execution -- the completion order and
+ * the data each stub delivered -- and replays them, so that the guarantee the
+ * design's header and §13 state is checked rather than asserted. Completion
+ * order is a kernel event and therefore an input, and what must follow from
+ * identical inputs is an identical internal execution; that is how
+ * constitution T3's sequential world is realized for a program that overlaps.
+ *
+ * A recording is one walk of a schedule. Its inputs are, per step, the
+ * process that stepped and -- at a device step -- which submitted record
+ * completed, its place in the completion order, and the result head the stub
+ * delivered for it. Beside the inputs it holds what the walk made of them,
+ * which is what "identical internal execution" is checked as here: the whole
+ * sequence of the core's own transitions, every stack phase change and every
+ * lane free-list swing, each with the thread that made it, in the order they
+ * were observed, and the core's statistics at the end. That sequence is the
+ * stacks parked, notified, committed, made READY, resumed, cancelled and
+ * emptied, and the slots taken and released, in order.
+ *
+ * The replay is a second walk from a fresh core which chooses nothing: at
+ * every step it takes the process the recording names and requires the state
+ * to enable it, at every completion it delivers the recorded head instead of
+ * asking the stub, and it compares each transition against the recorded one
+ * as it happens, so a divergence is reported at the step that diverged rather
+ * than at the end. A fed head is not inert: `wf_enum_join_io` checks that the
+ * head delivered for a record is the head that record's stub answers with, so
+ * a replay fed the wrong datum fails at the join.
+ *
+ * The pair runs on every schedule the enumerator walks, before the search,
+ * and its sizes are reported in the sweep's line. What it can catch that the
+ * search cannot is an input the model does not name: were the core or the
+ * harness to read anything but the state, the inputs and the picks, the two
+ * walks would part. */
+
+#define ENUM_MAX_RECORDING ENUM_MAX_DEPTH
+
+enum rec_mode { REC_OFF, REC_RECORDING, REC_REPLAYING };
+
+/* A stack phase change, or a lane's free-list swing. */
+enum rec_transition_kind { REC_T_PHASE, REC_T_SLOT };
+
+/* One step of a walk: the process that took it and, when it is the device's,
+ * the external input it delivered. `record` is ENUM_MAX_RECORDS when the step
+ * is a thread's. */
+typedef struct rec_step {
+    unsigned proc;
+    unsigned record;
+    unsigned long long serial;
+    unsigned long long head;
+} rec_step;
+
+/* One transition of the core. For a phase change `object` is the stack and
+ * `from`/`to` are the phases; for a free-list swing `object` is the lane,
+ * `from` is the slot and `to` is 1 for a pop and 0 for a push. */
+typedef struct rec_transition {
+    unsigned kind;
+    unsigned object;
+    unsigned from;
+    unsigned to;
+    unsigned thread;
+} rec_transition;
+
+static enum rec_mode rec_mode = REC_OFF;
+static rec_step rec_steps[ENUM_MAX_RECORDING];
+static unsigned rec_step_count;
+static unsigned rec_completions;
+static rec_transition rec_transitions[ENUM_MAX_RECORDING];
+static unsigned rec_transition_count;
+static unsigned rec_transition_cursor;
+static wf_sched_statistics rec_statistics;
+/* What the step just executed was, written by `execute_step`. */
+static rec_step rec_observed;
+/* The head a replay's next device step delivers, and whether it delivers one
+ * of its own at all. */
+static unsigned long long rec_fed_head;
+static int rec_feeding;
+
+/* Observes one core transition: appends it while recording, compares it
+ * against the recording while replaying, and does nothing otherwise. */
+static void rec_note_transition(unsigned kind, unsigned object, unsigned from, unsigned to) {
+    rec_transition seen;
+    const rec_transition *want;
+    if (rec_mode == REC_OFF) {
+        return;
+    }
+    seen.kind = kind;
+    seen.object = object;
+    seen.from = from;
+    seen.to = to;
+    seen.thread = current_index();
+    if (rec_mode == REC_RECORDING) {
+        if (rec_transition_count >= ENUM_MAX_RECORDING) {
+            fail_execution("harness: the recording holds more than %u transitions", ENUM_MAX_RECORDING);
+        }
+        rec_transitions[rec_transition_count] = seen;
+        rec_transition_count += 1u;
+        return;
+    }
+    if (rec_transition_cursor >= rec_transition_count) {
+        fail_execution(
+            "replay: the replayed execution ran past the recording's %u transitions",
+            rec_transition_count
+        );
+    }
+    want = &rec_transitions[rec_transition_cursor];
+    if (want->kind != seen.kind || want->object != seen.object || want->from != seen.from
+        || want->to != seen.to || want->thread != seen.thread) {
+        fail_execution(
+            "replay: transition %u differs: recorded %s %u %u->%u by t%u, replayed %s %u %u->%u by t%u",
+            rec_transition_cursor,
+            want->kind == (unsigned)REC_T_PHASE ? "stack" : "lane",
+            want->object, want->from, want->to, want->thread,
+            seen.kind == (unsigned)REC_T_PHASE ? "stack" : "lane",
+            seen.object, seen.from, seen.to, seen.thread
+        );
+    }
+    rec_transition_cursor += 1u;
+}
+
 /* --------------------------------------------- observing a phase change */
 
 static void note_phase(const word *w, unsigned old, unsigned new, enum op_kind kind) {
@@ -498,6 +630,7 @@ static void note_phase(const word *w, unsigned old, unsigned new, enum op_kind k
     if (old == new) {
         return;
     }
+    rec_note_transition(REC_T_PHASE, index, old, new);
     if (old == WF_SCHED_STACK_RUNNING && new == WF_SCHED_STACK_SUSPENDING && kind == OP_CAS) {
         if (!on_it) {
             fail_execution("a park began on stack %u from another stack", index);
@@ -709,6 +842,7 @@ static void note_word_write(const word *w, unsigned long long old, unsigned long
             if (is_pop && w->index != me) {
                 fail_execution("thread %u popped the slot free list of lane %u (I3)", me, w->index);
             }
+            rec_note_transition(REC_T_SLOT, w->index, is_pop ? expected : desired, (unsigned)is_pop);
         }
         break;
     case W_STATUS:
@@ -1113,6 +1247,8 @@ void wf_enum_submit(wf_sched_record *record) {
     records[record_count].record = record;
     records[record_count].state = R_OUTSTANDING;
     records[record_count].completed_at = 0;
+    records[record_count].head = ENUM_RESULT_HEAD + (unsigned long long)record_count;
+    records[record_count].delivered = 0;
     records[record_count].retired = 0;
     add_word(&record->state, W_IO_STATE, record_count, 0);
     add_word(&record->waiter, W_IO_WAITER, record_count, 0);
@@ -1149,6 +1285,15 @@ void wf_enum_join_io(wf_sched_record *record) {
             }
             if (record->waiter != NULL) {
                 fail_execution("an I/O join returned with its waiter still registered (§6)");
+            }
+            if (records[index].delivered != records[index].head) {
+                /* The datum this operation's stub answers with, checked where
+                 * the program would read it. A replay fed a head the stub
+                 * does not answer with fails here (§11 item 24). */
+                fail_execution(
+                    "an I/O join read the head %llx where its stub delivered %llx",
+                    records[index].delivered, records[index].head
+                );
             }
             remove_word(&record->state);
             remove_word(&record->waiter);
@@ -1621,6 +1766,10 @@ static void execute(unsigned p, unsigned n) {
 }
 
 static void execute_step(unsigned p, unsigned n) {
+    rec_observed.proc = p;
+    rec_observed.record = ENUM_MAX_RECORDS;
+    rec_observed.serial = 0;
+    rec_observed.head = 0;
     if (p < cfg_threads) {
         actor *a = &actors[p];
         op o = a->pending;
@@ -1641,6 +1790,13 @@ static void execute_step(unsigned p, unsigned n) {
         completion_serial += 1u;
         records[k].state = R_COMPLETED;
         records[k].completed_at = completion_serial;
+        /* The stub delivers its result head with the completion. A replay
+         * delivers the head its recording carries instead, so the data is fed
+         * back rather than recomputed (§11 item 24). */
+        records[k].delivered = rec_feeding ? rec_fed_head : records[k].head;
+        rec_observed.record = k;
+        rec_observed.serial = completion_serial;
+        rec_observed.head = records[k].delivered;
         wake_all();
         note_write(ENUM_MAX_THREADS);
     }
@@ -2302,6 +2458,158 @@ static void run_stateful(void) {
     }
 }
 
+/* ---------------------------------------------- the recorded walk (§11.24) */
+
+/* One linear walk of the current schedule to its terminal state: the
+ * recording walk when `replaying` is 0, the replay when it is 1. Returns 0
+ * when the walk passed.
+ *
+ * The recording walk chooses the lowest enabled process at every state, which
+ * is one valid execution of the schedule; the replay chooses nothing and
+ * every step it takes is the one the recording names. Both check every §11
+ * invariant after every step, as the searches do, so a recorded walk is not a
+ * weaker execution than a searched one. */
+static int recorded_walk(int replaying) {
+    unsigned index;
+    wf_sched_statistics ended;
+    rec_mode = replaying ? REC_REPLAYING : REC_RECORDING;
+    rec_feeding = replaying;
+    rec_transition_cursor = 0;
+    if (!replaying) {
+        rec_step_count = 0;
+        rec_completions = 0;
+        rec_transition_count = 0;
+        memset(&rec_statistics, 0, sizeof rec_statistics);
+    }
+    reset_execution();
+    controller_resume(&actors[0]);
+    while (!failed) {
+        unsigned enabled;
+        unsigned p;
+        /* A worker the entry thread has created runs to its first step. */
+        for (index = 1; index < cfg_threads; index += 1u) {
+            if (actors[index].state == A_RUNNABLE && !actors[index].has_pending
+                && stack_index_of(actors[index].sp) < 0 && !actors[index].taken_first) {
+                controller_resume(&actors[index]);
+                if (failed) {
+                    break;
+                }
+            }
+        }
+        if (failed) {
+            break;
+        }
+        enabled = enabled_set();
+        if (enabled == 0u) {
+            check_terminal();
+            break;
+        }
+        if (depth >= cfg_bound) {
+            fail_execution(
+                "harness: the %s walk passed the step bound %u",
+                replaying ? "replay" : "recording", cfg_bound
+            );
+            break;
+        }
+        if (replaying) {
+            if (depth >= rec_step_count) {
+                fail_execution(
+                    "replay: the replayed execution ran past the recording's %u steps",
+                    rec_step_count
+                );
+                break;
+            }
+            p = rec_steps[depth].proc;
+            if (((enabled >> p) & 1u) == 0u) {
+                fail_execution(
+                    "replay: step %u names process %u, which the replayed state does not enable",
+                    depth + 1u, p
+                );
+                break;
+            }
+            rec_fed_head = rec_steps[depth].head;
+        } else {
+            if (rec_step_count >= ENUM_MAX_RECORDING) {
+                fail_execution("harness: the recording holds more than %u steps", ENUM_MAX_RECORDING);
+                break;
+            }
+            p = lowest_bit(enabled);
+        }
+        execute(p, depth + 1u);
+        if (failed) {
+            break;
+        }
+        check_state();
+        if (failed) {
+            break;
+        }
+        if (replaying) {
+            const rec_step *want = &rec_steps[depth];
+            if (want->record != rec_observed.record || want->serial != rec_observed.serial
+                || want->head != rec_observed.head) {
+                fail_execution(
+                    "replay: step %u completed record %u as %llu with head %llx,"
+                    " the recording says record %u as %llu with head %llx",
+                    depth + 1u, rec_observed.record, rec_observed.serial, rec_observed.head,
+                    want->record, want->serial, want->head
+                );
+                break;
+            }
+        } else {
+            rec_steps[rec_step_count] = rec_observed;
+            rec_step_count += 1u;
+            if (rec_observed.record != ENUM_MAX_RECORDS) {
+                rec_completions += 1u;
+            }
+        }
+        depth += 1u;
+    }
+    rec_mode = REC_OFF;
+    rec_feeding = 0;
+    if (failed) {
+        return 1;
+    }
+    wf_sched_statistics_sum(&wf_enum_core, &ended);
+    if (!replaying) {
+        rec_statistics = ended;
+        return 0;
+    }
+    if (rec_transition_cursor != rec_transition_count) {
+        fail_execution(
+            "replay: the replayed execution made %u of the recording's %u transitions",
+            rec_transition_cursor, rec_transition_count
+        );
+        return 1;
+    }
+    if (memcmp(&ended, &rec_statistics, sizeof ended) != 0) {
+        fail_execution("replay: the core's statistics at the end differ from the recording's");
+        return 1;
+    }
+    return 0;
+}
+
+/* §11 item 24 on one schedule: record one walk, replay it from a fresh core,
+ * compare. The sweep's own coverage is left as it was, so the counts the
+ * report carries are the search's and these two walks add nothing to them. */
+static int record_and_replay(void) {
+    wf_enum_coverage kept = cov;
+    unsigned long long kept_serial = execution_serial;
+    int bad = recorded_walk(0);
+    if (!bad) {
+        bad = recorded_walk(1);
+    }
+    cov = kept;
+    execution_serial = kept_serial;
+    if (bad) {
+        (void)fprintf(stderr, "enumerate: FAIL schedule=%s threads=%u stacks=%u: %s\n",
+            schedule->name, cfg_threads, cfg_stacks, failure);
+        print_state(stderr);
+        print_trace(stderr);
+        return 1;
+    }
+    return 0;
+}
+
 static void print_coverage(FILE *out) {
     (void)fprintf(out,
         "enumerate: schedule=%s threads=%u stacks=%u search=%s executions=%llu bounded=%llu max_steps=%llu"
@@ -2312,7 +2620,8 @@ static void print_coverage(FILE *out) {
         " post_by_worker=%llu late_third_line=%llu publish_io=%llu publish_compute=%llu"
         " parks=%llu cancels=%llu resumes=%llu steals=%llu inline_runs=%llu exhausted_io=%llu"
         " exhausted_compute=%llu late_parks=%llu line_one=%llu max_parked=%llu all_asleep=%llu"
-        " sleeps=%llu states=%llu pruned=%llu\n",
+        " sleeps=%llu states=%llu pruned=%llu replay_steps=%u replay_completions=%u"
+        " replay_transitions=%u\n",
         schedule->name, cfg_threads, cfg_stacks, cfg_search == SEARCH_STATE ? "state" : "dfs",
         cov.executions, cov.bounded,
         cov.max_steps, cov.begin, cov.suspended, cov.notified, cov.ready_from_suspended,
@@ -2322,7 +2631,8 @@ static void print_coverage(FILE *out) {
         cov.post_by_worker, cov.late_third_line, cov.publish_io, cov.publish_compute, cov.stats.parks,
         cov.stats.cancels, cov.stats.resumes, cov.stats.steals, cov.stats.inline_runs,
         cov.stats.exhausted_io_waits, cov.stats.exhausted_compute_waits, cov.stats.late_parks,
-        cov.stats.line_one, cov.max_parked, cov.all_asleep, cov.sleeps, states_seen, states_pruned);
+        cov.stats.line_one, cov.max_parked, cov.all_asleep, cov.sleeps, states_seen, states_pruned,
+        rec_step_count, rec_completions, rec_transition_count);
 }
 
 /* Every interleaving of one schedule at the configured T and S. Returns 0
@@ -2335,6 +2645,14 @@ static int sweep(const wf_enum_schedule *s) {
     execution_serial = 0;
     states_seen = 0;
     states_pruned = 0;
+    rec_step_count = 0;
+    rec_completions = 0;
+    rec_transition_count = 0;
+    /* §11 item 24, before the search and on every schedule the enumerator
+     * walks: one recorded walk, one replay of it, compared. */
+    if (replay_count == 0u && record_and_replay() != 0) {
+        return 1;
+    }
     if (cfg_search == SEARCH_STATE && replay_count == 0u) {
         run_stateful();
         if (failed) {

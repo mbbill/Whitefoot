@@ -101,7 +101,11 @@ high-level sequencing; plans do not grant or withhold branch permission.
   enumerator, and `WF_SCHED_WEAK_ORDERS` passes the enumerator and then hangs
   `par_layout` deterministically at two workers and above, which is the
   sequentially consistent blind spot the plan's deferred GenMC note names,
-  witnessed. It is removed in slice 4b with the switches it measures.
+  witnessed. Slice 4b acted on that record: the six behavioural switches are
+  deleted from the core, `WF_SCHED_LANE_SLOTS` stays the `#if !defined`
+  override of `core.h` it was before the sweep, and the bundle keeps its
+  tables and the sections it can still reproduce. It goes when §12 item 1 and
+  the chain bar are answered or retired.
 - `io-completion-bench/` — the program-level answer to whether the unified-state
   completion I/O model reaches native performance on whole programs, which
   until 2026-08-27 had only C-level component evidence. Three lines per
