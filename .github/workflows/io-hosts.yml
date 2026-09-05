@@ -660,9 +660,14 @@ jobs:
                 tr -d $'\r' < "$par_dir/control-link.txt" >&2 || true
               }
 
-            # Second, the same link under AddressSanitizer. LLVM on this runner
-            # ships `clang_rt.asan` for x86_64-pc-windows-msvc; a runner where
-            # it does not says so here and the step goes on.
+            # Second, the same link under AddressSanitizer. LLVM on this
+            # runner ships `clang_rt.asan` for x86_64-pc-windows-msvc, but the
+            # sanitized image loads `clang_rt.asan_dynamic-x86_64.dll` at
+            # start-up and that DLL sits in clang's own `InstalledDir` rather
+            # than anywhere on the default PATH -- an unprefixed run answers
+            # 127 with "cannot open shared object file" and says nothing about
+            # the program. A runner without either the runtime or that
+            # directory says so here and the step goes on.
             echo "--- observed link under AddressSanitizer ---"
             if clang -std=c11 -O2 -g -municode -fsanitize=address \
               -I compiler/src/backend \
@@ -675,7 +680,8 @@ jobs:
               -o "$par_dir/par-layout-asan.exe" \
               > "$par_dir/asan-link.txt" 2>&1; then
               set +e
-              WF_WORKERS=4 "$par_dir/par-layout-asan.exe" \
+              PATH="/c/Program Files/LLVM/bin:$PATH" \
+                WF_WORKERS=4 "$par_dir/par-layout-asan.exe" \
                 > "$par_dir/asan.txt" 2> "$par_dir/asan.err"
               asan_status=$?
               set -e
