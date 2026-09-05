@@ -1,6 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected: REJECT [OP-4] -- data has length 5 and every byte equals 7, so count can reach 5 (all match); data[count] then indexes the one-past-end slot 5, which is out of bounds. Concrete violating trace: after the loop count=5, len_of(data)=5, so data[5] reads past the buffer.";
-  let data = buffer_new(5_u64, 7_u8);
+  let data = fixed_vector::<u8, 5>();
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
+  set data = place_back(vector: move data, value: 7_u8);
   let count = 0_u64;
   for (
     i in 0_u64..5_u64,

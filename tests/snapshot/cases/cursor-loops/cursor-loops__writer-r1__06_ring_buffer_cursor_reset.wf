@@ -1,6 +1,10 @@
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: a counted for loop writes through a ring cursor into a fixed capacity array, resetting the cursor to zero inside the body once it reaches capacity, exercising cursor reset across several full wraps, with a header invariant bounding the cursor by the ring's capacity.";
-  let ring = array_new::<u32, 4>(0_u32);
+  let ring = fixed_vector::<u32, 4>();
+  set ring = place_back(vector: move ring, value: 0_u32);
+  set ring = place_back(vector: move ring, value: 0_u32);
+  set ring = place_back(vector: move ring, value: 0_u32);
+  set ring = place_back(vector: move ring, value: 0_u32);
   let cursor = 0_u64;
   let total = 0_u32;
   let value = 0_u32;

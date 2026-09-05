@@ -1,6 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect REJECT: fast cursor advances by 2 each step but is only guarded by fast < len; it can equal len+1 relative index and read data[fast] out of bounds when len is odd";
-  let data = array_new::<u8, 5>(0_u8);
+  let data = fixed_vector::<u8, 5>();
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
   set data[0_u64] = 1_u8;
   set data[1_u64] = 2_u8;
   set data[2_u64] = 3_u8;

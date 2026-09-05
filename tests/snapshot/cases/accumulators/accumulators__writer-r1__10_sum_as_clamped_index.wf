@@ -1,7 +1,19 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expected ACCEPT: an accumulated sum drives a table lookup only after a real branch proves it in range.";
-  let data = buffer_new(4_u64, 1_u8);
-  let table = buffer_new(8_u64, 0_u8);
+  let data = fixed_vector::<u8, 4>();
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  let table = fixed_vector::<u8, 8>();
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
+  set table = place_back(vector: move table, value: 0_u8);
   set table[4_u64] = 42_u8;
   let sum = 0_u64;
   for (

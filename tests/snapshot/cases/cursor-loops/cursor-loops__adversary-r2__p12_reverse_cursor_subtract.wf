@@ -1,6 +1,11 @@
 command fn main() -> status: own ExitStatus pure {
   doc "expect ACCEPT: reverse traversal back = 4 - i for i in 0..5 stays within [0,4], all reads in bounds";
-  let data = array_new::<u64, 5>(0_u64);
+  let data = fixed_vector::<u64, 5>();
+  set data = place_back(vector: move data, value: 0_u64);
+  set data = place_back(vector: move data, value: 0_u64);
+  set data = place_back(vector: move data, value: 0_u64);
+  set data = place_back(vector: move data, value: 0_u64);
+  set data = place_back(vector: move data, value: 0_u64);
   set data[0_u64] = 1_u64;
   set data[1_u64] = 2_u64;
   set data[2_u64] = 3_u64;

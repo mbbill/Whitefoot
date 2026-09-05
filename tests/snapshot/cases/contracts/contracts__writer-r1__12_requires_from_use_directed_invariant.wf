@@ -1,4 +1,4 @@
-fn combined_probe(table: own buffer<u8>, first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, third: own u64, third_limit: own u64) -> byte: own u8 reads(table) contract {
+fn combined_probe<const n: u64>(table: own FixedVector<u8, n>, first: own u64, first_limit: own u64, second: own u64, second_limit: own u64, third: own u64, third_limit: own u64) -> byte: own u8 reads(table) contract {
   define spare = len_of(table);
   requires first <= first_limit;
   requires second <= second_limit;
@@ -23,8 +23,16 @@ fn combined_probe(table: own buffer<u8>, first: own u64, first_limit: own u64, s
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: an explicit use directed local invariant combines three published premises to establish a subscript's domain obligation.";
-  let table = buffer_new(12_u64, 3_u8);
-  let byte = combined_probe(table: move table, first: 2_u64, first_limit: 3_u64, second: 3_u64, second_limit: 3_u64, third: 3_u64, third_limit: 3_u64);
+  let table = fixed_vector::<u8, 12>();
+  for (
+    at_table in 0_u64..12_u64,
+    invariant grown_table: len_of(table) >= at_table,
+    invariant spare_table: room_of(table) + at_table >= 12_u64,
+    invariant flat_table: head_of(table) <= 0_u64
+  ) {
+    set table = place_back(vector: move table, value: 3_u8);
+  }
+  let byte = combined_probe::<12>(table: move table, first: 2_u64, first_limit: 3_u64, second: 3_u64, second_limit: 3_u64, third: 3_u64, third_limit: 3_u64);
   if byte == 3_u8 {
   } else {
     return exit_status(code: 1_u8);
