@@ -1,5 +1,13 @@
-command fn main() -> status: own ExitStatus pure {
-  doc "The body allocates heap storage but declares the empty `pure` row [EFF-2].";
-  let values = buffer_new(4_u64, 0_u8);
-  return exit_status(code: 0_u8);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap) {
+  doc "The body takes a run from the general store, which exhibits `allocates(heap)` over the provider its take names, and declares only the other two categories [EFF-2, S23].";
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 1_u8);
+      }
+      Some(value: run) => {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
 }

@@ -1,10 +1,18 @@
 contract PureMember {
-  fn apply(x: own i32) -> result: own i32 pure;
+  fn apply(store: &uniq Heap, x: own i32) -> result: own i32 reads(store);
 }
 
-fn allocating_apply(x: own i32) -> result: own i32 pure {
-  let scratch = buffer_new(1_u64, 0_u8);
-  return x;
+fn allocating_apply(store: &uniq Heap, x: own i32) -> result: own i32 reads(store), writes(store), allocates(store) {
+  region {
+    match heap_vector::<u8>(store: &uniq deref(store), count: 1_u64) {
+      None() => {
+        return x;
+      }
+      Some(value: scratch) => {
+        return x;
+      }
+    }
+  }
 }
 
 conform i32: PureMember {

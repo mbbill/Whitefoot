@@ -1,4 +1,4 @@
-fn carve['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u64>> reads(store), writes(store) {
+fn carve['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u64>> reads(store), writes(store), allocates(store) {
   doc "One helper generic over a bump store: the region argument is substituted into this parameter's container type at every call.";
   region {
     return arena_vector::<u64>(store: &uniq deref(store), count: 4_u64);

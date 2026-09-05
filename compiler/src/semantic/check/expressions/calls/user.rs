@@ -256,6 +256,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let (Some(formal), Some(actual)) = (formal, actual) else {
                     continue;
                 };
+                // [PROV-1] the entry heap's store region is minted before
+                // `main` and is no declaration's formal: a position naming it
+                // is already fixed and observes nothing.
+                if formal.is_entry_heap_region() {
+                    continue;
+                }
                 let index = Self::formal_region_index(signature, formal)?;
                 let mut binding = *region_bindings
                     .get(index)

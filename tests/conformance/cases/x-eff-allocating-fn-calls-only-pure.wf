@@ -3,14 +3,16 @@ fn bump(x: own i32) -> function_result: own i32 pure {
   return x +wrap 1_i32;
 }
 
-fn f(x: own i32) -> function_result: own i32 pure {
-  doc "Declares pure, but its body only calls a pure function [EFF-2].";
+fn f(heap: &uniq Heap, x: own i32) -> function_result: own i32 allocates(heap) {
+  doc "Declares allocates(heap) over its provider parameter, but its body only calls a pure function [EFF-2].";
   let a = bump(x: x);
   return a;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   doc "Driver.";
-  let a = f(x: 7_i32);
+  region {
+    let a = f(heap: &uniq heap, x: 7_i32);
+  }
   return exit_status(code: 0_u8);
 }

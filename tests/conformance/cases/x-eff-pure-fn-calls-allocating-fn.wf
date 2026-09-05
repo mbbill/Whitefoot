@@ -1,17 +1,28 @@
-fn allocate_then_return(x: own i32) -> function_result: own i32 pure {
-  doc "The allocation effect is part of the callee's checked row.";
-  let scratch = buffer_new(1_u64, 0_u8);
-  return x;
+fn allocate_then_return(heap: &uniq Heap, x: own i32) -> function_result: own i32 reads(heap), writes(heap), allocates(heap) {
+  doc "The allocation effect is part of the callee's checked row, named over the provider it takes.";
+  region {
+    match heap_vector::<u8>(store: &uniq deref(heap), count: 1_u64) {
+      None() => {
+        return x;
+      }
+      Some(value: scratch) => {
+        return x;
+      }
+    }
+  }
 }
 
-fn f(x: own i32) -> function_result: own i32 pure {
+fn f(heap: &uniq Heap, x: own i32) -> function_result: own i32 pure {
   doc "Declares pure but calls an allocating function [EFF-2].";
-  let a = allocate_then_return(x: x);
-  return a;
+  region {
+    return allocate_then_return(heap: &uniq deref(heap), x: x);
+  }
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
   doc "Driver.";
-  let a = f(x: 7_i32);
+  region {
+    let a = f(heap: &uniq heap, x: 7_i32);
+  }
   return exit_status(code: 0_u8);
 }
