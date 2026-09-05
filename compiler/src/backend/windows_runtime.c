@@ -324,22 +324,83 @@ int wf__windows_completion_descriptor_state(
     return present;
 }
 
-void wf__windows_completion_note_port_association(
+/* Whether the completion port may use this descriptor's handle, binding it
+ * exactly once if it must.
+ *
+ * The whole of it -- the class rule, the "has it been bound" question, the
+ * binding itself and the record of it -- happens inside one hold of the table's
+ * own lock, and that is the point of the call.  `CreateIoCompletionPort` binds
+ * a handle exactly once and answers ERROR_INVALID_PARAMETER for a handle a port
+ * already has, and there is no host call that asks whether it already has one.
+ * So the fact lives in this table, and a check outside the lock followed by a
+ * bind is a race with a real consequence rather than a wasted call: two threads
+ * offering the first two records on one descriptor both read "not bound", the
+ * first binds, the second's bind fails, and that second record falls to the
+ * bounded adapter -- which then issues host I/O on a handle that is now on this
+ * port.  The lock makes the second thread either wait for the first to finish
+ * binding or find the handle already bound, and in both cases submit.
+ *
+ * `bind` is the caller's, because the port is the completion runtime's and this
+ * unit does not reach it (`windows_runtime.h`).  It runs under the lock, which
+ * is what serializes it; it answers nonzero when the handle is now the port's.
+ *
+ * A descriptor this runtime never opened -- a probe's own `_open_osfhandle` of
+ * a `CreateFile` -- has no row until the first offer on it.  It is admitted on
+ * the host's own answer that it is a disk file, and given a row under class ANY
+ * so the association fact has somewhere to live; without the row, every offer
+ * would re-ask `GetFileType` and re-attempt the bind.  A row under any other
+ * class is a directory or an output, which this ring does not carry.
+ *
+ * The lock is held across three host calls.  This is once per descriptor, not
+ * once per operation: the second and every later offer on the same descriptor
+ * takes the already-bound answer and makes no host call at all. */
+int wf__windows_completion_ring_handle(
     int descriptor,
-    unsigned descriptor_class
+    int (*bind)(HANDLE handle, void *context),
+    void *context,
+    HANDLE *handle
 ) {
-    if (descriptor < 0) {
-        return;
+    HANDLE native;
+    int admitted = 0;
+    if (descriptor < 0 || bind == NULL || handle == NULL) {
+        return 0;
+    }
+    native = wf__windows_completion_descriptor_handle(descriptor);
+    if (!wf_windows_handle_valid(native)) {
+        return 0;
     }
     AcquireSRWLockExclusive(&wf_windows_registry_lock);
-    if (wf_windows_registry_grow((size_t)descriptor + 1u)) {
-        if (wf_windows_registry[descriptor].present == 0u) {
-            wf_windows_registry[descriptor].descriptor_class = descriptor_class;
-            wf_windows_registry[descriptor].present = 1u;
+    if (!wf_windows_registry_grow((size_t)descriptor + 1u)) {
+        ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+        return 0;
+    }
+    if (wf_windows_registry[descriptor].present == 0u) {
+        if (GetFileType(native) != FILE_TYPE_DISK) {
+            ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+            return 0;
         }
+        wf_windows_registry[descriptor].descriptor_class =
+            WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+        wf_windows_registry[descriptor].port_associated = 0u;
+        wf_windows_registry[descriptor].present = 1u;
+    } else if (wf_windows_registry[descriptor].descriptor_class
+                   != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+               && wf_windows_registry[descriptor].descriptor_class
+                   != WF_WINDOWS_DESCRIPTOR_CLASS_ANY) {
+        ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+        return 0;
+    }
+    if (wf_windows_registry[descriptor].port_associated != 0u) {
+        admitted = 1;
+    } else if (bind(native, context) != 0) {
         wf_windows_registry[descriptor].port_associated = 1u;
+        admitted = 1;
     }
     ReleaseSRWLockExclusive(&wf_windows_registry_lock);
+    if (admitted != 0) {
+        *handle = native;
+    }
+    return admitted;
 }
 
 void wf__windows_completion_forget_descriptor(int descriptor) {

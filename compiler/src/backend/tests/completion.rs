@@ -1480,10 +1480,13 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     // The ring's own bounded pass, which is the Linux arm of the bridge's one
     // ring seam. A failed pass is a fail-stop rather than a value the routing
     // could interpret, so the fail-stop is what is pinned here. It is
-    // `wf_bridge_fail` rather than a bare `abort` because a fail-stop that
-    // writes nothing cannot be diagnosed from a crash log, which is the whole
-    // reason that call exists (`completion/bridge.c`, "the bridge's one
-    // fail-stop").
+    // `wf_bridge_fail_with_code` rather than a bare `abort` because a
+    // fail-stop that writes nothing cannot be diagnosed from a crash log, and
+    // because the code the target answered is a different question from which
+    // call failed: EPROTO from a reaping pass says the ring handed back
+    // something that is not one of this runtime's records, which no site name
+    // alone distinguishes from a host error in the same place
+    // (`completion/bridge.c`, "the bridge's one fail-stop").
     let progress = bridge
         .split_once("static int wf_bridge_ring_progress(void) {")
         .expect("the Linux ring arm has a bounded progress pass")
@@ -1492,8 +1495,9 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
         .expect("progress precedes the flush")
         .0;
     assert!(progress.contains("wf_linux_io_uring_progress("));
-    assert!(progress.contains("!= 0) {"));
-    assert!(progress.contains("wf_bridge_fail("));
+    assert!(progress.contains("if (reap_error != 0) {"));
+    assert!(progress.contains("wf_bridge_fail_with_code("));
+    assert!(progress.contains("reap_error\n"));
     assert!(!progress.contains("abort();"));
     assert!(!progress.contains("(void)wf_linux_io_uring_progress"));
     assert!(!bridge.contains("wf_completion_park_if_unchanged(\n                    &wf_bridge_runtime,\n                    epoch,\n                    1u"));

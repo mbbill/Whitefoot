@@ -297,6 +297,23 @@ static void wf_bridge_shutdown(void) {
 
 #if defined(__linux__) || defined(_WIN32)
 
+/* `wf_bridge_fail` for a fail-stop whose site holds the code the target
+ * answered.  It lives with the ring rather than beside its sibling above
+ * because its every caller is one of the ring seam's calls, and a target with
+ * no ring makes none of them.
+ *
+ * The name of the site says which of the ring's calls failed; the code says
+ * what it failed with, and the two are different questions.  EPROTO from a
+ * reaping pass means the port handed back something that is not one of this
+ * runtime's records, which is a different defect from any Win32 or errno value
+ * in the same place -- and a log that carries only the site cannot tell them
+ * apart without another run. */
+static _Noreturn void wf_bridge_fail_with_code(const char *reason, int code) {
+    (void)fprintf(stderr, "whitefoot completion: %s: error %d\n", reason, code);
+    (void)fflush(stderr);
+    abort();
+}
+
 /* WF_IO_NO_NATIVE_RING: run this process on the bounded adapter route.
  *
  * Runtime policy of the same class as WF_IO_NOCACHE and WF_IO_HELPERS, and
@@ -376,10 +393,15 @@ static int wf_bridge_ring_offer(wf_completion_record *record) {
             "the io_uring target refused a record whose kind and shape it had already accepted"
         );
     }
-    if (wf_linux_io_uring_progress_error(&wf_bridge_linux_adapter) != 0) {
-        wf_bridge_fail(
-            "the io_uring target reported a failure while submitting"
-        );
+    {
+        int progress_error =
+            wf_linux_io_uring_progress_error(&wf_bridge_linux_adapter);
+        if (progress_error != 0) {
+            wf_bridge_fail_with_code(
+                "the io_uring target reported a failure while submitting",
+                progress_error
+            );
+        }
     }
     return 1;
 }
@@ -389,19 +411,23 @@ static int wf_bridge_ring_progress(void) {
     if (!wf_bridge_ring_ready()) {
         return 0;
     }
-    if (wf_linux_io_uring_progress(
+    {
+        int reap_error = wf_linux_io_uring_progress(
             &wf_bridge_linux_adapter,
             1u,
             0,
             &published
-        ) != 0) {
-        /* Target ownership has already transferred. Falling back now would
-         * duplicate an operation, and ignoring the error would strand its
-         * owned operation forever. A target-runtime failure is a fail-stop TCB
-         * defect, not a writer-visible IoError. */
-        wf_bridge_fail(
-            "the io_uring target failed while reaping completions"
         );
+        if (reap_error != 0) {
+            /* Target ownership has already transferred. Falling back now would
+             * duplicate an operation, and ignoring the error would strand its
+             * owned operation forever. A target-runtime failure is a fail-stop
+             * TCB defect, not a writer-visible IoError. */
+            wf_bridge_fail_with_code(
+                "the io_uring target failed while reaping completions",
+                reap_error
+            );
+        }
     }
     return published != 0;
 }
@@ -417,14 +443,18 @@ static int wf_bridge_ring_park(uint64_t observed_epoch) {
     if (!wf_bridge_ring_ready()) {
         return 0;
     }
-    if (wf_linux_io_uring_park(
+    {
+        int park_error = wf_linux_io_uring_park(
             &wf_bridge_linux_adapter,
             observed_epoch,
             UINT32_MAX
-        ) != 0) {
-        wf_bridge_fail(
-            "the io_uring target failed while parking on the ring"
         );
+        if (park_error != 0) {
+            wf_bridge_fail_with_code(
+                "the io_uring target failed while parking on the ring",
+                park_error
+            );
+        }
     }
     return 1;
 }
@@ -533,6 +563,16 @@ static int wf_bridge_ring_start(void) {
     return 1;
 }
 
+/* Binds one handle to this run's port.  The body of the association, without
+ * the question of whether it has already been made: that question and this
+ * answer are one critical section, and the section is the descriptor table's,
+ * which is why this arrives there as a function rather than being written
+ * there (`../windows_runtime.h`, `wf__windows_completion_ring_handle`). */
+static int wf_bridge_windows_bind(HANDLE handle, void *context) {
+    (void)context;
+    return wf_windows_iocp_associate(&wf_bridge_windows_adapter, handle) == 0;
+}
+
 /* The handle the port may take for this descriptor, or none.
  *
  * A descriptor this runtime opened as a regular file for reading is the
@@ -540,37 +580,16 @@ static int wf_bridge_ring_start(void) {
  * other way -- a probe's own fixture -- is admitted on the one fact the port
  * needs, that it names a disk file.  Either way the association is made once
  * and remembered, because `CreateIoCompletionPort` takes a handle exactly once
- * and no host call asks whether it already has. */
+ * and no host call asks whether it already has; and it is made under the
+ * table's lock, because every lane of a program may offer its first record on
+ * one descriptor at the same moment. */
 static int wf_bridge_windows_port_handle(int descriptor, HANDLE *handle) {
-    HANDLE native = wf__windows_completion_descriptor_handle(descriptor);
-    unsigned descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
-    unsigned associated = 0u;
-    if (native == INVALID_HANDLE_VALUE) {
-        return 0;
-    }
-    if (wf__windows_completion_descriptor_state(
-            descriptor,
-            &descriptor_class,
-            &associated
-        )) {
-        if (descriptor_class != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE) {
-            return 0;
-        }
-    } else if (GetFileType(native) != FILE_TYPE_DISK) {
-        return 0;
-    }
-    if (associated == 0u) {
-        if (wf_windows_iocp_associate(&wf_bridge_windows_adapter, native)
-            != 0) {
-            return 0;
-        }
-        wf__windows_completion_note_port_association(
-            descriptor,
-            WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
-        );
-    }
-    *handle = native;
-    return 1;
+    return wf__windows_completion_ring_handle(
+        descriptor,
+        wf_bridge_windows_bind,
+        NULL,
+        handle
+    );
 }
 
 static int wf_bridge_ring_offer(wf_completion_record *record) {
@@ -590,10 +609,15 @@ static int wf_bridge_ring_offer(wf_completion_record *record) {
             "the completion port refused a record whose kind and shape it had already accepted"
         );
     }
-    if (wf_windows_iocp_progress_error(&wf_bridge_windows_adapter) != 0) {
-        wf_bridge_fail(
-            "the completion port reported a failure while submitting"
-        );
+    {
+        int progress_error =
+            wf_windows_iocp_progress_error(&wf_bridge_windows_adapter);
+        if (progress_error != 0) {
+            wf_bridge_fail_with_code(
+                "the completion port reported a failure while submitting",
+                progress_error
+            );
+        }
     }
     return 1;
 }
@@ -603,11 +627,18 @@ static int wf_bridge_ring_progress(void) {
     if (!wf_bridge_ring_ready()) {
         return 0;
     }
-    if (wf_windows_iocp_progress(&wf_bridge_windows_adapter, 1u, &published)
-        != 0) {
-        wf_bridge_fail(
-            "the completion port failed while reaping completions"
+    {
+        int reap_error = wf_windows_iocp_progress(
+            &wf_bridge_windows_adapter,
+            1u,
+            &published
         );
+        if (reap_error != 0) {
+            wf_bridge_fail_with_code(
+                "the completion port failed while reaping completions",
+                reap_error
+            );
+        }
     }
     return published != 0;
 }
@@ -620,14 +651,18 @@ static int wf_bridge_ring_park(uint64_t observed_epoch) {
     if (!wf_bridge_ring_ready()) {
         return 0;
     }
-    if (wf_windows_iocp_park(
+    {
+        int park_error = wf_windows_iocp_park(
             &wf_bridge_windows_adapter,
             observed_epoch,
             UINT32_MAX
-        ) != 0) {
-        wf_bridge_fail(
-            "the completion port failed while parking on the port"
         );
+        if (park_error != 0) {
+            wf_bridge_fail_with_code(
+                "the completion port failed while parking on the port",
+                park_error
+            );
+        }
     }
     return 1;
 }

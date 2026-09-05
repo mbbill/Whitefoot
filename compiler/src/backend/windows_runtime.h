@@ -61,11 +61,22 @@ int wf__windows_completion_descriptor_state(
     unsigned *port_associated
 );
 
-/* Records that the completion port has taken this descriptor's handle,
- * registering it under `descriptor_class` if it was not registered. */
-void wf__windows_completion_note_port_association(
+/* Whether the completion port may use this descriptor's handle, binding it to
+ * the port exactly once if it must.  Answers 1 and writes `*handle` when the
+ * ring may use it, 0 otherwise.
+ *
+ * `bind` is called at most once for a descriptor, under this table's own lock,
+ * with the descriptor's native handle; it answers nonzero when the handle is
+ * now the port's.  The port belongs to the completion runtime and this unit
+ * does not reach it, which is why the binding arrives as the caller's function
+ * rather than a call from here.  The lock is what makes "check, then bind"
+ * atomic; `windows_runtime.c` says at the definition what goes wrong without
+ * it. */
+int wf__windows_completion_ring_handle(
     int descriptor,
-    unsigned descriptor_class
+    int (*bind)(HANDLE handle, void *context),
+    void *context,
+    HANDLE *handle
 );
 
 /* Forgets a descriptor whose close has been made, so the next descriptor to

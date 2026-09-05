@@ -52,16 +52,22 @@ static wf_file_result wf_file_windows_refused(
  *
  * This is the route a Windows run takes when it has no completion ring at all
  * -- `WF_IO_NO_NATIVE_RING`, and the negative control the gate runs -- and the
- * route a run *with* a ring takes for a handle the ring would not have.  In
- * both cases the handle it reads is one the port never took, and that is a
- * property the ring maintains rather than an assumption made here:
- * `windows_iocp.c`'s `wf_windows_iocp_associate` asks for its skip modes
- * before it binds the handle to the port, so a handle it refuses is left
- * exactly as it was found.  This read may therefore signal its own event.
+ * route a run *with* a ring takes for every shape that ring refuses: a count
+ * above MAXDWORD, a negative offset, a descriptor of a class it does not
+ * carry.  So the handle read here may well be one the port already has, and
+ * this call says so rather than hoping otherwise.
  *
  * The offset travels in an `OVERLAPPED` because that is how a Windows read
- * names one; the event beside it is this call's own, so two reads of one
- * handle cannot take each other's completion. */
+ * names one.  The event beside it is this call's own, so two reads of one
+ * handle cannot take each other's completion -- and its low-order bit is set,
+ * which is the documented way to say that this one operation posts no packet
+ * to whatever completion port the handle is bound to.  Without that bit a read
+ * here on a bound handle would deliver its completion to the ring's port, and
+ * the reaper would recover a "record" by subtraction from an `OVERLAPPED` that
+ * is a local of this frame.  A handle value with its low bits set still names
+ * the same object to every wait, so `GetOverlappedResult` below is unaffected;
+ * the bit belongs to the `OVERLAPPED`, and `CloseHandle` gets the event
+ * itself. */
 static wf_file_result wf_file_windows_pread(const wf_file_request *request) {
     wf_file_result result;
     OVERLAPPED overlapped;
@@ -99,7 +105,9 @@ static wf_file_result wf_file_windows_pread(const wf_file_request *request) {
     offset.QuadPart = (ULONGLONG)request->operation.pread.offset;
     overlapped.Offset = offset.LowPart;
     overlapped.OffsetHigh = offset.HighPart;
-    overlapped.hEvent = event;
+    /* The low bit is the "no completion packet for this operation" flag; see
+     * the header comment. */
+    overlapped.hEvent = (HANDLE)((uintptr_t)event | (uintptr_t)1);
     if (ReadFile(
             handle,
             request->operation.pread.buffer,
