@@ -1,59 +1,79 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
   doc "HOST-1: an argument that is not valid text retains its complete original code-unit sequence. host_bytes_len reports the exact native byte count and host_copy_bytes transfers exactly those bytes with no validation, no Unicode restriction, and no substitution [HOST-2, SYS-9].";
-  let bytes = buffer_new(4_u64, 0_u8);
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        region 'v {
-          let length = host_bytes_len(value: &text);
-          let exact = length == 3_u64;
-          if exact {
-          } else {
-            return exit_status(code: 10_u8);
-          }
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let bytes = move fresh;
+        for @scratch (
+          at in 0_u64..4_u64,
+          invariant grown: len_of(bytes) >= at,
+          invariant spare: room_of(bytes) + at >= 4_u64,
+          invariant flat: head_of(bytes) <= 0_u64
+        ) {
+          set bytes = place_back(vector: move bytes, value: 0_u8);
+        }
+        region {
+          let window = mut_slice_of(&uniq bytes);
           region {
-            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 0_u64, end: 4_u64) {
-              Ok(value: copied) => {
-                let counted = copied == 3_u64;
-                if counted {
+            match arg_get(args: &args, position: 1_u64) {
+              Ok(value: text) => {
+                region 'v {
+                  let length = host_bytes_len(value: &text);
+                  let exact = length == 3_u64;
+                  if exact {
+                  } else {
+                    return exit_status(code: 10_u8);
+                  }
+                  region {
+                    match host_copy_bytes(value: &'v text, destination: &uniq window, start: 0_u64, end: 4_u64) {
+                      Ok(value: copied) => {
+                        let counted = copied == 3_u64;
+                        if counted {
+                        } else {
+                          return exit_status(code: 11_u8);
+                        }
+                      }
+                      Err(error: problem) => {
+                        return exit_status(code: 12_u8);
+                      }
+                    }
+                  }
+                }
+                let first = bytes[0_u64];
+                let second = bytes[1_u64];
+                let third = bytes[2_u64];
+                let tail = bytes[3_u64];
+                let head_ok = first == 97_u8;
+                if head_ok {
                 } else {
-                  return exit_status(code: 11_u8);
+                  return exit_status(code: 13_u8);
+                }
+                let nontext_ok = second == 255_u8;
+                if nontext_ok {
+                } else {
+                  return exit_status(code: 14_u8);
+                }
+                let last_ok = third == 98_u8;
+                if last_ok {
+                } else {
+                  return exit_status(code: 15_u8);
+                }
+                let tail_ok = tail == 0_u8;
+                if tail_ok {
+                  return exit_status(code: 0_u8);
+                } else {
+                  return exit_status(code: 16_u8);
                 }
               }
-              Err(error: problem) => {
-                return exit_status(code: 12_u8);
+              Err(error: absent) => {
+                return exit_status(code: 17_u8);
               }
             }
           }
         }
-        let first = bytes[0_u64];
-        let second = bytes[1_u64];
-        let third = bytes[2_u64];
-        let tail = bytes[3_u64];
-        let head_ok = first == 97_u8;
-        if head_ok {
-        } else {
-          return exit_status(code: 13_u8);
-        }
-        let nontext_ok = second == 255_u8;
-        if nontext_ok {
-        } else {
-          return exit_status(code: 14_u8);
-        }
-        let last_ok = third == 98_u8;
-        if last_ok {
-        } else {
-          return exit_status(code: 15_u8);
-        }
-        let tail_ok = tail == 0_u8;
-        if tail_ok {
-          return exit_status(code: 0_u8);
-        } else {
-          return exit_status(code: 16_u8);
-        }
-      }
-      Err(error: absent) => {
-        return exit_status(code: 17_u8);
       }
     }
   }

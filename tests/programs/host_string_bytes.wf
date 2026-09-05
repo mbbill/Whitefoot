@@ -1,40 +1,60 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
+command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
   doc "Require one argument's complete target-native code-unit byte sequence to be the exact two bytes selected by the native target fixture, qualifying host_bytes_len and host_copy_bytes together [HOST-2, SYS-9].";
-  let bytes = buffer_new(2_u64, 0_u8);
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        region 'v {
-          let length = host_bytes_len(value: &text);
-          if length == 2_u64 {
-          } else {
-            return exit_status(code: 10_u8);
-          }
-          region {
-            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 0_u64, end: 2_u64) {
-              Ok(value: next) => {
-                if next == 2_u64 {
+    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let bytes = move fresh;
+        for @scratch (
+          at in 0_u64..2_u64,
+          invariant grown: len_of(bytes) >= at,
+          invariant spare: room_of(bytes) + at >= 2_u64,
+          invariant flat: head_of(bytes) <= 0_u64
+        ) {
+          set bytes = place_back(vector: move bytes, value: 0_u8);
+        }
+        region {
+          match arg_get(args: &args, position: 1_u64) {
+            Ok(value: text) => {
+              region 'v {
+                let length = host_bytes_len(value: &text);
+                if length == 2_u64 {
                 } else {
-                  return exit_status(code: 11_u8);
+                  return exit_status(code: 10_u8);
+                }
+                region {
+                  let window = mut_slice_of(&uniq bytes);
+                  region {
+                    match host_copy_bytes(value: &'v text, destination: &uniq window, start: 0_u64, end: 2_u64) {
+                      Ok(value: next) => {
+                        if next == 2_u64 {
+                        } else {
+                          return exit_status(code: 11_u8);
+                        }
+                      }
+                      Err(error: problem) => {
+                        return exit_status(code: 12_u8);
+                      }
+                    }
+                  }
                 }
               }
-              Err(error: problem) => {
-                return exit_status(code: 12_u8);
+              let first = bytes[0_u64];
+              let second = bytes[1_u64];
+              if first == 65_u8 {
+                if second == 66_u8 {
+                  return exit_status(code: 0_u8);
+                }
               }
+              return exit_status(code: 13_u8);
+            }
+            Err(error: absent) => {
+              return exit_status(code: 14_u8);
             }
           }
         }
-        let first = bytes[0_u64];
-        let second = bytes[1_u64];
-        if first == 65_u8 {
-          if second == 66_u8 {
-            return exit_status(code: 0_u8);
-          }
-        }
-        return exit_status(code: 13_u8);
-      }
-      Err(error: absent) => {
-        return exit_status(code: 14_u8);
       }
     }
   }

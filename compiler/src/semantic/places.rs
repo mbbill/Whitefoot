@@ -466,6 +466,35 @@ impl PlaceMap {
         }
     }
 
+    /// The place a callee writes through one view actual [CALL-3, VIEW-4].
+    ///
+    /// A view is handed to a callee as itself, because the descriptor is what
+    /// a borrow of one carries, and [`Self::argument_referent`] leaves that
+    /// shape unresolved: the permission judgment fails closed on it. The kill
+    /// projection has an exact answer for it, though — [VIEW-4] forbids
+    /// replacing a view through such a borrow, so what the callee writes
+    /// reaches element storage only, and the kill is the element write over
+    /// the view's own place, exactly as a `set` through a view subscript is.
+    /// Every measure of the view survives it.
+    pub(crate) fn viewed_write_referent(
+        &self,
+        argument: &CheckedExpression,
+    ) -> Option<ResolvedPlace> {
+        let CheckedExpression::Binding {
+            binding,
+            ty: CheckedType::Slice { .. },
+            ..
+        } = argument
+        else {
+            return None;
+        };
+        Some(self.resolve(&PlaceTerm {
+            root: PlaceRoot::Binding(*binding),
+            deref: self.is_holder(*binding),
+            fields: Vec::new(),
+        }))
+    }
+
     /// The resolved place a borrow-shaped call argument reads through, and
     /// whether a callee write through it is an element write.
     ///

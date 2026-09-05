@@ -5715,7 +5715,16 @@ impl Analyzer<'_, '_> {
                             source: carrier.clone(),
                         });
                     }
-                } else if !self.is_copy(*ty) {
+                } else if !self.is_copy(*ty)
+                    // [VIEW-1, OWN-5] a borrow of a view is not a consume of
+                    // it. A view binding occurs in a `borrow_expr` as itself,
+                    // because the descriptor is what a borrow of one carries,
+                    // and that occurrence carries `consume_root: false`; the
+                    // exclusive view is affine, so without this the ordinary
+                    // affine kill would end every fact about a view the
+                    // moment it is handed to a call that only borrows it.
+                    && (*consume_root || !matches!(ty, CheckedType::Slice { .. }))
+                {
                     events.push(KillEvent::Consume {
                         binding: *binding,
                         source: carrier.clone(),
@@ -5756,6 +5765,19 @@ impl Analyzer<'_, '_> {
                     else {
                         continue;
                     };
+                    // [CALL-3, VIEW-4] a view operand: what the callee writes
+                    // through it reaches element storage only, and the view
+                    // itself cannot be replaced through the borrow.
+                    if !writes.is_empty()
+                        && let Some(place) = self.places.viewed_write_referent(argument)
+                    {
+                        events.push(KillEvent::Write {
+                            place: element_write_place(place, PlaceOffset::Opaque),
+                            element: true,
+                            source: call.clone(),
+                        });
+                        continue;
+                    }
                     if let Some((place, element, entry_image_only)) =
                         self.argument_referent(argument)
                     {
@@ -5857,9 +5879,23 @@ impl Analyzer<'_, '_> {
                 for (index, argument) in arguments.iter().enumerate() {
                     let written =
                         u8::try_from(index).is_ok_and(|ordinal| writes.contains(&ordinal));
-                    if written
-                        && let Some((place, element, entry_image_only)) =
-                            self.argument_referent(argument)
+                    if !written {
+                        continue;
+                    }
+                    // [CALL-3, VIEW-4] a view operand: the callee writes
+                    // element storage through it and can replace nothing, so
+                    // the kill is that element write and the view's own
+                    // measures survive the call.
+                    if let Some(place) = self.places.viewed_write_referent(argument) {
+                        events.push(KillEvent::Write {
+                            place: element_write_place(place, PlaceOffset::Opaque),
+                            element: true,
+                            source: call.clone(),
+                        });
+                        continue;
+                    }
+                    if let Some((place, element, entry_image_only)) =
+                        self.argument_referent(argument)
                     {
                         let place = if element {
                             element_write_place(place, PlaceOffset::Opaque)

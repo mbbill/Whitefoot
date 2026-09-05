@@ -1,40 +1,60 @@
-command fn main(command.args as args: own Args) -> status: own ExitStatus reads(args) {
-  let bytes = buffer_new(3_u64, 0_u8);
+command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        region 'v {
-          region {
-            match host_copy_bytes(value: &'v text, destination: &uniq bytes, start: 1_u64, end: 3_u64) {
-              Ok(value: next) => {
-                if next == 3_u64 {
-                } else {
-                  return exit_status(code: 2_u8);
-                }
-              }
-              Err(error: problem) => {
-                return exit_status(code: 1_u8);
-              }
-            }
-          }
-        }
-        let first = bytes[0_u64];
-        let second = bytes[1_u64];
-        let third = bytes[2_u64];
-        let untouched = first == 0_u8;
-        let copied_a = second == 65_u8;
-        let copied_b = third == 66_u8;
-        if untouched {
-          if copied_a {
-            if copied_b {
-              return exit_status(code: 0_u8);
-            }
-          }
-        }
-        return exit_status(code: 3_u8);
+    match heap_vector::<u8>(store: &uniq heap, count: 3_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
       }
-      Err(error: absent) => {
-        return exit_status(code: 4_u8);
+      Some(value: fresh) => {
+        let bytes = move fresh;
+        for @scratch (
+          at in 0_u64..3_u64,
+          invariant grown: len_of(bytes) >= at,
+          invariant spare: room_of(bytes) + at >= 3_u64,
+          invariant flat: head_of(bytes) <= 0_u64
+        ) {
+          set bytes = place_back(vector: move bytes, value: 0_u8);
+        }
+        region {
+          let window = mut_slice_of(&uniq bytes);
+          region {
+            match arg_get(args: &args, position: 1_u64) {
+              Ok(value: text) => {
+                region 'v {
+                  region {
+                    match host_copy_bytes(value: &'v text, destination: &uniq window, start: 1_u64, end: 3_u64) {
+                      Ok(value: next) => {
+                        if next == 3_u64 {
+                        } else {
+                          return exit_status(code: 2_u8);
+                        }
+                      }
+                      Err(error: problem) => {
+                        return exit_status(code: 1_u8);
+                      }
+                    }
+                  }
+                }
+                let first = bytes[0_u64];
+                let second = bytes[1_u64];
+                let third = bytes[2_u64];
+                let untouched = first == 0_u8;
+                let copied_a = second == 65_u8;
+                let copied_b = third == 66_u8;
+                if untouched {
+                  if copied_a {
+                    if copied_b {
+                      return exit_status(code: 0_u8);
+                    }
+                  }
+                }
+                return exit_status(code: 3_u8);
+              }
+              Err(error: absent) => {
+                return exit_status(code: 4_u8);
+              }
+            }
+          }
+        }
       }
     }
   }

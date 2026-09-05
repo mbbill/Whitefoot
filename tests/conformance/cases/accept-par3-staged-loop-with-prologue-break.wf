@@ -1,3 +1,21 @@
+fn component() -> made: own FixedVector<u8, 16> pure contract {
+  ensures len_of(made) >= 16_u64;
+  ensures room_of(made) <= 0_u64;
+  ensures head_of(made) <= 0_u64;
+} {
+  doc "One name range, built by the ordinary counted fill.";
+  let built = fixed_vector::<u8, 16>();
+  for @fill (
+    at in 0_u64..16_u64,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= 16_u64,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: 97_u8);
+  }
+  return move built;
+}
+
 command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "An uncounted loop with its exit and its carried index written before the submission. PAR-3's unit is the iteration the statement graph gives, so a loop_stmt is admitted on the same terms as a for_stmt; the break lies in the prologue, and the short unique factory loan that reserve_file takes is serialized by index-ordered prologues rather than replicated.";
   let opened = 0_u64;
@@ -8,11 +26,12 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
       break @scan;
     }
     set index = index +wrap 1_u64;
-    let name = buffer_new(16_u64, 97_u8);
+    let name = component();
     region 'f {
       let permit = reserve_file(factory: &uniq files);
+      let window = slice_of(&name);
       region {
-        match open_file(permit: move permit, root: &'f cwd, name: &name, start: 0_u64, end: 4_u64) {
+        match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
           Ok(value: handle) => {
             set opened = opened +wrap 1_u64;
           }

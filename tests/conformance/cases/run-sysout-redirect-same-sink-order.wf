@@ -1,99 +1,125 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "EFF-5 and SYS-12: both calls take an exclusive borrow of the same `Output`, so ordinary ownership prevents the second call from starting until the first call has released its loan. The redirected sink is read back through an independent DirectoryRead value to witness that source order; no relationship is inferred between distinct Output values merely because the environment may redirect them to one physical sink.";
-  let first = buffer_new(2_u64, 65_u8);
-  let second = buffer_new(2_u64, 66_u8);
-  let page = buffer_new(8_u64, 0_u8);
-  region 'o {
-    region {
-      match write_once(output: &uniq 'o out, source: &first, start: 0_u64, end: 2_u64) {
-        Ok(value: written) => {
-        }
-        Err(error: problem) => {
-          return exit_status(code: 10_u8);
-        }
-      }
-    }
-  }
-  region 'e {
-    region {
-      match write_once(output: &uniq 'e out, source: &second, start: 0_u64, end: 2_u64) {
-        Ok(value: written) => {
-        }
-        Err(error: problem) => {
-          return exit_status(code: 11_u8);
-        }
-      }
-    }
-  }
+  let first = fixed_vector::<u8, 2>();
+  set first = place_back(vector: move first, value: 65_u8);
+  set first = place_back(vector: move first, value: 65_u8);
+  let second = fixed_vector::<u8, 2>();
+  set second = place_back(vector: move second, value: 66_u8);
+  set second = place_back(vector: move second, value: 66_u8);
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        match relative_path(value: move text) {
-          Ok(value: path) => {
-            region 'c {
-              region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    region 'f {
-                      region {
-                        match read_at(file: &'f file, destination: &uniq page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                          ReadBytes(next: n) => {
-                            let combined = n == 4_u64;
-                            if combined {
-                            } else {
-                              return exit_status(code: 12_u8);
-                            }
-                          }
-                          ReadEnd() => {
-                            return exit_status(code: 13_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 14_u8);
-                          }
-                        }
-                      }
-                    }
-                    let byte0 = page[0_u64];
-                    let byte1 = page[1_u64];
-                    let byte2 = page[2_u64];
-                    let byte3 = page[3_u64];
-                    let head0 = byte0 == 65_u8;
-                    if head0 {
-                    } else {
-                      return exit_status(code: 15_u8);
-                    }
-                    let head1 = byte1 == 65_u8;
-                    if head1 {
-                    } else {
-                      return exit_status(code: 16_u8);
-                    }
-                    let tail0 = byte2 == 66_u8;
-                    if tail0 {
-                    } else {
-                      return exit_status(code: 17_u8);
-                    }
-                    let tail1 = byte3 == 66_u8;
-                    if tail1 {
-                      return exit_status(code: 0_u8);
-                    } else {
-                      return exit_status(code: 18_u8);
-                    }
-                  }
-                  Err(error: problem) => {
-                    return exit_status(code: 19_u8);
-                  }
-                }
+    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let page = move fresh;
+        for @scratch (
+          at in 0_u64..8_u64,
+          invariant grown: len_of(page) >= at,
+          invariant spare: room_of(page) + at >= 8_u64,
+          invariant flat: head_of(page) <= 0_u64
+        ) {
+          set page = place_back(vector: move page, value: 0_u8);
+        }
+        region 'o {
+          let head = slice_of(&first);
+          region {
+            match write_once(output: &uniq 'o out, source: &head, start: 0_u64, end: 2_u64) {
+              Ok(value: written) => {
+              }
+              Err(error: problem) => {
+                return exit_status(code: 10_u8);
               }
             }
           }
-          Err(error: rejected) => {
-            return exit_status(code: 20_u8);
+        }
+        region 'e {
+          let tail = slice_of(&second);
+          region {
+            match write_once(output: &uniq 'e out, source: &tail, start: 0_u64, end: 2_u64) {
+              Ok(value: written) => {
+              }
+              Err(error: problem) => {
+                return exit_status(code: 11_u8);
+              }
+            }
           }
         }
-      }
-      Err(error: absent) => {
-        return exit_status(code: 21_u8);
+        region {
+          match arg_get(args: &args, position: 1_u64) {
+            Ok(value: text) => {
+              match relative_path(value: move text) {
+                Ok(value: path) => {
+                  region 'c {
+                    region {
+                      let permit = reserve_file(factory: &uniq 'c files);
+                      match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                        Ok(value: file) => {
+                          region 'f {
+                            region {
+                              let window = mut_slice_of(&uniq page);
+                              region {
+                                match read_at(file: &'f file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                                  ReadBytes(next: n) => {
+                                    let combined = n == 4_u64;
+                                    if combined {
+                                    } else {
+                                      return exit_status(code: 12_u8);
+                                    }
+                                  }
+                                  ReadEnd() => {
+                                    return exit_status(code: 13_u8);
+                                  }
+                                  ReadFailed(error: problem) => {
+                                    return exit_status(code: 14_u8);
+                                  }
+                                }
+                              }
+                            }
+                          }
+                          let byte0 = page[0_u64];
+                          let byte1 = page[1_u64];
+                          let byte2 = page[2_u64];
+                          let byte3 = page[3_u64];
+                          let head0 = byte0 == 65_u8;
+                          if head0 {
+                          } else {
+                            return exit_status(code: 15_u8);
+                          }
+                          let head1 = byte1 == 65_u8;
+                          if head1 {
+                          } else {
+                            return exit_status(code: 16_u8);
+                          }
+                          let tail0 = byte2 == 66_u8;
+                          if tail0 {
+                          } else {
+                            return exit_status(code: 17_u8);
+                          }
+                          let tail1 = byte3 == 66_u8;
+                          if tail1 {
+                            return exit_status(code: 0_u8);
+                          } else {
+                            return exit_status(code: 18_u8);
+                          }
+                        }
+                        Err(error: problem) => {
+                          return exit_status(code: 19_u8);
+                        }
+                      }
+                    }
+                  }
+                }
+                Err(error: rejected) => {
+                  return exit_status(code: 20_u8);
+                }
+              }
+            }
+            Err(error: absent) => {
+              return exit_status(code: 21_u8);
+            }
+          }
+        }
       }
     }
   }

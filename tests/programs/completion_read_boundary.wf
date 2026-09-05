@@ -1,107 +1,161 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "Reads two argument-named files through independent positioned operations and publishes their first bytes in argument order.";
-  let data_a = buffer_new(1_u64, 0_u8);
-  let data_b = buffer_new(1_u64, 0_u8);
-  let pair = buffer_new(2_u64, 0_u8);
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text_a) => {
-        match relative_path(value: move text_a) {
-          Ok(value: path_a) => {
-            region {
-              match arg_get(args: &args, position: 2_u64) {
-                Ok(value: text_b) => {
-                  match relative_path(value: move text_b) {
-                    Ok(value: path_b) => {
-                      region {
-                        let permit_a = reserve_file(factory: &uniq files);
-                        let permit_b = reserve_file(factory: &uniq files);
-                        let opened_a = open_read(permit: move permit_a, root: &cwd, path: &path_a);
-                        let opened_b = open_read(permit: move permit_b, root: &cwd, path: &path_b);
-                        match move opened_a {
-                          Ok(value: file_a) => {
-                            match move opened_b {
-                              Ok(value: file_b) => {
-                                region 'files {
-                                  region {
-                                    let read_a = read_at(file: &'files file_a, destination: &uniq data_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                                    let read_b = read_at(file: &'files file_b, destination: &uniq data_b, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                                    match move read_a {
-                                      ReadBytes(next: next_a) => {
-                                        if next_a == 1_u64 {
-                                        } else {
-                                          return exit_status(code: 7_u8);
+    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh_data_a) => {
+        let data_a = move fresh_data_a;
+        for @fill_data_a (
+          at in 0_u64..1_u64,
+          invariant grown_data_a: len_of(data_a) >= at,
+          invariant spare_data_a: room_of(data_a) + at >= 1_u64,
+          invariant flat_data_a: head_of(data_a) <= 0_u64
+        ) {
+          set data_a = place_back(vector: move data_a, value: 0_u8);
+        }
+        match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+          None() => {
+            return exit_status(code: 70_u8);
+          }
+          Some(value: fresh_data_b) => {
+            let data_b = move fresh_data_b;
+            for @fill_data_b (
+              at in 0_u64..1_u64,
+              invariant grown_data_b: len_of(data_b) >= at,
+              invariant spare_data_b: room_of(data_b) + at >= 1_u64,
+              invariant flat_data_b: head_of(data_b) <= 0_u64
+            ) {
+              set data_b = place_back(vector: move data_b, value: 0_u8);
+            }
+            match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
+              None() => {
+                return exit_status(code: 70_u8);
+              }
+              Some(value: fresh_pair) => {
+                let pair = move fresh_pair;
+                for @fill_pair (
+                  at in 0_u64..2_u64,
+                  invariant grown_pair: len_of(pair) >= at,
+                  invariant spare_pair: room_of(pair) + at >= 2_u64,
+                  invariant flat_pair: head_of(pair) <= 0_u64
+                ) {
+                  set pair = place_back(vector: move pair, value: 0_u8);
+                }
+                region {
+                  match arg_get(args: &args, position: 1_u64) {
+                    Ok(value: text_a) => {
+                      match relative_path(value: move text_a) {
+                        Ok(value: path_a) => {
+                          region {
+                            match arg_get(args: &args, position: 2_u64) {
+                              Ok(value: text_b) => {
+                                match relative_path(value: move text_b) {
+                                  Ok(value: path_b) => {
+                                    region {
+                                      let permit_a = reserve_file(factory: &uniq files);
+                                      let permit_b = reserve_file(factory: &uniq files);
+                                      let opened_a = open_read(permit: move permit_a, root: &cwd, path: &path_a);
+                                      let opened_b = open_read(permit: move permit_b, root: &cwd, path: &path_b);
+                                      match move opened_a {
+                                        Ok(value: file_a) => {
+                                          match move opened_b {
+                                            Ok(value: file_b) => {
+                                              region 'files {
+                                                region {
+                                                  let view_a = mut_slice_of(&uniq data_a);
+                                                  let view_b = mut_slice_of(&uniq data_b);
+                                                  region {
+                                                    let read_a = read_at(file: &'files file_a, destination: &uniq view_a, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                                    let read_b = read_at(file: &'files file_b, destination: &uniq view_b, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                                    match move read_a {
+                                                      ReadBytes(next: next_a) => {
+                                                        if next_a == 1_u64 {
+                                                        } else {
+                                                          return exit_status(code: 7_u8);
+                                                        }
+                                                      }
+                                                      ReadEnd() => {
+                                                        return exit_status(code: 8_u8);
+                                                      }
+                                                      ReadFailed(error: problem_a) => {
+                                                        return exit_status(code: 9_u8);
+                                                      }
+                                                    }
+                                                    match move read_b {
+                                                      ReadBytes(next: next_b) => {
+                                                        if next_b == 1_u64 {
+                                                        } else {
+                                                          return exit_status(code: 10_u8);
+                                                        }
+                                                      }
+                                                      ReadEnd() => {
+                                                        return exit_status(code: 11_u8);
+                                                      }
+                                                      ReadFailed(error: problem_b) => {
+                                                        return exit_status(code: 12_u8);
+                                                      }
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                              set pair[0_u64] = data_a[0_u64];
+                                              set pair[1_u64] = data_b[0_u64];
+                                              region {
+                                                let payload = slice_of(&pair);
+                                                region {
+                                                  match write_once(output: &uniq out, source: &payload, start: 0_u64, end: 2_u64) {
+                                                    Ok(value: published) => {
+                                                      if published == 2_u64 {
+                                                        return exit_status(code: 0_u8);
+                                                      } else {
+                                                        return exit_status(code: 13_u8);
+                                                      }
+                                                    }
+                                                    Err(error: problem) => {
+                                                      return exit_status(code: 14_u8);
+                                                    }
+                                                  }
+                                                }
+                                              }
+                                            }
+                                            Err(error: problem_b) => {
+                                              return exit_status(code: 6_u8);
+                                            }
+                                          }
                                         }
-                                      }
-                                      ReadEnd() => {
-                                        return exit_status(code: 8_u8);
-                                      }
-                                      ReadFailed(error: problem_a) => {
-                                        return exit_status(code: 9_u8);
-                                      }
-                                    }
-                                    match move read_b {
-                                      ReadBytes(next: next_b) => {
-                                        if next_b == 1_u64 {
-                                        } else {
-                                          return exit_status(code: 10_u8);
+                                        Err(error: problem_a) => {
+                                          return exit_status(code: 5_u8);
                                         }
-                                      }
-                                      ReadEnd() => {
-                                        return exit_status(code: 11_u8);
-                                      }
-                                      ReadFailed(error: problem_b) => {
-                                        return exit_status(code: 12_u8);
                                       }
                                     }
                                   }
-                                }
-                                set pair[0_u64] = data_a[0_u64];
-                                set pair[1_u64] = data_b[0_u64];
-                                region {
-                                  match write_once(output: &uniq out, source: &pair, start: 0_u64, end: 2_u64) {
-                                    Ok(value: published) => {
-                                      if published == 2_u64 {
-                                        return exit_status(code: 0_u8);
-                                      } else {
-                                        return exit_status(code: 13_u8);
-                                      }
-                                    }
-                                    Err(error: problem) => {
-                                      return exit_status(code: 14_u8);
-                                    }
+                                  Err(error: rejected_b) => {
+                                    return exit_status(code: 4_u8);
                                   }
                                 }
                               }
-                              Err(error: problem_b) => {
-                                return exit_status(code: 6_u8);
+                              Err(error: absent_b) => {
+                                return exit_status(code: 3_u8);
                               }
                             }
                           }
-                          Err(error: problem_a) => {
-                            return exit_status(code: 5_u8);
-                          }
+                        }
+                        Err(error: rejected_a) => {
+                          return exit_status(code: 2_u8);
                         }
                       }
                     }
-                    Err(error: rejected_b) => {
-                      return exit_status(code: 4_u8);
+                    Err(error: absent_a) => {
+                      return exit_status(code: 1_u8);
                     }
                   }
-                }
-                Err(error: absent_b) => {
-                  return exit_status(code: 3_u8);
                 }
               }
             }
           }
-          Err(error: rejected_a) => {
-            return exit_status(code: 2_u8);
-          }
         }
-      }
-      Err(error: absent_a) => {
-        return exit_status(code: 1_u8);
       }
     }
   }

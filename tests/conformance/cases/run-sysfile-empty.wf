@@ -1,46 +1,66 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
   doc "SYS-8: on a zero-byte file the first read_at over a nonempty range is ReadEnd, never ReadBytes(next: start), because ReadBytes is returned only for an endpoint greater than start. This is the empty member of the empty, short, exact, and multichunk file-shape family.";
-  let page = buffer_new(8_u64, 0_u8);
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        match relative_path(value: move text) {
-          Ok(value: path) => {
-            region 'c {
-              region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    region 'f {
+    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let page = move fresh;
+        for @scratch (
+          at in 0_u64..8_u64,
+          invariant grown: len_of(page) >= at,
+          invariant spare: room_of(page) + at >= 8_u64,
+          invariant flat: head_of(page) <= 0_u64
+        ) {
+          set page = place_back(vector: move page, value: 0_u8);
+        }
+        region {
+          let window = mut_slice_of(&uniq page);
+          region {
+            match arg_get(args: &args, position: 1_u64) {
+              Ok(value: text) => {
+                match relative_path(value: move text) {
+                  Ok(value: path) => {
+                    region 'c {
                       region {
-                        match read_at(file: &'f file, destination: &uniq page, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                          ReadBytes(next: n) => {
-                            return exit_status(code: 10_u8);
+                        let permit = reserve_file(factory: &uniq 'c files);
+                        match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                          Ok(value: file) => {
+                            region 'f {
+                              region {
+                                match read_at(file: &'f file, destination: &uniq window, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                                  ReadBytes(next: n) => {
+                                    return exit_status(code: 10_u8);
+                                  }
+                                  ReadEnd() => {
+                                    return exit_status(code: 0_u8);
+                                  }
+                                  ReadFailed(error: problem) => {
+                                    return exit_status(code: 11_u8);
+                                  }
+                                }
+                              }
+                            }
                           }
-                          ReadEnd() => {
-                            return exit_status(code: 0_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 11_u8);
+                          Err(error: problem) => {
+                            return exit_status(code: 12_u8);
                           }
                         }
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 12_u8);
+                  Err(error: rejected) => {
+                    return exit_status(code: 13_u8);
                   }
                 }
               }
+              Err(error: absent) => {
+                return exit_status(code: 14_u8);
+              }
             }
           }
-          Err(error: rejected) => {
-            return exit_status(code: 13_u8);
-          }
         }
-      }
-      Err(error: absent) => {
-        return exit_status(code: 14_u8);
       }
     }
   }

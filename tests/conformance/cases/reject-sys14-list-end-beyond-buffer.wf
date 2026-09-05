@@ -1,26 +1,46 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
   doc "`directory_next` carries SYS-8's two static range goals. End 4104 exceeds this 4096-byte destination, so compilation rejects the call before any host enumeration or runtime fallback.";
-  let entries = buffer_new(4096_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
+    match heap_vector::<u8>(store: &uniq heap, count: 4096_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let entries = move fresh;
+        for @scratch (
+          at in 0_u64..4096_u64,
+          invariant grown: len_of(entries) >= at,
+          invariant spare: room_of(entries) + at >= 4096_u64,
+          invariant flat: head_of(entries) <= 0_u64
+        ) {
+          set entries = place_back(vector: move entries, value: 0_u8);
+        }
         region {
-          match directory_next(source: &uniq list, destination: &uniq entries, start: 8_u64, end: 4104_u64) {
-            ListBytes(next: bytes, entries: reported) => {
-              return exit_status(code: 5_u8);
-            }
-            ListEnd() => {
-              return exit_status(code: 6_u8);
-            }
-            ListFailed(error: problem) => {
-              return exit_status(code: 3_u8);
+          let window = mut_slice_of(&uniq entries);
+          region {
+            let permit = reserve_file(factory: &uniq files);
+            match open_directory_source(permit: move permit, directory: &cwd) {
+              Ok(value: list) => {
+                region {
+                  match directory_next(source: &uniq list, destination: &uniq window, start: 8_u64, end: 4104_u64) {
+                    ListBytes(next: bytes, entries: reported) => {
+                      return exit_status(code: 5_u8);
+                    }
+                    ListEnd() => {
+                      return exit_status(code: 6_u8);
+                    }
+                    ListFailed(error: problem) => {
+                      return exit_status(code: 3_u8);
+                    }
+                  }
+                }
+              }
+              Err(error: problem) => {
+                return exit_status(code: 4_u8);
+              }
             }
           }
         }
-      }
-      Err(error: problem) => {
-        return exit_status(code: 4_u8);
       }
     }
   }

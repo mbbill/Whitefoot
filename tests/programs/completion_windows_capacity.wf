@@ -1,59 +1,145 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, cwd, out, files, heap), writes(cwd, out, files, heap), allocates(heap) {
   doc "Reads one byte through four independent positioned operations. In the Windows test-only two-slot completion runtime, three eligible submissions force the third to return core-capacity status 2; every byte is then published in source order.";
-  let published = buffer_new(4_u64, 0_u8);
   region {
-    match arg_get(args: &args, position: 1_u64) {
-      Ok(value: text) => {
-        match relative_path(value: move text) {
-          Ok(value: path) => {
-            region {
-              let permit = reserve_file(factory: &uniq files);
-              match open_read(permit: move permit, root: &cwd, path: &path) {
-                Ok(value: file) => {
-                  let bytes0 = buffer_new(1_u64, 0_u8);
-                  let bytes1 = buffer_new(1_u64, 0_u8);
-                  let bytes2 = buffer_new(1_u64, 0_u8);
-                  let bytes3 = buffer_new(1_u64, 0_u8);
-                  region 'file {
-                    region {
-                      let read0 = read_at(file: &'file file, destination: &uniq bytes0, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                      let read1 = read_at(file: &'file file, destination: &uniq bytes1, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                      let read2 = read_at(file: &'file file, destination: &uniq bytes2, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                      let read3 = read_at(file: &'file file, destination: &uniq bytes3, file_offset: 0_u64, start: 0_u64, end: 1_u64);
-                    }
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh_published) => {
+        let published = move fresh_published;
+        for @fill_published (
+          at in 0_u64..4_u64,
+          invariant grown_published: len_of(published) >= at,
+          invariant spare_published: room_of(published) + at >= 4_u64,
+          invariant flat_published: head_of(published) <= 0_u64
+        ) {
+          set published = place_back(vector: move published, value: 0_u8);
+        }
+        match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+          None() => {
+            return exit_status(code: 70_u8);
+          }
+          Some(value: fresh_bytes0) => {
+            let bytes0 = move fresh_bytes0;
+            for @fill_bytes0 (
+              at in 0_u64..1_u64,
+              invariant grown_bytes0: len_of(bytes0) >= at,
+              invariant spare_bytes0: room_of(bytes0) + at >= 1_u64,
+              invariant flat_bytes0: head_of(bytes0) <= 0_u64
+            ) {
+              set bytes0 = place_back(vector: move bytes0, value: 0_u8);
+            }
+            match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+              None() => {
+                return exit_status(code: 70_u8);
+              }
+              Some(value: fresh_bytes1) => {
+                let bytes1 = move fresh_bytes1;
+                for @fill_bytes1 (
+                  at in 0_u64..1_u64,
+                  invariant grown_bytes1: len_of(bytes1) >= at,
+                  invariant spare_bytes1: room_of(bytes1) + at >= 1_u64,
+                  invariant flat_bytes1: head_of(bytes1) <= 0_u64
+                ) {
+                  set bytes1 = place_back(vector: move bytes1, value: 0_u8);
+                }
+                match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+                  None() => {
+                    return exit_status(code: 70_u8);
                   }
-                  set published[0_u64] = bytes0[0_u64];
-                  set published[1_u64] = bytes1[0_u64];
-                  set published[2_u64] = bytes2[0_u64];
-                  set published[3_u64] = bytes3[0_u64];
-                  region {
-                    match write_once(output: &uniq out, source: &published, start: 0_u64, end: 4_u64) {
-                      Ok(value: written) => {
-                        if written == 4_u64 {
-                          return exit_status(code: 0_u8);
-                        } else {
-                          return exit_status(code: 5_u8);
+                  Some(value: fresh_bytes2) => {
+                    let bytes2 = move fresh_bytes2;
+                    for @fill_bytes2 (
+                      at in 0_u64..1_u64,
+                      invariant grown_bytes2: len_of(bytes2) >= at,
+                      invariant spare_bytes2: room_of(bytes2) + at >= 1_u64,
+                      invariant flat_bytes2: head_of(bytes2) <= 0_u64
+                    ) {
+                      set bytes2 = place_back(vector: move bytes2, value: 0_u8);
+                    }
+                    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+                      None() => {
+                        return exit_status(code: 70_u8);
+                      }
+                      Some(value: fresh_bytes3) => {
+                        let bytes3 = move fresh_bytes3;
+                        for @fill_bytes3 (
+                          at in 0_u64..1_u64,
+                          invariant grown_bytes3: len_of(bytes3) >= at,
+                          invariant spare_bytes3: room_of(bytes3) + at >= 1_u64,
+                          invariant flat_bytes3: head_of(bytes3) <= 0_u64
+                        ) {
+                          set bytes3 = place_back(vector: move bytes3, value: 0_u8);
+                        }
+                        region {
+                          match arg_get(args: &args, position: 1_u64) {
+                            Ok(value: text) => {
+                              match relative_path(value: move text) {
+                                Ok(value: path) => {
+                                  region {
+                                    let permit = reserve_file(factory: &uniq files);
+                                    match open_read(permit: move permit, root: &cwd, path: &path) {
+                                      Ok(value: file) => {
+                                        region 'file {
+                                          region {
+                                            let view0 = mut_slice_of(&uniq bytes0);
+                                            let view1 = mut_slice_of(&uniq bytes1);
+                                            let view2 = mut_slice_of(&uniq bytes2);
+                                            let view3 = mut_slice_of(&uniq bytes3);
+                                            region {
+                                              let read0 = read_at(file: &'file file, destination: &uniq view0, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                              let read1 = read_at(file: &'file file, destination: &uniq view1, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                              let read2 = read_at(file: &'file file, destination: &uniq view2, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                              let read3 = read_at(file: &'file file, destination: &uniq view3, file_offset: 0_u64, start: 0_u64, end: 1_u64);
+                                            }
+                                          }
+                                        }
+                                        set published[0_u64] = bytes0[0_u64];
+                                        set published[1_u64] = bytes1[0_u64];
+                                        set published[2_u64] = bytes2[0_u64];
+                                        set published[3_u64] = bytes3[0_u64];
+                                        region {
+                                          let payload = slice_of(&published);
+                                          region {
+                                            match write_once(output: &uniq out, source: &payload, start: 0_u64, end: 4_u64) {
+                                              Ok(value: written) => {
+                                                if written == 4_u64 {
+                                                  return exit_status(code: 0_u8);
+                                                } else {
+                                                  return exit_status(code: 5_u8);
+                                                }
+                                              }
+                                              Err(error: problem) => {
+                                                return exit_status(code: 6_u8);
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                      Err(error: problem) => {
+                                        return exit_status(code: 4_u8);
+                                      }
+                                    }
+                                  }
+                                }
+                                Err(error: problem) => {
+                                  return exit_status(code: 3_u8);
+                                }
+                              }
+                            }
+                            Err(error: problem) => {
+                              return exit_status(code: 2_u8);
+                            }
+                          }
                         }
                       }
-                      Err(error: problem) => {
-                        return exit_status(code: 6_u8);
-                      }
                     }
                   }
-                }
-                Err(error: problem) => {
-                  return exit_status(code: 4_u8);
                 }
               }
             }
           }
-          Err(error: problem) => {
-            return exit_status(code: 3_u8);
-          }
         }
-      }
-      Err(error: problem) => {
-        return exit_status(code: 2_u8);
       }
     }
   }

@@ -1,9 +1,18 @@
 command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
   doc "SYS-8: the positive baseline of the output half. One write_once makes at most one host output attempt and its Ok payload is the absolute endpoint after the accepted prefix; the target adds no hidden userspace buffering, so source observes exactly [start, next) as accepted [SYS-12].";
-  let bytes = buffer_new(5_u64, 65_u8);
+  let bytes = fixed_vector::<u8, 5>();
+  for @fill (
+    at in 0_u64..5_u64,
+    invariant grown: len_of(bytes) >= at,
+    invariant spare: room_of(bytes) + at >= 5_u64,
+    invariant flat: head_of(bytes) <= 0_u64
+  ) {
+    set bytes = place_back(vector: move bytes, value: 65_u8);
+  }
   region 'o {
+    let payload = slice_of(&bytes);
     region {
-      match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 5_u64) {
+      match write_once(output: &uniq 'o out, source: &payload, start: 0_u64, end: 5_u64) {
         Ok(value: written) => {
           let complete = written == 5_u64;
           if complete {
