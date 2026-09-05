@@ -55,6 +55,8 @@ jobs:
             -DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
             -DWF_COMPLETION_GETDENTS64=wf_completion_test_getdents64 \
             -DWF_COMPLETION_POLL=wf_completion_test_poll \
+            compiler/src/backend/sched/core.c \
+            compiler/src/backend/sched/prim_host.c \
             compiler/src/backend/completion/runtime.c \
             compiler/src/backend/completion/linux_io_uring.c \
             compiler/src/backend/completion/native_adapter_probe.c \
@@ -158,10 +160,11 @@ jobs:
 
       # The IOCP adapter does not cover the operations whose Windows APIs have
       # no overlapped form. Link the production bounded worker pool unchanged,
-      # inject only deterministic host-call outcomes, and require the sole
-      # resource-refused open to retire owed work before one exact retry. The
-      # same run also forces two opens to contend at their process-order gate,
-      # and proves each copied descriptor lease is validated and cleared once.
+      # inject only deterministic host-call outcomes, and prove that every
+      # submission is executed and published exactly once and that each copied
+      # descriptor lease is validated and cleared once. The refused-open retry
+      # and the open-order gate this probe once scripted went with the
+      # descriptor retirement ledger (docs/done/0106-backed-file-permit.md).
       - name: Build the Windows blocking adapter probe
         run: |
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
@@ -179,37 +182,7 @@ jobs:
           "$RUNNER_TEMP/completion/windows-blocking-probe.exe" | tee "$record"
           tr -d $'\r' < "$record" > "$record.normalized"
           grep -Fx \
-            'windows-blocking-probe status=pass workers=2 submissions=5 executions=5 publications=5 consumes=5 retries=1 leases=5 attempts=4' \
-            "$record.normalized" > /dev/null
-
-      # Stop a production close after the host has released both resources
-      # but before the ledger has counted them. A concurrent direct open must
-      # remain outside the host attempt until accounting completes, then take
-      # both credits exactly once rather than leaving either awardable.
-      - name: Build the Windows resource-attempt interleave probe
-        run: |
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
-            -DWF_WINDOWS_OPEN_ATTEMPT_WAIT_POINT=wf_windows_resource_probe_open_wait \
-            -DWF_WINDOWS_OPEN_ATTEMPT_POINT=wf_windows_resource_probe_open_acquired \
-            -DWF_WINDOWS_CLOSE_RELEASE_POINT=wf_windows_resource_probe_close_release \
-            -I compiler/src/backend \
-            -I compiler/src/backend/completion \
-            compiler/src/backend/windows_runtime.c \
-            compiler/src/backend/completion/windows_completion.c \
-            compiler/src/backend/completion/windows_iocp.c \
-            compiler/src/backend/completion/windows_blocking.c \
-            compiler/src/backend/completion/windows_bridge.c \
-            compiler/src/backend/completion/writer_scheduler_windows.c \
-            compiler/src/backend/completion/windows_resource_attempt_probe.c \
-            -o "$RUNNER_TEMP/completion/windows-resource-attempt-probe.exe"
-
-      - name: Run the Windows resource-attempt interleave probe
-        run: |
-          record="$RUNNER_TEMP/completion/windows-resource-attempt-probe.txt"
-          "$RUNNER_TEMP/completion/windows-resource-attempt-probe.exe" | tee "$record"
-          tr -d $'\r' < "$record" > "$record.normalized"
-          grep -Fx \
-            'windows-resource-attempt-probe status=pass blocked=1 native-credit=consumed crt-credit=consumed leases=0' \
+            'windows-blocking-probe status=pass workers=2 submissions=3 executions=3 publications=3 consumes=3 leases=3' \
             "$record.normalized" > /dev/null
 
       # This probe proves the namespace facilities the Windows target row
