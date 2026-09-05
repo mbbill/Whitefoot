@@ -112,8 +112,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             | CheckedType::Float(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_) => true,
-            CheckedType::Generic(_)
-            | CheckedType::Array { .. }
+            // [S37] a type parameter standing for itself is copy exactly when
+            // its written bound is `copy`: that bound is what admits the bare
+            // use and the duplication its body writes [OWN-1, FN-2].
+            CheckedType::Generic(declaration) => {
+                self.generic_parameter_class(declaration)? == super::linearity::LinearityClass::Copy
+            }
+            CheckedType::Array { .. }
             | CheckedType::Slice { .. }
             | CheckedType::Buffer { .. }
             | CheckedType::FixedVector { .. }

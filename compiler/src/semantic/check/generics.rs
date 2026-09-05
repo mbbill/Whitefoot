@@ -18,22 +18,27 @@ use super::{
     derive_slice_return_ceiling,
 };
 
+/// [FN-2, PROV-6, S37] the one mandatory bound a type parameter carries.
+///
+/// A bound is a closed class the argument must fall into, derived from the
+/// language's existing classifications, and never a user trait: `Int` and
+/// `Float` are [OP-1]'s numeric rows and each implies the copy class, and the
+/// three linearity classes are [OWN-1]'s copy class and [PROV-6]'s two
+/// linearity classes. It selects no behavior and admits no contract member.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum GenericBound {
-    Unbounded,
     Int,
     Float,
+    Class(super::linearity::LinearityClass),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum GenericParameter {
     Type {
         declaration: DeclarationId,
+        /// [PROV-6, FN-2, S37] the written bound this parameter's body is
+        /// written for. It is mandatory, always written and never inferred.
         bound: GenericBound,
-        /// [PROV-6, S32] the written linearity class this parameter's body is
-        /// written for, when the declaration writes one. It is not a contract
-        /// bound: it selects no behavior and admits no member.
-        linearity: Option<super::linearity::LinearityClass>,
     },
     /// One const `gparam`. The written integer type is retained because
     /// [MSR-6] admits the parameter as a value, whose exact type is that
@@ -1336,7 +1341,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 StableCheckedType::FixedVector { element, length }
             }
-            CheckedType::Vector { region, element } => {
+            CheckedType::Vector {
+                region, element, ..
+            } => {
                 let Some(element) = self.stabilize_flat_element(
                     element,
                     nominal_checkpoint,
@@ -1541,6 +1548,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             StableCheckedType::Vector { region, element } => CheckedType::Vector {
                 region: *region,
                 element: self.reify_flat_element(element)?,
+                release: self.vector_release_class(*region)?,
             },
             StableCheckedType::Heap { region } => CheckedType::Heap { region: *region },
             StableCheckedType::Extent {
@@ -1670,7 +1678,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     } => GenericArgument::Type(CheckedType::GenericFloat(declaration)),
                     GenericParameter::Type {
                         declaration,
-                        bound: GenericBound::Unbounded,
+                        bound: GenericBound::Class(_),
                         ..
                     } => GenericArgument::Type(CheckedType::Generic(declaration)),
                     GenericParameter::Const { declaration, .. } => {
@@ -2016,6 +2024,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .declaration_at(node, DeclarationRole::GenericType)?
                 .id();
             let path = self.tree.path(node)?;
+            // [GRAM-2, S37] the bound is mandatory, so the grammar admits no
+            // `gparam` without one: either a `linearity_bound` atom or a
+            // marker TYPEID is present, and an unbounded parameter is a
+            // parse rejection before this reader runs.
             let bound = match self
                 .resolved
                 .lexical_uses()
@@ -2025,7 +2037,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 })
                 .map(|usage| (usage.target(), usage.origin().coordinate()))
             {
-                None => GenericBound::Unbounded,
+                None => GenericBound::Class(
+                    self.written_linearity_bound(node)?
+                        .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?,
+                ),
                 Some((ResolvedTarget::Prelude(id), _)) if id == PreludeDeclarationId::new(22) => {
                     GenericBound::Int
                 }
@@ -2048,12 +2063,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Some(_) => return Err(SemanticCompilerFailure::InvalidResolution.into()),
             };
-            let linearity = self.written_linearity_bound(node)?;
-            parameters.push(GenericParameter::Type {
-                declaration,
-                bound,
-                linearity,
-            });
+            parameters.push(GenericParameter::Type { declaration, bound });
         }
         Ok(parameters)
     }
@@ -2148,11 +2158,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut bindings = Vec::with_capacity(parameters.len());
         for (parameter, argument) in parameters.iter().copied().zip(arguments) {
             let value = match parameter {
-                GenericParameter::Type {
-                    bound,
-                    linearity,
-                    declaration,
-                } => {
+                GenericParameter::Type { bound, declaration } => {
                     let Some(ty) = self.tree.first_child_with(argument, Production::Type)? else {
                         return self.issue_node(
                             argument_rule,
@@ -2164,11 +2170,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         );
                     };
                     let ty = self.parse_type_with(ty, caller)?;
-                    // `Unbounded` states no requirement, so it has no sentence
-                    // to print and no argument to refuse; the two bounds that
-                    // do carry a requirement carry the requirement's own words.
+                    // A marker bound is a numeric row and carries the
+                    // requirement's own words; a linearity bound is checked by
+                    // [PROV-6] below and prints that rule's sentence instead.
                     let requirement = match bound {
-                        GenericBound::Unbounded => None,
+                        GenericBound::Class(_) => None,
                         GenericBound::Int => {
                             Some("an integer type, which the parameter's `Int` bound requires")
                         }
@@ -2177,7 +2183,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                     };
                     let satisfies_bound = match bound {
-                        GenericBound::Unbounded => true,
+                        GenericBound::Class(_) => true,
                         GenericBound::Int => {
                             matches!(ty, CheckedType::Integer(_) | CheckedType::GenericInt(_))
                         }
@@ -2194,10 +2200,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             SemanticIssueKind::type_mismatch(required, self.checked_type_name(ty)?),
                         );
                     }
-                    // [PROV-6, S32] the linearity bound is checked at every
+                    // [PROV-6, S37] the bound is checked at every
                     // instantiation, against the class the argument's own
-                    // release graph gives it in this scope.
-                    if let Some(required) = linearity {
+                    // release graph gives it in this scope, and satisfaction
+                    // is the chain `copy < affine < linear` read left to
+                    // right. A marker bound implies `copy` and is admitted by
+                    // its own numeric requirement above.
+                    if let GenericBound::Class(required) = bound {
                         let spelling = self
                             .resolved
                             .declarations()

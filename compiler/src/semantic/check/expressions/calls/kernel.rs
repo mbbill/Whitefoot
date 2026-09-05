@@ -336,7 +336,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ///
     /// The judgment reads the resolved row and the resolved region argument,
     /// never a source spelling, so shadowing cannot select it.
-    fn reserving_occurrence_names(
+    pub(in crate::semantic) fn reserving_occurrence_names(
         &self,
         call: NodeId,
         region: DeclarationId,
@@ -684,14 +684,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     .capacity
                     .ok_or(SemanticCompilerFailure::InvalidResolution)?,
             },
-            KernelShape::Vector => CheckedType::Vector {
-                region: region()?,
-                element: self.kernel_element(instance.element, node)?,
-            },
-            KernelShape::OptionVector => {
-                let payload = CheckedType::Vector {
-                    region: region()?,
+            KernelShape::Vector => {
+                let region = region()?;
+                CheckedType::Vector {
+                    region,
                     element: self.kernel_element(instance.element, node)?,
+                    release: self.vector_release_class(region)?,
+                }
+            }
+            KernelShape::OptionVector => {
+                let region = region()?;
+                let payload = CheckedType::Vector {
+                    region,
+                    element: self.kernel_element(instance.element, node)?,
+                    release: self.vector_release_class(region)?,
                 };
                 CheckedType::Nominal(
                     self.prelude_nominal(super::super::super::PreludeType::Option(payload))?,

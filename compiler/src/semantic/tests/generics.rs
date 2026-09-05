@@ -88,7 +88,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn numeric_identity_requires_an_int_or_float_bound() {
-    let source = br#"fn invalid<T>() -> result: own T pure {
+    let source = br#"fn invalid<T: affine>() -> result: own T pure {
   return 0_T;
 }
 
@@ -190,7 +190,7 @@ fn polymorphic_recursion_is_rejected_at_the_call_that_leaves_the_caller_paramete
     // A growing argument is the shape that would actually diverge: each
     // instance would demand a strictly larger one.
     assert_rule(
-        br#"fn poly<T>(x: own T) -> result: own T pure {
+        br#"fn poly<T: affine>(x: own T) -> result: own T pure {
   let y = poly::<array<T, 2>>(x: x);
   return x;
 }
@@ -205,12 +205,12 @@ command fn main() -> status: own ExitStatus pure {
     // A permutation cycle terminates, and FN-6 is deliberately stronger than
     // finiteness requires, so it is rejected all the same.
     assert_rule(
-        br#"fn left<A, B>(first: own A, second: own B) -> result: own A pure {
+        br#"fn left<A: affine, B: affine>(first: own A, second: own B) -> result: own A pure {
   let swapped = right::<B, A>(first: second, second: first);
   return first;
 }
 
-fn right<A, B>(first: own A, second: own B) -> result: own A pure {
+fn right<A: affine, B: affine>(first: own A, second: own B) -> result: own A pure {
   let back = left::<A, B>(first: first, second: second);
   return first;
 }
@@ -234,7 +234,7 @@ command fn main() -> status: own ExitStatus pure {
 /// unimplemented-capability report.
 #[test]
 fn a_cycle_through_a_nongeneric_caller_is_not_polymorphic_recursion() {
-    let source = br#"fn poly<T>(x: own T) -> result: own T pure {
+    let source = br#"fn poly<T: affine>(x: own T) -> result: own T pure {
   let back = trampoline();
   return x;
 }
@@ -264,24 +264,39 @@ command fn main() -> status: own ExitStatus pure {
     assert_rule(source, SemanticRule::Fn1, SemanticIssueKind::ReturnMismatch);
 }
 
+/// [FN-2, OWN-1, S37] the template is the spelling authority.
+///
+/// This test asserted the opposite until the owner's 2026-09-05 ruling: an
+/// `affine`-bounded body writing `move value` was an [OWN-1] `MoveOfCopy`
+/// rejection at every copy instance, so no generic body could serve a copy
+/// type and an affine type, and the library dodged it by instantiating only at
+/// affine types. Under [S37] the body is checked once at the symbolic instance
+/// under its written bound, and the concrete-instance recheck does not
+/// re-judge the [OWN-1]/[FORM-1] spelling: `move` of a template-affine value
+/// at a copy instance denotes a copy. The instance recheck still rejects what
+/// is invalid *at the instance* — the conformance corpus keeps that in
+/// `const1-neg-eval-overflow`, whose body is admitted symbolically and refused
+/// at the instantiation whose value leaves the const domain.
 #[test]
-fn concretely_invalid_generic_body_is_rejected_during_instance_rechecking() {
-    let source = br#"fn transfer<T>(value: own T) -> result: own T pure {
+fn a_move_in_an_affine_bounded_body_denotes_a_copy_at_a_copy_instance() {
+    let source = br#"fn transfer<T: affine>(value: own T) -> result: own T pure {
   return move value;
 }
 
 command fn main() -> status: own ExitStatus pure {
   let copied = transfer::<u8>(value: 7_u8);
+  let payload = Some<u8>(value: 3_u8);
+  let held = transfer::<Option<u8>>(value: move payload);
   return exit_status(code: 0_u8);
 }
 "#;
-    assert_rule(
-        source,
-        SemanticRule::Own1,
-        SemanticIssueKind::MoveOfCopy {
-            mechanical_fix: "use the copy place without `move`",
-        },
-    );
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("one affine-bounded body must serve a copy and an affine instance: {outcome:?}");
+        };
+        // The template, its copy instance, its affine instance, and `main`.
+        assert_eq!(checked.function_count(), 3);
+    });
 }
 
 #[test]
@@ -340,7 +355,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unbounded_type_parameters_build_only_explicit_reachable_instances() {
-    let source = br#"fn marker<T>() -> result: own unit pure {
+    let source = br#"fn marker<T: affine>() -> result: own unit pure {
   return unit;
 }
 
@@ -368,7 +383,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn generic_argument_kinds_and_const_parameter_types_are_checked() {
     assert_rule_kind(
-        br#"fn marker<T>() -> result: own unit pure {
+        br#"fn marker<T: affine>() -> result: own unit pure {
   return unit;
 }
 
@@ -493,7 +508,7 @@ fn const_and_nested_source_nominal_instances_are_fully_substituted() {
   bytes: array<u8, n>;
 }
 
-struct Holder<T> {
+struct Holder<T: affine> {
   value: T;
 }
 
@@ -543,7 +558,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn source_nominal_argument_arity_and_kinds_are_exact() {
     assert_rule_kind(
-        br#"struct Pair<T> {
+        br#"struct Pair<T: affine> {
   value: T;
 }
 
@@ -574,7 +589,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn constructor_only_generic_instances_still_reach_normal_type_diagnostics() {
     assert_rule(
-        br#"struct Holder<T> {
+        br#"struct Holder<T: affine> {
   value: T;
 }
 
@@ -590,7 +605,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn unused_generic_nominal_members_are_checked_under_their_declared_bounds() {
     assert_rule_kind(
-        br#"struct Invalid<T> {
+        br#"struct Invalid<T: affine> {
   values: array<T, 2>;
 }
 
@@ -606,7 +621,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn recursive_generic_nominal_layouts_stop_before_concrete_enumeration() {
     assert_unsupported(
-        br#"struct Recursive<T> {
+        br#"struct Recursive<T: affine> {
   next: Recursive<T>;
 }
 
@@ -718,7 +733,7 @@ fn region_bearing_function_and_nominal_arguments_reject_under_fn2() {
         mechanical_fix: "make the slice or arena a direct written parameter or result instead of a generic argument",
     };
     assert_rule(
-        br#"fn instantiate<T>() -> result: own unit pure {
+        br#"fn instantiate<T: affine>() -> result: own unit pure {
   return unit;
 }
 
@@ -735,7 +750,7 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"struct Marker<T> {
+        br#"struct Marker<T: affine> {
 }
 
 fn invalid(value: own Marker<slice<u8>>) -> result: own unit pure {
@@ -762,7 +777,7 @@ command fn main() -> status: own ExitStatus pure {
         expected.clone(),
     );
     assert_rule(
-        br#"fn instantiate<T>() -> result: own unit pure {
+        br#"fn instantiate<T: affine>() -> result: own unit pure {
   return unit;
 }
 
@@ -789,11 +804,11 @@ fn schema_written_concrete_nominal_arguments_are_rebuilt_after_the_symbolic_chec
   value: T;
 }
 
-fn consume<T>(value: own T) -> result: own unit pure {
+fn consume<T: affine>(value: own T) -> result: own unit pure {
   return unit;
 }
 
-fn wrapper<U>() -> result: own unit pure {
+fn wrapper<U: affine>() -> result: own unit pure {
   let pair = Pair<u8>(value: 1_u8);
   consume::<Pair<u8>>(value: move pair);
   return unit;
@@ -833,16 +848,16 @@ fn partial_schema_rebuild_keeps_only_the_truly_concrete_nominal_instance() {
   right: T;
 }
 
-fn sink<T>() -> result: own unit pure {
+fn sink<T: affine>() -> result: own unit pure {
   return unit;
 }
 
-fn middle<A: Int, B>() -> result: own unit pure {
+fn middle<A: Int, B: affine>() -> result: own unit pure {
   sink::<Pair<A>>();
   return unit;
 }
 
-fn wrapper<U>() -> result: own unit pure {
+fn wrapper<U: affine>() -> result: own unit pure {
   middle::<u8, U>();
   return unit;
 }
@@ -897,11 +912,11 @@ fn partial_schema_rebuild_still_discovers_an_independent_concrete_descendant() {
   right: T;
 }
 
-fn sink<T>() -> result: own unit pure {
+fn sink<T: affine>() -> result: own unit pure {
   return unit;
 }
 
-fn next<X, Y>() -> result: own unit pure {
+fn next<X: affine, Y: affine>() -> result: own unit pure {
   sink::<Y>();
   return unit;
 }
@@ -953,7 +968,7 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn ordinary_admission_diagnostics_prefer_source_order_over_instance_identity() {
     let source =
-        br#"fn earlier<T>(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
+        br#"fn earlier<T: affine>(values: own array<u8, 4>, index: own u64) -> result: own u8 pure {
   return values[index];
 }
 

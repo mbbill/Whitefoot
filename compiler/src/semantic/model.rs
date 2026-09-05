@@ -358,6 +358,26 @@ impl CheckedFlatElement {
     }
 }
 
+/// [PROV-6, STOR-1, STOR-3] which release action a store-backed run's own
+/// reclamation is, decided from its store region's declaration alone.
+///
+/// A general store's run is released by spending that store's provider
+/// capability; a bump extent's is reclaimed by its region's own reset and has
+/// no action of its own [BLK-2]. Nothing else decides it: the class is read
+/// off the region declaration and travels in the type, which is what lets a
+/// region-erased lowering still select the right action.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum CheckedReleaseClass {
+    /// The entry heap, an unbounded region parameter, or a `linear`-bounded
+    /// one: the release is a free to that store, and an unbounded parameter is
+    /// this class fail-closed [PROV-6].
+    General,
+    /// An `affine`-bounded region parameter or a `region_stmt` region: the
+    /// extent's reclamation is its own region reset, so the run's release
+    /// action is empty [BLK-2, STOR-3].
+    Extent,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum CheckedType {
     Unit,
@@ -393,6 +413,11 @@ pub(crate) enum CheckedType {
     Vector {
         region: DeclarationId,
         element: CheckedFlatElement,
+        /// [PROV-6, STOR-3] which release action this run's own reclamation
+        /// is. It is a function of `region` alone, so it never separates two
+        /// types one region names, and it is carried because lowering erases
+        /// the region and must still select between the two actions.
+        release: CheckedReleaseClass,
     },
     /// One `Heap<'s>` [PROV-1]: the proof-only provider value of the general
     /// store `'s` names. The one route by which a program would obtain it is
@@ -1987,6 +2012,10 @@ pub(crate) struct CheckedWritablePlace {
     pub(crate) binding: BindingId,
     pub(crate) fields: Vec<u32>,
     pub(crate) ty: CheckedType,
+    /// [LIV-2] this commit declares the binding it writes, exactly as a `let`
+    /// does: the target identifier resolved to none, so the statement is the
+    /// binding's own initialization and nothing before it holds its storage.
+    pub(crate) declares: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

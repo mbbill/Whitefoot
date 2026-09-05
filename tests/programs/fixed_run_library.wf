@@ -1,4 +1,4 @@
-fn vacant<T, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
+fn vacant<T: affine, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contract {
   ensures len_of(result) >= n;
   ensures room_of(result) <= 0_u64;
   ensures head_of(result) <= 0_u64;
@@ -17,13 +17,13 @@ fn vacant<T, const n: u64>() -> result: own FixedVector<Option<T>, n> pure contr
   return move built;
 }
 
-fn filled<const n: u64>(value: own u8) -> result: own FixedVector<u8, n> pure contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
   ensures len_of(result) >= n;
   ensures room_of(result) <= 0_u64;
   ensures head_of(result) <= 0_u64;
 } {
-  doc "Builds a run of n slots, every one holding a copy of value.";
-  let built = seq_fixed::<u8, n>();
+  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = seq_fixed::<T, n>();
   for @fill (
     at in 0_u64..n,
     invariant grown: len_of(built) >= at,
@@ -35,7 +35,7 @@ fn filled<const n: u64>(value: own u8) -> result: own FixedVector<u8, n> pure co
   return move built;
 }
 
-fn take_at<T, const n: u64>(vector: own FixedVector<T, n>, at: own u64) -> (rest: own FixedVector<T, n>, taken: own T) reads(vector), writes(vector) contract {
+fn take_at<T: affine, const n: u64>(vector: own FixedVector<T, n>, at: own u64) -> (rest: own FixedVector<T, n>, taken: own T) reads(vector), writes(vector) contract {
   requires at + 2_u64 <= len_of(vector);
   ensures len_of(rest) + 1_u64 == len_of(vector);
   ensures room_of(rest) == room_of(vector) + 1_u64;
@@ -47,7 +47,7 @@ fn take_at<T, const n: u64>(vector: own FixedVector<T, n>, at: own u64) -> (rest
   return move short, move old;
 }
 
-fn try_place<T, const n: u64>(vector: own FixedVector<T, n>, value: own T) -> (rest: own FixedVector<T, n>, unplaced: own Option<T>) reads(vector), writes(vector) contract {
+fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own T) -> (rest: own FixedVector<T, n>, unplaced: own Option<T>) reads(vector), writes(vector) contract {
   ensures head_of(rest) == head_of(vector);
   ensures len_of(rest) <= len_of(vector) + 1_u64;
   ensures len_of(rest) >= len_of(vector);
@@ -64,7 +64,7 @@ fn try_place<T, const n: u64>(vector: own FixedVector<T, n>, value: own T) -> (r
   return move vector, Some<T>(value: move value);
 }
 
-fn try_take<T, const n: u64>(vector: own FixedVector<T, n>) -> (rest: own FixedVector<T, n>, taken: own Option<T>) reads(vector), writes(vector) contract {
+fn try_take<T: affine, const n: u64>(vector: own FixedVector<T, n>) -> (rest: own FixedVector<T, n>, taken: own Option<T>) reads(vector), writes(vector) contract {
   ensures head_of(rest) == head_of(vector);
   ensures len_of(rest) <= len_of(vector);
   ensures len_of(rest) + 1_u64 >= len_of(vector);
@@ -81,7 +81,7 @@ fn try_take<T, const n: u64>(vector: own FixedVector<T, n>) -> (rest: own FixedV
   return move vector, None<T>();
 }
 
-fn rebase<const n: u64>(vector: own FixedVector<u8, n>, spare: own FixedVector<u8, n>) -> rebased: own FixedVector<u8, n> reads(vector, spare), writes(vector, spare) contract {
+fn rebase<T: affine, const n: u64>(vector: own FixedVector<T, n>, spare: own FixedVector<T, n>) -> rebased: own FixedVector<T, n> reads(vector, spare), writes(vector, spare) contract {
   requires len_of(spare) <= 0_u64;
   requires room_of(spare) >= n;
   requires room_of(spare) <= n;
@@ -90,9 +90,8 @@ fn rebase<const n: u64>(vector: own FixedVector<u8, n>, spare: own FixedVector<u
   ensures len_of(rebased) <= len_of(vector);
   ensures head_of(rebased) <= 0_u64;
 } {
-  doc "Moves every element of a wrapped run into a fresh run, in order, so the result does not wrap.";
+  doc "Moves every element of a wrapped run into a fresh run, in order, so the result does not wrap; the front element's binding is declared by the commit that produces it.";
   let count = len_of(vector);
-  let one = 0_u8;
   let built = move spare;
   for @rot (
     at in 0_u64..count,
@@ -105,24 +104,36 @@ fn rebase<const n: u64>(vector: own FixedVector<u8, n>, spare: own FixedVector<u
     invariant flat: head_of(built) <= 0_u64
   ) {
     set (vector, one) = seq_take_front(vector: move vector);
-    set built = seq_place(vector: move built, value: one);
+    set built = seq_place(vector: move built, value: move one);
   }
   return move built;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "Runs the six fixed-run library functions of the container design: the two constructions, the transposing removal, the two checked boundary forms, and the drain that returns a wrapped window to its origin.";
+  doc "Runs the six fixed-run library functions of the container design at a copy element type and at an affine one: the two constructions, the transposing removal, the two checked boundary forms, and the drain that returns a wrapped window to its origin.";
   let slots = vacant::<u8, 4>();
   let vacant_held = len_of(slots);
   if vacant_held == 4_u64 {
   } else {
     return exit_status(code: 1_u8);
   }
-  let bytes = filled::<4>(value: 7_u8);
+  let nested = vacant::<Option<u8>, 4>();
+  let nested_held = len_of(nested);
+  if nested_held == 4_u64 {
+  } else {
+    return exit_status(code: 19_u8);
+  }
+  let bytes = filled::<u8, 4>(value: 7_u8);
   let filled_held = len_of(bytes);
   if filled_held == 4_u64 {
   } else {
     return exit_status(code: 2_u8);
+  }
+  let wide = filled::<u64, 4>(value: 9_u64);
+  let wide_first = wide[0_u64];
+  if wide_first == 9_u64 {
+  } else {
+    return exit_status(code: 20_u8);
   }
   let first = bytes[0_u64];
   let last = bytes[3_u64];
@@ -158,6 +169,15 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 7_u8);
     }
   }
+  let plain = seq_fixed::<u8, 4>();
+  let plain_one = seq_place(vector: move plain, value: 21_u8);
+  let plain_two = seq_place(vector: move plain_one, value: 22_u8);
+  let plain_three = seq_place(vector: move plain_two, value: 23_u8);
+  let (plain_rest, plain_pulled) = take_at::<u8, 4>(vector: move plain_three, at: 0_u64);
+  if plain_pulled == 21_u8 {
+  } else {
+    return exit_status(code: 21_u8);
+  }
   let probe = None<u8>();
   let moved = replace rest[0_u64] = move probe;
   match moved {
@@ -185,6 +205,14 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 11_u8);
     }
   }
+  let (plain_grown, plain_unplaced) = try_place::<u8, 4>(vector: move plain_rest, value: 24_u8);
+  match plain_unplaced {
+    None() => {
+    }
+    Some(value: plain_handed_back) => {
+      return exit_status(code: 22_u8);
+    }
+  }
   let (shrunk, pulled_back) = try_take::<Option<u8>, 4>(vector: move grown);
   let shrunk_held = len_of(shrunk);
   if shrunk_held == 2_u64 {
@@ -198,6 +226,18 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 13_u8);
     }
   }
+  let (plain_shrunk, plain_back) = try_take::<u8, 4>(vector: move plain_grown);
+  match plain_back {
+    Some(value: plain_taken_back) => {
+      if plain_taken_back == 24_u8 {
+      } else {
+        return exit_status(code: 23_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 24_u8);
+    }
+  }
   let start = seq_fixed::<u8, 4>();
   let s1 = seq_place(vector: move start, value: 11_u8);
   let s2 = seq_place(vector: move s1, value: 12_u8);
@@ -205,7 +245,7 @@ command fn main() -> status: own ExitStatus pure {
   let (after_front, dropped) = seq_take_front(vector: move s3);
   let wrapped = seq_place(vector: move after_front, value: 14_u8);
   let fresh = seq_fixed::<u8, 4>();
-  let flat = rebase::<4>(vector: move wrapped, spare: move fresh);
+  let flat = rebase::<u8, 4>(vector: move wrapped, spare: move fresh);
   let flat_held = len_of(flat);
   if flat_held == 3_u64 {
   } else {
@@ -231,5 +271,33 @@ command fn main() -> status: own ExitStatus pure {
   } else {
     return exit_status(code: 18_u8);
   }
-  return exit_status(code: 0_u8);
+  let ring = seq_fixed::<Option<u8>, 4>();
+  let r1v = Some<u8>(value: 31_u8);
+  let r1 = seq_place(vector: move ring, value: move r1v);
+  let r2v = Some<u8>(value: 32_u8);
+  let r2 = seq_place(vector: move r1, value: move r2v);
+  let r3v = Some<u8>(value: 33_u8);
+  let r3 = seq_place(vector: move r2, value: move r3v);
+  let (ring_rest, ring_dropped) = seq_take_front(vector: move r3);
+  let r4v = Some<u8>(value: 34_u8);
+  let ring_wrapped = seq_place(vector: move ring_rest, value: move r4v);
+  let ring_fresh = seq_fixed::<Option<u8>, 4>();
+  let ring_flat = rebase::<Option<u8>, 4>(vector: move ring_wrapped, spare: move ring_fresh);
+  let ring_head = head_of(ring_flat);
+  if ring_head == 0_u64 {
+  } else {
+    return exit_status(code: 25_u8);
+  }
+  let ring_first = replace ring_flat[0_u64] = None<u8>();
+  match ring_first {
+    Some(value: ring_got) => {
+      if ring_got == 32_u8 {
+        return exit_status(code: 0_u8);
+      }
+      return exit_status(code: 26_u8);
+    }
+    None() => {
+      return exit_status(code: 27_u8);
+    }
+  }
 }

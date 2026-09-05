@@ -10,8 +10,8 @@ use super::{
     DeferredUseRecord, DeferredUseRole, DependentDeclarationRecord, DependentDeclarationRole,
     LexicalUseRecord, LexicalUseRole, PostconditionCandidateRecord, PostconditionFieldRecord,
     PostconditionResolutionRecord, PostconditionSelectorClass, PostconditionSelectorUseRecord,
-    PreludeDeclarationRecord, ResolutionCompilerFailure, ResolutionIssue, ResolutionOutcome,
-    ResolvedSyntaxUnit, ScopeId, SourceOrigin, SystemDeclarationRecord,
+    PreludeDeclarationRecord, ResolutionCompilerFailure, ResolutionIssue, ResolutionIssueKind,
+    ResolutionOutcome, ResolvedSyntaxUnit, ScopeId, SourceOrigin, SystemDeclarationRecord,
 };
 
 mod admission;
@@ -21,7 +21,7 @@ mod roles;
 
 use admission::check_clause_blocks;
 use inventory::check_declaration_inventory;
-use lookup::{resolve_uses, resolve_uses_deferred};
+use lookup::resolve_uses_deferred;
 use roles::classify_roles;
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -230,119 +230,234 @@ fn build_tables(
     // unit as the third declaration source [SYS-1]. Entry-form validation is
     // deliberately later and cannot change which system names exist.
     let system = system_declarations(inventory);
-    let roles = classify_roles(syntax, &scopes)?;
-    let mut declarations = Vec::new();
-    let mut dependent_declarations = Vec::new();
-    let mut deferred_uses = Vec::new();
-    let mut declaration_metas = Vec::new();
-    let mut declaration_by_role = vec![None; roles.len()];
-    let mut uses = Vec::new();
-    let mut postcondition_entry_uses = Vec::new();
+    let mut roles = classify_roles(syntax, &scopes)?;
+    // [LIV-2] a `set` target identifier that resolves to no binding declares
+    // one exactly as a `let` does. Which targets those are is not a syntactic
+    // property — it is the outcome of the ordinary lookup — so the candidates
+    // are collected here by shape and the build below promotes exactly the
+    // ones lookup could not resolve, one per pass, until every use resolves.
+    // Each pass is the ordinary declaration inventory and the ordinary
+    // lookup, so a promoted target is judged by the same rules a `let` binder
+    // is, and nothing else in this file is special-cased for it.
+    let declaring_candidates = declaring_set_target_candidates(topology, &roles)?;
+    let mut promoted = std::collections::HashSet::new();
+    loop {
+        let mut declarations = Vec::new();
+        let mut dependent_declarations = Vec::new();
+        let mut deferred_uses = Vec::new();
+        let mut declaration_metas = Vec::new();
+        let mut declaration_by_role = vec![None; roles.len()];
+        let mut uses = Vec::new();
+        let mut postcondition_entry_uses = Vec::new();
 
-    for (role_index, role) in roles.iter().enumerate() {
-        match role.kind {
-            RawRoleKind::Declaration(declaration_role) => {
-                let id = DeclarationId::from_index(declarations.len())
-                    .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
-                let entries = declaration_classes(declaration_role);
-                let record_index = declarations.len();
-                declarations.push(DeclarationRecord {
-                    id,
-                    role: declaration_role,
-                    spelling: role.spelling.clone(),
-                    origin: role.origin.clone(),
-                    scope: declaration_scope(role, declaration_role, &scopes)?,
-                    classes: entries.clone(),
-                });
-                declaration_by_role[role_index] = Some(record_index);
-                declaration_metas.push(DeclarationMeta {
-                    role_index,
-                    record_index,
-                    scope: declarations[record_index].scope,
-                    owner: role.owner_chain.first().copied(),
-                    region_owner: function_owner(topology, role.owner),
-                    visibility: declaration_visibility(topology, role, declaration_role)?,
-                    entries,
-                });
-            }
-            RawRoleKind::DependentDeclaration(dependent_role) => {
-                dependent_declarations.push(DependentDeclarationRecord {
-                    role: dependent_role,
-                    spelling: role.spelling.clone(),
-                    origin: role.origin.clone(),
-                });
-            }
-            RawRoleKind::LexicalUse(use_role) => {
-                let use_meta = UseMeta {
-                    role: use_role,
-                    spelling: role.spelling.clone(),
-                    owner: role.owner,
-                    origin: role.origin.clone(),
-                    scope: role.scope,
-                    owner_chain: role.owner_chain.clone(),
-                    function_owner: function_owner(topology, role.owner),
-                };
-                if use_role != LexicalUseRole::EnsuresVariant
-                    && ancestor_with_production(topology, role.owner, Production::EnsuresClause)
-                        .is_some()
-                {
-                    postcondition_entry_uses.push(use_meta);
-                } else {
-                    uses.push(use_meta);
+        for (role_index, role) in roles.iter().enumerate() {
+            match role.kind {
+                RawRoleKind::Declaration(declaration_role) => {
+                    let id = DeclarationId::from_index(declarations.len())
+                        .ok_or(ResolutionCompilerFailure::CounterOverflow)?;
+                    let entries = declaration_classes(declaration_role);
+                    let record_index = declarations.len();
+                    declarations.push(DeclarationRecord {
+                        id,
+                        role: declaration_role,
+                        spelling: role.spelling.clone(),
+                        origin: role.origin.clone(),
+                        scope: declaration_scope(role, declaration_role, &scopes)?,
+                        classes: entries.clone(),
+                    });
+                    declaration_by_role[role_index] = Some(record_index);
+                    declaration_metas.push(DeclarationMeta {
+                        role_index,
+                        record_index,
+                        scope: declarations[record_index].scope,
+                        owner: role.owner_chain.first().copied(),
+                        region_owner: function_owner(topology, role.owner),
+                        visibility: declaration_visibility(topology, role, declaration_role)?,
+                        entries,
+                    });
                 }
+                RawRoleKind::DependentDeclaration(dependent_role) => {
+                    dependent_declarations.push(DependentDeclarationRecord {
+                        role: dependent_role,
+                        spelling: role.spelling.clone(),
+                        origin: role.origin.clone(),
+                    });
+                }
+                RawRoleKind::LexicalUse(use_role) => {
+                    let use_meta = UseMeta {
+                        role: use_role,
+                        spelling: role.spelling.clone(),
+                        owner: role.owner,
+                        origin: role.origin.clone(),
+                        scope: role.scope,
+                        owner_chain: role.owner_chain.clone(),
+                        function_owner: function_owner(topology, role.owner),
+                    };
+                    if use_role != LexicalUseRole::EnsuresVariant
+                        && ancestor_with_production(topology, role.owner, Production::EnsuresClause)
+                            .is_some()
+                    {
+                        postcondition_entry_uses.push(use_meta);
+                    } else {
+                        uses.push(use_meta);
+                    }
+                }
+                RawRoleKind::DeferredUse(deferred_role) => deferred_uses.push(DeferredUseRecord {
+                    role: deferred_role,
+                    spelling: role.spelling.clone(),
+                    origin: role.origin.clone(),
+                }),
+                // Table-checked carriers await the FN-7 kind-table capability, and
+                RawRoleKind::Selector(_) | RawRoleKind::TableChecked => {}
             }
-            RawRoleKind::DeferredUse(deferred_role) => deferred_uses.push(DeferredUseRecord {
-                role: deferred_role,
-                spelling: role.spelling.clone(),
-                origin: role.origin.clone(),
-            }),
-            // Table-checked carriers await the FN-7 kind-table capability, and
-            RawRoleKind::Selector(_) | RawRoleKind::TableChecked => {}
+        }
+
+        let declaration_index = DeclarationIndex::build(&declarations);
+
+        if let Some(issue) = check_declaration_inventory(
+            topology,
+            &scopes,
+            &roles,
+            &declarations,
+            &declaration_metas,
+            &declaration_index,
+            &declaration_by_role,
+            &system,
+        )? {
+            return Err(BuildStop::Issue(Box::new(issue)));
+        }
+        let (lexical_uses, unresolved) = resolve_uses_deferred(
+            &scopes,
+            &declarations,
+            &declaration_metas,
+            &declaration_index,
+            &uses,
+            &system,
+        )?;
+        if let Some(issue) = unresolved {
+            // [LIV-2] exactly one candidate is promoted per pass, and only the one
+            // this pass could not resolve, so the promotion order is the source
+            // order of the failures and never a search.
+            if let Some(index) =
+                promotable_candidate(&issue, &roles, &declaring_candidates, &promoted)
+            {
+                promoted.insert(index);
+                roles[index].kind = RawRoleKind::Declaration(DeclarationRole::Let);
+                continue;
+            }
+            return Err(BuildStop::Issue(Box::new(issue)));
+        }
+        let postconditions = build_postcondition_records(
+            topology,
+            &scopes,
+            &roles,
+            &declarations,
+            &declaration_metas,
+            &declaration_index,
+            &postcondition_entry_uses,
+            &lexical_uses,
+            &system,
+        )?;
+        return Ok(Tables {
+            scopes: scopes.records,
+            prelude: PRELUDE_DECLARATIONS.to_vec(),
+            system,
+            declarations,
+            dependent_declarations,
+            lexical_uses,
+            deferred_uses,
+            postconditions,
+        });
+    }
+}
+
+/// [LIV-2, GRAM-4, GRAM-5] every `pbase` role that a `set` target could
+/// declare: the base of a bare target `place` of a `set_stmt`, written with no
+/// `psuffix` and no `deref`.
+///
+/// Shape alone decides candidacy; whether a candidate declares anything is
+/// decided by lookup, which is what the build loop reads.
+fn declaring_set_target_candidates(
+    topology: &FinalizedTopology,
+    roles: &[ClassifiedRole],
+) -> Result<std::collections::HashSet<usize>, ResolutionCompilerFailure> {
+    let mut candidates = std::collections::HashSet::new();
+    for (index, role) in roles.iter().enumerate() {
+        if !matches!(
+            role.kind,
+            RawRoleKind::LexicalUse(super::LexicalUseRole::PlaceBase)
+        ) {
+            continue;
+        }
+        let pbase = role.owner;
+        let record = topology
+            .node(pbase)
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        if record.production != Production::Pbase {
+            continue;
+        }
+        // `pbase := IDENT | "deref" "(" place ")"`: a `deref` base owns a
+        // nested `place` child, and this role's spelling would then be that
+        // inner base's, so a base with any child is never a bare target.
+        if topology
+            .node_children(pbase)
+            .is_some_and(|children| !children.is_empty())
+        {
+            continue;
+        }
+        let Some(place) = record.parent else {
+            continue;
+        };
+        let place_record = topology
+            .node(place)
+            .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?;
+        if place_record.production != Production::Place {
+            continue;
+        }
+        // `place := pbase psuffix*`: a projected or subscripted target selects
+        // one component of a value that must already exist, so it declares
+        // nothing.
+        if topology.node_children(place).is_some_and(|children| {
+            children.iter().any(|child| {
+                topology
+                    .node(*child)
+                    .is_some_and(|record| record.production == Production::Psuffix)
+            })
+        }) {
+            continue;
+        }
+        let Some(statement) = place_record.parent else {
+            continue;
+        };
+        if topology
+            .node(statement)
+            .is_some_and(|record| record.production == Production::SetStmt)
+        {
+            candidates.insert(index);
         }
     }
+    Ok(candidates)
+}
 
-    let declaration_index = DeclarationIndex::build(&declarations);
-
-    if let Some(issue) = check_declaration_inventory(
-        topology,
-        &scopes,
-        &roles,
-        &declarations,
-        &declaration_metas,
-        &declaration_index,
-        &declaration_by_role,
-        &system,
-    )? {
-        return Err(BuildStop::Issue(Box::new(issue)));
+/// The candidate one unresolved-use rejection names, when it names one.
+///
+/// The rejection carries the use's own origin, and a role owns exactly one
+/// origin, so the match is exact. An already-promoted candidate is never
+/// matched again: its role is a declaration and produces no use at all.
+fn promotable_candidate(
+    issue: &ResolutionIssue,
+    roles: &[ClassifiedRole],
+    candidates: &std::collections::HashSet<usize>,
+    promoted: &std::collections::HashSet<usize>,
+) -> Option<usize> {
+    if !matches!(issue.kind, ResolutionIssueKind::UnresolvedUse { .. }) {
+        return None;
     }
-    let lexical_uses = resolve_uses(
-        &scopes,
-        &declarations,
-        &declaration_metas,
-        &declaration_index,
-        &uses,
-        &system,
-    )?;
-    let postconditions = build_postcondition_records(
-        topology,
-        &scopes,
-        &roles,
-        &declarations,
-        &declaration_metas,
-        &declaration_index,
-        &postcondition_entry_uses,
-        &lexical_uses,
-        &system,
-    )?;
-    Ok(Tables {
-        scopes: scopes.records,
-        prelude: PRELUDE_DECLARATIONS.to_vec(),
-        system,
-        declarations,
-        dependent_declarations,
-        lexical_uses,
-        deferred_uses,
-        postconditions,
+    candidates.iter().copied().find(|index| {
+        !promoted.contains(index)
+            && roles
+                .get(*index)
+                .is_some_and(|role| role.origin == *issue.origin())
     })
 }
 
@@ -756,8 +871,12 @@ fn declaration_visibility(
         // [PROV-6, GRAM-4] a destructuring consume's binder is owned by its
         // `fieldbind`, and the whole statement is where it becomes visible,
         // exactly as an ordinary `let` binder's own statement is.
+        // [LIV-2] a declaring `set` target becomes visible where a `let`
+        // binder does: after its own complete statement, so the right-hand
+        // side of the statement that declares it cannot name it.
         DeclarationRole::Let => {
             let owner = ancestor_with_production(topology, role.owner, Production::LetStmt)
+                .or_else(|| ancestor_with_production(topology, role.owner, Production::SetStmt))
                 .unwrap_or(role.owner);
             node_end(topology, owner)?.value()
         }

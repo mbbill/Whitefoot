@@ -387,3 +387,75 @@ command fn main() -> status: own ExitStatus pure {
         UnsupportedSemanticFeature::ArenaRuntime,
     );
 }
+
+/// [PROV-6, STOR-1, STOR-3] a store-backed run's release class is decided from
+/// its store region's declaration alone and travels in its type.
+///
+/// No heap value exists in this version, so nothing releases through a free
+/// yet and no program can observe the difference at run time. The
+/// classification is what a heap-backed run's lowering will select between, so
+/// it is pinned here rather than left to the version that first spends it: an
+/// `affine`-bounded region parameter and a `region_stmt` region are bump
+/// extents whose reclamation is the region's own reset, and the entry heap, an
+/// unbounded region parameter and a `linear`-bounded one are general stores.
+#[test]
+fn a_runs_release_class_is_read_off_its_store_regions_declaration() {
+    let source = br#"fn from_extent['s: affine](run: own Vector<'s, u64>) -> back: own Vector<'s, u64> pure {
+  doc "An affine-bounded region parameter is a bump extent.";
+  return move run;
+}
+
+fn from_general['s: linear](run: own Vector<'s, u64>) -> back: own Vector<'s, u64> pure {
+  doc "A linear-bounded region parameter is a general store.";
+  return move run;
+}
+
+fn from_unconstrained['s](run: own Vector<'s, u64>) -> back: own Vector<'s, u64> pure {
+  doc "An unbounded region parameter is a general store, fail-closed.";
+  return move run;
+}
+
+fn from_entry_heap(run: own Vector<u64>) -> back: own Vector<u64> pure {
+  doc "An elided store brand at a parameter position is the entry heap's store region.";
+  return move run;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "The four declarations are checked; none is called, because no program can produce a general store's run yet.";
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the four run declarations must check: {outcome:?}");
+        };
+        let class = |name: &str| {
+            let function = checked
+                .data
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .expect("each declaration is one checked function");
+            match function.result {
+                crate::semantic::CheckedType::Vector { release, .. } => release,
+                other => panic!("{name} must return a run, got {other:?}"),
+            }
+        };
+        assert_eq!(
+            class("from_extent"),
+            crate::semantic::CheckedReleaseClass::Extent
+        );
+        assert_eq!(
+            class("from_general"),
+            crate::semantic::CheckedReleaseClass::General
+        );
+        assert_eq!(
+            class("from_unconstrained"),
+            crate::semantic::CheckedReleaseClass::General
+        );
+        assert_eq!(
+            class("from_entry_heap"),
+            crate::semantic::CheckedReleaseClass::General
+        );
+    });
+}

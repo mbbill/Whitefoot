@@ -1,4 +1,4 @@
-struct Marker<T> {
+struct Marker<T: affine> {
 }
 
 fn invalid() -> result: own unit pure {

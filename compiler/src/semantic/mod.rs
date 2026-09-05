@@ -49,9 +49,9 @@ pub(crate) use model::{
     CheckedIntegerOperation, CheckedKernelInstance, CheckedLayoutCeiling, CheckedLayoutMagnitude,
     CheckedLoopId, CheckedMatchArm, CheckedMeasure, CheckedMode, CheckedNominalKind,
     CheckedNumericType, CheckedParameter, CheckedProgramData, CheckedProjectedDrop,
-    CheckedRunSetTarget, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
-    CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation, CheckedType, CheckedValue,
-    MeasureCell, MeasuredKind, NominalId, PropagationContext,
+    CheckedReleaseClass, CheckedRunSetTarget, CheckedRuntimeTargetObligations, CheckedSetTarget,
+    CheckedSliceRoot, CheckedSliceSource, CheckedStatement, CheckedTargetDomainObligation,
+    CheckedType, CheckedValue, MeasureCell, MeasuredKind, NominalId, PropagationContext,
 };
 
 /// Master switch for the v0.31 candidate's gated semantic surface:
@@ -669,8 +669,14 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by PROV-1.
         mechanical_fix: &'static str,
     },
-    /// [PROV-6, S32] an instantiation whose argument's linearity class is not
-    /// the parameter's written bound.
+    /// [PROV-6, S37] a region parameter written `'s: copy`, which is not one
+    /// of the two classes a store has.
+    InvalidRegionBound {
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
+    /// [PROV-6, S37] an instantiation whose argument's linearity class does not
+    /// satisfy the parameter's written bound.
     LinearityBoundMismatch {
         /// The bounded parameter's written spelling.
         parameter: String,

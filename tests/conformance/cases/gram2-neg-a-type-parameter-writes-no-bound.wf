@@ -1,0 +1,9 @@
+fn pass<T>(value: own T) -> back: own T pure {
+  doc "A type parameter with no written bound.";
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "GRAM-2, S37: a type parameter carries exactly one bound, always written, never inferred, with no default, so `gparam` has no unbounded alternative and an omitted bound is a grammar rejection.";
+  return exit_status(code: 0_u8);
+}

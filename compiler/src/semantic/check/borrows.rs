@@ -11,6 +11,7 @@ use super::super::model::{
     CheckedBufferRoot, CheckedExpression, CheckedMode, CheckedNominalKind, CheckedSliceOrigin,
     CheckedStatePath, CheckedType,
 };
+use super::linearity::LinearityClass;
 use super::{
     CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding, ParameterSignature,
     TypedExpression,
@@ -324,13 +325,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // order is the child order and each child owns exactly one region.
         let mut declarations = Vec::new();
         for member in self.tree.children_with(node, Production::RegionParam)? {
-            // [PROV-6, S32] a member may carry a linearity bound, read here at
-            // the declaration and checked at every instantiation. Every store
-            // a region names in this version is reclaimed by its own region
-            // release [STOR-4] and needs no capability, so no region argument
-            // fails a bound; the instantiation check lands with the version
-            // whose stores have a provider value.
-            let _bound = self.written_linearity_bound(member)?;
+            // [PROV-6, S37] a member may carry a linearity bound, read here at
+            // the declaration and checked at every instantiation over the
+            // store class of the region argument. `copy` is not one of the two
+            // classes a store has: the bound names the class of the store the
+            // region identifies, and no store is reclaimed by duplication.
+            if self.written_linearity_bound(member)? == Some(LinearityClass::Copy) {
+                return self.issue_node(
+                    SemanticRule::Prov6,
+                    member,
+                    SemanticIssueKind::InvalidRegionBound {
+                        mechanical_fix: "a region parameter's bound names its store: write \
+                             `affine` for a bump extent and `linear` for a general store, or \
+                             leave it unbounded",
+                    },
+                );
+            }
             declarations.push(
                 self.declaration_at(member, DeclarationRole::RegionParameter)?
                     .id(),

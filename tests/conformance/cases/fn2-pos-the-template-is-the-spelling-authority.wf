@@ -1,0 +1,24 @@
+fn pass<T: affine>(value: own T) -> back: own T pure {
+  doc "One body written for the affine class, serving a copy instance and an affine one.";
+  return move value;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "FN-2, OWN-1, S37: the body is checked once at the symbolic instance under its written bound, and the concrete-instance recheck does not re-judge the spelling FORM-1 keys on a value's class. `move` of a template-affine value denotes a copy at the copy instance, which is what lets one generic body serve both classes.";
+  let copied = pass::<u64>(value: 4_u64);
+  let payload = Some<u8>(value: 3_u8);
+  let held = pass::<Option<u8>>(value: move payload);
+  match held {
+    Some(value: got) => {
+      if copied == 4_u64 {
+        if got == 3_u8 {
+          return exit_status(code: 0_u8);
+        }
+      }
+      return exit_status(code: 1_u8);
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+}

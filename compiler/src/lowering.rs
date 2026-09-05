@@ -195,6 +195,20 @@ impl IrAddressed {
     }
 }
 
+/// [PROV-6, STOR-3] which release action a store-backed run's own reclamation
+/// is, carried into the IR because the region that decided it is erased there.
+///
+/// The checker fixes this from the store region's declaration alone
+/// [`crate::semantic::CheckedReleaseClass`]; nothing after that point
+/// rediscovers it, and no lowering may infer one action from a type shape.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum IrReleaseClass {
+    /// A free to the general store the run was taken from.
+    General,
+    /// Empty: the extent's reclamation is its region's own reset [BLK-2].
+    Extent,
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum IrType {
     Unit,
@@ -227,9 +241,10 @@ pub enum IrType {
     },
     /// One `Vector<'s, T>` [BLK-1]: the descriptor `{ pointer, cap, len,
     /// head }` over a run taken from the store `'s` names. The region is
-    /// erased here, having already decided the release action.
+    /// erased here, and the release action it decided travels in its place.
     Vector {
         element: IrFlatElement,
+        release: IrReleaseClass,
     },
     /// One provider value [PROV-1]. It is proof-only: the general store's
     /// provider carries no runtime state at all, and the bump extent's
@@ -294,7 +309,13 @@ fn lower_type(value: CheckedType) -> Result<IrType, LoweringFailure> {
                 .value()
                 .ok_or(LoweringFailure::InvalidCheckedProgram)?,
         },
-        CheckedType::Vector { element, .. } => IrType::Vector {
+        CheckedType::Vector {
+            element, release, ..
+        } => IrType::Vector {
+            release: match release {
+                crate::semantic::CheckedReleaseClass::General => IrReleaseClass::General,
+                crate::semantic::CheckedReleaseClass::Extent => IrReleaseClass::Extent,
+            },
             element: lower_flat_element(element)?,
         },
         CheckedType::Heap { .. } | CheckedType::Extent { .. } => IrType::Provider,

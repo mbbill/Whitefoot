@@ -2139,6 +2139,24 @@ impl<'program> IrBuilder<'program> {
         value: IrValueId,
     ) -> Result<(), LoweringFailure> {
         let binding = target.binding();
+        // [LIV-2] a commit whose target declares its own binding is that
+        // binding's initialization, exactly as a `let` is: nothing before it
+        // holds storage for it, so the committed value becomes the binding.
+        if let CheckedSetTarget::Place(place) = target
+            && place.declares
+        {
+            if place.fields.is_empty() {
+                if self.value_type(value)? != lower_type(place.ty)? {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                if self.bindings.insert(binding, value).is_some() {
+                    return Err(LoweringFailure::InvalidCheckedProgram);
+                }
+                self.promote_binding_if_needed(binding)?;
+                return Ok(());
+            }
+            return Err(LoweringFailure::InvalidCheckedProgram);
+        }
         let storage = self
             .bindings
             .get(&binding)

@@ -8,23 +8,7 @@ use super::super::{
     ResolvedTarget, ScopeId, SystemDeclarationRecord,
 };
 use super::inventory::conflict_key;
-use super::{BuildStop, DeclarationIndex, DeclarationMeta, UseMeta, is_visible};
-
-pub(super) fn resolve_uses(
-    scopes: &ScopeBuild,
-    declarations: &[DeclarationRecord],
-    metas: &[DeclarationMeta],
-    index: &DeclarationIndex,
-    uses: &[UseMeta],
-    system: &[SystemDeclarationRecord],
-) -> Result<Vec<LexicalUseRecord>, BuildStop> {
-    let (resolved, issue) =
-        resolve_uses_deferred(scopes, declarations, metas, index, uses, system)?;
-    match issue {
-        Some(issue) => Err(BuildStop::Issue(Box::new(issue))),
-        None => Ok(resolved),
-    }
-}
+use super::{DeclarationIndex, DeclarationMeta, UseMeta, is_visible};
 
 pub(super) fn resolve_uses_deferred(
     scopes: &ScopeBuild,

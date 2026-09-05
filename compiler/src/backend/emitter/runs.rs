@@ -28,7 +28,7 @@ impl RunShape {
     const fn of(ty: IrType) -> Option<Self> {
         match ty {
             IrType::FixedVector { element, length } => Some(Self::Inline { element, length }),
-            IrType::Vector { element } => Some(Self::Descriptor { element }),
+            IrType::Vector { element, .. } => Some(Self::Descriptor { element }),
             _ => None,
         }
     }

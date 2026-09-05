@@ -702,8 +702,8 @@ fn a_copied_affine_binder_element_map_is_permitted() {
     let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(128_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
-    let copy = i;
-    let slot = copy * 2_u64;
+    let step = i;
+    let slot = step * 2_u64;
     set out[slot] = i;
   }
   return exit_status(code: 0_u8);
@@ -724,8 +724,8 @@ fn op4_retains_the_affine_index_map_consumed_by_parallel_permission() {
     let source = b"command fn main() -> status: own ExitStatus allocates(heap) {
   let out = buffer_new(128_u64, 0_u64);
   for @fill (i in 0_u64..64_u64) {
-    let copy = i;
-    let slot = copy * 2_u64;
+    let step = i;
+    let slot = step * 2_u64;
     set out[slot] = i;
   }
   return exit_status(code: 0_u8);

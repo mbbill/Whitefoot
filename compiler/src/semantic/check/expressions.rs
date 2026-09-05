@@ -278,6 +278,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binding: local.binding,
                 fields,
                 ty,
+                declares: false,
             }),
             effects,
             unsupported: None,
@@ -294,7 +295,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         form: MutationForm,
     ) -> Result<(), CheckStop> {
         let MutationForm::Set = form else {
-            if self.is_copy_type(ty)? {
+            if self.is_copy_type(ty)? && self.judges_class_spelling() {
                 return self.issue_node(
                     SemanticRule::Set2,
                     node,
@@ -457,7 +458,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.checked_type_name(element.ty())?
                 )
             }
-            CheckedType::Vector { region, element } => {
+            CheckedType::Vector {
+                region, element, ..
+            } => {
                 let element = self.checked_type_name(element.ty())?;
                 match self.region_spelling(region).as_str() {
                     "" => format!("Vector<{element}>"),
@@ -1270,7 +1273,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 let (fields, ty) = self.resolve_struct_path(&suffixes, local.ty)?;
                 let copy = self.is_copy_type(ty)?;
-                if options.explicit_move && copy {
+                if options.explicit_move && copy && self.judges_class_spelling() {
                     return self.issue_node(
                         SemanticRule::Own1,
                         use_node,
@@ -1588,6 +1591,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binding: local.binding,
                 fields,
                 ty,
+                declares: false,
             }),
             effects: EffectSet::NONE,
             unsupported,
@@ -1651,6 +1655,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 binding: local.binding,
                 fields,
                 ty,
+                declares: false,
             }),
             effects,
             unsupported: None,

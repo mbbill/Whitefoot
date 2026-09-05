@@ -567,6 +567,19 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// everywhere else, where the brand resolves to the entry heap's store
     /// region.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
+    /// [FN-2, OWN-1, S37] whether the body now being checked is a *concrete
+    /// instance* of a generic template whose spelling one symbolic instance
+    /// has already judged.
+    ///
+    /// The template is the spelling authority: an `affine` or `linear` body
+    /// writes `move`, a `copy` body writes bare use, and the one symbolic
+    /// instance decides both once. The concrete-instance recheck therefore
+    /// does not re-judge the [OWN-1]/[FORM-1] spelling, and a `move` of a
+    /// template-affine value at a copy instance denotes a copy. Every other
+    /// [OWN-1] judgment — consume-once, dead roots, exclusivity — is
+    /// re-judged as usual, because those are properties of the concrete
+    /// instance and not of the written spelling.
+    template_spelling_authority: std::cell::Cell<bool>,
     /// [LIV-2] the target places of the `set` commit whose right-hand side is
     /// being checked, and whether that right-hand side has read each out.
     /// Empty everywhere else: `check_commit` installs it around exactly that
@@ -900,6 +913,23 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// mints it under a name no source token can form, and printing that name
     /// would name a region the writer cannot write. Diagnostics that quote a
     /// region go through this instead of the raw spelling.
+    /// [OWN-1, FORM-1, FN-2, S37] whether this body is the authority on the
+    /// spellings [FORM-1] keys on a value's copy/affine class.
+    ///
+    /// Those are `move p` versus a bare `p` [OWN-1] and `replace` versus `set`
+    /// [SET-1, SET-2]: one spelling per meaning, selected by the class. A
+    /// concrete instance of a generic template is not their authority: the
+    /// template's one symbolic instance judged them under the parameter's
+    /// written bound, so at a copy instance a `move` of a template-affine
+    /// value denotes a copy and a `replace` of one denotes the same exchange,
+    /// rather than reopening a judgment the template already made. Every other
+    /// judgment of those rules — consume-once, dead roots, exclusivity, the
+    /// region-free demand on a replacement target — is re-judged here, because
+    /// each is a property of the concrete instance and not of the spelling.
+    pub(in crate::semantic::check) fn judges_class_spelling(&self) -> bool {
+        !self.template_spelling_authority.get()
+    }
+
     pub(in crate::semantic::check) fn region_phrase(
         &self,
         region: DeclarationId,
@@ -994,6 +1024,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
+            template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),
             system_nominals: HashMap::new(),
@@ -1548,7 +1579,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.check_function_signature(signature)
     }
 
+    /// [FN-2, OWN-1, S37] one body, checked with the template's spelling
+    /// authority recorded for the instance it is.
+    ///
+    /// A concrete instance of a generic template is exactly the body whose
+    /// [OWN-1]/[FORM-1] spelling the template's own symbolic instance already
+    /// judged under the parameter's written bound, so this instance does not
+    /// re-judge it. A symbolic instance and a nongeneric body are their own
+    /// authority and judge the spelling here.
     fn check_function_signature(
+        &self,
+        signature: &FunctionSignature,
+    ) -> Result<CheckedFunctionInventory, CheckStop> {
+        let previous = self
+            .template_spelling_authority
+            .replace(signature.substitution.len() > 0 && signature.substitution.is_concrete());
+        let outcome = self.check_function_signature_body(signature);
+        self.template_spelling_authority.set(previous);
+        outcome
+    }
+
+    fn check_function_signature_body(
         &self,
         signature: &FunctionSignature,
     ) -> Result<CheckedFunctionInventory, CheckStop> {
@@ -2693,10 +2744,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element: self.instantiate_goal_flat_element(element, signature, regions)?,
                 length: self.instantiate_goal_const(length, signature)?,
             },
-            CheckedType::Vector { region, element } => CheckedType::Vector {
-                region: self.instantiate_goal_region(region, signature, regions)?,
-                element: self.instantiate_goal_flat_element(element, signature, regions)?,
-            },
+            CheckedType::Vector {
+                region, element, ..
+            } => {
+                let region = self.instantiate_goal_region(region, signature, regions)?;
+                CheckedType::Vector {
+                    region,
+                    element: self.instantiate_goal_flat_element(element, signature, regions)?,
+                    release: self.vector_release_class(region)?,
+                }
+            }
             CheckedType::Heap { region } => CheckedType::Heap {
                 region: self.instantiate_goal_region(region, signature, regions)?,
             },

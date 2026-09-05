@@ -930,7 +930,7 @@ impl LayoutComputer<'_, '_, '_, '_> {
             // A `Vector` descriptor is a pointer, a capacity, a length, and a
             // window origin [BLK-1]; a provider is proof-only and carries at
             // most its own cursor.
-            IrType::Vector { element } => {
+            IrType::Vector { element, .. } => {
                 self.flat_element(element)?;
                 Ok(Layout { size: 32, align: 8 })
             }

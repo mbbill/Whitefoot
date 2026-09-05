@@ -1,4 +1,4 @@
-fn poly<T>(x: own T) -> result: own T pure {
+fn poly<T: affine>(x: own T) -> result: own T pure {
   doc "Polymorphic recursion: the call instantiates the callee at a different type parameter [FN-6 violated].";
   let y = poly::<i32>(x: 0_i32);
   return x;

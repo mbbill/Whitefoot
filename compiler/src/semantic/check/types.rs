@@ -668,9 +668,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     return mismatch("a const argument in the Vector element position");
                 }
                 let element = element_of(*element)?;
+                let region = written_region.unwrap_or_else(|| self.elided_store_region());
                 Ok(CheckedType::Vector {
-                    region: written_region.unwrap_or_else(|| self.elided_store_region()),
+                    region,
                     element,
+                    release: self.vector_release_class(region)?,
                 })
             }
             crate::ContainerShape::FixedVector => {

@@ -372,7 +372,7 @@ fn emit_cleanup_jobs(
                 // makes such a run. A run whose element type derives a
                 // release action of its own is an explicit unsupported
                 // capability, refused at its type before lowering.
-                IrType::Vector { element } => {
+                IrType::Vector { element, .. } => {
                     if type_requires_cleanup(program, element.ty())? {
                         return Err(BackendFailure::InvalidIr);
                     }

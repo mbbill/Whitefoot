@@ -1,0 +1,10 @@
+fn discard<T: linear>(value: own T) -> count: own u8 pure {
+  doc "The value reaches this scope's exit without being consumed.";
+  return 2_u8;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6, S37: under the `linear` bound the body must consume its value exactly once and may never drop it, so a body that lets it reach a scope exit is refused at the declaration, naming the written bound where a marked nominal would otherwise be named.";
+  let n = discard::<u64>(value: 4_u64);
+  return exit_status(code: n);
+}

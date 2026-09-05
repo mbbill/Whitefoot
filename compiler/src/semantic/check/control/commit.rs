@@ -14,6 +14,7 @@ use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKin
 
 use super::super::super::model::{
     CheckedCommitValues, CheckedExpression, CheckedSetTarget, CheckedStatement,
+    CheckedWritablePlace,
 };
 use super::super::borrows::{ResolvedPlace, places_overlap};
 use super::super::expressions::MutationTarget;
@@ -86,6 +87,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         function: &FunctionSignature,
         node: NodeId,
         bindings: &mut HashMap<DeclarationId, LocalBinding>,
+        counters: &mut super::ControlCounters<'_>,
         scope: ControlScope<'_>,
     ) -> Result<StatementResult, CheckStop> {
         let target_nodes = self.tree.children_with(node, Production::Place)?;
@@ -96,10 +98,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         // [LIV-2] every target place is resolved and judged in written order,
         // before the right-hand side is evaluated, and the resolution is not
-        // re-taken at the commit.
+        // re-taken at the commit. A target that declares its own binding has
+        // nothing to resolve and nothing to read out: it is formed below,
+        // once its ordinal has fixed its type.
         let mut targets: Vec<FormedTarget> = Vec::with_capacity(target_nodes.len());
+        let mut declaring: Vec<(usize, NodeId, DeclarationId)> = Vec::new();
         let mut effects = EffectSet::NONE;
-        for target_node in &target_nodes {
+        for (ordinal, target_node) in target_nodes.iter().enumerate() {
+            if let Some(declaration) = self.declaring_commit_target(*target_node)? {
+                declaring.push((ordinal, *target_node, declaration));
+                continue;
+            }
             let revives = self.commit_revives_binding(*target_node, bindings)?;
             let mutation =
                 self.check_set_target(function, *target_node, bindings, scope.loops.len())?;
@@ -143,7 +152,78 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
 
         // Condition 3, then the commit itself.
-        let ordinals = self.commit_ordinal_types(node, &targets, &values)?;
+        let ordinals = self.commit_ordinal_types(node, target_nodes.len(), &values)?;
+        // [LIV-2, TYPE-5] a declaring target's binding is minted here, dead,
+        // with its own ordinal's type; the ordinary target formation then
+        // judges it exactly as it judges a `let`-bound binding this commit
+        // revives, and the commit below makes it live.
+        for (ordinal, target_node, declaration) in declaring {
+            let ty = *ordinals
+                .get(ordinal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let binding = Self::allocate_binding(counters.next_binding)?;
+            counters
+                .binding_names
+                .push(self.declaration_spelling(declaration)?);
+            if bindings
+                .insert(
+                    declaration,
+                    LocalBinding {
+                        binding,
+                        declaration,
+                        mode: crate::semantic::model::CheckedMode::Own,
+                        ty,
+                        state_origins: None,
+                        live: false,
+                        loop_depth: scope.loops.len(),
+                        compiler_updated: false,
+                        borrow: None,
+                        slice: None,
+                        slice_loans: Vec::new(),
+                        suspended: false,
+                    },
+                )
+                .is_some()
+            {
+                return Err(SemanticCompilerFailure::InvalidResolution.into());
+            }
+            // The target names no existing place, so there is nothing to
+            // resolve, nothing to read out and nothing to overlap: what the
+            // statement writes is this binding's own fresh storage, and
+            // [EFF-2] attributes the write to that storage exactly as a `let`
+            // attributes its initialization.
+            let place = ResolvedPlace {
+                root: declaration,
+                fields: Vec::new(),
+            };
+            let mut target_effects = EffectSet::NONE;
+            for path in self.effect_paths_for_place(&place, bindings)? {
+                target_effects.add_write(path);
+            }
+            let mutation = MutationTarget {
+                declaration,
+                place,
+                element: false,
+                target: CheckedSetTarget::Place(CheckedWritablePlace {
+                    binding,
+                    fields: Vec::new(),
+                    ty,
+                    declares: true,
+                }),
+                effects: target_effects,
+                unsupported: None,
+            };
+            effects = effects.union(mutation.effects.clone());
+            targets.insert(
+                ordinal.min(targets.len()),
+                FormedTarget {
+                    node: target_node,
+                    mutation,
+                    revives: true,
+                    read_out: false,
+                },
+            );
+        }
         for (target, ty) in targets.iter().zip(&ordinals) {
             if target.mutation.target.ty() != *ty {
                 return self.issue_node(
@@ -262,10 +342,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     fn commit_ordinal_types(
         &self,
         node: NodeId,
-        targets: &[FormedTarget],
+        targets: usize,
         values: &[super::super::TypedExpression],
     ) -> Result<Vec<super::super::super::model::CheckedType>, CheckStop> {
-        if values.len() == targets.len() {
+        if values.len() == targets {
             return Ok(values.iter().map(|value| value.expression.ty()).collect());
         }
         // More than one target and exactly one written expression: the
@@ -276,7 +356,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 SemanticRule::Type5,
                 node,
                 SemanticIssueKind::type_mismatch(
-                    format!("{} committed values", targets.len()),
+                    format!("{targets} committed values"),
                     format!("{} written values", values.len()),
                 ),
             );
@@ -287,11 +367,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .and_then(|expr| self.tree.first_child_with(expr, Production::Call).ok()?)
             .unwrap_or(node);
         let Some(nominal) = self.result_list_of(value) else {
-            return self.result_list_shape_rejection(call, targets.len(), value);
+            return self.result_list_shape_rejection(call, targets, value);
         };
         let ordinals = self.result_list_ordinals(nominal)?;
-        if ordinals.len() != targets.len() {
-            return self.result_list_shape_rejection(call, targets.len(), value);
+        if ordinals.len() != targets {
+            return self.result_list_shape_rejection(call, targets, value);
         }
         Ok(ordinals)
     }
@@ -381,6 +461,36 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             }
         }
         Ok(())
+    }
+
+    /// [LIV-2] the declaration one `set` target mints, when its identifier
+    /// resolved to no binding.
+    ///
+    /// The resolver decides this, not the checker: a target identifier with no
+    /// visible binding is promoted there to an ordinary `let` declaration
+    /// owned by its own `pbase`, so the question here is exactly whether this
+    /// target's base owns one.
+    fn declaring_commit_target(
+        &self,
+        target_node: NodeId,
+    ) -> Result<Option<DeclarationId>, CheckStop> {
+        if !self
+            .tree
+            .children_with(target_node, Production::Psuffix)?
+            .is_empty()
+        {
+            return Ok(None);
+        }
+        let Some(pbase) = self.tree.first_child_with(target_node, Production::Pbase)? else {
+            return Ok(None);
+        };
+        if !self.tree.children(pbase)?.is_empty() {
+            return Ok(None);
+        }
+        Ok(self
+            .declaration_at(pbase, crate::DeclarationRole::Let)
+            .ok()
+            .map(|declaration| declaration.id()))
     }
 
     /// Whether this written target is a complete binding that is already dead,

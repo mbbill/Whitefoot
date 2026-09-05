@@ -1,4 +1,4 @@
-contract GenericMarker<T> {
+contract GenericMarker<T: affine> {
 }
 
 command fn main() -> status: own ExitStatus pure {

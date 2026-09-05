@@ -372,7 +372,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // [GRAM-4, SET-1, LIV-2] every written `set` is one commit: the
             // targets are resolved and judged first, then the whole
             // right-hand side, then the three admission conditions.
-            Production::SetStmt => self.check_commit(function, node, bindings, scope),
+            Production::SetStmt => self.check_commit(function, node, bindings, counters, scope),
             Production::LoopStmt => self.check_loop(function, node, bindings, counters, scope),
             Production::ForStmt => {
                 self.check_counted_range(function, node, bindings, counters, scope)

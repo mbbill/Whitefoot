@@ -718,7 +718,7 @@ fn operation_call_shapes_keep_their_exact_rule_owners() {
 fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // Missing the arguments the callee's class mandates.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -730,7 +730,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
     // A wrong-count argument list, the same failure on both classes.
     assert_rule_kind(
-        b"struct Held {\n  v: i32;\n}\n\nfn pick<T>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Held {\n  v: i32;\n}\n\nfn pick<T: affine>(value: own T) -> result: own T pure {\n  return move value;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let a = Held(v: 1_i32);\n  let b = pick::<Held, Held>(value: move a);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn2,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -745,7 +745,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
     // user-generic call, so it is the control that the rule is not simply
     // keyed on that reader.
     assert_rule_kind(
-        b"struct Pair<T> {\n  v: T;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
+        b"struct Pair<T: affine> {\n  v: T;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  let p = Pair(v: 1_i32);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         |kind| matches!(kind, SemanticIssueKind::TypeMismatch { .. }),
     );
@@ -771,7 +771,7 @@ fn effect_mismatch_is_located_at_the_written_effect_row() {
 #[test]
 fn invalid_generic_main_is_fn7_not_an_unsupported_generic() {
     assert_rule(
-        b"fn main<T>() -> result: own unit pure {\n  return unit;\n}\n",
+        b"fn main<T: affine>() -> result: own unit pure {\n  return unit;\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidMain,
     );

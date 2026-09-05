@@ -14,10 +14,17 @@ use crate::{Production, SemanticIssueKind, SemanticRule, TerminalPredicate};
 use super::super::model::{CheckedNominalKind, CheckedType, NominalId};
 use super::{CheckStop, Checker};
 
-/// [PROV-6] the linearity class a declaration may write as a bound, and the
+/// [PROV-6, S37] the linearity class a declaration writes as a bound, and the
 /// class this compiler computes for a type in a scope.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+///
+/// The three form the strict chain `copy < affine < linear`, ordered by what a
+/// body may do with a value of the class: `copy` may duplicate it, use it bare
+/// and drop it; `affine` may `move` it at most once and may drop it; `linear`
+/// must consume it exactly once and may never drop it.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(in crate::semantic) enum LinearityClass {
+    /// Duplicated on use and dropped without any action [OWN-1].
+    Copy,
     /// Reclaimed without spending a capability and unmarked.
     Affine,
     /// Marked by the modifier, or reclaimed by spending a capability this
@@ -28,9 +35,17 @@ pub(in crate::semantic) enum LinearityClass {
 impl LinearityClass {
     pub(in crate::semantic) const fn spelling(self) -> &'static str {
         match self {
+            Self::Copy => "copy",
             Self::Affine => "affine",
             Self::Linear => "linear",
         }
+    }
+
+    /// [PROV-6, S37] satisfaction is the chain read left to right: an argument
+    /// of class `self` instantiates the bound `bound` exactly when
+    /// `self <= bound`. The reverse direction is the rule's hard error.
+    pub(in crate::semantic) fn satisfies(self, bound: Self) -> bool {
+        self <= bound
     }
 }
 
@@ -158,15 +173,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [PROV-6] the linearity class of a value of this type in the scope now
     /// being checked.
     ///
+    /// The copy half is [OWN-1]'s own classification, which [PROV-6] refines
+    /// and replaces nothing of: a copy value is never affine and never linear.
     /// The capability half is stated over the provider a scope holds. In this
     /// version the only provider is the ambient heap, which every scope
     /// holds, so the capability half makes nothing linear here and the
-    /// modifier is the whole of the answer. The version that makes a
+    /// modifier is the whole of the remaining answer. The version that makes a
     /// provider a written value is where the second half first fires.
+    ///
+    /// A type parameter standing for itself at a symbolic instance [FN-2] has
+    /// exactly the class its written bound names [S37]: the body is checked
+    /// once under that bound and the bound is what the body was written for.
     pub(in crate::semantic) fn linearity_class(
         &self,
         ty: CheckedType,
     ) -> Result<LinearityClass, CheckStop> {
+        if let CheckedType::Generic(declaration) = ty {
+            return self.generic_parameter_class(declaration);
+        }
+        if self.is_copy_type(ty)? {
+            return Ok(LinearityClass::Copy);
+        }
         Ok(if self.owns_modifier_linear_node(ty)?.is_some() {
             LinearityClass::Linear
         } else {
@@ -184,10 +211,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         name: &str,
         node: NodeId,
     ) -> Result<(), CheckStop> {
-        let Some(marked) = self.owns_modifier_linear_node(ty)? else {
-            return Ok(());
+        // [S37] a `linear`-bounded type parameter is linear at its symbolic
+        // instance: the body is checked once under its written bound, and
+        // under `linear` it must consume the value exactly once and may never
+        // drop it. The obligation names the bound rather than a nominal,
+        // because at the symbolic instance no nominal carries it.
+        let marked = match self.owns_modifier_linear_node(ty)? {
+            Some(marked) => self.nominal(marked)?.name.clone(),
+            None => {
+                if self.linearity_class(ty)? != LinearityClass::Linear {
+                    return Ok(());
+                }
+                let named = match ty {
+                    CheckedType::Generic(declaration) => self.declaration_spelling(declaration)?,
+                    other => self.checked_type_name(other)?,
+                };
+                format!("the `linear` bound written on {named}")
+            }
         };
-        let marked = self.nominal(marked)?.name.clone();
         self.issue_node::<()>(
             SemanticRule::Prov6,
             node,
@@ -282,22 +323,139 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         else {
             return Ok(None);
         };
-        if self
-            .tree
-            .direct_token_with(
-                bound,
-                TerminalPredicate::Fixed(crate::FixedTerminal::Linear),
-            )?
-            .is_some()
-        {
-            return Ok(Some(LinearityClass::Linear));
+        for (terminal, class) in [
+            (crate::FixedTerminal::Linear, LinearityClass::Linear),
+            (crate::FixedTerminal::Copy, LinearityClass::Copy),
+        ] {
+            if self
+                .tree
+                .direct_token_with(bound, TerminalPredicate::Fixed(terminal))?
+                .is_some()
+            {
+                return Ok(Some(class));
+            }
         }
         Ok(Some(LinearityClass::Affine))
     }
 
-    /// [PROV-6, S32] an instantiation whose argument's class is not the
-    /// written bound is refused at the call, naming the parameter, the bound
-    /// and the argument.
+    /// [PROV-6, S37] the class a type parameter's written bound names.
+    ///
+    /// The bound is mandatory [GRAM-2], so a `gparam` that writes no
+    /// `linearity_bound` writes a marker TYPEID instead — `Int` or `Float`,
+    /// each of which is a copy class [OP-1, OWN-1]. The reader is over the
+    /// parameter's own declaration and never over a use of it.
+    pub(in crate::semantic) fn generic_parameter_class(
+        &self,
+        declaration: crate::DeclarationId,
+    ) -> Result<LinearityClass, CheckStop> {
+        let record = self
+            .resolved
+            .declarations()
+            .iter()
+            .find(|candidate| candidate.id() == declaration)
+            .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+        let node = self
+            .tree
+            .node_with_path(record.origin().node())
+            .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+        Ok(self
+            .written_linearity_bound(node)?
+            .unwrap_or(LinearityClass::Copy))
+    }
+
+    /// [PROV-1, PROV-6, S37] the store class of one region, or `None` when
+    /// that region names no store.
+    ///
+    /// The answer is read from the region's own declaration and from the
+    /// reserving occurrences of the unit, never from a type over it: the entry
+    /// heap is the general store, a bounded region parameter is the class its
+    /// bound names, and a `region_stmt` region is a bump extent exactly when a
+    /// reserving occurrence [BLK-2] names it. Every other region — a loop
+    /// body's, an unwritten borrow position's, an unbounded region parameter's
+    /// — names no store, which is the answer that satisfies neither bound.
+    pub(in crate::semantic) fn region_store_class(
+        &self,
+        region: crate::DeclarationId,
+    ) -> Result<Option<LinearityClass>, CheckStop> {
+        if region.is_entry_heap_region() {
+            return Ok(Some(LinearityClass::Linear));
+        }
+        let record = self
+            .resolved
+            .declarations()
+            .iter()
+            .find(|candidate| candidate.id() == region)
+            .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+        let role = record.role();
+        let Some(node) = self.tree.node_with_path(record.origin().node()) else {
+            return Ok(None);
+        };
+        if role == crate::DeclarationRole::RegionParameter {
+            return self.written_linearity_bound(node);
+        }
+        if role != crate::DeclarationRole::LocalRegion {
+            return Ok(None);
+        }
+        for call in self
+            .tree
+            .descendants_with(self.tree.root(), Production::Call)?
+        {
+            if self.reserving_occurrence_names(call, region)? {
+                return Ok(Some(LinearityClass::Affine));
+            }
+        }
+        Ok(None)
+    }
+
+    /// [PROV-6, STOR-1, STOR-3] the release class of a run branded by one
+    /// region, decided from that region's own declaration.
+    ///
+    /// It is the store class read fail-closed: an `affine`-bounded region
+    /// parameter and a `region_stmt` region are bump extents, whose
+    /// reclamation is the region's own reset, and every other region — the
+    /// entry heap, an unbounded region parameter, a `linear`-bounded one — is
+    /// a general store whose run is released by spending a provider. A
+    /// misclassification in the extent direction would drop a free, so the
+    /// two extent cases are the ones that must be positively identified.
+    pub(in crate::semantic) fn vector_release_class(
+        &self,
+        region: crate::DeclarationId,
+    ) -> Result<super::super::model::CheckedReleaseClass, CheckStop> {
+        use super::super::model::CheckedReleaseClass;
+        if region.is_entry_heap_region() {
+            return Ok(CheckedReleaseClass::General);
+        }
+        let Some(record) = self
+            .resolved
+            .declarations()
+            .iter()
+            .find(|candidate| candidate.id() == region)
+        else {
+            return Ok(CheckedReleaseClass::General);
+        };
+        Ok(match record.role() {
+            crate::DeclarationRole::LocalRegion => CheckedReleaseClass::Extent,
+            crate::DeclarationRole::RegionParameter => {
+                let node = self
+                    .tree
+                    .node_with_path(record.origin().node())
+                    .ok_or(crate::SemanticCompilerFailure::InvalidResolution)?;
+                match self.written_linearity_bound(node)? {
+                    Some(LinearityClass::Affine) => CheckedReleaseClass::Extent,
+                    _ => CheckedReleaseClass::General,
+                }
+            }
+            _ => CheckedReleaseClass::General,
+        })
+    }
+
+    /// [PROV-6, S37] an instantiation whose argument's class does not satisfy
+    /// the written bound is refused at the call, naming the parameter, the
+    /// bound and the argument.
+    ///
+    /// Satisfaction is the chain `copy < affine < linear` read left to right,
+    /// so the bound is a ceiling and not an equality: `linear` accepts every
+    /// class, `affine` accepts copy and affine, and `copy` accepts copy alone.
     pub(in crate::semantic) fn check_linearity_bound(
         &self,
         parameter: &str,
@@ -306,7 +464,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
     ) -> Result<(), CheckStop> {
         let actual = self.linearity_class(argument)?;
-        if actual == bound {
+        if actual.satisfies(bound) {
             return Ok(());
         }
         let argument = self.checked_type_name(argument)?;
@@ -318,6 +476,42 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 bound: bound.spelling(),
                 argument,
                 actual: actual.spelling(),
+            },
+        )?;
+        Ok(())
+    }
+
+    /// [PROV-6, S37] the region axis of the same check.
+    ///
+    /// A region argument's class is `affine` when the store it names is a bump
+    /// extent, whose reclamation is its own region reset, and `linear` when it
+    /// names a general store, whose reclamation spends a provider capability
+    /// [PROV-1]. A region that names no store — a loan region, or a region a
+    /// `region_stmt` introduced that no reserving occurrence names — has no
+    /// store class and satisfies neither bound.
+    pub(in crate::semantic) fn check_region_linearity_bound(
+        &self,
+        parameter: &str,
+        bound: LinearityClass,
+        argument: crate::DeclarationId,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        let actual = self.region_store_class(argument)?;
+        if actual.is_some_and(|actual| actual.satisfies(bound)) {
+            return Ok(());
+        }
+        self.issue_node::<()>(
+            SemanticRule::Prov6,
+            node,
+            SemanticIssueKind::LinearityBoundMismatch {
+                parameter: parameter.to_owned(),
+                bound: bound.spelling(),
+                argument: if argument.is_entry_heap_region() {
+                    "the entry heap's store region".to_owned()
+                } else {
+                    self.region_phrase(argument)?
+                },
+                actual: actual.map_or("a region that names no store", LinearityClass::spelling),
             },
         )?;
         Ok(())

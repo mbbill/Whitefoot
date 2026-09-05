@@ -768,7 +768,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if options.explicit_move {
+        if options.explicit_move && self.judges_class_spelling() {
             return self.issue_node(
                 SemanticRule::Own1,
                 use_node,

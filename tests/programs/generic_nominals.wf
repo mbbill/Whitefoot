@@ -12,7 +12,7 @@ struct Packet<const n: u64> {
   bytes: array<u8, n>;
 }
 
-struct Holder<T> {
+struct Holder<T: affine> {
   value: T;
 }
 

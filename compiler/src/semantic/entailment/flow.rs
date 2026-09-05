@@ -13398,6 +13398,7 @@ mod goal_origin_kill_tests {
             binding,
             fields: vec![1],
             ty: CheckedType::Bool,
+            declares: false,
         });
 
         invalidate_goal_origin_for_set(&mut state, &target);

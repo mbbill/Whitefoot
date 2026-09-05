@@ -115,10 +115,10 @@ fn a_missing_entry_is_the_one_bundle_root_rejection() {
 #[test]
 fn the_entry_is_nongeneric_and_declares_no_region_parameter() {
     assert_rule_at(
-        b"command fn main<T>() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main<T: affine>() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Fn7,
         SemanticIssueKind::InvalidMain,
-        b"<T>",
+        b"<T: affine>",
     );
     // [FORM-8] separately rejects a region parameter list no position of the
     // declaration writes; [FN-7] is defined first and owns the entry form.

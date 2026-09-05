@@ -70,7 +70,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn conformance_subject_materializes_its_only_generic_nominal_instance() {
-    let source = br#"struct Wrapper<T> {
+    let source = br#"struct Wrapper<T: affine> {
   value: T;
 }
 
@@ -105,7 +105,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn contract_member_materializes_its_only_generic_nominal_instance() {
-    let source = br#"struct Wrapper<T> {
+    let source = br#"struct Wrapper<T: affine> {
   value: T;
 }
 
@@ -288,7 +288,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn contract_generics_point_at_the_generic_child() {
-    let source = br#"contract Generic<T> {
+    let source = br#"contract Generic<T: affine> {
 }
 
 command fn main() -> status: own ExitStatus pure {
@@ -299,7 +299,7 @@ command fn main() -> status: own ExitStatus pure {
         source,
         SemanticRule::Fn3,
         SemanticIssueKind::GenericContract,
-        b"<T>",
+        b"<T: affine>",
     );
 }
 

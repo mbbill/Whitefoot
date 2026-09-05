@@ -1,0 +1,28 @@
+fn carve['s: affine](store: &uniq Arena<'s, 256, 16>) -> made: own Option<Vector<'s, u64>> reads(store), writes(store) {
+  doc "One helper generic over a bump store: the region argument is substituted into this parameter's container type at every call.";
+  region {
+    return seq_arena::<u64>(store: &uniq deref(store), count: 4_u64);
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "PROV-6, S37: a region argument naming a bump extent has store class affine and satisfies an `affine`-bounded region parameter, so a source function may be generic over a store. The region occupies an input position, so FORM-8 leaves it unwritten at the call and the actual determines it.";
+  region 'a {
+    let workspace = arena_frame::<256, 16, 'a>();
+    region {
+      let taken = carve(store: &uniq workspace);
+      match taken {
+        Some(value: run) => {
+          let spare = room_of(run);
+          if spare == 4_u64 {
+            return exit_status(code: 0_u8);
+          }
+          return exit_status(code: 1_u8);
+        }
+        None() => {
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
+}

@@ -1,4 +1,4 @@
-fn only<T>(value: own T) -> made: own FixedVector<T, 4> pure contract {
+fn only<T: affine>(value: own T) -> made: own FixedVector<T, 4> pure contract {
   ensures len_of(made) >= 1_u64;
 } {
   doc "Builds a run of one element at an unbounded element type.";

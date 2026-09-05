@@ -239,14 +239,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                 ),
                 (
-                    match parameter.ty {
-                        CheckedType::Slice { region, .. } => Some(region),
-                        _ => None,
-                    },
-                    match expected_type {
-                        CheckedType::Slice { region, .. } => Some(region),
-                        _ => None,
-                    },
+                    Self::written_type_region(parameter.ty),
+                    Self::written_type_region(expected_type),
                 ),
             ] {
                 let (Some(formal), Some(actual)) = (formal, actual) else {
@@ -295,6 +289,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             arguments.push(argument.expression);
         }
         let actual_regions = Self::resolved_regions(&region_bindings)?;
+        self.check_region_parameter_bounds(node, signature, &actual_regions)?;
         self.check_call_borrow_overlap(node, &checked_borrows, &checked_slices)?;
         self.project_call_effects(
             node,
@@ -609,11 +604,46 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             matches!(
                 parameter.mode,
                 CheckedMode::Shared(region) | CheckedMode::Unique(region) if region == formal
-            ) || matches!(
-                parameter.ty,
-                CheckedType::Slice { region, .. } if region == formal
-            )
+            ) || Self::written_type_region(parameter.ty) == Some(formal)
         })
+    }
+
+    /// The one region a type writes at its own top level [FORM-8, PROV-1].
+    ///
+    /// A view names its loan region and each store-branded type names its
+    /// store region; every other type names none. This is the region axis of
+    /// substitution: a parameter whose type names a formal region determines
+    /// that region from its actual, exactly as a borrow mode does, so the
+    /// caller does not write it.
+    const fn written_type_region(ty: CheckedType) -> Option<DeclarationId> {
+        match ty {
+            CheckedType::Slice { region, .. }
+            | CheckedType::Vector { region, .. }
+            | CheckedType::Heap { region }
+            | CheckedType::Extent { region, .. } => Some(region),
+            _ => None,
+        }
+    }
+
+    /// The same type with its written region replaced [FN-2, OWN-12].
+    const fn with_type_region(ty: CheckedType, region: DeclarationId) -> CheckedType {
+        match ty {
+            CheckedType::Slice { element, .. } => CheckedType::Slice { region, element },
+            CheckedType::Vector {
+                element, release, ..
+            } => CheckedType::Vector {
+                region,
+                element,
+                release,
+            },
+            CheckedType::Heap { .. } => CheckedType::Heap { region },
+            CheckedType::Extent { bytes, align, .. } => CheckedType::Extent {
+                region,
+                bytes,
+                align,
+            },
+            other => other,
+        }
     }
 
     /// The formal regions a caller writes: exactly those the callee's own
@@ -769,6 +799,49 @@ call's own arguments and is not written",
             };
         }
         Ok(bindings)
+    }
+
+    /// [PROV-6, S37] the region axis of the bound check, at one call.
+    ///
+    /// A written region parameter may carry a linearity bound, and that bound
+    /// is a claim about the *store* the region names: `affine` is a bump
+    /// extent, `linear` a general store [PROV-1]. The region argument this
+    /// call binds to it is the one every other region judgment uses, whether
+    /// the caller wrote it in the `::` list or a parameter position determined
+    /// it, so the check is over the resolved binding and never over a
+    /// spelling. Elided formal regions [FORM-8] carry no bound and are not
+    /// written, so only the written prefix is read.
+    fn check_region_parameter_bounds(
+        &self,
+        node: NodeId,
+        signature: &FunctionSignature,
+        actual_regions: &[DeclarationId],
+    ) -> Result<(), CheckStop> {
+        for (index, formal) in signature
+            .region_parameters
+            .iter()
+            .take(signature.written_regions)
+            .enumerate()
+        {
+            let record = self
+                .resolved
+                .declarations()
+                .iter()
+                .find(|candidate| candidate.id() == *formal)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            let Some(formal_node) = self.tree.node_with_path(record.origin().node()) else {
+                continue;
+            };
+            let Some(bound) = self.written_linearity_bound(formal_node)? else {
+                continue;
+            };
+            let spelling = record.spelling().to_owned();
+            let actual = *actual_regions
+                .get(index)
+                .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+            self.check_region_linearity_bound(&spelling, bound, actual, node)?;
+        }
+        Ok(())
     }
 
     /// The index of one formal region in the callee's formal-region list.
@@ -955,19 +1028,27 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         bindings: &[RegionBinding],
         actual: CheckedType,
     ) -> Result<CheckedType, CheckStop> {
-        let CheckedType::Slice { region, element } = ty else {
+        let Some(formal) = Self::written_type_region(ty) else {
             return Ok(ty);
         };
-        let index = Self::formal_region_index(signature, region)?;
+        let Ok(index) = Self::formal_region_index(signature, formal) else {
+            // A region this declaration does not parameterize — the entry
+            // heap's store region [PROV-1] is the one such region a parameter
+            // type can name — is not substituted at a call.
+            return Ok(ty);
+        };
         let binding = bindings
             .get(index)
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let region = match (binding.written, binding.region, actual) {
-            (true, Some(region), _) => region,
-            (false, _, CheckedType::Slice { region, .. }) => region,
+        let region = match (binding.written, binding.region) {
+            (true, Some(region)) => region,
+            (false, _) => match Self::written_type_region(actual) {
+                Some(region) => region,
+                None => return Ok(ty),
+            },
             _ => return Ok(ty),
         };
-        Ok(CheckedType::Slice { region, element })
+        Ok(Self::with_type_region(ty, region))
     }
 
     /// One formal type with every formal region already resolved.
@@ -977,16 +1058,18 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         signature: &FunctionSignature,
         actual_regions: &[DeclarationId],
     ) -> Result<CheckedType, CheckStop> {
-        let CheckedType::Slice { region, element } = ty else {
+        let Some(formal) = Self::written_type_region(ty) else {
             return Ok(ty);
         };
-        let index = Self::formal_region_index(signature, region)?;
-        Ok(CheckedType::Slice {
-            region: *actual_regions
+        let Ok(index) = Self::formal_region_index(signature, formal) else {
+            return Ok(ty);
+        };
+        Ok(Self::with_type_region(
+            ty,
+            *actual_regions
                 .get(index)
                 .ok_or(SemanticCompilerFailure::InvalidResolution)?,
-            element,
-        })
+        ))
     }
 
     fn substitute_slice_result(

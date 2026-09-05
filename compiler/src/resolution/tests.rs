@@ -1983,7 +1983,7 @@ struct Package<T: Bound, const n: i32> {
   items: array<T, n>;
 }
 
-enum Choice<T> {
+enum Choice<T: affine> {
   Absent();
   Present(value: T);
 }
