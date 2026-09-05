@@ -147,9 +147,13 @@ place land with those rows. B7a3 renames the four readers `len_of`, `cap_of`,
 `room_of` and `head_of` [S36], deletes [PROV-6]'s release-graph cycle refusal so a
 cyclic release recurses, and makes a measure former an affine factor of
 [INV-1], which is what a filling loop needs to state its own header relation.
-The store -- the bump take, the extent reservation and the general store's
-provider value -- together with the confinement rule, the arithmetic clause
-operand, the element-position window store and the retirement of the old
+B7a3b makes a contract clause side the affine expression an invariant already
+is, gives a parameter's measure in an `ensures` its entry datum and a `let`
+rebind its own, lands the element-position window store over both runs, and
+opens a run's element domain to [BLK-1]'s, which together are what let the
+design's own fixed-run library prove its contracts and run. The store -- the
+bump take, the extent reservation and the general store's provider value --
+together with the confinement rule, a run of runs and the retirement of the old
 container types, is what remains.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`

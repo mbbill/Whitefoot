@@ -683,6 +683,42 @@ writes that kill the measure [MSR-2], so a header conclusion never survives the
 statement that refutes it. Only the four measure formers are admitted there;
 every other call in an affine position is an [INV-1] rejection naming them.
 
+**Addition, v0.45: a contract clause side is that same affine expression.**
+The clause and the invariant now share one production [GRAM-4, GRAM-5, MSR-5],
+so what a loop header may state a contract may state too:
+
+```whitefoot
+requires at + 2_u64 <= len_of(vector);
+ensures len_of(rest) + 1_u64 == len_of(vector);
+```
+
+Before this version the `+` was a [GRAM-2] parse rejection at the operator, and
+the relation a boundary operation publishes — `len_of(result) = len_of(vector) + 1`
+— was unwritable in any source declaration, so no source helper could republish
+it and every library function over a run was unstatable. The arithmetic in a
+clause side performs no [OP-1] operation and creates no [OP-2] obligation
+[MSR-5]: it is a relation over mathematical values, not a computation. What a
+*published* relation is narrowed to is smaller than what a `requires` may
+carry — one difference bound between two operands displaced by a constant
+[FN-9] — so `ensures room_of(rebased) + len_of(vector) >= n;` is refused at the
+declaration while the same expression in a `requires` is admitted; write the
+two-datum fact as two clauses, or let [MSR-2]'s standing identity supply it.
+
+**And an affine atom is one bare local or one literal.** A const-generic
+parameter is not an atom [INV-1], so a loop over `n` that needs `n` inside an
+invariant binds it first:
+
+```whitefoot
+let limit = n;
+for @fill (
+  at in 0_u64..n,
+  invariant spare: room_of(built) + at >= limit
+) {
+```
+
+The binding is the [ENT-3.S6] equality that carries the symbolic constant into
+the affine domain; without it the atom does not resolve.
+
 Under v0.44 the same fact is stated directly in the contract
 that consumes it, with no binding and no `contract_define` at all: a
 `requires` and an `ensures` operand may be a measure of a place [MSR-5], so a
@@ -782,6 +818,35 @@ whitefootc: Semantics/Source [STOR-1]: SemanticIssue { rule: Stor1, …, kind: A
 { target_type: "Cell", mechanical_fix: "use replace: let old = replace p = e; binds the
 previous owner" } } at cells.wf:8:7 in line "  set left = move right;"
 ```
+
+**Addition, v0.45: the same commit over an `own` parameter keeps that
+parameter's contract meaning.** A measure of an `own` parameter named in an
+`ensures` denotes that parameter's **entry datum** [MSR-3] — a compiler-owned
+term with no place in it, which no write and no consume kills — so a body may
+write its own parameter back and every clause naming it still means what it
+read as at entry:
+
+```whitefoot
+fn try_place(vector: own FixedVector<u8, 4>, value: own u8)
+    -> (rest: own FixedVector<u8, 4>, unplaced: own Option<u8>)
+    reads(vector), writes(vector) contract {
+  ensures len_of(rest) <= len_of(vector) + 1_u64;
+} {
+  set vector = seq_place(vector: move vector, value: value);
+```
+
+Before this version the `set` killed `len_of(vector)` and the clause was
+unproved, so the shape this pattern recommends could not be used in any
+function with a contract over the value it commits.
+
+**And a `let` that only renames a measured value keeps its measures.** The same
+former stands at the rebind, so `let built = move spare;` carries every measure
+`spare` had onto `built`; a rename is not a place a proof falls out of. The
+other four naming events — a `construct`, a [LIV-2] `set` target, a `match`
+payload binder and a destructuring binder — do not carry them yet, so a
+measured value that reaches its new name through one of those arrives with no
+measures and the fact has to be re-established from the operation that
+published it.
 
 Replaces: a mutable accumulator parameter threaded by reference, `+=` into a
 caller's struct, and the three-line temporary-variable swap.

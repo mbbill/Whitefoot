@@ -262,15 +262,24 @@ judged, and a call to one stops as an explicit unsupported capability, so no
 `Vector<'s, T>` and no `Arena<'s, bytes, align>` value exists at run time even
 though both types are named, branded, confined, laid out and measured by the
 ordinary source judgments. `seq_heap` additionally has no writable operand at
-all, because [FN-7]'s `command.heap` row is DEFERRED. Element-position writes
-into a run — `set v[i] = e;` and `replace v[i] = e;` — and a run whose element
-type is itself a run are the two further stops, each explicit. Beside them
-stand three source-surface gaps the container library needs and this compiler
-does not have: a contract clause whose side is an arithmetic expression, which
-is a GRAM-2 rejection at the operator; [MSR-3]'s deferred rebind and payload
-placements, so an `own` parameter written back in a body loses its entry image
-for every clause naming it; and a run whose element type is an unbounded
-generic or is itself affine.
+all, because [FN-7]'s `command.heap` row is DEFERRED. A run whose element type
+is itself a run is the one further stop, and it is explicit: a run's element
+type is otherwise every type [BLK-1] states — every copy element, one
+region-free affine nominal stored by value, and an unbounded type parameter,
+which [FN-2] resolves at every concrete instance. Element-position writes into
+a run execute: `set v[i] = e;` and `replace v[i] = e;` commit at the window's
+logical offset `(head_of + i) mod cap_of`, under [OP-4]'s ordinary subscript
+obligation judged at the target place and [MSR-2]'s storage-granular kill, so
+the store kills every measure of the element and none of the run's own.
+Beside them stands one source-surface gap the container library needs and this
+compiler does not have: [MSR-3]'s construct, `set`-target, enum-payload and
+destructuring placements, so a measured value renamed by anything but a `let`
+binder loses its measures. A `requires` or `ensures` side is an affine
+expression [GRAM-4, GRAM-5, MSR-5] and a parameter's measure named in an
+`ensures` is its entry datum [MSR-3], which together are what let the container
+design's own fixed-run library — `vacant`, `filled`, `take_at`, `try_place`,
+`try_take` and `rebase` — prove its contracts and execute
+(`tests/programs/fixed_run_library.wf`).
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 

@@ -995,6 +995,28 @@ nothing about that store's post-state* (Q17).
 > callee's writes change is a claim about that point. A plain field read is a live term,
 > and the caller's own kill rules already govern it.
 
+> **Correction, decided 2026-09-04, from B7a3b's implementation: two more placements
+> landed, and the rebind is narrower than the list above.** The **entry** placement is
+> the one B7a2 measured missing, and it is what makes the ordinary shape of an operation
+> over an `own` parameter — `set vector = seq_place(vector: move vector, ...)` [LIV-2] —
+> leave every clause naming that parameter meaning what it read as at entry. Before it,
+> `try_place`'s five `ensures` were all unproved and 3.L.4 was unwritable; after it they
+> discharge and the same datum is what the caller substitutes as that call's call datum.
+> The **rebind** placement landed at the `let` half only: a `let` binder whose right-hand
+> side is a bare use of a measured place mints one datum per measure before the
+> statement's own kills and reads it back after them, which is what carries `spare`'s
+> measures onto `built` in `let built = move spare;`. The [LIV-2] `set`-target half did
+> not land and is DEFERRED with the construct, payload and field placements; nothing in
+> 3.L needs it, because the two `set` forms 3.L writes are a call target and an n-ary
+> call target, both of which publish their own relations through [CALL-6].
+>
+> **The list above says `move P` and the implementation says a bare use.** They agree at
+> an affine `P`, where a bare use is refused [OWN-1] and `move P` is the only spelling;
+> they differ at a copy measured `P` — `array<T, N>` — where a bare use is the writer's
+> form and carries the same measures across the same rename. The narrower reading would
+> have made the placement depend on the element class rather than on the naming event,
+> which is what the closure sentence forbids, so the implementation keys on the event.
+
 **One sentence fixes what an [INV-1] affine atom over a measured place is keyed by.**
 
 > An [INV-1] affine atom over a measured place is keyed by the [ENT-2] term. **A [LIV-2]
@@ -1123,6 +1145,41 @@ the affine index has to range over measure terms.
 > minus those three, which is a fourth production this batch did not have owner sanction
 > to add. The defect stands and the two alternatives are recorded for the owner in the
 > batch report.
+
+> **Correction, decided 2026-09-04, from B7a3b's implementation: the clause half landed,
+> and the fourth production is what the owner sanctioned.** The ruling of 2026-09-04
+> within [S17] gives one production and no new spelling, and it is what this batch wrote:
+>
+> ```text
+> clause_expr    := affine_expr (clause_op affine_expr)?
+> clause_op      := compare_op | "+defined" | "-defined" | "*defined"
+>                 | "/defined" | "%defined"
+> ```
+>
+> `clause_op` is the fourth production the correction above said the unambiguous union
+> needs, and the ruling names it: the clause tail's operator set is `compare_op` together
+> with the [OP-1] rows whose result is `Bool`, which over this version's table is exactly
+> the five `.defined` predicates. It is not `infix_op` minus three, so `a + b` in clause
+> position derives one way — inside the `affine_expr` — and [GRAM-1]'s ambiguity refusal
+> is satisfied without dropping `requires total /defined steps;`, whose recorded verdict
+> stays **accept**. A Bool-rooted clause with no tail — `requires ok;`,
+> `requires band(nonzero, not_neg1);`, `requires buffer_fits::<T>(length);` — is the
+> one-side form of the same production, its side being one `affine_factor`, so every
+> corpus clause keeps parsing with the same meaning. Both placements now share
+> `affine_expr`, and each rule states its own admitted factors: [INV-1] admits one bare
+> IDENT place or one integer literal as an atom, while a clause carries the wider factor
+> set [FN-8] and [FN-9] already judge. The arithmetic performs no [OP-1] operation and
+> creates no [OP-2] obligation; it is a relation over mathematical values.
+>
+> **What the clause side may carry is wider than what a declared relation may publish.**
+> [FN-9]'s relation is one difference bound between two operands displaced by a written
+> constant, which is what [ENT-4]'s closure represents and what every kernel row writes.
+> `requires at + 2_u64 <= len_of(vector);` is therefore admitted and 3.L.2's `take_at`
+> compiles, while 3.L.8's `ensures room_of(rebased) + len_of(vector) >= n;` — two datums on
+> one side — is refused at the declaration naming the fragment. That clause is also
+> derivable from [MSR-2]'s standing identity and `cap_of(rebased) = n`, so `rebase` is
+> written without it; the design text above states it because the seventh draft had no
+> standing identity to lean on.
 
 > **Correction, decided 2026-09-04, from B1's implementation.** The eighth draft wrote
 > `clause_expr := affine_expr compare_op affine_expr`. That production has a comparison at
@@ -6242,6 +6299,71 @@ cannot be repaired in the form the ruling gives.
   `rebase` need both the arithmetic clause operand and the rebind placement. Each is
   blocked on an item above rather than on the programs themselves.
 
+### 6.0i B7a3b landed (v0.45)
+
+**The five items B7a3 did not reach, and the four things that are still not writable.**
+
+- **A clause side is an affine expression [S17, MSR-5].** One production and no new
+  spelling, plus the `clause_op` production the ruling names, which is what makes the
+  union unambiguous where B7a3 could not: `clause_op` is `compare_op` together with the
+  [OP-1] rows whose result is `Bool`, not `infix_op` minus three, so `a + b` in clause
+  position derives one way and `requires total /defined steps;` keeps its **accept**. The
+  correction under [MSR-5] above states it in full. Every corpus clause parses with the
+  same meaning and no recorded verdict moved. Two consequences are worth naming. A
+  requirement side carries the whole affine expression [FN-8], while a *published*
+  relation stays [FN-9]'s difference bound between two operands displaced by a written
+  constant, so `requires at + 2_u64 <= len_of(vector);` is admitted and
+  `ensures room_of(rebased) + len_of(vector) >= n;` is refused at the declaration naming
+  the fragment. And one probe's diagnostic moved: `define` after `requires` used to reach
+  [GRAM-2] and now reaches [FORM-3], because the clause tail no longer decides at that
+  token; the pinned GRAM-2 sentence is reached by a `requires` after an `ensures`
+  instead, and `compiler/src/driver/pinned_sentences.rs` records the change.
+- **[MSR-3]'s entry placement landed, and the rebind placement landed at its `let`
+  half.** The correction under [MSR-3] above states both. Together they are what make
+  `try_place`'s five `ensures` provable and `let built = move spare;` carry `spare`'s
+  measures onto `built`. The [LIV-2] `set`-target, construct, payload and field
+  placements stay DEFERRED, and nothing in 3.L needs them.
+- **An element-position store into a run executes.** `set v[i] = e;` and
+  `replace v[i] = e;` commit at the window's logical offset `(head_of + i) mod cap_of`
+  over both runs, under [OP-4]'s ordinary obligation judged at the target place exactly as
+  in read position and [MSR-2]'s storage-granular kill. [BLK-1] and [SET-1]/[SET-2] say so
+  in the spec; the compiler now does it, checker to LLVM, and a wrapped window is the case
+  under test.
+- **A run's element domain is [BLK-1]'s.** Every copy element, one region-free affine
+  nominal stored by value, and — in a run's element position alone — one unbounded type
+  parameter, which [FN-2] resolves at every concrete instance. **A run of runs is the one
+  part that needed more than the lift and did not land**: it is still an explicit
+  `CompositeValues` stop, because a run element carries a descriptor and the flat-element
+  representation this compiler stores in a run has no place to put one. 3.L.4's
+  `BlockPool` is the program that wants it and is not attempted here.
+- **The fixed-run library proves and runs.** `tests/programs/fixed_run_library.wf`
+  carries all six of 3.L's fixed-run functions in the design's spelling and
+  `the_fixed_run_library_proves_and_runs` executes it, checking the order the drain
+  preserves, the element the transposition moved and the head the drain leaves at zero.
+  **Four deviations from the design text were forced, and each is a finding rather than a
+  repair.**
+
+```text
+| written as                        | had to be written                  | why                              |
+|-----------------------------------|------------------------------------|----------------------------------|
+| invariant spare: ... >= n         | let limit = n; ... >= limit        | [MSR-6] reached [ENT-2]'s        |
+|                                   |                                    | endpoint and [MSR-5]'s clause    |
+|                                   |                                    | and not [INV-1]'s atom role      |
+| fn filled<T, const n: u64>        | fn filled<const n: u64>, at u8     | the bare copy use of `value` is  |
+|                                   |                                    | [OWN-1] at an unbounded T: Q8    |
+| rebase's two `requires`           | four, `room_of(spare)` two-sided   | room = cap - len at a symbolic n |
+|                                   |                                    | is two premises, not automatic   |
+| rebase<T, const n: u64>           | rebase<const n: u64>, at u8        | the loop's front take needs a    |
+|                                   |                                    | [LIV-2] target introduction      |
+```
+
+The last row is the one that costs a capability rather than a line. 3.L.8's loop body is
+`set (vector, one) = seq_take_front(vector: move vector);`, and `one` is not in scope, so
+that target introduction is [LIV-2]'s DEFERRED clause; the workaround is to declare `one`
+first, which needs a value of the element type and therefore a copy element type. The
+other route — `let (shorter, one) = ...; set vector = move shorter;` — stops at
+`Semantics/Unsupported: OwnershipJoin` inside a loop. **`collect`, the `BlockPool` and the
+`bs_*` family are the next batch's** and none was attempted.
 ### 6.1 What the compiler did in this session
 
 ```text

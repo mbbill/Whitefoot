@@ -120,10 +120,14 @@ lower and run. [CALL-4]'s measured result and the measure over its bare result
 place land with those rows. B7a3 renames the four readers `len_of`, `cap_of`,
 `room_of` and `head_of` [S36], deletes [PROV-6]'s release-graph cycle refusal so
 a cyclic release is an ordinary recursive walk, and makes a measure former an
-affine factor of [INV-1]. What remains is the store — the bump take, the extent
-reservation and the general store's provider value — together with the
-confinement rule, an arithmetic clause operand, the element-position window
-store and the retirement of the old container types.
+affine factor of [INV-1]. B7a3b makes a contract clause side the affine expression an invariant already
+is, gives a parameter's measure in an `ensures` its entry datum and a `let`
+rebind its own, lands the element-position window store over both runs, and
+opens a run's element domain to [BLK-1]'s; the design's own fixed-run library
+now proves its contracts and runs. What remains is the store — the bump take,
+the extent reservation and the general store's provider value — together with
+the confinement rule, a run of runs and the retirement of the old container
+types.
 
 ## Outcome
 
