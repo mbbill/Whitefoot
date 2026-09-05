@@ -324,6 +324,47 @@ before the code lands.
    its pools, capacity waits and refusals, and executes an operation with no
    kernel completion form inside its engine, publishing a completion like
    any other. Step (c) therefore opens slice 3 rather than closing slice 2.
+
+   **Status 2026-09-05.** (a) landed as `bccf181`: `compute_join_order` in
+   `emitter/parallel.rs`, consumed by `emit_overlap_joins`,
+   `overlap_join_tail` and `block_exit_label`; a finding on the way, that a
+   group with a completion member between compute members is handed out
+   nowhere by today's emitter (its compute members are emitted as plain
+   calls), so the completion half of the rule is pinned by the function's
+   unit test only. (b) landed as `89688f9`: the record block
+   (`WF_COMPLETION_RECORD_BYTES`, `WF_COMPLETION_RECORD_ALIGN` in
+   `completion/contract.h`, mirrored in `native_completion_api.h`, asserted
+   by the C units that store a record and by a Rust test that parses the
+   header), `stackless.rs`, `tests/stackless.rs`, the writer-frame submit
+   ABI and the `WF_PAR_WITH_WRITER_SCHEDULER` variant gone. The runtime half
+   of (c) landed next (the commit after this note): `wf_completion_record`
+   (120 bytes, reserved as 128 at 8) is the frame's block, `contract.h` is
+   its header and `runtime.c` keeps only the wake epoch and the park; the
+   slot pool, tokens, claims, milestones, drains, consumes, dependent
+   frames and every capacity wait are deleted from the core, the bridge, the
+   file adapter (whose queue is now an intrusive FIFO through the records)
+   and the io_uring adapter (whose `user_data` is the record's address and
+   whose depth is its own parameter, `WF_LINUX_IO_URING_DEPTH`); every
+   submit ends in `wf_completion_record_complete`, which is
+   `wf_sched_complete` on the record; the joins wait in place through the
+   core's `WF_SCHED_WAITER_IN_PLACE` registration; the core's park and wake
+   are the bridge's (`wf__sched_host_epoch`, `wf__sched_host_park`,
+   `wf__sched_host_wake`, weak in `prim_host.c`, strong in the bridge), so
+   one wake rings the ring's eventfd and the condition variable alike. The
+   harness and the probes were brought to the record API, the tests of the
+   deleted machinery retired with design §7 named at each site, and the
+   properties that remain retested (one completion per submission under a
+   race, an in-place registration claimed by its completion, a helper
+   completion waking a waiting join, more operations outstanding than the
+   old pool and the ring depth).
+
+   Not done in that step: the Windows record port. The Windows units keep
+   their own completion core and pools; the bridge header's Windows-only
+   entries moved to `windows_completion.h`, and both platforms state the
+   same reservation, but nothing Windows was compiled or run here (this
+   host has no Windows toolchain, and the gate's matrix is Linux and macOS).
+   The port is slice 3's Windows twins bullet and stays there. The emitter
+   half of (c), the one lowering, is next.
 3. **Runtime** (design §7): the core replaces both parallel runtimes and both
    writer schedulers; the bridge, adapters and rings find the record by
    address and lose their pools, capacity waits and tokens; the I/O joins park

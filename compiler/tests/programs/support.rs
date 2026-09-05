@@ -10,7 +10,8 @@ use whitefoot::{
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CompilationFailure, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE, SourceInput,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_RUNTIME_SOURCE, SCHED_CORE_HEADER,
+    SCHED_CORE_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
     WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile, compile_with_overlap,
     compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime,
@@ -44,48 +45,73 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     });
     let completion_units = completion_required.then(|| {
         for (name, source) in [
-            ("contract.h", COMPLETION_CONTRACT_HEADER),
-            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
-            ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("completion/writer_scheduler.h", WRITER_SCHEDULER_HEADER),
+            (
+                "completion/linux_io_uring.h",
+                COMPLETION_LINUX_IO_URING_HEADER,
+            ),
+            ("sched/core.h", SCHED_CORE_HEADER),
+            ("sched/prim.h", SCHED_PRIM_HEADER),
+            ("sched/switch.h", SCHED_SWITCH_HEADER),
+            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+            ("completion/writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
+            (
+                "completion/linux_io_uring.c",
+                COMPLETION_LINUX_IO_URING_SOURCE,
+            ),
+            ("sched/core.c", SCHED_CORE_SOURCE),
+            ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
         ] {
+            std::fs::create_dir_all(directory.join("completion"))
+                .expect("stage completion directory");
+            std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
             std::fs::write(directory.join(name), source).expect("write completion runtime unit");
         }
         command
             .arg("-I")
-            .arg(directory)
+            .arg(directory.join("completion"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_runtime.c"))
+            .arg(directory.join("completion/completion_runtime.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("file_adapter.c"))
+            .arg(directory.join("completion/file_adapter.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_bridge.c"))
+            .arg(directory.join("completion/completion_bridge.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("writer_scheduler.c"))
+            .arg(directory.join("completion/writer_scheduler.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("linux_io_uring.c"));
+            .arg(directory.join("completion/linux_io_uring.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/core.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/prim_host.c"));
         [
-            "contract.h",
-            "file_adapter.h",
-            "bridge.h",
-            "writer_scheduler.h",
-            "linux_io_uring.h",
-            "completion_runtime.c",
-            "file_adapter.c",
-            "completion_bridge.c",
-            "writer_scheduler.c",
-            "linux_io_uring.c",
+            "completion/contract.h",
+            "completion/file_adapter.h",
+            "completion/bridge.h",
+            "completion/writer_scheduler.h",
+            "completion/linux_io_uring.h",
+            "sched/core.h",
+            "sched/prim.h",
+            "sched/switch.h",
+            "completion/completion_runtime.c",
+            "completion/file_adapter.c",
+            "completion/completion_bridge.c",
+            "completion/writer_scheduler.c",
+            "completion/linux_io_uring.c",
+            "sched/core.c",
+            "sched/prim_host.c",
         ]
     });
     let compilation = command
@@ -108,6 +134,12 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     if let Some(names) = completion_units {
         for name in names {
             std::fs::remove_file(directory.join(name)).expect("remove completion runtime unit");
+        }
+        // The staged tree keeps the repository's own two directories, because
+        // the completion header reaches the scheduler core by the relative
+        // path it uses in the tree.
+        for staged in ["completion", "sched"] {
+            std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
         }
     }
 }
@@ -322,37 +354,57 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     // because the caller did not ask to observe the compute scheduler.
     if module_requires_completion_runtime(llvm) {
         for (name, source) in [
-            ("contract.h", COMPLETION_CONTRACT_HEADER),
-            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
-            ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("completion/writer_scheduler.h", WRITER_SCHEDULER_HEADER),
+            (
+                "completion/linux_io_uring.h",
+                COMPLETION_LINUX_IO_URING_HEADER,
+            ),
+            ("sched/core.h", SCHED_CORE_HEADER),
+            ("sched/prim.h", SCHED_PRIM_HEADER),
+            ("sched/switch.h", SCHED_SWITCH_HEADER),
+            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+            ("completion/writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
+            (
+                "completion/linux_io_uring.c",
+                COMPLETION_LINUX_IO_URING_SOURCE,
+            ),
+            ("sched/core.c", SCHED_CORE_SOURCE),
+            ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
         ] {
+            std::fs::create_dir_all(directory.join("completion"))
+                .expect("stage completion directory");
+            std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
             std::fs::write(directory.join(name), source).expect("write completion runtime unit");
         }
         command
             .arg("-I")
-            .arg(&directory)
+            .arg(directory.join("completion"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_runtime.c"))
+            .arg(directory.join("completion/completion_runtime.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("file_adapter.c"))
+            .arg(directory.join("completion/file_adapter.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_bridge.c"))
+            .arg(directory.join("completion/completion_bridge.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("writer_scheduler.c"))
+            .arg(directory.join("completion/writer_scheduler.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("linux_io_uring.c"));
+            .arg(directory.join("completion/linux_io_uring.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/core.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/prim_host.c"));
     }
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)

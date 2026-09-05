@@ -1221,20 +1221,49 @@ fn a_completion_window_before_a_block_join_names_its_join_block() {
 #[test]
 fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     let directory = test_directory();
-    let units: [(&str, &str); 12] = [
-        ("contract.h", crate::COMPLETION_CONTRACT_HEADER),
-        ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
-        ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
-        ("writer_scheduler.h", crate::WRITER_SCHEDULER_HEADER),
-        ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
-        ("runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
-        ("file_adapter.c", crate::COMPLETION_FILE_ADAPTER_SOURCE),
-        ("bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
-        ("writer_scheduler.c", crate::WRITER_SCHEDULER_SOURCE),
-        ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
-        ("floor.c", crate::FLOOR_RUNTIME_SOURCE),
-        ("par_runtime.c", crate::PARALLEL_RUNTIME_SOURCE),
+    // The staged tree keeps the repository's own two directories, because the
+    // completion header reaches the scheduler core by the relative path it
+    // uses in the tree: the completion record begins with a `wf_sched_record`.
+    let units: [(&str, &str); 17] = [
+        ("completion/contract.h", crate::COMPLETION_CONTRACT_HEADER),
+        (
+            "completion/file_adapter.h",
+            crate::COMPLETION_FILE_ADAPTER_HEADER,
+        ),
+        ("completion/bridge.h", crate::COMPLETION_BRIDGE_HEADER),
+        (
+            "completion/writer_scheduler.h",
+            crate::WRITER_SCHEDULER_HEADER,
+        ),
+        (
+            "completion/linux_io_uring.h",
+            crate::COMPLETION_LINUX_IO_URING_HEADER,
+        ),
+        ("sched/core.h", crate::SCHED_CORE_HEADER),
+        ("sched/prim.h", crate::SCHED_PRIM_HEADER),
+        ("sched/switch.h", crate::SCHED_SWITCH_HEADER),
+        ("completion/runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
+        (
+            "completion/file_adapter.c",
+            crate::COMPLETION_FILE_ADAPTER_SOURCE,
+        ),
+        ("completion/bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
+        (
+            "completion/writer_scheduler.c",
+            crate::WRITER_SCHEDULER_SOURCE,
+        ),
+        (
+            "completion/linux_io_uring.c",
+            crate::COMPLETION_LINUX_IO_URING_SOURCE,
+        ),
+        ("sched/core.c", crate::SCHED_CORE_SOURCE),
+        ("sched/prim_host.c", crate::SCHED_PRIM_HOST_SOURCE),
+        ("completion/floor.c", crate::FLOOR_RUNTIME_SOURCE),
+        ("completion/par_runtime.c", crate::PARALLEL_RUNTIME_SOURCE),
     ];
+    for staged in ["completion", "sched"] {
+        std::fs::create_dir_all(directory.join(staged)).expect("stage runtime directory");
+    }
     for (name, source) in units {
         std::fs::write(directory.join(name), source).expect("write compiler-owned C unit");
     }
@@ -1246,7 +1275,7 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
             .arg("-fsyntax-only")
             .arg("-pthread")
             .arg("-I")
-            .arg(&directory)
+            .arg(directory.join("completion"))
             .arg("-x")
             .arg("c")
             .arg(directory.join(name))
@@ -1261,11 +1290,27 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     for (name, _) in units {
         std::fs::remove_file(directory.join(name)).expect("remove compiler-owned C unit");
     }
+    for staged in ["completion", "sched"] {
+        std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
+    }
     std::fs::remove_dir(directory).expect("remove the default-dialect directory");
 }
 
+/// The writer-ready cells still name one capacity source, and the completion
+/// runtime no longer has one at all.
+///
+/// This case used to tie three numbers together: the completion slot count,
+/// the bridge's operation capacity, and the writer scheduler's ready cells.
+/// The first two are deleted with the record pool — the record is a block of
+/// the submitting frame, so there is no slot to run out of and no operation
+/// capacity anywhere in the runtime
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §7, "The record's pool
+/// machinery: deleted, not answered"). What is left is the writer scheduler's
+/// own ready array, which still derives its bound from one constant, and the
+/// deletion itself, which is asserted here so a capacity cannot creep back in
+/// unnoticed.
 #[test]
-fn completion_slots_and_writer_ready_cells_have_one_capacity_source() {
+fn the_writer_ready_cells_have_one_capacity_source() {
     let header = crate::WRITER_SCHEDULER_HEADER;
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
     let scheduler = crate::WRITER_SCHEDULER_SOURCE;
@@ -1275,18 +1320,38 @@ fn completion_slots_and_writer_ready_cells_have_one_capacity_source() {
             .matches("#define WF_COMPLETION_SLOT_CAPACITY 64u")
             .count(),
         1,
-        "the bounded process runtime must name its capacity once"
+        "the writer scheduler must name its capacity once"
     );
     assert!(header.contains("#define WF_WRITER_READY_CAPACITY WF_COMPLETION_SLOT_CAPACITY"));
-    assert!(bridge.contains("#define WF_BRIDGE_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY"));
-    assert!(bridge.contains("WF_BRIDGE_SLOT_COUNT == WF_WRITER_READY_CAPACITY"));
-    assert!(!bridge.contains("#define WF_BRIDGE_OPERATION_CAPACITY 64u"));
     assert!(!scheduler.contains("#define WF_WRITER_READY_COUNT"));
     assert!(scheduler.contains("wf_writer_ready[WF_WRITER_READY_CAPACITY]"));
     assert!(scheduler.contains("wf_writer_count == WF_WRITER_READY_CAPACITY"));
+
+    // The bridge keeps no operation capacity, no slot array and no queue
+    // array, so nothing there can refuse an operation.
+    for gone in [
+        "WF_BRIDGE_OPERATION_CAPACITY",
+        "WF_BRIDGE_SLOT_COUNT",
+        "WF_BRIDGE_QUEUE_COUNT",
+        "wf_bridge_slots",
+        "wf_bridge_queue",
+        "wf_bridge_linux_entries",
+        "wf_completion_claim",
+        "WAIT_CAPACITY",
+        "wf_completion_notify_capacity",
+    ] {
+        assert!(
+            !bridge.contains(gone),
+            "the bridge still names the deleted pool machinery: {gone}"
+        );
+    }
     assert!(
-        include_str!("../completion/harness.c")
-            .contains("#define WF_HARNESS_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY")
+        !crate::COMPLETION_CONTRACT_HEADER.contains("wf_completion_slot"),
+        "the contract header still declares a slot pool"
+    );
+    assert!(
+        !crate::COMPLETION_CONTRACT_HEADER.contains("wf_completion_token"),
+        "the contract header still declares a token"
     );
 }
 
@@ -1307,11 +1372,11 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     assert!(contract.contains("wf_completion_set_wake_callback"));
 
     let notify = runtime
-        .split_once("static void wf_completion_notify_scheduler")
-        .expect("completion core has one scheduler announcer")
+        .split_once("static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {")
+        .expect("completion runtime has one scheduler announcer")
         .1
-        .split_once("static enum wf_completion_publish_result")
-        .expect("announcer precedes publication")
+        .split_once("\nuint64_t wf_completion_wake_epoch")
+        .expect("announcer precedes the epoch reader")
         .0;
     let parked = notify
         .find("parked_schedulers")
@@ -1754,67 +1819,94 @@ fn directory_enumeration_completes_before_writer_normalization() {
     std::fs::remove_dir(directory).expect("remove directory completion directory");
 }
 
-/// A scheduler waiting for a completion must sleep rather than spin whenever
-/// some other thread owns the work it is waiting for.
+/// A join that cannot read its record yet waits in place: nothing runs above
+/// it, and it sleeps on the one primitive rather than spinning.
 ///
-/// The park guard used to refuse to park while the target queue held anything
-/// at all. With helpers that is a busy wait for exactly as long as a helper
-/// keeps the queue non-empty, because `wf_bridge_progress` deliberately does
-/// not let a waiting scheduler execute an unrelated queued request when
-/// helpers exist — so the loop spins, makes no progress, and refuses to sleep.
-/// Measured on a four-wide many-file program, the one-helper configuration
-/// burned about 270 ms of user CPU against 71 ms for the same program at four
-/// helpers. Only the zero-helper configuration, where the waiting scheduler
-/// really is the target's engine, may refuse to park.
+/// The park guard this case used to pin — `wf_bridge_target_work_needs_this_thread`,
+/// which refused to park while the target queue held anything — is deleted
+/// with the drain it protected (design §7). The arm that replaces it is §2's
+/// fourth line for an I/O target: read the record, yield through COMPLETING,
+/// run one bounded progress pass, register this thread as the record's
+/// in-place waiter, capture the epoch, re-check, and only then park. The
+/// property that survives is the one the old guard bought — a thread with
+/// nothing to do sleeps rather than spinning — and it is now a property of the
+/// arm's order rather than of a predicate.
 #[test]
-fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
+fn a_join_waits_in_place_and_sleeps_on_the_one_primitive() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let predicate = bridge
-        .split_once("static int wf_bridge_target_work_needs_this_thread(void) {")
-        .expect("the park guard is one named predicate")
+    let arm = bridge
+        .split_once("static void wf_bridge_wait_in_place(wf_completion_record *record) {")
+        .expect("the I/O arm of the fourth line is one named function")
         .1
-        .split_once('}')
-        .expect("the predicate has a body")
+        .split_once("\n}\n")
+        .expect("the arm ends with the function")
         .0;
     assert!(
-        predicate.contains("wf_file_adapter_helper_count"),
-        "the guard must read the helper count: {predicate}"
+        arm.contains("wf_prim_yield()"),
+        "COMPLETING is DONE a few instructions away and is yielded through: {arm}"
     );
     assert!(
-        predicate.contains("wf_file_adapter_queued"),
-        "the guard must read the queue: {predicate}"
+        arm.contains("wf_bridge_progress()"),
+        "the arm makes one bounded progress pass before it sleeps: {arm}"
     );
-    // Every join's park decision goes through the predicate, so no site may
-    // still spell the old queue-only condition.
     assert!(
-        !bridge.contains("|| wf_file_adapter_queued(&wf_bridge_adapter) == 0)"),
-        "a join still refuses to park on a non-empty queue alone"
+        arm.contains("WF_SCHED_WAITER_IN_PLACE"),
+        "the arm registers itself as the record's in-place waiter: {arm}"
     );
+    assert!(
+        arm.contains("wf_bridge_park(epoch)"),
+        "the arm sleeps on the one primitive: {arm}"
+    );
+    assert!(
+        arm.find("WF_SCHED_WAITER_IN_PLACE") < arm.find("wf_completion_wake_epoch"),
+        "the registration goes up before the epoch is captured: {arm}"
+    );
+    assert!(
+        arm.find("wf_completion_wake_epoch") < arm.find("wf_bridge_park(epoch)"),
+        "the epoch is captured before the park: {arm}"
+    );
+    // The deleted guard, and the drain it protected, are gone from every site.
+    for gone in [
+        "wf_bridge_target_work_needs_this_thread",
+        "wf_bridge_drain",
+        "wf_completion_ready_event_count",
+        "wf__par_help_once",
+    ] {
+        assert!(
+            !bridge.contains(gone),
+            "the bridge still names the deleted drain machinery: {gone}"
+        );
+    }
+    // Every join runs the one arm.
     assert_eq!(
-        bridge
-            .matches("!wf_bridge_target_work_needs_this_thread()")
-            .count(),
+        bridge.matches("wf_bridge_wait_in_place(held)").count(),
         3,
-        "each of the three joins asks the same question"
+        "each of the three joins waits in place the same way"
     );
 }
 
-/// A positioned read the submitting thread would run itself is not submitted.
+/// A positioned read the submitting thread would run itself is executed there
+/// and published, rather than queued.
 ///
 /// The completion path exists so a program is not stalled by a wait it could
 /// have overlapped. When the bounded adapter holds no helper, has nothing
-/// queued, and has measured its own operations as not waiting, the submitted
-/// read would be executed by the submitting thread anyway — at its join, after
-/// a queue crossing, a claim, four slot transitions and a drain. On the
-/// `macos-14` runner that machinery is about 400 ns against a warm 4 KiB read
-/// of about 1.2 us, which is why the eight-wide warm program cost 41.78 ms
-/// with the pool off against 32.80 ms for the sequential build of the same
-/// source. Declining the submission leaves the caller the ordinary direct call
-/// the emitter already emits for a refused one.
+/// queued, and has measured its own operations as not waiting, the queued read
+/// would be executed by the submitting thread anyway — at its join, after a
+/// queue crossing. On the `macos-14` runner that machinery is about 400 ns
+/// against a warm 4 KiB read of about 1.2 us, which is why the eight-wide warm
+/// program cost 41.78 ms with the pool off against 32.80 ms for the sequential
+/// build of the same source.
+///
+/// What changed is the answer, not the question. The rule used to refuse the
+/// submission and leave the caller its own direct call; there is no refusal
+/// left to give, because every submit ends in a published record and the
+/// emitted program has one lowering (design §7, "Every submit path ends in a
+/// published record"). So the same host call is made on the same thread inside
+/// submit, and the record is completed there.
 ///
 /// Two limits are what make it safe rather than merely fast.
 ///
-/// Only a *positioned* transfer is declined. An offset is meaningful only on a
+/// Only a *positioned* transfer takes it. An offset is meaningful only on a
 /// seekable object and the typed opens that produce one admit nothing but a
 /// regular file, so a positioned read waits on storage. A non-positioned read
 /// or write may be waiting on something another part of the same program has
@@ -1823,17 +1915,17 @@ fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
 /// `independent_io_reaches_the_second_operation_before_the_first_unblocks`
 /// pins, and it writes to a pipe.
 ///
-/// And a written `WF_IO_HELPERS` declines nothing. It pins the route with the
-/// count, which is what makes a pinned line of a measurement a measurement of
-/// the completion path rather than of the policy that may decline it.
+/// And a written `WF_IO_HELPERS` takes nothing inline. It pins the route with
+/// the count, which is what makes a pinned line of a measurement a measurement
+/// of the completion path rather than of the policy that may leave it.
 #[test]
-fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
+fn a_positioned_read_the_submitting_thread_would_run_itself_runs_there() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
     let adapter = crate::COMPLETION_FILE_ADAPTER_SOURCE;
 
     let rule = bridge
         .split_once("static int wf_bridge_positioned_read_runs_on_caller(uint64_t count) {")
-        .expect("one rule decides whether a positioned read is declined")
+        .expect("one rule decides whether a positioned read runs on its caller")
         .1
         .split_once("\n}\n")
         .expect("the rule ends with the function")
@@ -1844,7 +1936,7 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
     );
     assert!(
         rule.contains("wf_bridge_helpers_pinned == 0"),
-        "a written helper count declines nothing: {rule}"
+        "a written helper count takes nothing inline: {rule}"
     );
     assert!(
         rule.contains("wf_file_adapter_transfer_runs_on_caller(&wf_bridge_adapter)"),
@@ -1857,7 +1949,7 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
             .matches("wf_bridge_positioned_read_runs_on_caller(count)")
             .count(),
         1,
-        "only the positioned read may be declined"
+        "only the positioned read may run on its caller"
     );
     let pread = bridge
         .split_once("int wf__completion_file_pread_submit(")
@@ -1868,13 +1960,29 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
         .0;
     assert!(
         pread.find("wf_bridge_positioned_read_runs_on_caller(count)")
-            < pread.find("request.kind = WF_FILE_PREAD"),
-        "the decision comes before anything is claimed: {pread}"
+            < pread.find("return wf_bridge_dispatch(held);\n}"),
+        "the decision comes before the record reaches an engine: {pread}"
     );
     assert!(
-        pread.find("wf_bridge_submit_linux_pread")
+        pread.find("wf_linux_io_uring_carries(held)")
             < pread.find("wf_bridge_positioned_read_runs_on_caller(count)"),
         "a native completion path is tried before the bounded adapter's rule"
+    );
+    // Whichever arm it takes, the record is published: there is no `0`.
+    assert!(
+        pread.contains("return wf_bridge_execute_here(held);"),
+        "the inline arm publishes the record rather than answering 0: {pread}"
+    );
+    let submits = bridge
+        .split_once("int wf__completion_file_read_submit(")
+        .expect("the submit family starts at the plain read")
+        .1
+        .split_once("/* ------------------------------------------------------------ the window */")
+        .expect("the submit family ends before the window query")
+        .0;
+    assert!(
+        !submits.contains("return 0;"),
+        "no submit answers 0 any more: {submits}"
     );
 
     // The adapter's half: no helper, nothing queued, and a measured
@@ -2098,32 +2206,34 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
          round trip that measured 31 percent slower"
     );
     assert!(
-        decision.contains("fstat(entry->opened_descriptor"),
+        decision.contains("fstat(record->opened_descriptor"),
         "the kind check reads the mode of the descriptor the open produced: \
          {decision}"
     );
-    // The bridge offers both operations to the ring before the bounded
-    // fallback, and answers -1 rather than claiming an operation it cannot
-    // then hand over.
-    for route in [
-        "wf_bridge_submit_linux_open_at(",
-        "wf_bridge_submit_linux_close(",
-    ] {
-        assert!(bridge.contains(route), "the bridge must offer {route}");
-    }
-    let open_submit = bridge
-        .split_once("int wf__completion_file_open_at_submit(")
-        .expect("one open submission entry point")
-        .1;
-    let native = open_submit
-        .find("wf_bridge_submit_linux_open_at(")
-        .expect("the open tries the ring");
-    let fallback = open_submit
-        .find("request.kind = WF_FILE_OPEN_AT;")
-        .expect("the open keeps its bounded fallback");
+    // Every submit routes through one dispatcher, which asks the ring whether
+    // it has a form for this kind before it reaches the bounded adapter. The
+    // question is asked before the record is offered, so a kind the ring does
+    // not carry is never refused after the operation was already the ring's.
+    let dispatch = bridge
+        .split_once("static int wf_bridge_dispatch(wf_completion_record *record) {")
+        .expect("one dispatcher")
+        .1
+        .split_once("\n}\n")
+        .expect("the dispatcher ends with the function")
+        .0;
+    let native = dispatch
+        .find("wf_linux_io_uring_carries(record)")
+        .expect("the dispatcher asks the ring first");
+    let fallback = dispatch
+        .find("return wf_bridge_submit_file(record);")
+        .expect("the dispatcher keeps the bounded adapter");
     assert!(
         native < fallback,
-        "the ring is tried before the bounded POSIX adapter"
+        "the ring is asked before the bounded POSIX adapter: {dispatch}"
+    );
+    assert!(
+        ring.contains("int wf_linux_io_uring_carries(const wf_completion_record *record) {"),
+        "the ring answers which kinds it has a form for"
     );
 }
 

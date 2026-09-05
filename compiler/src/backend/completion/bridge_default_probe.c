@@ -6,6 +6,10 @@
 #endif
 
 #include "bridge.h"
+/* Only for the two ABI constants an emitted frame reserves its record block
+ * by.  This probe stands in for emitted code and learns no more of the
+ * record's layout than emitted code does. */
+#include "contract.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -37,8 +41,16 @@
  * What it asserts of each read is what a writer can observe and nothing else:
  * every read delivers the byte that is at its offset, with the count and error
  * the operation promises, whichever route the bridge chose for it -- and the
- * run finishes, which is the liveness half, since a declined submission and a
- * grown pool are both decisions about who executes the work.
+ * run finishes, which is the liveness half, since running an operation inside
+ * submit and growing the pool are both decisions about who executes the work.
+ *
+ * There is no declined submission any more: every submit ends in a published
+ * record, and the branch that used to hand the operation back to its caller
+ * now executes it inside submit and publishes it there
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Every submit path
+ * ends in a published record").  The branch is still watched, through the
+ * runtime's count of operations the engine executed inside the submitting
+ * call.
  *
  * It then asserts that the routes it exists to watch were taken at all, which
  * is the difference between covering a decision and counting it: see the
@@ -52,7 +64,6 @@
 
 static _Atomic int probe_finished;
 static _Atomic unsigned submitted_route;
-static _Atomic unsigned declined_route;
 static _Atomic unsigned nonpositioned_route;
 
 /* A stuck run is the failure this probe most needs to report, and a test that
@@ -97,91 +108,79 @@ static void *lane_main(void *context) {
     lane_context *self = context;
     unsigned round;
     for (round = 0; round < ROUNDS; ++round) {
-        unsigned char token[16];
+        _Alignas(WF_COMPLETION_RECORD_ALIGN)
+            unsigned char record[WF_COMPLETION_RECORD_BYTES];
         unsigned char byte = 0xff;
         uint64_t offset =
             (uint64_t)((self->lane * 7u + round * 13u) % FILE_BYTES);
         int64_t value = 0;
         int error = 0;
-        int accepted;
-        memset(token, 0, sizeof(token));
-        accepted = wf__completion_file_pread_submit(
-            self->descriptor,
-            &byte,
-            1,
-            offset,
-            token
-        );
-        if (accepted == 1) {
-            atomic_fetch_add_explicit(
-                &submitted_route,
-                1,
-                memory_order_relaxed
-            );
-            wf__completion_file_join(token, &value, &error);
-        } else {
-            /* The route the emitter takes for a refused submission: the same
-             * host call, at the statement rather than between submit and
-             * join. */
-            atomic_fetch_add_explicit(
-                &declined_route,
-                1,
-                memory_order_relaxed
-            );
-            value = wf__completion_file_pread_direct(
+        if (wf__completion_file_pread_submit(
                 self->descriptor,
                 &byte,
                 1,
-                (int64_t)offset
-            );
-            error = value < 0 ? errno : 0;
+                offset,
+                record
+            ) != 1) {
+            fprintf(stderr, "bridge default probe: submit did not answer 1\n");
+            self->failed = 1;
+            return NULL;
         }
+        atomic_fetch_add_explicit(&submitted_route, 1, memory_order_relaxed);
+        wf__completion_file_join(record, &value, &error);
         if (value != 1 || error != 0 || byte != expected_byte(offset)) {
             fprintf(
                 stderr,
                 "bridge default probe: lane %u round %u offset %llu: "
-                "value %lld error %d byte %u expected %u (route %s)\n",
+                "value %lld error %d byte %u expected %u\n",
                 self->lane,
                 round,
                 (unsigned long long)offset,
                 (long long)value,
                 error,
                 (unsigned)byte,
-                (unsigned)expected_byte(offset),
-                accepted == 1 ? "submitted" : "declined"
+                (unsigned)expected_byte(offset)
             );
             self->failed = 1;
             return NULL;
         }
-        /* One non-positioned read every so often.  It is never declined, so it
-         * puts work in the queue and takes away the decline's `nothing queued`
-         * precondition under the other lanes. */
+        /* One non-positioned read every so often.  It is never run inside
+         * submit, so it puts work in the queue and takes away the inline
+         * branch's `nothing queued` precondition under the other lanes. */
         if ((round & 0x3fu) == 0) {
+            _Alignas(WF_COMPLETION_RECORD_ALIGN)
+                unsigned char other_record[WF_COMPLETION_RECORD_BYTES];
             unsigned char other = 0;
-            memset(token, 0, sizeof(token));
             if (wf__completion_file_read_submit(
                     self->descriptor,
                     &other,
                     1,
-                    token
-                ) == 1) {
-                atomic_fetch_add_explicit(
-                    &nonpositioned_route,
-                    1,
-                    memory_order_relaxed
+                    other_record
+                ) != 1) {
+                fprintf(
+                    stderr,
+                    "bridge default probe: non-positioned submit did not "
+                    "answer 1\n"
                 );
-                wf__completion_file_join(token, &value, &error);
-                if (value < 0) {
-                    fprintf(
-                        stderr,
-                        "bridge default probe: non-positioned read %lld "
-                        "error %d\n",
-                        (long long)value,
-                        error
-                    );
-                    self->failed = 1;
-                    return NULL;
-                }
+                self->failed = 1;
+                return NULL;
+            }
+            atomic_fetch_add_explicit(
+                &nonpositioned_route,
+                1,
+                memory_order_relaxed
+            );
+            wf__completion_file_join(other_record, &value, &error);
+            if (value < 0) {
+                fprintf(
+                    stderr,
+                    "bridge default probe: non-positioned read %lld "
+                    "error %d\n",
+                    (long long)value,
+                    error
+                );
+                self->failed = 1;
+                return NULL;
             }
         }
     }
@@ -201,7 +200,7 @@ int main(int argc, char **argv) {
     uint64_t ring_submissions;
     uint64_t adapter_submissions;
     unsigned submitted;
-    unsigned declined;
+    uint64_t inline_executions;
     uint64_t helpers;
 
     if (argc != 2) {
@@ -272,28 +271,24 @@ int main(int argc, char **argv) {
      * above zero is the native ring; anything else is the adapter, on either
      * host.
      *
-     * Both routes owe a submitted positioned read: the first read of the run
-     * is measured by nothing, so the decline's WAIT_SHORT precondition cannot
-     * hold for it, and the ring accepts unconditionally.
-     *
      * What the adapter route owes is one of the demand-driven policy's two
-     * branches, not specifically a decline.  Both branches are decided by the
-     * same measurement: a positioned read is run by its caller when the
-     * adapter measured no wait and holds no helper, and a helper is started
-     * when it measured a wait.  Which one this run gets is a property of how
-     * fast this host's reads actually are, and that is not fixed -- the same
-     * binary on the same machine declines about 15 700 of 16 000 reads when
-     * the host is quiet and declines none while growing three helpers when it
-     * is loaded, because under a sanitizer on a busy machine a one-byte read
-     * really does cost more than the twenty microseconds the rule is asking
-     * about.  Requiring a decline would therefore be requiring the host to be
+     * branches.  Both branches are decided by the same measurement: a
+     * positioned read is executed inside submit when the adapter measured no
+     * wait and holds no helper, and a helper is started when it measured a
+     * wait.  Which one this run gets is a property of how fast this host's
+     * reads actually are, and that is not fixed -- the same binary on the same
+     * machine runs about 15 700 of 16 000 reads inline when the host is quiet
+     * and runs none inline while growing three helpers when it is loaded,
+     * because under a sanitizer on a busy machine a one-byte read really does
+     * cost more than the twenty microseconds the rule is asking about.
+     * Requiring the inline branch would therefore be requiring the host to be
      * idle, which is not a property of the runtime.  Requiring *either* is a
      * real requirement: if neither happened, the policy took no branch in
      * sixteen thousand reads and this run covered none of it. */
     ring_submissions = wf__completion_linux_io_uring_submissions();
     adapter_submissions = wf__completion_file_fallback_submissions();
     submitted = atomic_load_explicit(&submitted_route, memory_order_relaxed);
-    declined = atomic_load_explicit(&declined_route, memory_order_relaxed);
+    inline_executions = wf__completion_inline_executions();
     helpers = wf__completion_target_helper_count();
     /* The arm that exists to reach the adapter branch above has to have
      * reached the adapter.  Without this the Makefile could set
@@ -315,17 +310,16 @@ int main(int argc, char **argv) {
     if (submitted == 0) {
         fprintf(
             stderr,
-            "bridge default probe: no positioned read was submitted; the "
-            "bridge declined every one of them\n"
+            "bridge default probe: no positioned read was submitted\n"
         );
         failed = 1;
     }
-    if (ring_submissions == 0 && declined == 0 && helpers == 0) {
+    if (ring_submissions == 0 && inline_executions == 0 && helpers == 0) {
         fprintf(
             stderr,
             "bridge default probe: on the POSIX adapter route the "
             "demand-driven policy took neither branch in %u positioned reads: "
-            "none was declined and no helper was started\n",
+            "none ran inside submit and no helper was started\n",
             submitted
         );
         failed = 1;
@@ -334,11 +328,11 @@ int main(int argc, char **argv) {
     if (failed != 0) {
         fprintf(
             stderr,
-            "bridge default probe: FAIL submitted=%u declined=%u "
+            "bridge default probe: FAIL submitted=%u inline=%llu "
             "non-positioned=%u helpers=%llu submissions=%llu "
             "ring=%llu adapter=%llu\n",
             submitted,
-            declined,
+            (unsigned long long)inline_executions,
             atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
             (unsigned long long)helpers,
             (unsigned long long)wf__completion_file_submissions(),
@@ -349,11 +343,11 @@ int main(int argc, char **argv) {
     }
     fprintf(
         stderr,
-        "bridge default probe: PASS submitted=%u declined=%u "
+        "bridge default probe: PASS submitted=%u inline=%llu "
         "non-positioned=%u helpers=%llu submissions=%llu "
         "ring=%llu adapter=%llu route=%s\n",
         submitted,
-        declined,
+        (unsigned long long)inline_executions,
         atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
         (unsigned long long)helpers,
         (unsigned long long)wf__completion_file_submissions(),

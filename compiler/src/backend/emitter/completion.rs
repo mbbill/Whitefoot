@@ -55,6 +55,22 @@ pub const COMPLETION_WINDOWS_BRIDGE_SOURCE: &str = include_str!("../completion/w
 pub const WRITER_SCHEDULER_WINDOWS_SOURCE: &str =
     include_str!("../completion/writer_scheduler_windows.c");
 
+/// The scheduler core's contract embedded in the compiler.
+///
+/// The completion record begins with a `wf_sched_record` and every publication
+/// goes through `wf_sched_complete`, so a link that carries the completion
+/// runtime carries the core beside it
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §5, §7).
+pub const SCHED_CORE_HEADER: &str = include_str!("../sched/core.h");
+/// The scheduler core embedded in the compiler.
+pub const SCHED_CORE_SOURCE: &str = include_str!("../sched/core.c");
+/// The seven primitives the core reaches shared state through.
+pub const SCHED_PRIM_HEADER: &str = include_str!("../sched/prim.h");
+/// The host's implementation of those primitives.
+pub const SCHED_PRIM_HOST_SOURCE: &str = include_str!("../sched/prim_host.c");
+/// The one stack switch, shared by the host primitives and the enumerator.
+pub const SCHED_SWITCH_HEADER: &str = include_str!("../sched/switch.h");
+
 /// Size in bytes of the opaque record block an emitted frame reserves for one
 /// outstanding completion operation.
 ///
@@ -64,7 +80,7 @@ pub const WRITER_SCHEDULER_WINDOWS_SOURCE: &str =
 /// alone, so `the_record_block_abi_constants_agree_with_the_contract_header`
 /// below reads the header's own text and refuses a compilation in which the
 /// two have drifted apart.
-pub(crate) const COMPLETION_RECORD_BYTES: u64 = 16;
+pub(crate) const COMPLETION_RECORD_BYTES: u64 = 128;
 
 /// Alignment of that same block, the emitter's half of
 /// `WF_COMPLETION_RECORD_ALIGN`. A byte block's natural alignment is one, so

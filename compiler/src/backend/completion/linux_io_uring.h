@@ -20,75 +20,28 @@
 extern "C" {
 #endif
 
-enum wf_linux_file_operation_kind {
-    WF_LINUX_FILE_READ_AT = 1,
-    WF_LINUX_FILE_WRITE_AT = 2,
-    WF_LINUX_FILE_OPEN_AT = 3,
-    WF_LINUX_FILE_CLOSE = 4
-};
-
-typedef struct wf_linux_file_request {
-    enum wf_linux_file_operation_kind kind;
-    /* A transfer or a close names the operated descriptor; an open names the
-     * directory its path is resolved against. */
-    int descriptor;
-    union {
-        void *read_buffer;
-        const void *write_buffer;
-        /* Caller-owned only while the request is still the caller's.  The
-         * SQE keeps this pointer to completion and the caller regains its
-         * name buffer the moment submission returns, so submission copies the
-         * bytes into the entry's own storage and repoints this at them. */
-        const char *path;
-    } buffer;
-    size_t count;
-    uint64_t offset;
-    int open_flags;
-    unsigned open_mode;
-    unsigned has_open_mode;
-    enum wf_file_expected_kind expected_kind;
-} wf_linux_file_request;
-
-typedef struct wf_linux_file_result {
-    enum wf_linux_file_operation_kind kind;
-    int64_t value;
-    int error_code;
-    /* Meaningful for WF_LINUX_FILE_OPEN_AT; WF_FILE_OPEN_SUCCEEDED otherwise. */
-    enum wf_file_open_outcome open_outcome;
-} wf_linux_file_result;
+/* The ring's depth: how many submission entries the kernel keeps for this
+ * process, asked for once at `io_uring_setup`.
+ *
+ * It is a throughput parameter of the ring and nothing else.  It used to be
+ * the completion slot count, and through that a bound on how many operations
+ * the process could have in flight; with the record a block of the submitting
+ * frame there is no such bound, and a full submission queue is emptied by the
+ * submitting call's own `io_uring_enter` rather than by a wait on an event
+ * (design §7).  The number is the one the slot count used to supply, so this
+ * change moves no measurement.  The bridge passes it at
+ * `wf_linux_io_uring_init`; nothing else sets it. */
+#define WF_LINUX_IO_URING_DEPTH 64u
 
 enum wf_linux_io_uring_submit_result {
     WF_LINUX_IO_URING_TARGET_OWNS = 0,
-    WF_LINUX_IO_URING_WAIT_CAPACITY = 1,
-    WF_LINUX_IO_URING_SUBMIT_STALE = 2,
-    WF_LINUX_IO_URING_SUBMIT_INVALID = 3,
-    WF_LINUX_IO_URING_UNAVAILABLE = 4
+    WF_LINUX_IO_URING_SUBMIT_INVALID = 1,
+    WF_LINUX_IO_URING_UNAVAILABLE = 2,
+    /* The submitting call could not empty the submission queue itself.  It is
+     * a target-runtime failure and never an operation outcome: the caller
+     * fail-stops on it. */
+    WF_LINUX_IO_URING_SUBMIT_FAILED = 3
 };
-
-enum wf_linux_io_uring_entry_state {
-    WF_LINUX_IO_URING_ENTRY_FREE = 0,
-    WF_LINUX_IO_URING_ENTRY_RESERVED = 1,
-    WF_LINUX_IO_URING_ENTRY_IN_FLIGHT = 2,
-    WF_LINUX_IO_URING_ENTRY_RETRY_PENDING = 3
-};
-
-typedef struct wf_linux_io_uring_entry {
-    _Atomic unsigned state;
-    wf_completion_token token;
-    enum wf_linux_file_operation_kind kind;
-    wf_linux_file_request request;
-    /* An open's path bytes, owned by this entry.  `request.buffer.path` names
-     * these from submission onwards, including across a resubmission, so the
-     * kernel never reads the caller's buffer. */
-    char path_storage[WF_FILE_PATH_CAPACITY];
-    unsigned waiting_readiness;
-    /* An open's answer, decided when its completion is reaped. The descriptor
-     * is named even where the kind check refused and disposed of it, which is
-     * what the direct path reports too. */
-    int opened_descriptor;
-    enum wf_file_open_outcome open_outcome;
-    int open_error;
-} wf_linux_io_uring_entry;
 
 typedef struct wf_linux_io_uring_statistics {
     uint64_t submissions;
@@ -96,9 +49,7 @@ typedef struct wf_linux_io_uring_statistics {
      * With the doorbell deferred this is far below `submissions`, and the
      * distance between the two is the whole of what deferring buys. */
     uint64_t submission_enters;
-    uint64_t capacity_waits;
     uint64_t completions;
-    uint64_t publication_failures;
     uint64_t enter_failures;
     uint64_t kernel_waits;
     uint64_t kernel_wakes;
@@ -108,13 +59,11 @@ typedef struct wf_linux_io_uring_statistics {
 /* Target-private protocol state.  The mmap pointers below name shared
  * kernel/runtime queue pages; they are never Whitefoot buffers and never
  * cross the generated-code ABI.  A request buffer crosses this boundary only
- * through wf_linux_file_request after its loan has moved into one owned
- * completion operation. */
+ * inside a `wf_completion_record`, which is a block of the frame that
+ * submitted the operation and outlives it. */
 typedef struct wf_linux_io_uring_adapter {
     wf_completion_runtime *runtime;
-    wf_linux_io_uring_entry *entries;
-    size_t entry_capacity;
-    _Atomic size_t entry_cursor;
+    size_t depth;
     _Atomic size_t in_flight;
 
     int ring_descriptor;
@@ -145,9 +94,7 @@ typedef struct wf_linux_io_uring_adapter {
 
     _Atomic uint64_t stat_submissions;
     _Atomic uint64_t stat_submission_enters;
-    _Atomic uint64_t stat_capacity_waits;
     _Atomic uint64_t stat_completions;
-    _Atomic uint64_t stat_publication_failures;
     _Atomic uint64_t stat_enter_failures;
     _Atomic uint64_t stat_kernel_waits;
     _Atomic uint64_t stat_kernel_wakes;
@@ -155,27 +102,34 @@ typedef struct wf_linux_io_uring_adapter {
     _Atomic int progress_error;
 } wf_linux_io_uring_adapter;
 
-/* `entry_storage` is the entire userspace operation capacity.  Initialization
- * requires IORING_FEAT_NODROP so an accepted operation can never silently
- * lose its unique CQE.  Any setup or qualification failure occurs before a
- * completion token is touched. */
+/* `depth` is the ring's submission-queue depth, a throughput parameter and
+ * not a bound on operations in flight.  Initialization requires
+ * IORING_FEAT_NODROP so an accepted operation can never silently lose its
+ * unique CQE.  Any setup or qualification failure occurs before a record is
+ * touched. */
 int wf_linux_io_uring_init(
     wf_linux_io_uring_adapter *adapter,
     wf_completion_runtime *runtime,
-    wf_linux_io_uring_entry *entry_storage,
-    size_t entry_capacity
+    size_t depth
 );
 
+/* Whether this adapter has a ring form for the record's request kind.  Asked
+ * by the bridge before it hands the record over, so a kind the ring does not
+ * carry reaches the bounded POSIX adapter or the inline executor instead of
+ * being refused after the operation was already the ring's. */
+int wf_linux_io_uring_carries(const wf_completion_record *record);
+
+/* Hands one record to the ring.  It cannot answer capacity: a full submission
+ * queue is emptied by this call's own `io_uring_enter`. */
 enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     wf_linux_io_uring_adapter *adapter,
-    wf_completion_token token,
-    const wf_linux_file_request *request
+    wf_completion_record *record
 );
 
-/* Kicks staged SQEs, then publishes at most `budget` CQEs.  If `wait` is
- * nonzero and no CQE is ready, one scheduler lane may wait in io_uring_enter;
+/* Kicks staged SQEs, then completes at most `budget` CQEs.  If `wait` is
+ * nonzero and no CQE is ready, one thread may wait in io_uring_enter;
  * submissions use a different lock and remain possible while it sleeps.
- * Returns zero or an errno value and always reports the number published. */
+ * Returns zero or an errno value and always reports the number completed. */
 int wf_linux_io_uring_progress(
     wf_linux_io_uring_adapter *adapter,
     size_t budget,
@@ -188,10 +142,10 @@ int wf_linux_io_uring_progress(
  * the bounded eventfd counter and never runs a continuation. */
 void wf_linux_io_uring_notify(void *context);
 
-/* Parks one scheduler lane on the union of the ring CQ and the completion
- * core's compute/capacity endpoint.  `observed_epoch` is rechecked before the
- * kernel wait, closing completion-before-park without a polling timeout.
- * UINT32_MAX means no deadline. */
+/* Parks one thread on the union of the ring CQ and the completion core's
+ * epoch endpoint.  `observed_epoch` is rechecked before the kernel wait,
+ * closing completion-before-park without a polling timeout.  UINT32_MAX means
+ * no deadline. */
 int wf_linux_io_uring_park(
     wf_linux_io_uring_adapter *adapter,
     uint64_t observed_epoch,
@@ -209,9 +163,9 @@ size_t wf_linux_io_uring_in_flight(
     const wf_linux_io_uring_adapter *adapter
 );
 
-/* How many operations this ring can own at once: the smaller of the entry
- * array the bridge supplied and the submission queue the kernel gave it.
- * Zero before initialization succeeds. */
+/* The ring's submission-queue depth as the kernel gave it.  Zero before
+ * initialization succeeds.  It is a throughput parameter, not a bound on how
+ * many operations may be outstanding. */
 size_t wf_linux_io_uring_capacity(
     const wf_linux_io_uring_adapter *adapter
 );

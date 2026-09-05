@@ -68,10 +68,6 @@ _Static_assert(
     sizeof(struct stat) <= WF_FILE_STATUS_CAPACITY,
     "WF_FILE_STATUS_CAPACITY must hold the host stat record"
 );
-_Static_assert(
-    sizeof(wf_file_result) <= WF_COMPLETION_RESULT_CAPACITY,
-    "completion result cell must hold a file result"
-);
 
 static int wf_file_request_valid(const wf_file_request *request) {
     if (request == NULL) {
@@ -114,19 +110,19 @@ static int wf_file_request_valid(const wf_file_request *request) {
 static wf_file_result wf_file_execute_once(const wf_file_request *request) {
     wf_file_result result;
     memset(&result, 0, sizeof(result));
-    result.kind = request->kind;
-    result.value = -1;
+    result.head.kind = request->kind;
+    result.head.value = -1;
 
     switch (request->kind) {
     case WF_FILE_READ:
         if (request->operation.read.count > (size_t)SSIZE_MAX) {
-            result.error_code = EINVAL;
+            result.head.error_code = EINVAL;
             return result;
         }
         break;
     case WF_FILE_WRITE:
         if (request->operation.write.count > (size_t)SSIZE_MAX) {
-            result.error_code = EINVAL;
+            result.head.error_code = EINVAL;
             return result;
         }
         break;
@@ -136,13 +132,13 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
          * rely on zero length completing without touching
          * either the destination or the file facility. */
         if (request->operation.pread.count == 0) {
-            result.value = 0;
+            result.head.value = 0;
             return result;
         }
         if (request->operation.pread.count > (size_t)SSIZE_MAX
             || (int64_t)(off_t)request->operation.pread.offset
                 != request->operation.pread.offset) {
-            result.error_code = EINVAL;
+            result.head.error_code = EINVAL;
             return result;
         }
         break;
@@ -150,14 +146,14 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         if (request->operation.pwrite.count > (size_t)SSIZE_MAX
             || (int64_t)(off_t)request->operation.pwrite.offset
                 != request->operation.pwrite.offset) {
-            result.error_code = EINVAL;
+            result.head.error_code = EINVAL;
             return result;
         }
         break;
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     case WF_FILE_DIRECTORY_NEXT:
         if (request->operation.directory_next.count > (size_t)SSIZE_MAX) {
-            result.error_code = EINVAL;
+            result.head.error_code = EINVAL;
             return result;
         }
         break;
@@ -173,12 +169,12 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
     case WF_FILE_OPEN_AT:
         if (request->operation.open_at.expected_kind
             > WF_FILE_EXPECT_DIRECTORY) {
-            result.error_code = EINVAL;
-            result.open_outcome = WF_FILE_OPEN_FAILED;
+            result.head.error_code = EINVAL;
+            result.head.open_outcome = WF_FILE_OPEN_FAILED;
             return result;
         }
         if (request->operation.open_at.has_mode != 0) {
-            result.value = WF_FILE_OPENAT(
+            result.head.value = WF_FILE_OPENAT(
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
                 request->operation.open_at.flags
@@ -188,7 +184,7 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                 (mode_t)request->operation.open_at.mode
             );
         } else {
-            result.value = WF_FILE_OPENAT(
+            result.head.value = WF_FILE_OPENAT(
                 request->operation.open_at.directory,
                 request->operation.open_at.path,
                 request->operation.open_at.flags
@@ -197,25 +193,25 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
                       )
             );
         }
-        if (result.value < 0) {
-            result.open_outcome = WF_FILE_OPEN_FAILED;
+        if (result.head.value < 0) {
+            result.head.open_outcome = WF_FILE_OPEN_FAILED;
             break;
         }
         if (request->operation.open_at.expected_kind != WF_FILE_EXPECT_ANY) {
             struct stat status;
-            int descriptor = (int)result.value;
+            int descriptor = (int)result.head.value;
             if (fstat(descriptor, &status) != 0) {
                 int status_error = errno;
                 (void)close(descriptor);
-                result.error_code = status_error;
-                result.open_outcome = WF_FILE_OPEN_STATUS_FAILED;
+                result.head.error_code = status_error;
+                result.head.open_outcome = WF_FILE_OPEN_STATUS_FAILED;
                 return result;
             }
-            result.open_outcome = wf_file_kind_outcome(
+            result.head.open_outcome = wf_file_kind_outcome(
                 request->operation.open_at.expected_kind,
                 (unsigned int)status.st_mode
             );
-            if (result.open_outcome != WF_FILE_OPEN_SUCCEEDED) {
+            if (result.head.open_outcome != WF_FILE_OPEN_SUCCEEDED) {
                 (void)close(descriptor);
                 return result;
             }
@@ -223,24 +219,24 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         /* The descriptor is the one this open hands back: the kind check has
          * either passed or was not asked for. WF_IO_NOCACHE is applied here,
          * once, so a refused descriptor never receives it. */
-        wf_file_apply_uncached_reads((int)result.value);
+        wf_file_apply_uncached_reads((int)result.head.value);
         break;
     case WF_FILE_READ:
-        result.value = read(
+        result.head.value = read(
             request->operation.read.descriptor,
             request->operation.read.buffer,
             request->operation.read.count
         );
         break;
     case WF_FILE_WRITE:
-        result.value = write(
+        result.head.value = write(
             request->operation.write.descriptor,
             request->operation.write.buffer,
             request->operation.write.count
         );
         break;
     case WF_FILE_PREAD:
-        result.value = WF_COMPLETION_PREAD(
+        result.head.value = WF_COMPLETION_PREAD(
             request->operation.pread.descriptor,
             request->operation.pread.buffer,
             request->operation.pread.count,
@@ -248,7 +244,7 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         );
         break;
     case WF_FILE_PWRITE:
-        result.value = pwrite(
+        result.head.value = pwrite(
             request->operation.pwrite.descriptor,
             request->operation.pwrite.buffer,
             request->operation.pwrite.count,
@@ -257,20 +253,20 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         break;
     case WF_FILE_STATUS: {
         struct stat status;
-        result.value = fstat(request->operation.status.descriptor, &status);
-        if (result.value == 0) {
+        result.head.value = fstat(request->operation.status.descriptor, &status);
+        if (result.head.value == 0) {
             result.status_size = sizeof(status);
             memcpy(result.status, &status, sizeof(status));
         }
         break;
     }
     case WF_FILE_CLOSE:
-        result.value = close(request->operation.close.descriptor);
+        result.head.value = close(request->operation.close.descriptor);
         break;
 #if defined(WF_FILE_HAS_DIRECTORY_NEXT)
     case WF_FILE_DIRECTORY_NEXT:
 #if defined(__APPLE__)
-        result.value = WF_COMPLETION_GETDIRENTRIES64(
+        result.head.value = WF_COMPLETION_GETDIRENTRIES64(
             request->operation.directory_next.descriptor,
             request->operation.directory_next.buffer,
             request->operation.directory_next.count,
@@ -280,7 +276,7 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         /* Linux keeps the whole enumeration cursor in the descriptor, so the
          * facility takes no base-position argument and this cell is left as
          * the caller gave it. */
-        result.value = WF_COMPLETION_GETDENTS64(
+        result.head.value = WF_COMPLETION_GETDENTS64(
             request->operation.directory_next.descriptor,
             request->operation.directory_next.buffer,
             request->operation.directory_next.count
@@ -289,11 +285,11 @@ static wf_file_result wf_file_execute_once(const wf_file_request *request) {
         break;
 #endif
     default:
-        result.error_code = EINVAL;
+        result.head.error_code = EINVAL;
         return result;
     }
-    if (result.value < 0) {
-        result.error_code = errno;
+    if (result.head.value < 0) {
+        result.head.error_code = errno;
     }
     return result;
 }
@@ -338,15 +334,15 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
     wf_file_result result;
     if (!wf_file_request_valid(request)) {
         memset(&result, 0, sizeof(result));
-        result.kind = request == NULL ? 0 : request->kind;
-        result.value = -1;
-        result.error_code = EINVAL;
+        result.head.kind = request == NULL ? 0 : request->kind;
+        result.head.value = -1;
+        result.head.error_code = EINVAL;
         return result;
     }
     for (;;) {
         int readiness_error;
         result = wf_file_execute_once(request);
-        if (result.value >= 0 || result.error_code == 0) {
+        if (result.head.value >= 0 || result.head.error_code == 0) {
             return result;
         }
         switch (request->kind) {
@@ -361,19 +357,19 @@ wf_file_result wf_file_execute_direct(const wf_file_request *request) {
         default:
             return result;
         }
-        if (result.error_code == EINTR) {
+        if (result.head.error_code == EINTR) {
             continue;
         }
-        if (result.error_code != EAGAIN
+        if (result.head.error_code != EAGAIN
 #if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
-            && result.error_code != EWOULDBLOCK
+            && result.head.error_code != EWOULDBLOCK
 #endif
         ) {
             return result;
         }
         readiness_error = wf_file_wait_ready(request);
         if (readiness_error != 0) {
-            result.error_code = readiness_error;
+            result.head.error_code = readiness_error;
             return result;
         }
     }
@@ -447,59 +443,52 @@ static int wf_file_execution_should_be_timed(wf_file_adapter *adapter) {
     return tick % WF_FILE_EXECUTE_SAMPLE_INTERVAL == 0;
 }
 
-/* Moves one queue entry into the executing thread's own storage.
+/* Takes one queued record off this adapter's list.
  *
- * The record is copied rather than executed in place because the queue slot
- * becomes free the moment the lock is released.  Only an open needs its path
- * bytes, and only an open pays for them: copying the whole record moved a
- * kilobyte of path storage for every read and write as well, inside the one
- * lock every submission and every execution has to take. */
-static void wf_file_copy_out(wf_file_work *work, const wf_file_work *entry) {
-    work->token = entry->token;
-    work->request = entry->request;
-    if (entry->request.kind == WF_FILE_OPEN_AT) {
-        (void)wf_file_stage_path(work->path_storage, entry->path_storage);
-        wf_file_work_bind_path(work);
-    }
-}
-
-/* Takes one queued request off this adapter's queue.
+ * `from_head` chooses which end.  A joining thread's visit takes the newest
+ * request, so a blocked earlier host facility cannot hide every later free
+ * operation behind it, and helper threads take the oldest, so several target
+ * contexts spread across both ends of the list.
  *
- * `from_head` chooses which end.  A scheduler visit takes the newest request,
- * so a blocked earlier host facility cannot hide every later free operation
- * behind it, and helper threads take the oldest, so several target contexts
- * spread across both ends of the bounded queue.  Work this adapter still owes,
- * run on the way to re-attempting a refused open, is taken from the head
- * whichever thread does it: that is the order the program wrote, and it is the
- * order that reproduces the sequential outcome. */
-static int wf_file_take_work(
+ * The list is singly linked through each record's own `next`, so taking the
+ * newest walks it; that walk is bounded by what this program has outstanding,
+ * which is bounded by the frames that hold the records, and it costs nothing
+ * at all in the common case of one queued operation.  Nothing is copied out:
+ * the record is the submitting frame's and outlives the operation, so the
+ * executing thread runs it in place (design §5, §7).
+ */
+static wf_completion_record *wf_file_take_work(
     wf_file_adapter *adapter,
-    wf_file_work *work,
     int from_head
 ) {
-    int present = 0;
-    int released_capacity = 0;
+    wf_completion_record *taken = NULL;
     (void)pthread_mutex_lock(&adapter->queue_lock);
-    if (adapter->queue_count != 0) {
-        released_capacity = adapter->queue_count == adapter->queue_capacity;
-        if (from_head != 0) {
-            wf_file_copy_out(work, &adapter->queue[adapter->queue_head]);
-            adapter->queue_head =
-                (adapter->queue_head + 1) % adapter->queue_capacity;
+    if (adapter->queue_head != NULL) {
+        if (from_head != 0 || adapter->queue_head == adapter->queue_tail) {
+            taken = adapter->queue_head;
+            adapter->queue_head = taken->next;
+            if (adapter->queue_head == NULL) {
+                adapter->queue_tail = NULL;
+            }
         } else {
-            adapter->queue_tail = adapter->queue_tail == 0
-                ? adapter->queue_capacity - 1
-                : adapter->queue_tail - 1;
-            wf_file_copy_out(work, &adapter->queue[adapter->queue_tail]);
+            wf_completion_record *previous = adapter->queue_head;
+            while (previous->next != adapter->queue_tail) {
+                previous = previous->next;
+            }
+            taken = adapter->queue_tail;
+            previous->next = NULL;
+            adapter->queue_tail = previous;
         }
-        adapter->queue_count -= 1;
-        present = 1;
+        taken->next = NULL;
+        atomic_store_explicit(
+            &adapter->queue_count,
+            atomic_load_explicit(&adapter->queue_count, memory_order_relaxed)
+                - 1u,
+            memory_order_seq_cst
+        );
     }
     (void)pthread_mutex_unlock(&adapter->queue_lock);
-    if (released_capacity != 0) {
-        wf_completion_notify_capacity(adapter->runtime);
-    }
-    return present;
+    return taken;
 }
 
 /* Whether this adapter's record has been published, read the way a thread
@@ -588,47 +577,52 @@ int wf_file_adapter_transfer_runs_on_caller(const wf_file_adapter *adapter) {
     return wf_file_adapter_queued(adapter) == 0;
 }
 
+/* Stores one execution's answer into the record and publishes it.
+ *
+ * Bytes first, head second, DONE last.  A submitted status writes into the
+ * destination its own request named, because the record carries a size and
+ * never the bytes (design §7); everything else has already written into
+ * storage the caller named.  `wf_completion_record_complete` then stores the
+ * result head's DONE through the scheduler core, which is the publisher's
+ * last touch of a record that is a block of the joiner's frame. */
+void wf_file_complete_record(
+    wf_completion_record *record,
+    const wf_file_result *result
+) {
+    if (record->request.kind == WF_FILE_STATUS
+        && result->status_size != 0
+        && record->request.operation.status.destination != NULL) {
+        size_t written = result->status_size;
+        if (written > record->request.operation.status.capacity) {
+            written = record->request.operation.status.capacity;
+        }
+        memcpy(
+            record->request.operation.status.destination,
+            result->status,
+            written
+        );
+        record->status_written = written;
+    }
+    record->result = result->head;
+    wf_completion_record_complete(record);
+}
+
 static void wf_file_run_work(
     wf_file_adapter *adapter,
-    const wf_file_work *work,
+    wf_completion_record *record,
     int helper
 ) {
-    wf_file_result result = wf_file_execute_timed(adapter, &work->request);
-    wf_completion_publication publication;
-    publication = (wf_completion_publication) {
-        .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
-        .terminal_kind = result.error_code == 0
-                && result.open_outcome == WF_FILE_OPEN_SUCCEEDED
-            ? 1u
-            : 2u,
-        .result = &result,
-        .result_size = sizeof(result),
-    };
-    enum wf_completion_publish_result published = wf_completion_publish_terminal(
-        adapter->runtime,
-        work->token,
-        &publication
-    );
+    wf_file_result result = wf_file_execute_timed(adapter, &record->request);
     wf_file_finish_execution(adapter, helper);
-    if (published != WF_COMPLETION_PUBLISHED) {
-        /* A legitimate accepted work item owns the unique terminal route.  A
-         * failure here records an adapter/core defect; it never invokes writer
-         * code or attempts a second publication. */
-        atomic_fetch_add_explicit(
-            &adapter->stat_publication_failures,
-            1,
-            memory_order_relaxed
-        );
-    }
+    wf_file_complete_record(record, &result);
 }
 
 static void *wf_file_helper_main(void *context) {
     wf_file_adapter *adapter = context;
     for (;;) {
-        wf_file_work work;
-        int released_capacity;
+        wf_completion_record *record;
         (void)pthread_mutex_lock(&adapter->queue_lock);
-        while (adapter->queue_count == 0 && adapter->stopping == 0) {
+        while (adapter->queue_head == NULL && adapter->stopping == 0) {
             adapter->blocked_helpers += 1;
             (void)pthread_cond_wait(
                 &adapter->queue_available,
@@ -636,27 +630,30 @@ static void *wf_file_helper_main(void *context) {
             );
             adapter->blocked_helpers -= 1;
         }
-        if (adapter->queue_count == 0 && adapter->stopping != 0) {
+        if (adapter->queue_head == NULL && adapter->stopping != 0) {
             (void)pthread_mutex_unlock(&adapter->queue_lock);
             return NULL;
         }
-        released_capacity = adapter->queue_count == adapter->queue_capacity;
-        wf_file_copy_out(&work, &adapter->queue[adapter->queue_head]);
-        adapter->queue_head = (adapter->queue_head + 1) % adapter->queue_capacity;
-        adapter->queue_count -= 1;
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
-        if (released_capacity != 0) {
-            wf_completion_notify_capacity(adapter->runtime);
+        record = adapter->queue_head;
+        adapter->queue_head = record->next;
+        if (adapter->queue_head == NULL) {
+            adapter->queue_tail = NULL;
         }
-        wf_file_run_work(adapter, &work, 1);
+        record->next = NULL;
+        atomic_store_explicit(
+            &adapter->queue_count,
+            atomic_load_explicit(&adapter->queue_count, memory_order_relaxed)
+                - 1u,
+            memory_order_seq_cst
+        );
+        (void)pthread_mutex_unlock(&adapter->queue_lock);
+        wf_file_run_work(adapter, record, 1);
     }
 }
 
 int wf_file_adapter_init(
     wf_file_adapter *adapter,
     wf_completion_runtime *runtime,
-    wf_file_work *queue_storage,
-    size_t queue_capacity,
     pthread_t *helper_storage,
     size_t helper_capacity,
     size_t helper_count
@@ -664,8 +661,7 @@ int wf_file_adapter_init(
     size_t created = 0;
     int error;
 
-    if (adapter == NULL || runtime == NULL || queue_storage == NULL
-        || queue_capacity == 0 || helper_count > helper_capacity
+    if (adapter == NULL || runtime == NULL || helper_count > helper_capacity
         || (helper_capacity != 0 && helper_storage == NULL)) {
         return EINVAL;
     }
@@ -676,30 +672,19 @@ int wf_file_adapter_init(
      * That pair of stores is what makes the record safe to read, and it is the
      * only thing that does.  The field-by-field assignment below is not:
      * `atomic_init` is a plain write by definition, and adjacent plain writes
-     * may be merged.  At -O2 on aarch64 clang merges these -- one 16-byte
-     * store covering `mean_execute_ns` and `execute_ticks`, two more covering
-     * the four statistics counters -- so a `memset` here would differ in
-     * nothing that matters.  What excludes the race is that no reader touches
-     * any of these fields without first passing
-     * `wf_file_adapter_initialized`, whose acquire load pairs with the release
-     * store this function ends on.
+     * may be merged.  What excludes the race is that no reader touches any of
+     * these fields without first passing `wf_file_adapter_initialized`, whose
+     * acquire load pairs with the release store this function ends on.
      *
      * A reader can therefore see one of these writes only if the record it
      * already holds is initialized *again* underneath it, which this adapter's
      * contract does not allow and the bridge never does: it initializes once,
-     * under a `pthread_once`, with the flag still zero.  A probe that breaks
-     * that contract on purpose -- readers running across repeated
-     * init/shutdown cycles -- does draw a ThreadSanitizer report, between
-     * `atomic_init(&adapter->mean_execute_ns, 0)` below and the acquire load
-     * of that same field in `wf_file_adapter_wait_verdict`.  What that report
-     * names is the re-initialization, not this line. */
+     * under a `pthread_once`, with the flag still zero. */
     atomic_store_explicit(&adapter->initialized, 0, memory_order_release);
     adapter->runtime = runtime;
-    adapter->queue = queue_storage;
-    adapter->queue_capacity = queue_capacity;
-    adapter->queue_head = 0;
-    adapter->queue_tail = 0;
-    adapter->queue_count = 0;
+    adapter->queue_head = NULL;
+    adapter->queue_tail = NULL;
+    atomic_init(&adapter->queue_count, 0);
     adapter->helpers = helper_storage;
     atomic_init(&adapter->helper_count, 0);
     atomic_init(&adapter->mean_execute_ns, 0);
@@ -709,10 +694,8 @@ int wf_file_adapter_init(
     adapter->helper_capacity = helper_capacity;
     adapter->helper_cap = helper_count;
     atomic_init(&adapter->stat_submissions, 0);
-    atomic_init(&adapter->stat_capacity_waits, 0);
     atomic_init(&adapter->stat_helper_executions, 0);
     atomic_init(&adapter->stat_scheduler_executions, 0);
-    atomic_init(&adapter->stat_publication_failures, 0);
 
     error = pthread_mutex_init(&adapter->queue_lock, NULL);
     if (error != 0) {
@@ -841,9 +824,13 @@ static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
     );
 }
 
-/* Appends one accepted queue entry and grows the pool when the queue has
- * outrun it.  The caller holds the queue lock and has already made the entry's
- * ownership transition.
+/* Appends one record to the pending list and grows the pool when the list has
+ * outrun it.  The caller holds the queue lock.
+ *
+ * There is no capacity here to answer: the list is threaded through the
+ * records, each of which is a block of the frame that submitted it, so the
+ * only bound is how many operations the program's own frames can hold
+ * (design §7).
  *
  * Returns whether a sleeping helper has to be woken for it.  The wake itself
  * is the caller's, after the lock: a signal issued while holding the queue
@@ -851,42 +838,21 @@ static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {
  * the submission pays a system call to start a thread it then stalls. */
 static int wf_file_enqueue_locked(
     wf_file_adapter *adapter,
-    wf_completion_token token,
-    const wf_file_request *request
+    wf_completion_record *record
 ) {
     int wake;
-    wf_file_work *entry = &adapter->queue[adapter->queue_tail];
-    entry->token = token;
-    entry->request = *request;
-    if (request->kind == WF_FILE_OPEN_AT) {
-        /* The path becomes this record's own before any helper can see the
-         * entry.  `wf_file_adapter_submit` refused a name that does not fit
-         * before the operation was claimed, so this copy cannot fail. */
-        (void)wf_file_stage_path(
-            entry->path_storage,
-            request->operation.open_at.path
-        );
-        wf_file_work_bind_path(entry);
-        /* [SYS-2]'s `loan-released(path)` for this open holds from here: the
-         * name the host will resolve is the record's own, so the caller's
-         * buffer is free whatever the host does next.  Publishing it makes
-         * that an observable fact rather than an adapter comment.  A refusal
-         * is an adapter/core contract defect: it is counted, never retried,
-         * and never turned into writer-visible behaviour. */
-        if (wf_completion_publish_milestone(
-                adapter->runtime,
-                token,
-                WF_COMPLETION_PAYLOAD_RELEASED
-            ) != WF_COMPLETION_PUBLISHED) {
-            atomic_fetch_add_explicit(
-                &adapter->stat_publication_failures,
-                1,
-                memory_order_relaxed
-            );
-        }
+    record->next = NULL;
+    if (adapter->queue_tail == NULL) {
+        adapter->queue_head = record;
+    } else {
+        adapter->queue_tail->next = record;
     }
-    adapter->queue_tail = (adapter->queue_tail + 1) % adapter->queue_capacity;
-    adapter->queue_count += 1;
+    adapter->queue_tail = record;
+    atomic_store_explicit(
+        &adapter->queue_count,
+        atomic_load_explicit(&adapter->queue_count, memory_order_relaxed) + 1u,
+        memory_order_seq_cst
+    );
     atomic_fetch_add_explicit(
         &adapter->stat_submissions,
         1,
@@ -906,57 +872,21 @@ static int wf_file_enqueue_locked(
 
 enum wf_file_submit_result wf_file_adapter_submit(
     wf_file_adapter *adapter,
-    wf_completion_token token,
-    const wf_file_request *request
+    wf_completion_record *record
 ) {
-    enum wf_completion_transition_result transition;
     int wake;
 
-    if (!wf_file_adapter_initialized(adapter)
-        || !wf_file_request_valid(request)) {
+    if (!wf_file_adapter_initialized(adapter) || record == NULL
+        || !wf_file_request_valid(&record->request)) {
         return WF_FILE_SUBMIT_INVALID;
     }
-    /* A submitted open's path must fit the operation record, because the
-     * record is what resolves it.  The direct executor carries any length and
-     * needs no copy, so refusing here before anything is claimed leaves the
-     * caller an honest fallback rather than a truncated name. */
-    if (request->kind == WF_FILE_OPEN_AT
-        && !wf_file_path_fits(request->operation.open_at.path)) {
-        return WF_FILE_SUBMIT_INVALID;
-    }
+    record->route = WF_COMPLETION_ROUTE_FILE_ADAPTER;
     (void)pthread_mutex_lock(&adapter->queue_lock);
     if (adapter->stopping != 0) {
         (void)pthread_mutex_unlock(&adapter->queue_lock);
         return WF_FILE_ADAPTER_STOPPING;
     }
-    transition = wf_completion_begin_submit(adapter->runtime, token);
-    if (transition == WF_COMPLETION_TRANSITION_STALE) {
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
-        return WF_FILE_SUBMIT_STALE;
-    }
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
-        return WF_FILE_SUBMIT_INVALID;
-    }
-    if (adapter->queue_count == adapter->queue_capacity) {
-        (void)wf_completion_mark_wait_capacity(adapter->runtime, token);
-        atomic_fetch_add_explicit(
-            &adapter->stat_capacity_waits,
-            1,
-            memory_order_relaxed
-        );
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
-        return WF_FILE_WAIT_CAPACITY;
-    }
-    transition = wf_completion_target_accepted(adapter->runtime, token);
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        (void)pthread_mutex_unlock(&adapter->queue_lock);
-        return transition == WF_COMPLETION_TRANSITION_STALE
-            ? WF_FILE_SUBMIT_STALE
-            : WF_FILE_SUBMIT_INVALID;
-    }
-
-    wake = wf_file_enqueue_locked(adapter, token, request);
+    wake = wf_file_enqueue_locked(adapter, record);
     (void)pthread_mutex_unlock(&adapter->queue_lock);
     if (wake != 0) {
         (void)pthread_cond_signal(&adapter->queue_available);
@@ -970,11 +900,11 @@ size_t wf_file_adapter_progress(wf_file_adapter *adapter, size_t budget) {
         return 0;
     }
     while (executed < budget) {
-        wf_file_work work;
-        if (!wf_file_take_work(adapter, &work, 0)) {
+        wf_completion_record *record = wf_file_take_work(adapter, 0);
+        if (record == NULL) {
             break;
         }
-        wf_file_run_work(adapter, &work, 0);
+        wf_file_run_work(adapter, record, 0);
         executed += 1;
     }
     return executed;
@@ -1019,13 +949,13 @@ int wf_file_adapter_shutdown(wf_file_adapter *adapter) {
      * and then uses storage this teardown destroys: `queue_lock` and the
      * condition variable beside it.  The queue count is not among them — it is
      * an atomic this teardown never writes, which is what lets
-     * `wf_file_adapter_queued` be read with no lock at all, for the decline check
-     * `wf_file_adapter_transfer_runs_on_caller`.  Storing zero after the
-     * destroys would leave a window in which that
-     * guard still answers yes and the mutex it guards no longer exists, so a
-     * reader admitted through it locks destroyed storage.  Storing zero first
-     * closes the window to the ordinary one this function's precondition
-     * already covers: a reader that passed the guard before this store.
+     * `wf_file_adapter_queued` be read with no lock at all, for the check
+     * `wf_file_adapter_transfer_runs_on_caller` makes.  Storing zero after the
+     * destroys would leave a window in which that guard still answers yes and
+     * the mutex it guards no longer exists, so a reader admitted through it
+     * locks destroyed storage.  Storing zero first closes the window to the
+     * ordinary one this function's precondition already covers: a reader that
+     * passed the guard before this store.
      *
      * It is stored whatever the joins and destroys reported.  A record whose
      * condition variable and mutex have been destroyed is not usable, and
@@ -1057,20 +987,12 @@ wf_file_adapter_statistics wf_file_adapter_statistics_snapshot(
         &adapter->stat_submissions,
         memory_order_relaxed
     );
-    statistics.capacity_waits = atomic_load_explicit(
-        &adapter->stat_capacity_waits,
-        memory_order_relaxed
-    );
     statistics.helper_executions = atomic_load_explicit(
         &adapter->stat_helper_executions,
         memory_order_relaxed
     );
     statistics.scheduler_executions = atomic_load_explicit(
         &adapter->stat_scheduler_executions,
-        memory_order_relaxed
-    );
-    statistics.publication_failures = atomic_load_explicit(
-        &adapter->stat_publication_failures,
         memory_order_relaxed
     );
     return statistics;

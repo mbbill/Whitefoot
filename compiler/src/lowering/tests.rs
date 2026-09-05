@@ -1072,8 +1072,14 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
             .into_string();
         assert!(llvm.contains("call i64 @wf__completion_window(i64 4, i64 0, i64 2)"));
         assert!(llvm.contains("%wf.frame = alloca {"));
-        assert!(llvm.contains("[2 x [16 x i8]]"));
-        assert!(llvm.contains("getelementptr inbounds [2 x [16 x i8]]"));
+        // Two blocks of WF_COMPLETION_RECORD_BYTES, which the record grew to
+        // when it stopped being a token into a pool and became the operation's
+        // own state in the submitting frame
+        // (`research/investigations/io-model/PARK-ON-MISS.md` §5). The number
+        // is the contract header's, checked against the emitter's own constant
+        // by `the_record_block_abi_constants_agree_with_the_contract_header`.
+        assert!(llvm.contains("[2 x [128 x i8]]"));
+        assert!(llvm.contains("getelementptr inbounds [2 x [128 x i8]]"));
         assert!(llvm.contains("call i32 @wf__completion_file_open_at_submit("));
         assert!(llvm.contains("call void @wf__completion_file_open_join("));
     });

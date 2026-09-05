@@ -71,11 +71,43 @@ static pthread_cond_t wf_prim_wake_signal = PTHREAD_COND_INITIALIZER;
 static uint64_t wf_prim_wake_epoch;
 static unsigned wf_prim_sleepers;
 
+/* Platform item 2 of design §7: one wait and wake primitive.
+ *
+ * The core sleeps and wakes on whatever the link's owner of the host wait set
+ * supplies.  A completion link has one -- the bridge, whose park is the
+ * io_uring epoll wait where a ring exists and the runtime's condition-variable
+ * park elsewhere, and whose wake raises the same epoch the ring's own park
+ * announces itself against -- so the bridge defines these three strongly and
+ * the mapping is written down at that definition.  A core linked without a
+ * completion runtime, such as the smoke build and the enumerator, gets the
+ * weak answers below and keeps the epoch on this file's own mutex and
+ * condition variable.  Each returns nonzero when it handled the call. */
+__attribute__((weak)) int wf__sched_host_epoch(uint64_t *epoch) {
+    (void)epoch;
+    return 0;
+}
+
+__attribute__((weak)) int wf__sched_host_park(uint64_t observed) {
+    (void)observed;
+    return 0;
+}
+
+__attribute__((weak)) int wf__sched_host_wake(void) {
+    return 0;
+}
+
 uint64_t wf_prim_epoch(void) {
+    uint64_t supplied = 0;
+    if (wf__sched_host_epoch(&supplied)) {
+        return supplied;
+    }
     return __atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST);
 }
 
 void wf_prim_park(uint64_t observed) {
+    if (wf__sched_host_park(observed)) {
+        return;
+    }
     pthread_mutex_lock(&wf_prim_wake_lock);
     wf_prim_sleepers += 1u;
     while (__atomic_load_n(&wf_prim_wake_epoch, __ATOMIC_SEQ_CST) == observed) {
@@ -86,6 +118,9 @@ void wf_prim_park(uint64_t observed) {
 }
 
 void wf_prim_wake(void) {
+    if (wf__sched_host_wake()) {
+        return;
+    }
     pthread_mutex_lock(&wf_prim_wake_lock);
     __atomic_add_fetch(&wf_prim_wake_epoch, 1u, __ATOMIC_SEQ_CST);
     if (wf_prim_sleepers != 0u) {

@@ -13,6 +13,40 @@
 extern "C" {
 #endif
 
+/* Stable integer verdicts for target submit implementations that expose core
+ * backpressure, and the two entries the emitted Windows fork still reaches.
+ *
+ * These were declared in `bridge.h` until the POSIX runtime stopped having a
+ * capacity to expose: with the record a block of the submitting frame there is
+ * nothing to refuse, every submit ends in a published record, and the shared
+ * header states that contract
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §7).  Windows keeps its
+ * own completion core for now and the emitter still emits its verdict fork, so
+ * the two halves of that removal cannot be split here the way they can on
+ * POSIX: a submit that answered 0 would leave an emitted arm undefined.  The
+ * declarations therefore live beside the definitions in this unit until the
+ * emitter step removes the fork, and nothing shared names them. */
+enum wf_completion_submit_verdict {
+    WF_COMPLETION_SUBMIT_DIRECT_ONLY = 0,
+    WF_COMPLETION_SUBMIT_ACCEPTED = 1,
+    WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY = 2
+};
+
+void wf__completion_wait_core_capacity(void);
+int wf__completion_file_take(
+    const void *record,
+    int64_t *value,
+    int *error_code
+);
+int wf__completion_file_take_status(
+    const void *record,
+    int64_t *value,
+    int *error_code,
+    void *status,
+    uint64_t status_capacity,
+    uint64_t *status_size
+);
+
 struct wf_windows_iocp_adapter;
 
 enum wf_completion_phase {

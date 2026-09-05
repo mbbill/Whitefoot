@@ -985,8 +985,15 @@ int wf__completion_file_open_at_submit(
     );
 }
 
-int wf__completion_file_status_submit(int descriptor, void *record) {
+int wf__completion_file_status_submit(
+    int descriptor,
+    void *status,
+    uint64_t status_capacity,
+    void *record
+) {
     (void)descriptor;
+    (void)status;
+    (void)status_capacity;
     (void)record;
     return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
 }
@@ -1208,7 +1215,11 @@ uint64_t wf__completion_windows_iocp_dequeued_completions(void) {
 }
 
 uint64_t wf__completion_file_fallback_submissions(void) { return 0; }
-uint64_t wf__completion_file_demoted_opens(void) { return 0; }
+
+/* Operations the engine executed inside the submitting call itself.  This
+ * bridge has no such route: it either hands the operation to IOCP or answers
+ * DIRECT_ONLY, so nothing is executed inside a submit here. */
+uint64_t wf__completion_inline_executions(void) { return 0; }
 uint64_t wf__completion_file_helper_executions(void) {
     return wf_windows_blocking_statistics_snapshot(
         &wf_windows_bridge_blocking

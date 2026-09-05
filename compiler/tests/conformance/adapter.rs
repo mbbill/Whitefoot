@@ -44,8 +44,9 @@ use whitefoot::{
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
     CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER,
-    WRITER_SCHEDULER_SOURCE, compile, module_requires_completion_runtime,
+    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_RUNTIME_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
+    WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile, module_requires_completion_runtime,
     module_requires_parallel_runtime,
 };
 
@@ -226,37 +227,57 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     }
     if completion {
         for (name, source) in [
-            ("contract.h", COMPLETION_CONTRACT_HEADER),
-            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
-            ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("completion/writer_scheduler.h", WRITER_SCHEDULER_HEADER),
+            (
+                "completion/linux_io_uring.h",
+                COMPLETION_LINUX_IO_URING_HEADER,
+            ),
+            ("sched/core.h", SCHED_CORE_HEADER),
+            ("sched/prim.h", SCHED_PRIM_HEADER),
+            ("sched/switch.h", SCHED_SWITCH_HEADER),
+            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+            ("completion/writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
+            (
+                "completion/linux_io_uring.c",
+                COMPLETION_LINUX_IO_URING_SOURCE,
+            ),
+            ("sched/core.c", SCHED_CORE_SOURCE),
+            ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
         ] {
+            std::fs::create_dir_all(directory.join("completion"))
+                .expect("stage completion directory");
+            std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
             std::fs::write(directory.join(name), source).expect("write completion runtime unit");
         }
         command
             .arg("-I")
-            .arg(directory)
+            .arg(directory.join("completion"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_runtime.c"))
+            .arg(directory.join("completion/completion_runtime.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("file_adapter.c"))
+            .arg(directory.join("completion/file_adapter.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_bridge.c"))
+            .arg(directory.join("completion/completion_bridge.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("writer_scheduler.c"))
+            .arg(directory.join("completion/writer_scheduler.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("linux_io_uring.c"));
+            .arg(directory.join("completion/linux_io_uring.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/core.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/prim_host.c"));
     }
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)

@@ -260,6 +260,17 @@ uint64_t wf_prim_epoch(void);
 void wf_prim_park(uint64_t observed);
 void wf_prim_wake(void);
 
+/* The seam through which the owner of the host's wait set supplies that one
+ * sleep and wake (design §7, platform item 2).  The host implementation
+ * declares all three weak and answers zero, keeping its own epoch; a link that
+ * carries a completion runtime defines them strongly, so the core and the
+ * bridge sleep and wake on one primitive.  Each returns nonzero when it
+ * handled the call.  They are not an eighth primitive: they are how item 3 is
+ * bound to a platform. */
+int wf__sched_host_epoch(uint64_t *epoch);
+int wf__sched_host_park(uint64_t observed);
+int wf__sched_host_wake(void);
+
 /* 4. The reservation: `count` stacks of `bytes` each, each with a guard page
  * below it, in one mapping. Returns the base of the first stack's usable
  * range or NULL when the reservation cannot be made. */

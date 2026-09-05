@@ -21,8 +21,14 @@
 
 /* The opaque per-operation record block, mirrored from contract.h so a
  * Windows translation unit reserves and asserts against the same two ABI
- * constants. See that header for what the block is and who owns it. */
-#define WF_COMPLETION_RECORD_BYTES 16u
+ * constants. See that header for what the block is and who owns it.
+ *
+ * The number is the POSIX record's, because the emitter reserves one block per
+ * operation for every target and cannot reserve two sizes.  A Windows unit
+ * that still keeps a token there simply leaves the rest of the block unused;
+ * what the constants have to say is what the frame reserved, not what this
+ * platform's runtime happens to store. */
+#define WF_COMPLETION_RECORD_BYTES 128u
 #define WF_COMPLETION_RECORD_ALIGN 8u
 
 enum wf_completion_milestone {

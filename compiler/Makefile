@@ -60,6 +60,11 @@ COMPILER_STAGES := format lint test-partition test-unit test-sampling test-corpu
 	docs spec completion-test
 
 COMPLETION_DIR := src/backend/completion
+# The scheduler core is linked into every completion build: the completion
+# record begins with a `wf_sched_record` and every publication goes through
+# `wf_sched_complete` (design §7).
+SCHED_DIR := src/backend/sched
+SCHED_SOURCES := $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c
 COMPLETION_TMP ?= $(HOME)/do_not_scan/whitefoot-completion-test
 COMPLETION_DEFINES := \
 	-DWF_COMPLETION_GETDIRENTRIES64=wf_completion_test_getdirentries64 \
@@ -93,6 +98,7 @@ COMPLETION_HARNESS_DEFINES := \
 	-DWF_FILE_OPENAT=wf_completion_test_openat
 COMPLETION_HARNESS_CFLAGS := $(COMPLETION_CFLAGS) $(COMPLETION_HARNESS_DEFINES)
 COMPLETION_SOURCES := \
+	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
 	$(COMPLETION_DIR)/bridge.c \
@@ -111,10 +117,12 @@ COMPLETION_DEFAULT_ROUTE_SOURCES := \
 # route at once. Built without COMPLETION_DEFINES for the same reason as the
 # default-route probe: the schedule it is about is the shipped one.
 COMPLETION_CORE_READ_SOURCES := \
+	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
 	$(COMPLETION_DIR)/core_read_probe.c
 COMPLETION_CORE_READ_ALLOWED_SOURCES := \
+	$(SCHED_SOURCES) \
 	$(COMPLETION_DIR)/runtime.c \
 	$(COMPLETION_DIR)/file_adapter.c \
 	$(COMPLETION_DIR)/core_read_probe.c
@@ -249,6 +257,7 @@ completion-test: completion-core-read-test completion-default-route-test sched-s
 	@echo "completion pure-compute link boundary: PASS"
 	@if [ "$$(uname -s)" = Linux ]; then \
 		$(CC) $(COMPLETION_CFLAGS) \
+			$(SCHED_SOURCES) \
 			$(COMPLETION_DIR)/runtime.c \
 			$(COMPLETION_DIR)/linux_io_uring.c \
 			$(COMPLETION_DIR)/native_adapter_probe.c \
@@ -296,7 +305,6 @@ completion-default-route-test:
 # The scheduler core (src/backend/sched) on real threads, the real switch and
 # the real park: not the §11 gate, which is the enumerator, but the run that
 # has to pass before an enumeration is worth building.
-SCHED_DIR := src/backend/sched
 sched-smoke:
 	@mkdir -p "$(COMPLETION_TMP)"
 	$(CC) $(COMPLETION_BASE_CFLAGS) $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c \

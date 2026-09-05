@@ -8,25 +8,6 @@
 extern "C" {
 #endif
 
-/* Stable integer verdicts for target submit implementations that expose core
- * backpressure.  The Windows positioned-read submit uses all three in this
- * runtime slice.  On that path DIRECT_ONLY means the request cannot use IOCP
- * and leaves the token untouched.  ACCEPTED transfers the request to IOCP and
- * returns with a valid token.  WAIT_CORE_CAPACITY also leaves the token
- * untouched so the source owner can consume one of its older tokens and retry
- * the same request. */
-enum wf_completion_submit_verdict {
-    WF_COMPLETION_SUBMIT_DIRECT_ONLY = 0,
-    WF_COMPLETION_SUBMIT_ACCEPTED = 1,
-    WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY = 2
-};
-
-/* Called only after WAIT_CORE_CAPACITY when the source owner has no earlier
- * accepted request left to consume. It helps scheduler work or waits for a
- * capacity notification, then returns so the caller can retry the exact
- * submission. */
-void wf__completion_wait_core_capacity(void);
-
 /* How many iterations of one loop the runtime will carry in flight at once,
  * asked once per loop entry and never per iteration.  `span` is the loop's
  * statically known trip count, `slot_bytes` the private storage one in-flight
@@ -40,6 +21,13 @@ uint64_t wf__completion_window(
     uint64_t ceiling
 );
 
+/* Every submit fills the record the caller supplies and returns 1: the
+ * runtime either accepted the operation or executed it itself and published
+ * its completion into the record, and either way the operation is the
+ * runtime's and will be joined
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Every submit path
+ * ends in a published record").  A `NULL` record, or an argument this ABI
+ * cannot mean, is a contract violation and terminates. */
 int wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
@@ -75,8 +63,14 @@ int wf__completion_file_open_at_submit(
     void *record
 );
 
+/* A submitted status names the storage its bytes go to, because the record
+ * carries a size and never the bytes: the destination is the submitter's and
+ * the engine writes it there, so a frame that can hold any operation does not
+ * pay 192 bytes for a facility one direct call uses (design §7). */
 int wf__completion_file_status_submit(
     int descriptor,
+    void *status,
+    uint64_t status_capacity,
     void *record
 );
 
@@ -150,6 +144,10 @@ int64_t wf__completion_directory_next_direct(
     int64_t *position
 );
 
+/* The join waits in place on the record with the scheduler core's own
+ * protocol: nothing runs above it, and the thread makes target progress until
+ * the record is DONE or there is nothing left to do but sleep (design §2's
+ * fourth line, I/O arm; §6 step 4). */
 void wf__completion_file_join(
     const void *record,
     int64_t *value,
@@ -165,33 +163,21 @@ void wf__completion_file_status_join(
     uint64_t *status_size
 );
 
-int wf__completion_file_take(
-    const void *record,
-    int64_t *value,
-    int *error_code
-);
-
-int wf__completion_file_take_status(
-    const void *record,
-    int64_t *value,
-    int *error_code,
-    void *status,
-    uint64_t status_capacity,
-    uint64_t *status_size
-);
-
 void wf__writer_run_root(void *frame);
 
 uint64_t wf__completion_file_submissions(void);
 uint64_t wf__completion_file_fallback_submissions(void);
-/* Opens no operation record could hold the name of, which their callers
- * performed as direct blocking opens instead.  The outcome of each is the
- * open it asked for; what it lost is the completion path. */
-uint64_t wf__completion_file_demoted_opens(void);
 uint64_t wf__completion_file_helper_executions(void);
 uint64_t wf__completion_target_helper_count(void);
 uint64_t wf__completion_target_helper_executions(void);
+/* Records completed: one per submission, whichever engine finished it. */
 uint64_t wf__completion_publications(void);
+/* Operations the engine executed inside the submitting call itself, because
+ * the operation had no kernel completion form, no host work at all, or the
+ * adapter measured that submitting it could only add a queue crossing to a
+ * host call this thread was about to make (design §7.1, primitive 7).  It is
+ * a throughput fact and never an outcome: the record is published either way. */
+uint64_t wf__completion_inline_executions(void);
 uint64_t wf__completion_linux_io_uring_submissions(void);
 /* `io_uring_enter` calls that carried staged submissions to the kernel.  The
  * doorbell is deferred, so this is far below the submission count and the
