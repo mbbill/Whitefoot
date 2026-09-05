@@ -3257,7 +3257,13 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   does, in the enclosing block, visible after the complete statement, with the
   mode and type of its own ordinal; only a bare identifier target declares.
   [BLK-1]'s element admission drops the word *unbounded*, which named a class
-  of parameter this ruling deletes.
+  of parameter this ruling deletes. On the region axis [PROV-6] adds two
+  sentences the same ruling requires: a region parameter's bound is `affine`
+  or `linear` and never `copy`, because it names the class of the store its
+  region identifies and no store is reclaimed by duplication, so `'s: copy` is
+  a hard error at that `region_param`; and that axis is an equality of store
+  class rather than the type axis' chain, which is what the rule already said
+  and what makes an extent not stand in for a general store.
 - CONSEQUENCE OF THE ADDED ATOM: `copy` is a fixed lowercase grammar atom, so
   [FORM-3] excludes it from IDENT and no source declaration may be spelled
   `copy` any more. Two corpus bindings were: one `let copy = maximum;` in
@@ -3276,10 +3282,10 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `tests/programs/fixed_run_library.wf` (`filled<T: copy, const n>` and
   `rebase<T: affine, const n>`) are additions rather than respells and are
   counted separately.
-- CONFORMANCE BOUNDARY (B7a5): this batch ADDS nine conformance cases and their
-  nine manifest rows, RENAMES and MODIFIES one case, MODIFIES the source of
+- CONFORMANCE BOUNDARY (B7a5): this batch ADDS ten conformance cases and their
+  ten manifest rows, RENAMES and MODIFIES one case, MODIFIES the source of
   eight more, and deletes none; it changes no adapter, runner, or collection
-  wiring, and no manifest row but the renamed one. The nine added ids are
+  wiring, and no manifest row but the renamed one. The ten added ids are
   `prov6-pos-the-bound-chain-admits-every-lower-class` (run, exit 0),
   `prov6-neg-a-copy-bound-refuses-an-affine-argument` (reject, PROV-6),
   `fn2-pos-the-template-is-the-spelling-authority` (run, exit 0),
@@ -3287,8 +3293,9 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `prov6-neg-a-linear-bounded-body-drops-its-value` (reject, PROV-6),
   `gram2-neg-a-type-parameter-writes-no-bound` (reject, GRAM-2),
   `prov6-pos-a-region-argument-names-a-bump-extent` (run, exit 0),
-  `liv2-pos-a-set-target-that-declares-its-binding` (run, exit 0) and
-  `liv2-neg-a-projected-set-target-declares-nothing` (reject, TYPE-5).
+  `liv2-pos-a-set-target-that-declares-its-binding` (run, exit 0),
+  `liv2-neg-a-projected-set-target-declares-nothing` (reject, TYPE-5) and
+  `prov6-neg-a-region-parameter-bounded-copy` (reject, PROV-6).
   The renamed and modified case is the one intended verdict flip.
   BEFORE: id `prov6-pos-linearity-bound-on-a-region-parameter`, rules
   ["PROV-6", "FN-2", "FORM-8"], expectation `{"kind": "run", "exit": 0}`,
@@ -3315,9 +3322,9 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   intended and is the whole point of landing the region axis: under [S32] the
   instantiation check had no region axis at all, so nothing looked at what `'s`
   was bound to. Before this batch the corpus holds 597 cases with the native
-  adapter reporting Pass=595, Xfail=1, Skip=1; after it the corpus holds 606
-  with the adapter reporting Pass=604, Xfail=1, Skip=1. The one xfail
+  adapter reporting Pass=595, Xfail=1, Skip=1; after it the corpus holds 607
+  with the adapter reporting Pass=605, Xfail=1, Skip=1. The one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no other verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 913acf09b22a3a7ad0217bbeff988575fc30d4aa4ea58945dd87a2d2c4297572 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 1e87817bcbd7c87354dc68a1c0fa5d92c6bac5fb2343d82c16eb61dd9491b92b 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

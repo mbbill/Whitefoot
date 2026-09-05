@@ -1752,6 +1752,12 @@ this rule does not restate it**; the seventh draft's second, wider sentence here
 > and `rebase` were instantiated only at affine types to dodge it. The exception reaches
 > both spellings or `take_at`'s own `replace short[at] = move endv;` does not compile at a
 > copy instance. Q8's copy/affine half closes here.
+> **The chain is the type axis and not the region axis.** A region bound names *which
+> kind of store* its region identifies, so satisfaction there stays the equality this rule
+> already stated: an extent does not stand in for a general store, and a region that names
+> no store satisfies neither bound. `linearity_bound` is one production with three
+> alternatives, so the grammar admits `'s: copy`; the class is refused at the
+> `region_param` itself, because no store is reclaimed by duplication.
 
 > **Landed 2026-09-04 (B5), with five halves not exercised and one clause deferred.**
 > [PROV-6] is in the active specification and in the compiler. The criterion, the release

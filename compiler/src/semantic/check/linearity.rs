@@ -489,6 +489,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [PROV-1]. A region that names no store — a loan region, or a region a
     /// `region_stmt` introduced that no reserving occurrence names — has no
     /// store class and satisfies neither bound.
+    ///
+    /// This axis is an equality and not the type axis' chain: a region bound
+    /// names *which kind of store* its region identifies, so an extent does
+    /// not stand in for a general store any more than a general store stands
+    /// in for an extent [PROV-6].
     pub(in crate::semantic) fn check_region_linearity_bound(
         &self,
         parameter: &str,
@@ -497,7 +502,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
     ) -> Result<(), CheckStop> {
         let actual = self.region_store_class(argument)?;
-        if actual.is_some_and(|actual| actual.satisfies(bound)) {
+        if actual == Some(bound) {
             return Ok(());
         }
         self.issue_node::<()>(

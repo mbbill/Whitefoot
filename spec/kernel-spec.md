@@ -816,7 +816,7 @@ Each commit is an [ENT-5] kill event over that storage exactly as [SET-1]'s sing
 A commit derives no drop, release, finalizer, or cleanup edge [STOR-3]: a copy target's previous value needs none, and an affine target's previous value has already left through the read-out or was already gone.
 A target identifier that resolves to no binding in scope declares one, exactly as a `let` binder does: it is a fresh declaration of the enclosing block owned by that target's own `pbase` [TYPE-6], visible after the complete `set` statement and not inside it, and its mode and type are `own` and its own ordinal's type [TYPE-5].
 Such a target names no existing place, so it reads no previous value out, overlaps no other target, and is the one binding this commit initializes rather than writes; conditions 1 and 2 are over the targets that name existing places, and condition 3 fixes this one's type.
-Only a bare identifier target declares: a projected, dereferenced, or subscripted target selects one component of a value that must already exist, so an unresolved base there keeps its ordinary [TYPE-6] rejection.
+Only a bare identifier target declares: a projected, dereferenced, or subscripted target selects one component of a value that must already exist, so an unresolved base there keeps the ordinary lookup rejection [TYPE-6] states, cited as that rule's own table cites a `pbase` IDENT.
 The checked program retains each target path, each discharged target check, each ordinal's value, each read-out, the post-right-hand-side liveness and writability judgments, and the one commit before lowering [DIAG-2].
 
 [PROV-1] A store's identity is a region, that region is a component of every type the store backs, and every elided store brand resolves by one rule.
