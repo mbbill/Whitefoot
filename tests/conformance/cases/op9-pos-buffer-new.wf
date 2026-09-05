@@ -1,9 +1,11 @@
-fn make(n: own u64) -> return_value: own buffer<i32> pure contract {
+fn make['s](store: &uniq Heap<'s>, n: own u64) -> made: own Option<Vector<'s, i32>> reads(store), writes(store), allocates(store) contract {
   requires n <= 1024_u64;
   requires buffer_fits::<i32>(n);
 } {
-  doc "buffer_new(n, v) allocates and fills a flat runtime-length buffer only after its source allocation bound and selected-target byte bound are both proved [OP-9, STOR-6].";
-  return buffer_new(n, 0_i32);
+  doc "heap_vector::<T>(store, count) takes a runtime-length run from the general store only after its source allocation bound and selected-target byte bound are both proved [OP-9, STOR-6].";
+  region {
+    return heap_vector::<i32>(store: &uniq deref(store), count: n);
+  }
 }
 
 command fn main() -> return_value: own ExitStatus pure {

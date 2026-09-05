@@ -1,4 +1,22 @@
-fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, spare: own u64) reads(taken) contract {
+fn filled<T: copy, const n: u64>(value: own T) -> result: own FixedVector<T, n> pure contract {
+  ensures len_of(result) >= n;
+  ensures room_of(result) <= 0_u64;
+  ensures head_of(result) <= 0_u64;
+} {
+  doc "Builds a run of n slots, every one holding a copy of value; the copy bound is what admits the bare repeated use.";
+  let built = fixed_vector::<T, n>();
+  for @fill (
+    at in 0_u64..n,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= n,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: value);
+  }
+  return move built;
+}
+
+fn probe(taken: own FixedVector<u8, 8>) -> (outcome: own Result<u64, Overflow>, spare: own u64) reads(taken) contract {
   ensures when Ok(value: reported): reported == len_of(taken);
 } {
   doc "Exactly one ordinal has the route's enum type, so the ordinal binder is omitted.";
@@ -8,7 +26,7 @@ fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, spare: o
 
 command fn main() -> status: own ExitStatus pure {
   doc "CALL-4: the ordinal binder may be omitted exactly when one declared ordinal has the route's enum type.";
-  let run = buffer_new(8_u64, 0_u8);
+  let run = filled::<u8, 8>(value: 0_u8);
   let (outcome, spare) = probe(taken: move run);
   match outcome {
     Ok(value: reported) => {

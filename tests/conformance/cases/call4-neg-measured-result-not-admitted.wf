@@ -1,4 +1,4 @@
-fn hold(taken: own buffer<u8>) -> kept: own buffer<u8> pure contract {
+fn hold(taken: own FixedVector<u8, 4>) -> kept: own FixedVector<u8, 4> pure contract {
   ensures len_of(kept) >= 1_u64;
 } {
   doc "A measure of a result is an admitted operand, and this one is unprovable: the parameter arrives with no known length, so the relation it publishes has no premise.";
@@ -7,7 +7,11 @@ fn hold(taken: own buffer<u8>) -> kept: own buffer<u8> pure contract {
 
 command fn main() -> status: own ExitStatus pure {
   doc "CALL-4: a measured result and a measure over its bare result place are admitted operands, so the refusal is the ordinary FN-9 proof at the selected return rather than the admission or the grammar.";
-  let run = buffer_new(4_u64, 0_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 0_u8);
+  let two = place_back(vector: move one, value: 0_u8);
+  let three = place_back(vector: move two, value: 0_u8);
+  let run = place_back(vector: move three, value: 0_u8);
   let kept = hold(taken: move run);
   return exit_status(code: 0_u8);
 }

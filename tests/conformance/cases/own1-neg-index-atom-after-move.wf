@@ -4,7 +4,7 @@ struct Rec {
 }
 
 command fn main() -> return_value: own ExitStatus pure {
-  let b = buffer_new(8_u64, 0_u64);
+  let b = fixed_vector::<u64, 8>();
   let r = Rec(f: 1_u64, g: 2_u64);
   let s = move r;
   let x = b[r.f];
