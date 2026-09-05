@@ -112,6 +112,8 @@ pub(crate) enum TermKind {
 pub(crate) enum CallDatumProjection {
     Deref,
     Field(u32),
+    /// One [OP-4] subscript inside a datum's place [MSR-1, MSR-3].
+    Subscript(super::super::places::PlaceOffset),
 }
 
 /// Dense identity of one interned term.

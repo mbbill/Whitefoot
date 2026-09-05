@@ -1324,12 +1324,57 @@ pub(crate) struct CheckedSliceRoot {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedContainerRoot {
     pub(crate) binding: BindingId,
-    pub(crate) fields: Vec<u32>,
+    /// The path below the root: field selections and subscripts, in written
+    /// order [MSR-1]. `len_of(table[i])` is a term, so a measured place is
+    /// not a field path.
+    pub(crate) path: Vec<CheckedPlaceStep>,
     /// `FixedVector<T, n>`, `Vector<'s, T>`, or `Arena<'s, bytes, align>`.
     pub(crate) ty: CheckedType,
 }
 
+/// One step below a measured place's root [MSR-1]: a field selection, or one
+/// [OP-4] subscript together with the obligation that subscript owes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedPlaceStep {
+    Field(u32),
+    Subscript(Box<CheckedPlaceSubscript>),
+}
+
+/// One subscript occurring inside a measured place [MSR-1, OP-4].
+///
+/// The offset is a logical one and its obligation is against `len_of` of the
+/// base it indexes; the storage it selects is slot `(head_of + i) mod cap_of`,
+/// which the lowering computes and no source rule mentions [BLK-1].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CheckedPlaceSubscript {
+    /// The base this subscript indexes. Its measure-table row is what the
+    /// [OP-4] obligation `i < len_of(base)` is stated against [MSR-1].
+    pub(crate) base_type: CheckedType,
+    /// The [BLK-1] element type the subscript selects.
+    pub(crate) element_type: CheckedType,
+    pub(crate) offset: CheckedExpression,
+    pub(crate) obligation: crate::NodePath,
+    pub(crate) target_domain: CheckedTargetDomainObligation,
+    /// [OWN-7, LIV-2, ENT-5] the offset as the place relations read it: two
+    /// literals decide distinctness, a binding contributes its own support,
+    /// and everything else is opaque.
+    pub(crate) place_offset: super::places::PlaceOffset,
+}
+
 impl CheckedContainerRoot {
+    /// The same path as [ENT-2] goal projections.
+    pub(crate) fn goal_projections(&self) -> Vec<super::goal::GoalProjection> {
+        self.path
+            .iter()
+            .map(|step| match step {
+                CheckedPlaceStep::Field(field) => super::goal::GoalProjection::Field(*field),
+                CheckedPlaceStep::Subscript(subscript) => {
+                    super::goal::GoalProjection::Subscript(subscript.place_offset)
+                }
+            })
+            .collect()
+    }
+
     /// The measure-table row this place selects [MSR-1].
     pub(crate) const fn measured(&self) -> Option<MeasuredKind> {
         match self.ty {
@@ -2121,6 +2166,10 @@ pub(crate) struct CheckedRunSetTarget {
     pub(crate) offset: CheckedExpression,
     pub(crate) obligation: NodePath,
     pub(crate) target_domain: CheckedTargetDomainObligation,
+    /// [MSR-2, OWN-7] the written offset as the place relations read it: the
+    /// element this commit writes is `root[place_offset]`, and that is the
+    /// descriptor storage the kill overlaps.
+    pub(crate) place_offset: super::places::PlaceOffset,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

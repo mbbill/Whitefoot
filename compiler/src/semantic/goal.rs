@@ -182,6 +182,11 @@ pub(crate) enum EvaluatedValueOccurrence {
 pub(crate) enum GoalProjection {
     Deref,
     Field(u32),
+    /// One [OP-4] subscript of the base reached so far, which [MSR-1] admits
+    /// in a measure place so that `len_of(table[i])` is a term. The offset is
+    /// a logical one and the obligation it owes is discharged where the place
+    /// is formed [MSR-4].
+    Subscript(super::places::PlaceOffset),
 }
 
 /// One structural goal row and its exact selected type/domain identity.

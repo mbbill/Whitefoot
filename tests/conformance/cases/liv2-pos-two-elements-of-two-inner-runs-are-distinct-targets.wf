@@ -1,0 +1,56 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "LIV-2 condition 2 over two subscripted places of a run of runs. The two targets agree in their last offset and differ in their first, so the complete path is what decides them: `grid[0][1]` and `grid[1][1]` are two storages and the one commit writes both.";
+  region 'a {
+    let workspace = arena_frame::<8192, 16, 'a>();
+    region {
+      match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
+        None() => {
+          return exit_status(code: 1_u8);
+        }
+        Some(value: first) => {
+          match arena_vector::<u8>(store: &uniq workspace, count: 8_u64) {
+            None() => {
+              return exit_status(code: 6_u8);
+            }
+            Some(value: second) => {
+              let left_room = room_of(first);
+              let right_room = room_of(second);
+              if left_room >= 2_u64 {
+                if right_room >= 2_u64 {
+                  let a0 = place_back(vector: move first, value: 1_u8);
+                  let a1 = place_back(vector: move a0, value: 2_u8);
+                  let b0 = place_back(vector: move second, value: 3_u8);
+                  let b1 = place_back(vector: move b0, value: 4_u8);
+                  let table = fixed_vector::<Vector<'a, u8>, 2>();
+                  let row0 = place_back(vector: move table, value: move a1);
+                  let grid = place_back(vector: move row0, value: move b1);
+                  let rows = len_of(grid);
+                  if rows == 2_u64 {
+                    let left = len_of(grid[0_u64]);
+                    let right = len_of(grid[1_u64]);
+                    if left == 2_u64 {
+                      if right == 2_u64 {
+                        set (grid[0_u64][1_u64], grid[1_u64][1_u64]) = 9_u8, 8_u8;
+                        let seen_left = grid[0_u64][1_u64];
+                        let seen_right = grid[1_u64][1_u64];
+                        if seen_left == 9_u8 {
+                          if seen_right == 8_u8 {
+                            return exit_status(code: 0_u8);
+                          }
+                        }
+                        return exit_status(code: 4_u8);
+                      }
+                    }
+                    return exit_status(code: 2_u8);
+                  }
+                  return exit_status(code: 3_u8);
+                }
+              }
+              return exit_status(code: 5_u8);
+            }
+          }
+        }
+      }
+    }
+  }
+}

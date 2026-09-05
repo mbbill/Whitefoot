@@ -1240,7 +1240,7 @@ impl<'check> Program<'check> {
                 match argument_place(places, argument).or_else(|| consumed_place(places, argument))
                 {
                     Some(mut place) => {
-                        place.fields.extend_from_slice(&path.fields);
+                        place.extend_fields(&path.fields);
                         let access = Access::Place {
                             place,
                             argument: node.clone(),
@@ -1641,7 +1641,7 @@ pub(super) fn set_target_place(
         }
         CheckedSetTarget::RunIndex(target) => {
             collect_operand_reads(places, &target.offset, node, footprint);
-            rooted_place(places, target.root.binding, &target.root.fields)
+            rooted_container_place(places, &target.root)
         }
     };
     if reads_target {
@@ -1900,11 +1900,7 @@ pub(super) fn collect_operand_reads(
         }
         CheckedExpression::ContainerMeasure { root, .. }
         | CheckedExpression::RunIndex { root, .. } => {
-            read(
-                footprint,
-                node,
-                rooted_place(places, root.binding, &root.fields),
-            );
+            read(footprint, node, rooted_container_place(places, root));
         }
         CheckedExpression::ArrayMeasure { root, .. }
         | CheckedExpression::ArrayIndex { root, .. } => match root {
@@ -1916,7 +1912,7 @@ pub(super) fn collect_operand_reads(
                 node,
                 ResolvedPlace {
                     root: PlaceRoot::Constant(*id),
-                    fields: Vec::new(),
+                    path: Vec::new(),
                 },
             ),
         },
@@ -1962,7 +1958,7 @@ pub(super) fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource)
             CheckedArrayRoot::Binding { binding, fields } => rooted_place(places, *binding, fields),
             CheckedArrayRoot::Constant(id) => ResolvedPlace {
                 root: PlaceRoot::Constant(*id),
-                fields: Vec::new(),
+                path: Vec::new(),
             },
         },
         CheckedSliceSource::Buffer(root) => rooted_place(places, root.binding, &root.fields),
@@ -1970,6 +1966,32 @@ pub(super) fn slice_source_place(places: &PlaceMap, source: &CheckedSliceSource)
             binding, fields, ..
         } => rooted_place(places, *binding, fields),
     }
+}
+
+/// The [OWN-5] place one measured or subscripted root names [MSR-1, MSR-2].
+///
+/// A run's path may carry subscripts of its own, so it is resolved from the
+/// same source-order path the proof engine reads and never from a field list.
+pub(super) fn rooted_container_place(
+    places: &PlaceMap,
+    root: &super::model::CheckedContainerRoot,
+) -> ResolvedPlace {
+    let mut projections = Vec::new();
+    if places.is_holder(root.binding) {
+        projections.push(super::places::PlaceProjection::Deref);
+    }
+    projections.extend(root.path.iter().map(|step| match step {
+        super::model::CheckedPlaceStep::Field(field) => {
+            super::places::PlaceProjection::Field(*field)
+        }
+        super::model::CheckedPlaceStep::Subscript(subscript) => {
+            super::places::PlaceProjection::Subscript(subscript.place_offset)
+        }
+    }));
+    places.resolve_projected(&super::places::ProjectedPlaceTerm {
+        root: PlaceRoot::Binding(root.binding),
+        projections,
+    })
 }
 
 pub(super) fn rooted_place(places: &PlaceMap, binding: BindingId, fields: &[u32]) -> ResolvedPlace {

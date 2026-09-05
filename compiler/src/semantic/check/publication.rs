@@ -35,14 +35,21 @@ struct Operand {
 #[derive(Eq, PartialEq)]
 enum OperandKey {
     Result,
-    Parameter(u32, Vec<u32>),
-    NamedConst(crate::DeclarationId, Vec<u32>),
+    Parameter(u32, ProjectionKey),
+    NamedConst(crate::DeclarationId, ProjectionKey),
     /// One measure of one formal place [MSR-1]: two clauses name one term
     /// only when they name the same measure of the same place.
-    Measure(CheckedMeasure, u32, Vec<u32>),
+    Measure(CheckedMeasure, u32, ProjectionKey),
     /// One measure of one declared result place [CALL-4].
-    ResultMeasure(CheckedMeasure, u32, Vec<u32>),
+    ResultMeasure(CheckedMeasure, u32, ProjectionKey),
 }
+
+/// The exact projection path of one operand's place, as this table keys it.
+///
+/// It is the written path itself rather than a lossy digest of it: a
+/// subscript's offset [MSR-1] is part of the place's identity, so two clauses
+/// naming two elements of one run name two terms.
+type ProjectionKey = Vec<super::super::goal::GoalProjection>;
 
 /// The declared relations of one contract, as difference bounds over
 /// abstract terms.
@@ -228,14 +235,8 @@ impl Closure {
     }
 }
 
-fn projection_key(projections: &[super::super::goal::GoalProjection]) -> Vec<u32> {
-    projections
-        .iter()
-        .map(|projection| match projection {
-            super::super::goal::GoalProjection::Deref => u32::MAX,
-            super::super::goal::GoalProjection::Field(field) => *field,
-        })
-        .collect()
+fn projection_key(projections: &[super::super::goal::GoalProjection]) -> ProjectionKey {
+    projections.to_vec()
 }
 
 /// Whether the relations one contract publishes on one route are

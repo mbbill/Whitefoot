@@ -13,6 +13,8 @@
 //! sibling calls' footprints are disjoint. Neither may grow a private copy of
 //! the overlap relation.
 
+use crate::DeclarationId;
+
 use super::model::{
     BindingId, CheckedConstantId, CheckedExpression, CheckedFunction, CheckedMatchArm, CheckedMode,
     CheckedStatement, CheckedType, IntegerType,
@@ -27,11 +29,94 @@ pub(crate) enum PlaceRoot {
     Constant(CheckedConstantId),
 }
 
+/// One [OP-4] subscript offset occurring inside a tracked place [MSR-1].
+///
+/// [OWN-7] and [LIV-2] condition 2 decide two offsets by one relation: two
+/// written literals are provably distinct exactly when their values differ,
+/// and every other offset is opaque to it — provably distinct from nothing,
+/// itself included. A live `own` integer binding and an in-scope const
+/// generic are retained rather than collapsed to that opacity because they
+/// are places and terms in their own right: [ENT-5] takes the support of
+/// every offset occurring in P into the support of a measure over P, and a
+/// write to the binding an offset reads therefore kills at every level.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum PlaceOffset {
+    /// A written integer literal.
+    Literal(u64),
+    /// A live `own` integer binding read at the subscript.
+    Binding(BindingId),
+    /// An in-scope const generic [CONST-1], fixed at instantiation [FN-2].
+    Const(DeclarationId),
+    /// An offset no relation of this document decides: a computed value, or
+    /// a callee's projected element write, which names no offset at all.
+    Opaque,
+}
+
+impl PlaceOffset {
+    /// [OWN-7, LIV-2] whether the two offsets name two elements on every
+    /// execution.
+    pub(crate) const fn provably_distinct(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Literal(left), Self::Literal(right)) => left != right,
+            _ => false,
+        }
+    }
+
+    /// [LIV-2] whether the two offsets name one element on every execution,
+    /// which is what a read-out of an element target needs.
+    pub(crate) const fn provably_same(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Literal(left), Self::Literal(right)) => left == right,
+            _ => false,
+        }
+    }
+
+    /// The support one offset contributes to every measure term of the place
+    /// it occurs in [ENT-5]: the binding it reads, where it reads one.
+    pub(crate) const fn support(self) -> Option<BindingId> {
+        match self {
+            Self::Binding(binding) => Some(binding),
+            Self::Literal(_) | Self::Const(_) | Self::Opaque => None,
+        }
+    }
+}
+
+/// One step of a tracked place's path below its root: a field selection, or
+/// one subscript of an indexable base [OP-4].
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub(crate) enum PlaceStep {
+    Field(u32),
+    Subscript(PlaceOffset),
+}
+
+impl PlaceStep {
+    /// [LIV-2] whether the two steps select one storage on every execution.
+    pub(crate) const fn provably_same(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Subscript(left), Self::Subscript(right)) => left.provably_same(right),
+            (Self::Field(left), Self::Field(right)) => left == right,
+            _ => false,
+        }
+    }
+
+    /// Whether the two steps select two storages on every execution, which
+    /// for two subscripts is [OWN-7]'s own offset relation and for everything
+    /// else is inequality.
+    pub(crate) const fn provably_distinct(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Subscript(left), Self::Subscript(right)) => left.provably_distinct(right),
+            (Self::Field(left), Self::Field(right)) => left != right,
+            _ => true,
+        }
+    }
+}
+
 /// One tracked place [ENT-2](a): a root, an optional `deref` reading through
 /// a borrow or box holder, and field selections — never an index segment.
 ///
 /// This compact form represents no deref or one leading deref followed by
-/// fields. Interleaved or repeated derefs use [`ProjectedPlaceTerm`].
+/// fields. Interleaved or repeated derefs, and every subscripted place, use
+/// [`ProjectedPlaceTerm`].
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct PlaceTerm {
     pub(crate) root: PlaceRoot,
@@ -47,6 +132,10 @@ pub(crate) struct PlaceTerm {
 pub(crate) enum PlaceProjection {
     Field(u32),
     Deref,
+    /// One subscript of the base reached so far [OP-4, MSR-1]. The offset is
+    /// a logical one; the storage it selects is `(head_of + i) mod cap_of`,
+    /// which no source rule mentions [BLK-1].
+    Subscript(PlaceOffset),
 }
 
 /// The exact source-order path of a tracked place with interleaved field and
@@ -62,23 +151,50 @@ pub(crate) struct ProjectedPlaceTerm {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ResolvedPlace {
     pub(crate) root: PlaceRoot,
-    pub(crate) fields: Vec<u32>,
+    pub(crate) path: Vec<PlaceStep>,
 }
 
 impl ResolvedPlace {
     /// [OWN-7]: places overlap when one's path is a prefix of the other's.
+    ///
+    /// Two subscripts of one base are one step of that prefix unless their
+    /// offsets are provably distinct, which is the sentence [OWN-7] states
+    /// for two subscripted places and [LIV-2]'s second condition reads at a
+    /// commit.
     pub(crate) fn overlaps(&self, other: &Self) -> bool {
-        self.root == other.root
-            && (self.fields.starts_with(&other.fields) || other.fields.starts_with(&self.fields))
+        self.root == other.root && !paths_diverge(&self.path, &other.path)
     }
 
-    /// The whole storage of one binding, with no field selection.
+    /// Whether one place's path reaches the other's storage: `prefix` selects
+    /// the same storage as, or a storage containing, `path`.
+    pub(crate) fn is_prefix_of(&self, other: &Self) -> bool {
+        self.root == other.root
+            && self.path.len() <= other.path.len()
+            && !paths_diverge(&self.path, &other.path)
+    }
+
+    /// The whole storage of one binding, with no selection below the root.
     pub(crate) fn binding(binding: BindingId) -> Self {
         Self {
             root: PlaceRoot::Binding(binding),
-            fields: Vec::new(),
+            path: Vec::new(),
         }
     }
+
+    /// The same place with one field selection appended, for a caller that
+    /// holds a plain field path.
+    pub(crate) fn extend_fields(&mut self, fields: &[u32]) {
+        self.path
+            .extend(fields.iter().copied().map(PlaceStep::Field));
+    }
+}
+
+/// Whether two paths select two disjoint storages: some step in their common
+/// prefix provably selects two different storages [OWN-7].
+pub(crate) fn paths_diverge(left: &[PlaceStep], right: &[PlaceStep]) -> bool {
+    left.iter()
+        .zip(right)
+        .any(|(left, right)| left.provably_distinct(*right))
 }
 
 /// What one binding reads through by `deref`, for place resolution.
@@ -249,17 +365,21 @@ impl PlaceMap {
     /// through let-bound borrows; opaque holders anchor at themselves.
     pub(crate) fn resolve(&self, place: &PlaceTerm) -> ResolvedPlace {
         match place.root {
-            PlaceRoot::Constant(id) => ResolvedPlace {
-                root: PlaceRoot::Constant(id),
-                fields: place.fields.clone(),
-            },
+            PlaceRoot::Constant(id) => {
+                let mut resolved = ResolvedPlace {
+                    root: PlaceRoot::Constant(id),
+                    path: Vec::new(),
+                };
+                resolved.extend_fields(&place.fields);
+                resolved
+            }
             PlaceRoot::Binding(binding) => {
                 let mut resolved = if place.deref {
                     self.resolve_deref(binding, 0)
                 } else {
                     ResolvedPlace::binding(binding)
                 };
-                resolved.fields.extend_from_slice(&place.fields);
+                resolved.extend_fields(&place.fields);
                 resolved
             }
         }
@@ -272,13 +392,16 @@ impl PlaceMap {
     pub(crate) fn resolve_projected(&self, place: &ProjectedPlaceTerm) -> ResolvedPlace {
         let mut resolved = ResolvedPlace {
             root: place.root,
-            fields: Vec::new(),
+            path: Vec::new(),
         };
         for projection in &place.projections {
             match projection {
-                PlaceProjection::Field(field) => resolved.fields.push(*field),
+                PlaceProjection::Field(field) => resolved.path.push(PlaceStep::Field(*field)),
+                PlaceProjection::Subscript(offset) => {
+                    resolved.path.push(PlaceStep::Subscript(*offset));
+                }
                 PlaceProjection::Deref => {
-                    if resolved.fields.is_empty()
+                    if resolved.path.is_empty()
                         && let PlaceRoot::Binding(binding) = resolved.root
                     {
                         resolved = self.resolve_deref(binding, 0);
@@ -304,7 +427,7 @@ impl PlaceMap {
                 } else {
                     ResolvedPlace::binding(*binding)
                 };
-                resolved.fields.extend_from_slice(fields);
+                resolved.extend_fields(fields);
                 resolved
             }
             Some(HolderReferent::Holder(next)) => self.resolve_deref(*next, depth + 1),
@@ -333,7 +456,7 @@ impl PlaceMap {
                 } else {
                     ResolvedPlace::binding(*binding)
                 };
-                resolved.fields.extend_from_slice(fields);
+                resolved.extend_fields(fields);
                 resolved
             }
             Some(HolderReferent::Holder(next)) => {

@@ -684,7 +684,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.reject_named_operation_arguments(call, spelling)?;
         self.reject_written_operation_type_argument(call)?;
         let atoms = self.operation_atoms(call, 1)?;
-        let place = self.check_indexed_atom_place(atoms[0], bindings)?;
+        // [INV-1] an affine factor is checked without the enclosing instance
+        // in hand, so a subscript inside the measured place keeps its own
+        // unsupported report rather than being formed here from a different
+        // premise set.
+        let place = self.check_indexed_atom_place(
+            atoms[0],
+            bindings,
+            super::super::expressions::flat_storage::PlaceOffsetContext::ProofOnly,
+        )?;
         // [INV-1] the place resolves in the same context an IDENT does, and
         // its root is one of the values that context admits.
         if let Some(declaration) = place.root_declaration()

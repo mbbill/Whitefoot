@@ -9,7 +9,7 @@
 
 use crate::semantic::{
     CheckedContainerRoot, CheckedExpression, CheckedKernelInstance, CheckedMeasure,
-    CheckedRunSetTarget, CheckedType, MeasureCell,
+    CheckedPlaceStep, CheckedRunSetTarget, CheckedType, MeasureCell,
 };
 use crate::{IrBoundary, IrMeasure};
 
@@ -184,18 +184,92 @@ impl IrBuilder<'_> {
     }
 
     /// One element store's new root value: a run reached through field
-    /// selections is written back into the aggregate that holds it, because
-    /// a frame-resident run's slots are part of its own value.
+    /// selections and subscripts is written back into the aggregate that
+    /// holds it, because a frame-resident run's slots are part of its own
+    /// value and a run held in another run's slot is part of that run's.
     fn reinsert_container_root(
         &mut self,
         root: IrValueId,
         container: &CheckedContainerRoot,
         stored: IrValueId,
     ) -> Result<IrValueId, LoweringFailure> {
-        if container.fields.is_empty() {
+        self.replace_place_path(root, &container.path, stored)
+    }
+
+    /// Writes `stored` back through one measured place's path, rebuilding
+    /// every aggregate and every run it was reached through.
+    ///
+    /// A field step is the ordinary struct replacement; a subscript step is
+    /// the [BLK-1] element store into the slot the same offset selected on
+    /// the way in, so `grid[i][j]` writes the inner run back into slot `i`.
+    fn replace_place_path(
+        &mut self,
+        base: IrValueId,
+        steps: &[CheckedPlaceStep],
+        stored: IrValueId,
+    ) -> Result<IrValueId, LoweringFailure> {
+        let Some((step, rest)) = steps.split_first() else {
             return Ok(stored);
+        };
+        match step {
+            CheckedPlaceStep::Field(field) => {
+                let inner = self.project_struct_path(base, &[*field], false)?;
+                let inner = self.replace_place_path(inner, rest, stored)?;
+                self.replace_struct_path(base, &[*field], inner)
+            }
+            CheckedPlaceStep::Subscript(subscript) => {
+                let offset = self.expression(&subscript.offset)?;
+                let element = self.define(
+                    lower_type(self.erasure, subscript.element_type)?,
+                    IrOperation::RunIndex {
+                        run: base,
+                        offset,
+                        target_domain: subscript.target_domain.into(),
+                    },
+                )?;
+                let element = self.replace_place_path(element, rest, stored)?;
+                let run_type = self.value_type(base)?;
+                self.define(
+                    run_type,
+                    IrOperation::RunStore {
+                        run: base,
+                        offset,
+                        value: element,
+                        target_domain: subscript.target_domain.into(),
+                    },
+                )
+            }
         }
-        self.replace_struct_path(root, &container.fields, stored)
+    }
+
+    /// Reads one measured place's value out of the value at its root:
+    /// a field step projects, and a subscript step reads the slot the offset
+    /// selects [BLK-1, OP-4].
+    fn project_place_path(
+        &mut self,
+        base: IrValueId,
+        steps: &[CheckedPlaceStep],
+    ) -> Result<IrValueId, LoweringFailure> {
+        let mut value = base;
+        for step in steps {
+            value = match step {
+                CheckedPlaceStep::Field(field) => {
+                    self.project_struct_path(value, &[*field], false)?
+                }
+                CheckedPlaceStep::Subscript(subscript) => {
+                    let offset = self.expression(&subscript.offset)?;
+                    self.define(
+                        lower_type(self.erasure, subscript.element_type)?,
+                        IrOperation::RunIndex {
+                            run: value,
+                            offset,
+                            target_domain: subscript.target_domain.into(),
+                        },
+                    )?
+                }
+            };
+        }
+        Ok(value)
     }
 
     fn run_store(
@@ -235,11 +309,7 @@ impl IrBuilder<'_> {
         root: IrValueId,
         container: &CheckedContainerRoot,
     ) -> Result<IrValueId, LoweringFailure> {
-        let value = if container.fields.is_empty() {
-            root
-        } else {
-            self.project_struct_path(root, &container.fields, false)?
-        };
+        let value = self.project_place_path(root, &container.path)?;
         if self.value_type(value)? != lower_type(self.erasure, container.ty)? {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }
@@ -468,11 +538,7 @@ impl IrBuilder<'_> {
         root: &CheckedContainerRoot,
     ) -> Result<IrValueId, LoweringFailure> {
         let value = self.binding_value(root.binding)?;
-        let value = if root.fields.is_empty() {
-            value
-        } else {
-            self.project_struct_path(value, &root.fields, false)?
-        };
+        let value = self.project_place_path(value, &root.path)?;
         if self.value_type(value)? != lower_type(self.erasure, root.ty)? {
             return Err(LoweringFailure::InvalidCheckedProgram);
         }

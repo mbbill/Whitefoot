@@ -13,9 +13,9 @@ use crate::syntax::NodeId;
 use crate::{DeclarationId, Production, SemanticCompilerFailure, SemanticIssueKind, SemanticRule};
 
 use super::super::super::model::{
-    CheckedCommitValues, CheckedExpression, CheckedSetTarget, CheckedStatement,
-    CheckedWritablePlace,
+    CheckedCommitValues, CheckedPlaceStep, CheckedSetTarget, CheckedStatement, CheckedWritablePlace,
 };
+use super::super::super::places::{PlaceOffset, PlaceStep, paths_diverge};
 use super::super::borrows::{ResolvedPlace, places_overlap};
 use super::super::expressions::MutationTarget;
 use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
@@ -34,38 +34,6 @@ struct FormedTarget {
     read_out: bool,
 }
 
-/// [LIV-2, OWN-7] one subscript's offset, as far as this rule reads it.
-///
-/// The relation the rule states is over written literals: two are provably
-/// distinct exactly when their values differ, and provably the same exactly
-/// when they agree. Every other offset term is opaque here — provably equal to
-/// nothing, itself included — so a target carrying one is never read out and
-/// never admitted beside a second subscript of its own run.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(in crate::semantic::check) enum CommitOffset {
-    Literal(u64),
-    Opaque,
-}
-
-impl CommitOffset {
-    /// Whether the two offsets name one element on every execution.
-    const fn provably_equal(self, other: Self) -> bool {
-        match (self, other) {
-            (Self::Literal(left), Self::Literal(right)) => left == right,
-            _ => false,
-        }
-    }
-
-    /// Whether the two offsets name two elements on every execution
-    /// [LIV-2] condition 2.
-    const fn provably_distinct(self, other: Self) -> bool {
-        match (self, other) {
-            (Self::Literal(left), Self::Literal(right)) => left != right,
-            _ => false,
-        }
-    }
-}
-
 /// [LIV-2] one target place of the commit whose right-hand side is being
 /// checked, and whether that right-hand side has read it out.
 ///
@@ -77,7 +45,12 @@ pub(in crate::semantic::check) struct CommitReadOut {
     /// itself [MSR-2], so it is matched by the element read-out below and
     /// never by the whole-place one: a `move` of `place`, or of a place
     /// reached through it, is a different element as often as it is this one.
-    element: Option<CommitOffset>,
+    ///
+    /// The complete path below the target's root is retained rather than one
+    /// offset, because a measured place may carry a subscript of its own
+    /// [MSR-1]: `grid[0][1]` and `grid[1][1]` write two elements and agree in
+    /// their last offset.
+    element: Option<Vec<PlaceStep>>,
     read_out: bool,
 }
 
@@ -121,17 +94,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(in crate::semantic::check) fn take_commit_element_read_out(
         &self,
         place: &ResolvedPlace,
-        offset: CommitOffset,
+        path: &[PlaceStep],
     ) -> bool {
         let mut targets = self.commit_read_outs.borrow_mut();
         for target in targets.iter_mut() {
-            let Some(target_offset) = target.element else {
+            let Some(target_path) = target.element.as_ref() else {
                 continue;
             };
             if target.read_out
                 || target.place.root != place.root
                 || target.place.fields != place.fields
-                || !target_offset.provably_equal(offset)
+                || target_path.len() != path.len()
+                || !target_path
+                    .iter()
+                    .zip(path)
+                    .all(|(target, read)| target.provably_same(*read))
             {
                 continue;
             }
@@ -374,7 +351,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     element: target
                         .mutation
                         .element
-                        .then(|| Self::commit_offset(&target.mutation.target)),
+                        .then(|| Self::commit_target_path(&target.mutation.target)),
                     read_out: false,
                 })
                 .collect(),
@@ -579,43 +556,82 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// [LIV-2] condition 2 over two formed targets.
     ///
     /// Two places overlap when one is reached through the other [OWN-7]; two
-    /// element writes of one place additionally overlap unless their offsets
-    /// are literals with unequal values, which is the same judgment [OWN-7] states
-    /// for two subscripted places.
+    /// element writes of one place additionally overlap unless some step of
+    /// their common prefix provably selects two different storages, which for
+    /// two subscripts is literals with unequal values. That is the same
+    /// judgment [OWN-7] states for two subscripted places, and it reads the
+    /// complete path because a measured place may carry a subscript of its
+    /// own: `grid[k]` and `grid[i][j]` are decided at `k` against `i`.
     fn commit_targets_overlap(&self, first: &MutationTarget, second: &MutationTarget) -> bool {
         if !places_overlap(&first.place, &second.place) {
             return false;
         }
         if first.element && second.element && first.place == second.place {
-            return !Self::commit_offset(&first.target)
-                .provably_distinct(Self::commit_offset(&second.target));
+            return !paths_diverge(
+                &Self::commit_target_path(&first.target),
+                &Self::commit_target_path(&second.target),
+            );
         }
         true
     }
 
-    /// One subscript target's offset, as [LIV-2] and [OWN-7] read it.
-    pub(in crate::semantic::check) fn commit_offset(target: &CheckedSetTarget) -> CommitOffset {
-        let offset = match target {
-            CheckedSetTarget::Place(_) => return CommitOffset::Opaque,
-            CheckedSetTarget::ArrayIndex(target) => &target.offset,
-            CheckedSetTarget::BufferIndex(target) => &target.offset,
-            CheckedSetTarget::RunIndex(target) => &target.offset,
+    /// The complete path one element target writes below its root: the
+    /// selections that reach the base, and the element the offset selects.
+    ///
+    /// A measured place may itself carry a subscript [MSR-1], so this is a
+    /// path and never one offset: `grid[k]` and `grid[i][j]` are decided by
+    /// their *first* offsets and not by their last.
+    pub(in crate::semantic::check) fn commit_target_path(
+        target: &CheckedSetTarget,
+    ) -> Vec<PlaceStep> {
+        let (mut path, offset) = match target {
+            CheckedSetTarget::Place(target) => (
+                target
+                    .fields
+                    .iter()
+                    .copied()
+                    .map(PlaceStep::Field)
+                    .collect::<Vec<_>>(),
+                None,
+            ),
+            CheckedSetTarget::ArrayIndex(target) => (
+                target
+                    .fields
+                    .iter()
+                    .copied()
+                    .map(PlaceStep::Field)
+                    .collect(),
+                Some(Self::place_offset_of(&target.offset).unwrap_or(PlaceOffset::Opaque)),
+            ),
+            CheckedSetTarget::BufferIndex(target) => (
+                target
+                    .root
+                    .fields
+                    .iter()
+                    .copied()
+                    .map(PlaceStep::Field)
+                    .collect(),
+                Some(Self::place_offset_of(&target.offset).unwrap_or(PlaceOffset::Opaque)),
+            ),
+            CheckedSetTarget::RunIndex(target) => (
+                target
+                    .root
+                    .path
+                    .iter()
+                    .map(|step| match step {
+                        CheckedPlaceStep::Field(field) => PlaceStep::Field(*field),
+                        CheckedPlaceStep::Subscript(subscript) => {
+                            PlaceStep::Subscript(subscript.place_offset)
+                        }
+                    })
+                    .collect(),
+                Some(target.place_offset),
+            ),
         };
-        Self::offset_of_expression(offset)
-    }
-
-    /// The same reading over one written offset expression, which is what a
-    /// `move P[i]` in the right-hand side carries.
-    pub(in crate::semantic::check) fn offset_of_expression(
-        offset: &CheckedExpression,
-    ) -> CommitOffset {
-        match offset {
-            CheckedExpression::Constant(super::super::super::model::CheckedValue::Integer {
-                bits,
-                ..
-            }) => CommitOffset::Literal(*bits),
-            _ => CommitOffset::Opaque,
+        if let Some(offset) = offset {
+            path.push(PlaceStep::Subscript(offset));
         }
+        path
     }
 
     /// The written spelling of one `place`, rebuilt from its own tokens, for

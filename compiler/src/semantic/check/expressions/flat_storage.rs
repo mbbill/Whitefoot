@@ -14,9 +14,11 @@ use super::super::super::model::{
     CheckedArrayRoot, CheckedArraySetTarget, CheckedBufferRoot, CheckedBufferSetTarget,
     CheckedConst, CheckedContainerRoot, CheckedExpression, CheckedFlatElement,
     CheckedLayoutCeiling, CheckedLayoutMagnitude, CheckedMeasure, CheckedMode, CheckedNominalKind,
-    CheckedRunSetTarget, CheckedRuntimeTargetObligations, CheckedSetTarget, CheckedSliceRoot,
-    CheckedTargetDomainObligation, CheckedType, IntegerType, MeasureCell, NominalId,
+    CheckedPlaceStep, CheckedPlaceSubscript, CheckedRunSetTarget, CheckedRuntimeTargetObligations,
+    CheckedSetTarget, CheckedSliceRoot, CheckedTargetDomainObligation, CheckedType, IntegerType,
+    MeasureCell, NominalId,
 };
+use super::super::super::places::{PlaceOffset, PlaceStep};
 use super::super::borrows::{
     AccessKind, BorrowInfo, BorrowKind, RequiredReferent, ResolvedPlace, SliceInfo,
 };
@@ -75,11 +77,39 @@ pub(in crate::semantic::check) enum CheckedIndexedPlace {
     Container(CheckedContainerPlace),
 }
 
+/// What a place-forming judgment knows about the offsets it may meet
+/// [MSR-1, OP-4].
+///
+/// A subscript inside a measured place is an ordinary [OP-4] occurrence and
+/// its offset is an ordinary operand, so forming one needs the enclosing
+/// concrete instance the operand is checked under. The affine-proof reader
+/// [INV-1] has no such instance, so a subscript there keeps its own explicit
+/// unsupported report; nothing is admitted from a different premise set.
+#[derive(Clone, Copy)]
+pub(in crate::semantic::check) enum PlaceOffsetContext<'signature> {
+    Executable {
+        function: &'signature FunctionSignature,
+        loop_depth: usize,
+    },
+    ProofOnly,
+}
+
 #[derive(Clone)]
 pub(in crate::semantic::check) struct CheckedContainerPlace {
     root: CheckedContainerRoot,
     resolved: ResolvedPlace,
     holder: Option<DeclarationId>,
+    /// The effects and accesses of every offset occurring inside the place
+    /// [EFF-2]: an offset that reads a binding is a read of that binding,
+    /// wherever in the place it occurs.
+    offsets: CarriedOperands,
+}
+
+/// The effects and accesses one place's own offset operands exhibit.
+#[derive(Clone, Default)]
+pub(in crate::semantic::check) struct CarriedOperands {
+    effects: EffectSet,
+    accesses: Vec<PlaceAccess>,
 }
 
 fn add_layout_magnitude(
@@ -134,6 +164,41 @@ impl CheckedIndexedPlace {
             Self::Slice(slice) => Some(slice.declaration),
             Self::Container(container) => Some(container.resolved.root),
         }
+    }
+
+    /// The complete path one element read selects below the base's root:
+    /// the selections that reach the base, and the element `offset` selects
+    /// [LIV-2].
+    fn indexed_element_path(&self, offset: PlaceOffset) -> Vec<PlaceStep> {
+        let mut path = match self {
+            Self::Array(array) => match &array.root {
+                CheckedArrayRoot::Binding { fields, .. } => {
+                    fields.iter().copied().map(PlaceStep::Field).collect()
+                }
+                CheckedArrayRoot::Constant(_) => Vec::new(),
+            },
+            Self::Buffer(buffer) => buffer
+                .root
+                .fields
+                .iter()
+                .copied()
+                .map(PlaceStep::Field)
+                .collect(),
+            Self::Slice(_) => Vec::new(),
+            Self::Container(container) => container
+                .root
+                .path
+                .iter()
+                .map(|step| match step {
+                    CheckedPlaceStep::Field(field) => PlaceStep::Field(*field),
+                    CheckedPlaceStep::Subscript(subscript) => {
+                        PlaceStep::Subscript(subscript.place_offset)
+                    }
+                })
+                .collect(),
+        };
+        path.push(PlaceStep::Subscript(offset));
+        path
     }
 
     /// The resolved place of the indexed base, for [LIV-2]'s element read-out
@@ -618,7 +683,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [OP-2] a measure former's selected element type is the base place's
         // own; the result is `own u64` for every row, so nothing else consults
         // it.
-        let place = self.check_indexed_atom_place(atoms[0], bindings)?;
+        let place = self.check_indexed_atom_place(
+            atoms[0],
+            bindings,
+            PlaceOffsetContext::Executable {
+                function: _function,
+                loop_depth: _loop_depth,
+            },
+        )?;
         let mut effects = EffectSet::NONE;
         match &place {
             CheckedIndexedPlace::Array(_) => {}
@@ -636,6 +708,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for path in self.effect_paths_for_place(&container.resolved, bindings)? {
                     effects.add_read(path);
                 }
+                // [EFF-2] an offset occurring inside the measured place is
+                // read where the place is formed, exactly as the operand of
+                // a written subscript is.
+                effects = effects.union(container.offsets.effects.clone());
             }
             CheckedIndexedPlace::Buffer(buffer) => {
                 self.check_loan_access(
@@ -766,8 +842,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         {
             return Ok(false);
         }
-        Ok(self
-            .take_commit_element_read_out(&place, Self::offset_of_expression(&offset.expression)))
+        let path = indexed.indexed_element_path(
+            Self::place_offset_of(&offset.expression).unwrap_or(PlaceOffset::Opaque),
+        );
+        Ok(self.take_commit_element_read_out(&place, &path))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -792,7 +870,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             );
         }
-        let indexed = self.check_indexed_place(place, bindings, &suffixes[..subscript], suffix)?;
+        let indexed = self.check_indexed_place(
+            place,
+            bindings,
+            &suffixes[..subscript],
+            suffix,
+            PlaceOffsetContext::Executable {
+                function,
+                loop_depth: options.loop_depth,
+            },
+        )?;
         // [LIV-2, BLK-1] the one affine element read a subscript admits: a
         // `move P[i]` in the right-hand side of the `set` whose own target is
         // `P[i]`. The element leaves through the read-out and the same
@@ -927,10 +1014,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 place: buffer.resolved.clone(),
                 kind: AccessKind::Read,
             }),
-            CheckedIndexedPlace::Container(container) => accesses.push(PlaceAccess {
-                place: container.resolved.clone(),
-                kind: AccessKind::Read,
-            }),
+            CheckedIndexedPlace::Container(container) => {
+                accesses.push(PlaceAccess {
+                    place: container.resolved.clone(),
+                    kind: AccessKind::Read,
+                });
+                accesses.extend(container.offsets.accesses.iter().cloned());
+            }
             CheckedIndexedPlace::Slice(slice) => {
                 if let Some(descriptor) = &slice.descriptor {
                     accesses.push(PlaceAccess {
@@ -972,6 +1062,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 for path in self.effect_paths_for_place(&container.resolved, bindings)? {
                     effects.add_read(path);
                 }
+                effects = effects.union(container.offsets.effects);
                 let element_type = container
                     .root
                     .element()
@@ -1040,7 +1131,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 ),
             );
         }
-        let indexed = self.check_indexed_place(node, bindings, &suffixes[..subscript], suffix)?;
+        let indexed = self.check_indexed_place(
+            node,
+            bindings,
+            &suffixes[..subscript],
+            suffix,
+            PlaceOffsetContext::Executable {
+                function,
+                loop_depth,
+            },
+        )?;
         match &indexed {
             CheckedIndexedPlace::Array(array) => {
                 if let Some(resolved) = array.resolved_place() {
@@ -1206,6 +1306,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     CheckedSetTarget::RunIndex(Box::new(CheckedRunSetTarget {
                         root: container.root,
                         element_type,
+                        place_offset: Self::place_offset_of(&offset.expression)
+                            .unwrap_or(PlaceOffset::Opaque),
                         offset: offset.expression,
                         obligation,
                         target_domain: CheckedTargetDomainObligation::ElementAddress,
@@ -1229,10 +1331,125 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// Resolves a run of place suffixes into one [MSR-1] measured place's
+    /// path: field selections and subscripts, in written order.
+    ///
+    /// `len_of(table[i])` is a term, so a measured place is not a field path.
+    /// A subscript inside one is an [OP-4] occurrence like every other: it
+    /// selects the base's [BLK-1] element and owes `i < len_of(base)`, which
+    /// is submitted where the place is formed [MSR-4]. Its offset must be a
+    /// term the place relations can name — [OWN-7] decides two subscripts by
+    /// their offsets and [ENT-5] takes each offset's own support into every
+    /// enclosing measure — so a written literal, a live `own u64` binding and
+    /// an in-scope const generic [MSR-6] are admitted and every other offset
+    /// is the explicit unsupported capability rather than a place whose
+    /// identity no relation can decide.
+    fn resolve_measured_path(
+        &self,
+        suffixes: &[NodeId],
+        mut ty: CheckedType,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        context: PlaceOffsetContext<'_>,
+    ) -> Result<(Vec<CheckedPlaceStep>, CheckedType, CarriedOperands), CheckStop> {
+        let mut path = Vec::new();
+        let mut carried = CarriedOperands::default();
+        for (position, &suffix) in suffixes.iter().enumerate() {
+            let Some(offset_node) = self.subscript_offset(suffix)? else {
+                let (fields, selected) =
+                    self.resolve_struct_path(&suffixes[position..=position], ty)?;
+                path.extend(fields.into_iter().map(CheckedPlaceStep::Field));
+                ty = selected;
+                continue;
+            };
+            let PlaceOffsetContext::Executable {
+                function,
+                loop_depth,
+            } = context
+            else {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
+            };
+            // [OP-4] a subscript inside a place indexes one of the two runs:
+            // every other indexable base has a flat element [TYPE-2], which
+            // no measure table row and no further subscript reaches.
+            let element = match ty {
+                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                    element
+                }
+                _ => {
+                    return self.issue_node(
+                        SemanticRule::Op4,
+                        suffix,
+                        SemanticIssueKind::type_mismatch(
+                            "a run base, whose element a subscript inside a place selects",
+                            self.checked_type_name(ty)?,
+                        ),
+                    );
+                }
+            };
+            let mut probe = bindings.clone();
+            let offset = self.check_atom(function, offset_node, &mut probe, loop_depth)?;
+            if offset.expression.ty() != CheckedType::Integer(IntegerType::U64)
+                || offset.mode != CheckedMode::Own
+            {
+                return self.issue_node(
+                    SemanticRule::Op4,
+                    offset_node,
+                    SemanticIssueKind::type_mismatch(
+                        "own u64",
+                        self.checked_value_name(offset.mode, offset.expression.ty())?,
+                    ),
+                );
+            }
+            let Some(place_offset) = Self::place_offset_of(&offset.expression) else {
+                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, offset_node);
+            };
+            carried.effects = carried.effects.union(offset.effects);
+            carried.accesses.extend(offset.accesses);
+            path.push(CheckedPlaceStep::Subscript(Box::new(
+                CheckedPlaceSubscript {
+                    base_type: ty,
+                    element_type: element.ty(),
+                    offset: offset.expression,
+                    obligation: self.tree.path(suffix)?.clone(),
+                    target_domain: CheckedTargetDomainObligation::ElementAddress,
+                    place_offset,
+                },
+            )));
+            ty = element.ty();
+        }
+        Ok((path, ty, carried))
+    }
+
+    /// One admitted offset as the place relations read it [OWN-7, ENT-5].
+    ///
+    /// The classification is over the checked operand and never over its
+    /// spelling: a literal is its own value, a binding read is that binding,
+    /// and a const generic is fixed at instantiation [FN-2].
+    pub(in crate::semantic::check) fn place_offset_of(
+        offset: &CheckedExpression,
+    ) -> Option<PlaceOffset> {
+        match offset {
+            CheckedExpression::Constant(super::super::super::model::CheckedValue::Integer {
+                bits,
+                ..
+            }) => Some(PlaceOffset::Literal(*bits)),
+            CheckedExpression::Constant(
+                super::super::super::model::CheckedValue::ConstGeneric { declaration, .. },
+            ) => Some(PlaceOffset::Const(*declaration)),
+            CheckedExpression::Binding {
+                binding,
+                consume_root: false,
+                ..
+            } => Some(PlaceOffset::Binding(*binding)),
+            _ => None,
+        }
+    }
+
     pub(in crate::semantic::check) fn check_indexed_atom_place(
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
+        context: PlaceOffsetContext<'_>,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         if self.has_fixed(node, FixedTerminal::Move)? {
             return self.issue_node(
@@ -1258,7 +1475,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             })?;
         let suffixes = self.tree.children_with(place, Production::Psuffix)?;
-        self.check_indexed_place(place, bindings, &suffixes, place)
+        self.check_indexed_place(place, bindings, &suffixes, place, context)
     }
 
     /// Checks "pbase plus the given suffix run" as one place of indexable
@@ -1271,6 +1488,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         base_suffixes: &[NodeId],
         anchor: NodeId,
+        context: PlaceOffsetContext<'_>,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         let pbase = self
             .tree
@@ -1286,7 +1504,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let ResolvedTarget::Source { declaration, class } = usage.target() else {
             return Err(SemanticCompilerFailure::InvalidResolution.into());
         };
-        let (root, binding, declaration, fields, ty, slice) = match class {
+        let (root, binding, declaration, path, ty, slice, offsets) = match class {
             DeclarationClass::Value => {
                 let local = bindings
                     .get(&declaration)
@@ -1301,7 +1519,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                let (fields, ty) = self.resolve_struct_path(base_suffixes, local.ty)?;
+                let (path, ty, offsets) =
+                    self.resolve_measured_path(base_suffixes, local.ty, bindings, context)?;
                 // A borrow holder written where its indexable referent is
                 // required is the [TYPE-7] implicit read; a borrow of
                 // something no `index` could reach falls through to the
@@ -1328,9 +1547,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     },
                     Some(local.binding),
                     Some(declaration),
-                    fields,
+                    path,
                     ty,
                     local.slice,
+                    offsets,
                 )
             }
             DeclarationClass::NamedConst => {
@@ -1348,12 +1568,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     Vec::new(),
                     self.constant(id)?.ty,
                     None,
+                    CarriedOperands::default(),
                 )
             }
             _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),
         };
+        // Every base but a run's carries a flat element [TYPE-2], so a
+        // subscript inside one selects storage this version has no measured
+        // place for; the field prefix is what those branches read.
+        let fields = field_prefix(&path);
         match ty {
             CheckedType::Array { element, length } => {
+                let Some(fields) = fields else {
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, anchor);
+                };
                 let root = match root {
                     CheckedArrayRoot::Binding { binding, .. } => {
                         CheckedArrayRoot::Binding { binding, fields }
@@ -1377,6 +1605,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let (Some(binding), Some(declaration)) = (binding, declaration) else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
+                let Some(fields) = fields else {
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, anchor);
+                };
                 let resolved_fields = fields.clone();
                 Ok(CheckedIndexedPlace::Buffer(CheckedBufferPlace {
                     root: CheckedBufferRoot {
@@ -1395,6 +1626,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }))
             }
             CheckedType::Slice { region, element } => {
+                let Some(fields) = fields else {
+                    return self.unsupported(UnsupportedSemanticFeature::CompositeValues, anchor);
+                };
                 if !fields.is_empty() {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 }
@@ -1440,17 +1674,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let (Some(binding), Some(declaration)) = (binding, declaration) else {
                     return Err(SemanticCompilerFailure::InvalidResolution.into());
                 };
-                let resolved_fields = fields.clone();
+                // [OWN-5] the loan judgment reads the storage the place is
+                // reached through; a subscript selects inside that storage,
+                // so the prefix before the first one is what a loan protects.
+                let resolved_fields = loan_prefix(&path);
                 Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
-                    root: CheckedContainerRoot {
-                        binding,
-                        fields,
-                        ty,
-                    },
+                    root: CheckedContainerRoot { binding, path, ty },
                     resolved: ResolvedPlace {
                         root: declaration,
                         fields: resolved_fields,
                     },
+                    offsets,
                     holder: None,
                 }))
             }
@@ -1464,6 +1698,27 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             ),
         }
     }
+}
+
+/// The field selections of a path that carries no subscript, absent where it
+/// does.
+fn field_prefix(path: &[CheckedPlaceStep]) -> Option<Vec<u32>> {
+    path.iter()
+        .map(|step| match step {
+            CheckedPlaceStep::Field(field) => Some(*field),
+            CheckedPlaceStep::Subscript(_) => None,
+        })
+        .collect()
+}
+
+/// The field selections before the first subscript of a path [OWN-5].
+fn loan_prefix(path: &[CheckedPlaceStep]) -> Vec<u32> {
+    path.iter()
+        .map_while(|step| match step {
+            CheckedPlaceStep::Field(field) => Some(*field),
+            CheckedPlaceStep::Subscript(_) => None,
+        })
+        .collect()
 }
 
 /// The [MSR-1] measure-table row one type selects, if it has one.

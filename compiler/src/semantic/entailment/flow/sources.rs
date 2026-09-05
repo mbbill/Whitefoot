@@ -32,7 +32,7 @@ use super::super::{
     CountedEqualityDerivation, CountedProofPoint, RemainderEndpoint, S7Derivation,
     S7DerivationKind, S7Subject, ShiftOneIdentity,
 };
-use super::{Analyzer, ArmFacts};
+use super::{Analyzer, ArmFacts, projected_place};
 use crate::SYSTEM_OPERATIONS;
 
 /// The [SYS-2] operations whose outcome carries an [ENT-3] S10 absolute
@@ -526,7 +526,12 @@ impl Analyzer<'_, '_> {
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
         let mut datums = Vec::with_capacity(4);
         for measure in MEASURES {
-            let live = self.place_measure_term(measure, source.clone(), measured, constant);
+            let live = self.place_measure_term(
+                measure,
+                projected_place(source.clone()),
+                measured,
+                constant,
+            );
             let datum = self.terms.intern(TermKind::RebindDatum {
                 statement: node_path.components().to_vec(),
                 ordinal,
@@ -563,8 +568,12 @@ impl Analyzer<'_, '_> {
         let target = self.bound_place(binding);
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
         for (measure, datum) in MEASURES.into_iter().zip(&rebind.datums) {
-            let left =
-                self.place_measure_term(measure, target.clone(), rebind.measured, rebind.constant);
+            let left = self.place_measure_term(
+                measure,
+                projected_place(target.clone()),
+                rebind.measured,
+                rebind.constant,
+            );
             state.establish(
                 &Relation::Equal {
                     left,
@@ -650,7 +659,7 @@ impl Analyzer<'_, '_> {
                 let place = self.bound_place(binding);
                 let length_term = self.place_measure_term(
                     CheckedMeasure::Length,
-                    place,
+                    projected_place(place),
                     MeasuredKind::Buffer,
                     None,
                 );
@@ -700,7 +709,7 @@ impl Analyzer<'_, '_> {
                 };
                 let source_length = self.place_measure_term(
                     CheckedMeasure::Length,
-                    place,
+                    projected_place(place),
                     if array_length.is_some() {
                         MeasuredKind::Array
                     } else {
@@ -711,7 +720,7 @@ impl Analyzer<'_, '_> {
                 let slice_place = self.bound_place(binding);
                 let slice_length = self.place_measure_term(
                     CheckedMeasure::Length,
-                    slice_place,
+                    projected_place(slice_place),
                     MeasuredKind::Slice,
                     None,
                 );
@@ -786,19 +795,17 @@ impl Analyzer<'_, '_> {
             // [MSR-1] a run's or a bump extent's measure reader names the
             // same [ENT-2] term the clause and the invariant name, so a `let`
             // over one is the ordinary [ENT-3.S6] equality a buffer's is.
-            CheckedExpression::ContainerMeasure { measure, root } => (
-                *measure,
-                PlaceTerm {
-                    root: PlaceRoot::Binding(root.binding),
-                    deref: self.is_holder(root.binding),
-                    fields: root.fields.clone(),
-                },
-                root.measured()?,
-                root.type_constant(),
-            ),
+            CheckedExpression::ContainerMeasure { measure, root } => {
+                return Some(self.place_measure_term(
+                    *measure,
+                    self.container_root_path(root),
+                    root.measured()?,
+                    root.type_constant(),
+                ));
+            }
             _ => return None,
         };
-        Some(self.place_measure_term(measure, place, measured, array_length))
+        Some(self.place_measure_term(measure, projected_place(place), measured, array_length))
     }
 
     /// [ENT-3] S7 constant-offset arithmetic at a `let` binding.

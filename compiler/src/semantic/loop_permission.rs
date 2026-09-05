@@ -111,7 +111,8 @@ use super::model::{
 };
 use super::permission::{
     Access, Footprint, LoanStrength, Program, call_projection, collect_consumed_places,
-    rooted_place, set_target_place, slice_source_place, visit_read_bindings,
+    rooted_container_place, rooted_place, set_target_place, slice_source_place,
+    visit_read_bindings,
 };
 use super::places::{PlaceMap, PlaceRoot, ResolvedPlace};
 use crate::NodePath;
@@ -723,14 +724,13 @@ impl<'check> Survey<'check, '_> {
             )),
             // A run's or a bump extent's descriptor storage is the resolved
             // place of the measured value itself [MSR-2].
-            CheckedExpression::ContainerMeasure { root, .. } => Some((
-                root.binding,
-                rooted_place(self.places, root.binding, &root.fields),
-            )),
+            CheckedExpression::ContainerMeasure { root, .. } => {
+                Some((root.binding, rooted_container_place(self.places, root)))
+            }
             CheckedExpression::RunIndex {
                 root, obligation, ..
             } => {
-                let place = rooted_place(self.places, root.binding, &root.fields);
+                let place = rooted_container_place(self.places, root);
                 if let Some(map) = self.proven_affine_map_at(root.binding, obligation) {
                     self.element_reads.push(ProvenElementRead {
                         binding: root.binding,

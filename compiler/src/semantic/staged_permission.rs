@@ -1334,7 +1334,7 @@ impl<'check> StagedSurvey<'check, '_> {
     /// the fail-closed answer for an unresolved type is that it cannot be
     /// replicated.
     fn is_replicable_shape(&self, place: &ResolvedPlace) -> bool {
-        if !place.fields.is_empty() {
+        if !place.path.is_empty() {
             return false;
         }
         let PlaceRoot::Binding(binding) = place.root else {
