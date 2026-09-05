@@ -1,0 +1,18 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "LIV-2 condition 1 at an element target: a live affine target whose previous value the right-hand side does not read out is STOR-1's error. The element target here is live and holds a store-backed run, and the right-hand side supplies a different one, so the stored run would be overwritten without leaving.";
+  region 'a {
+    let workspace = arena_frame::<65536, 16, 'a>();
+    region {
+      let empty = fixed_vector::<Vector<'a, u8>, 2>();
+      let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
+      let grid = place_back(vector: move empty, value: move small);
+      let other = arena_vector_proved::<u8>(store: &uniq workspace, count: 512_u64);
+      set grid[0_u64] = move other;
+      let held = len_of(grid);
+      if held == 1_u64 {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

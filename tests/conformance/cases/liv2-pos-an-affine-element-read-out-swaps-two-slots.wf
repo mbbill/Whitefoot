@@ -1,0 +1,25 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "LIV-2: a move of a subscripted target place, in the right-hand side of that target's own set, is that target's read-out. Two elements of one run therefore exchange slots in one commit: the offsets are two literals with unequal values, so the targets do not overlap, and each move reads out the target whose offset it provably names. No writer-observable point lies between the read-outs and the commit, so no slot is observed empty and no second owner of a stored element is minted.";
+  region 'a {
+    let workspace = arena_frame::<65536, 16, 'a>();
+    region {
+      let empty = fixed_vector::<Vector<'a, u8>, 2>();
+      let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
+      let one = place_back(vector: move empty, value: move small);
+      let large = arena_vector_proved::<u8>(store: &uniq workspace, count: 512_u64);
+      let grid = place_back(vector: move one, value: move large);
+      set (grid[0_u64], grid[1_u64]) = move grid[1_u64], move grid[0_u64];
+      let (rest, back) = take_back(vector: move grid);
+      let width = room_of(back);
+      if width == 256_u64 {
+        let (drained, front) = take_back(vector: move rest);
+        let other = room_of(front);
+        if other == 512_u64 {
+          return exit_status(code: 0_u8);
+        }
+        return exit_status(code: 2_u8);
+      }
+      return exit_status(code: 1_u8);
+    }
+  }
+}

@@ -136,6 +136,18 @@ impl CheckedIndexedPlace {
         }
     }
 
+    /// The resolved place of the indexed base, for [LIV-2]'s element read-out
+    /// matching. A slice indexes storage its own descriptor names and is not
+    /// a commit target, so it has none here.
+    fn indexed_base_place(&self) -> Option<ResolvedPlace> {
+        match self {
+            Self::Array(array) => array.resolved_place(),
+            Self::Buffer(buffer) => Some(buffer.resolved.clone()),
+            Self::Container(container) => Some(container.resolved.clone()),
+            Self::Slice(_) => None,
+        }
+    }
+
     fn element_type(&self) -> CheckedType {
         match self {
             Self::Array(array) => array.element_type,
@@ -723,6 +735,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         })
     }
 
+    /// [LIV-2] whether this subscript read is the read-out of an element
+    /// target of the `set` whose right-hand side is being checked.
+    ///
+    /// The offset is read here before the ordinary judgment below reaches it,
+    /// so that the admission is decided from the same written offset the
+    /// target carried. An offset that does not check, or that this rule
+    /// cannot decide, matches nothing and leaves every diagnostic below in
+    /// its own place: no read-out is recorded and the affine rejection stands.
+    fn element_read_out(
+        &self,
+        function: &FunctionSignature,
+        indexed: &CheckedIndexedPlace,
+        suffix: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        loop_depth: usize,
+    ) -> Result<bool, CheckStop> {
+        let Some(place) = indexed.indexed_base_place() else {
+            return Ok(false);
+        };
+        let Some(offset_node) = self.subscript_offset(suffix)? else {
+            return Ok(false);
+        };
+        let mut probe = bindings.clone();
+        let Ok(offset) = self.check_atom(function, offset_node, &mut probe, loop_depth) else {
+            return Ok(false);
+        };
+        if offset.expression.ty() != CheckedType::Integer(IntegerType::U64)
+            || offset.mode != CheckedMode::Own
+        {
+            return Ok(false);
+        }
+        Ok(self
+            .take_commit_element_read_out(&place, Self::offset_of_expression(&offset.expression)))
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub(super) fn check_index_use(
         &self,
@@ -746,11 +793,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             );
         }
         let indexed = self.check_indexed_place(place, bindings, &suffixes[..subscript], suffix)?;
+        // [LIV-2, BLK-1] the one affine element read a subscript admits: a
+        // `move P[i]` in the right-hand side of the `set` whose own target is
+        // `P[i]`. The element leaves through the read-out and the same
+        // statement's commit reinitialises the slot at one commit, so no
+        // program point sees the slot empty and no second owner is minted —
+        // which is exactly the ground [SET-2]'s exchange stands on. Every
+        // other affine subscript read is the rejection below.
+        let element_read_out = options.explicit_move
+            && !self.is_copy_type(indexed.element_type())?
+            && self.element_read_out(function, &indexed, suffix, bindings, options.loop_depth)?;
         // [TYPE-2] affine elements leave and enter their slots only through
         // [SET-2] replacement and are read in place through borrowed match:
         // a subscript read would mint a second owner of the stored value, so
         // both the bare and the `move` spelling reject here.
-        if !self.is_copy_type(indexed.element_type())? {
+        if !element_read_out && !self.is_copy_type(indexed.element_type())? {
             if options.explicit_move {
                 return self.issue_node(
                     SemanticRule::Type2,
@@ -768,7 +825,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if options.explicit_move && self.judges_class_spelling() {
+        if !element_read_out && options.explicit_move && self.judges_class_spelling() {
             return self.issue_node(
                 SemanticRule::Own1,
                 use_node,

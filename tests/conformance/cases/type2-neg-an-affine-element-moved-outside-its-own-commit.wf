@@ -1,0 +1,17 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "TYPE-2: an affine element leaves its slot through a SET-2 replacement or through the LIV-2 read-out of an element target of the same set, and through nothing else. A bare `let stolen = move grid[0_u64];` is neither: it would mint a second owner of the stored value and leave the slot holding one it no longer owns.";
+  region 'a {
+    let workspace = arena_frame::<65536, 16, 'a>();
+    region {
+      let empty = fixed_vector::<Vector<'a, u8>, 2>();
+      let small = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
+      let grid = place_back(vector: move empty, value: move small);
+      let stolen = move grid[0_u64];
+      let width = room_of(stolen);
+      if width == 256_u64 {
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+  return exit_status(code: 1_u8);
+}

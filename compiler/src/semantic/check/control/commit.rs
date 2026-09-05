@@ -34,6 +34,38 @@ struct FormedTarget {
     read_out: bool,
 }
 
+/// [LIV-2, OWN-7] one subscript's offset, as far as this rule reads it.
+///
+/// The relation the rule states is over written literals: two are provably
+/// distinct exactly when their values differ, and provably the same exactly
+/// when they agree. Every other offset term is opaque here — provably equal to
+/// nothing, itself included — so a target carrying one is never read out and
+/// never admitted beside a second subscript of its own run.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::semantic::check) enum CommitOffset {
+    Literal(u64),
+    Opaque,
+}
+
+impl CommitOffset {
+    /// Whether the two offsets name one element on every execution.
+    const fn provably_equal(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Literal(left), Self::Literal(right)) => left == right,
+            _ => false,
+        }
+    }
+
+    /// Whether the two offsets name two elements on every execution
+    /// [LIV-2] condition 2.
+    const fn provably_distinct(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Literal(left), Self::Literal(right)) => left != right,
+            _ => false,
+        }
+    }
+}
+
 /// [LIV-2] one target place of the commit whose right-hand side is being
 /// checked, and whether that right-hand side has read it out.
 ///
@@ -42,14 +74,10 @@ struct FormedTarget {
 pub(in crate::semantic::check) struct CommitReadOut {
     place: ResolvedPlace,
     /// A subscript target writes one element of `place` rather than `place`
-    /// itself [MSR-2], and a resolved place names no offset, so a `move` of
-    /// `place` or of any place through it is a different element as often as
-    /// it is this one. Such a target is therefore never matched here, which
-    /// costs no program: every element type this version can construct is
-    /// copy, so `move P[i]` cannot be written at all, and a live affine
-    /// element target keeps [STOR-1]'s rejection until the measured element
-    /// types exist.
-    element: bool,
+    /// itself [MSR-2], so it is matched by the element read-out below and
+    /// never by the whole-place one: a `move` of `place`, or of a place
+    /// reached through it, is a different element as often as it is this one.
+    element: Option<CommitOffset>,
     read_out: bool,
 }
 
@@ -69,9 +97,41 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let mut targets = self.commit_read_outs.borrow_mut();
         for target in targets.iter_mut() {
             if target.read_out
-                || target.element
+                || target.element.is_some()
                 || target.place.root != place.root
                 || !place.fields.starts_with(&target.place.fields)
+            {
+                continue;
+            }
+            target.read_out = true;
+            return true;
+        }
+        false
+    }
+
+    /// Whether `place[offset]` is the read-out of an element target of the
+    /// commit now being checked, recording that read-out when it is [LIV-2].
+    ///
+    /// An element target is matched only at an offset provably the same as
+    /// its own: reading one element out and reinitialising another would
+    /// leave the second holding a value that never left and the first holding
+    /// none, so an offset this rule cannot decide keeps [STOR-1]'s rejection.
+    /// One target is read out at most once, exactly as a whole-place target
+    /// is.
+    pub(in crate::semantic::check) fn take_commit_element_read_out(
+        &self,
+        place: &ResolvedPlace,
+        offset: CommitOffset,
+    ) -> bool {
+        let mut targets = self.commit_read_outs.borrow_mut();
+        for target in targets.iter_mut() {
+            let Some(target_offset) = target.element else {
+                continue;
+            };
+            if target.read_out
+                || target.place.root != place.root
+                || target.place.fields != place.fields
+                || !target_offset.provably_equal(offset)
             {
                 continue;
             }
@@ -311,7 +371,10 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 .iter()
                 .map(|target| CommitReadOut {
                     place: target.mutation.place.clone(),
-                    element: target.mutation.element,
+                    element: target
+                        .mutation
+                        .element
+                        .then(|| Self::commit_offset(&target.mutation.target)),
                     read_out: false,
                 })
                 .collect(),
@@ -524,31 +587,34 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return false;
         }
         if first.element && second.element && first.place == second.place {
-            return match (
-                Self::literal_offset(&first.target),
-                Self::literal_offset(&second.target),
-            ) {
-                (Some(left), Some(right)) => left == right,
-                _ => true,
-            };
+            return !Self::commit_offset(&first.target)
+                .provably_distinct(Self::commit_offset(&second.target));
         }
         true
     }
 
-    /// One subscript target's offset when it is a literal [OWN-7].
-    fn literal_offset(target: &CheckedSetTarget) -> Option<u64> {
+    /// One subscript target's offset, as [LIV-2] and [OWN-7] read it.
+    pub(in crate::semantic::check) fn commit_offset(target: &CheckedSetTarget) -> CommitOffset {
         let offset = match target {
-            CheckedSetTarget::Place(_) => return None,
+            CheckedSetTarget::Place(_) => return CommitOffset::Opaque,
             CheckedSetTarget::ArrayIndex(target) => &target.offset,
             CheckedSetTarget::BufferIndex(target) => &target.offset,
             CheckedSetTarget::RunIndex(target) => &target.offset,
         };
+        Self::offset_of_expression(offset)
+    }
+
+    /// The same reading over one written offset expression, which is what a
+    /// `move P[i]` in the right-hand side carries.
+    pub(in crate::semantic::check) fn offset_of_expression(
+        offset: &CheckedExpression,
+    ) -> CommitOffset {
         match offset {
             CheckedExpression::Constant(super::super::super::model::CheckedValue::Integer {
                 bits,
                 ..
-            }) => Some(*bits),
-            _ => None,
+            }) => CommitOffset::Literal(*bits),
+            _ => CommitOffset::Opaque,
         }
     }
 
