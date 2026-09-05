@@ -3848,12 +3848,26 @@ impl Analyzer<'_, '_> {
         self.goals.support(goal).iter().any(|support| {
             let (place, holders) = self.resolve_goal_support(support);
             match event {
-                KillEvent::Write { element: true, .. }
-                | KillEvent::EntryImageHolderWrite { element: true, .. }
-                    if support.measure.is_some() =>
-                {
-                    false
+                // [MSR-2] a write at an element position carries the written
+                // element's own place, `P[i]`, so it reaches the descriptor
+                // storage of `P[i]` and none of P's own. A measure goal over
+                // a place the written place is a prefix of therefore dies
+                // and one over P does not, which is the same sentence
+                // `event_kills_measure` reads for an L0 measure term. The
+                // blanket "an element write kills no measure goal" this
+                // replaces was [ENT-5]'s element-position carve-out, which
+                // was only ever true of a table with no measured element
+                // type.
+                KillEvent::Write {
+                    place: written,
+                    element: true,
+                    ..
                 }
+                | KillEvent::EntryImageHolderWrite {
+                    place: written,
+                    element: true,
+                    ..
+                } if support.measure.is_some() => written.is_prefix_of(&place),
                 KillEvent::Write { place: written, .. }
                 | KillEvent::EntryImageHolderWrite { place: written, .. } => {
                     place.overlaps(written)
