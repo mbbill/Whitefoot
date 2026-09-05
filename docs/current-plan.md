@@ -7,8 +7,9 @@ The active language authority is the specification at `spec/kernel-spec.md`;
 its version and digest are the chain tail in `governance/APPROVALS.md`. On top
 of the v0.40 proof surface this plan delivered, v0.41 added the comparison
 symbols and the call-site `::` delimiter, v0.42 the canonical region spelling,
-v0.43 the loop-body region block and the associative join, and v0.44 the fact
-machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]). Each superseded version is
+v0.43 the loop-body region block and the associative join, v0.44 the fact
+machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]), and v0.45 the interval an
+admitted product already proved ([ENT-3.S14]). Each superseded version is
 archived at `spec/kernel-spec-vN.md` with its merge-time record in
 `governance/APPROVALS.md`. Nothing merges to `main` until the owner approves
 the exact revision and canonical `make check` passes on that revision. This
@@ -44,6 +45,23 @@ and restricted to its routed arm, and refuses at the declaration a contract
 whose published relations contradict each other. The batch that carried it is
 B1 of the container and resource design under
 `research/investigations/containers-and-resources/`.
+
+v0.45 adds and retires no rule (136 remain) and amends [ENT-6] and [ENT-3] in
+place. [ENT-6]'s fixed interval-product rule proves an inclusive interval for
+each operand of a non-constant multiplication and forms the four products of
+their endpoint pairs; the multiplication is admitted exactly when all four lie
+in the result type, and the rule then discarded them. [ENT-3]'s new source S14
+establishes the least and greatest of those same four products on the value
+the multiplication binds, so an admitted product no longer produces a value
+with no bound and the operation that follows it has the premise the checker
+had already proved. Both published relations are constant bounds against the
+distinguished zero term, so their [ENT-5] support is the bound value alone: a
+later write to an operand leaves them true, a write to the bound place kills
+them, and no relation over the operands, new term, or automatic premise route
+is added. A written `use` remains the only way a product participates in a
+certificate, and a domain discharged by the finite L0 or affine-clause route
+publishes nothing. The evidence that selected it is in
+`research/investigations/binary-arithmetic/`.
 
 ## Outcome
 

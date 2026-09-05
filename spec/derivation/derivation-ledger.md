@@ -4,7 +4,7 @@ The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
 are the chain tail in `governance/APPROVALS.md`; each superseded version is
-archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.44 amendments
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.45 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -14,7 +14,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 through v0.44 amendments below and the active
+the v0.40 through v0.45 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -23,6 +23,10 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
+**v0.45 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.45 adds and retires no rule and moves no row's status. It
+amends [ENT-3] and [ENT-6] in place, so every derivation status carries over
+from v0.44 and the v0.45 amendment below binds the changed sentences.)
 **v0.44 statistics: 81 derived · 55 existence-only · 0 underived**
 (136 rules: v0.44 adds derived MSR-3 and CALL-6 and existence-only MSR-5 and
 CALL-4, retires no rule, and moves no existing row's status, so every other
@@ -1895,3 +1899,21 @@ authority.
 | MSR-3 | One denotation per operand position, keyed on the parameter's mode: an `own` operand read at a caller denotes that call's compiler-owned call datum, a shared-borrow operand the live term, the result binder the result; and a `&uniq` parameter's measure is inadmissible in a source-declared `ensures` | 🟢 derived | Derived from L11 as the constitution's no-guessing premise carries it: the checker's knowledge of a measure comes from the type, an established fact with live support, a compiler-owned measure datum, or a verified contract relation, and a relation about a value a callee received names that value. An `own` parameter is a value the operation received, so its post-state is not a thing a caller can name and the only sound denotation is the value at transfer — which must therefore be a term with empty support, or the consume the same statement performs deletes the relation the contract was written to publish. The `&uniq` inadmissibility is the same sentence read from the other side: a source-declared body is a body, so a caller reading its post-state would be reading a claim about an object at a point the callee cannot name. Both halves were refuted before they were derived — the seventh falsifier round keyed the denotation on `writes` coverage and read `len(P) = len(P) + 1` out of one row, which discharges every goal in every loop from a contradiction. | Registered: the five measure-datum placements this version defers — entry, construct, rebind, enum payload binder, and destructuring binder — carry the same closure sentence and are not yet written, so a measured value still loses its measures at every naming event other than a call. |
 | CALL-6 | Publication stated once: a declared relation is instantiated at the call under MSR-3's substitution, established on the call's normal continuation in ENT-5's order, restricted to its arm when it is routed rather than deferred to it, and supported by the substituted terms; and a contract whose published relations are contradictory at their establishment point is refused at the declaration | 🟢 derived | Derived from ENT-4's own least-closure semantics: at a contradictory point every L0 relation and both signs of every goal are derivable, so an inconsistent published set is not one wrong fact at one caller but every fact at every caller, including the subscript bounds SCOPE-2 exists to keep. Refusing it at the declaration is forced by the same sentence — the set is fixed at the declaration and no caller state repairs it. The instantiate-at-the-call/restrict-to-the-arm shape is derived from ENT-5's own call-boundary order together with the seventh falsifier round's refutation of the alternative: deferring a routed relation's establishment to the arm and killing it from that later point makes every write between the call and the arm precede the establishment and kill nothing, which that round used to hand back a run running past its extent in a program the resource judgment accepts. | Registered: the declaration-domain population of this source is empty in this version, because no compiler-owned row carries a declared relation set until the container declaration domain lands; the rule is written over both callee classes and exercised over one. |
 | CALL-4 | Contract vocabulary over the result: a `fn_decl` declares exactly one `result_binding`, so a route names no ordinal and no ordinal binder is written, and the destinations stay ENT-3.S12's closed list | 🟡 existence-only | Existence derived: L16's one-denotation-per-position sentence requires that the position a route applies to be named exactly once, and with one result there is exactly one naming and no ambiguity to resolve. Form NOT derived: the ordinal binder this rule declines to write is the form a multi-result declaration would need, and no multi-result declaration exists to measure it against; the rule records the criterion rather than selecting a spelling. | Registered: a result of measured type, a measure over a result place, and a route over any variant of any returned enum are DEFERRED in the rule text with their deltas; each is an admission widening of FN-9 and each is what a container-returning helper needs before it can hand a run back with its measures. |
+
+## v0.45 amendment — the admitted product's own interval (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.45, at
+SHA-256 `07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd`,
+superseding v0.44
+(`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`), whose
+bytes are archived at `spec/kernel-spec-v0.44.md`. This version amends and
+activates in one change, so no candidate digest precedes it. The merge-time
+record is in `governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [ENT-6] and [ENT-3] in
+place and adds [ENT-3]'s enumerated source S14. No row's status moves, so the
+statistics line above is v0.44's unchanged.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| ENT-6 / ENT-3.S14 | The fixed interval-product rule publishes the constant interval its four endpoint products bound, established by S14 on the value the admitted multiplication binds | 🟢 derived | Derived from ENT-1's own fact-source sentence read against what the rule already computes. ENT-6 proves an inclusive interval for each operand and forms the four endpoint products, and the multiplication is admitted exactly when all four lie in the result type; the least and greatest of those same four products therefore bound the value the operation produced, on the same premises, at the same point, with no further derivation. Withholding them was not a soundness boundary but a publication choice, and it is the choice R4 forbids: the shift-left ladder ranks a static rejection above a runtime check, and a writer whose admitted product carries no bound must hand the checker back the identical interval as an executed guard, which is a runtime branch standing in for a fact the compiler had already proved. P0 reads the same way — that guard is an emitted comparison and an unreachable arm on the hottest index path there is. Soundness is the ordinary ENT-5 rule rather than a new one: the published relations name only the bound value and the distinguished zero term, so their support is the bound value alone, which is what they mean — they describe a value already produced, so a write to an operand leaves them true and a write to the bound place kills them. The bound value never aliases an operand because a `let` binder is fresh and a commit value is compiler-owned [ENT-2]. Monotonicity is preserved in the permitted direction: the amendment only establishes facts, and no admission condition anywhere reads whether this source fired. | Registered: S14 states a constant interval, so it reaches an operand bounded by constants and not a bound relative to another runtime value — `p * n <= (k - 1) * n` with runtime `k` stays outside it, because the interval of `p < k` is the type range. That family is what a written non-literal `use` multiplier would reach, and no rule in this version admits one. |

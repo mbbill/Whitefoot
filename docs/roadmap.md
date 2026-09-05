@@ -77,6 +77,23 @@ syntax before lowering. It contains no writer-accessible runtime assertion;
 internal inconsistencies are ordinary compiler defects owned by implementation
 repair and tests, not another proof-object or runtime self-validation layer.
 
+v0.45 adds and retires no rule (136 remain) and amends [ENT-6] and [ENT-3] in
+place. [ENT-6]'s fixed interval-product rule proves an inclusive interval for
+each operand of a non-constant multiplication and forms the four products of
+their endpoint pairs; the multiplication is admitted exactly when all four lie
+in the result type, and the rule then discarded them. [ENT-3]'s new source S14
+establishes the least and greatest of those same four products on the value
+the multiplication binds, so an admitted product no longer produces a value
+with no bound and the operation that follows it has the premise the checker
+had already proved. Both published relations are constant bounds against the
+distinguished zero term, so their [ENT-5] support is the bound value alone: a
+later write to an operand leaves them true, a write to the bound place kills
+them, and no relation over the operands, new term, or automatic premise route
+is added. A written `use` remains the only way a product participates in a
+certificate, and a domain discharged by the finite L0 or affine-clause route
+publishes nothing. The evidence that selected it is in
+`research/investigations/binary-arithmetic/`.
+
 ## How to read this outline
 
 This file is the owner-facing map of Whitefoot's live directions. It answers:
