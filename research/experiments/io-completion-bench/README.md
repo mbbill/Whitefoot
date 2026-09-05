@@ -234,8 +234,8 @@ stderr, or stdout different from the committed exact oracle invalidates the
 sample before its time is reported. A sampled child or the untimed observer
 that exceeds two minutes is terminated and invalidates the run.
 
-Before any timed cohort, one direct and one IOCP 4 KiB read-heavy sample must
-both publish the exact oracle. This keeps a target-native path or fixture
+Before any timed cohort, one sequential and one IOCP 4 KiB read-heavy sample
+must both publish the exact oracle. This keeps a target-native path or fixture
 failure from being discovered only after the compute cohort has completed.
 
 The five alternating paired cohorts are compute (`par_layout.wf`, default
@@ -245,14 +245,38 @@ plus IOCP pair, followed by a direct sequential/full pair that prevents the
 two component improvements from hiding a net mixed regression. The exact
 mixed window is source-level
 `read_at, compute_pair, read_at`; `compute_pair` contains the independent
-`churn, churn` pair. Before timing, an observed link requires all requested
-non-owner workers to start, a non-owner execution and successful steal, all
-1024 compute publications to occur while the source still owns the first read,
-and records separately how many of those reads remained kernel-in-flight and
-how many synchronous-success reads published inline. It also requires exactly
-1025 accepted/published/consumed completion operations, exactly one blocking
-helper execution (the overlapped open, beside 1024 IOCP reads), and zero
-fallback. Its fixed tree oracle is `17574306422404092952\n`.
+`churn, churn` pair. Its fixed tree oracle is `17574306422404092952\n`.
+
+Before timing, the script checks that the mixed contender is the thing it
+claims to be, in two places rather than one.
+
+The first is the emitted module. Every I/O operation has one lowering now,
+submit and then join, so the window's overlap is visible in the module itself:
+`@wf_main` submits the first read, calls `compute_pair` on this thread, runs
+the source-last read through the always-inlined wrapper that submits and joins
+in place, and only then joins the first read. The group hands none of its own
+members to a compute lane, because its join site is itself a submitting member
+and the emitter keeps the pure completion lowering for such a group; the
+compute hand-out this cohort measures is one level down, in `compute_pair`,
+whose `churn, churn` group acquires a lane, publishes into it, joins it, and
+releases it once per iteration. The script pins both orders. They belong to the
+emitter and not to the target, so the same shape reads out of a Linux
+`--emit-llvm` of the same program.
+
+The second is one observed link, the shipped runtime plus `grant_observer.c`,
+which is `io-hosts.yml`'s `completion-windows` worker step applied to this
+program. Correct bytes alone would also be produced by a pool that granted no
+lane and by a run that never reached the completion port, so that link requires
+all three: the program's exact oracle on the output channel, exactly one line
+on the diagnostic channel, `grants=` and a positive count, and exit zero under
+`WF_REQUIRE_WINDOWS_IOCP=1`, which is the runtime's own exit assertion that the
+port carried at least one submission and reaped every submission it made. The
+retired Windows probes counted worker starts, worker executions,
+compute publications outstanding across the first read, IOCP inline and
+dequeued completions, and accepted/published/consumed operations; the second
+copy of the runtime they instrumented is gone, the core's steal count and the
+required-ring assertion carry the verdict, and the publication-during-flight
+property is pinned in the emitted order above instead of counted once per run.
 
 The compute pair gives both builds three inert command arguments.
 `par_layout.wf` counts the complete invocation vector, including the invoked

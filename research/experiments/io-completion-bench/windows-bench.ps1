@@ -73,21 +73,43 @@ function Write-AsciiFile {
     [IO.File]::WriteAllBytes($Path, [Text.Encoding]::ASCII.GetBytes($Text))
 }
 
+# One compilation rule for every observed unit, and it is the repository
+# gate's own warning set: the runtime this script links is the shipped runtime,
+# so a unit that would not build under `make check` must not build here either.
+# No unit takes a `-D` of its own any more -- the runtime has one shipped form
+# and no probe variants to select.
 function Compile-Object {
     param(
         [Parameter(Mandatory = $true)][string]$Source,
-        [Parameter(Mandatory = $true)][string]$Output,
-        [string[]]$Definitions = @()
+        [Parameter(Mandatory = $true)][string]$Output
     )
     $arguments = @(
         "-std=c11", "-O2", "-g", "-Wall", "-Wextra", "-Werror",
-        "-Wpedantic", "-municode", "-I", $Backend, "-I", $Completion
+        "-Wpedantic", "-municode", "-I", $Backend, "-I", $Completion,
+        "-c", $Source, "-o", $Output
     )
-    foreach ($definition in $Definitions) {
-        $arguments += "-D$definition"
-    }
-    $arguments += @("-c", $Source, "-o", $Output)
     Invoke-Tool -File $Clang -Arguments $arguments -Description "compile $Source"
+}
+
+# The body of one emitted definition, so an order is pinned inside the
+# function that carries it rather than anywhere in the module. `wf_main` and
+# `wf_compute_pair` are both defined before anything calls them, so the first
+# occurrence of the symbol is its definition, and an emitted body is the only
+# text whose closing brace starts a line.
+function Get-EmittedFunction {
+    param(
+        [Parameter(Mandatory = $true)][string]$Module,
+        [Parameter(Mandatory = $true)][string]$Symbol
+    )
+    $at = $Module.IndexOf("@$Symbol(", [StringComparison]::Ordinal)
+    if ($at -lt 0) {
+        throw "the emitted mixed module defines no $Symbol"
+    }
+    $end = $Module.IndexOf("`n}`n", $at, [StringComparison]::Ordinal)
+    if ($end -lt 0) {
+        throw "the emitted definition of $Symbol is unterminated"
+    }
+    return $Module.Substring($at, $end - $at)
 }
 
 function Warm-Tree {
@@ -163,7 +185,7 @@ Invoke-Tool -File $Wfc -Arguments @(
 Invoke-Tool -File $Wfc -Arguments @(
     "--no-overlap", (Join-Path $Programs "read_heavy_wide8_4k.wf"),
     "-o", $IoDirect
-) -Description "compile the direct positioned-read reference"
+) -Description "compile the sequential positioned-read reference"
 Invoke-Tool -File $Wfc -Arguments @(
     (Join-Path $Programs "read_heavy_wide8_4k.wf"), "-o", $IoIocp
 ) -Description "compile the IOCP positioned-read contender"
@@ -178,70 +200,167 @@ Invoke-Tool -File $Wfc -Arguments @(
     "--par", "--emit-llvm", $MixedSource, "-o", $MixedIr
 ) -Description "emit the observed mixed module"
 
+# What this pins, and why it is that shape.
+#
+# The mixed window is source-level `read_at, compute_pair, read_at`, and the
+# permission judgment reads it as one three-member chain -- `--par-ledger`
+# prints `run(read_at, compute_pair, read_at)  3 members` for it. Every I/O
+# operation now has exactly one lowering, submit and then join
+# (`research/investigations/io-model/PARK-ON-MISS.md` section 8, "One lowering
+# for every I/O operation"), so there is no direct-read family left to look
+# for: `@wf.sys.read_at.v1` is the always-inlined wrapper that submits and
+# joins, not a direct target read.
+#
+# So `@wf_main` carries, in this order:
+#
+#   1. `wf__completion_file_pread_submit` for the first read, which the group
+#      leaves in flight,
+#   2. the call to `@wf_compute_pair` on this thread,
+#   3. the source-last read through `@wf.sys.read_at.v1`, which submits and
+#      joins in place, and
+#   4. `wf__completion_file_join` for the first read.
+#
+# That order is exactly what this cohort claims to measure: the first read is
+# outstanding across both the compute member and the second read.
+#
+# The group hands none of its own members to a compute lane, and that is the
+# emitter's stated rule rather than an accident: a group whose join site is
+# itself a submitting member keeps the pure completion lowering
+# (`ordinary_overlap_lane_frames`, `compiler/src/backend/emitter.rs`), and here
+# the source-last member is a `read_at`. Section 4 leaves a completion member
+# where it was published in either case. The compute overlap this cohort
+# measures is one level down, inside `@wf_compute_pair`, whose own
+# `pair(churn, churn)` group takes the lane protocol -- acquire a lane, publish
+# into it, join it, release it -- 1024 times per run. That is the hand-out the
+# observed link below reads back as `grants=`.
+#
+# The order is a property of the emitter and not of the target, so reading it
+# here on the Windows host reads the same shape a Linux `--emit-llvm` of this
+# program reads. The completion schedule and the overlap group are both
+# produced by lowering, which takes no target; `ordinary_overlap_lane_frames`
+# declines this group before it reaches anything target-dependent; and the
+# Windows and native POSIX columns name the same submit and join symbols
+# (`HostFacilities` in `compiler/src/backend/qualification.rs`).
 $Ir = [IO.File]::ReadAllText($MixedIr)
-$SubmitAt = $Ir.IndexOf("call i32 @wf__completion_file_pread_submit", [StringComparison]::Ordinal)
+$Main = Get-EmittedFunction -Module $Ir -Symbol "wf_main"
+$Pair = Get-EmittedFunction -Module $Ir -Symbol "wf_compute_pair"
+$SubmitAt = $Main.IndexOf(
+    "call void @wf__completion_file_pread_submit(", [StringComparison]::Ordinal
+)
 $ComputeAt = if ($SubmitAt -ge 0) {
-    $Ir.IndexOf("call i64 @wf_compute_pair", $SubmitAt, [StringComparison]::Ordinal)
+    $Main.IndexOf("call i64 @wf_compute_pair(", $SubmitAt, [StringComparison]::Ordinal)
 } else { -1 }
-$DirectAt = if ($ComputeAt -ge 0) {
-    $Ir.IndexOf("@wf.sys.read_at.v1", $ComputeAt, [StringComparison]::Ordinal)
+$LastReadAt = if ($ComputeAt -ge 0) {
+    $Main.IndexOf("@wf.sys.read_at.v1(", $ComputeAt, [StringComparison]::Ordinal)
 } else { -1 }
-$CompletionJoinAt = if ($DirectAt -ge 0) {
-    $Ir.IndexOf("call void @wf__completion_file_join", $DirectAt, [StringComparison]::Ordinal)
+$CompletionJoinAt = if ($LastReadAt -ge 0) {
+    $Main.IndexOf(
+        "call void @wf__completion_file_join(", $LastReadAt, [StringComparison]::Ordinal
+    )
 } else { -1 }
-$PairAt = $Ir.IndexOf("define internal i64 @wf_compute_pair", [StringComparison]::Ordinal)
-$PublishAt = if ($PairAt -ge 0) {
-    $Ir.IndexOf("call void @wf__par_publish", $PairAt, [StringComparison]::Ordinal)
+if ($SubmitAt -lt 0 -or $ComputeAt -le $SubmitAt -or $LastReadAt -le $ComputeAt `
+    -or $CompletionJoinAt -le $LastReadAt) {
+    throw "mixed IR does not keep the first read in flight across the compute member and the source-last read"
+}
+$AcquireAt = $Pair.IndexOf("call ptr @wf__par_acquire_lane(", [StringComparison]::Ordinal)
+$PublishAt = if ($AcquireAt -ge 0) {
+    $Pair.IndexOf("call void @wf__par_publish(", $AcquireAt, [StringComparison]::Ordinal)
 } else { -1 }
 $ParJoinAt = if ($PublishAt -ge 0) {
-    $Ir.IndexOf("call void @wf__par_join", $PublishAt, [StringComparison]::Ordinal)
+    $Pair.IndexOf("call void @wf__par_join(", $PublishAt, [StringComparison]::Ordinal)
 } else { -1 }
-if ($SubmitAt -lt 0 -or $ComputeAt -le $SubmitAt -or $DirectAt -le $ComputeAt `
-    -or $CompletionJoinAt -le $DirectAt -or $PublishAt -le $PairAt `
-    -or $ParJoinAt -le $PublishAt) {
-    throw "mixed IR does not preserve submit -> compute publish/join -> source-last read -> completion join"
+$ReleaseAt = if ($ParJoinAt -ge 0) {
+    $Pair.IndexOf("call void @wf__par_release(", $ParJoinAt, [StringComparison]::Ordinal)
+} else { -1 }
+if ($AcquireAt -lt 0 -or $PublishAt -le $AcquireAt -or $ParJoinAt -le $PublishAt `
+    -or $ReleaseAt -le $ParJoinAt) {
+    throw "the mixed program's compute member does not offer a lane, publish into it, join it and release it"
 }
 
-$ObjectSources = @(
-    [pscustomobject]@{ Name = "windows-runtime"; Source = (Join-Path $Backend "windows_runtime.c") }
-    [pscustomobject]@{ Name = "wf-floor-windows"; Source = (Join-Path $Backend "wf_floor_windows.c") }
-    [pscustomobject]@{ Name = "windows-completion"; Source = (Join-Path $Completion "windows_completion.c") }
-    [pscustomobject]@{ Name = "windows-iocp"; Source = (Join-Path $Completion "windows_iocp.c") }
-    [pscustomobject]@{ Name = "windows-blocking"; Source = (Join-Path $Completion "windows_blocking.c") }
-    [pscustomobject]@{ Name = "writer-scheduler"; Source = (Join-Path $Completion "writer_scheduler_windows.c") }
+# The observed link: the shipped runtime, plus one unit no shipped program
+# carries.
+#
+# The production executables above are `whitefootc.exe`'s own links and need
+# nothing added to them. This one link exists to read back a fact that correct
+# bytes alone would also be produced without: that the mixed contender really
+# stole compute work and really carried its reads on the completion port. It is
+# `io-hosts.yml`'s `completion-windows` step "Require native workers for a real
+# --par program" applied to this program, and the unit list below is exactly
+# what `whitefootc` stages for a module that both hands work out and submits
+# operations -- `runtime_units(core, completion)` in
+# `compiler/src/bin/whitefootc.rs`: the floor, the scheduler core with its
+# Windows leaf, and the completion runtime with its Windows wait, host leaf and
+# ring. The one addition is `sched/grant_observer.c`, which registers an
+# `atexit` report of the core's own steal count and is linked into no shipped
+# program.
+#
+# What the retired probes measured, and what carries it now. The Windows
+# parallel runtime, its identity probe and its mixed probe are gone with the
+# second copy of the runtime they belonged to, so their counters are gone with
+# them:
+#
+#   `wf__par_started_worker_count` and `wf__par_worker_execution_count`
+#     -> `wf__par_grants`, reported as the `grants=` line. The core counts
+#        hand-outs that ran on a thread other than the one that offered them,
+#        which is the property those two were together standing in for: a pool
+#        that started and never granted a lane cannot produce a positive count.
+#   `publishes`, `outstanding_publishes` and `kernel_overlap_publishes`
+#     (`WF_PAR_MIXED_PROBE`)
+#     -> the IR assertion above. That the compute member runs while the first
+#        read is outstanding is a property of the one lowering, fixed for every
+#        iteration by the emitted order, so it is pinned where it is decided
+#        instead of counted once per run.
+#   the IOCP inline and dequeued completion counts
+#     -> nothing on the protocol's side, deliberately. The ring still keeps
+#        both (`wf_windows_iocp_statistics` in `completion/windows_iocp.h`) and
+#        the bridge still exports the shared halves of that split
+#        (`wf__completion_native_ring_submissions` and
+#        `wf__completion_inline_executions`), but the split was a throughput
+#        fact and never a verdict, and what this protocol needs from the ring
+#        -- that it carried the reads and reaped them -- is the exit assertion
+#        below.
+#   `submissions`, `publications`, `consumes`, `helpers` and `fallback`
+#     -> the shared bridge's own statistics entries
+#        (`completion/bridge.h`: `wf__completion_file_submissions`,
+#        `wf__completion_publications`,
+#        `wf__completion_file_helper_executions`,
+#        `wf__completion_file_fallback_submissions`). There is no consume step
+#        left to count: the record is the submitting frame's, so a completion
+#        is published into it and joined there.
+#
+# The second half of the protocol is the runtime's own: with
+# `WF_REQUIRE_WINDOWS_IOCP=1` the bridge asserts at exit that the port carried
+# at least one submission and that it reaped every submission it made
+# (`wf_bridge_verify_required_ring` in `completion/bridge.c`), and fails the
+# process otherwise. So a run that silently reached no ring cannot answer zero
+# here; it cannot exit zero at all.
+$ObservedUnits = @(
+    "sched/core.c",
+    "sched/prim_windows.c",
+    "sched/entry.c",
+    "completion/runtime.c",
+    "completion/wait_windows.c",
+    "completion/file_adapter.c",
+    "completion/file_windows.c",
+    "completion/bridge.c",
+    "completion/windows_iocp.c",
+    "windows_runtime.c",
+    "wf_floor_windows.c",
+    "sched/grant_observer.c"
 )
 $ObservedObjects = @()
-foreach ($unit in $ObjectSources) {
-    $object = Join-Path $Objects ($unit.Name + ".o")
-    Compile-Object -Source $unit.Source -Output $object
+foreach ($unit in $ObservedUnits) {
+    $object = Join-Path $Objects (($unit -replace '/', '-') -replace '\.c$', '.o')
+    Compile-Object -Source (Join-Path $Backend $unit) -Output $object
     $ObservedObjects += $object
 }
-$ParObject = Join-Path $Objects "par-runtime-observed.o"
-Compile-Object -Source (Join-Path $Backend "par_runtime_windows.c") `
-    -Output $ParObject -Definitions @(
-        "WF_PAR_WITH_WRITER_SCHEDULER=1",
-        "WF_PAR_IDENTITY_PROBE=1",
-        "wf__par_publish=wf__mixed_observed_par_publish"
-    )
-$BridgeObject = Join-Path $Objects "windows-bridge-observed.o"
-Compile-Object -Source (Join-Path $Completion "windows_bridge.c") `
-    -Output $BridgeObject -Definitions @(
-        "wf__completion_file_join=wf__mixed_observed_file_join",
-        "wf__completion_file_open_join=wf__mixed_observed_file_open_join"
-    )
-$ObserverObject = Join-Path $Objects "mixed-observer.o"
-Compile-Object -Source (Join-Path $Backend "par_runtime_windows_probe.c") `
-    -Output $ObserverObject -Definitions @(
-        "WF_PAR_IDENTITY_PROBE=1", "WF_PAR_MIXED_PROBE=1"
-    )
-$ObservedObjects += @($ParObject, $BridgeObject, $ObserverObject)
 $MixedObserved = Join-Path $Bin "mixed-observed.exe"
 $LinkArguments = @(
     "-std=c11", "-O2", "-g", "-municode", "-x", "ir", $MixedIr,
     "-x", "none"
 ) + $ObservedObjects + @("-Wno-override-module", "-o", $MixedObserved)
 Invoke-Tool -File $Clang -Arguments $LinkArguments `
-    -Description "link the native mixed identity observer"
+    -Description "link the observed mixed executable"
 
 $ObservedStart = [Diagnostics.ProcessStartInfo]::new()
 $ObservedStart.FileName = $MixedObserved
@@ -260,22 +379,29 @@ if (-not $ObservedProcess.WaitForExit(120000)) {
     $ObservedProcess.Kill($true)
     $ObservedProcess.WaitForExit()
     $ObservedProcess.Dispose()
-    throw "mixed identity observer exceeded the 120000 ms timeout"
+    throw "the observed mixed run exceeded the 120000 ms timeout"
 }
 $ObservedStdout = $ObservedStdoutTask.GetAwaiter().GetResult()
 $ObservedStderr = $ObservedStderrTask.GetAwaiter().GetResult()
 $ObservedExitCode = $ObservedProcess.ExitCode
 $ObservedProcess.Dispose()
 $ExpectedMixedText = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($MixedExpected))
-$ObservedLine = $ObservedStderr.TrimEnd([char[]]"`r`n")
-$ObservedPattern = (
-    '^windows-native-mixed-probe status=pass started={0} executed=[1-9][0-9]* grants=[1-9][0-9]* publishes=1024 outstanding_publishes=1024 kernel_overlap_publishes=[0-9]+ inline_completions=[0-9]+ dequeued_completions=[0-9]+ submissions=1025 publications=1025 consumes=1025 helpers=1 fallback=0$' -f
-    ($Workers - 1)
+# The whole verdict, in three parts. The exit status carries the required-ring
+# assertion: with `WF_REQUIRE_WINDOWS_IOCP=1` a run that submitted nothing to
+# the port, or left anything it submitted unreaped, ends nonzero. The bytes
+# carry the program. And the one diagnostic line carries the steal: the
+# observer is the only thing in this link that writes to the diagnostic
+# channel, so anything else on it is a runtime complaint and fails the run
+# whatever it says.
+$ObservedLines = @(
+    ($ObservedStderr -replace "`r", "") -split "`n" | Where-Object { $_ -ne "" }
 )
+$ObservedPattern = '^grants=[1-9][0-9]*$'
 if ($ObservedExitCode -ne 0 -or $ObservedStdout -cne $ExpectedMixedText `
-    -or $ObservedLine -cnotmatch $ObservedPattern) {
-    throw "mixed identity observer failed: exit=$ObservedExitCode stdout=[$ObservedStdout] stderr=[$ObservedStderr]"
+    -or $ObservedLines.Count -ne 1 -or $ObservedLines[0] -cnotmatch $ObservedPattern) {
+    throw "the observed mixed run did not show a steal and a reaped port submission: exit=$ObservedExitCode stdout=[$ObservedStdout] stderr=[$ObservedStderr]"
 }
+$ObservedLine = $ObservedLines[0]
 [IO.File]::WriteAllText(
     (Join-Path $Out "mixed-observer.txt"),
     $ObservedLine + "`n",
