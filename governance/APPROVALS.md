@@ -4075,4 +4075,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   No verdict of either corpus moved apart from the one deleted case recorded
   above, and no program of the executable corpus changed behaviour;
   `tests/programs/run_views.wf` is added and runs to exit 0.
-ACTIVE-SPEC: v0.45 cc477409782b07323cf2a8e160c5670a301bc9b8acc0d79e5f6e0c454c7be09b 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 4386b78bcf9488f5959e70a48b05878e1e6a74de10933000caacacd3a3165118 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

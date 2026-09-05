@@ -6,7 +6,7 @@ struct BlockPool['s] {
   free: FixedVector<Vector<'s, u8>, 8>;
 }
 
-fn pool_new['s: affine](store: &uniq Arena<'s, 65536, 16>) -> made: own Option<BlockPool<'s>> reads(store), writes(store) {
+fn pool_new['s: affine](store: &uniq Arena<'s, 65536, 16>) -> made: own Option<BlockPool<'s>> reads(store), writes(store), allocates(store) {
   doc "Carves eight 256-byte runs out of the store and holds them as a free list.";
   let free = fixed_vector::<Vector<'s, u8>, 8>();
   for @carve (
