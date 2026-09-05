@@ -53,7 +53,8 @@ const ENUMERATOR_UNITS: [(&str, &str); 7] = [
 /// costly -- the enumerator makes a yield block until another process writes,
 /// so a yield in front of the park forces every device completion ahead of the
 /// park and the one thread then never sleeps on the primitive, which S10a
-/// asserts it does.
+/// asserts it does; at (2,4) a yield round fails seventeen schedules with
+/// "thread 1 spins with nothing left to change what it spins on".
 const ENUMERATOR_DEFINES: [&str; 6] = [
     "-DWF_SCHED_ENUMERATE",
     "-DWF_SCHED_LANE_SLOTS=2u",

@@ -75,7 +75,11 @@ LANE_SLOT_COUNTS=${LANE_SLOT_COUNTS:-"2 4 8 16"}
 # pair of defines each form is built with. `spin-0-0` is the form the tree
 # shipped before the spin existed -- the idle window parks the moment its last
 # look misses -- and is the reference every line here is read against.
-SPIN_ROUNDS=${SPIN_ROUNDS:-"0 256 1024 4096 16384"}
+# The spin rounds carry two points below the coarse grid this sweep started
+# from (0, 256, 1024, 4096, 16384), because the first run showed the cost of a
+# round where the design did not expect one: a round takes the core's one mutex
+# to look at the ready list, so the interesting region is nearer 16 than 256.
+SPIN_ROUNDS=${SPIN_ROUNDS:-"0 16 64 256 1024 4096 16384"}
 SPIN_YIELDS=${SPIN_YIELDS:-"0 16 64"}
 spin_forms() {
     for rounds in $SPIN_ROUNDS; do
@@ -88,11 +92,18 @@ SPIN_FORMS=${SPIN_FORMS:-$(spin_forms)}
 # The mixed program's tree: two files of MIXED_KIB KiB, which is what
 # `programs/windows_runtime_mixed.wf` reads (4096 blocks of 4096 bytes).
 MIXED_KIB=${MIXED_KIB:-16384}
+# The I/O line is a best-of, as design section 12 item 4 reads it.
+SPIN_IO_ROUNDS=${SPIN_IO_ROUNDS:-7}
 
 define_of() {
     case $1 in
     shipped) printf '' ;;
     lane-slots-*) printf -- '-DWF_SCHED_LANE_SLOTS=%su' "${1#lane-slots-}" ;;
+    spin-*-*)
+        pair=${1#spin-}
+        printf -- '-DWF_SCHED_IDLE_SPIN_ROUNDS=%su -DWF_SCHED_IDLE_YIELD_ROUNDS=%su' \
+            "${pair%%-*}" "${pair##*-}"
+        ;;
     *) echo "run.sh: unknown form $1" >&2; exit 2 ;;
     esac
 }
@@ -143,6 +154,15 @@ prepare() {
 # README's section 3 records what each was and why it went.
 section_park() {
     echo "== park: one park and one publish through the core, nanoseconds =="
+    park_sweep
+    echo "-- this host's own reference primitives --"
+    make -C "$ROOT/research/experiments/park-on-miss-switch-cost" CC="$CLANG" run
+}
+
+# The round trip over whatever `$PARK_FORMS` names, so that the idle-spin
+# section below takes the same measurement over its own forms with the same
+# discipline rather than a second one of its own.
+park_sweep() {
     for form in $PARK_FORMS; do
         define=$(define_of "$form")
         # shellcheck disable=SC2086
@@ -199,8 +219,6 @@ section_park() {
         echo "-- a form that could not complete a run --"
         grep FAULT "$WORK/park-samples.txt" | sort -u
     fi
-    echo "-- this host's own reference primitives --"
-    make -C "$ROOT/research/experiments/park-on-miss-switch-cost" CC="$CLANG" run
 }
 
 
@@ -293,6 +311,111 @@ section_io() {
     echo "-- many_files_wide, expected [$FILES_EXPECTED], rounds=$ROUNDS warmup=$WARMUP --"
     ( cd "$TREE" && "$BUILD/runner" "$WORK/plan-io.txt" "$ROUNDS" "$WARMUP" \
         "$FILES_EXPECTED" 2> "$WORK/runner-io.err" )
+}
+
+
+# ------------------------------------------------------------------ spin
+
+# The bounded spin before the idle park: `WF_SCHED_IDLE_SPIN_ROUNDS` and
+# `WF_SCHED_IDLE_YIELD_ROUNDS` of `compiler/src/backend/sched/core.h`, swept
+# against `spin-0-0`, which is the form the tree carried before the spin
+# existed -- the idle window parks the moment its last look misses. The
+# README's "section 12 addendum: the idle spin" is the table.
+#
+# Four lines, all under the method above. The mixed program in the three
+# builds the Windows qualification bench compares, because that bench is the
+# judge the spin exists for; the two compute programs of section 12 item 1,
+# which the spin can move because a compute miss whose stolen child finishes
+# soon then finds the READY stack with no kernel wake; the many-files I/O
+# workload, where a spin standing in front of the drain would show; and the
+# park and publish round trip. The runner prints child user and system CPU
+# beside every wall time, which is the column that says whether a form won its
+# wall time by burning a core.
+
+# The mixed program of `../io-completion-bench/programs/windows_runtime_mixed.wf`
+# in the bench's three builds: the fully sequential reference (`--no-overlap`),
+# the completion-only control (no flag), and the unified contender (`--par`).
+build_mixed() {
+    "$WFC" --no-overlap --emit-llvm -o "$BUILD/mixed-seq.ll" "$IOBENCH/programs/windows_runtime_mixed.wf"
+    "$WFC" --emit-llvm -o "$BUILD/mixed-iocp.ll" "$IOBENCH/programs/windows_runtime_mixed.wf"
+    "$WFC" --par --emit-llvm -o "$BUILD/mixed-full.ll" "$IOBENCH/programs/windows_runtime_mixed.wf"
+    for form in "$@"; do
+        define=$(define_of "$form")
+        for build in seq iocp full; do
+            # shellcheck disable=SC2086
+            link_form "$BUILD/mixed-$build.ll" "$BUILD/mixed-$build-$form" $define
+        done
+    done
+}
+
+section_spin() {
+    echo "== spin: the idle window's bounded spin, swept =="
+    echo "-- forms: $SPIN_FORMS --"
+    # Every line is read against the first form named, which is `spin-0-0` in
+    # the sweep above: the form the tree carried before the spin existed.
+    spin_reference=$(printf '%s\n' $SPIN_FORMS | head -1)
+
+    echo "== spin/mixed: windows_runtime_mixed.wf in the bench's three builds, WF_WORKERS=4 =="
+    build_mixed $SPIN_FORMS
+    rm -rf "$WORK/mixedtree"
+    mkdir -p "$WORK/mixedtree"
+    "$BUILD/gen" "$WORK/mixedtree" 2 "$MIXED_KIB" fixed
+    mixed_expected=$( cd "$WORK/mixedtree" && "$BUILD/mixed-seq-$spin_reference" f00000.dat f00001.dat )
+    {
+        for form in $SPIN_FORMS; do
+            for build in seq iocp full; do
+                printf '%s.%s\tWF_WORKERS=4\t%s/mixed-%s-%s\tf00000.dat\tf00001.dat\n' \
+                    "$build" "$form" "$BUILD" "$build" "$form"
+            done
+        done
+    } > "$WORK/plan-spin-mixed.txt"
+    echo "-- mixed, expected [$mixed_expected], rounds=$ROUNDS warmup=$WARMUP --"
+    ( cd "$WORK/mixedtree" && "$BUILD/runner" "$WORK/plan-spin-mixed.txt" "$ROUNDS" "$WARMUP" \
+        "$mixed_expected" 2> "$WORK/runner-spin-mixed.err" )
+
+    echo "== spin/compute: par_layout and the grid loop split, W=1,2,4,8 =="
+    build_compute $SPIN_FORMS
+    for program in par_layout grid; do
+        expected=$("$BUILD/$program-$spin_reference" 2>/dev/null)
+        {
+            for form in $SPIN_FORMS; do
+                for workers in 1 2 4 8; do
+                    printf '%s.w%s\tWF_WORKERS=%s\t%s/%s-%s\n' \
+                        "$form" "$workers" "$workers" "$BUILD" "$program" "$form"
+                done
+            done
+        } > "$WORK/plan-spin-$program.txt"
+        echo "-- $program, expected [$expected], rounds=$ROUNDS warmup=$WARMUP --"
+        "$BUILD/runner" "$WORK/plan-spin-$program.txt" "$ROUNDS" "$WARMUP" "$expected" \
+            2> "$WORK/runner-spin-$program.err"
+    done
+
+    echo "== spin/io: many_files_wide at the default policy =="
+    rm -rf "$TREE"
+    mkdir -p "$TREE"
+    "$BUILD/gen" "$TREE" "$FILES" "$MAX_KIB"
+    "$WFC" --emit-llvm -o "$BUILD/wide.ll" "$IOBENCH/programs/many_files_wide.wf"
+    for form in $SPIN_FORMS; do
+        define=$(define_of "$form")
+        # shellcheck disable=SC2086
+        link_form "$BUILD/wide.ll" "$BUILD/wide-$form" $define
+    done
+    {
+        for form in $SPIN_FORMS; do
+            printf '%s.default\t\t%s/wide-%s\n' "$form" "$BUILD" "$form"
+        done
+    } > "$WORK/plan-spin-io.txt"
+    echo "-- many_files_wide, expected [$FILES_EXPECTED], rounds=$SPIN_IO_ROUNDS warmup=$WARMUP --"
+    ( cd "$TREE" && "$BUILD/runner" "$WORK/plan-spin-io.txt" "$SPIN_IO_ROUNDS" "$WARMUP" \
+        "$FILES_EXPECTED" 2> "$WORK/runner-spin-io.err" )
+
+    # Twenty-one forms and two modes, so each pass times a quarter of the
+    # round trips section 3 times; the number is a per-round-trip average and
+    # the spread over PARK_ROUNDS passes is what the table reports either way.
+    echo "== spin/park: one park and one publish through the core, nanoseconds =="
+    PARK_FORMS=$SPIN_FORMS
+    PARK_ITERATIONS=${SPIN_PARK_ITERATIONS:-50000}
+    park_sweep
 }
 
 # ---------------------------------------------------------------- chain

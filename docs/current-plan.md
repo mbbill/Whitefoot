@@ -753,6 +753,78 @@ before the code lands.
    writer to predict which joins park, and what the enumerator needs to
    check a miss that nests a never-suspends job under a may-suspend one.
 
+   **Status 2026-09-05, the idle spin.** The Windows qualification bench now
+   runs to its bar on the real host and fails two of them: `mixed-full` 1.0593
+   and `mixed-total` 1.0578 against 0.95, with `compute` 0.3202 against 0.90
+   and `io-warm` 0.9595 against 1.10 both met and `grants=1024`. What the two
+   failing cohorts pay is wake latency: per iteration of
+   `windows_runtime_mixed.wf` an idle worker has to be woken to steal the
+   hand-out and the publisher has to be woken again when the stolen job makes
+   its joiner's stack READY, and on a four-vCPU Windows VM each of those is a
+   completion-port round trip. The retired runtime found both by spinning
+   (`WF_PAR_SPIN_ROUNDS` 4096, `WF_PAR_YIELD_ROUNDS` 16) before it slept; the
+   core parks the moment its last look misses.
+
+   So `wf_sched_idle_step` now repeats its own looks before it parks, for
+   `WF_SCHED_IDLE_SPIN_ROUNDS` rounds of a new `wf_prim_pause` and then
+   `WF_SCHED_IDLE_YIELD_ROUNDS` rounds of `wf_prim_yield` (`sched/core.h`,
+   `sched/prim.h`). **Where the spin sits is most of the result.** In front of
+   the drain it is a disaster, because the drain is the only thing that
+   delivers an I/O completion: sixteen rounds there cost `many_files_wide` 19
+   percent and four thousand cost it forty-one times. After the drain and after
+   the window's own last look, immediately before the park, the I/O line is
+   flat across the whole sweep — a turn with work to find has already found it
+   and never reaches the spin. The epoch capture does not move, so §6's
+   lost-wake argument is untouched.
+
+   The sweep is
+   [`research/experiments/park-on-miss-measurements/README.md`](../research/experiments/park-on-miss-measurements/README.md)'s
+   "§12 addendum: the idle spin" and `run.sh`'s new `spin` section: pause
+   rounds 0, 16, 64, 256, 1024, 4096, 16384 against yield rounds 0, 16, 64, on
+   the mixed program's three builds, `par_layout` and the grid at four worker
+   counts, `many_files_wide`, and the park and publish round trip, with CPU
+   beside wall on every line. The chosen constants against the shipped form, at
+   N = 15 on this four-core Linux host:
+
+   | line | `spin-0-0` | `spin-256-16` (chosen) | `spin-4096-16` |
+   |---|---|---|---|
+   | mixed, completion-only build | 256.53 ms | 252.63 | 244.39 |
+   | mixed, unified `--par` build | 170.68 ms | 160.91 | 154.10 |
+   | mixed, unified ÷ completion-only | 0.665 | 0.637 | 0.631 |
+   | mixed unified, user CPU | 254.97 ms | 410.39 | 457.40 |
+   | par_layout W=4 | 562.75 ms | 451.52 | 453.60 |
+   | par_layout W=8 | 802.02 ms | 492.70 | 566.55 |
+   | par_layout W=8, system CPU | 625.75 ms | 229.49 | 356.71 |
+   | grid W=8 | 389.34 ms | 390.36 | 390.60 |
+   | many_files_wide, best of 7 | 114.86 ms | 112.94 | 118.79 |
+   | park and publish, settled median | 6320 ns | 4107 | 3662 |
+
+   **256 and 16 chosen, by the numbers.** A look round costs about 43 ns here,
+   so 256 of them is a window of about 11 µs against this host's own
+   park-and-wake of 16.2 — the retired runtime's own floor (do not sleep to
+   save less than the sleep costs) applied to the machine that was measured
+   rather than to the 2.2 µs machine its comment was written on. Above it the
+   sweep buys a further 4 percent on the mixed program and pays for it on
+   `par_layout` at eight workers on four cores, where a pause-spin takes a core
+   from a thread that had work, and in idle CPU. Nothing regresses at the
+   chosen point: the two I/O-only mixed builds, the grid and `many_files_wide`
+   are inside their own spread at every form of the grid.
+
+   It also moves design §12 item 1, the open compute-miss regression: against
+   the 406.7 ms and 421.3 ms the tree read before park on miss, `par_layout`'s
+   45 percent at four workers and 103 at eight become 11 and 17. That is not an
+   answer to the item — the fallback it asks for is still the colouring
+   question above — but it is most of the gap, taken without one.
+
+   **The real judge is the Windows job**, and it has not run this. Every number
+   here is a Linux VM whose park-and-wake is 16.2 µs; the failing bar is a
+   Windows VM whose wake is a completion-port round trip, which is the case the
+   spin exists for and the case this host cannot produce. Both constants are
+   `#if !defined` overrides so the bench can sweep them where the bar is, and
+   `sched-enumerate` pins them to one round and no yields — a spin round is a
+   step there, not a delay, and the §11 search costs 9.4 times the states at
+   (T=2,S=4) with one round and 24 times at (T=2,S=3) with two.
+
 ### Decided 2026-09-05: measured before chosen
 
 The owner ruled that the locked form and the lock-free form of §6 are both

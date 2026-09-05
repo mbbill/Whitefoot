@@ -1179,6 +1179,14 @@ void wf_prim_yield(void) {
     current->others_wrote = 0;
 }
 
+void wf_prim_pause(void) {
+    /* Not a step. A pause reaches no shared state, so it can neither observe
+     * anything nor be observed, and announcing it would add a scheduling
+     * point that distinguishes no execution -- it would only multiply the
+     * states the search digests. The looks the bounded spin makes around it
+     * are its steps, and they are announced as they always were. */
+}
+
 /* The oldest completed record the drain has not delivered yet. */
 static io_record *oldest_completed(void) {
     unsigned index;
