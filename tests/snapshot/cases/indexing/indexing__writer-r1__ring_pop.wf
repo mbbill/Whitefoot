@@ -4,7 +4,8 @@ struct Popped {
   next_used: u64;
 }
 
-fn ring_pop(buf: own array<u8, 8>, front: own u64, used: own u64) -> value: own Option<Popped> pure contract {
+fn ring_pop(buf: own FixedVector<u8, 8>, front: own u64, used: own u64) -> value: own Option<Popped> reads(buf) contract {
+  requires len_of(buf) >= 8_u64;
   requires front < 8_u64;
 } {
   doc "ACCEPT: pops the oldest byte from a fixed 8-slot ring; the front is proved inside the array by the contract, and it advances mod 8 without a written certificate.";
@@ -21,7 +22,15 @@ fn ring_pop(buf: own array<u8, 8>, front: own u64, used: own u64) -> value: own 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let buf = array_new::<u8, 8>(0_u8);
+  let buf = fixed_vector::<u8, 8>();
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
+  set buf = place_back(vector: move buf, value: 0_u8);
   let out = ring_pop(buf: move buf, front: 6_u64, used: 2_u64);
   match out {
     Some(value: popped) => {
