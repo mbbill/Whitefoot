@@ -290,3 +290,22 @@ unsigned wf_prim_online_cpus(void) {
     online = sysconf(_SC_NPROCESSORS_ONLN);
     return online > 0 ? (unsigned)online : 0u;
 }
+
+int wf_prim_setting_text(const char *name, char *buffer, size_t capacity) {
+    const char *text;
+    size_t length;
+    if (name == NULL || buffer == NULL || capacity == 0) {
+        return -1;
+    }
+    buffer[0] = '\0';
+    text = getenv(name);
+    if (text == NULL) {
+        return 0;
+    }
+    length = strlen(text);
+    if (length >= capacity) {
+        return -1;
+    }
+    memcpy(buffer, text, length + 1);
+    return 1;
+}

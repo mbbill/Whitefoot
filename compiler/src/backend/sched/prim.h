@@ -307,14 +307,14 @@ void wf_prim_yield(void);
  * `wf_sched_complete`. Returns nonzero when it made progress. May block. */
 int wf_prim_progress(struct wf_sched_core *core);
 
-/* ------------------------------------- the platform layer's own three */
+/* -------------------------------------- the platform layer's own four */
 
 /* Not primitives: the core reaches no shared state through any of these and
  * the enumerator never calls one. They are the parts of design §7's platform
  * layer that the layer *over* the core needs -- thread creation with a
  * reserved host stack (item 1), the thread's attach and detach for the switch
- * (item 3), and the machine's own core count -- stated here so `entry.c`
- * carries one startup policy on every platform.
+ * (item 3), the machine's own core count, and the read of one runtime setting
+ * -- stated here so `entry.c` carries one startup policy on every platform.
  *
  * P1. Creates one detached thread running `entry(argument)` on a host stack of
  * `stack_bytes`, or the platform's own default when that is zero. Returns 0
@@ -363,6 +363,29 @@ void wf_prim_thread_detach(void);
  * platform will not say. `sysctlbyname`/`sysconf` on the host,
  * `GetActiveProcessorCount` on Windows. */
 unsigned wf_prim_online_cpus(void);
+
+/* P4. The text of one runtime setting, copied into the caller's buffer.
+ *
+ * Answers 1 when the setting is set and its text -- which may be empty --
+ * fits, 0 when it is not set, and -1 when it is set but the caller's buffer
+ * cannot hold it. `buffer[0]` is written in every case, so a caller that only
+ * asks whether a setting is set never reads uninitialized bytes. The -1 answer
+ * is the honest one for a value this runtime cannot represent: truncating
+ * would silently turn a value the caller would have refused into one it
+ * accepts, and every caller here treats "set but not delivered" the way it
+ * already treats a value it cannot use. A malformed call -- no name, no
+ * buffer, or no capacity -- is the same answer for the same reason.
+ *
+ * It is behind this seam rather than in the shared units for one reason:
+ * `getenv` is the C standard library on POSIX and mingw, and the MSVC ucrt
+ * marks it deprecated, so a shared unit that names it does not compile on the
+ * shipped Windows toolchain. POSIX answers with `getenv`, Windows with
+ * `GetEnvironmentVariableA`. Every setting name and setting value this runtime
+ * reads is ASCII, which is what makes the A form exact rather than a narrowing
+ * of the W one. */
+#define WF_PRIM_SETTING_BYTES 64u
+
+int wf_prim_setting_text(const char *name, char *buffer, size_t capacity);
 
 #if defined(__cplusplus)
 }

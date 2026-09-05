@@ -317,12 +317,16 @@ int main(int argc, char **argv) {
     unsigned submitted;
     uint64_t inline_executions;
     uint64_t helpers;
+    /* The two settings this probe reads about itself, through the platform
+     * layer's own setting read (`../sched/prim.h`, P4) rather than `getenv`,
+     * which the MSVC ucrt marks deprecated. */
+    char setting[WF_PRIM_SETTING_BYTES];
 
     if (argc != 2) {
         fprintf(stderr, "usage: %s SCRATCH_DIRECTORY\n", argv[0]);
         return 2;
     }
-    if (getenv("WF_IO_HELPERS") != NULL) {
+    if (wf_prim_setting_text("WF_IO_HELPERS", setting, sizeof(setting)) != 0) {
         fprintf(
             stderr,
             "bridge default probe: WF_IO_HELPERS is set; this probe is about "
@@ -415,8 +419,12 @@ int main(int argc, char **argv) {
      * WF_IO_NO_NATIVE_RING, the bridge could ignore it, and the run would pass
      * as a second copy of the native-ring arm. */
     {
-        const char *refused = getenv("WF_IO_NO_NATIVE_RING");
-        if (refused != NULL && refused[0] == '1' && refused[1] == 0
+        int refused = wf_prim_setting_text(
+            "WF_IO_NO_NATIVE_RING",
+            setting,
+            sizeof(setting)
+        );
+        if (refused == 1 && setting[0] == '1' && setting[1] == 0
             && ring_submissions != 0) {
             fprintf(
                 stderr,

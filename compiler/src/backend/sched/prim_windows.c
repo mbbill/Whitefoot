@@ -391,3 +391,32 @@ unsigned wf_prim_online_cpus(void) {
     DWORD active = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
     return active > 0 ? (unsigned)active : 0u;
 }
+
+/* P4. The text of one runtime setting.
+ *
+ * `GetEnvironmentVariableA` reports an unset name by answering 0 with a last
+ * error of ERROR_ENVVAR_NOT_FOUND, and a name whose value is the empty string
+ * by answering 0 with the last error untouched -- so the error is cleared
+ * before the call and read after it, which is the only way the two are told
+ * apart. A value the buffer cannot hold answers with the length it would need,
+ * including the terminator, which is why "at least the capacity" is the
+ * doesn't-fit test and "less than the capacity" is a real length. */
+int wf_prim_setting_text(const char *name, char *buffer, size_t capacity) {
+    DWORD written;
+    if (name == NULL || buffer == NULL || capacity == 0
+        || capacity > (size_t)MAXDWORD) {
+        return -1;
+    }
+    buffer[0] = '\0';
+    SetLastError(ERROR_SUCCESS);
+    written = GetEnvironmentVariableA(name, buffer, (DWORD)capacity);
+    if (written == 0) {
+        buffer[0] = '\0';
+        return GetLastError() == ERROR_ENVVAR_NOT_FOUND ? 0 : 1;
+    }
+    if (written >= (DWORD)capacity) {
+        buffer[0] = '\0';
+        return -1;
+    }
+    return 1;
+}

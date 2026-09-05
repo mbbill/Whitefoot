@@ -269,10 +269,14 @@ static void wf_bridge_shutdown(void) {
  * same state a host without a ring reaches, which is a path the runtime
  * already has rather than one this setting adds.
  *
- * It is read once, before the only call that starts the ring. */
+ * It is read once, before the only call that starts the ring, through the
+ * platform layer's own setting read (`../sched/prim.h`, P4) rather than
+ * `getenv`, because a shared unit that names `getenv` does not compile under
+ * the MSVC ucrt. */
 static int wf_bridge_native_ring_refused(void) {
-    const char *text = getenv("WF_IO_NO_NATIVE_RING");
-    return text != NULL && text[0] == '1' && text[1] == 0;
+    char text[WF_PRIM_SETTING_BYTES];
+    return wf_prim_setting_text("WF_IO_NO_NATIVE_RING", text, sizeof(text)) == 1
+        && text[0] == '1' && text[1] == 0;
 }
 
 /* ------------------------------------------------------------- the ring */
@@ -456,13 +460,13 @@ static void wf_bridge_verify_required_ring(void) {
 }
 
 static int wf_bridge_windows_ring_required(void) {
-    WCHAR required[2];
-    DWORD length = GetEnvironmentVariableW(
-        L"WF_REQUIRE_WINDOWS_IOCP",
-        required,
-        (DWORD)(sizeof(required) / sizeof(required[0]))
-    );
-    return length == 1u && required[0] == L'1';
+    char required[WF_PRIM_SETTING_BYTES];
+    return wf_prim_setting_text(
+               "WF_REQUIRE_WINDOWS_IOCP",
+               required,
+               sizeof(required)
+           ) == 1
+        && required[0] == '1' && required[1] == 0;
 }
 
 static int wf_bridge_ring_start(void) {

@@ -9,9 +9,9 @@
  * One implementation for every platform, with no `#if` of its own. Everything
  * that differs by host -- thread creation with a reserved host stack, the
  * thread's attach and detach for the switch, the machine's core count, the
- * atomics, the yield -- is behind `prim.h`, answered by `prim_host.c` on POSIX
- * and `prim_windows.c` on Windows. `getenv` and `strtol` are the C standard
- * library on both and are used directly. */
+ * atomics, the yield, the read of a setting's text -- is behind `prim.h`,
+ * answered by `prim_host.c` on POSIX and `prim_windows.c` on Windows. `strtol`
+ * is the C standard library on both and is used directly. */
 
 #include "entry.h"
 #include "prim.h"
@@ -134,23 +134,31 @@ __attribute__((weak)) void wf__floor_attach_thread(void) {}
  * a changed ceiling changes the message with it.
  *
  * Answers 1 and writes `*value` when the setting named a number, 0 when it is
- * unset or empty, and does not return otherwise. */
+ * unset or empty, and does not return otherwise.
+ *
+ * A setting whose text is longer than the buffer below reaches the same
+ * diagnostic as any other text that is not a number in range, because that is
+ * what it is: `prim.h`'s P4 refuses to truncate, and no number this rule
+ * admits is anywhere near that long. */
 int wf__sched_setting(
     const char *name,
     unsigned long ceiling,
     unsigned long *value
 ) {
-    const char *text = getenv(name);
+    char text[WF_PRIM_SETTING_BYTES];
+    int state = wf_prim_setting_text(name, text, sizeof(text));
     char *end = NULL;
     long written;
-    if (text == NULL || text[0] == '\0') {
+    if (state == 0 || (state == 1 && text[0] == '\0')) {
         return 0;
     }
-    written = strtol(text, &end, 10);
-    if (end != text && *end == '\0' && written >= 0
-        && (unsigned long)written <= ceiling) {
-        *value = (unsigned long)written;
-        return 1;
+    if (state == 1) {
+        written = strtol(text, &end, 10);
+        if (end != text && *end == '\0' && written >= 0
+            && (unsigned long)written <= ceiling) {
+            *value = (unsigned long)written;
+            return 1;
+        }
     }
     (void)fprintf(
         stderr,
