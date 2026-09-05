@@ -199,7 +199,21 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // static domain obligation before emission. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.43 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.44";
+// v0.45 product-interval review (2026-09-05): the one amendment is front-end
+// fact publication. [ENT-6]'s interval-product rule already proved the four
+// endpoint products it needs to admit a non-constant multiplication; [ENT-3]'s
+// new source S14 stops discarding their least and greatest and establishes
+// them on the value that multiplication binds. Both published relations are
+// constant bounds against the distinguished zero term, they live in the
+// erased proof state, and [ENT-1] erases every one of them before lowering,
+// so nothing reaches the value graph. The amendment only admits programs it
+// previously refused, and every operation those programs emit is a shape this
+// mapping already qualifies: no operation kind, entry form, or result shape is
+// introduced, and every emitted partial operation still passes its static
+// domain obligation before emission. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.44 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.45";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

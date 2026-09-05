@@ -2736,3 +2736,47 @@ ACTIVE-SPEC: v0.43 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6
   conformance case, manifest row, adapter, runner, or collection wiring; the
   boundary recorded with the candidate on 2026-09-04 is unchanged.
 ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049 037c9e69b271a7ae212bd71fa2e79c74a3bf4b2115c0418f4908a24b0a9f6951
+
+## 2026-09-05 — merge-time approval content: activate v0.45 (publish the interval an admitted product already proved; [ENT-3] gains source S14, no rule id added or retired, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.45 at exact SHA-256
+  `07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd`.
+  It supersedes active v0.44 at SHA-256
+  `5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.44.md`. The activated content is one amendment in two
+  places. [ENT-6]'s fixed interval-product rule kept the sentence "this rule
+  publishes no product inequality or intermediate premise"; it now publishes
+  the one thing it had already computed, the constant interval its four
+  endpoint products bound. [ENT-3] gains source S14, which establishes that
+  interval's least and greatest product on the value the admitted
+  multiplication binds. No numbered rule is added or retired (136 remain), no
+  grammar production, atom, or token changes, and no source label is retired
+  or reused. The published relations name only the bound value and the
+  distinguished zero term, so their [ENT-5] support is the bound value alone
+  and no operand relation, new term, or automatic premise route is created; a
+  written `use` remains the only way a product participates in a certificate,
+  and a domain discharged by the finite L0 or affine-clause route publishes
+  nothing.
+- SELECTION GROUND: evidence-selected, recorded in
+  `research/investigations/binary-arithmetic/`. Four independent sweeps
+  against the v0.44 compiler converged on the discarded interval rather than
+  on the strength of the prover. The decisive pair is `E1_bounded_product.wf`,
+  accepted because the interval rule discharges `r * w`, beside
+  `E5_product_then_add.wf`, the same program plus `base + c`, refused [OP-2]
+  because the admitted product bounded nothing; supplying exactly the
+  discarded interval as a written guard turns E5 into an accept. Over the 55
+  constructed multi-dimensional and strided programs the amendment moves
+  exactly two verdicts, both from refusal to acceptance, and relocates the
+  refusal of the guarded flattened-index programs from the arithmetic domain
+  [OP-2] to the subscript bound [OP-4] they were always about.
+- CONFORMANCE BOUNDARY: this merge adds, modifies, deletes, or renames no
+  conformance case, manifest row, adapter, runner, or collection wiring. The
+  compiler test corpus gains a positive S14 case and updates the two source
+  inventories that enumerate [ENT-3]'s sources; those are ordinary compiler
+  tests, not conformance content.
+ACTIVE-SPEC: v0.45 07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

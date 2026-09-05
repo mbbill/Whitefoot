@@ -342,6 +342,11 @@ struct ProofResult {
     route: Option<ProofRoute>,
     derivation: Option<DerivationId>,
     numeric_upper_bound: Option<ProvedNumericUpperBound>,
+    /// The interval [ENT-6]'s fixed interval-product rule proved for an
+    /// admitted non-constant multiplication. Carried out of the judgment so
+    /// [ENT-3.S14] publishes exactly the measurement the domain decision
+    /// consumed, rather than proving the same endpoints a second time.
+    product_interval: Option<AffineProductInterval>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -471,6 +476,16 @@ struct AffineIntegerProduct {
     left: AffineForm,
     right: AffineForm,
     ty: IntegerType,
+}
+
+/// What the fixed interval-product rule proved about one admitted
+/// multiplication: the inclusive interval its four endpoint products bound,
+/// and the affine consequences that proved the operand endpoints.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AffineProductInterval {
+    minimum: i128,
+    maximum: i128,
+    consequences: Box<[DerivationId]>,
 }
 
 #[derive(Clone, Copy)]
@@ -716,6 +731,7 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         goals: GoalTable::default(),
         derivations: DerivationLedger::default(),
         obligations: Vec::new(),
+        product_intervals: HashMap::new(),
         call_goals: Vec::new(),
         counted_derivations: Vec::new(),
         loop_invariants: Vec::new(),
@@ -944,6 +960,12 @@ struct Analyzer<'check, 'unit> {
     goals: GoalTable,
     derivations: DerivationLedger,
     obligations: Vec<ObligationOutcome>,
+    /// The interval [ENT-6]'s interval-product rule proved at each admitted
+    /// non-constant multiplication, keyed by that operation's own node. The
+    /// domain is judged while the initializer is walked and [ENT-3.S14]
+    /// establishes at the binding the walk then reaches, so the measurement
+    /// waits here between the two rather than being proved again.
+    product_intervals: HashMap<crate::NodePath, AffineProductInterval>,
     call_goals: Vec<CallGoalOutcome>,
     counted_derivations: Vec<CountedDerivationSet>,
     loop_invariants: Vec<LoopInvariantOutcome>,
@@ -5463,6 +5485,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         let facts = Self::affine_facts(context.affine);
@@ -5474,6 +5497,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
@@ -5486,6 +5510,7 @@ impl Analyzer<'_, '_> {
             route: Some(ProofRoute::Affine),
             derivation: Some(derivation),
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -5508,6 +5533,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -5539,6 +5565,7 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                 ),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -5565,6 +5592,7 @@ impl Analyzer<'_, '_> {
                 }),
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -5591,6 +5619,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5611,6 +5640,7 @@ impl Analyzer<'_, '_> {
             route: derivation.map(|_| ProofRoute::Affine),
             derivation,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -5756,6 +5786,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if closed.derives(relation) {
@@ -5768,6 +5799,7 @@ impl Analyzer<'_, '_> {
                         .expect("a proved L0 relation must retain its local derivation"),
                 ),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if closed.derives(&relation.negated()) {
@@ -5776,6 +5808,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::L0),
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -5785,6 +5818,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let assumptions = Self::affine_facts(context.affine);
@@ -5796,6 +5830,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
@@ -5808,6 +5843,7 @@ impl Analyzer<'_, '_> {
             route: Some(ProofRoute::Affine),
             derivation: Some(derivation),
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -5831,6 +5867,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if let Some(canonical) = canonical {
@@ -5840,6 +5877,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: closed.opaque_proof(canonical, GoalSign::Positive),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.holds_opaque(canonical, GoalSign::Negative) {
@@ -5848,6 +5886,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5864,6 +5903,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.derives(&relation.negated()) {
@@ -5872,6 +5912,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5892,6 +5933,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5916,6 +5958,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
 
@@ -5936,6 +5979,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5945,6 +5989,7 @@ impl Analyzer<'_, '_> {
             route: None,
             derivation: None,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -6020,6 +6065,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if let Some(goal) = goal {
@@ -6029,6 +6075,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: closed.opaque_proof(goal, GoalSign::Positive),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.holds_opaque(goal, GoalSign::Negative) {
@@ -6037,6 +6084,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -6051,6 +6099,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.derives(&relation.negated()) {
@@ -6059,6 +6108,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -6069,6 +6119,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let assumptions = Self::affine_facts(context.affine);
@@ -6080,6 +6131,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
@@ -6093,6 +6145,7 @@ impl Analyzer<'_, '_> {
             route: Some(ProofRoute::Affine),
             derivation: Some(derivation),
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -6859,6 +6912,14 @@ impl Analyzer<'_, '_> {
         let discharged = outcome.disposition == ProofDisposition::Proved;
         let refuted = outcome.disposition == ProofDisposition::Refuted;
         let contradictory = outcome.route == Some(ProofRoute::Contradiction);
+        // [ENT-3.S14] publishes only what an admitted multiplication proved,
+        // so the interval is retained exactly when this obligation discharged
+        // through the interval-product route.
+        if discharged
+            && let Some(interval) = outcome.product_interval.clone()
+        {
+            self.product_intervals.insert(node_path.clone(), interval);
+        }
         let ordinal = u32::try_from(self.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if let Some(root) = outcome.derivation {
@@ -7180,10 +7241,11 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Affine),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
-        if let Some(derivation) = goal.affine_product.and_then(|product| {
+        if let Some((derivation, interval)) = goal.affine_product.and_then(|product| {
             self.affine_integer_product_derivation(
                 product,
                 context.affine,
@@ -7196,6 +7258,11 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Affine),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                // [ENT-3.S14] establishes this interval on whatever value the
+                // multiplication binds. It travels with the judgment because
+                // only this route proved it: a domain discharged by the finite
+                // L0 or affine-clause route publishes no product interval.
+                product_interval: Some(interval),
             };
         }
 
@@ -7204,6 +7271,7 @@ impl Analyzer<'_, '_> {
             route: None,
             derivation: None,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -7243,6 +7311,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -7260,6 +7329,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.holds_opaque(canonical, GoalSign::Negative) {
@@ -7268,6 +7338,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -7321,6 +7392,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::L0),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -7344,6 +7416,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::L0),
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -7352,6 +7425,7 @@ impl Analyzer<'_, '_> {
             route: None,
             derivation: None,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -7433,7 +7507,26 @@ impl Analyzer<'_, '_> {
         affine: &AffineFlowState,
         facts: &FactState,
         goal: Option<GoalId>,
-    ) -> Option<DerivationId> {
+    ) -> Option<(DerivationId, AffineProductInterval)> {
+        let interval = self.affine_integer_product_interval(product, affine, facts)?;
+        let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
+            goal,
+            parents: interval.consequences.to_vec(),
+        });
+        Some((derivation, interval))
+    }
+
+    /// The one measurement the fixed interval-product rule performs. The four
+    /// endpoint products decide [ENT-6]'s domain admission and bound
+    /// [ENT-3.S14]'s published interval, so both read this result rather than
+    /// proving the same endpoints twice: the admitted range and the published
+    /// bound then cannot disagree by construction.
+    fn affine_integer_product_interval(
+        &mut self,
+        product: &AffineIntegerProduct,
+        affine: &AffineFlowState,
+        facts: &FactState,
+    ) -> Option<AffineProductInterval> {
         let assumptions = Self::affine_facts(affine);
         let left = self.affine_closed_interval_proof(&product.left, &assumptions, affine, facts)?;
         let right =
@@ -7452,8 +7545,13 @@ impl Analyzer<'_, '_> {
         {
             return None;
         }
+        // The extrema of a product over two inclusive intervals occur among
+        // exactly these four pairs, so the tightest interval the rule can
+        // state is their own minimum and maximum.
+        let minimum = *products.iter().min()?;
+        let maximum = *products.iter().max()?;
 
-        let consequences = [
+        let consequences: Vec<DerivationId> = [
             left.minimum.consequence,
             left.maximum.consequence,
             right.minimum.consequence,
@@ -7468,10 +7566,11 @@ impl Analyzer<'_, '_> {
             })
         })
         .collect();
-        Some(self.derivations.intern(DerivationNode::IntegerDomain {
-            goal,
-            parents: consequences,
-        }))
+        Some(AffineProductInterval {
+            minimum,
+            maximum,
+            consequences: consequences.into_boxed_slice(),
+        })
     }
 
     /// Computes the tightest endpoint found by the existing coefficient-one
