@@ -557,17 +557,24 @@ fn windows_completion_modules_require_the_native_runtime_at_link_time() {
     let module = emit_windows_completion(POSITIONED_READS);
 
     assert!(crate::module_requires_completion_runtime(&module));
+    // The `wf__completion_wait_core_capacity` entry is retired here with the
+    // Windows verdict fork that called it, on the owner's ruling recorded in
+    // design section 8: a submit answers nothing, so core pressure is the
+    // target runtime's own business and never reaches emitted code.
     for declaration in [
-        "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)",
-        "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)",
+        "declare void @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)",
+        "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)",
         "declare void @wf__completion_file_join(ptr, ptr, ptr)",
-        "declare void @wf__completion_wait_core_capacity()",
     ] {
         assert!(
             module.contains(declaration),
             "Windows completion must name the native ABI `{declaration}`:\n{module}"
         );
     }
+    assert!(
+        !module.contains("@wf__completion_wait_core_capacity"),
+        "the retired capacity wait must not be named at all:\n{module}"
+    );
     assert!(
         !module.contains("define weak i32 @wf__completion_file_read_submit"),
         "a missing Windows runtime must be a link error, not a direct backend"
@@ -578,88 +585,52 @@ fn windows_completion_modules_require_the_native_runtime_at_link_time() {
     );
 }
 
+/// Core pressure on the Windows target must never become direct execution.
+///
+/// The retry-shape assertions of
+/// `windows_core_pressure_materializes_the_oldest_owned_result_and_retries`
+/// are retired here on the owner's ruling recorded in design section 8: the
+/// verdict fork they described is gone with the inline arm it selected, so a
+/// submit answers nothing and there is no oldest owned result to materialize
+/// and no retry to shape. The assertion design section 8 says **stays** is the
+/// one below, and it is now the stronger statement the one lowering makes:
+/// there is no direct-execution arm in the emitted function at all.
 #[test]
-fn windows_core_pressure_materializes_the_oldest_owned_result_and_retries() {
+fn windows_core_pressure_never_becomes_direct_execution() {
     let source = more_than_target_capacity_reads(3);
     let module = emit_windows_completion(&source);
     let body = emitted_function(&module, "main");
     let submissions = body
-        .matches("call i32 @wf__completion_file_pread_submit")
+        .matches("call void @wf__completion_file_pread_submit")
         .count();
 
     assert_eq!(submissions, 2, "the source-last read remains direct");
-    assert_eq!(
-        body.matches(" = icmp eq i32 ").count(),
-        submissions * 3,
-        "each submit distinguishes DIRECT_ONLY, ACCEPTED, and WAIT_CORE_CAPACITY"
+    assert!(
+        !body.contains("completion.inline."),
+        "core pressure must never become direct execution:\n{body}"
     );
-    assert_eq!(
-        body.matches(", 2\n  br i1 ").count(),
-        submissions,
-        "status 2 must have its own branch at every submit"
+    assert!(
+        !body.contains("completion.verdict."),
+        "a submit that answers nothing has no verdict to branch on:\n{body}"
     );
-    assert_eq!(
-        body.matches("call void @wf__completion_wait_core_capacity()")
-            .count(),
-        submissions,
-        "every site has a no-owned-token capacity wait before retry"
+    assert!(
+        !body.contains("completion.capacity."),
+        "capacity is the target runtime's own business:\n{body}"
     );
-    assert_eq!(
-        body.matches("completion.capacity.consume.").count(),
-        2,
-        "the second submit has one consume label and one branch to it"
+    assert!(
+        !body.contains("@wf__completion_wait_core_capacity"),
+        "the emitted module must not name the retired capacity wait:\n{body}"
     );
     assert_eq!(
         body.matches("call void @wf__completion_file_join").count(),
-        3,
-        "two source joins plus one pressure-path materialization consume each token at most once"
+        submissions,
+        "each submitted read is joined exactly once, with no pressure-path \
+         materialization beside it"
     );
-
-    let lines = body.lines().collect::<Vec<_>>();
-    let wait_verdicts = lines
-        .windows(3)
-        .filter(|window| {
-            window[0].trim().starts_with("completion.verdict.wait.")
-                && window[0].trim().ends_with(':')
-        })
-        .map(|window| window[2])
-        .collect::<Vec<_>>();
-    assert_eq!(wait_verdicts.len(), submissions);
-    for branch in wait_verdicts {
-        assert!(branch.contains("label %completion.capacity."), "{branch}");
-        assert!(
-            branch.contains("label %completion.verdict.invalid."),
-            "{branch}"
-        );
-        assert!(
-            !branch.contains("completion.inline."),
-            "core pressure must never become direct execution: {branch}"
-        );
-    }
-
-    let consume = body
-        .split_once("\ncompletion.capacity.consume.")
-        .expect("the second submit can consume the first request")
-        .1
-        .split_once("\ncompletion.capacity.next.")
-        .expect("the consume arm rejoins the owner scan")
-        .0;
-    assert!(consume.contains("call void @wf__completion_file_join"));
-    let mapped = consume
-        .find("@wf.sys.read.completion(")
-        .expect("the pressure path maps the raw result");
-    let stored = consume[mapped..]
-        .find("\n  store ")
-        .map(|offset| mapped + offset)
-        .expect("the pressure path stores the typed result");
-    let cleared = consume
-        .find("store i1 false")
-        .expect("the pressure path relinquishes target ownership");
-    assert!(mapped < stored && stored < cleared, "{consume}");
-    assert!(consume.contains("br label %completion.submit."));
-    assert!(
-        body.matches("call void @abort()").count() >= submissions,
-        "an unknown runtime verdict must abort"
+    assert_eq!(
+        body.matches("@wf.sys.read_at.v1(").count(),
+        1,
+        "only the source-last read, which was never handed out, runs directly"
     );
 }
 
@@ -779,7 +750,7 @@ fn only_an_actualized_target_operation_selects_the_completion_runtime() {
     // (design section 8): no module can publish a writer frame any more, so
     // there is no predicate left to ask.
     assert!(sequential.contains("@wf__completion_file_write_direct"));
-    assert!(!sequential.contains("call i32 @wf__completion_file_write_submit"));
+    assert!(!sequential.contains("call void @wf__completion_file_write_submit"));
     assert!(!pure.contains("wf__completion_"));
     assert_eq!(pure, pure_sequential);
 }
@@ -791,7 +762,7 @@ fn compute_world_selection_does_not_disable_completion_io() {
     assert!(crate::module_requires_completion_runtime(&module));
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_write_submit")
+            .matches("call void @wf__completion_file_write_submit")
             .count(),
         2,
         "both compute worlds submit the earlier I/O and keep the source-last call direct"
@@ -851,7 +822,7 @@ fn one_slot_submission_crosses_its_edge_before_the_drain_joins_and_dispatches() 
     assert!(feeder_start < drain_start);
     let feeder_body = &body[feeder_start..drain_start];
     let submit = feeder_body
-        .find("call i32 @wf__completion_file_open_at_submit")
+        .find("call void @wf__completion_file_open_at_submit")
         .expect("the feeder must submit the open");
     let branch = feeder_body
         .find(&format!("br label %{drain_label}"))
@@ -942,29 +913,52 @@ fn source_derived_two_slot_batch_links_and_preserves_every_iteration() {
     std::fs::remove_dir(directory).expect("remove completion test directory");
 }
 
-/// Windows pressure recovery may inspect a ring element before that iteration
-/// takes its submit arm. Its submission-state array must therefore start false
-/// in the entry prelude, not on a path through the loop body.
+/// Every route through a staged iteration writes that slot's submission state
+/// before any drain can read it.
+///
+/// The entry-prelude `zeroinitializer` this used to pin is retired with the
+/// Windows pressure fork that needed it (design section 8): nothing inspects
+/// another iteration's slot any more, and both routes an iteration can take --
+/// the submit and the refused component name -- store the flag on the way to
+/// the drain. That is the property asserted here instead, and it is what makes
+/// the pre-initialization unnecessary rather than merely absent.
 #[test]
 fn windows_staged_ring_initializes_submission_state_before_pressure_recovery() {
     let module = emit_windows_completion(BOUNDED_BATCH_OPENS);
     let body = emitted_function(&module, "main");
-    let initialized = body
-        .find("store [2 x i1] zeroinitializer, ptr ")
-        .expect("the submission-state ring is initialized in the entry prelude");
-    let submit = body
-        .find("call i32 @wf__completion_file_open_at_submit")
-        .expect("the source-derived batch submits an open");
-    let pressure = body
-        .find("completion.capacity.v")
-        .expect("Windows emits a capacity-recovery path");
     assert!(
-        initialized < submit && initialized < pressure,
-        "the state ring starts false before either an accepted submit or a pressure path"
+        !body.contains("completion.capacity.v"),
+        "Windows emits no capacity-recovery path any more:\n{body}"
+    );
+    assert!(
+        !body.contains("store [2 x i1] zeroinitializer, ptr "),
+        "no route reads a submission state it did not write:\n{body}"
+    );
+    let submit = body
+        .find("call void @wf__completion_file_open_at_submit")
+        .expect("the source-derived batch submits an open");
+    let refused = body
+        .find("completion.not_submitted.v")
+        .expect("a refused component name is the one route without a submission");
+    let stored = body
+        .match_indices("store i1 ")
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        stored.len(),
+        1,
+        "one iteration owns one submission-state element:\n{body}"
+    );
+    let loaded = body
+        .find("load i1, ptr ")
+        .expect("the drain reads the submission state of the slot it retires");
+    assert!(
+        submit < stored[0] && refused < stored[0] && stored[0] < loaded,
+        "both routes reach the store, and the store precedes the drain's load"
     );
     assert!(
         module.contains("declare void @abort() noreturn"),
-        "the invalid Windows submit verdict remains fail-closed"
+        "the Windows floor remains fail-closed"
     );
 }
 
@@ -1028,7 +1022,7 @@ fn a_target_without_native_completion_runs_the_same_batch_one_iteration_at_a_tim
 fn the_file_helper_receives_a_typed_request_and_never_a_writer_thunk() {
     let module = emit(INDEPENDENT_WRITES);
     let first = module
-        .find("call i32 @wf__completion_file_write_submit")
+        .find("call void @wf__completion_file_write_submit")
         .expect("submit the first owned operation");
     let join = module[first..]
         .find("call void @wf__completion_file_join")
@@ -1037,7 +1031,7 @@ fn the_file_helper_receives_a_typed_request_and_never_a_writer_thunk() {
     assert!(first < join);
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_write_submit")
+            .matches("call void @wf__completion_file_write_submit")
             .count(),
         1,
         "only a call with later independent work is submitted"
@@ -1064,7 +1058,7 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
     assert!(crate::module_requires_completion_runtime(&module));
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_pread_submit")
+            .matches("call void @wf__completion_file_pread_submit")
             .count(),
         1,
         "the final positioned read keeps the direct specialization"
@@ -1076,10 +1070,10 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
     assert!(crate::COMPLETION_BRIDGE_SOURCE.contains("file_offset > (uint64_t)INT64_MAX"));
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
     let pread = bridge
-        .split_once("int wf__completion_file_pread_submit(")
+        .split_once("void wf__completion_file_pread_submit(")
         .expect("the bridge exposes positioned read")
         .1
-        .split_once("int wf__completion_file_write_submit(")
+        .split_once("void wf__completion_file_write_submit(")
         .expect("positioned read precedes write")
         .0;
     assert!(
@@ -1087,10 +1081,10 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
         "Linux must try native completion before constructing the typed fallback"
     );
     let write = bridge
-        .split_once("int wf__completion_file_write_submit(")
+        .split_once("void wf__completion_file_write_submit(")
         .expect("the bridge exposes write_once")
         .1
-        .split_once("int wf__completion_file_open_at_submit(")
+        .split_once("void wf__completion_file_open_at_submit(")
         .expect("ordinary write submit precedes the open submission")
         .0;
     assert!(!write.contains("wf_bridge_submit_linux"));
@@ -1159,9 +1153,15 @@ fn one_empty_write_uses_the_normal_direct_operation_path() {
 /// The emitter writes a block's phis before it writes the blocks that reach
 /// it, so an incoming edge is named by predicting the label its predecessor
 /// will end at. Every construct that opens a further LLVM block moves that
-/// label; a direct completion hand-out does too, and naming the plain `bbN`
-/// header instead produced a module `clang` rejects outright. Building the
-/// executable is the assertion: an invalid module never links.
+/// label; naming the plain `bbN` header where the predecessor ends somewhere
+/// else produced a module `clang` rejects outright. Building the executable is
+/// the assertion: an invalid module never links.
+///
+/// The prediction this pins was `%par.done.`, which is retired here with the
+/// two-arm join (design section 8): a write submits and joins in straight line
+/// now, so its hand-out opens no block and the prediction is the plain header
+/// again. Getting that wrong is the same link failure in the other direction,
+/// so the same test still holds it.
 #[test]
 fn a_completion_window_before_a_block_join_names_its_join_block() {
     for lowering in [OverlapLowering::Completion, OverlapLowering::On] {
@@ -1179,9 +1179,22 @@ fn a_completion_window_before_a_block_join_names_its_join_block() {
         );
         for phi in block_parameters {
             assert!(
-                phi.contains("%par.done."),
-                "{lowering:?}: the arm's edge leaves the completion join block: {phi}"
+                !phi.contains("%par.done."),
+                "{lowering:?}: a write's one-route join opens no block of its \
+                 own, so no edge can leave one: {phi}"
             );
+            for edge in phi.split("], [") {
+                let label = edge
+                    .rsplit_once("%")
+                    .expect("every phi edge names a predecessor label")
+                    .1
+                    .trim_end_matches([' ', ']']);
+                assert!(
+                    joined.contains(&format!("\n{label}:")),
+                    "{lowering:?}: the predicted label `{label}` is not a block \
+                     of this function: {phi}"
+                );
+            }
         }
 
         let directory = test_directory();
@@ -1494,7 +1507,7 @@ fn a_reused_unique_output_waits_only_for_its_own_prior_operation() {
         .expect("command entry is emitted")
         .1;
     let submits = body
-        .match_indices("call i32 @wf__completion_file_write_submit")
+        .match_indices("call void @wf__completion_file_write_submit")
         .map(|(position, _)| position)
         .collect::<Vec<_>>();
     let joins = body
@@ -1511,16 +1524,19 @@ fn a_reused_unique_output_waits_only_for_its_own_prior_operation() {
         "A and B submit; source-last C stays direct"
     );
     assert_eq!(joins.len(), 2, "each submitted operation is consumed once");
+    // One direct call, not three: A and B have no inline arm to name the
+    // sequential wrapper from any more, so the only direct call left is C,
+    // which was never handed out (design section 8).
     assert_eq!(
         direct_calls.len(),
-        3,
-        "each path retains its direct fallback"
+        1,
+        "only the call that was never handed out stays direct"
     );
     assert!(
         submits[0] < submits[1]
             && submits[1] < joins[0]
-            && joins[0] < direct_calls[2]
-            && direct_calls[2] < joins[1],
+            && joins[0] < direct_calls[0]
+            && direct_calls[0] < joins[1],
         "C must wait for A, then run while unrelated B remains pending"
     );
 }
@@ -1574,7 +1590,7 @@ fn more_than_sixty_four_calls_progress_by_falling_back_only_the_full_call() {
     let module = emit(&source);
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_pread_submit")
+            .matches("call void @wf__completion_file_pread_submit")
             .count(),
         65,
         "every call with later work attempts its own submission"
@@ -1599,7 +1615,7 @@ fn more_than_sixty_four_calls_progress_by_falling_back_only_the_full_call() {
 #[test]
 fn a_rejected_nonregular_open_does_not_delay_independent_writer_work() {
     let module = emit(BLOCKING_OPEN_AND_MARKER);
-    assert!(module.contains("call i32 @wf__completion_file_open_at_submit"));
+    assert!(module.contains("call void @wf__completion_file_open_at_submit"));
     let directory = test_directory();
     let fifo = directory.join("blocking-open");
     let created = Command::new("mkfifo")
@@ -1633,7 +1649,7 @@ fn direct_and_completion_open_read_reject_a_fifo_without_blocking() {
     let direct = emit_lowered(DIRECT_NONREGULAR_OPEN, crate::OverlapLowering::Off);
     let completion = emit(COMPLETION_NONREGULAR_OPEN);
     assert!(!direct.contains("@wf__completion_file_open_at_submit"));
-    assert!(completion.contains("call i32 @wf__completion_file_open_at_submit"));
+    assert!(completion.contains("call void @wf__completion_file_open_at_submit"));
     assert!(completion.contains("i32 1, ptr %"));
 
     let directory = test_directory();
@@ -1672,7 +1688,7 @@ fn component_directory_open_uses_the_same_typed_completion_route() {
     let module = emit(INDEPENDENT_COMPONENT_OPENS);
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_open_at_submit")
+            .matches("call void @wf__completion_file_open_at_submit")
             .count(),
         1
     );
@@ -1706,7 +1722,7 @@ fn windows_component_completion_stages_one_terminated_utf16_name() {
         .split_once("completion.component.entry.")
         .expect("the Windows completion route validates the component")
         .1
-        .split_once("call i32 @wf__completion_file_open_at_submit")
+        .split_once("call void @wf__completion_file_open_at_submit")
         .expect("the validated component reaches the typed submit")
         .0;
 
@@ -1725,7 +1741,7 @@ fn directory_source_open_uses_the_typed_completion_route() {
     let module = emit(INDEPENDENT_DIRECTORY_SOURCE_OPENS);
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_open_at_submit")
+            .matches("call void @wf__completion_file_open_at_submit")
             .count(),
         1
     );
@@ -1753,7 +1769,7 @@ fn regular_file_open_maps_status_and_release_after_completion() {
     let module = emit(INDEPENDENT_REGULAR_FILE_OPENS);
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_open_at_submit")
+            .matches("call void @wf__completion_file_open_at_submit")
             .count(),
         1
     );
@@ -1793,7 +1809,7 @@ fn directory_enumeration_completes_before_writer_normalization() {
     let module = emit(INDEPENDENT_DIRECTORY_READS);
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_directory_next_submit")
+            .matches("call void @wf__completion_directory_next_submit")
             .count(),
         1
     );
@@ -1952,15 +1968,15 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_runs_there() {
         "only the positioned read may run on its caller"
     );
     let pread = bridge
-        .split_once("int wf__completion_file_pread_submit(")
+        .split_once("void wf__completion_file_pread_submit(")
         .expect("the bridge exposes positioned read")
         .1
-        .split_once("int wf__completion_file_write_submit(")
+        .split_once("void wf__completion_file_write_submit(")
         .expect("positioned read precedes write")
         .0;
     assert!(
         pread.find("wf_bridge_positioned_read_runs_on_caller(count)")
-            < pread.find("return wf_bridge_dispatch(held);\n}"),
+            < pread.find("wf_bridge_dispatch(held);\n}"),
         "the decision comes before the record reaches an engine: {pread}"
     );
     assert!(
@@ -1970,11 +1986,19 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_runs_there() {
     );
     // Whichever arm it takes, the record is published: there is no `0`.
     assert!(
-        pread.contains("return wf_bridge_execute_here(held);"),
+        pread.contains("wf_bridge_execute_here(held);"),
         "the inline arm publishes the record rather than answering 0: {pread}"
     );
+    // The one refusal a writer can spell: an offset the target ABI cannot
+    // express. It is the host's own EINVAL, published into the record, and no
+    // longer a reason to terminate now that no direct wrapper can take the
+    // shape instead (design section 8).
+    assert!(
+        pread.contains("wf_bridge_complete_refused(held, EINVAL);"),
+        "an offset above INT64_MAX is published as EINVAL: {pread}"
+    );
     let submits = bridge
-        .split_once("int wf__completion_file_read_submit(")
+        .split_once("void wf__completion_file_read_submit(")
         .expect("the submit family starts at the plain read")
         .1
         .split_once("/* ------------------------------------------------------------ the window */")
@@ -2215,7 +2239,7 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
     // question is asked before the record is offered, so a kind the ring does
     // not carry is never refused after the operation was already the ring's.
     let dispatch = bridge
-        .split_once("static int wf_bridge_dispatch(wf_completion_record *record) {")
+        .split_once("static void wf_bridge_dispatch(wf_completion_record *record) {")
         .expect("one dispatcher")
         .1
         .split_once("\n}\n")
@@ -2225,7 +2249,7 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
         .find("wf_linux_io_uring_carries(record)")
         .expect("the dispatcher asks the ring first");
     let fallback = dispatch
-        .find("return wf_bridge_submit_file(record);")
+        .find("wf_bridge_submit_file(record);")
         .expect("the dispatcher keeps the bounded adapter");
     assert!(
         native < fallback,
@@ -2398,7 +2422,7 @@ fn completion_write_shape(module: &str) -> (usize, usize, usize) {
         .expect("command entry is emitted")
         .1;
     (
-        body.matches("call i32 @wf__completion_file_write_submit")
+        body.matches("call void @wf__completion_file_write_submit")
             .count(),
         body.matches("call void @wf__completion_file_join").count(),
         body.matches("@wf.sys.write_once.v1(").count(),
@@ -2432,9 +2456,12 @@ fn assert_publishes_marked_streams(module: &str) {
 fn a_call_in_scrutinee_position_is_handed_out_exactly_as_a_bound_call_is() {
     let bound = emit(SCRUTINEE_TAIL_LET_FORM);
     let scrutinee = emit(SCRUTINEE_TAIL_MATCH_FORM);
+    // One direct call, not two: the handed-out write no longer has an inline
+    // arm to name the sequential wrapper from, so the only direct call left is
+    // the source-last write that was never handed out (design section 8).
     assert_eq!(
         completion_write_shape(&bound),
-        (1, 1, 2),
+        (1, 1, 1),
         "the bound form submits the first write and leaves the second direct"
     );
     assert_eq!(

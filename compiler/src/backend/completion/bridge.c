@@ -697,6 +697,15 @@ void wf__completion_file_status_join(
 
 /* ----------------------------------------------------------- the submits */
 
+/* Whether the operation has no external action at all, because its transfer
+ * range is empty.
+ *
+ * The emitted code no longer holds this back: with one lowering per operation
+ * an empty range is submitted like any other and the runtime completes it, so
+ * every kind that carries a byte count answers here -- directory enumeration
+ * included, whose host facility refuses a zero-sized batch rather than
+ * reporting an empty one (design section 8, "One lowering for every I/O
+ * operation"). */
 static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
     switch (request->kind) {
         case WF_FILE_READ:
@@ -705,6 +714,10 @@ static int wf_bridge_file_request_is_empty(const wf_file_request *request) {
             return request->operation.write.count == 0;
         case WF_FILE_PREAD:
             return request->operation.pread.count == 0;
+#if defined(WF_FILE_HAS_DIRECTORY_NEXT)
+        case WF_FILE_DIRECTORY_NEXT:
+            return request->operation.directory_next.count == 0;
+#endif
         default:
             return 0;
     }
@@ -728,7 +741,7 @@ static wf_file_result wf_bridge_execute_direct(
  * program can take (design §7.1, primitive 7).  It is the same host call on
  * the same thread the refused submission used to leave to the caller, with the
  * record published at the end. */
-static int wf_bridge_execute_here(wf_completion_record *record) {
+static void wf_bridge_execute_here(wf_completion_record *record) {
     wf_file_result result;
     record->route = WF_COMPLETION_ROUTE_INLINE;
     atomic_fetch_add_explicit(
@@ -740,12 +753,11 @@ static int wf_bridge_execute_here(wf_completion_record *record) {
     wf_bridge_flush_target();
     result = wf_bridge_execute_direct(&record->request);
     wf_file_complete_record(record, &result);
-    return 1;
 }
 
 /* An empty transfer has no external action at all, so there is nothing to
  * execute and nothing to overlap: the record is completed here. */
-static int wf_bridge_complete_empty(wf_completion_record *record) {
+static void wf_bridge_complete_empty(wf_completion_record *record) {
     wf_file_result result;
     memset(&result, 0, sizeof(result));
     result.head.kind = record->request.kind;
@@ -757,14 +769,14 @@ static int wf_bridge_complete_empty(wf_completion_record *record) {
         memory_order_relaxed
     );
     wf_file_complete_record(record, &result);
-    return 1;
 }
 
 /* Queues the record on the bounded POSIX adapter, or executes it here when
  * that adapter cannot be built.  Either way the record is the runtime's. */
-static int wf_bridge_submit_file(wf_completion_record *record) {
+static void wf_bridge_submit_file(wf_completion_record *record) {
     if (!wf_bridge_ensure_file()) {
-        return wf_bridge_execute_here(record);
+        wf_bridge_execute_here(record);
+        return;
     }
     if (wf_file_adapter_submit(&wf_bridge_adapter, record)
         != WF_FILE_TARGET_OWNS) {
@@ -772,10 +784,10 @@ static int wf_bridge_submit_file(wf_completion_record *record) {
          * answer left is an adapter that has stopped admitting -- the process
          * is exiting -- and the operation is executed here instead of being
          * left unpublished. */
-        return wf_bridge_execute_here(record);
+        wf_bridge_execute_here(record);
+        return;
     }
     wf_bridge_notify_target();
-    return 1;
 }
 
 /* Whether a positioned transfer is better made where it was stated than
@@ -830,10 +842,12 @@ static wf_completion_record *wf_bridge_begin(void *record) {
 
 /* Hands the record to whichever engine can take it, in the one order every
  * submit uses: the ring where it has a form for this kind, then the bounded
- * adapter, and the engine here when neither applies.  Always returns 1. */
-static int wf_bridge_dispatch(wf_completion_record *record) {
+ * adapter, and the engine here when neither applies.  Every path ends in a
+ * record the runtime owns, so there is nothing to answer. */
+static void wf_bridge_dispatch(wf_completion_record *record) {
     if (wf_bridge_file_request_is_empty(&record->request)) {
-        return wf_bridge_complete_empty(record);
+        wf_bridge_complete_empty(record);
+        return;
     }
 #if defined(__linux__)
     if (wf_bridge_linux_ready != 0
@@ -848,13 +862,13 @@ static int wf_bridge_dispatch(wf_completion_record *record) {
         if (wf_linux_io_uring_progress_error(&wf_bridge_linux_adapter) != 0) {
             abort();
         }
-        return 1;
+        return;
     }
 #endif
-    return wf_bridge_submit_file(record);
+    wf_bridge_submit_file(record);
 }
 
-int wf__completion_file_read_submit(
+void wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
@@ -868,10 +882,32 @@ int wf__completion_file_read_submit(
     held->request.operation.read.descriptor = descriptor;
     held->request.operation.read.buffer = buffer;
     held->request.operation.read.count = (size_t)count;
-    return wf_bridge_dispatch(held);
+    wf_bridge_dispatch(held);
 }
 
-int wf__completion_file_pread_submit(
+/* Publishes a refusal the host itself would have made, without asking it.
+ *
+ * A failed outcome and a terminated process are different things, and only
+ * one of them is what an offset the target ABI cannot express deserves: the
+ * writer may spell any `u64` offset, and the host answers an offset above
+ * `INT64_MAX` with EINVAL.  The record is completed with exactly that answer,
+ * so the emitted mapper builds the same failed outcome it built when this
+ * shape still went to the direct wrapper (design section 8, "One lowering for
+ * every I/O operation").  Nothing is executed, so the inline-execution count
+ * is untouched; the publication count is not, because this is one record's
+ * one terminal completion. */
+static void wf_bridge_complete_refused(
+    wf_completion_record *record,
+    int error_code
+) {
+    record->route = WF_COMPLETION_ROUTE_INLINE;
+    record->result.kind = record->request.kind;
+    record->result.value = -1;
+    record->result.error_code = error_code;
+    wf_completion_record_complete(record);
+}
+
+void wf__completion_file_pread_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
@@ -879,27 +915,32 @@ int wf__completion_file_pread_submit(
     void *record
 ) {
     wf_completion_record *held = wf_bridge_begin(record);
-    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count
-        || file_offset > (uint64_t)INT64_MAX) {
+    if ((buffer == NULL && count != 0) || (uint64_t)(size_t)count != count) {
         abort();
     }
     held->request.kind = WF_FILE_PREAD;
     held->request.operation.pread.descriptor = descriptor;
     held->request.operation.pread.buffer = buffer;
     held->request.operation.pread.count = (size_t)count;
+    if (file_offset > (uint64_t)INT64_MAX) {
+        wf_bridge_complete_refused(held, EINVAL);
+        return;
+    }
     held->request.operation.pread.offset = (int64_t)file_offset;
 #if defined(__linux__)
     if (wf_bridge_linux_ready != 0 && wf_linux_io_uring_carries(held)) {
-        return wf_bridge_dispatch(held);
+        wf_bridge_dispatch(held);
+        return;
     }
 #endif
     if (wf_bridge_positioned_read_runs_on_caller(count)) {
-        return wf_bridge_execute_here(held);
+        wf_bridge_execute_here(held);
+        return;
     }
-    return wf_bridge_dispatch(held);
+    wf_bridge_dispatch(held);
 }
 
-int wf__completion_file_write_submit(
+void wf__completion_file_write_submit(
     int descriptor,
     const void *buffer,
     uint64_t count,
@@ -919,10 +960,10 @@ int wf__completion_file_write_submit(
     held->request.operation.write.descriptor = descriptor;
     held->request.operation.write.buffer = buffer;
     held->request.operation.write.count = (size_t)count;
-    return wf_bridge_dispatch(held);
+    wf_bridge_dispatch(held);
 }
 
-int wf__completion_file_open_at_submit(
+void wf__completion_file_open_at_submit(
     int directory,
     const char *path,
     int flags,
@@ -947,10 +988,10 @@ int wf__completion_file_open_at_submit(
     held->request.operation.open_at.has_mode = has_mode;
     held->request.operation.open_at.expected_kind =
         (enum wf_file_expected_kind)expected_kind;
-    return wf_bridge_dispatch(held);
+    wf_bridge_dispatch(held);
 }
 
-int wf__completion_file_status_submit(
+void wf__completion_file_status_submit(
     int descriptor,
     void *status,
     uint64_t status_capacity,
@@ -965,20 +1006,20 @@ int wf__completion_file_status_submit(
     held->request.operation.status.descriptor = descriptor;
     held->request.operation.status.destination = status;
     held->request.operation.status.capacity = (size_t)status_capacity;
-    return wf_bridge_dispatch(held);
+    wf_bridge_dispatch(held);
 }
 
-int wf__completion_file_close_submit(
+void wf__completion_file_close_submit(
     int descriptor,
     void *record
 ) {
     wf_completion_record *held = wf_bridge_begin(record);
     held->request.kind = WF_FILE_CLOSE;
     held->request.operation.close.descriptor = descriptor;
-    return wf_bridge_dispatch(held);
+    wf_bridge_dispatch(held);
 }
 
-int wf__completion_directory_next_submit(
+void wf__completion_directory_next_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
@@ -996,7 +1037,7 @@ int wf__completion_directory_next_submit(
     held->request.operation.directory_next.buffer = buffer;
     held->request.operation.directory_next.count = (size_t)count;
     held->request.operation.directory_next.position = position;
-    return wf_bridge_dispatch(held);
+    wf_bridge_dispatch(held);
 #else
     /* A family with no [QUAL-2] enumeration facility compiles no such request
      * kind, and `backend/qualification.rs` refuses the operation for that

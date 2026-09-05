@@ -1080,7 +1080,7 @@ fn direct_staged_loop_builds_a_two_slot_issue_and_drain_driver() {
         // by `the_record_block_abi_constants_agree_with_the_contract_header`.
         assert!(llvm.contains("[2 x [128 x i8]]"));
         assert!(llvm.contains("getelementptr inbounds [2 x [128 x i8]]"));
-        assert!(llvm.contains("call i32 @wf__completion_file_open_at_submit("));
+        assert!(llvm.contains("call void @wf__completion_file_open_at_submit("));
         assert!(llvm.contains("call void @wf__completion_file_open_join("));
     });
 }

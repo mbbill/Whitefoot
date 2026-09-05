@@ -319,16 +319,13 @@ static void *submission_racer(void *opaque) {
         uint64_t offset = (uint64_t)((context->lane + round) % 8u);
         int64_t value = -1;
         int error = -1;
-        if (wf__completion_file_pread_submit(
-                context->descriptor,
-                &byte,
-                1,
-                offset,
-                record.bytes
-            ) != 1) {
-            context->failed = 1;
-            return NULL;
-        }
+        wf__completion_file_pread_submit(
+            context->descriptor,
+            &byte,
+            1,
+            offset,
+            record.bytes
+        );
         wf__completion_file_join(record.bytes, &value, &error);
         if (value != 1 || error != 0
             || byte != (unsigned char)('a' + offset)) {
@@ -575,23 +572,19 @@ static int test_linux_independent_operations_use_available_target(
     native_before = wf__completion_linux_io_uring_submissions();
     fallback_before = wf__completion_file_fallback_submissions();
 
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            &bytes[0],
-            1,
-            0,
-            records[0].bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        &bytes[0],
+        1,
+        0,
+        records[0].bytes
     );
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            &bytes[1],
-            1,
-            1,
-            records[1].bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        &bytes[1],
+        1,
+        1,
+        records[1].bytes
     );
     wf__completion_file_join(records[0].bytes, &value, &error_code);
     CHECK(value == 1 && error_code == 0);
@@ -763,23 +756,19 @@ static int test_bridge_independent_positioned_reads(
      *
      * A written WF_IO_HELPERS keeps both on the queued route, which is what
      * the submission count below asserts. */
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            first,
-            4,
-            4,
-            first_record.bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        first,
+        4,
+        4,
+        first_record.bytes
     );
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            second,
-            4,
-            11,
-            second_record.bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        second,
+        4,
+        11,
+        second_record.bytes
     );
     wf__completion_file_join(
         second_record.bytes,
@@ -800,13 +789,39 @@ static int test_bridge_independent_positioned_reads(
     }
 #endif
 
-    /* An offset the signed native type cannot represent is an argument this
-     * ABI cannot mean, and a submit that receives one terminates rather than
-     * answering: there is no `0` left for a caller to interpret, because there
-     * is no second lowering to fall to (design §7, §8).  Reaching it needs a
-     * child process, which this in-process harness deliberately does not
-     * spawn; what it does assert is that every representable submission is
-     * accepted. */
+    /* An offset the signed native type cannot represent is a refusal the host
+     * itself would make, not a contract violation: a writer may spell any
+     * `u64` offset, and there is no direct wrapper left to take the shape and
+     * answer the host's EINVAL (design section 8, "One lowering for every I/O
+     * operation").  The submit therefore publishes that same answer into the
+     * record -- `value = -1`, `error_code = EINVAL` -- so the join reads what
+     * the direct route used to read, one publication is counted for it, and
+     * nothing was executed. */
+    {
+        wf_harness_record refused_record;
+        uint64_t publications_before = wf__completion_publications();
+        uint64_t executions_before = wf__completion_inline_executions();
+        char refused[5] = {0};
+        int64_t refused_value = 0;
+        int refused_error = 0;
+        wf__completion_file_pread_submit(
+            descriptor,
+            refused,
+            4,
+            (uint64_t)INT64_MAX + 1u,
+            refused_record.bytes
+        );
+        wf__completion_file_join(
+            refused_record.bytes,
+            &refused_value,
+            &refused_error
+        );
+        CHECK(refused_value == -1);
+        CHECK(refused_error == EINVAL);
+        CHECK(wf__completion_publications() == publications_before + 1u);
+        CHECK(wf__completion_inline_executions() == executions_before);
+        CHECK(memcmp(refused, "\0\0\0\0", 4) == 0);
+    }
 
     CHECK(close(descriptor) == 0);
     CHECK(unlink(path) == 0);
@@ -838,16 +853,14 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     );
     (void)unlink(path);
 
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_CREAT | O_EXCL | O_RDWR,
-            0600u,
-            1u,
-            WF_FILE_EXPECT_REGULAR,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        path,
+        O_CREAT | O_EXCL | O_RDWR,
+        0600u,
+        1u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -862,13 +875,11 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     descriptor = (int)value;
 
     memset(status, 0, sizeof(status));
-    CHECK(
-        wf__completion_file_status_submit(
-            descriptor,
-            status,
-            sizeof(status),
-            record.bytes
-        ) == 1
+    wf__completion_file_status_submit(
+        descriptor,
+        status,
+        sizeof(status),
+        record.bytes
     );
     wf__completion_file_status_join(
         record.bytes,
@@ -881,13 +892,13 @@ static int test_bridge_open_status_and_close_are_typed_operations(
     CHECK(value == 0 && error_code == 0);
     CHECK(status_size == sizeof(struct stat));
 
-    CHECK(wf__completion_file_close_submit(descriptor, record.bytes) == 1);
+    wf__completion_file_close_submit(descriptor, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
     /* Closing a descriptor whose authority this program already gave up is a
      * typed refusal, not a crash and not a silent success. */
-    CHECK(wf__completion_file_close_submit(descriptor, record.bytes) == 1);
+    wf__completion_file_close_submit(descriptor, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value < 0 && error_code == EBADF);
 
@@ -1015,27 +1026,23 @@ static int test_submitted_open_resolves_the_submitters_bytes(
     CHECK(wf_completion_runtime_destroy(&runtime) == 0);
 
     /* The shipped bridge, with both opens outstanding at once. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            root,
-            first,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            first_block.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        root,
+        first,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        first_block.bytes
     );
-    CHECK(
-        wf__completion_file_open_at_submit(
-            root,
-            second,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            second_block.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        root,
+        second,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        second_block.bytes
     );
     wf__completion_file_open_join(
         second_block.bytes,
@@ -1094,16 +1101,14 @@ static int test_submitted_open_resolves_the_submitters_bytes(
     CHECK(wf_harness_write_marker_file(marker_descriptor, "marker", 'A') == 0);
     CHECK(close(marker_descriptor) == 0);
 
-    CHECK(
-        wf__completion_file_open_at_submit(
-            root,
-            first_directory,
-            O_RDONLY | O_DIRECTORY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            first_block.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        root,
+        first_directory,
+        O_RDONLY | O_DIRECTORY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        first_block.bytes
     );
     wf__completion_file_open_join(
         first_block.bytes,
@@ -1221,16 +1226,14 @@ static int test_a_name_no_pool_record_could_hold_takes_the_completion_path(
     }
 
     submissions_before = wf__completion_file_submissions();
-    CHECK(
-        wf__completion_file_open_at_submit(
-            root,
-            relative,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        root,
+        relative,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1311,14 +1314,12 @@ static int test_more_operations_outstanding_than_the_old_capacity(
 
     for (index = 0; index < WF_HARNESS_OUTSTANDING; ++index) {
         bytes[index] = 0xa5u;
-        CHECK(
-            wf__completion_file_pread_submit(
-                descriptor,
-                &bytes[index],
-                1,
-                (uint64_t)(index % 8u),
-                records[index].bytes
-            ) == 1
+        wf__completion_file_pread_submit(
+            descriptor,
+            &bytes[index],
+            1,
+            (uint64_t)(index % 8u),
+            records[index].bytes
         );
     }
     for (index = 0; index < WF_HARNESS_OUTSTANDING; ++index) {
@@ -1373,16 +1374,14 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
     CHECK(fcntl((int)value, F_GETFD) == -1);
     CHECK(errno == EBADF);
 
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1416,16 +1415,14 @@ static int test_checked_open_rejects_and_closes_nonregular_descriptors(
 
     /* The same submitted refusal, so a target which carries opens natively
      * answers the same discriminator as one which does not. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            scratch_directory,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        scratch_directory,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1486,16 +1483,14 @@ static int test_open_failure_classes_are_typed_outcomes(
     CHECK(close(descriptor) == 0);
 
     /* A name that does not resolve fails before any descriptor exists. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            missing,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        missing,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1523,16 +1518,14 @@ static int test_open_failure_classes_are_typed_outcomes(
 
     /* A directory open of a regular file is refused by the same one rule
      * that refuses a regular open of a directory. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1566,16 +1559,14 @@ static int test_open_failure_classes_are_typed_outcomes(
 
     /* The directory the refusal above named really does open as a directory,
      * so the refusal is about the kind and not about the request shape. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            scratch_directory,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        scratch_directory,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1586,7 +1577,7 @@ static int test_open_failure_classes_are_typed_outcomes(
     CHECK(value >= 0);
     CHECK(error_code == 0);
     CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    CHECK(wf__completion_file_close_submit((int)value, record.bytes) == 1);
+    wf__completion_file_close_submit((int)value, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
 
@@ -1608,17 +1599,15 @@ static void *wf_open_waiter_main(void *opaque) {
     unsigned open_outcome = WF_FILE_OPEN_FAILED;
     unsigned yield;
     waiter->result = 1;
-    if (wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            waiter->path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            record.bytes
-        ) != 1) {
-        return NULL;
-    }
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        waiter->path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
+    );
     /* Give the engine every chance to finish before this owner asks for the
      * result, so the join exercises the already-published path rather than
      * only the park-and-wake one. */
@@ -1635,9 +1624,7 @@ static void *wf_open_waiter_main(void *opaque) {
         || open_outcome != WF_FILE_OPEN_SUCCEEDED) {
         return NULL;
     }
-    if (wf__completion_file_close_submit((int)value, record.bytes) != 1) {
-        return NULL;
-    }
+    wf__completion_file_close_submit((int)value, record.bytes);
     wf__completion_file_join(record.bytes, &value, &error_code);
     waiter->result = value == 0 && error_code == 0 ? 0 : 1;
     return NULL;
@@ -1827,16 +1814,14 @@ static int test_uncached_reads_are_target_policy_only(
     /* One kind-checked open through the submitted path.  Its flags are the
      * request's O_RDONLY plus the O_NONBLOCK a kind check needs, and nothing
      * else; the bytes it reads are the bytes that were written. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1849,14 +1834,12 @@ static int test_uncached_reads_are_target_policy_only(
     CHECK(open_outcome == WF_FILE_OPEN_SUCCEEDED);
     CHECK(wf_uncached_open_flags((int)value) == (O_RDONLY | O_NONBLOCK));
     memset(window, 0, sizeof(window));
-    CHECK(
-        wf__completion_file_pread_submit(
-            (int)value,
-            window,
-            (uint64_t)sizeof(window),
-            0u,
-            record.bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        (int)value,
+        window,
+        (uint64_t)sizeof(window),
+        0u,
+        record.bytes
     );
     {
         int64_t moved = -1;
@@ -1896,16 +1879,14 @@ static int test_uncached_reads_are_target_policy_only(
     CHECK(close((int)value) == 0);
 
     /* An unchecked open carries exactly the request's own flags. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_ANY,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_ANY,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -1921,16 +1902,14 @@ static int test_uncached_reads_are_target_policy_only(
 
     /* A refused open hands back no descriptor, so the policy has nothing to
      * apply to it. */
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            regular,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_DIRECTORY,
-            record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        regular,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_DIRECTORY,
+        record.bytes
     );
     wf__completion_file_open_join(
         record.bytes,
@@ -2400,13 +2379,11 @@ static int test_a_helper_completion_wakes_a_waiting_join(void) {
 
     CHECK(pipe(descriptors) == 0);
     publications_before = wf__completion_publications();
-    CHECK(
-        wf__completion_file_read_submit(
-            descriptors[0],
-            &byte,
-            1,
-            record.bytes
-        ) == 1
+    wf__completion_file_read_submit(
+        descriptors[0],
+        &byte,
+        1,
+        record.bytes
     );
     writer_context.descriptor = descriptors[1];
     writer_context.byte = 'w';
@@ -2581,16 +2558,14 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     CHECK(close(writer) == 0);
 
     submissions_before = wf__completion_linux_io_uring_submissions();
-    CHECK(
-        wf__completion_file_open_at_submit(
-            AT_FDCWD,
-            path,
-            O_RDONLY,
-            0u,
-            0u,
-            WF_FILE_EXPECT_REGULAR,
-            open_record.bytes
-        ) == 1
+    wf__completion_file_open_at_submit(
+        AT_FDCWD,
+        path,
+        O_RDONLY,
+        0u,
+        0u,
+        WF_FILE_EXPECT_REGULAR,
+        open_record.bytes
     );
     wf__completion_file_open_join(
         open_record.bytes,
@@ -2607,14 +2582,12 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     /* A submission alone rings nothing. */
     enters = wf__completion_linux_io_uring_submission_enters();
     memset(first, 0, sizeof(first));
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            first,
-            sizeof(first),
-            0,
-            read_record.bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        first,
+        sizeof(first),
+        0,
+        read_record.bytes
     );
     if (ring_route) {
         CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
@@ -2637,23 +2610,19 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     enters = wf__completion_linux_io_uring_submission_enters();
     memset(first, 0, sizeof(first));
     memset(second, 0, sizeof(second));
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            first,
-            4,
-            0,
-            read_record.bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        first,
+        4,
+        0,
+        read_record.bytes
     );
-    CHECK(
-        wf__completion_file_pread_submit(
-            descriptor,
-            second,
-            4,
-            4,
-            other_record.bytes
-        ) == 1
+    wf__completion_file_pread_submit(
+        descriptor,
+        second,
+        4,
+        4,
+        other_record.bytes
     );
     if (ring_route) {
         CHECK(wf__completion_linux_io_uring_submission_enters() == enters);
@@ -2671,7 +2640,7 @@ static int test_a_submitted_operation_is_kicked_before_it_waits(
     CHECK(memcmp(first, "door", 4) == 0);
     CHECK(memcmp(second, "bell", 4) == 0);
 
-    CHECK(wf__completion_file_close_submit(descriptor, read_record.bytes) == 1);
+    wf__completion_file_close_submit(descriptor, read_record.bytes);
     wf__completion_file_join(read_record.bytes, &value, &error_code);
     CHECK(value == 0 && error_code == 0);
     CHECK(unlink(path) == 0);
@@ -2767,14 +2736,12 @@ static int test_directory_progress_is_internal(void) {
     wf_directory_poll_calls = 0;
     byte = 0;
     position = 4242;
-    CHECK(
-        wf__completion_directory_next_submit(
-            descriptors[0],
-            &byte,
-            1,
-            &position,
-            record.bytes
-        ) == 1
+    wf__completion_directory_next_submit(
+        descriptors[0],
+        &byte,
+        1,
+        &position,
+        record.bytes
     );
     wf__completion_file_join(record.bytes, &value, &error_code);
     CHECK(value == 1 && error_code == 0);

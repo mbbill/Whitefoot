@@ -760,7 +760,22 @@ static int wf_windows_bridge_path_units(
     return 0;
 }
 
-void wf__completion_wait_core_capacity(void) {
+/* Waits for this target's own completion core to retire capacity.
+ *
+ * This was an exported entry the emitted Windows verdict fork called, and the
+ * fork is gone with the direct family: an emitted submit answers nothing, so
+ * there is no arm left to reach a capacity verdict and nothing outside this
+ * unit may name this function (design section 8, "The Windows verdict fork
+ * goes with it").  The wait itself stays, internal to the bridge, because
+ * this target still keeps the slot pool the verdict reported on; slice 3's
+ * Windows record port makes the record the submitting frame's block, at which
+ * point there is no capacity to wait for and this disappears with the pool.
+ *
+ * Note what the fork used to do that this cannot: consume an older request
+ * the calling owner still holds.  A caller that owns every claimed slot
+ * therefore has nothing to wait for here.  That hole is the pool's, not this
+ * function's, and it closes with the pool. */
+static void wf_windows_bridge_wait_core_capacity(void) {
     if (wf_windows_bridge_start() != 0) {
         abort();
     }
@@ -787,6 +802,25 @@ void wf__completion_wait_core_capacity(void) {
     }
 }
 
+/* Submits a blocking-pool request and does not return until the record is the
+ * target's, retrying a capacity verdict through the bridge's own wait. */
+static void wf_windows_bridge_submit_settled(
+    const wf_windows_blocking_request *request,
+    wf_completion_token *token
+) {
+    for (;;) {
+        enum wf_completion_submit_verdict verdict =
+            wf_windows_bridge_submit_blocking(request, token, NULL);
+        if (verdict == WF_COMPLETION_SUBMIT_ACCEPTED) {
+            return;
+        }
+        if (verdict != WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY) {
+            abort();
+        }
+        wf_windows_bridge_wait_core_capacity();
+    }
+}
+
 static int wf_windows_bridge_submit_pread(
     int descriptor,
     void *buffer,
@@ -802,10 +836,19 @@ static int wf_windows_bridge_submit_pread(
     if (descriptor < 0 || (buffer == NULL && count != 0) || token == NULL) {
         abort();
     }
+    /* Each of these three named the emitted inline arm, and there is no such
+     * arm any more: an empty transfer, an offset the native type cannot
+     * express, and a range that would run past it.  The POSIX bridge answers
+     * all three by publishing the record itself -- empty completes with zero,
+     * an unrepresentable offset with EINVAL -- and doing the same here needs
+     * the Windows record port that slice 3 carries, not a mechanical edit of
+     * this unit (design section 8; the plan's "Not done in that step: the
+     * Windows record port").  Until then the refusal stops the process rather
+     * than leaving a record no join can read. */
     if (count == 0 || count > (uint64_t)MAXDWORD
         || file_offset > (uint64_t)INT64_MAX
         || count > (uint64_t)INT64_MAX - file_offset) {
-        return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
+        abort();
     }
     if (wf_windows_bridge_start() != 0) {
         abort();
@@ -887,27 +930,46 @@ uint64_t wf__completion_window(
     return window == 0 ? 1u : window;
 }
 
-int wf__completion_file_pread_submit(
+/* The three shapes below are the ones an emitted module submits, and each
+ * settles its own record before it returns.
+ *
+ * A capacity verdict is retried here rather than handed back, because a
+ * submit answers nothing any more (design section 8).  A DIRECT_ONLY verdict
+ * has no destination at all: it named the emitted inline arm, which no longer
+ * exists, and completing the record in its place is the Windows record port
+ * of slice 3 rather than a mechanical edit.  Until that port lands, a shape
+ * this target refuses stops the process where it is refused instead of
+ * leaving a record no join can ever read. */
+void wf__completion_file_pread_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
     uint64_t file_offset,
     void *record
 ) {
-    return wf_windows_bridge_submit_pread(
-        descriptor,
-        buffer,
-        count,
-        file_offset,
-        (wf_completion_token *)record,
-        NULL
-    );
+    for (;;) {
+        int verdict = wf_windows_bridge_submit_pread(
+            descriptor,
+            buffer,
+            count,
+            file_offset,
+            (wf_completion_token *)record,
+            NULL
+        );
+        if (verdict == WF_COMPLETION_SUBMIT_ACCEPTED) {
+            return;
+        }
+        if (verdict != WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY) {
+            abort();
+        }
+        wf_windows_bridge_wait_core_capacity();
+    }
 }
 
 /* IOCP's positioned WRITE_AT is not `Output.write_once`: it has no stream or
  * current-position meaning. The bounded blocking pool preserves WriteFile's
  * exact current-position contract without stalling a scheduler lane. */
-int wf__completion_file_write_submit(
+void wf__completion_file_write_submit(
     int descriptor,
     const void *buffer,
     uint64_t count,
@@ -919,21 +981,20 @@ int wf__completion_file_write_submit(
         abort();
     }
     if (count == 0) {
-        return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
+        abort();
     }
     memset(&request, 0, sizeof(request));
     request.kind = WF_WINDOWS_FILE_WRITE;
     request.operation.write.descriptor = descriptor;
     request.operation.write.buffer = buffer;
     request.operation.write.count = count;
-    return wf_windows_bridge_submit_blocking(
+    wf_windows_bridge_submit_settled(
         &request,
-        (wf_completion_token *)record,
-        NULL
+        (wf_completion_token *)record
     );
 }
 
-int wf__completion_file_read_submit(
+void wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
@@ -948,7 +1009,7 @@ int wf__completion_file_read_submit(
     abort();
 }
 
-int wf__completion_file_open_at_submit(
+void wf__completion_file_open_at_submit(
     int directory,
     const char *path,
     int flags,
@@ -963,10 +1024,14 @@ int wf__completion_file_open_at_submit(
     if (directory < 0 || path == NULL || record == NULL) {
         abort();
     }
-    /* An overlong path is outside the bounded job representation. The direct
-     * operation preserves its precise ERROR_FILENAME_EXCED_RANGE result. */
+    /* An overlong path is outside the bounded job representation, and the
+     * direct operation that used to take it and preserve its precise
+     * ERROR_FILENAME_EXCED_RANGE result is no longer reachable from emitted
+     * code.  Publishing that result into the record is the Windows record port
+     * of slice 3; until then this stops rather than leaving a record no join
+     * can read. */
     if (!wf_windows_bridge_path_units(path, &path_units)) {
-        return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
+        abort();
     }
     memset(&request, 0, sizeof(request));
     request.kind = WF_WINDOWS_FILE_OPEN_AT;
@@ -978,14 +1043,17 @@ int wf__completion_file_open_at_submit(
     request.operation.open_at.has_mode = has_mode;
     request.operation.open_at.expected_kind = expected_kind;
     request.operation.open_at.descriptor_class = descriptor_class;
-    return wf_windows_bridge_submit_blocking(
+    wf_windows_bridge_submit_settled(
         &request,
-        (wf_completion_token *)record,
-        NULL
+        (wf_completion_token *)record
     );
 }
 
-int wf__completion_file_status_submit(
+/* Neither entry is emitted on this target: a status and a close are made by
+ * the qualified direct wrapper, which is what `qualification.rs` selects for
+ * both.  They exist so the ABI is one ABI on both platforms, and reaching
+ * either is compiler/runtime drift rather than a route. */
+void wf__completion_file_status_submit(
     int descriptor,
     void *status,
     uint64_t status_capacity,
@@ -995,16 +1063,16 @@ int wf__completion_file_status_submit(
     (void)status;
     (void)status_capacity;
     (void)record;
-    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
+    abort();
 }
 
-int wf__completion_file_close_submit(int descriptor, void *record) {
+void wf__completion_file_close_submit(int descriptor, void *record) {
     (void)descriptor;
     (void)record;
-    return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
+    abort();
 }
 
-int wf__completion_directory_next_submit(
+void wf__completion_directory_next_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
@@ -1017,7 +1085,7 @@ int wf__completion_directory_next_submit(
         abort();
     }
     if (count == 0) {
-        return WF_COMPLETION_SUBMIT_DIRECT_ONLY;
+        abort();
     }
     memset(&request, 0, sizeof(request));
     request.kind = WF_WINDOWS_FILE_DIRECTORY_NEXT;
@@ -1025,10 +1093,9 @@ int wf__completion_directory_next_submit(
     request.operation.directory_next.buffer = buffer;
     request.operation.directory_next.count = count;
     request.operation.directory_next.position = position;
-    return wf_windows_bridge_submit_blocking(
+    wf_windows_bridge_submit_settled(
         &request,
-        (wf_completion_token *)record,
-        NULL
+        (wf_completion_token *)record
     );
 }
 

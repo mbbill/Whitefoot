@@ -13,26 +13,26 @@
 extern "C" {
 #endif
 
-/* Stable integer verdicts for target submit implementations that expose core
- * backpressure, and the two entries the emitted Windows fork still reaches.
+/* Stable integer verdicts of this target's internal submit implementations.
  *
- * These were declared in `bridge.h` until the POSIX runtime stopped having a
- * capacity to expose: with the record a block of the submitting frame there is
- * nothing to refuse, every submit ends in a published record, and the shared
- * header states that contract
- * (`research/investigations/io-model/PARK-ON-MISS.md` §7).  Windows keeps its
- * own completion core for now and the emitter still emits its verdict fork, so
- * the two halves of that removal cannot be split here the way they can on
- * POSIX: a submit that answered 0 would leave an emitted arm undefined.  The
- * declarations therefore live beside the definitions in this unit until the
- * emitter step removes the fork, and nothing shared names them. */
+ * A verdict no longer crosses the generated-code ABI in either direction.  The
+ * emitted module has one lowering per operation -- submit, then join -- so a
+ * submit answers nothing: there is no inline arm for DIRECT_ONLY to select and
+ * no fork for WAIT_CORE_CAPACITY to retry
+ * (`research/investigations/io-model/PARK-ON-MISS.md` §8, "The Windows verdict
+ * fork goes with it").  A capacity verdict is unreachable altogether once the
+ * record is the submitting frame's block, because there is then no pool to be
+ * full and nothing to refuse (§5, §7); this target still keeps its own core
+ * and slot pool until slice 3's Windows record port, so until then the bridge
+ * consumes the verdict internally and waits inside its own submit rather than
+ * answering one.  The type stays because the runtime type is unchanged, and
+ * nothing shared names it. */
 enum wf_completion_submit_verdict {
     WF_COMPLETION_SUBMIT_DIRECT_ONLY = 0,
     WF_COMPLETION_SUBMIT_ACCEPTED = 1,
     WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY = 2
 };
 
-void wf__completion_wait_core_capacity(void);
 int wf__completion_file_take(
     const void *record,
     int64_t *value,

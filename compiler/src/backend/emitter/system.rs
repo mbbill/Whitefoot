@@ -2021,6 +2021,7 @@ fn invalid_component(
     program: &IrProgram<'_, '_, '_>,
     err_llvm: &str,
     err_type: IrType,
+    prefix: &str,
 ) -> Result<(String, String), BackendFailure> {
     let classes = io_error_classes(program, err_type)?;
     let class = classes
@@ -2030,10 +2031,56 @@ fn invalid_component(
     Ok(io_error_value(
         err_llvm,
         class,
-        "invalid",
+        prefix,
         "0",
         &ORIGIN_NONE.to_string(),
     ))
+}
+
+/// The same refused-name outcome, built at a completion hand-out site and
+/// stored in that operation's result slot.
+///
+/// An open by component name is the one completion shape that can reach its
+/// outcome without submitting anything: a name that is empty, over the target
+/// family's limit, or carrying a separator never becomes a host call. The
+/// sequential wrapper answers that from its own `invalid` block, and this
+/// builds the identical value from the same two functions rather than calling
+/// the wrapper for it, which is what lets the direct family leave emitted code
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §8). `prefix` makes the
+/// names unique per site, because unlike the wrapper's block this one is
+/// emitted into a function that may hold several such opens.
+pub(super) fn completion_invalid_component_outcome(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+    prefix: &str,
+    destination: &str,
+) -> Result<String, BackendFailure> {
+    let shape = outcome_shape(program, ty)?;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
+    let OutcomeShape {
+        llvm,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = &shape;
+    let (invalid_value, invalid_error) =
+        invalid_component(program, err_llvm, *err_type, &format!("{prefix}.path"))?;
+    let mut text = invalid_value;
+    text.push_str(&format!(
+        "  %{prefix}.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n"
+    ));
+    text.push_str(&format!(
+        "  %{prefix}.tag = insertvalue {llvm} %{prefix}.base, i32 {err_tag}, 0\n"
+    ));
+    text.push_str(&format!(
+        "  %{prefix}.outcome = insertvalue {llvm} %{prefix}.tag, {err_llvm} {invalid_error}, {err_index}\n"
+    ));
+    text.push_str(&format!(
+        "  store {llvm} %{prefix}.outcome, ptr {destination}\n"
+    ));
+    Ok(text)
 }
 
 /// Emits the component-name validation every [SYS-14] name operation shares.
@@ -2246,7 +2293,8 @@ fn emit_open_by_name(
     let entry = range_entry(&prologue);
     let component = component_validation(&buffer, target);
     let (read_error, error) = native_error(target, "failure");
-    let (invalid_value, invalid_error) = invalid_component(program, err_llvm, *err_type)?;
+    let (invalid_value, invalid_error) =
+        invalid_component(program, err_llvm, *err_type, "invalid")?;
     let opened_target = if require_regular { "inspect" } else { "live" };
     let validation = if require_regular {
         let (inspection_read_error, inspection_error) = native_error(target, "inspection");
@@ -2837,17 +2885,35 @@ fn emit_directory_next_completion_mapper(
         .ok_or(BackendFailure::InvalidIr)?;
     let ListOutcomeShape {
         llvm,
+        bytes_tag,
+        bytes_index,
         end_tag,
         failed_tag,
         failed_index,
         failed_llvm,
         ..
     } = shape;
+    let entries_index = bytes_index + 1;
     let normalizer = emit_directory_record_normalizer(shape, target, enumeration);
+    // The empty-range arm is the same one the sequential wrapper answers from,
+    // and it is here because this mapper is now reached with an empty range.
+    // The handed-out lowering used to hold that range back and run the wrapper
+    // instead; with one lowering it submits, the runtime completes the record
+    // with no external action, and the outcome has to be the wrapper's own
+    // `ListBytes(next: start, entries: 0)` rather than the exhaustion a zero
+    // count means for a range that was not empty (design section 8).
     Ok(format!(
         "define private {llvm} @{DIRECTORY_NEXT_COMPLETION_MAPPER}(i64 %filled, i32 %error, \
          {buffer} %destination, i64 %start, i64 %extent) alwaysinline {{\n\
          entry:\n  \
+         %empty.range = icmp eq i64 %extent, 0\n  \
+         br i1 %empty.range, label %vacant, label %nonempty\n\
+         vacant:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %empty.endpoint = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
+         %empty.outcome = insertvalue {llvm} %empty.endpoint, i64 0, {entries_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         nonempty:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
          %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          %progress = icmp sgt i64 %filled, 0\n  \

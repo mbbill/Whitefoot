@@ -115,17 +115,13 @@ static void *lane_main(void *context) {
             (uint64_t)((self->lane * 7u + round * 13u) % FILE_BYTES);
         int64_t value = 0;
         int error = 0;
-        if (wf__completion_file_pread_submit(
-                self->descriptor,
-                &byte,
-                1,
-                offset,
-                record
-            ) != 1) {
-            fprintf(stderr, "bridge default probe: submit did not answer 1\n");
-            self->failed = 1;
-            return NULL;
-        }
+        wf__completion_file_pread_submit(
+            self->descriptor,
+            &byte,
+            1,
+            offset,
+            record
+        );
         atomic_fetch_add_explicit(&submitted_route, 1, memory_order_relaxed);
         wf__completion_file_join(record, &value, &error);
         if (value != 1 || error != 0 || byte != expected_byte(offset)) {
@@ -151,20 +147,12 @@ static void *lane_main(void *context) {
             _Alignas(WF_COMPLETION_RECORD_ALIGN)
                 unsigned char other_record[WF_COMPLETION_RECORD_BYTES];
             unsigned char other = 0;
-            if (wf__completion_file_read_submit(
-                    self->descriptor,
-                    &other,
-                    1,
-                    other_record
-                ) != 1) {
-                fprintf(
-                    stderr,
-                    "bridge default probe: non-positioned submit did not "
-                    "answer 1\n"
-                );
-                self->failed = 1;
-                return NULL;
-            }
+            wf__completion_file_read_submit(
+                self->descriptor,
+                &other,
+                1,
+                other_record
+            );
             atomic_fetch_add_explicit(
                 &nonpositioned_route,
                 1,

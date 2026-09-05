@@ -1,5 +1,17 @@
-/* Native Windows proof that a full compiler completion window asks its source
- * owner to release capacity without modifying the rejected request's token. */
+/* Native Windows proof that a submit beyond this target's core capacity waits
+ * inside the bridge and settles once another owner joins.
+ *
+ * It used to prove the shape of a verdict the emitted code interpreted: a
+ * DIRECT_ONLY answer that selected the inline arm and left the caller's token
+ * untouched, and a WAIT answer the emitted fork retried.  Both are retired by
+ * the owner's ruling recorded in `research/investigations/io-model/
+ * PARK-ON-MISS.md` section 8 -- one lowering per operation, no inline arm and
+ * no verdict fork -- so a submit answers nothing and does not return until the
+ * record is the target's.  That is what is proved here instead, and the
+ * assertions of the retired shape are gone rather than weakened.  The shapes
+ * this target still refuses outright (an empty transfer, an offset the native
+ * type cannot express) stop the process until slice 3's Windows record port
+ * lets the bridge publish them, so they cannot be probed in process. */
 
 #define WIN32_LEAN_AND_MEAN
 #ifndef _WIN32_WINNT
@@ -33,20 +45,20 @@ typedef struct wf_windows_bridge_probe_submit {
     int descriptor;
     unsigned char *buffer;
     wf_completion_token *token;
-    volatile LONG verdict;
+    volatile LONG returned;
 } wf_windows_bridge_probe_submit;
 
 static DWORD WINAPI wf_windows_bridge_probe_submit_full(void *opaque) {
     wf_windows_bridge_probe_submit *submit =
         (wf_windows_bridge_probe_submit *)opaque;
-    int verdict = wf__completion_file_pread_submit(
+    wf__completion_file_pread_submit(
         submit->descriptor,
         submit->buffer,
         1,
         0,
         submit->token
     );
-    InterlockedExchange(&submit->verdict, (LONG)verdict);
+    InterlockedExchange(&submit->returned, 1);
     return 0;
 }
 
@@ -61,10 +73,7 @@ int main(int argc, char **argv) {
     HANDLE native;
     int descriptor;
     unsigned char direct_buffer = 0;
-    wf_completion_token local_token;
-    wf_completion_token local_untouched;
     wf_completion_token tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u];
-    wf_completion_token untouched;
     unsigned char buffers[WF_WINDOWS_BRIDGE_PROBE_CAPACITY + 1u];
     wf_windows_bridge_probe_submit full;
     HANDLE submit_thread;
@@ -123,59 +132,23 @@ int main(int argc, char **argv) {
             "direct pread on the associated handle did not complete exactly"
         );
     }
-    local_token.slot = UINT32_C(0x5a5aa5a5);
-    local_token.generation = UINT64_C(0x5a5aa5a50ff00ff0);
-    local_untouched = local_token;
-    if (wf__completion_file_pread_submit(
-            descriptor,
-            NULL,
-            0,
-            0,
-            &local_token
-        ) != WF_COMPLETION_SUBMIT_DIRECT_ONLY
-        || wf__completion_file_pread_submit(
-            descriptor,
-            &direct_buffer,
-            UINT64_C(0x100000000),
-            0,
-            &local_token
-        ) != WF_COMPLETION_SUBMIT_DIRECT_ONLY) {
-        return wf_windows_bridge_probe_fail(
-            "a locally ineligible request did not remain direct-only"
-        );
-    }
-    if (local_token.slot != local_untouched.slot
-        || local_token.generation != local_untouched.generation) {
-        return wf_windows_bridge_probe_fail(
-            "a direct-only verdict modified the caller's token"
-        );
-    }
-
     memset(tokens, 0, sizeof(tokens));
     memset(buffers, 0, sizeof(buffers));
     for (index = 0; index < WF_WINDOWS_BRIDGE_PROBE_CAPACITY; ++index) {
-        if (wf__completion_file_pread_submit(
-                descriptor,
-                &buffers[index],
-                1,
-                0,
-                &tokens[index]
-            ) != WF_COMPLETION_SUBMIT_ACCEPTED) {
-            return wf_windows_bridge_probe_fail(
-                "a slot below the core capacity was not accepted"
-            );
-        }
+        wf__completion_file_pread_submit(
+            descriptor,
+            &buffers[index],
+            1,
+            0,
+            &tokens[index]
+        );
     }
 
-    tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].slot = UINT32_C(0xa5a55a5a);
-    tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].generation =
-        UINT64_C(0xa5a55a5af00ff00f);
-    untouched = tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY];
     memset(&full, 0, sizeof(full));
     full.descriptor = descriptor;
     full.buffer = &buffers[WF_WINDOWS_BRIDGE_PROBE_CAPACITY];
     full.token = &tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY];
-    full.verdict = -1;
+    full.returned = 0;
     submit_thread = CreateThread(
         NULL,
         0,
@@ -187,29 +160,13 @@ int main(int argc, char **argv) {
     if (submit_thread == NULL) {
         return wf_windows_bridge_probe_fail("could not start the boundary submit");
     }
-    waited = WaitForSingleObject(
-        submit_thread,
-        WF_WINDOWS_BRIDGE_PROBE_TIMEOUT_MS
-    );
-    if (waited != WAIT_OBJECT_0) {
-        fputs(
-            "windows bridge capacity probe: full submit did not return\n",
-            stderr
-        );
-        ExitProcess(1);
-    }
-    (void)CloseHandle(submit_thread);
-    if (InterlockedCompareExchange(&full.verdict, 0, 0)
-        != WF_COMPLETION_SUBMIT_WAIT_CORE_CAPACITY) {
+    /* The core is full, so the boundary submit is inside the bridge's own
+     * capacity wait.  It has no verdict to hand back and must not return
+     * until a join elsewhere retires a slot. */
+    Sleep(50);
+    if (InterlockedCompareExchange(&full.returned, 0, 0) != 0) {
         return wf_windows_bridge_probe_fail(
-            "the operation beyond core capacity did not return WAIT"
-        );
-    }
-    if (tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].slot != untouched.slot
-        || tokens[WF_WINDOWS_BRIDGE_PROBE_CAPACITY].generation
-            != untouched.generation) {
-        return wf_windows_bridge_probe_fail(
-            "the WAIT verdict modified the caller's token"
+            "the submit beyond core capacity returned before a slot was free"
         );
     }
 
@@ -224,17 +181,18 @@ int main(int argc, char **argv) {
             );
         }
     }
-    if (wf__completion_file_pread_submit(
-            full.descriptor,
-            full.buffer,
-            1,
-            0,
-            full.token
-        ) != WF_COMPLETION_SUBMIT_ACCEPTED) {
-        return wf_windows_bridge_probe_fail(
-            "the exact request was not accepted after capacity was released"
+    waited = WaitForSingleObject(
+        submit_thread,
+        WF_WINDOWS_BRIDGE_PROBE_TIMEOUT_MS
+    );
+    if (waited != WAIT_OBJECT_0) {
+        fputs(
+            "windows bridge capacity probe: full submit did not return\n",
+            stderr
         );
+        ExitProcess(1);
     }
+    (void)CloseHandle(submit_thread);
 
     for (index = 1; index <= WF_WINDOWS_BRIDGE_PROBE_CAPACITY; ++index) {
         int64_t value = -1;

@@ -21,21 +21,26 @@ uint64_t wf__completion_window(
     uint64_t ceiling
 );
 
-/* Every submit fills the record the caller supplies and returns 1: the
+/* Every submit fills the record the caller supplies and answers nothing: the
  * runtime either accepted the operation or executed it itself and published
  * its completion into the record, and either way the operation is the
  * runtime's and will be joined
  * (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Every submit path
- * ends in a published record").  A `NULL` record, or an argument this ABI
- * cannot mean, is a contract violation and terminates. */
-int wf__completion_file_read_submit(
+ * ends in a published record" -- "never with a 0 the caller must interpret").
+ * There is no second lowering left for a verdict to select, so a submit that
+ * returned one would be a value no caller could act on.  A `NULL` record, or
+ * an argument this ABI cannot mean, is a contract violation and terminates;
+ * an argument the host itself would refuse is an ordinary failed outcome and
+ * is published as one, which is why a `pread` offset above `INT64_MAX`
+ * completes with `EINVAL` rather than terminating. */
+void wf__completion_file_read_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
     void *record
 );
 
-int wf__completion_file_pread_submit(
+void wf__completion_file_pread_submit(
     int descriptor,
     void *buffer,
     uint64_t count,
@@ -43,14 +48,14 @@ int wf__completion_file_pread_submit(
     void *record
 );
 
-int wf__completion_file_write_submit(
+void wf__completion_file_write_submit(
     int descriptor,
     const void *buffer,
     uint64_t count,
     void *record
 );
 
-int wf__completion_file_open_at_submit(
+void wf__completion_file_open_at_submit(
     int directory,
     const char *path,
     int flags,
@@ -67,19 +72,19 @@ int wf__completion_file_open_at_submit(
  * carries a size and never the bytes: the destination is the submitter's and
  * the engine writes it there, so a frame that can hold any operation does not
  * pay 192 bytes for a facility one direct call uses (design §7). */
-int wf__completion_file_status_submit(
+void wf__completion_file_status_submit(
     int descriptor,
     void *status,
     uint64_t status_capacity,
     void *record
 );
 
-int wf__completion_file_close_submit(
+void wf__completion_file_close_submit(
     int descriptor,
     void *record
 );
 
-int wf__completion_directory_next_submit(
+void wf__completion_directory_next_submit(
     int descriptor,
     void *buffer,
     uint64_t count,

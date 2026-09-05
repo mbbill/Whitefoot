@@ -379,10 +379,14 @@ fn emit_llvm_for(
     }
     if completion_used {
         text.push('\n');
+        // Declarations on both platforms now: a submit answers nothing, so
+        // there is no weak body that could stand in for the runtime, and a
+        // link that omits it is an unresolved symbol rather than a program
+        // that silently runs a second arm (design §8).
         text.push_str(if system_target.is_windows() {
             completion::COMPLETION_WINDOWS_RUNTIME_DECLARATIONS
         } else {
-            completion::COMPLETION_RUNTIME_FALLBACK
+            completion::COMPLETION_RUNTIME_DECLARATIONS
         });
         // Emitted only where a module actually asks for a window, exactly as
         // the split budget's fallback is, so a module that stages no loop
@@ -1078,6 +1082,16 @@ struct FunctionEmitter<'program, 'state> {
     /// step reaches.  Their wait sets contain only ordinary prior result/loan
     /// dependencies retained by lowering.
     completion_steps: HashMap<IrValueId, crate::IrCompletionStep>,
+    /// The handed-out completion results whose lowering opens LLVM blocks of
+    /// its own.
+    ///
+    /// Exactly one shape does: an open by component name, the one operation
+    /// that can reach an outcome without submitting, so its submit ends in a
+    /// `completion.offered` selecting the route and its join ends in a
+    /// `par.done` selecting the value. Every other shape is straight-line in
+    /// both places (design §8), and `block_exit_label` has to say so or a phi
+    /// would name a block that is not its predecessor.
+    branching_completions: HashSet<IrValueId>,
     /// Hand-outs emitted and not yet joined.
     ///
     /// Ordinarily this is empty at every terminator, because a block joins
@@ -1201,6 +1215,23 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 overlaps.push(overlap.clone());
             }
         }
+        let branching_completions = function
+            .blocks()
+            .iter()
+            .flat_map(crate::IrBlock::instructions)
+            .filter_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    result,
+                    operation: IrOperation::SystemCall { operation, .. },
+                    ..
+                } if completion_steps.contains_key(result) => {
+                    system::completion_file_operation(*operation)
+                        .filter(|operation| completion::completion_may_skip_submission(*operation))
+                        .map(|_| *result)
+                }
+                _ => None,
+            })
+            .collect();
         let overlap_handed_out = overlaps
             .iter()
             .flat_map(|overlap| overlap.handed_out().iter().copied())
@@ -1259,6 +1290,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             overlap_join_sites,
             ordinary_lane_frames,
             completion_steps,
+            branching_completions,
             handed_out: Vec::new(),
             pipeline,
             block_slot: None,
@@ -1432,6 +1464,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         self.block(edge.predecessor)?,
                         &self.overlaps,
                         &self.completion_steps,
+                        &self.branching_completions,
                         self.pipeline,
                     )
                 )
@@ -2315,16 +2348,19 @@ fn overlap_join_tail(
 ///
 /// The two hand-out mechanisms both leave the block somewhere else. A compute
 /// overlap settles on its group's `par.done` when its join site runs. A direct
-/// completion step submits into `completion.offered` and is joined later, and
-/// its join settles on that operation's own `par.done`. Ordinary outstanding
-/// work is joined before the terminator; a driven result is preserved until
-/// the exact drain block, so this walk uses the same owner and queue order as
-/// `emit_completion_dependencies`.
+/// completion step that can reach an outcome without submitting -- an open by
+/// component name, and nothing else -- submits into `completion.offered` and
+/// settles its join on that operation's own `par.done`; every other completion
+/// step is straight-line at both points and moves the label nowhere. Ordinary
+/// outstanding work is joined before the terminator; a driven result is
+/// preserved until the exact drain block, so this walk uses the same owner and
+/// queue order as `emit_completion_dependencies`.
 fn block_exit_label(
     block_id: IrBlockId,
     block: &IrBlock,
     overlaps: &[IrOverlap],
     completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    branching_completions: &HashSet<IrValueId>,
     pipeline: Option<&crate::IrCompletionPipeline>,
 ) -> String {
     let mut label = block_label(block_id);
@@ -2351,15 +2387,27 @@ fn block_exit_label(
         if let IrInstruction::Define { result, .. } = instruction
             && let Some(step) = completion_steps.get(result)
         {
-            drain_completions(&mut outstanding, step.wait_for(), &mut label);
+            drain_completions(
+                &mut outstanding,
+                step.wait_for(),
+                branching_completions,
+                &mut label,
+            );
             if step.submit() {
                 outstanding.push(*result);
-                label = completion_offered_label(*result);
+                if branching_completions.contains(result) {
+                    label = completion_offered_label(*result);
+                }
             } else {
                 definition_exit_label(block_id, index, instruction, &mut label);
             }
             if step.finish() {
-                drain_all_completions_except(&mut outstanding, protected_result, &mut label);
+                drain_all_completions_except(
+                    &mut outstanding,
+                    protected_result,
+                    branching_completions,
+                    &mut label,
+                );
             }
             continue;
         }
@@ -2372,17 +2420,31 @@ fn block_exit_label(
             label = par_done_label(last);
         }
     }
-    drain_all_completions_except(&mut outstanding, protected_result, &mut label);
+    drain_all_completions_except(
+        &mut outstanding,
+        protected_result,
+        branching_completions,
+        &mut label,
+    );
     label
 }
 
 /// Replays `emit_completion_dependencies`: each named operation still
-/// outstanding is joined, and each join leaves the block at its `par.done`.
-fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], label: &mut String) {
+/// outstanding is joined, and a join that selects between two routes leaves
+/// the block at its `par.done`. A one-route join emits no block of its own and
+/// leaves the label where it was.
+fn drain_completions(
+    outstanding: &mut Vec<IrValueId>,
+    wanted: &[IrValueId],
+    branching_completions: &HashSet<IrValueId>,
+    label: &mut String,
+) {
     for value in wanted {
         if let Some(position) = outstanding.iter().position(|held| held == value) {
             outstanding.remove(position);
-            *label = par_done_label(*value);
+            if branching_completions.contains(value) {
+                *label = par_done_label(*value);
+            }
         }
     }
 }
@@ -2392,6 +2454,7 @@ fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], lab
 fn drain_all_completions_except(
     outstanding: &mut Vec<IrValueId>,
     protected: Option<IrValueId>,
+    branching_completions: &HashSet<IrValueId>,
     label: &mut String,
 ) {
     let mut last = None;
@@ -2399,7 +2462,9 @@ fn drain_all_completions_except(
         if Some(*value) == protected {
             true
         } else {
-            last = Some(*value);
+            if branching_completions.contains(value) {
+                last = Some(*value);
+            }
             false
         }
     });
