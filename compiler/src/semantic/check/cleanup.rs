@@ -101,6 +101,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     /// records are the complete release contribution of [EFF-2].
     pub(super) fn collect_release_sites(
         &self,
+        function: &super::FunctionSignature,
         statements: &[CheckedStatement],
         sites: &mut Vec<ReleaseSite>,
     ) -> Result<(), CheckStop> {
@@ -146,7 +147,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     ..
                 } => {
                     self.collect_expression_release_sites(scrutinee, sites)?;
-                    self.collect_drop_release_sites(error_drops, sites)?;
+                    self.collect_drop_release_sites(function, error_drops, sites)?;
                 }
                 CheckedStatement::Set { target, value, .. }
                 | CheckedStatement::Replace { target, value, .. } => {
@@ -190,7 +191,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedStatement::Proof(_) => {}
                 CheckedStatement::Return { value, drops, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_drop_release_sites(function, drops, sites)?;
                 }
                 CheckedStatement::Match {
                     scrutinee, arms, ..
@@ -200,21 +201,21 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } => {
                     self.collect_expression_release_sites(scrutinee, sites)?;
                     for arm in arms {
-                        self.collect_release_sites(&arm.body, sites)?;
-                        self.collect_drop_release_sites(&arm.fallthrough_drops, sites)?;
+                        self.collect_release_sites(function, &arm.body, sites)?;
+                        self.collect_drop_release_sites(function, &arm.fallthrough_drops, sites)?;
                     }
                 }
                 CheckedStatement::Give { value, drops, .. } => {
                     self.collect_expression_release_sites(value, sites)?;
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_drop_release_sites(function, drops, sites)?;
                 }
                 CheckedStatement::Loop {
                     body,
                     backedge_drops,
                     ..
                 } => {
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(backedge_drops, sites)?;
+                    self.collect_release_sites(function, body, sites)?;
+                    self.collect_drop_release_sites(function, backedge_drops, sites)?;
                 }
                 CheckedStatement::CountedRange {
                     lower,
@@ -225,19 +226,19 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 } => {
                     self.collect_expression_release_sites(lower, sites)?;
                     self.collect_expression_release_sites(upper, sites)?;
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(backedge_drops, sites)?;
+                    self.collect_release_sites(function, body, sites)?;
+                    self.collect_drop_release_sites(function, backedge_drops, sites)?;
                 }
                 CheckedStatement::Break { drops, .. } => {
-                    self.collect_drop_release_sites(drops, sites)?;
+                    self.collect_drop_release_sites(function, drops, sites)?;
                 }
                 CheckedStatement::Region {
                     body,
                     fallthrough_drops,
                     ..
                 } => {
-                    self.collect_release_sites(body, sites)?;
-                    self.collect_drop_release_sites(fallthrough_drops, sites)?;
+                    self.collect_release_sites(function, body, sites)?;
+                    self.collect_drop_release_sites(function, fallthrough_drops, sites)?;
                 }
             }
         }
@@ -246,13 +247,20 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn collect_drop_release_sites(
         &self,
+        function: &super::FunctionSignature,
         drops: &[CheckedDrop],
         sites: &mut Vec<ReleaseSite>,
     ) -> Result<(), CheckStop> {
         for drop in drops {
             // The drop record already carries its [SYS-5] row, so attribution
             // reads the checked program rather than rederiving it.
-            let effects = self.effects_of_row(drop.release.row, drop.state_origins.as_ref())?;
+            let mut effects = self.effects_of_row(drop.release.row, drop.state_origins.as_ref())?;
+            // [PROV-6, D3] a derived release of store-backed storage spends
+            // that store's provider capability, and the scope it runs in says
+            // so in its own row.
+            for path in self.resolved_provider_writes(function, drop.ty)? {
+                effects.add_write(path);
+            }
             if effects != EffectSet::NONE {
                 sites.push(ReleaseSite {
                     owner: ReleaseOwner::Binding(drop.binding),

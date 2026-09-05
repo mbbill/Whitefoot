@@ -62,6 +62,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<bool, CheckStop> {
         Ok(match ty {
             CheckedType::Buffer { .. } => true,
+            // [PROV-1] a run branded to a general store is released to that
+            // store; a bump extent's run is reclaimed by its region's own
+            // reset and spends nothing.
+            CheckedType::Vector { release, .. } => {
+                release == super::super::model::CheckedReleaseClass::General
+            }
             CheckedType::Nominal(id) => {
                 matches!(self.nominal(id)?.kind, CheckedNominalKind::Box { .. })
             }
@@ -147,6 +153,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
+                // A run owns the elements of its window [BLK-1], so its
+                // element is a sub-node exactly as a field is.
+                CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
+                    pending.push(element.ty());
+                }
                 CheckedType::Nominal(id) => pending.extend(self.owned_components(id)?),
                 _ => {}
             }
@@ -199,6 +210,87 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         } else {
             LinearityClass::Affine
         })
+    }
+
+    /// [PROV-6, D3] every general store whose capability a value of this type
+    /// spends at its release, named by that store's own region.
+    ///
+    /// A run branded to a general store is the one capability-released node
+    /// this version has whose provider is a value [PROV-1]: `box<T>` and
+    /// `buffer<T>` name the ambient heap, which is no value and which every
+    /// scope therefore holds. The regions come back in release-graph order
+    /// with no duplicates.
+    pub(in crate::semantic) fn capability_released_stores(
+        &self,
+        ty: CheckedType,
+    ) -> Result<Vec<crate::DeclarationId>, CheckStop> {
+        let mut stores = Vec::new();
+        for node in self.release_graph_nodes(ty)? {
+            if let CheckedType::Vector {
+                region,
+                release: super::super::model::CheckedReleaseClass::General,
+                ..
+            } = node
+                && !stores.contains(&region)
+            {
+                stores.push(region);
+            }
+        }
+        Ok(stores)
+    }
+
+    /// [PROV-6, D3] whether a live binding of this store's provider type
+    /// stands in this scope, reached directly or through a borrow.
+    ///
+    /// A provider enters a function only as a parameter or as an entry input
+    /// [PROV-2, FN-7], so this is a question about the bindings that stand at
+    /// the point, and the mode of the binding is immaterial: a `&uniq
+    /// Heap<'s>` parameter holds the capability exactly as the entry's own
+    /// `own Heap<'s>` does.
+    pub(in crate::semantic) fn scope_holds_store_capability(
+        &self,
+        bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
+        store: crate::DeclarationId,
+    ) -> bool {
+        bindings.values().any(|local| {
+            local.live && matches!(local.ty, CheckedType::Heap { region } if region == store)
+        })
+    }
+
+    /// [PROV-6, D3] the refusal of a value whose release spends a capability
+    /// this scope does not hold. The rejection names the binding, the scope's
+    /// own edge, and the absent capability.
+    pub(in crate::semantic) fn reject_release_without_capability(
+        &self,
+        ty: CheckedType,
+        name: &str,
+        bindings: &std::collections::HashMap<crate::DeclarationId, super::LocalBinding>,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        for store in self.capability_released_stores(ty)? {
+            if self.scope_holds_store_capability(bindings, store) {
+                continue;
+            }
+            let phrase = if store.is_entry_heap_region() {
+                "the entry heap's store region".to_owned()
+            } else {
+                self.region_phrase(store)?
+            };
+            return self
+                .issue_node::<()>(
+                    SemanticRule::Prov6,
+                    node,
+                    SemanticIssueKind::LinearValueNotConsumed {
+                        binding: name.to_owned(),
+                        obligation: format!(
+                            "the provider capability of {phrase}, which no live binding of this scope holds"
+                        ),
+                        mechanical_fix: "move the value out whole, take it apart with let N(f: a, ...) = move v;, or receive this store's provider as a parameter so the scope holds its capability",
+                    },
+                )
+                .map(|_| ());
+        }
+        Ok(())
     }
 
     /// [PROV-6] a value linear in this scope may not reach a scope exit by a
@@ -568,9 +660,72 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        // Every capability-released leaf in this version names the ambient
-        // heap, which every scope holds, so the resolution admits every
-        // otherwise-admitted operand and contributes no provider write.
+        // [PROV-6] the resolution: an ambient-heap leaf resolves no binding,
+        // and a general-store leaf resolves that store's live provider and
+        // writes it. The provider write itself is added by the caller, which
+        // holds the function signature this resolution reads.
+        Ok(())
+    }
+
+    /// [PROV-6, D3] the provider place each general store reached by `ty`'s
+    /// release graph spends, resolved against this function's own parameters.
+    ///
+    /// A provider enters a function only as a parameter or as an entry input
+    /// [PROV-2, FN-7], so the parameter list is the complete candidate set,
+    /// and the write this returns is what makes a derived or early release of
+    /// store-backed storage visible in the declared row [EFF-2].
+    pub(in crate::semantic) fn resolved_provider_writes(
+        &self,
+        function: &super::FunctionSignature,
+        ty: CheckedType,
+    ) -> Result<Vec<super::super::model::CheckedStatePath>, CheckStop> {
+        let mut writes = Vec::new();
+        for store in self.capability_released_stores(ty)? {
+            if let Some(parameter) = function
+                .parameters
+                .iter()
+                .find(|parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store))
+            {
+                writes.push(super::super::model::CheckedStatePath {
+                    root: parameter.declaration,
+                    fields: Vec::new(),
+                });
+            }
+        }
+        Ok(writes)
+    }
+
+    /// [PROV-6] `dispose p;` in a scope holding no provider of a store `p`
+    /// releases to, rendered with the parameter the scope is missing.
+    pub(in crate::semantic) fn reject_dispose_without_provider(
+        &self,
+        function: &super::FunctionSignature,
+        ty: CheckedType,
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        for store in self.capability_released_stores(ty)? {
+            if function
+                .parameters
+                .iter()
+                .any(|parameter| matches!(parameter.ty, CheckedType::Heap { region } if region == store))
+            {
+                continue;
+            }
+            let phrase = if store.is_entry_heap_region() {
+                "the entry heap's store region".to_owned()
+            } else {
+                self.region_phrase(store)?
+            };
+            return self.issue_node(
+                SemanticRule::Prov6,
+                node,
+                SemanticIssueKind::DisposeHasNoProvider {
+                    store: phrase,
+                    provider: "a Heap parameter of this store's own region".to_owned(),
+                    mechanical_fix: "receive this store's provider as a parameter, so the                          release this statement runs has a capability to spend",
+                },
+            );
+        }
         Ok(())
     }
 }

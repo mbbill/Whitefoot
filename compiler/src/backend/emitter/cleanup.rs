@@ -262,6 +262,30 @@ pub(super) fn buffer_drop_helper_symbol(element: IrNominalId) -> String {
     format!("wf.drop.buffer.t{}", element.ordinal())
 }
 
+/// Whether any type of this program is a run taken from a general store
+/// [PROV-1]. Such a run's backing release is a free, so the module declares
+/// the two allocator symbols even where nothing else allocates.
+pub(super) fn program_has_general_run(program: &IrProgram<'_, '_, '_>) -> bool {
+    let mut pending = program_types(program);
+    let mut visited: HashSet<IrType> = HashSet::new();
+    while let Some(ty) = pending.pop() {
+        if !visited.insert(ty) {
+            continue;
+        }
+        match ty {
+            IrType::Vector {
+                release: IrReleaseClass::General,
+                ..
+            } => return true,
+            IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
+                pending.push(element.ty());
+            }
+            _ => {}
+        }
+    }
+    false
+}
+
 pub(super) fn type_requires_cleanup(
     program: &IrProgram<'_, '_, '_>,
     ty: IrType,
@@ -500,13 +524,29 @@ fn emit_cleanup_jobs(
                 // A run's release visits its window and then releases its own
                 // backing [PROV-6, BLK-1], and the helper is what carries
                 // that order. A frame-resident run reclaims no storage of its
-                // own, and every store-resident run this version can form is
-                // taken from a bump extent, whose region reset reclaims the
-                // whole extent [BLK-2] — so both backings are empty here and
-                // a run whose window derives no action emits nothing at all.
-                // The general store's free lands with `heap_vector`, after
-                // the walk the helper already performs.
-                IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
+                // own, and a bump extent's run is reclaimed by its region's
+                // own reset [BLK-2]; a general store's run spends that
+                // store's capability, and its backing action is the free
+                // emitted here, after the window walk.
+                IrType::Vector { element, release } => {
+                    if type_requires_cleanup(program, element.ty())?
+                        && let Some(symbol) = run_drop_helper(program, ty)?
+                    {
+                        let run_llvm = llvm_type(program, ty)?;
+                        writeln!(output, "  call void @{symbol}({run_llvm} {operand})")
+                            .map_err(|_| BackendFailure::TextEmission)?;
+                    }
+                    if release == IrReleaseClass::General {
+                        let run_llvm = llvm_type(program, ty)?;
+                        let pointer = next_temporary(temporary)?;
+                        writeln!(
+                            output,
+                            "  %{pointer} = extractvalue {run_llvm} {operand}, 0\n  call void @free(ptr %{pointer})",
+                        )
+                        .map_err(|_| BackendFailure::TextEmission)?;
+                    }
+                }
+                IrType::FixedVector { element, .. } => {
                     if type_requires_cleanup(program, element.ty())?
                         && let Some(symbol) = run_drop_helper(program, ty)?
                     {

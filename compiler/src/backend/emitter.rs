@@ -304,7 +304,12 @@ fn emit_llvm_for(
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
-    if has_heap_storage {
+    // A general store's run takes its backing from the allocator and gives it
+    // back at the release [PROV-1, BLK-2], so a module holding one declares
+    // the two symbols even where nothing else on this list allocates. It does
+    // not write a resource record: a refused take is the row's own `None`
+    // arm and never an abort.
+    if has_heap_storage || cleanup::program_has_general_run(program) {
         text.push_str("declare ptr @malloc(i64)\ndeclare void @free(ptr)\n");
     }
     for declaration in &system_declarations {

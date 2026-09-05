@@ -3077,9 +3077,14 @@ pub(super) fn emit_entry(
     let mut supplied = Vec::with_capacity(inputs.len());
     let mut opens_directory = false;
     for (ordinal, (_, ty)) in inputs.iter().zip(main.parameters()) {
-        let expected = expected_input(*ordinal)?;
-        if *ty != system_resource_ir_type(program, expected)? {
-            return Err(BackendFailure::InvalidIr);
+        // [S22] the general store's provider is the one standard input that
+        // is not a [SYS-2] resource: it is the proof-only provider value
+        // [PROV-1, STOR-1], so it is checked against `IrType::Provider` and
+        // supplied as the zero aggregate.
+        match expected_input(*ordinal)? {
+            Some(expected) if *ty == system_resource_ir_type(program, expected)? => {}
+            None if *ty == IrType::Provider => {}
+            _ => return Err(BackendFailure::InvalidIr),
         }
         match ordinal {
             0 => {
@@ -3119,6 +3124,7 @@ pub(super) fn emit_entry(
             4 => {
                 supplied.push("i1 true".to_owned());
             }
+            5 => supplied.push(format!("{} zeroinitializer", PROVIDER_REPRESENTATION)),
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
@@ -3210,9 +3216,14 @@ fn emit_windows_entry(
     let mut supplied = Vec::with_capacity(inputs.len());
     let mut available = Vec::new();
     for (ordinal, (_, ty)) in inputs.iter().zip(main.parameters()) {
-        let expected = expected_input(*ordinal)?;
-        if *ty != system_resource_ir_type(program, expected)? {
-            return Err(BackendFailure::InvalidIr);
+        // [S22] the general store's provider is the one standard input that
+        // is not a [SYS-2] resource: it is the proof-only provider value
+        // [PROV-1, STOR-1], so it is checked against `IrType::Provider` and
+        // supplied as the zero aggregate.
+        match expected_input(*ordinal)? {
+            Some(expected) if *ty == system_resource_ir_type(program, expected)? => {}
+            None if *ty == IrType::Provider => {}
+            _ => return Err(BackendFailure::InvalidIr),
         }
         match ordinal {
             0 => {
@@ -3251,6 +3262,7 @@ fn emit_windows_entry(
                 available.push("%stderr.available");
             }
             4 => supplied.push("i1 true".to_owned()),
+            5 => supplied.push(format!("{} zeroinitializer", PROVIDER_REPRESENTATION)),
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
@@ -3320,15 +3332,23 @@ fn emit_windows_entry(
 }
 
 /// The [FN-7] standard-input row one table ordinal selects.
-fn expected_input(ordinal: u8) -> Result<SystemResourceType, BackendFailure> {
+/// The [SYS-2] resource one standard input supplies, or `None` for the one
+/// row whose value is a provider rather than a system resource [S22].
+fn expected_input(ordinal: u8) -> Result<Option<SystemResourceType>, BackendFailure> {
     match ordinal {
-        0 => Ok(SystemResourceType::Args),
-        1 => Ok(SystemResourceType::DirectoryRead),
-        2 | 3 => Ok(SystemResourceType::Output),
-        4 => Ok(SystemResourceType::FileFactory),
+        0 => Ok(Some(SystemResourceType::Args)),
+        1 => Ok(Some(SystemResourceType::DirectoryRead)),
+        2 | 3 => Ok(Some(SystemResourceType::Output)),
+        4 => Ok(Some(SystemResourceType::FileFactory)),
+        5 => Ok(None),
         _ => Err(BackendFailure::InvalidIr),
     }
 }
+
+/// The LLVM representation of `IrType::Provider`, which the entry writes
+/// literally because the bootstrap holds no `IrProgram` type table position
+/// for it.
+const PROVIDER_REPRESENTATION: &str = "{ ptr, i64 }";
 
 fn system_resource_ir_type(
     program: &IrProgram<'_, '_, '_>,

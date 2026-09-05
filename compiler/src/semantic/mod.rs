@@ -665,6 +665,16 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by PROV-6.
         mechanical_fix: &'static str,
     },
+    /// [PROV-6] a `dispose` whose operand releases to a store no live
+    /// binding of this scope holds the provider of.
+    DisposeHasNoProvider {
+        /// The store the operand's release spends, as a diagnostic names it.
+        store: String,
+        /// The parameter the scope is missing.
+        provider: String,
+        /// Exact restructuring required by PROV-6.
+        mechanical_fix: &'static str,
+    },
     /// [PROV-6] a `dispose` one of whose release-graph nodes carries the
     /// `linear` modifier.
     DisposeOfLinearNode {

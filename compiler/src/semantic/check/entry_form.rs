@@ -47,17 +47,18 @@ const fn input(tail: &'static str, written: &'static str, nominal: &'static str)
 /// [FN-7]'s closed standard-input table for kind `command`, in table-ordinal
 /// order. Ordinal identity, never type identity, selects the supplied value:
 /// `command.stdout` and `command.stderr` share one type and stay two inputs.
-const COMMAND_INPUTS: [StandardInput; 5] = [
+const COMMAND_INPUTS: [StandardInput; 6] = [
     input("args", "own Args", "Args"),
     input("cwd", "own DirectoryRead", "DirectoryRead"),
     input("stdout", "own Output", "Output"),
     input("stderr", "own Output", "Output"),
     input("files", "own FileFactory", "FileFactory"),
-    // [FN-7] DEFERRED: the sixth row, `command.heap as heap: own Heap`, by
-    // which a program obtains the one general store [PROV-1]. Its label tail
-    // is the spelling [EFF-1] fixes as the allocation atom of
-    // `pure`, which [FORM-3] therefore excludes from IDENT, so no
-    // source can write the row until that atom retires.
+    // [S22] the sixth row is the one route by which a program obtains the
+    // general store [PROV-1]. Its written type is the compiler-owned
+    // container nominal `Heap` [TYPE-2] rather than a [SYS-2] one, written
+    // bare because the entry heap's store region has no spelling; the label
+    // tail became writable when [EFF-1]'s allocation atom retired [S23].
+    input("heap", "own Heap", "Heap"),
 ];
 
 const COMMAND_RESULT: &str = "own ExitStatus";

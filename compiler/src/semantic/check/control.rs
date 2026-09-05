@@ -419,6 +419,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
         let ty = value.expression.ty();
         self.dispose_admission(ty, node)?;
+        self.reject_dispose_without_provider(function, ty, node)?;
         let whole_origins = self.state_origins_of_value(&value, bindings)?;
         let paths = self.drop_paths(ty, Vec::new())?;
         // [PROV-6, EFF-2] the statement writes `p`'s ultimate storage origin
@@ -430,6 +431,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             for path in self.effect_paths_for_place(&access.place, bindings)? {
                 effects.add_write(path);
             }
+        }
+        // [PROV-6] the statement spends each resolved store's provider, so
+        // its row carries a write of that provider place.
+        for path in self.resolved_provider_writes(function, ty)? {
+            effects.add_write(path);
         }
         let mut drops = Vec::new();
         for (fields, ty, release) in self.released_paths(paths)? {
@@ -1026,6 +1032,11 @@ so the block is written `region { ... }`",
                 .find(|declaration| declaration.id() == local.declaration)
                 .map_or_else(String::new, |declaration| declaration.spelling().to_owned());
             self.reject_linear_value_not_consumed(local.ty, &name, edge)?;
+            // [D3] the capability half, read against this scope: a run
+            // branded to a general store is linear wherever no binding of
+            // that store's provider is live, and there is then no derived
+            // release to carry it off the edge.
+            self.reject_release_without_capability(local.ty, &name, bindings, edge)?;
         }
         for (_, local) in live {
             if !self.is_copy_type(local.ty)? {

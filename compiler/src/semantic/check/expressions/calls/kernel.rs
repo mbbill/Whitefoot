@@ -70,15 +70,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .get(usize::from(operation_index))
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
         let signature = kernel_signature(record.row);
-        // TEMPORARY capability stop, judged before any operand is read: a
-        // general-store take needs the release action of a heap-backed run,
-        // which this version does not lower, and the general store's provider
-        // has no source route at all while [FN-7]'s own row is DEFERRED. It is
-        // an explicit unsupported capability and never a source rejection
-        // [BLK-0].
-        if matches!(record.row, KernelRow::HeapVector) {
-            return self.unsupported(crate::UnsupportedSemanticFeature::ContainerRuntime, node);
-        }
         let mut instance = self.kernel_written_arguments(node, signature, record, function)?;
         if record.row == KernelRow::ArenaFrame {
             self.check_reservation_placement(node, &instance)?;

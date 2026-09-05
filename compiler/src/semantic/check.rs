@@ -1906,7 +1906,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.written_body_effects(signature, checked.effects.clone())
         };
         let mut release_sites = Vec::new();
-        self.collect_release_sites(&checked.statements, &mut release_sites)?;
+        self.collect_release_sites(signature, &checked.statements, &mut release_sites)?;
         let mut release = EffectSet::NONE;
         for site in &release_sites {
             release = release.union(site.effects.clone());
