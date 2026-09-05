@@ -1,0 +1,283 @@
+diff --git a/compiler/src/semantic/check/requires.rs b/compiler/src/semantic/check/requires.rs
+index 504fb47..6ea3664 100644
+--- a/compiler/src/semantic/check/requires.rs
++++ b/compiler/src/semantic/check/requires.rs
+@@ -11,7 +11,8 @@ use super::super::goal::{
+     CheckedRequirement, GoalDatum, GoalExpression, GoalOperation, GoalProjection, GoalTemplate,
+ };
+ use super::super::model::{
+-    BindingId, CheckedConst, CheckedExpression, CheckedFloatOperation, CheckedMode,
++    BindingId, CheckedConst, CheckedExpression, CheckedFloatOperation, CheckedIntegerOperation,
++    CheckedMode,
+     CheckedNominalKind, CheckedStatement, CheckedType, CheckedValue,
+ };
+ use super::super::postcondition::PostconditionConstantOrigin;
+@@ -795,6 +796,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
+         Ok(false)
+     }
+ 
++/// The exact rows a contract clause reads mathematically rather than as a
++/// runtime evaluation, matching the carve-out [INV-1] already gives an
++/// `affine_expr`. Addition, subtraction, and multiplication have a total
++/// meaning over the mathematical integers, so a clause written over them
++/// states a relation rather than requesting an operation, and [FN-9] erases
++/// every clause before lowering. Division, remainder, the shifts, negation,
++/// and absolute value stay inadmissible: each has an input a relation cannot
++/// state its way out of, so admitting them would put a partial operation in a
++/// position with no domain obligation to discharge it.
++const fn clause_affine_operation(operation: CheckedIntegerOperation) -> bool {
++    matches!(
++        operation,
++        CheckedIntegerOperation::AddExact
++            | CheckedIntegerOperation::SubtractExact
++            | CheckedIntegerOperation::MultiplyExact
++    )
++}
++
+     /// Validates the infix spelling of a row against the same [FN-8] subset
+     /// the named spelling faces.
+     ///
+@@ -811,7 +830,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
+         tail: NodeId,
+     ) -> Result<(), CheckStop> {
+         let operator = self.infix_operator_node(tail)?;
+-        if self.infix_operation(operator)?.is_exact() {
++        let operation = self.infix_operation(operator)?;
++        if operation.is_exact() && !Self::clause_affine_operation(operation) {
+             return self.invalid_clause(clause, entry);
+         }
+         let left = self
+diff --git a/compiler/src/semantic/entailment/flow.rs b/compiler/src/semantic/entailment/flow.rs
+index c6d2bce..8a63dde 100644
+--- a/compiler/src/semantic/entailment/flow.rs
++++ b/compiler/src/semantic/entailment/flow.rs
+@@ -201,6 +201,18 @@ struct ProofFlowState {
+ #[derive(Clone, Debug, Default, Eq, PartialEq)]
+ struct AffineFlowState {
+     values: HashMap<BindingId, AffineForm>,
++    /// The affine atom standing for the measure of each unprojected place
++    /// live at this point, keyed by that place's root binding.
++    ///
++    /// A measure is fixed at its object's creation and an element write never
++    /// moves it [ENT-5], so the atom is stable while the object is: it is
++    /// minted once on first use and re-minted only when a write to that root
++    /// binding removes the entry, exactly as the binding's own image is.
++    /// Facts name the immutable atom and never this map, so a replacement
++    /// value cannot match an image published before the write. Keying on the
++    /// root binding rather than on an interned measure term is what lets a
++    /// read resolve the atom without interning anything.
++    length_values: HashMap<BindingId, AffineForm>,
+     /// Every published affine conclusion at this control-flow point. Fact
+     /// identity is only the canonical inequality over immutable value images;
+     /// evidence is retained solely to explain a selected derivation.
+@@ -1378,6 +1390,12 @@ impl Analyzer<'_, '_> {
+                 projections,
+                 ty: CheckedType::Integer(_),
+             }) if projections.is_empty() => state.values.get(root).cloned(),
++            GoalExpression::Operation { row, arguments, .. }
++                if Self::measure_place_root(row, arguments).is_some() =>
++            {
++                let root = Self::measure_place_root(row, arguments)?;
++                state.length_values.get(&root).cloned()
++            }
+             GoalExpression::Operation {
+                 row:
+                     GoalOperation::NumericConversion {
+@@ -3379,7 +3397,7 @@ impl Analyzer<'_, '_> {
+         }
+         self.promote_flow_contradiction(states);
+         self.apply_kills_one(&mut states.facts, events);
+-        Self::apply_affine_kills(&mut states.affine, events);
++        self.apply_affine_kills(&mut states.affine, events);
+         self.invalidate_entry_images(states, events, None);
+     }
+ 
+@@ -3477,6 +3495,9 @@ impl Analyzer<'_, '_> {
+             .copied()
+             .collect::<HashSet<_>>();
+         state.values.retain(|binding, _| !exited.contains(binding));
++        state
++            .length_values
++            .retain(|binding, _| !exited.contains(binding));
+     }
+ 
+     fn exit_scopes_to(&mut self, states: &mut ProofFlowState, depth: usize) {
+@@ -5117,6 +5138,7 @@ impl Analyzer<'_, '_> {
+                                     .expect("reached actuals have admitted argument slots"),
+                             ),
+                         );
++                        self.install_measure_atoms(&goal.root, &mut states.affine);
+                         let (disposition, derivation) = self.judge_call_goal(
+                             *function,
+                             call,
+@@ -5331,6 +5353,57 @@ impl Analyzer<'_, '_> {
+         }
+     }
+ 
++    /// The root binding of the place one measure operation measures, when
++    /// that place is the whole object rather than a part of it.
++    ///
++    /// A holder is named through `deref` and a value directly, and
++    /// `length_term` already derives which from the binding itself, so both
++    /// spellings key the same measure. A field projection names a different
++    /// object and is not this measure.
++    fn measure_place_root(row: &GoalOperation, arguments: &[GoalExpression]) -> Option<BindingId> {
++        if !matches!(
++            row,
++            GoalOperation::BufferLength { .. } | GoalOperation::SliceLength { .. }
++        ) {
++            return None;
++        }
++        let [GoalExpression::Datum(GoalDatum::Place {
++            root, projections, ..
++        })] = arguments
++        else {
++            return None;
++        };
++        match projections.as_slice() {
++            [] | [GoalProjection::Deref] => Some(*root),
++            _ => None,
++        }
++    }
++
++    /// Mints the stable affine atom for every measure this goal names, so the
++    /// read path can image it without interning anything.
++    ///
++    /// A measure of an unprojected place is one unknown u64 fixed at the
++    /// object's creation [ENT-5]. Installing it here rather than at the read
++    /// is what keeps `affine_goal_value` a pure read: the atom exists before
++    /// the proof runs, and the kill rule removes it when the root binding is
++    /// written, which is what re-mints it.
++    fn install_measure_atoms(&mut self, expression: &GoalExpression, state: &mut AffineFlowState) {
++        match expression {
++            GoalExpression::Operation { row, arguments, .. } => {
++                if let Some(root) = Self::measure_place_root(row, arguments)
++                    && !state.length_values.contains_key(&root)
++                {
++                    let atom = self.new_affine_atom(IntegerType::U64);
++                    state.length_values.insert(root, atom);
++                }
++                for argument in arguments {
++                    self.install_measure_atoms(argument, state);
++                }
++            }
++            GoalExpression::Datum(_) => {}
++        }
++    }
++
+     fn judge_call_goal(
+         &mut self,
+         callee: super::super::model::FunctionId,
+@@ -8238,8 +8311,35 @@ impl Analyzer<'_, '_> {
+             };
+             values.insert(binding, value);
+         }
++        let mut length_values = HashMap::new();
++        // A measure is not arithmetic-updated, so there is no spread for a
++        // join delta to stand for: inputs that disagree disagree because some
++        // branch replaced the object, and the next read mints a new unknown.
++        let mut measures = first
++            .affine
++            .length_values
++            .keys()
++            .copied()
++            .collect::<Vec<_>>();
++        measures.sort_by_key(|binding| binding.0);
++        for binding in measures {
++            let Some(first_value) = first.affine.length_values.get(&binding) else {
++                continue;
++            };
++            if states.iter().skip(1).all(|state| {
++                state
++                    .affine
++                    .length_values
++                    .get(&binding)
++                    .is_some_and(|value| value == first_value)
++            }) {
++                length_values.insert(binding, first_value.clone());
++            }
++        }
++
+         AffineFlowState {
+             values,
++            length_values,
+             facts: self.join_affine_facts(states),
+             published_invariants: first
+                 .affine
+@@ -9440,6 +9540,26 @@ impl Analyzer<'_, '_> {
+                 value: values.values[&binding].clone(),
+             });
+         }
++        // The same bridge for a measure: the L0 state carries the bounds a
++        // creation or a verified contract established on `len(P)`, and this
++        // pairs them with the atom that images it, so an atom minted as an
++        // unknown u64 tightens to what is actually known about the object.
++        let mut measures = values.length_values.keys().copied().collect::<Vec<_>>();
++        measures.sort_by_key(|binding| binding.0);
++        for binding in measures {
++            let term = self.length_term(
++                PlaceTerm {
++                    root: PlaceRoot::Binding(binding),
++                    deref: self.is_holder(binding),
++                    fields: Vec::new(),
++                },
++                None,
++            );
++            candidates.push(AffineL0Candidate {
++                term,
++                value: values.length_values[&binding].clone(),
++            });
++        }
+         candidates
+     }
+ 
+@@ -9844,12 +9964,21 @@ impl Analyzer<'_, '_> {
+         }
+     }
+ 
+-    fn apply_affine_kills(state: &mut AffineFlowState, events: &[KillEvent]) {
++    fn apply_affine_kills(&self, state: &mut AffineFlowState, events: &[KillEvent]) {
+         state.values.retain(|binding, _| {
+             !events
+                 .iter()
+                 .any(|event| Self::affine_event_kills_binding(*binding, event))
+         });
++        // A measure survives every write to the measured object's elements and
++        // dies with a write to its root binding [ENT-5]. Dropping the entry is
++        // what re-mints the atom, so a length read after a replacement is a
++        // new unknown rather than the old one.
++        state.length_values.retain(|binding, _| {
++            !events
++                .iter()
++                .any(|event| Self::affine_event_kills_binding(*binding, event))
++        });
+         // Published facts name immutable AffineTermId value identities, not
+         // mutable bindings. Removing the map above prevents a replacement
+         // value from matching an old image; retaining each theorem preserves
+@@ -9879,7 +10008,7 @@ impl Analyzer<'_, '_> {
+                 };
+                 let proof_event = self.proof_event(kind, Some(event.source()));
+                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
++                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                 self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
+                 prepared.transfer_events.push(proof_event);
+             }
+@@ -10002,7 +10131,7 @@ impl Analyzer<'_, '_> {
+             }
+             for event in &target_kills {
+                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
+-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
++                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                 self.invalidate_entry_images(
+                     state,
+                     std::slice::from_ref(event),
+@@ -11352,7 +11481,7 @@ impl Analyzer<'_, '_> {
+     ) {
+         self.promote_flow_contradiction(states);
+         self.apply_loop_kills_one(&mut states.facts, kills);
+-        Self::apply_affine_kills(&mut states.affine, &kills.events);
++        self.apply_affine_kills(&mut states.affine, &kills.events);
+         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
+         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
+         for group in groups {

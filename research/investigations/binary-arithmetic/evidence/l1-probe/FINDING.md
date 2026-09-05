@@ -70,3 +70,73 @@ it — carried into the affine layer unchanged.
 
 Order still holds: the fact base is fed before the surface widens. L0 fed it
 one kind of fact; this is the second.
+
+---
+
+# Second attempt: the measure atom, built and still short
+
+Built the second half against v0.45 rather than reasoning about it further.
+The patch is `measure-as-affine-atom.patch`, recorded and not merged. Every
+piece below compiles; the motivating case still does not discharge.
+
+## What was built
+
+1. `AffineFlowState.length_values: HashMap<BindingId, AffineForm>` — the
+   stable atom for the measure of an unprojected place, keyed by that place's
+   root binding rather than by an interned measure term, so a read can resolve
+   it without interning anything.
+2. Kill: the entry is dropped by exactly the events that drop the binding's
+   own image, which is what re-mints the atom. This mirrors the existing
+   comment on `apply_affine_kills` — facts name the immutable atom, never the
+   map, so a replacement value cannot match an image published before the
+   write. A measure survives an element write and dies with a write to the
+   root [ENT-5], which is what keying on the root gives.
+3. Join: keep the atom where every input agrees, drop it otherwise. A measure
+   is not arithmetic-updated, so there is no spread for a join delta to stand
+   for; disagreement means a branch replaced the object.
+4. Scope exit: dropped with the binding.
+5. Mint: `install_measure_atoms` walks the instantiated call goal in the
+   `&mut` window before the proof context is built, so the read path stays a
+   pure `&self` read.
+6. Read: `affine_goal_value` images a `BufferLength`/`SliceLength` over a
+   place spelled bare or through one `deref` — `length_term` derives that
+   `deref` from `is_holder`, so both spellings key the same measure.
+7. Bridge: `affine_l0_candidates` pairs each measure atom with its interned
+   length term, so L0 bounds established at creation tighten an atom minted
+   as an unknown u64.
+8. The clause allow-list from the first attempt, so the contract forms.
+
+## Where it still stops
+
+Unchanged:
+
+```
+[FN-8] UndischargedCallRequirement
+  instantiated_goal: "len(out) >= len(src) * 2_u64"
+  disposition: Unproved
+```
+
+The affine route is wired for call goals — `call_goal_disposition` builds an
+`affine_goal_ordering_target` and passes it as `ProofGoal::Signed`'s affine
+target — and `affine_goal_value`'s `MultiplyExact` arm already scales a form
+by a literal on either side. So the shape the goal needs exists on both ends.
+
+What is not established is whether the measure atom is *found* at that point.
+The next thing to determine, and the reason this stops here rather than
+continuing: `admitted_call_goal_expression` substitutes each formal with the
+actual before the goal is judged, and the actual here is a borrow expression.
+If substitution leaves the measured operand as something other than a
+`GoalDatum::Place` — an `EvaluatedValue`, or a place carrying the borrow's own
+projections — then both the mint and the read skip it and every piece above is
+correct and unreachable. That is one instrumented run to settle, and it should
+be settled before any more of this is written.
+
+## Reading
+
+L1 is not a follow-on to L0. L0 published a fact the checker had already
+proved, into a domain that already held that shape. L1 introduces a new kind
+of affine atom, and each layer it touches — kill, join, scope, substitution,
+the L0 bridge — is a place where the atom's identity has to mean the same
+thing. The eight pieces above are a plausible design and they are not
+evidence that the design is right; the case that would be evidence is still
+refused.
