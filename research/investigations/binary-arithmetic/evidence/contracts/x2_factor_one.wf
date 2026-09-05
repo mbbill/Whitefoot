@@ -1,0 +1,26 @@
+fn expand(out: &uniq buffer<u8>, src: own buffer<u8>, needed: own u64) -> written: own u64 reads(src), writes(out) contract {
+  requires needed >= 1_u64;
+  requires len(deref(out)) >= needed;
+} {
+  doc "expansion codec: the 2x precondition arrives as a precomputed parameter";
+  let count = len(src);
+  set deref(out)[0_u64] = 0_u8;
+  return count;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "drive: caller computes 2 * len(src) with the exact row and passes it";
+  let src = buffer_new(4_u64, 65_u8);
+  let out = buffer_new(8_u64, 0_u8);
+  region {
+    let handle = &uniq out;
+    let count = len(src);
+    let needed = 1_u64 * count;
+    let produced = expand(out: move handle, src: move src, needed: needed);
+    if produced == 4_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

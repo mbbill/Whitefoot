@@ -49,24 +49,47 @@ E6_invariant_on_product_result.wf
 Supplying exactly the discarded bound as a written guard turns `E5` into an
 accept, so that bound is the whole missing ingredient.
 
-The same measurement found a second gap that is not about nonlinearity at all:
-a contract clause admits no binary arithmetic in any spelling. `define needed =
-count * 2_u64;` and `define needed = count + 2_u64;` are the same `[FN-8]`
-rejection, so `requires len(out) >= 2 * len(src)` — the precondition of every
-expansion codec — is unwritable, and a widened multiplication would not fix it.
+The same measurement found a second gap that is not about nonlinearity at all,
+though its shape is not what the first reading suggested. A contract clause
+does admit binary arithmetic, including nonlinear arithmetic: `define needed =
+count *sat count;` forms, and so does `count +wrap 2_u64`. What a clause
+refuses is the **exact** rows — `requires.rs:813-816` rejects any operation
+whose `is_exact()` holds, which is `+ - * / % iabs ineg ishl ishr`. So the
+divide is exact against total, not addition against multiplication:
+
+```
+define needed = count +wrap 2_u64;   forms; fails at the caller, Unproved
+define needed = count *sat count;    forms (nonlinear, admitted); same
+define needed = count + 2_u64;       [FN-8] InvalidRequires at formation
+```
+
+A second, independent wall is arity: `clause_expr` admits one operator, so
+`requires a >= b + 1_u64;` is a `[GRAM-5]` parse rejection whatever the row.
+
+The consequence stands — `requires len(out) >= 2 * len(src)`, the precondition
+of every expansion codec, is unwritable — but the cause is a formation-time
+policy over one operator set, not an absent arithmetic. The exact rows are
+banned because a clause is runtime-typed (`requires.rs:236` runs
+`check_expression`), while `affine_expr` "denotes a mathematical integer
+expression and never a runtime evaluation" (`spec:3250`). An `invariant`
+already has that carve-out; a clause does not.
 
 ## The five positions
 
 The same relation is admitted differently depending on where it is written.
 Every cell was compiled.
 
-| position | `a + b` | `2 * b` | `a * b` |
-| --- | --- | --- | --- |
-| `invariant` [INV-1] | admitted | admitted | rejected at formation |
-| `use` factor [PRF-1] | admitted | bare decimal only | `[GRAM-4]` |
-| `requires`/`ensures` [MSR-5] | `[GRAM-5]` | `[GRAM-5]` | `[GRAM-5]` |
-| contract `define` [FN-8] | `[FN-8]` | `[FN-8]` | `[FN-8]` |
-| branch condition [ENT-3] | atoms only — a guard on a field projection records nothing |
+| position | `a + b` (exact) | `2 * b` (exact) | `a * b` (exact) | `a +wrap b`, `a *sat b` (total) |
+| --- | --- | --- | --- | --- |
+| `invariant` [INV-1] | admitted | admitted | rejected at formation | n/a — clauses are mathematical |
+| `use` factor [PRF-1] | admitted | bare decimal only | `[GRAM-4]` | n/a |
+| `requires`/`ensures` [MSR-5] | `[FN-8]` exact ban; second operator also `[GRAM-5]` | same | same | **admitted**, nonlinear included |
+| contract `define` [FN-8] | `[FN-8]` | `[FN-8]` | `[FN-8]` | **admitted** |
+| branch condition [ENT-3] | atoms only — a guard on a field projection records nothing | | | |
+
+So the four positions disagree along two independent axes: which operator
+rows are admitted (exact against total), and how many operators one relation
+may contain.
 
 ## Direction
 
@@ -86,8 +109,15 @@ Ordered by what the evidence asked for:
 - **L0** — publish the interval product's proved bound on the result. No new
   representation: the bounds are constants carried against the zero term, so
   the ordinary `[ENT-5]` support rule gives the right kill behaviour for free.
-- **L1** — one relation vocabulary across the five positions, so a contract can
-  state a size precondition.
+- **L1** — admit the exact affine rows in clause position, so a contract can
+  state a size precondition. The prover is already unified —
+  `ProofGoal::Ordering` carries both a `Relation` and an `AffineForm` — and
+  `affine_goal_value` already implements `AddExact`, `SubtractExact` and
+  literal-sided `MultiplyExact`; those rows reach it today only from the
+  caller side. What is genuinely duplicated is narrower than a relation model:
+  `check/publication.rs` is a hand-rolled difference-bound closure beside the
+  entailment one, and three separate converters into affine exist
+  (`proofs.rs:531`, `flow.rs:8724`, `flow.rs:1337`).
 - **L2** — a non-literal `use` multiplier, `use n * (p <= k - 1);`. The
   identical certificate with a literal factor already compiles.
 - **L3** — premise products, which is where Handelman completeness comes from.
@@ -97,6 +127,15 @@ relative to another runtime value: with a runtime `k`, the interval of `p < k`
 is the type range, so `p * n <= (k - 1) * n` is outside it. That family —
 matrix multiply's inner index, a transpose's destination stride — is what L2
 is for.
+
+The order matters and it is not the order the surface suggests. Widening a
+written surface before the fact base can hold what it states converts a clean
+rejection into a silent non-fact: `checked_affine_relation_l0` publishes only
+unit-coefficient relations, so `ensures len(out) >= 2 * len(src)` would form
+and publish nothing, and a measure has no affine image to fall back on
+(`spec:1429` — a measure term "is a clause operand and not yet an affine
+atom"). So the fact base is fed first. L0 is exactly that, which is why it
+comes before the surface work rather than after it.
 
 ## Layout
 

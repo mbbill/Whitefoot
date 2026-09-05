@@ -1,0 +1,18 @@
+fn need(n: own u64, m: own u64) -> ok: own u64 pure contract {
+  requires n >= m;
+} {
+  doc "callee requires an ordering between two own integers";
+  return n;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "caller computes the actual with exact * by a literal";
+  let b = 4_u64;
+  let scaled = 2_u64 * b;
+  let got = need(n: scaled, m: b);
+  if got == 8_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}
