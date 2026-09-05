@@ -3823,9 +3823,18 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   written place is a prefix of, and no other. No rule is amended, because the
   specification already said this.
 - CONFORMANCE BOUNDARY (B8d): this batch ADDS thirteen conformance cases and
-  their thirteen manifest rows, and MODIFIES, DELETES and RENAMES none. No
-  adapter, runner, or collection wiring changes, and no expectation, rule
-  citation, status or doc of any existing row is touched. The added ids are
+  their thirteen manifest rows, MODIFIES the `doc` sentence of one existing
+  case's source, and DELETES and RENAMES none. No adapter, runner, or collection
+  wiring changes, and no expectation, rule citation or status of any existing row
+  is touched. The MODIFIED case is
+  `blk1-pos-a-store-backed-run-is-a-run-element` (`{"kind": "run", "exit": 0}`
+  before and after, and its manifest row untouched): B8c gave it a `room_of`
+  branch and wrote "because MSR-3's element placements are deferred", which this
+  batch's [MSR-3] amendment makes false. The branch and every statement of the
+  program are unchanged; only the reason is corrected to the one the amended rule
+  states — the element placement reaches a written element position, and
+  `place_back`'s `len_of(vector)` and `take_back`'s `len_of(rest)` are not
+  offsets a place relation may name. The added ids are
   `blk0-pos-a-routed-row-publishes-its-payload-on-the-some-arm`
   (`{"kind": "run", "exit": 0}`),
   `blk0-pos-the-none-arm-knows-the-store-was-not-advanced`
