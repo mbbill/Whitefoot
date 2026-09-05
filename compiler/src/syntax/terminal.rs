@@ -14,7 +14,7 @@ pub const TERMINAL_CONTRACT_SPEC_HASH: SpecHash = ACTIVE_KERNEL_SPEC_HASH;
 /// v0.33's contract, command, and integer-domain spellings, the v0.40 proof
 /// spellings, and v0.41's four compound comparisons and call-site `::`
 /// delimiter, plus v0.45's route-ordinal `is` and its capitalized view atom
-/// `MutSlice` [S6, S35]. Retired source atoms are removed from this current-grammar
+/// `MutSlice`. Retired source atoms are removed from this current-grammar
 /// inventory; the dense indices are compiler-local and are never serialized.
 /// First grammar-occurrence order is carried by
 /// [`ALL_FIXED_TERMINALS`] and is stable language data, not parser priority.
@@ -89,7 +89,7 @@ pub enum FixedTerminal {
     Unit,
     /// `array`.
     Array,
-    /// `Slice` [S35].
+    /// `Slice`, S35's capitalized view spelling.
     Slice,
     /// `box`.
     Box,
@@ -227,7 +227,7 @@ pub enum FixedTerminal {
     Copy,
     /// `dispose`.
     Dispose,
-    /// `MutSlice` [S6, S35].
+    /// `MutSlice`, the second view S6 and S35 name.
     MutSlice,
 }
 
@@ -661,7 +661,7 @@ pub fn is_identifier(spelling: &[u8]) -> bool {
 /// Tests active specification `TYPEID` membership, excluding the fixed
 /// capitalized spellings.
 ///
-/// [S35] capitalizes the view nominals, so `Slice` is a fixed atom of the
+/// S35 capitalizes the view nominals, so `Slice` is a fixed atom of the
 /// `type` production [GRAM-3] exactly as `array` and `buffer` are, and the
 /// same exclusion `is_identifier` makes for a fixed lowercase word is made
 /// here: a fixed spelling is its atom and never also a TYPEID, so no token

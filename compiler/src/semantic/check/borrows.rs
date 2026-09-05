@@ -159,24 +159,37 @@ pub(super) struct SliceLoan {
 }
 
 impl SliceLoan {
-    /// Whether one access to the origin conflicts with this loan [OWN-5,
-    /// PROV-3 use 3].
+    /// Whether one access to the origin conflicts with this loan [OWN-5].
     ///
-    /// The refused set is the one use 3 states — a write, a replace or
-    /// exchange, a consume, and the unique borrow that would carry any of
-    /// them — and it is the same set at both strengths, because what
-    /// separates the two is the access the *formation* takes rather than the
-    /// access the standing loan refuses: an exclusive formation takes a
-    /// unique borrow, which a live loan of either strength refuses, so a
-    /// second `MutSlice` over one place meets the first loan and a second
-    /// `Slice` does not. A read of the origin is admitted by both, which is
-    /// what lets a view's own element read reach the storage it views.
+    /// A shared loan refuses what a shared borrow refuses: a write, a move,
+    /// and the unique borrow that would carry either — which is what makes an
+    /// exclusive formation over a place a shared view already views the
+    /// second formation's own conflict.
+    ///
+    /// An exclusive loan refuses those and a *second view* of the range
+    /// besides, at either strength. Element writes through the exclusive view
+    /// reach storage a second view would read, and this version has no child
+    /// reborrow of a view: forming a shared `Slice` over a place a live
+    /// `MutSlice` views would be [OWN-6]'s shared child of a unique loan, and
+    /// nothing here establishes the parent's suspension or its resumption, so
+    /// the pair is refused rather than admitted unchecked.
+    ///
+    /// A read of the origin is admitted at both strengths, which is what lets
+    /// a view's own element read reach the storage it views.
     pub(super) const fn refuses(&self, access: AccessKind) -> bool {
-        let _ = self.strength;
-        matches!(
-            access,
-            AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
-        )
+        match self.strength {
+            LoanStrength::Shared => matches!(
+                access,
+                AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
+            ),
+            LoanStrength::Exclusive => matches!(
+                access,
+                AccessKind::Write
+                    | AccessKind::Move
+                    | AccessKind::UniqueBorrow
+                    | AccessKind::SharedBorrow
+            ),
+        }
     }
 }
 

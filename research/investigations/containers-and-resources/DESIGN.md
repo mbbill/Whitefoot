@@ -7559,7 +7559,14 @@ rather than as a plan.
   view's loan already refuses: two exclusive views of one range are [OWN-5]'s ordinary
   conflict at the *second formation*, and two shared views are admitted for the reason a
   second shared borrow is. That is the design's own sentence, implemented without a second
-  overlap notion.
+  overlap notion. **One sentence had to be added to it, and the reason is a hole the
+  element write opened.** With the write reachable, a shared view formed over a place a
+  live `MutSlice` views reads storage that view may change — `mut_slice_of(&uniq table)`,
+  `slice_of(&table)`, `set writer[0] = 9;`, `reader[0]` compiled, linked and read `7`.
+  That pair is [S31]'s child reborrow, which this version does not implement, so an
+  exclusive loan refuses a second view of its range at either strength and the pair is
+  refused at the second formation. When the child reborrow lands, that refusal is where
+  its admission goes.
 
 **[S27] is the one decision this batch had to hand back, and the corpus is why.** Making
 `Slice<'r, T>` copy would move a recorded verdict:
@@ -7583,9 +7590,9 @@ class. Neither is deep, and both are outside a batch that had already changed th
 [VIEW-6]'s two-same-region-result refusal and [S31]'s child reborrow of an exclusive view
 are not implemented and are not stated as rules.
 
-**Verdicts.** The adapter moves from Pass=647 over 649 cases to Pass=653 over 655, with the
+**Verdicts.** The adapter moves from Pass=647 over 649 cases to Pass=654 over 656, with the
 one xfail and the one skip unchanged, coverage complete at 150/150, and the snapshot corpus
-at Pass=491, Flip=0. No corpus verdict moved. The respell touched 17 conformance case
+at Pass=491, Flip=0. No corpus verdict moved. The respell touched 12 conformance case
 sources, 3 snapshot case sources, 4 `tests/programs` sources, the compiler's embedded test
 sources, the conformance manifest's own prose and `docs/patterns.md`, and every one of them
 keeps the verdict it recorded.

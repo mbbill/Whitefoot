@@ -223,6 +223,17 @@ the place rules can name; that is now the stated limit rather than a deferred
 clause. B8d also closes a fourth soundness hole its own element placement found:
 [ENT-5]'s element-position carve-out survived on the **goal** path, so a measure
 goal over `len_of(P[i])` outlived the write that replaced `P[i]`.
+**B8e lands the view half in part**: [S35] spells the view type `Slice<'r, T>`
+and releases the lowercase word, [VIEW-1] adds `MutSlice<'r, T>` as the second
+view at exclusive loan strength, [VIEW-2] states the two formation rows as one
+judgment, and [SET-1] admits a target path through a view exactly at that
+strength, so `set view[i] = e;` through a `MutSlice` compiles, links and runs
+where probe `p7` was a refusal. Three parts of that rule set did not land and
+are DEFERRED with stated deltas: [S27]'s copy classification of `Slice`, which
+would move an accepted conformance program that `move`s a shared view; the
+widening of the viewed domain to the two runs, with the non-wrap premise and the
+retirement of the two formation rows into [BLK-0]; and [VIEW-4], [VIEW-6] and
+[PROV-3], which this version states as rules nowhere.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`
@@ -1066,7 +1077,12 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   suspension of a uniq root (OWN-13), closing the recorded OWN-6 gap and
   the OWN-13/OWN-5 contradiction. Uniq non-copy payload binders and written
   uniq nested chains remain explicit capability gaps; branch-produced loans
-  and holder-derived slices remain absent.
+  and holder-derived slices remain absent. v0.45 adds the second view:
+  [VIEW-1] and [VIEW-2] give the language `Slice<'r, T>` and `MutSlice<'r, T>`
+  at shared and exclusive loan strength, and [SET-1] admits an element write
+  through the exclusive one, so a helper can fill a caller's storage without
+  taking it. `Slice` is still affine, the viewed domain is still `array<T, N>`
+  and `buffer<T>`, and neither run is viewable.
 - **Missing / next:** choose the smallest missing rule only after a real
   project cannot express its required access pattern. The 31-rule loan/freeze
   review candidate and older M1 model are parked evidence, not language

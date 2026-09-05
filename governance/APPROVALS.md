@@ -3906,7 +3906,7 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   region parameter [FORM-8], and the pass that mints it runs before resolution,
   so it can tell `Slice<u8>` from `Vector<u8>` only by a fixed atom or by a
   name comparison at a layer that has no declarations yet. The respell moves
-  17 conformance case sources, 3 snapshot case sources, 4 `tests/programs`
+  12 conformance case sources, 3 snapshot case sources, 4 `tests/programs`
   sources, `docs/patterns.md`, the compiler's embedded test sources and the
   conformance manifest's own prose; every one of them keeps the verdict it
   recorded, and no `tests/snapshot/index.tsv` row and no
@@ -3926,7 +3926,7 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   than [BLK-0] kernel declaration records. **The child reborrow of an exclusive
   view and the two-same-region-result refusal are not landed at all**, and
   neither is stated as a rule in this specification.
-- CONFORMANCE BOUNDARY (B8e): six added cases, no modification of a case's
+- CONFORMANCE BOUNDARY (B8e): seven added cases, no modification of a case's
   expectation, no deletion and no rename, beside the source respell recorded
   above.
   `view1-pos-an-element-write-through-an-exclusive-view`
@@ -3938,16 +3938,18 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `view2-pos-two-shared-views-of-one-place`
   (`{"kind": "run", "exit": 0}`),
   `view2-neg-an-exclusive-view-takes-a-unique-borrow`
-  (`{"kind": "reject", "rule": "TYPE-5"}`) and
+  (`{"kind": "reject", "rule": "TYPE-5"}`),
   `view2-neg-an-exclusive-view-of-a-named-const`
-  (`{"kind": "reject", "rule": "CONST-2"}`), each status runnable. Before this
+  (`{"kind": "reject", "rule": "CONST-2"}`) and
+  `view2-neg-a-shared-view-of-a-place-an-exclusive-view-holds`
+  (`{"kind": "reject", "rule": "OWN-5"}`), each status runnable. Before this
   batch the corpus holds 649 cases with the native adapter reporting Pass=647,
-  Xfail=1, Skip=1; after it the corpus holds 655 with the adapter reporting
-  Pass=653, Xfail=1, Skip=1. The one xfail
+  Xfail=1, Skip=1; after it the corpus holds 656 with the adapter reporting
+  Pass=654, Xfail=1, Skip=1. The one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, rule coverage stays complete at
   150/150, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0.
   No verdict of either corpus moved and no program of the executable corpus
   changed behaviour: every source the respell touched compiles to the same
   verdict under the new spelling.
-ACTIVE-SPEC: v0.45 e394b997a6463f4fbe6c1e8e455d6a34fd062b5539f01e522d2595876b8263d1 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 7ba7880481d958a3cf02d414e297f65c09859ec25b4276a74529a0074f5d6344 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

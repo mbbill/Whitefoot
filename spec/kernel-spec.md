@@ -721,7 +721,9 @@ A value initializer whose derived delivery type [GIVE-1, TYPE-5] is `Slice<'r, T
 Alternative direct returns are checked independently and the caller uses their common signature ceiling [FN-1].
 
 An access through a view is judged as one access of that view's own loan strength through every resolved-place origin in its set: shared for `Slice<'r, T>` and exclusive for `MutSlice<'r, T>` [VIEW-1].
-A write, move, or unique borrow of an ordinary place conflicts when that place overlaps any such origin, at either strength; the exclusive strength additionally makes the formation of a second view over that place its own conflict, because that formation takes a unique borrow [VIEW-2].
+A write, move, or unique borrow of an ordinary place conflicts when that place overlaps any such origin, at either strength.
+An exclusive loan refuses a second view of its range besides, at either strength, because an element write through the exclusive view reaches storage a second view would read and this specification states no child reborrow of a view; the pair is therefore refused at the second formation and not admitted unchecked [VIEW-2].
+A read of the origin is admitted at both strengths, which is what lets a view's own element read reach the storage it views.
 `immutable-const` creates no conflicting access because named const storage is permanently read-only [CONST-2].
 A formal-slice origin has a writable storage path inside its callee exactly when that view's loan strength is exclusive [SET-1]; overlap with the caller's other actual arguments is checked after substitution under [OWN-12].
 No traversal order or chosen runtime arm may narrow the static set.
@@ -1135,7 +1137,7 @@ The written borrow decides the row: a `&uniq` operand to `slice_of` and a shared
 `'r` is the region the operand's borrow takes, written or elided exactly as [FORM-8] states, and `T` is the viewed place's element type; neither is a written type argument, and a written argument list on either row is a hard error citing OP-1 at the `call`.
 **The formed value, not the argument borrow, holds the loan**: the argument borrow is an ordinary call-scoped temporary [OWN-6], and the loan the formation establishes on the origin place lives for the region `'r` [OWN-5].
 The access the formation itself performs is the access its own strength names — one shared access for `slice_of`, one exclusive access for `mut_slice_of` — judged against the complete loan state at that point [OWN-5].
-Two exclusive views of one place are therefore refused at the second formation, which is [OWN-5]'s ordinary conflict at the unique borrow the second formation takes, while two shared views of one place are admitted without limit.
+Two exclusive views of one place are therefore refused at the second formation, which is [OWN-5]'s ordinary conflict at the unique borrow the second formation takes; a shared view of a place a live exclusive view already views is refused there too, on [OWN-5]'s own second-view sentence; and two shared views of one place are admitted without limit.
 A named const is the `immutable-const` origin of a shared view [OWN-5, CONST-2] and is never the origin of an exclusive one: `mut_slice_of` over a named const is a hard error citing CONST-2 at that operand's `atom`.
 The viewed domain of both rows is `array<T, N>` and `buffer<T>` [OP-1]. Widening it to the two runs [BLK-1], and with it the non-wrap requirement `head_of(vector) <= room_of(vector)` a run source owes — which is the premise `head_of + len_of <= cap_of` under [MSR-2]'s standing identity `len_of + room_of = cap_of` — is DEFERRED with recorded delta [META-5]: numbered rules +0, grammar productions +0, records +2, being the retirement of these two [OP-1] rows into the kernel declaration domain [BLK-0], whose operand is spelled `vector` and whose requirement and four published relations are the record's own.
 
