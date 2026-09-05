@@ -1502,7 +1502,11 @@ command fn main() -> status: own ExitStatus pure {
 /// nothing.
 #[test]
 fn an_unresolvable_loan_actual_denies_rather_than_dropping_the_loan() {
-    let source = br#"fn touch_uniqslice(v: &uniq Slice<u8>) -> result: own u64 pure {
+    // [BLK-4] refuses the `&uniq Slice<u8>` parameter this fixture used to
+    // take, so the loan actual is a shared borrow of the same view binding.
+    // The denial is the one this test is about and is unchanged: the
+    // borrow's place is unresolvable at either strength.
+    let source = br#"fn touch_slice(v: &Slice<u8>) -> result: own u64 pure {
   return 3_u64;
 }
 
@@ -1511,8 +1515,8 @@ fn a_pure_uniqslice() -> result: own u64 pure {
   region {
     let v = slice_of(&buf);
     region {
-      let a = touch_uniqslice(v: &uniq v);
-      let b = touch_uniqslice(v: &uniq v);
+      let a = touch_slice(v: &v);
+      let b = touch_slice(v: &v);
       let s = a +wrap b;
       return s;
     }

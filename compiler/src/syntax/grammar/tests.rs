@@ -21,9 +21,9 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 #[test]
 fn complete_inventory_is_pinned() {
     assert_eq!(productions().len(), 88);
-    assert_eq!(DECISIONS.len(), 135);
-    assert_eq!(SELECT_ROWS.len(), 6_311);
-    assert_eq!(diagnostic_terminal_order().len(), 112);
+    assert_eq!(DECISIONS.len(), 136);
+    assert_eq!(SELECT_ROWS.len(), 6_318);
+    assert_eq!(diagnostic_terminal_order().len(), 111);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
     assert_eq!(productions()[13], Production::RequiresClause);
@@ -169,7 +169,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 135);
+    assert_eq!(decisions, 136);
 }
 
 #[test]
@@ -237,7 +237,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 135);
+    assert_eq!(DECISIONS.len(), 136);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -282,6 +282,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 6_311);
+    assert_eq!(total_rows, 6_318);
     assert!(saw_atom_only);
 }

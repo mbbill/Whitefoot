@@ -162,6 +162,34 @@ fn with_semantics_inputs<ResultValue>(
 
 /// [`with_semantics_inputs`] against one named [SYS-2] inventory state.
 ///
+/// Asserts that one source is refused at the parse stage citing one rule.
+///
+/// A grammar the tables cannot derive is refused before the checker sees it,
+/// and [DIAG-1] cites the production's own rule there. This is the assertion
+/// for a source whose defect the grammar itself decides.
+fn assert_parse_rule(source: &[u8], rule: crate::SyntaxRule) {
+    let Ok(bundle) = SourceBundle::with_limits(&[SourceInput::new("parse.wf", source)], SOURCE_LIMITS) else {
+        panic!("parse test bundle must be valid");
+    };
+    let LexOutcome::Complete(lexed) = lex(&bundle, LEX_LIMITS) else {
+        panic!("parse test source must lex");
+    };
+    let TerminalOutcome::Complete(classified) = classify_terminals(
+        &lexed,
+        ACTIVE_KERNEL_SPEC_HASH,
+        TerminalLimits {
+            max_tokens: LEX_LIMITS.max_tokens,
+        },
+    ) else {
+        panic!("parse test source must classify");
+    };
+    let outcome = parse(&classified, PARSE_LIMITS);
+    let ParseOutcome::SourceIssue(issue) = outcome else {
+        panic!("parse test source must be refused at the parse stage");
+    };
+    assert_eq!(issue.rule(), rule);
+}
+
 /// A frozen real source may name the inventory that first declared an
 /// operation; every other caller takes the active one.
 fn with_semantics_inputs_for<ResultValue>(
@@ -503,13 +531,15 @@ fn semantic_rule_owners_remain_distinct() {
         SemanticRule::Inv1,
         |kind| matches!(kind, SemanticIssueKind::InvalidInvariant { .. }),
     );
+    // [S23] both EFF-2 arms name a provider path: the first declares less
+    // than the body exhibits, the second more.
     assert_rule_kind(
-        b"fn helper() -> result: own unit pure {\n  let values = buffer_new(1_u64, 0_u8);\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper(heap: &uniq Heap) -> result: own unit reads(heap), writes(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq deref(heap), count: 1_u64) {\n      None() => {\n        return unit;\n      }\n      Some(value: run) => {\n        return unit;\n      }\n    }\n  }\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     assert_rule_kind(
-        b"fn helper() -> result: own unit pure {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"fn helper(heap: &uniq Heap) -> result: own unit allocates(heap) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
@@ -753,7 +783,7 @@ fn the_cited_rule_follows_the_callee_class_and_not_the_argument_problem() {
 
 #[test]
 fn effect_mismatch_is_located_at_the_written_effect_row() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  let values = buffer_new(1_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n";
     with_semantics(source, |outcome| {
         let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
             panic!("expected EFF-2 mismatch, got {outcome:?}");

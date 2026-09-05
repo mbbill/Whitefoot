@@ -48,6 +48,40 @@ pub(crate) fn derive_target_actions(functions: &mut [CheckedFunction]) {
     for (function, summary) in functions.iter_mut().zip(summaries) {
         function.target_action = summary;
     }
+
+    // [PROV-4, EFF-1] the ambient heap's reachability closure, over the same
+    // call graph and in the same pass. That store has no provider value, so
+    // no `effect_path` names it and no row carries it [S23]; its reachability
+    // is therefore the compiler's own retained record rather than a declared
+    // row, and it is exact for the same reason every other closure here is —
+    // the compilation unit is closed and there are no function values.
+    let mut reaches: Vec<bool> = functions
+        .iter()
+        .map(|function| function.reaches_ambient_heap)
+        .collect();
+    loop {
+        let mut changed = false;
+        for index in 0..functions.len() {
+            if reaches[index] {
+                continue;
+            }
+            if edges[index].iter().any(|callee| {
+                reaches
+                    .get(callee.0 as usize)
+                    .copied()
+                    .unwrap_or_default()
+            }) {
+                reaches[index] = true;
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    for (function, reached) in functions.iter_mut().zip(reaches) {
+        function.reaches_ambient_heap = reached;
+    }
 }
 
 fn collect_statements(

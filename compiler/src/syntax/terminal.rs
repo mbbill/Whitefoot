@@ -534,21 +534,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 112] = {
-    let mut predicates = [TerminalPredicate::Identifier; 112];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 111] = {
+    let mut predicates = [TerminalPredicate::Identifier; 111];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[104] = TerminalPredicate::Identifier;
-    predicates[105] = TerminalPredicate::TypeIdentifier;
-    predicates[106] = TerminalPredicate::RegionIdentifier;
-    predicates[107] = TerminalPredicate::Label;
-    predicates[108] = TerminalPredicate::OperationName;
-    predicates[109] = TerminalPredicate::Literal;
-    predicates[110] = TerminalPredicate::String;
-    predicates[111] = TerminalPredicate::Digits;
+    predicates[103] = TerminalPredicate::Identifier;
+    predicates[104] = TerminalPredicate::TypeIdentifier;
+    predicates[105] = TerminalPredicate::RegionIdentifier;
+    predicates[106] = TerminalPredicate::Label;
+    predicates[107] = TerminalPredicate::OperationName;
+    predicates[108] = TerminalPredicate::Literal;
+    predicates[109] = TerminalPredicate::String;
+    predicates[110] = TerminalPredicate::Digits;
     predicates
 };
 
@@ -556,14 +556,14 @@ impl TerminalPredicate {
     const fn index(self) -> u8 {
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 104,
-            Self::TypeIdentifier => 105,
-            Self::RegionIdentifier => 106,
-            Self::Label => 107,
-            Self::OperationName => 108,
-            Self::Literal => 109,
-            Self::String => 110,
-            Self::Digits => 111,
+            Self::Identifier => 103,
+            Self::TypeIdentifier => 104,
+            Self::RegionIdentifier => 105,
+            Self::Label => 106,
+            Self::OperationName => 107,
+            Self::Literal => 108,
+            Self::String => 109,
+            Self::Digits => 110,
         }
     }
 
@@ -818,27 +818,29 @@ mod tests {
                 Some(terminal)
             );
         }
-        assert_eq!(FixedTerminal::PercentChecked as u8, 79);
-        assert_eq!(FixedTerminal::For as u8, 80);
-        assert_eq!(FixedTerminal::In as u8, 81);
-        assert_eq!(FixedTerminal::DotDot as u8, 82);
-        assert_eq!(FixedTerminal::Ensures as u8, 83);
-        assert_eq!(FixedTerminal::Replace as u8, 84);
-        assert_eq!(FixedTerminal::Invariant as u8, 91);
-        assert_eq!(FixedTerminal::Use as u8, 92);
-        assert_eq!(FixedTerminal::Is as u8, 98);
+        assert_eq!(FixedTerminal::PercentChecked as u8, 78);
+        assert_eq!(FixedTerminal::For as u8, 79);
+        assert_eq!(FixedTerminal::In as u8, 80);
+        assert_eq!(FixedTerminal::DotDot as u8, 81);
+        assert_eq!(FixedTerminal::Ensures as u8, 82);
+        assert_eq!(FixedTerminal::Replace as u8, 83);
+        assert_eq!(FixedTerminal::Invariant as u8, 90);
+        assert_eq!(FixedTerminal::Use as u8, 91);
+        assert_eq!(FixedTerminal::Is as u8, 97);
         // [PROV-6, S37] the four added atoms take the enum's last four
         // discriminants, so the external predicates start four places later.
-        assert_eq!(FixedTerminal::Linear as u8, 99);
-        assert_eq!(FixedTerminal::Affine as u8, 100);
-        assert_eq!(FixedTerminal::Copy as u8, 101);
-        assert_eq!(FixedTerminal::Dispose as u8, 102);
+        // [S23] the retired `heap` allocation atom stood before all of them,
+        // so every discriminant after it moved one place down.
+        assert_eq!(FixedTerminal::Linear as u8, 98);
+        assert_eq!(FixedTerminal::Affine as u8, 99);
+        assert_eq!(FixedTerminal::Copy as u8, 100);
+        assert_eq!(FixedTerminal::Dispose as u8, 101);
         // [S6, S35] `MutSlice` is the atom v0.45 appends, so it takes the
         // enum's next discriminant and the external predicates start one
         // place later than they did.
-        assert_eq!(FixedTerminal::MutSlice as u8, 103);
-        assert_eq!(TerminalPredicate::Identifier.index(), 104);
-        assert_eq!(TerminalPredicate::Digits.index(), 111);
+        assert_eq!(FixedTerminal::MutSlice as u8, 102);
+        assert_eq!(TerminalPredicate::Identifier.index(), 103);
+        assert_eq!(TerminalPredicate::Digits.index(), 110);
     }
 
     #[test]

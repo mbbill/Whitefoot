@@ -41,6 +41,7 @@ fn invalid_label(label: &str) -> SemanticIssueKind {
             "command.stdout".to_owned(),
             "command.stderr".to_owned(),
             "command.files".to_owned(),
+            "command.heap".to_owned(),
         ],
     }
 }
@@ -148,10 +149,12 @@ fn a_missing_command_marker_outranks_legacy_signature_details() {
 
 #[test]
 fn admitted_but_unexhibited_entry_effects_reach_eff2() {
-    // Allocation remains an admitted entry category. This body does not
-    // exhibit it, so it passes FN-7 and rejects later under EFF-2.
+    // [S23] allocation remains an admitted entry category and now names a
+    // provider path rooted in the entry's own `heap` standard input. This
+    // body does not exhibit it, so it passes FN-7 and rejects later under
+    // EFF-2.
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus allocates(heap) {\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );

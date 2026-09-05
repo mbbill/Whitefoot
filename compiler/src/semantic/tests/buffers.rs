@@ -497,7 +497,7 @@ command fn main() -> status: own ExitStatus pure {
             panic!("primitive buffer family must check: {outcome:?}");
         };
         let make = &checked.data.functions[0];
-        assert!(make.declared_allocates_heap);
+        assert!(make.reaches_ambient_heap);
         assert!(matches!(
             &make.body[0],
             CheckedStatement::Return {
@@ -516,7 +516,7 @@ command fn main() -> status: own ExitStatus pure {
         ));
 
         let main = &checked.data.functions[1];
-        assert!(main.declared_allocates_heap);
+        assert!(main.reaches_ambient_heap);
 
         let CheckedStatement::Set { target, .. } = &main.body[4] else {
             panic!("the statement after the dominating length branch must be indexed SET-1");
@@ -571,21 +571,30 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
+/// [EFF-1, S23] the ambient heap has no provider value, so no `effect_path`
+/// names it and a `buffer_new` body carries no allocation entry at all: the
+/// exact row of such a body is `pure`, and there is no second spelling for
+/// [EFF-2] to check it against.
+///
+/// This test used to check that row both ways over the retired `heap` atom.
+/// The both-ways judgment is unchanged and is exercised here over the store
+/// whose provider *is* a value: a `heap_vector` body that declares only
+/// `reads` and `writes` is missing its `allocates`, and the same body that
+/// declares all three is accepted.
 #[test]
-fn buffer_effect_rows_are_checked_both_ways() {
-    assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
-    );
+fn an_ambient_allocation_writes_no_row_and_a_store_take_is_checked_both_ways() {
     with_semantics(
         b"command fn main() -> status: own ExitStatus pure {\n  let values = buffer_new(2_u64, 0_u8);\n  return exit_status(code: 0_u8);\n}\n",
         |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
     assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+        b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
         SemanticRule::Eff2,
         |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
+    );
+    with_semantics(
+        b"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {\n  region {\n    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {\n      None() => {\n        return exit_status(code: 1_u8);\n      }\n      Some(value: run) => {\n        return exit_status(code: 0_u8);\n      }\n    }\n  }\n}\n",
+        |outcome| assert!(matches!(outcome, SemanticOutcome::Complete(_))),
     );
 }
 
@@ -645,19 +654,18 @@ fn buffer_vacant_constructs_an_all_none_affine_element_buffer() {
     });
 }
 
+/// The `effect row` half of this test's old name is gone with [EFF-1]'s
+/// `heap` atom [S23]: `buffer_vacant`'s allocation is from the ambient heap,
+/// which has no provider value and therefore no `effect_path`, so the row it
+/// contributes is empty and the accepted declaration is `pure`. What the test
+/// still holds is the written payload and the one operand [TYPE-5].
 #[test]
-fn buffer_vacant_requires_its_written_payload_and_effect_row() {
+fn buffer_vacant_requires_its_written_payload_and_operand() {
     // [TYPE-5]: the element payload type is a retained written argument.
     assert_rule(
         b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
         SemanticRule::Type5,
         SemanticIssueKind::InvalidOperation,
-    );
-    // [EFF-2]: allocation is the only effect; OP-9 is statically discharged.
-    assert_rule_kind(
-        b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant::<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff2,
-        |kind| matches!(kind, SemanticIssueKind::EffectMismatch { .. }),
     );
     with_semantics(
         b"command fn main() -> status: own ExitStatus pure {\n  let slots = buffer_vacant::<u32>(3_u64);\n  return exit_status(code: 0_u8);\n}\n",

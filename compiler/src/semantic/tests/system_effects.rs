@@ -223,10 +223,17 @@ fn release_attribution_is_transitive_over_owned_content() {
 fn live_effect_categories_keep_eff1_canonical_order_and_multiplicity() {
     // The replacement keeps the same canonical-order and multiplicity
     // coverage over the live categories: reads, writes, and allocates.
-    assert_rule_kind(
+    //
+    // `pure` combined with a second category is refused at the same rule but
+    // at the earlier stage: `effects := "pure" | effect ("," effect)*` cannot
+    // derive it, and regenerating the tables for [S23]'s `allocates` entry
+    // tightened the decision that used to admit the bytes and leave the
+    // refusal to the checker. The conformance corpus keeps its recorded
+    // `reject EFF-1` verdict for the same program either way; what moved is
+    // the stage, so this assertion moves with it.
+    super::assert_parse_rule(
         b"fn probe(file: own ReadFile) -> result: own unit pure, writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
-        SemanticRule::Eff1,
-        |kind| matches!(kind, SemanticIssueKind::InvalidEffectRow { .. }),
+        crate::SyntaxRule::Eff1,
     );
     assert_rule_kind(
         b"fn probe(file: own ReadFile) -> result: own unit writes(file), writes(file) {\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",

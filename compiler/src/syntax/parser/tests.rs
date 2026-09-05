@@ -560,7 +560,7 @@ linear struct Lease { doc "lease"; slot: u8; }
 linear enum Ticket { doc "ticket"; Open(value: u8); }
 contract Contract<T: affine> {
 doc "contract";
-fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(heap arena 'r);
+fn member['r](x: own T) -> result: own T reads(x), writes(x), allocates(x);
 law associative(member);
 law identity(member, 0_i32);
 }
@@ -574,7 +574,7 @@ command fn entry(command.args as arguments: own i32, command.cwd as directory: o
 return unit;
 }
 fn everything['r: affine, 's: linear](x: own i32, shared: &'r i32, unique: &uniq 'r i32)
--> result: own unit reads(shared, unique), writes(unique), allocates(heap arena 'r)
+-> result: own unit reads(shared, unique), writes(unique), allocates(arena 'r)
 contract {
 define pre = 0_i32 +wrap 1_i32;
 define post = 0_i32 +wrap 1_i32;
