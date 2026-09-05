@@ -105,6 +105,41 @@ is in `workload.h`: the digest is a serial multiply-add chain running at about
 warm table pure compute, and would add to the uncached table CPU that the
 eight-wide program can spread across helpers and the sequential one cannot.
 
+### The four-stage chain
+
+`chain.c` is not a Whitefoot program and is not one of the three lines above.
+It is the C program design §12's fourth item asks for: the
+`read -> parse -> request -> write` chain of `PARK-ON-MISS.md` §0, on raw
+io_uring, in the four shapes that item names — nested helping, thread
+compensation, the stack switch, and the staged pipeline as it is lowered today
+(one lane, K slots, the loop blocking on the oldest slot's join). It reports
+the dependent stage's in-flight depth beside the wall time, because the claim
+§0 makes is about depth and not about speed.
+
+It lives here rather than in a home of its own because the ring plumbing,
+the generated tree and the file-name format are this bundle's
+(`uring_baseline.h`, `gen.c`, `workload.h`), and a second copy of them would be
+a second thing to keep true. The shape it compares is driven from
+`research/experiments/park-on-miss-measurements/run.sh`, which is where its
+numbers are recorded.
+
+    make -C research/experiments/io-completion-bench chain
+
+One thing is deliberately the same in all four shapes: the ring is driven by
+one reaper thread, so what the four numbers compare is what a worker does when
+it joins an operation that has not completed, and nothing else. The stack
+switch shape links `compiler/src/backend/sched/core.c` and drives it, so that
+shape is the shipped scheduler rather than a model of it — with the one
+difference its own numbers have to be read against, that the park it sleeps on
+is `prim_host.c`'s fallback epoch condition variable and not the bridge's ring
+park, because the bridge is not linked here.
+
+Every file is opened once, before the timed region, for the reason the
+read-heavy workload opens once: an `openat` of a cold inode costs more here
+than the read that follows it. The descriptors are opened `O_DIRECT` where the
+filesystem allows it, and the printed line says which it was, because on a
+buffered tree a read does not wait and no shape can reach any depth.
+
 ### WF_IO_NOCACHE
 
 `WF_IO_NOCACHE=1` is a target-policy knob of the same class as `WF_IO_HELPERS`

@@ -85,6 +85,23 @@ high-level sequencing; plans do not grant or withhold branch permission.
   quiet-host medians. Fourteen defects with dispositions in
   [`docs/done/0098-blind-writer.md`](../../docs/done/0098-blind-writer.md). It
   is removed when the language stops changing.
+- `park-on-miss-measurements/` — the rest of the §12 measurements and the four
+  choices the plan added on 2026-09-05, each alternative built behind a
+  compile-time `-D` in the scheduler core and measured against the shipped form
+  with the io-completion-bench runner's discipline. Measured 2026-09-05 (Linux,
+  four cores, clang 18): the shipped park and publish is 4.40 µs at best and
+  6.23 µs at the median, against this host's own 16.2 µs condition-variable
+  park-and-wake and the design's quoted 2.2 µs; the lane slot count cannot be
+  separated between 4 and 64; the pool stops refusing at twelve stacks at four
+  workers and twenty at eight, and a refusal costs no measurable wall time; the
+  record's growth is exactly 32 bytes per outstanding operation a frame holds;
+  every hand-out entry in `tests/programs` is bounded by 80 bytes. Nothing is
+  chosen here. The result that decides the rest is that five of the six
+  behavioural variants cannot be measured: four are rejected by the §11
+  enumerator, and `WF_SCHED_WEAK_ORDERS` passes the enumerator and then hangs
+  `par_layout` deterministically at two workers and above, which is the
+  sequentially consistent blind spot the plan's deferred GenMC note names,
+  witnessed. It is removed in slice 4b with the switches it measures.
 - `io-completion-bench/` — the program-level answer to whether the unified-state
   completion I/O model reaches native performance on whole programs, which
   until 2026-08-27 had only C-level component evidence. Three lines per

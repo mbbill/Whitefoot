@@ -7,6 +7,43 @@
 
 #include <string.h>
 
+/* ------------------------------------------- the measurement variants */
+
+/* Compile-time switches, each one an alternative form design §12 asks to be
+ * measured before it is chosen, built for
+ * `research/experiments/park-on-miss-measurements/` and removed with the
+ * losing forms once the owner has the numbers. None of them is a run-time
+ * setting and none is reachable without its own `-D`; the shipped build takes
+ * the form the §11 enumerator checked.
+ *
+ *   WF_SCHED_NESTED_NEVER_SUSPENDS  §12 item 1: at a compute miss, run the
+ *                                   target's work nested here instead of
+ *                                   parking this stack.
+ *   WF_SCHED_LOCKED_PARK            §12 item 2: §6's locked fallback, one
+ *                                   lock per park and one per publish.
+ *   WF_SCHED_NO_CLAIM               §12 item 3: no COMPLETING store and no
+ *                                   compare-exchange on `record->waiter`.
+ *   WF_SCHED_PARK_AT_ONCE           §12 item 4: the idle window sleeps at
+ *                                   once instead of re-testing first.
+ *   WF_SCHED_WEAK_ORDERS            §12 item 5: acquire and release at the
+ *                                   record's state and waiter and the
+ *                                   stack's phase, where the shipped form is
+ *                                   sequentially consistent.
+ *   WF_SCHED_THREAD_READY           §12 item 6: a per-thread ready list in
+ *                                   place of the one list under the mutex.
+ *   WF_SCHED_LANE_SLOTS             §12 item 6: the lane slot count, already
+ *                                   a constant of `core.h`. */
+
+#if defined(WF_SCHED_WEAK_ORDERS)
+#define WF_SCHED_ORDER_LOAD WF_PRIM_ACQUIRE
+#define WF_SCHED_ORDER_STORE WF_PRIM_RELEASE
+#define WF_SCHED_ORDER_CAS WF_PRIM_ACQ_REL
+#else
+#define WF_SCHED_ORDER_LOAD WF_PRIM_SEQ_CST
+#define WF_SCHED_ORDER_STORE WF_PRIM_SEQ_CST
+#define WF_SCHED_ORDER_CAS WF_PRIM_SEQ_CST
+#endif
+
 /* --------------------------------------------------------------- threads */
 
 wf_sched_thread *wf_sched_current_thread(wf_sched_core *core) {
@@ -47,12 +84,97 @@ static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
     wf_prim_unlock();
 }
 
+#if defined(WF_SCHED_THREAD_READY) && defined(WF_SCHED_LOCKED_PARK)
+#error "the two measurement variants of the ready list and the park are measured one at a time"
+#endif
+
+#if defined(WF_SCHED_THREAD_READY)
+
+/* Measurement variant of `research/experiments/park-on-miss-measurements/`
+ * (design §12 item 6): one ready list per thread instead of one list under
+ * the core's mutex, so a push and a pop touch no word another thread's push
+ * or pop touches unless the lists are empty.
+ *
+ * Each list is pushed to by any thread with one compare-exchange and is
+ * emptied *whole* by whichever thread takes it, so nothing dereferences a
+ * head it has not taken and the pop needs no version counter. A thread looks
+ * at its own list first and then at the others, takes one stack, and pushes
+ * the remainder of the chain it took onto its own list. */
+
+static void wf_sched_ready_link(wf_sched_stack **head, wf_sched_stack *chain, wf_sched_stack *tail) {
+    void *seen = wf_prim_load_p((void *const *)head, WF_PRIM_ACQUIRE);
+    for (;;) {
+        wf_prim_store_p((void **)&tail->next, seen, WF_PRIM_RELEASE);
+        if (wf_prim_cas_p((void **)head, &seen, chain, WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE)) {
+            return;
+        }
+    }
+}
+
+static wf_sched_stack *wf_sched_ready_take(wf_sched_stack **head) {
+    void *seen = wf_prim_load_p((void *const *)head, WF_PRIM_ACQUIRE);
+    for (;;) {
+        if (seen == NULL) {
+            return NULL;
+        }
+        if (wf_prim_cas_p((void **)head, &seen, NULL, WF_PRIM_ACQ_REL, WF_PRIM_ACQUIRE)) {
+            return seen;
+        }
+    }
+}
+
+static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_ready_link(&thread->ready_own, stack, stack);
+    /* Every list is private to no one, so "the list was empty" is not the
+     * transition that decides the wake here; the announced sleepers are. */
+    if (wf_prim_load_q(&core->idle, WF_PRIM_SEQ_CST) != 0ull) {
+        wf_prim_wake();
+    }
+}
+
+static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_stack *chain = wf_sched_ready_take(&thread->ready_own);
+    wf_sched_stack *rest;
+    if (chain == NULL) {
+        unsigned index;
+        for (index = 0; index < core->thread_count; index += 1u) {
+            if (&core->threads[index] == thread) {
+                continue;
+            }
+            chain = wf_sched_ready_take(&core->threads[index].ready_own);
+            if (chain != NULL) {
+                break;
+            }
+        }
+    }
+    if (chain == NULL) {
+        return NULL;
+    }
+    rest = wf_prim_load_p((void *const *)&chain->next, WF_PRIM_ACQUIRE);
+    wf_prim_store_p((void **)&chain->next, NULL, WF_PRIM_RELAXED);
+    if (rest != NULL) {
+        wf_sched_stack *tail = rest;
+        for (;;) {
+            wf_sched_stack *next = wf_prim_load_p((void *const *)&tail->next, WF_PRIM_ACQUIRE);
+            if (next == NULL) {
+                break;
+            }
+            tail = next;
+        }
+        wf_sched_ready_link(&thread->ready_own, rest, tail);
+    }
+    return chain;
+}
+
+#else
+
 /* Links one READY stack at the tail. The epoch is bumped only when the list
  * was empty, which is the one transition that could otherwise leave a thread
  * asleep beside a ready stack (§6). */
-static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
+static int wf_sched_ready_link(wf_sched_core *core, wf_sched_stack *stack) {
     int was_empty;
-    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
     stack->next = NULL;
     was_empty = core->ready_head == NULL;
     if (was_empty) {
@@ -61,11 +183,23 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
         core->ready_tail->next = stack;
     }
     core->ready_tail = stack;
+    return was_empty;
+}
+
+#if !defined(WF_SCHED_LOCKED_PARK)
+/* The locked measurement variant (design §12 item 2) links inside the one
+ * critical section its park and its publish already hold, so it defines no
+ * caller of this and the section below is the whole of its list protocol. */
+static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
+    int was_empty;
+    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
+    was_empty = wf_sched_ready_link(core, stack);
     wf_prim_unlock();
     if (was_empty) {
         wf_prim_wake();
     }
 }
+#endif
 
 static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
@@ -81,6 +215,8 @@ static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
     wf_prim_unlock();
     return stack;
 }
+
+#endif
 
 /* ----------------------------------------------------------- the switch */
 
@@ -98,6 +234,16 @@ static void wf_sched_after_switch(wf_sched_core *core) {
     wf_sched_stack *parked = thread->pending_commit;
     thread->pending_empty = NULL;
     thread->pending_commit = NULL;
+#if defined(WF_SCHED_LOCKED_PARK)
+    /* Measurement variant (design §12 item 2): the locked form's park takes
+     * the mutex before the switch and releases it here, on the target stack,
+     * which is the whole of §6's handshake in that form. It is released
+     * before anything below, because both of the obligations below take it. */
+    if (thread->pending_unlock) {
+        thread->pending_unlock = 0;
+        wf_prim_unlock();
+    }
+#endif
     if (empty != NULL) {
         wf_sched_pool_push(core, empty);
     }
@@ -226,15 +372,64 @@ static void wf_sched_execute(wf_sched_core *core, wf_sched_slot *slot) {
     wf_sched_complete(core, &slot->record);
 }
 
+#if defined(WF_SCHED_LOCKED_PARK)
+
+/* Measurement variant of `research/experiments/park-on-miss-measurements/`
+ * (design §12 item 2): §6's locked fallback publisher. The five phases
+ * collapse to RUNNING, SUSPENDED and READY, the COMPLETING window and the
+ * claim disappear, and what replaces them is one critical section per
+ * publish: the parker registers inside the section and re-reads the state
+ * there, so a publisher and a parker cannot see half of each other.
+ *
+ * The order inside the section is the one property the lock does not supply:
+ * the waiter is read and cleared before DONE is stored, because DONE lets the
+ * joiner's frame die and an I/O record is a block of that frame. */
+void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
+    wf_sched_stack *waiter;
+    int wake = 0;
+    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
+    waiter = wf_prim_load_p((void *const *)&record->waiter, WF_SCHED_ORDER_LOAD);
+    wf_prim_store_p((void **)&record->waiter, NULL, WF_SCHED_ORDER_STORE);
+    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_SCHED_ORDER_STORE);
+    if (waiter == WF_SCHED_WAITER_IN_PLACE) {
+        wake = 1;
+    } else if (waiter != NULL) {
+        unsigned phase = wf_prim_load_u(&waiter->phase, WF_SCHED_ORDER_LOAD);
+        if (phase != WF_SCHED_STACK_SUSPENDED) {
+            wf_prim_fail("a publisher found its waiter in a phase no park reaches");
+        }
+        wf_prim_store_u(&waiter->phase, WF_SCHED_STACK_READY, WF_SCHED_ORDER_STORE);
+        wake = wf_sched_ready_link(core, waiter);
+    }
+    wf_prim_unlock();
+    if (wake) {
+        wf_prim_wake();
+    }
+}
+
+#else
+
 void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
     wf_sched_stack *waiter;
     unsigned phase;
+#if defined(WF_SCHED_NO_CLAIM)
+    /* Measurement variant of `research/experiments/park-on-miss-measurements/`
+     * (design §12 item 3): the price of the claim protocol, paid by removing
+     * it. There is no COMPLETING store and no compare-exchange on the waiter,
+     * so a publisher that merely loaded the pointer may act on it after the
+     * parker has cancelled -- which is the defect the enumerator found on S3
+     * and the reason the shipped form has the claim. The number is the price
+     * of the protocol; whether the form stands at all is the enumerator's
+     * answer, not this measurement's. */
+    waiter = wf_prim_load_p((void *const *)&record->waiter, WF_SCHED_ORDER_LOAD);
+    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_SCHED_ORDER_STORE);
+#else
     /* COMPLETING first, DONE last: a joiner returns only on DONE, and an I/O
      * record is a block of the joiner's frame, so the record must not be
      * touched after DONE is stored (the enumerator reached a publisher
      * reading the waiter of a frame that had already died, §11). */
-    wf_prim_store_u(&record->state, WF_SCHED_COMPLETING, WF_PRIM_SEQ_CST);
-    waiter = wf_prim_load_p((void *const *)&record->waiter, WF_PRIM_SEQ_CST);
+    wf_prim_store_u(&record->state, WF_SCHED_COMPLETING, WF_SCHED_ORDER_STORE);
+    waiter = wf_prim_load_p((void *const *)&record->waiter, WF_SCHED_ORDER_LOAD);
     /* The registration is claimed before the waiter's phase is touched: a
      * publisher that merely loaded the pointer could act on it late, after
      * the parker had cancelled, run on, and parked again on another record,
@@ -243,10 +438,11 @@ void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
      * compare-exchange, so exactly one of the two owns this park's wake
      * (the enumerator reached the late publisher on S3, §11). */
     if (waiter != NULL
-        && !wf_prim_cas_p((void **)&record->waiter, (void **)&waiter, NULL, WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST)) {
+        && !wf_prim_cas_p((void **)&record->waiter, (void **)&waiter, NULL, WF_SCHED_ORDER_CAS, WF_SCHED_ORDER_CAS)) {
         waiter = NULL;
     }
-    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_PRIM_SEQ_CST);
+    wf_prim_store_u(&record->state, WF_SCHED_DONE, WF_SCHED_ORDER_STORE);
+#endif
     if (waiter == NULL) {
         return;
     }
@@ -288,7 +484,69 @@ void wf_sched_complete(wf_sched_core *core, wf_sched_record *record) {
     (void)core;
 }
 
+#endif
+
 /* ------------------------------------------------------------ the park */
+
+#if defined(WF_SCHED_LOCKED_PARK)
+
+/* Measurement variant of `research/experiments/park-on-miss-measurements/`
+ * (design §12 item 2): §6's locked fallback park.
+ *
+ * The lock is taken before the registration and released on the target stack
+ * after the switch, which is the whole handshake: the five phases collapse to
+ * RUNNING, SUSPENDED and READY, there is no SUSPENDING window for a publisher
+ * to see and therefore no commit, no NOTIFIED arm and no claim. The re-read
+ * of step 3 stays, and under the lock it is a plain read of a value no
+ * publisher can be halfway through writing.
+ *
+ * There is nothing to commit in this form, so the commit is the unlock and
+ * `pending_commit` is never set. */
+static void wf_sched_commit_park(wf_sched_core *core, wf_sched_stack *parked) {
+    (void)core;
+    (void)parked;
+    wf_prim_fail("the locked form commits no park");
+}
+
+static int wf_sched_park(
+    wf_sched_core *core,
+    wf_sched_record *record,
+    wf_sched_stack *target,
+    int target_was_ready
+) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    wf_sched_stack *stack = thread->stack;
+    unsigned state;
+    wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
+    wf_prim_store_u(&stack->phase, WF_SCHED_STACK_SUSPENDED, WF_SCHED_ORDER_STORE);
+    wf_prim_store_p((void **)&record->waiter, stack, WF_SCHED_ORDER_STORE);
+    state = wf_prim_load_u(&record->state, WF_SCHED_ORDER_LOAD);
+    if (state == WF_SCHED_DONE) {
+        int wake = 0;
+        wf_prim_store_p((void **)&record->waiter, NULL, WF_SCHED_ORDER_STORE);
+        wf_prim_store_u(&stack->phase, WF_SCHED_STACK_RUNNING, WF_SCHED_ORDER_STORE);
+        thread->counts.cancels += 1u;
+        if (target_was_ready) {
+            wake = wf_sched_ready_link(core, target);
+        } else {
+            target->next = core->free_head;
+            core->free_head = target;
+        }
+        wf_prim_unlock();
+        if (wake) {
+            wf_prim_wake();
+        }
+        return 0;
+    }
+    thread->counts.parks += 1u;
+    thread->pending_unlock = 1;
+    wf_sched_switch_to(core, target);
+    wf_prim_store_p((void **)&record->waiter, NULL, WF_PRIM_RELAXED);
+    wf_sched_current_thread(core)->counts.resumes += 1u;
+    return 1;
+}
+
+#else
 
 /* Step 5's commit, run on the target stack by whichever thread switched
  * there (§6): SUSPENDING becomes SUSPENDED, or a NOTIFIED park becomes READY
@@ -336,11 +594,11 @@ static int wf_sched_park(
         wf_prim_fail("a park began on a stack that was not RUNNING");
     }
     /* 2. register the wake */
-    wf_prim_store_p((void **)&record->waiter, stack, WF_PRIM_SEQ_CST);
+    wf_prim_store_p((void **)&record->waiter, stack, WF_SCHED_ORDER_STORE);
     /* 3. re-read the record's state. COMPLETING means the publisher is
      * between its claim and its DONE store, a few instructions away. */
     for (;;) {
-        unsigned state = wf_prim_load_u(&record->state, WF_PRIM_SEQ_CST);
+        unsigned state = wf_prim_load_u(&record->state, WF_SCHED_ORDER_LOAD);
         if (state != WF_SCHED_COMPLETING) {
             expected = state;
             break;
@@ -354,10 +612,19 @@ static int wf_sched_park(
          * park's wake and will make the stack READY, so the park goes on to
          * step 5 and is resumed the ordinary way (§6). */
         void *registered = stack;
+#if defined(WF_SCHED_NO_CLAIM)
+        /* Measurement variant (design §12 item 3): with no claim there is
+         * nothing to win, so the cancel takes the registration back with a
+         * plain store and always continues here. */
+        wf_prim_store_p((void **)&record->waiter, NULL, WF_SCHED_ORDER_STORE);
+        (void)registered;
+        {
+#else
         if (wf_prim_cas_p(
                 (void **)&record->waiter, &registered, NULL,
-                WF_PRIM_SEQ_CST, WF_PRIM_SEQ_CST
+                WF_SCHED_ORDER_CAS, WF_SCHED_ORDER_CAS
             )) {
+#endif
             expected = WF_SCHED_STACK_SUSPENDING;
             if (!wf_prim_cas_u(
                     &stack->phase, &expected, WF_SCHED_STACK_RUNNING,
@@ -384,6 +651,8 @@ static int wf_sched_park(
     return 1;
 }
 
+#endif
+
 /* Line three's precondition: a switch target, READY first, else free. */
 static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int *was_ready) {
     wf_sched_stack *target = wf_sched_ready_pop(core);
@@ -393,6 +662,29 @@ static wf_sched_stack *wf_sched_take_target(wf_sched_core *core, int *was_ready)
     }
     *was_ready = 0;
     return wf_sched_pool_pop(core);
+}
+
+/* Whether the third line of §2's rule is taken for a target of this kind.
+ *
+ * It always is in the shipped form: the line does not test what the target is.
+ * Under the measurement variant of
+ * `research/experiments/park-on-miss-measurements/` (design §12 item 1) a
+ * compute target skips it and falls to the fourth line's compute arm, which
+ * runs the work nested on this stack -- the design's stated fallback for a
+ * target whose job never suspends. What that fallback needs and what this
+ * variant does not have is the target-action bit at the hand-out: today's
+ * emitter marks none, so the variant assumes every compute hand-out never
+ * suspends. That assumption is exactly true of a group with no completion
+ * member (`compute_join_order`'s classification in `emitter/parallel.rs`) and
+ * of both programs this experiment measures, which submit nothing. It is not
+ * a form that could ship without the bit, and it is not offered as one. */
+static int wf_sched_line_three_applies(int is_io) {
+#if defined(WF_SCHED_NESTED_NEVER_SUSPENDS)
+    return is_io;
+#else
+    (void)is_io;
+    return 1;
+#endif
 }
 
 /* ---------------------------------------------------------- the rule (§2) */
@@ -410,8 +702,6 @@ static int wf_sched_idle_step(
     wf_sched_thread *thread = wf_sched_current_thread(core);
     unsigned long long bit = 1ull << thread->index;
     uint64_t epoch;
-    wf_sched_stack *ready;
-    int was_ready;
     *left_for_status = 0;
     /* The bit goes up before the epoch is captured and before the last look,
      * so a publisher that misses the bit is one whose push the look finds.
@@ -431,23 +721,46 @@ static int wf_sched_idle_step(
             goto restart;
         }
     }
-    ready = wf_sched_ready_pop(core);
-    if (ready != NULL) {
-        if (on_record != NULL) {
-            /* The third line taken late: this stack parks with its own I/O as
-             * the wake and switches to the stack that appeared (§2). */
+#if defined(WF_SCHED_PARK_AT_ONCE)
+    /* Measurement variant of `research/experiments/park-on-miss-measurements/`
+     * (design §12 item 4, "the in-place wait of the idle window against
+     * parking at once"): this form drops the window's look at the ready list
+     * and sleeps on the captured epoch instead.
+     *
+     * That look is the one step of the window that a wake can repair, which
+     * is why it is the only one this variant removes and why the variant is
+     * this narrow. §6 says it in the design's own words: a stack enqueued
+     * between priority 1's test and the capture leaves "a stranded READY
+     * stack rather than a lost wake", closed here because §3 forbids a ready
+     * continuation held behind a sleeping thread. Every other step of the
+     * window closes a transition that raised the epoch *before* the capture,
+     * which no later wake reaches: the flush and the drain (a park with
+     * staged submissions is a hang, and with no helper the drain is the only
+     * engine), the re-read of the record above (a completion that landed
+     * before the in-place registration went up woke nobody), the status test
+     * (§5's second exit for the entry thread), and the last look at the
+     * deques. Removing any of those is a lost wake and is therefore not an
+     * alternative form to measure. */
+#else
+    {
+        wf_sched_stack *ready = wf_sched_ready_pop(core);
+        if (ready != NULL) {
+            if (on_record != NULL) {
+                /* The third line taken late: this stack parks with its own I/O
+                 * as the wake and switches to the stack that appeared (§2). */
+                (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
+                thread->counts.late_parks += 1u;
+                (void)wf_sched_park(core, on_record, ready, 1);
+                return 1;
+            }
+            thread->pending_empty = thread->stack;
+            wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
             (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
-            was_ready = 1;
-            thread->counts.late_parks += 1u;
-            (void)wf_sched_park(core, on_record, ready, was_ready);
+            wf_sched_switch_to(core, ready);
             return 1;
         }
-        thread->pending_empty = thread->stack;
-        wf_prim_store_u(&thread->stack->phase, WF_SCHED_STACK_EMPTY, WF_PRIM_RELAXED);
-        (void)wf_prim_and_q(&core->idle, ~bit, WF_PRIM_SEQ_CST);
-        wf_sched_switch_to(core, ready);
-        return 1;
     }
+#endif
     if (on_record == NULL && thread->index == 0u
         && wf_prim_load_u(&core->status_posted, WF_PRIM_SEQ_CST) != 0u) {
         *left_for_status = 1;
@@ -514,10 +827,12 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
             }
         }
         /* line three */
-        target = wf_sched_take_target(core, &was_ready);
-        if (target != NULL) {
-            (void)wf_sched_park(core, record, target, was_ready);
-            continue;
+        if (wf_sched_line_three_applies(is_io)) {
+            target = wf_sched_take_target(core, &was_ready);
+            if (target != NULL) {
+                (void)wf_sched_park(core, record, target, was_ready);
+                continue;
+            }
         }
         /* line four */
         if (is_io) {

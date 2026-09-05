@@ -96,7 +96,7 @@ READ_SETTLE_ATTEMPTS ?= 24
 READ_SETTLE_SECONDS ?= 15
 DOCKER_IMAGE ?= wf-io-bench:linux
 
-.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean \
+.PHONY: build prepare compiler gen verify bench bench-pipe linux linux-image expected clean chain \
 	read-build read-gen read-uncache read-settle read-warm read-verify expected-read bench-read \
 	linux-read
 
@@ -471,6 +471,28 @@ linux-read: linux-image
 		-e EXPECTED_READ_4K="$(EXPECTED_READ_4K)" \
 		$(DOCKER_IMAGE) \
 		sh /work/research/experiments/io-completion-bench/read-bench.sh
+
+# The four-stage chain of design section 12's fourth item, in its four shapes.
+# Not one of the three lines: it is a C program on raw io_uring, it links the
+# scheduler core for the stack-switch shape, and what it reports is the
+# dependent stage's in-flight depth beside the wall time.
+CHAIN_JOBS ?= 1000
+CHAIN_THREADS ?= 8
+CHAIN_SLOTS ?= 32
+CHAIN_STACKS ?= 72
+SCHED_DIR := $(ROOT)/compiler/src/backend/sched
+
+$(BUILD)/chain: chain.c uring_baseline.h workload.h $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c | prepare
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread -I. -I$(SCHED_DIR) \
+		chain.c $(SCHED_DIR)/core.c $(SCHED_DIR)/prim_host.c -o $@
+
+chain: $(BUILD)/chain $(BUILD)/gen
+	@rm -rf $(WORK)/chaintree
+	$(BUILD)/gen $(WORK)/chaintree $(CHAIN_JOBS) $(MAX_KIB)
+	@for shape in nested compensate switch pipeline; do \
+		$(BUILD)/chain $(WORK)/chaintree $$shape $(CHAIN_JOBS) \
+			$(CHAIN_THREADS) $(CHAIN_SLOTS) $(CHAIN_STACKS) || exit 1; \
+	done
 
 clean:
 	rm -rf $(WORK)

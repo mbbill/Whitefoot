@@ -160,6 +160,20 @@ typedef struct wf_sched_thread {
     void *entry_argument;
     wf_sched_stack *pending_empty;
     wf_sched_stack *pending_commit;
+#if defined(WF_SCHED_LOCKED_PARK)
+    /* Measurement variant of `research/experiments/park-on-miss-measurements/`
+     * (design §12 item 2, the locked form of §6): the mutex is taken before
+     * the switch and released on the target stack, so the obligation the
+     * switching thread leaves is an unlock. */
+    int pending_unlock;
+#endif
+#if defined(WF_SCHED_THREAD_READY)
+    /* Measurement variant of `research/experiments/park-on-miss-measurements/`
+     * (design §12 item 6, the ready list under the one mutex against a
+     * per-thread ready list): this thread's own ready list, pushed to by any
+     * thread and emptied whole by whichever thread takes it. */
+    wf_sched_stack *ready_own;
+#endif
     wf_sched_statistics counts;
 } wf_sched_thread;
 

@@ -582,6 +582,53 @@ before the code lands.
    park cost and per-frame record growth measured; `LOOP-PIPELINE.md` §3.4
    and the roadmap's two stackless items edited in place; batch record.
 
+   **Status 2026-09-05, slice 4a.** The measurements exist and nothing is
+   chosen. Home: `research/experiments/park-on-miss-measurements/`, with the
+   method, every table, the exact commands and the bars; the runner is its
+   `run.sh`, wired to `make -C compiler park-on-miss-measurements`, outside
+   `check`. Each alternative is a compile-time `-D` read by the C unit and
+   carried into every gate build by `compiler/Makefile`'s
+   `SCHED_VARIANT_DEFINES`, so `completion-test` and the §11 enumerator judge a
+   form on the terms they judge the shipped one. Host: Linux, four cores,
+   `cc` GCC 13.3 for the gate and clang 18 `-O2` for every measured binary;
+   this host's own condition-variable park-and-wake is 16.2 µs and its
+   hand-written stack switch 10.6 ns, against the 2.2 µs and 10.4 ns the tree
+   quotes from another machine.
+
+   | § | form | number | bar | met |
+   |---|---|---|---|---|
+   | 12.1 | park and resume at a compute miss, shipped | par_layout W=1 1526.64 ms, W=2 824.13, W=4 587.82, W=8 856.48 (medians of 9); grid W=1 1561.19, W=2 778.10, W=4 398.14, W=8 399.42 | within noise of 0.4067 s at W=4 and 0.4213 s at W=8 | **no**, by 45 percent at W=4 and 103 percent at W=8 |
+   | 12.1 | nested runs of never-suspends jobs | not measured | — | variant rejected: it must assume every compute hand-out never suspends, which S23 falsifies, and the enumerator finds a live-lock at one thread |
+   | 12.2 | one park and one publish, lock-free | 4399 ns best, 6231 ns median, N=15 | 2.2 µs | **no** at 2.2 µs; 0.27× this host's own 16.2 µs |
+   | 12.2 | the locked form of §6 | not measured | — | variant rejected: §11's invariants encode the lock-free state machine the locked form deliberately collapses |
+   | 12.3 | the claim protocol's price | 4399 ns against 4502 ns best, 6231 against 6556 median | — | not separated at this host's spread; the variant aborts on `par_layout` W=4 with the S3 fault |
+   | 12.4 | the in-place wait of the idle window | shipped many_files_wide 112.06 ms default, 112.28 ms at `WF_IO_HELPERS=4` | — | second column absent: variant rejected on S23's coverage assertion |
+   | 12.4 | the four-stage chain, 1000 files, 8 threads | nested 119.43 ms / depth 8; compensation 124.13 / 15; stack switch 438.36 / 8; pipeline K=32 119.68 / 8 | park on miss not slower than the pipeline, and beats nested helping | **no**, and the run cannot test the bar: this host's reads do not wait enough for any shape to reach its own bound, and the switch shape sleeps on `prim_host.c`'s broadcast fallback rather than the bridge's ring park |
+   | 12.5 | the memory orders | weak orders 3119 ns best, 4394 median against 4399 and 6231 | admitted only with a GenMC run | **worse than that**: the form passes the enumerator at all four configurations and then hangs `par_layout` deterministically at W≥2, which is §6's step-2/step-3 store-then-load pair on both sides |
+   | 12.5 | the stack count at which the pool stops refusing | par_layout 12 at W=4, 20 at W=8; grid 8 at W=4, 16 at W=8; default is threads+8 | — | a refusal costs no measurable wall time (par_layout W=8: 827 ms with 274 317 refusals against 850 ms with none) |
+   | 12.6 | the lane slot count | 2, 4, 8, 16 against the shipped 64, at W=4 and 8 | — | not separated between 4 and 64 on either program; 2 slots costs 12 percent on the grid at W=8 |
+   | 12.6 | the per-thread ready list | not measured | — | variant rejected: it adds a shared word the enumerator does not model |
+   | 12.6 | record memory per frame | 128 to 160 bytes: +128 completion_read_boundary, +96 wfgrep, +32 byte_string, dir_walk, par_layout, 0 elsewhere | — | exactly 32 bytes per outstanding operation a frame holds, and the deepest chain bound grows by the same |
+   | 12.7 | the chain bound per hand-out entry | nineteen entries across nine programs, every one ≤ 80 bytes | — | today's corpus needs one stack class |
+
+   The result that shapes the rest: five of the six behavioural switches
+   cannot be measured. Four are rejected by the §11 enumerator, and the
+   rejections are three different kinds — an invariant the form breaks
+   (`WF_SCHED_NO_CLAIM`, and `WF_SCHED_NESTED_NEVER_SUSPENDS`'s live-lock), a
+   state machine the enumerator does not have (`WF_SCHED_LOCKED_PARK`, whose
+   two failures are exactly the two edges §6 says the locked fallback
+   collapses), and a coverage assertion or an unmodelled word the form cannot
+   meet (`WF_SCHED_PARK_AT_ONCE`, `WF_SCHED_THREAD_READY`). The fifth,
+   `WF_SCHED_WEAK_ORDERS`, passes every gate and hangs a corpus program. So
+   §12 items 1, 2 and 6's ready list are not answerable by measurement in
+   their current state, and what each needs is named in the bundle: the
+   target-action bit at the hand-out for item 1, a second invariant set in
+   `enumerate.c` for the locked state machine, and a model of one word for the
+   per-thread list. `tests/programs` holds no grid loop-split program —
+   `mandelbrot_grid.wf` is a `loop` and not a counted `for`, so [PAR-2] grants
+   it nothing — so the bundle supplies `programs/grid_split.wf` for the
+   comparison item 1 asks for.
+
 ### Decided 2026-09-05: measured before chosen
 
 The owner ruled that the locked form and the lock-free form of §6 are both

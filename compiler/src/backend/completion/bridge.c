@@ -961,8 +961,12 @@ static unsigned wf_bridge_record_state(const wf_completion_record *record) {
     return wf_prim_load_u(&record->sched.state, WF_PRIM_ACQUIRE);
 }
 
+#if !defined(WF_SCHED_PARK_AT_ONCE)
 /* Waits a bounded time for this record to be completed by someone else.
- * Returns 1 when it was, so the caller re-reads it instead of parking. */
+ * Returns 1 when it was, so the caller re-reads it instead of parking.
+ *
+ * The measurement variant of `research/experiments/park-on-miss-measurements/`
+ * (design §12 item 4) sleeps at once and has no caller for this. */
 static int wf_bridge_spin_for_completion(const wf_completion_record *record) {
     uint64_t started = wf_file_monotonic_ns();
     uint64_t deadline;
@@ -988,6 +992,7 @@ static int wf_bridge_spin_for_completion(const wf_completion_record *record) {
         }
     }
 }
+#endif
 
 /* The I/O arm of §2's fourth line: wait in place on the record, with nothing
  * running above this join.
@@ -1055,7 +1060,19 @@ static void wf_bridge_wait_in_place(wf_completion_record *record) {
         );
         epoch = wf_completion_wake_epoch(&wf_bridge_runtime);
         if (wf_bridge_record_state(record) == WF_SCHED_PENDING
-            && !wf_bridge_spin_for_completion(record)) {
+#if !defined(WF_SCHED_PARK_AT_ONCE)
+            /* Measurement variant of
+             * `research/experiments/park-on-miss-measurements/` (design §12
+             * item 4, "the in-place wait of the idle window against parking
+             * at once"): the spin is this window's other optional step, so
+             * the variant sleeps at once instead of spinning for a completion
+             * that is a few microseconds away. The state test beside it is
+             * not optional -- a completion that landed before the in-place
+             * registration went up raised the epoch before the capture and
+             * wakes nobody -- so it stays in both forms. */
+            && !wf_bridge_spin_for_completion(record)
+#endif
+        ) {
             wf_bridge_park(epoch);
         }
         marker = WF_SCHED_WAITER_IN_PLACE;
