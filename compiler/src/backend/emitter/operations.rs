@@ -80,6 +80,11 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             | IrAddressed::Bool
             | IrAddressed::Integer { .. }
             | IrAddressed::Float { .. }
+            // A run's storage — inline slots, or the descriptor of a
+            // store-resident one — lives in its owner, so a borrow of either
+            // run addresses that storage [BLK-1].
+            | IrAddressed::FixedVector { .. }
+            | IrAddressed::Vector { .. }
             // A provider is stored content: its cursor is the state a bump
             // take advances through the `&uniq` borrow [PROV-1, BLK-2].
             | IrAddressed::Provider => true,

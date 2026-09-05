@@ -20,7 +20,7 @@ fn extent_constants(instance: &CheckedKernelInstance) -> Result<(u64, u64), Lowe
     let value = |constant: Option<crate::semantic::CheckedConst>| {
         constant
             .and_then(|constant| constant.value())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)
+            .ok_or(crate::lowering::traced_invalid_checked_program())
     };
     Ok((value(instance.bytes)?, value(instance.align)?))
 }
@@ -48,7 +48,7 @@ impl IrBuilder<'_> {
     ) -> Result<IrValueId, LoweringFailure> {
         let measured = root
             .measured()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         match measure.cell(measured) {
             MeasureCell::ExactConstant(value) => self.lower_fixed_measure(value),
             // A `FixedVector`'s capacity and a bump extent's byte extent are
@@ -60,7 +60,7 @@ impl IrBuilder<'_> {
                         crate::semantic::CheckedConst::Value(value) => Some(value),
                         _ => None,
                     })
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 self.lower_fixed_measure(constant)
             }
             MeasureCell::ExactExtent | MeasureCell::ExactRuntime | MeasureCell::Bounded => {
@@ -75,7 +75,7 @@ impl IrBuilder<'_> {
                     let bytes = root
                         .type_constant()
                         .and_then(|constant| constant.value())
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                        .ok_or(crate::lowering::traced_invalid_checked_program())?;
                     let cursor = self.define(
                         IrType::Integer {
                             width: 64,
@@ -99,7 +99,7 @@ impl IrBuilder<'_> {
                     },
                 )
             }
-            MeasureCell::Absent => Err(LoweringFailure::InvalidCheckedProgram),
+            MeasureCell::Absent => Err(crate::lowering::traced_invalid_checked_program()),
         }
     }
 
@@ -112,7 +112,7 @@ impl IrBuilder<'_> {
     ) -> Result<IrValueId, LoweringFailure> {
         let element = root
             .element()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let run = self.container_root_value(root)?;
         let offset = self.expression(offset)?;
         if self.value_type(offset)?
@@ -121,7 +121,7 @@ impl IrBuilder<'_> {
                 signed: false,
             })
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.define(
             lower_element(self.erasure, element)?.ty(),
@@ -166,7 +166,7 @@ impl IrBuilder<'_> {
         let element = target
             .root
             .element()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let run = self.project_container_root(root, &target.root)?;
         let index = self.expression(&target.offset)?;
         let previous = self.define(
@@ -282,7 +282,7 @@ impl IrBuilder<'_> {
         let element = target
             .root
             .element()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         if self.value_type(offset)?
             != (IrType::Integer {
                 width: 64,
@@ -290,7 +290,7 @@ impl IrBuilder<'_> {
             })
             || self.value_type(value)? != lower_element(self.erasure, element)?.ty()
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let run_type = self.value_type(run)?;
         self.define(
@@ -311,7 +311,7 @@ impl IrBuilder<'_> {
     ) -> Result<IrValueId, LoweringFailure> {
         let value = self.project_place_path(root, &container.path)?;
         if self.value_type(value)? != lower_type(self.erasure, container.ty)? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(value)
     }
@@ -335,11 +335,11 @@ impl IrBuilder<'_> {
             // expression, which carries the viewed source; no `KernelCall`
             // ever names them.
             crate::KernelRow::SliceOf | crate::KernelRow::MutSliceOf => {
-                Err(LoweringFailure::InvalidCheckedProgram)
+                Err(crate::lowering::traced_invalid_checked_program())
             }
             crate::KernelRow::FixedVector => {
                 if !arguments.is_empty() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.define(result_type, IrOperation::FixedVector)
             }
@@ -351,7 +351,7 @@ impl IrBuilder<'_> {
             }
             crate::KernelRow::ArenaFrame => {
                 if !arguments.is_empty() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 let (bytes, align) = extent_constants(instance)?;
                 self.define(result_type, IrOperation::ArenaFrame { bytes, align })
@@ -380,17 +380,17 @@ impl IrBuilder<'_> {
         result: CheckedType,
     ) -> Result<IrValueId, LoweringFailure> {
         let [store, value] = arguments else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let store = self.expression(store)?;
         if self.value_type(store)? != IrType::Address(crate::IrAddressed::Provider) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let value = self.expression(value)?;
         let crate::semantic::CheckedLayoutMagnitude::Finite(stride) =
             instance.element_ceiling.stride
         else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let extent = match row {
             crate::KernelRow::HeapBox => None,
@@ -405,7 +405,7 @@ impl IrBuilder<'_> {
             Some(crate::IrExtentConstants { align, .. }) if align > 0 => {
                 stride
                     .checked_add(align - 1)
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?
                     / align
                     * align
             }
@@ -429,22 +429,22 @@ impl IrBuilder<'_> {
     /// told apart by the prelude's own variant order rather than by shape.
     fn outcome_of(&self, result: CheckedType) -> Result<crate::IrRefusal, LoweringFailure> {
         let CheckedType::Nominal(id) = result else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let nominal = self.erased(id);
         let IrNominalKind::Enum { variants } = &self
             .nominals
             .get(nominal.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .ok_or(crate::lowering::traced_invalid_checked_program())?
             .kind
         else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let [made, refused] = variants.as_slice() else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         if made.fields().len() != 1 || refused.fields().len() != 1 {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(crate::IrRefusal {
             nominal,
@@ -469,11 +469,11 @@ impl IrBuilder<'_> {
         result: CheckedType,
     ) -> Result<IrValueId, LoweringFailure> {
         let [store, count] = arguments else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let store = self.expression(store)?;
         if self.value_type(store)? != IrType::Address(crate::IrAddressed::Provider) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let count = self.expression(count)?;
         if self.value_type(count)?
@@ -482,12 +482,12 @@ impl IrBuilder<'_> {
                 signed: false,
             })
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let stride = match instance.element_ceiling.stride {
             crate::semantic::CheckedLayoutMagnitude::Finite(stride) => stride,
             crate::semantic::CheckedLayoutMagnitude::AboveU64 => {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
         };
         let extent = match row {
@@ -517,16 +517,16 @@ impl IrBuilder<'_> {
     /// two variants: exactly one carries the run and exactly one is empty.
     fn refusal_of(&self, result: CheckedType) -> Result<crate::IrRefusal, LoweringFailure> {
         let CheckedType::Nominal(id) = result else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let nominal = self.erased(id);
         let IrNominalKind::Enum { variants } = &self
             .nominals
             .get(nominal.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .ok_or(crate::lowering::traced_invalid_checked_program())?
             .kind
         else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let mut made = None;
         let mut refused = None;
@@ -534,11 +534,11 @@ impl IrBuilder<'_> {
             match variant.fields().len() {
                 0 => refused = refused.xor(Some(variant.tag())),
                 1 => made = made.xor(Some(variant.tag())),
-                _ => return Err(LoweringFailure::InvalidCheckedProgram),
+                _ => return Err(crate::lowering::traced_invalid_checked_program()),
             }
         }
         let (Some(made), Some(refused)) = (made, refused) else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         Ok(crate::IrRefusal {
             nominal,
@@ -565,31 +565,31 @@ impl IrBuilder<'_> {
             crate::KernelRow::PlaceFront => IrBoundary::PlaceFront,
             crate::KernelRow::TakeBack => IrBoundary::TakeBack,
             crate::KernelRow::TakeFront => IrBoundary::TakeFront,
-            _ => return Err(LoweringFailure::InvalidCheckedProgram),
+            _ => return Err(crate::lowering::traced_invalid_checked_program()),
         };
         let run_type = lower_type(
             self.erasure,
-            instance.run.ok_or(LoweringFailure::InvalidCheckedProgram)?,
+            instance.run.ok_or(crate::lowering::traced_invalid_checked_program())?,
         )?;
         let result_type = lower_type(self.erasure, result)?;
         let element_type = lower_type(self.erasure, instance.element)?;
         let [run, rest @ ..] = arguments else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let run = self.expression(run)?;
         if self.value_type(run)? != run_type {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let value = match (boundary.places(), rest) {
             (true, [value]) => {
                 let value = self.expression(value)?;
                 if self.value_type(value)? != element_type {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 Some(value)
             }
             (false, []) => None,
-            _ => return Err(LoweringFailure::InvalidCheckedProgram),
+            _ => return Err(crate::lowering::traced_invalid_checked_program()),
         };
         // The element is read out before the boundary moves, so the removal
         // rows evaluate their taken value first and the run second.
@@ -608,13 +608,13 @@ impl IrBuilder<'_> {
             if result_type == run_type {
                 return Ok(handed_back);
             }
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         // The ordered result list [CALL-4] is one value of the row's
         // compiler-owned result-list nominal, whose fields are `rest` then
         // `value` in declared order.
         let CheckedType::Nominal(nominal) = result else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let nominal = self.erased(nominal);
         self.define(
@@ -635,7 +635,7 @@ impl IrBuilder<'_> {
         let value = self.binding_value(root.binding)?;
         let value = self.project_place_path(value, &root.path)?;
         if self.value_type(value)? != lower_type(self.erasure, root.ty)? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(value)
     }

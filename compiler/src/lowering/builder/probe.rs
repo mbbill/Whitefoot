@@ -455,11 +455,11 @@ impl IrBuilder<'_> {
             },
         )?;
         if self.bindings.insert(walk.induction, next) != Some(index) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let arguments = self.binding_values(carried_bindings)?;
         if self.bindings.insert(walk.induction, index) != Some(next) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.terminate(IrTerminator::Jump {
             target: header,

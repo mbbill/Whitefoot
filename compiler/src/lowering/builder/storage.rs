@@ -171,14 +171,14 @@ impl IrBuilder<'_> {
             .bindings
             .get(&binding)
             .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let referent = self.addressed_referent(self.value_type(value)?)?;
         let address = self.define(
             IrType::Address(referent),
             IrOperation::AddressOf { value, referent },
         )?;
         if self.bindings.insert(binding, address) != Some(value) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(())
     }
@@ -188,17 +188,17 @@ impl IrBuilder<'_> {
     /// A borrow addresses directly stored content only; a descriptor or opaque
     /// handle is already its own borrow and never reaches this path.
     fn addressed_referent(&self, ty: IrType) -> Result<IrAddressed, LoweringFailure> {
-        let referent = IrAddressed::of(ty).ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let referent = IrAddressed::of(ty).ok_or(crate::lowering::traced_invalid_checked_program())?;
         if let IrAddressed::Nominal(nominal) = referent
             && !matches!(
                 self.nominals
                     .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?
                     .kind,
                 IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
             )
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(referent)
     }
@@ -212,9 +212,9 @@ impl IrBuilder<'_> {
             .bindings
             .get(&binding)
             .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         if self.value_type(value)? != IrType::Address(self.addressed_referent(ty)?) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(value)
     }
@@ -227,7 +227,7 @@ impl IrBuilder<'_> {
             .bindings
             .get(&binding)
             .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.load_storage_value(storage)
     }
 
@@ -256,7 +256,7 @@ impl IrBuilder<'_> {
         if self.value_type(address)? != IrType::Address(referent)
             || self.value_type(value)? != referent.ty()
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.current_block_mut()?
             .instructions

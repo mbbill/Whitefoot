@@ -32,7 +32,7 @@ impl IrBuilder<'_> {
         backedge_drops: &[CheckedDrop],
         give_target: Option<GiveTarget>,
     ) -> Result<(), LoweringFailure> {
-        let pipeline_entry = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let pipeline_entry = self.current.ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.note_staged_pipeline(id, pipeline_entry, crate::IrCompletionWindow::new(0, 0, 1));
         let base_bindings = self.bindings.clone();
         let mut carried_bindings = base_bindings.keys().copied().collect::<Vec<_>>();
@@ -43,7 +43,7 @@ impl IrBuilder<'_> {
                 base_bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    .ok_or(crate::lowering::traced_invalid_checked_program())
                     .and_then(|value| self.value_type(value))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -78,10 +78,10 @@ impl IrBuilder<'_> {
             })?;
         }
         let Some(target) = self.loops.pop() else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         if target.id != id || target.block != exit {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
 
         self.current = Some(exit);
@@ -116,7 +116,7 @@ impl IrBuilder<'_> {
         let lower_capture = self.expression(lower)?;
         let upper_capture = self.expression(upper)?;
         if self.value_type(lower_capture)? != U64 || self.value_type(upper_capture)? != U64 {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         if self.split_counted_range(
             id,
@@ -142,7 +142,7 @@ impl IrBuilder<'_> {
         )? {
             return Ok(());
         }
-        let pipeline_entry = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let pipeline_entry = self.current.ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.note_staged_pipeline(
             id,
             pipeline_entry,
@@ -225,7 +225,7 @@ impl IrBuilder<'_> {
 
         let base_bindings = self.bindings.clone();
         if base_bindings.contains_key(&binder) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let mut carried_bindings = base_bindings.keys().copied().collect::<Vec<_>>();
         carried_bindings.sort_by_key(|binding| binding.0);
@@ -235,7 +235,7 @@ impl IrBuilder<'_> {
                 base_bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    .ok_or(crate::lowering::traced_invalid_checked_program())
                     .and_then(|value| self.value_type(value))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -309,27 +309,27 @@ impl IrBuilder<'_> {
 
         let issue_state = issue_parameters
             .get(..carried_count)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let issue_index = *issue_parameters
             .get(carried_count)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let issue_upper = *issue_parameters
             .get(carried_count + 1)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let issue_count = *issue_parameters
             .get(carried_count + 2)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.current = Some(issue);
         self.bindings = base_bindings.clone();
         self.bind_parameters(&carried_bindings, issue_state)?;
         if self.bindings.insert(binder, issue_index).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         for statement in &direct.prologue {
             let before = self.current;
             self.lower_statements(std::slice::from_ref(*statement), None)?;
             if self.current != before {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
         }
         let result = self.expression(direct.scrutinee)?;
@@ -349,7 +349,7 @@ impl IrBuilder<'_> {
                 )
             });
         if !call_is_last {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let one = self.define(
             U64,
@@ -429,25 +429,25 @@ impl IrBuilder<'_> {
 
         let drain_state = drain_parameters
             .get(..carried_count)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let drain_next_index = *drain_parameters
             .get(carried_count)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let drain_upper = *drain_parameters
             .get(carried_count + 1)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let drain_count = *drain_parameters
             .get(carried_count + 2)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let drain_slot = *drain_parameters
             .get(carried_count + 3)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.current = Some(drain);
         self.bindings = base_bindings.clone();
         self.bind_parameters(&carried_bindings, drain_state)?;
         self.lower_match_from_value(result, direct.enum_type, direct.arms, true, None, None)?;
         if self.current.is_none() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let (drain_again_edge, _) = self.new_block(&[])?;
         let (batch_finished_edge, _) = self.new_block(&[])?;
@@ -588,7 +588,7 @@ impl IrBuilder<'_> {
                 base_bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    .ok_or(crate::lowering::traced_invalid_checked_program())
                     .and_then(|value| self.value_type(value))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -598,14 +598,14 @@ impl IrBuilder<'_> {
         // before the first header, and carry the address rather than creating
         // a new address each iteration.
         if self.bindings.insert(binder, lower_capture).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.promote_binding_if_needed(binder)?;
         let binder_storage = self
             .bindings
             .get(&binder)
             .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let binder_storage_type = self.value_type(binder_storage)?;
 
         let base_count = base_parameter_types.len();
@@ -629,22 +629,22 @@ impl IrBuilder<'_> {
 
         let header_base = header_parameters
             .get(..base_count)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let header_lower = *header_parameters
             .get(base_count)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let header_upper = *header_parameters
             .get(base_count + 1)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let header_binder = *header_parameters
             .get(base_count + 2)
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
 
         self.current = Some(header);
         self.bindings = base_bindings.clone();
         self.bind_parameters(&carried_bindings, header_base)?;
         if self.bindings.insert(binder, header_binder).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let binder_value = self.binding_value(binder)?;
         let guard = self.define(
@@ -689,7 +689,7 @@ impl IrBuilder<'_> {
         self.bindings = base_bindings.clone();
         self.bind_parameters(&carried_bindings, header_base)?;
         if self.bindings.insert(binder, header_binder).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.loops.push(LoopTarget {
             id,
@@ -712,10 +712,10 @@ impl IrBuilder<'_> {
             None
         };
         let Some(target) = self.loops.pop() else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         if target.id != id || target.block != exit {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
 
         if let Some((update, update_parameters)) = update {
@@ -725,21 +725,21 @@ impl IrBuilder<'_> {
             // operation. An all-terminating body creates no update block at all.
             let update_base = update_parameters
                 .get(..base_count)
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                .ok_or(crate::lowering::traced_invalid_checked_program())?;
             let update_lower = *update_parameters
                 .get(base_count)
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                .ok_or(crate::lowering::traced_invalid_checked_program())?;
             let update_upper = *update_parameters
                 .get(base_count + 1)
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                .ok_or(crate::lowering::traced_invalid_checked_program())?;
             let update_binder = *update_parameters
                 .get(base_count + 2)
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                .ok_or(crate::lowering::traced_invalid_checked_program())?;
             self.current = Some(update);
             self.bindings = base_bindings.clone();
             self.bind_parameters(&carried_bindings, update_base)?;
             if self.bindings.insert(binder, update_binder).is_some() {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
             let old = self.binding_value(binder)?;
             let one = self.define(
@@ -761,7 +761,7 @@ impl IrBuilder<'_> {
                 }
                 _ => {
                     if self.bindings.insert(binder, next) != Some(update_binder) {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
+                        return Err(crate::lowering::traced_invalid_checked_program());
                     }
                     next
                 }
@@ -786,11 +786,11 @@ impl IrBuilder<'_> {
         parameters: &[IrValueId],
     ) -> Result<(), LoweringFailure> {
         if bindings.len() != parameters.len() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         for (binding, value) in bindings.iter().zip(parameters) {
             if self.bindings.insert(*binding, *value).is_none() {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
         }
         Ok(())

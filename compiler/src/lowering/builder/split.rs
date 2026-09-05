@@ -163,9 +163,9 @@ impl Synthesis {
         let slot = ordinal
             .checked_sub(self.base)
             .and_then(|offset| self.functions.get_mut(offset as usize))
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         if slot.replace(function).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(())
     }
@@ -176,7 +176,7 @@ impl Synthesis {
             .functions
             .into_iter()
             .collect::<Option<Vec<_>>>()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         Ok((functions, self.ledger))
     }
 }
@@ -240,7 +240,7 @@ impl IrBuilder<'_> {
                 self.bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    .ok_or(crate::lowering::traced_invalid_checked_program())
                     .and_then(|value| self.value_type(value))
             })
             .collect::<Result<Vec<_>, _>>()?;
@@ -250,7 +250,7 @@ impl IrBuilder<'_> {
                 self.bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    .ok_or(crate::lowering::traced_invalid_checked_program())
             })
             .collect::<Result<Vec<_>, _>>()?;
 
@@ -365,7 +365,7 @@ impl IrBuilder<'_> {
                 .bindings
                 .get(binding)
                 .copied()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)
+                .ok_or(crate::lowering::traced_invalid_checked_program())
                 .and_then(|value| self.value_type(value))?;
             bytes = bytes.saturating_add(frame_bytes(ty));
         }
@@ -423,12 +423,12 @@ impl IrBuilder<'_> {
         if let LoopActualization::Reduction { accumulator, .. } = actualization
             && builder.bindings.insert(accumulator, seed).is_some()
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         for (binding, ty) in captures.iter().zip(capture_types) {
             let value = builder.new_parameter(*ty)?;
             if builder.bindings.insert(*binding, value).is_some() {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
         }
         // No give target and no enclosing loop: condition 4 refused every edge
@@ -675,7 +675,7 @@ impl IrBuilder<'_> {
         combine: LoopCombine,
         ty: IrType,
     ) -> Result<IrValueId, LoweringFailure> {
-        let identity = identity(combine, ty).ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let identity = identity(combine, ty).ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.define(ty, IrOperation::Constant(identity))
     }
 

@@ -812,12 +812,14 @@ absent when it writes none",
             CheckedType::Buffer { .. } | CheckedType::Slice { .. } => true,
             // A store-resident run is a descriptor and a provider is its own
             // handle, so each is already the thing a borrow carries; a
-            // frame-resident run is inline storage and is borrowed no more
-            // than an `array` is today [BLK-1, PROV-1].
+            // frame-resident run is inline storage, so a borrow of it is the
+            // address of that storage, exactly as a borrow of a struct is
+            // [BLK-1, PROV-1]. [BLK-4] refuses only the `&uniq` of a run, so
+            // the shared borrow is an ordinary one.
             CheckedType::Vector { .. } | CheckedType::Heap { .. } | CheckedType::Extent { .. } => {
                 true
             }
-            CheckedType::FixedVector { .. } => false,
+            CheckedType::FixedVector { .. } => true,
             CheckedType::Nominal(nominal) => matches!(
                 self.nominal(nominal)?.kind,
                 CheckedNominalKind::Struct { .. }
@@ -854,14 +856,20 @@ absent when it writes none",
             | CheckedType::Float(_) => true,
             // A `Heap` or an `Arena` is a stored proof-only value whose
             // cursor state a `&uniq` holder writes, so its borrow addresses
-            // that storage; a `Vector` is a descriptor and a `FixedVector` is
-            // not borrowable at all [BLK-1, PROV-1].
-            CheckedType::Heap { .. } | CheckedType::Extent { .. } => true,
+            // that storage. Both runs [BLK-1] are borrowed the same way: an
+            // inline run is storage in its owner and a store-resident run's
+            // descriptor is storage in its owner's frame, so each borrow is
+            // the address of the run's own storage. That is one borrow path
+            // for the two runs rather than one shape each, and [BLK-4]
+            // refuses the `&uniq` of either, so no borrow of a run writes
+            // through it.
+            CheckedType::Heap { .. }
+            | CheckedType::Extent { .. }
+            | CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. } => true,
             CheckedType::Buffer { .. }
             | CheckedType::Slice { .. }
             | CheckedType::Array { .. }
-            | CheckedType::Vector { .. }
-            | CheckedType::FixedVector { .. }
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_) => false,
@@ -1697,9 +1705,16 @@ and name it on the returned reborrow"
                 }
                 _ => false,
             },
+            // [OP-4, BLK-1] the two runs are indexable bases exactly as the
+            // three flat storages are, so a run holder written where its
+            // referent is required is the same [TYPE-7] missing `deref`.
             RequiredReferent::IndexableStorage => matches!(
                 ty,
-                CheckedType::Array { .. } | CheckedType::Buffer { .. } | CheckedType::Slice { .. }
+                CheckedType::Array { .. }
+                    | CheckedType::Buffer { .. }
+                    | CheckedType::Slice { .. }
+                    | CheckedType::FixedVector { .. }
+                    | CheckedType::Vector { .. }
             ),
         })
     }

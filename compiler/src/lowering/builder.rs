@@ -152,7 +152,7 @@ fn lower_scalar_constant(value: &CheckedValue) -> Result<IrConstant, LoweringFai
         CheckedValue::ConstGeneric { .. }
         | CheckedValue::NumericIdentity { .. }
         | CheckedValue::Array { .. }
-        | CheckedValue::Struct { .. } => Err(LoweringFailure::InvalidCheckedProgram),
+        | CheckedValue::Struct { .. } => Err(crate::lowering::traced_invalid_checked_program()),
     }
 }
 
@@ -183,7 +183,7 @@ fn lower_constants(
         .enumerate()
         .map(|(index, constant)| {
             if constant.id.0 as usize != index || constant.value.ty() != constant.ty {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
             Ok(IrGlobalConstant {
                 id: IrConstantId(constant.id.0),
@@ -201,12 +201,12 @@ fn lower_nominals(
 ) -> Result<Vec<IrNominal>, LoweringFailure> {
     data.nominals
         .get(..data.executable_nominal_count)
-        .ok_or(LoweringFailure::InvalidCheckedProgram)?
+        .ok_or(crate::lowering::traced_invalid_checked_program())?
         .iter()
         .enumerate()
         .map(|(index, nominal)| {
             if nominal.id.0 as usize != index {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
             let identity = match &nominal.kind {
                 CheckedNominalKind::SystemResource { nominal } => {
@@ -240,10 +240,10 @@ fn lower_nominals(
                                 .and_then(|index| {
                                     crate::SYSTEM_CONSTRUCTORS.get(usize::from(index))
                                 })
-                                .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                                .ok_or(crate::lowering::traced_invalid_checked_program())?;
                         match owner {
                             Some(existing) if existing != constructor.owner => {
-                                return Err(LoweringFailure::InvalidCheckedProgram);
+                                return Err(crate::lowering::traced_invalid_checked_program());
                             }
                             Some(_) => {}
                             None => owner = Some(constructor.owner),
@@ -303,7 +303,7 @@ fn lower_nominals(
                 // qualification's business, not this stage's.
                 CheckedNominalKind::SystemResource { nominal } => IrNominalKind::SystemResource(
                     crate::system_resource_contract(*nominal)
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                        .ok_or(crate::lowering::traced_invalid_checked_program())?,
                 ),
             };
             Ok(IrNominal {
@@ -336,7 +336,7 @@ fn lower_function<'program>(
     let result = *context
         .function_results
         .get(function.id.0 as usize)
-        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        .ok_or(crate::lowering::traced_invalid_checked_program())?;
     // The whole permission table of this function, and only when this
     // compilation asked for actualization: with none, a permitted loop lowers
     // exactly as it did before the split existed and no group is actualized.
@@ -352,7 +352,7 @@ fn lower_function<'program>(
         let ty = lower_parameter_type(context.erasure, parameter, context.nominals)?;
         let value = builder.new_parameter(ty)?;
         if builder.bindings.insert(parameter.binding, value).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         builder.promote_binding_if_needed(parameter.binding)?;
     }
@@ -401,7 +401,7 @@ fn lower_borrow_mode_type(
         && !matches!(
             nominals
                 .get(nominal.index())
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                .ok_or(crate::lowering::traced_invalid_checked_program())?
                 .kind,
             IrNominalKind::Struct { .. } | IrNominalKind::Enum { .. }
         )
@@ -527,7 +527,7 @@ impl<'program> IrBuilder<'program> {
         };
         let (entry, parameters) = builder.new_block(&[])?;
         if !parameters.is_empty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         builder.current = Some(entry);
         Ok(builder)
@@ -570,7 +570,7 @@ impl<'program> IrBuilder<'program> {
         target_action: crate::TargetAction,
     ) -> Result<IrFunction, LoweringFailure> {
         if self.current.is_some() || self.blocks.iter().any(|block| block.terminator.is_none()) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(IrFunction {
             name,
@@ -586,7 +586,7 @@ impl<'program> IrBuilder<'program> {
                         instructions: block.instructions,
                         terminator: block
                             .terminator
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?,
+                            .ok_or(crate::lowering::traced_invalid_checked_program())?,
                     })
                 })
                 .collect::<Result<Vec<_>, LoweringFailure>>()?,
@@ -666,7 +666,7 @@ impl<'program> IrBuilder<'program> {
             return Ok(());
         };
         let Some(block) = self.blocks.get(feeder.index()) else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let call_is_last = matches!(
             block.instructions.last(),
@@ -713,14 +713,14 @@ impl<'program> IrBuilder<'program> {
             .blocks
             .get_mut(feeder.index())
             .and_then(|block| block.terminator.take())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let (drain, parameters) = self.new_block(&[])?;
         if !parameters.is_empty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.blocks
             .get_mut(feeder.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .ok_or(crate::lowering::traced_invalid_checked_program())?
             .terminator = Some(IrTerminator::Jump {
             target: drain,
             arguments: Vec::new(),
@@ -728,11 +728,11 @@ impl<'program> IrBuilder<'program> {
         });
         self.blocks
             .get_mut(drain.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .ok_or(crate::lowering::traced_invalid_checked_program())?
             .terminator = Some(original);
         self.completion_pipeline
             .as_mut()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .ok_or(crate::lowering::traced_invalid_checked_program())?
             .plan_one_slot(feeder, drain, result);
         Ok(())
     }
@@ -760,16 +760,16 @@ impl<'program> IrBuilder<'program> {
     }
 
     fn current_block_mut(&mut self) -> Result<&mut BuildingBlock, LoweringFailure> {
-        let current = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let current = self.current.ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.blocks
             .get_mut(current.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)
+            .ok_or(crate::lowering::traced_invalid_checked_program())
     }
 
     fn terminate(&mut self, terminator: IrTerminator) -> Result<(), LoweringFailure> {
         let block = self.current_block_mut()?;
         if block.terminator.replace(terminator).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.current = None;
         Ok(())
@@ -995,7 +995,7 @@ impl<'program> IrBuilder<'program> {
         };
         // The block the call's own definition landed in, which is the block
         // current after the arguments are lowered.
-        let block = self.current.ok_or(LoweringFailure::InvalidCheckedProgram)?;
+        let block = self.current.ok_or(crate::lowering::traced_invalid_checked_program())?;
         self.call_results.insert(call.clone(), (block, value));
         Ok(())
     }
@@ -1022,7 +1022,7 @@ impl<'program> IrBuilder<'program> {
     ) -> Result<(), LoweringFailure> {
         for statement in statements {
             if self.current.is_none() {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
             match statement {
                 CheckedStatement::Let {
@@ -1033,7 +1033,7 @@ impl<'program> IrBuilder<'program> {
                     let value = self.expression(expression)?;
                     self.note_call_result(expression, value)?;
                     if self.bindings.insert(*binding, value).is_some() {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
+                        return Err(crate::lowering::traced_invalid_checked_program());
                     }
                     self.promote_binding_if_needed(*binding)?;
                 }
@@ -1072,7 +1072,7 @@ impl<'program> IrBuilder<'program> {
                     self.note_call_result(expression, aggregate)?;
                     let erased = self.erased(*nominal);
                     if self.value_type(aggregate)? != IrType::Nominal(erased) {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
+                        return Err(crate::lowering::traced_invalid_checked_program());
                     }
                     // S39 a cell's one binder is its referent, loaded out
                     // while the cell's own storage is released.
@@ -1080,7 +1080,7 @@ impl<'program> IrBuilder<'program> {
                         self.nominals.get(erased.index()).map(IrNominal::kind)
                     {
                         let [(binding, ty)] = bindings.as_slice() else {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
+                            return Err(crate::lowering::traced_invalid_checked_program());
                         };
                         let referent = lower_type(self.erasure, *ty)?;
                         let value = self.define(
@@ -1091,20 +1091,20 @@ impl<'program> IrBuilder<'program> {
                             },
                         )?;
                         if self.bindings.insert(*binding, value).is_some() {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
+                            return Err(crate::lowering::traced_invalid_checked_program());
                         }
                         self.promote_binding_if_needed(*binding)?;
                         continue;
                     }
                     for (ordinal, (binding, ty)) in bindings.iter().enumerate() {
                         let field = u32::try_from(ordinal)
-                            .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
+                            .map_err(|_| crate::lowering::traced_invalid_checked_program())?;
                         let value = self.project_struct_path(aggregate, &[field], true)?;
                         if self.value_type(value)? != lower_type(self.erasure, *ty)? {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
+                            return Err(crate::lowering::traced_invalid_checked_program());
                         }
                         if self.bindings.insert(*binding, value).is_some() {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
+                            return Err(crate::lowering::traced_invalid_checked_program());
                         }
                         self.promote_binding_if_needed(*binding)?;
                     }
@@ -1163,10 +1163,10 @@ impl<'program> IrBuilder<'program> {
                 CheckedStatement::Give { value, drops, .. } => {
                     let target = give_target
                         .as_ref()
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                        .ok_or(crate::lowering::traced_invalid_checked_program())?;
                     let value = self.expression(value)?;
                     if self.value_type(value)? != target.result {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
+                        return Err(crate::lowering::traced_invalid_checked_program());
                     }
                     let mut arguments = Vec::with_capacity(1 + target.carried_bindings.len());
                     arguments.push(value);
@@ -1213,7 +1213,7 @@ impl<'program> IrBuilder<'program> {
                         .rev()
                         .find(|candidate| candidate.id == *target)
                         .cloned()
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                        .ok_or(crate::lowering::traced_invalid_checked_program())?;
                     let arguments = self.binding_values(&target.carried_bindings)?;
                     let drops = self.lower_drops(drops)?;
                     self.terminate(IrTerminator::Jump {
@@ -1236,11 +1236,11 @@ impl<'program> IrBuilder<'program> {
                             .iter()
                             .find(|nominal| nominal.kind == IrNominalKind::ArenaStorage)
                             .map(|nominal| nominal.id)
-                            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                            .ok_or(crate::lowering::traced_invalid_checked_program())?;
                         let value =
                             self.define(IrType::Nominal(storage), IrOperation::ArenaListNew)?;
                         if self.bindings.insert(*list, value).is_some() {
-                            return Err(LoweringFailure::InvalidCheckedProgram);
+                            return Err(crate::lowering::traced_invalid_checked_program());
                         }
                     }
                     self.lower_statements(body, give_target.clone())?;
@@ -1317,7 +1317,7 @@ impl<'program> IrBuilder<'program> {
         if let Some((feeder, drain)) = one_slot_driver {
             self.completion_pipeline
                 .as_mut()
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                .ok_or(crate::lowering::traced_invalid_checked_program())?
                 .plan_one_slot(feeder, drain, scrutinee);
         }
         Ok(())
@@ -1368,7 +1368,7 @@ impl<'program> IrBuilder<'program> {
 
         let (drain, parameters) = self.new_block(&[])?;
         if !parameters.is_empty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.terminate(IrTerminator::Jump {
             target: drain,
@@ -1409,7 +1409,7 @@ impl<'program> IrBuilder<'program> {
                 let value = base_bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 parameter_types.push(self.value_type(value)?);
             }
             let (block, parameters) = self.new_block(&parameter_types)?;
@@ -1438,7 +1438,7 @@ impl<'program> IrBuilder<'program> {
             self.bindings = base_bindings.clone();
             for binder in &arm.binders {
                 let CheckedEnumType::Nominal(nominal) = enum_type else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 let value = self.define(
                     lower_type(self.erasure, binder.ty)?,
@@ -1450,7 +1450,7 @@ impl<'program> IrBuilder<'program> {
                     },
                 )?;
                 if self.bindings.insert(binder.binding, value).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 if binder.mode == CheckedMode::Own {
                     self.promote_binding_if_needed(binder.binding)?;
@@ -1467,10 +1467,10 @@ impl<'program> IrBuilder<'program> {
             self.lower_statements(&arm.body, arm_give_target)?;
             if self.current.is_some() {
                 let Some((join, _)) = &join else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 if value_binding.is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 let drops = self.lower_drops(&arm.fallthrough_drops)?;
                 let arguments = self.binding_values(&carried_bindings)?;
@@ -1486,19 +1486,19 @@ impl<'program> IrBuilder<'program> {
             self.current = Some(join);
             let carried_start = usize::from(value_binding.is_some());
             if parameters.len() != carried_start + carried_bindings.len() {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
             for (binding, value) in carried_bindings.iter().zip(&parameters[carried_start..]) {
                 if self.bindings.insert(*binding, *value).is_none() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
             }
             if let Some((binding, _)) = value_binding {
                 let value = *parameters
                     .first()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 if self.bindings.insert(binding, value).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
             }
         } else {
@@ -1514,7 +1514,7 @@ impl<'program> IrBuilder<'program> {
                     .bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 let expected = lower_type(self.erasure, *ty)?;
                 let actual = self.value_type(value)?;
                 let value = if self.addressed_bindings.contains(binding) {
@@ -1528,7 +1528,7 @@ impl<'program> IrBuilder<'program> {
                         (IrType::Address(referent), _) if referent.ty() == expected
                     )
                 {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 Ok(value)
             }
@@ -1557,7 +1557,7 @@ impl<'program> IrBuilder<'program> {
                 let result = *self
                     .function_results
                     .get(function.0 as usize)
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 self.define(
                     result,
                     IrOperation::Call {
@@ -1596,7 +1596,7 @@ impl<'program> IrBuilder<'program> {
             } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 Ok(value)
             }
@@ -1694,7 +1694,7 @@ impl<'program> IrBuilder<'program> {
                 ..
             } => {
                 let [left, right] = arguments.as_slice() else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 let left = self.expression(left)?;
                 let right = self.expression(right)?;
@@ -1714,11 +1714,11 @@ impl<'program> IrBuilder<'program> {
                 ..
             } => {
                 let IrType::Array { element, .. } = lower_type(self.erasure, *ty)? else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 let value = self.expression(value)?;
                 if self.value_type(value)? != element.ty() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.define(
                     lower_type(self.erasure, *ty)?,
@@ -1738,13 +1738,13 @@ impl<'program> IrBuilder<'program> {
                 }
                 let (_, ty) = self.array_root(root)?;
                 let IrType::Array { length: actual, .. } = ty else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 let length = length
                     .value()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 if actual != length {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.define(
                     IrType::Integer {
@@ -1774,13 +1774,13 @@ impl<'program> IrBuilder<'program> {
                     length: actual,
                 } = ty
                 else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 let length = length
                     .value()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 if element.ty() != lower_type(self.erasure, *element_type)? || actual != length {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 let offset = self.expression(offset)?;
                 if self.value_type(offset)?
@@ -1789,7 +1789,7 @@ impl<'program> IrBuilder<'program> {
                         signed: false,
                     })
                 {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.define(
                     element.ty(),
@@ -1841,7 +1841,7 @@ impl<'program> IrBuilder<'program> {
             // [FN-9] a clause-only datum: the checker discards it with the
             // clause's typing, so no checked program carries one here.
             CheckedExpression::PostconditionResultMeasure { .. } => {
-                Err(LoweringFailure::InvalidCheckedProgram)
+                Err(crate::lowering::traced_invalid_checked_program())
             }
             CheckedExpression::RunIndex {
                 root,
@@ -1891,10 +1891,10 @@ impl<'program> IrBuilder<'program> {
                 let IrNominalKind::Box { referent, .. } = self
                     .nominals
                     .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?
                     .kind
                 else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 self.define(referent, IrOperation::BoxDeref { nominal, value })
             }
@@ -1909,13 +1909,13 @@ impl<'program> IrBuilder<'program> {
                 let IrNominalKind::Arena { content } = self
                     .nominals
                     .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?
                     .kind
                 else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 if self.value_type(value)? != content {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 let list = self.binding_value(*list)?;
                 self.define(
@@ -1931,15 +1931,15 @@ impl<'program> IrBuilder<'program> {
                 let value = self.expression(value)?;
                 let nominal = self.erased(*nominal);
                 if self.value_type(value)? != IrType::Nominal(nominal) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 let IrNominalKind::Arena { content } = self
                     .nominals
                     .get(nominal.index())
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?
                     .kind
                 else {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 };
                 self.define(content, IrOperation::ArenaDeref { nominal, value })
             }
@@ -1949,7 +1949,7 @@ impl<'program> IrBuilder<'program> {
             } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 Ok(value)
             }
@@ -1960,7 +1960,7 @@ impl<'program> IrBuilder<'program> {
             CheckedExpression::DerefAddressed { binding, ty, .. } => {
                 let value = self.binding_value(*binding)?;
                 if self.value_type(value)? != lower_type(self.erasure, *ty)? {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 Ok(value)
             }
@@ -2012,7 +2012,7 @@ impl<'program> IrBuilder<'program> {
                 }
                 let value = self.project_struct_path(root, fields, *consume_root)?;
                 if self.value_type(value)? != lower_type(self.erasure, *ty)? {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 for drop in lowered_drops {
                     self.current_block_mut()?
@@ -2055,7 +2055,7 @@ impl<'program> IrBuilder<'program> {
                     .bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 let root = self.load_storage_value(storage)?;
                 let value = if fields.is_empty() {
                     root
@@ -2068,7 +2068,7 @@ impl<'program> IrBuilder<'program> {
                 let constant = self
                     .constants
                     .get(constant.0 as usize)
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?;
                 Ok((
                     IrArrayRoot::Constant(IrConstantId(constant.id().0)),
                     constant.ty(),
@@ -2092,7 +2092,7 @@ impl<'program> IrBuilder<'program> {
             .bindings
             .get(&root_binding)
             .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let root = self.load_storage_value(storage)?;
         let previous = match target {
             CheckedSetTarget::Place(place) => {
@@ -2110,7 +2110,7 @@ impl<'program> IrBuilder<'program> {
             CheckedSetTarget::BufferIndex(target) => {
                 let previous = self.lower_buffer_replace(root, target, value)?;
                 if self.bindings.insert(binding, previous).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.promote_binding_if_needed(binding)?;
                 return Ok(());
@@ -2124,7 +2124,7 @@ impl<'program> IrBuilder<'program> {
                 let (previous, replacement) = self.lower_run_replace(root, target, value)?;
                 self.commit_root_storage(root_binding, storage, replacement)?;
                 if self.bindings.insert(binding, previous).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.promote_binding_if_needed(binding)?;
                 return Ok(());
@@ -2134,14 +2134,14 @@ impl<'program> IrBuilder<'program> {
             // checker never forms an element-position replace target over
             // either [SET-2].
             CheckedSetTarget::ArrayIndex(_) | CheckedSetTarget::SliceIndex(_) => {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
         };
         if self.value_type(previous)? != lower_type(self.erasure, target.ty())? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         if self.bindings.insert(binding, previous).is_some() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         self.promote_binding_if_needed(binding)?;
         self.set(target, value)
@@ -2169,19 +2169,19 @@ impl<'program> IrBuilder<'program> {
                 let aggregate = self.expression(value)?;
                 self.note_call_result(value, aggregate)?;
                 if self.value_type(aggregate)? != IrType::Nominal(self.erased(*nominal)) {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 let mut ordinals = Vec::with_capacity(targets.len());
                 for ordinal in 0..targets.len() {
                     let field = u32::try_from(ordinal)
-                        .map_err(|_| LoweringFailure::InvalidCheckedProgram)?;
+                        .map_err(|_| crate::lowering::traced_invalid_checked_program())?;
                     ordinals.push(self.project_struct_path(aggregate, &[field], true)?);
                 }
                 ordinals
             }
             CheckedCommitValues::Written(values) => {
                 if values.len() != targets.len() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 let mut ordinals = Vec::with_capacity(values.len());
                 for value in values {
@@ -2211,30 +2211,30 @@ impl<'program> IrBuilder<'program> {
         {
             if place.fields.is_empty() {
                 if self.value_type(value)? != lower_type(self.erasure, place.ty)? {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 if self.bindings.insert(binding, value).is_some() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.promote_binding_if_needed(binding)?;
                 return Ok(());
             }
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let storage = self
             .bindings
             .get(&binding)
             .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?;
+            .ok_or(crate::lowering::traced_invalid_checked_program())?;
         let root = self.load_storage_value(storage)?;
         if self.value_type(value)? != lower_type(self.erasure, target.ty())? {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let replacement = match target {
             CheckedSetTarget::Place(place) => {
                 if place.fields.is_empty() {
                     if self.value_type(root)? != self.value_type(value)? {
-                        return Err(LoweringFailure::InvalidCheckedProgram);
+                        return Err(crate::lowering::traced_invalid_checked_program());
                     }
                     value
                 } else {
@@ -2271,7 +2271,7 @@ impl<'program> IrBuilder<'program> {
         let stored = match self.value_type(storage)? {
             IrType::Address(referent) => {
                 if self.value_type(replacement)? != referent.ty() {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
                 self.store_addressed(storage, replacement, referent)?;
                 storage
@@ -2279,7 +2279,7 @@ impl<'program> IrBuilder<'program> {
             _ => replacement,
         };
         if self.bindings.insert(binding, stored) != Some(storage) {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(())
     }
@@ -2307,7 +2307,7 @@ impl<'program> IrBuilder<'program> {
     ) -> Result<IrValueId, LoweringFailure> {
         let array_type = lower_type(self.erasure, target.array_type)?;
         let IrType::Array { element, length } = array_type else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let array = if target.fields.is_empty() {
             root
@@ -2318,7 +2318,7 @@ impl<'program> IrBuilder<'program> {
             || element.ty() != lower_type(self.erasure, target.element_type)?
             || Some(length) != target.length.value()
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let index = self.expression(&target.offset)?;
         if self.value_type(index)?
@@ -2327,10 +2327,10 @@ impl<'program> IrBuilder<'program> {
                 signed: false,
             })
         {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         if self.value_type(value)? != element.ty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         let replacement = self.define(
             array_type,
@@ -2354,22 +2354,22 @@ impl<'program> IrBuilder<'program> {
         consume_root: bool,
     ) -> Result<IrValueId, LoweringFailure> {
         if fields.is_empty() {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         for field in fields {
             let IrType::Nominal(nominal) = self.value_type(value)? else {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             };
             let field_ty = match &self
                 .nominals
                 .get(nominal.index())
-                .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                .ok_or(crate::lowering::traced_invalid_checked_program())?
                 .kind
             {
                 IrNominalKind::Struct { fields } => {
                     fields
                         .get(*field as usize)
-                        .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                        .ok_or(crate::lowering::traced_invalid_checked_program())?
                         .ty
                 }
                 // An opaque system resource has no writer-visible field, so no
@@ -2379,7 +2379,7 @@ impl<'program> IrBuilder<'program> {
                 | IrNominalKind::Arena { .. }
                 | IrNominalKind::ArenaStorage
                 | IrNominalKind::SystemResource(_) => {
-                    return Err(LoweringFailure::InvalidCheckedProgram);
+                    return Err(crate::lowering::traced_invalid_checked_program());
                 }
             };
             value = self.define(
@@ -2402,21 +2402,21 @@ impl<'program> IrBuilder<'program> {
         replacement: IrValueId,
     ) -> Result<IrValueId, LoweringFailure> {
         let Some((field, remaining)) = fields.split_first() else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let IrType::Nominal(nominal) = self.value_type(aggregate)? else {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         };
         let field_ty = match &self
             .nominals
             .get(nominal.index())
-            .ok_or(LoweringFailure::InvalidCheckedProgram)?
+            .ok_or(crate::lowering::traced_invalid_checked_program())?
             .kind
         {
             IrNominalKind::Struct { fields } => {
                 fields
                     .get(*field as usize)
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)?
+                    .ok_or(crate::lowering::traced_invalid_checked_program())?
                     .ty
             }
             // An opaque system resource has no writer-visible field, so no
@@ -2426,12 +2426,12 @@ impl<'program> IrBuilder<'program> {
             | IrNominalKind::Arena { .. }
             | IrNominalKind::ArenaStorage
             | IrNominalKind::SystemResource(_) => {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
         };
         let value = if remaining.is_empty() {
             if self.value_type(replacement)? != field_ty {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
             replacement
         } else {
@@ -2471,7 +2471,7 @@ impl<'program> IrBuilder<'program> {
         };
         let ty = lower_type(self.erasure, drop.ty)?;
         if self.value_type(value)? != ty {
-            return Err(LoweringFailure::InvalidCheckedProgram);
+            return Err(crate::lowering::traced_invalid_checked_program());
         }
         Ok(IrDrop {
             value,
@@ -2484,7 +2484,7 @@ impl<'program> IrBuilder<'program> {
         self.values
             .get(value.index())
             .copied()
-            .ok_or(LoweringFailure::InvalidCheckedProgram)
+            .ok_or(crate::lowering::traced_invalid_checked_program())
     }
 
     fn binding_values(&self, bindings: &[BindingId]) -> Result<Vec<IrValueId>, LoweringFailure> {
@@ -2494,7 +2494,7 @@ impl<'program> IrBuilder<'program> {
                 self.bindings
                     .get(binding)
                     .copied()
-                    .ok_or(LoweringFailure::InvalidCheckedProgram)
+                    .ok_or(crate::lowering::traced_invalid_checked_program())
             })
             .collect()
     }
@@ -2510,7 +2510,7 @@ impl<'program> IrBuilder<'program> {
             };
             let ty = lower_type(self.erasure, drop.ty)?;
             if self.value_type(value)? != ty {
-                return Err(LoweringFailure::InvalidCheckedProgram);
+                return Err(crate::lowering::traced_invalid_checked_program());
             }
             // The checked program already fixed what this release performs
             // [STOR-3]; lowering preserves the record and the edge's reverse

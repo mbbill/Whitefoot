@@ -1,0 +1,19 @@
+fn first_of(table: &FixedVector<u32, 4>) -> value: own u32 reads(table) contract {
+  requires len_of(deref(table)) > 0_u64;
+} {
+  doc "A run is indexable storage [OP-4, BLK-1], so a holder written where the run itself is required is the ordinary [TYPE-7] missing dereference and not an implicit read.";
+  return table[0_u64];
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let table = fixed_vector::<u32, 4>();
+  set table = place_back(vector: move table, value: 7_u32);
+  region {
+    let seen = first_of(table: &table);
+    if seen == 7_u32 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

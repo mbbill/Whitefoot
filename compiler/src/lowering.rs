@@ -209,6 +209,17 @@ pub enum IrAddressed {
         width: u8,
     },
     Nominal(IrNominalId),
+    /// One `FixedVector<T, n>` [BLK-1]. A frame-resident run is inline
+    /// storage in its owner, exactly as a struct is, so a borrow of one is
+    /// the address of that storage rather than a copy of the run.
+    FixedVector { element: IrElement, length: u64 },
+    /// One `Vector<'s, T>` [BLK-1]. Its descriptor is storage in its owner's
+    /// frame, and a borrow of the run is the address of that descriptor, so
+    /// both runs are borrowed through one path.
+    Vector {
+        element: IrElement,
+        release: IrReleaseClass,
+    },
     /// One provider value [PROV-1]. A provider is the one operand a [BLK-0]
     /// acquiring row takes by `&uniq`, and a bump take advances its cursor
     /// through that borrow, so its binding carries a stable address exactly
@@ -224,6 +235,8 @@ impl IrAddressed {
             Self::Integer { width, signed } => IrType::Integer { width, signed },
             Self::Float { width } => IrType::Float { width },
             Self::Nominal(id) => IrType::Nominal(id),
+            Self::FixedVector { element, length } => IrType::FixedVector { element, length },
+            Self::Vector { element, release } => IrType::Vector { element, release },
             Self::Provider => IrType::Provider,
         }
     }
@@ -235,13 +248,13 @@ impl IrAddressed {
             IrType::Integer { width, signed } => Self::Integer { width, signed },
             IrType::Float { width } => Self::Float { width },
             IrType::Nominal(id) => Self::Nominal(id),
+            IrType::FixedVector { element, length } => Self::FixedVector { element, length },
+            IrType::Vector { element, release } => Self::Vector { element, release },
             IrType::Provider => Self::Provider,
             IrType::Address(_)
             | IrType::Array { .. }
             | IrType::Buffer { .. }
-            | IrType::Slice { .. }
-            | IrType::FixedVector { .. }
-            | IrType::Vector { .. } => return None,
+            | IrType::Slice { .. } => return None,
         })
     }
 }
@@ -2060,6 +2073,18 @@ impl IrProgram<'_, '_, '_> {
 pub enum LoweringFailure {
     InvalidCheckedProgram,
     CounterOverflow,
+}
+
+#[track_caller]
+pub(crate) fn traced_invalid_checked_program() -> LoweringFailure {
+    if std::env::var_os("WF_TRACE_LOWERING").is_some() {
+        eprintln!(
+            "InvalidCheckedProgram at {}\n{}",
+            std::panic::Location::caller(),
+            std::backtrace::Backtrace::force_capture()
+        );
+    }
+    LoweringFailure::InvalidCheckedProgram
 }
 
 mod builder;

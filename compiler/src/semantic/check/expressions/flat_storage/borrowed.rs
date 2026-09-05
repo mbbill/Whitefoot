@@ -3,9 +3,14 @@ use std::collections::HashMap;
 use crate::syntax::NodeId;
 use crate::{DeclarationId, SemanticCompilerFailure, UnsupportedSemanticFeature};
 
-use super::super::super::super::model::{CheckedBufferRoot, CheckedSliceRoot, CheckedType};
+use super::super::super::super::model::{
+    CheckedBufferRoot, CheckedContainerRoot, CheckedPlaceStep, CheckedSliceRoot, CheckedType,
+};
 use super::super::super::{CheckStop, Checker, LocalBinding};
-use super::{CheckedBufferPlace, CheckedIndexedPlace, CheckedSlicePlace};
+use super::{
+    CarriedOperands, CheckedBufferPlace, CheckedContainerPlace, CheckedIndexedPlace,
+    CheckedSlicePlace,
+};
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
     pub(super) fn check_dereferenced_buffer_place(
@@ -55,6 +60,30 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     declaration,
                     descriptor: Some(borrow),
                     slice,
+                }))
+            }
+            // [BLK-1, MSR-1, OWN-5] a run or a bump extent reached through a
+            // holder. A run is one measured place wherever it is reached
+            // from, so this is the same container place the deref-free path
+            // forms, with the holder recorded: the loan judgment reads the
+            // holder's own borrow, and every measure and subscript term over
+            // the place carries that holder's `deref` step. [BLK-4] refuses
+            // only the `&uniq` of a run, so a holder that reaches one here is
+            // a shared one or an own-mode cell.
+            CheckedType::FixedVector { .. }
+            | CheckedType::Vector { .. }
+            | CheckedType::Extent { .. } => {
+                let mut resolved = borrow.place.clone();
+                resolved.fields.extend_from_slice(&fields);
+                Ok(CheckedIndexedPlace::Container(CheckedContainerPlace {
+                    root: CheckedContainerRoot {
+                        binding: local.binding,
+                        path: fields.into_iter().map(CheckedPlaceStep::Field).collect(),
+                        ty,
+                    },
+                    resolved,
+                    offsets: CarriedOperands::default(),
+                    holder: Some(declaration),
                 }))
             }
             _ => self.unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, node),
