@@ -165,12 +165,18 @@ impl CertificatePolynomial {
     /// it: the value image of an admitted exact product of the same two
     /// operands.
     ///
-    /// The direction matters. Expanding the target's product atoms instead
-    /// would rewrite a proposition that is already affine and could turn a
-    /// provable residual into an unprovable one, while folding the sum only
-    /// ever removes monomials. What comes out is an ordinary affine sum, so
-    /// the residual, its integer tightenings, and the L0 route that discharges
-    /// it are the same ones a bare-decimal certificate uses.
+    /// The direction matters, and not only because it is the safer of two
+    /// symmetric choices. Folding is bounded: the sum holds finitely many
+    /// monomials and each fold removes one, so it terminates in the degree-two
+    /// domain it started in. Expanding the target's product atoms is not
+    /// bounded, because an operand may itself be a product — `let a = n * p;
+    /// let b = a * q;` expands `b` to `a*q` and then `a` to `n*p`, which is
+    /// degree three and outside anything [PRF-1] can hold. Expansion also
+    /// rewrites a proposition that was already affine, so it can turn a
+    /// provable residual into an unprovable one. What folding leaves is an
+    /// ordinary affine sum, so the residual, its integer tightenings, and the
+    /// L0 route that discharges it are the same ones a bare-decimal
+    /// certificate uses.
     pub(crate) fn fold_products(
         &self,
         products: &BTreeMap<(AffineTermId, AffineTermId), AffineTermId>,
