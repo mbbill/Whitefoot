@@ -3267,7 +3267,7 @@ Internal derivation metadata is only the diagnostic explanation of that acceptan
 A loop-header placement additionally creates induction obligations because control may enter that point from the preheader and from a backedge; a body placement creates only the one ordinary program-point obligation in its entering ProofContext.
 The spelling `invariant` therefore describes the writer-visible meaning in both positions, while the control-flow owner determines how many incoming-edge obligations exist.
 
-The `compare_op` of a `header_invariant`, an `invariant_stmt`, or a relation-form `use_premise` must be exactly `<=`, `<`, `>=`, or `>`; it selects a proof-domain relation over its two affine expressions and performs no [OP-1] operation, and `==` or `!=` in that position is a hard error citing INV-1 at the `compare_op` node.
+The `compare_op` of a `header_invariant`, an `invariant_stmt`, or a relation-form `use_premise` must be exactly `<=`, `<`, `>=`, or `>`; it selects a proof-domain relation over its two affine expressions and performs no [OP-1] operation, and `==` or `!=` in that position is a hard error at the `compare_op` node. It cites INV-1 in a `header_invariant` or an `invariant_stmt` target, and PRF-1 in a `use_premise`, because a relation source is owned diagnostically by PRF-1 as that rule states; the restriction itself is one rule stated once, and only its citation follows the owning position.
 The checker normalizes `a <= b` to `a-b <= 0`, `a < b` to `a-b <= -1`, `a >= b` to `b-a <= 0`, and `a > b` to `b-a <= -1`.
 Equality, disequality, and every other Bool root are outside this version's invariant surface.
 

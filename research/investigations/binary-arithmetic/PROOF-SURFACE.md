@@ -4,7 +4,10 @@ Design input for the amendment that follows. Written before the grammar is
 touched, because the previous attempt changed the EBNF first, hit a parser
 conflict, and only then discovered the design was wrong.
 
-Every "today" verdict below was compiled against v0.47.
+Every "today" verdict below was compiled — most against v0.47 when this note
+was written, the rest re-measured against v0.48 after two of them turned out
+to have been reasoned rather than run, and wrong. Where a verdict names a rule
+it is the rule the compiler actually cited.
 
 ## The one rule
 
@@ -56,7 +59,9 @@ Three symptoms, all from that one category error:
 The literal multiplier works today only by an accident of lexing: `"[0-9]+"`
 in that position is the grammar's sole pattern predicate, a bare decimal with
 no type suffix, while an affine literal must carry one. `use 3_u64 * (a<=b);`
-is a `[GRAM-4]` rejection. A term has no such distinguishing class.
+is therefore a rejection — measured, `[GRAM-5]`, because the suffixed literal
+takes the bare-relation alternative and then finds no `compare_op`. A term has
+no such distinguishing class.
 
 ## The `use` form
 
@@ -125,13 +130,33 @@ name or of a relation.
 Verified against v0.47. "math" means the [ENT] affine reading; "exact row"
 means the operation-table row with its `[OP-2]` obligation.
 
+This table says which operator *rows* each position admits at formation. It is
+not a table of what is writable there: a clause carries one operator whatever
+its row, which the last row's footnote records.
+
 | position | `a + b` | `2 * b` | `a * b` | `a +wrap b` | bare name | bare decimal |
 | --- | --- | --- | --- | --- | --- | --- |
 | function body | exact row | exact row | exact row | wrap row | no — needs a `place` | no — needs a suffix |
-| `invariant NAME:` | math | math | rejected at formation | n/a | yes | no — needs a suffix |
-| `use` premise | math | math | rejected at formation | n/a | yes | no |
+| `invariant NAME:` | math | math | rejected at formation, `[INV-1] InvalidInvariant` | n/a | yes | no — needs a suffix |
+| `use` premise | math | math | rejected at formation, `[PRF-1] InvalidSourceProof` | n/a | yes | no |
 | `use` multiplicity | — | — | — | — | yes, unsigned only | **yes, the only such position** |
-| `requires`/`ensures`/`define` | math (v0.46) | math (v0.46) | math (v0.46) | admitted | yes | no |
+| `requires`/`ensures`/`define` | row admitted (v0.46) | row admitted (v0.46) | row admitted (v0.46) | row admitted | yes | no |
+
+An admitted row in the `invariant` and `use` rows means the relation forms; it
+still has to be proved, and an unprovable one is `[INV-1]
+UndischargedLocalInvariant` rather than a formation error. The two rejected
+cells cite different rules for the same restriction because a relation source
+is owned diagnostically by PRF-1, which is the reading the specification's own
+attribution sentence takes.
+
+**The clause row's caveat, measured.** `requires a * b <= c;` and `requires a
++wrap b <= c;` are both `[GRAM-5]` rejections, and neither is about the row:
+`clause_expr` carries one operator, so a relation with an arithmetic operator
+*and* a comparison has two and does not derive. v0.46 widened which rows a
+clause admits and left that arity alone; a second operator is written through
+a `contract_define`. This note's first version reported the row admission as
+though it were writability, which is the same conflation the investigation's
+own README warns about.
 
 The one row that is unique to a proof position is the multiplicity: a bare
 decimal with no type suffix appears nowhere else in the language except a

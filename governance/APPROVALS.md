@@ -2879,7 +2879,7 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   record creates no separate approval step, and nothing in this record asserts
   that the approval has been given.
 - SPECIFICATION: activate Whitefoot v0.48 at exact SHA-256
-  `fe7149d23d623acfd7648704813d12b5d37f485b347e3b1e65522c7c5c565ebf`.
+  `8102bf5f5aa32a8a220fa03c57965782f2de1969c67ea6f9455037f86af97f88`.
   It supersedes active v0.47 at SHA-256
   `8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`;
   those outgoing bytes are preserved byte-for-byte as
@@ -2894,7 +2894,11 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   productions go 84 to 85, unique fixed lowercase atoms 54 to 55, and the
   [FORM-2] whitespace rule that told a multiplied premise from an affine
   relation is replaced by the ordinary keyword-paren space a `for_stmt` header
-  already states. [ENT-3] gains no source.
+  already states. [ENT-3] gains no source. [INV-1]'s `compare_op` sentence
+  gains the citation the rest of the specification already implied: the
+  restriction is one rule stated once, and `==` or `!=` cites INV-1 in an
+  invariant target and PRF-1 in a `use_premise`, which is where the amended
+  text says a relation source is owned diagnostically.
 - SELECTION GROUND: evidence-selected, recorded in
   `research/investigations/binary-arithmetic/`, whose `PROOF-SURFACE.md`
   carries the design and its measured alternatives. The capability is a matrix
@@ -2907,7 +2911,7 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   this very construct in prose. The mandatory parentheses were measured
   against all 124 `use` sites in the corpus: 61 bare relations, 29 names, 29
   name-with-multiplicity, 5 relation-with-multiplicity.
-- CONFORMANCE BOUNDARY: this merge adds five conformance cases and modifies
+- CONFORMANCE BOUNDARY: this merge adds six conformance cases and modifies
   eleven; it deletes and renames none, and changes no manifest schema,
   adapter, runner, or collection wiring.
   ADDED `tests/conformance/cases/prf1-pos-term-multiplicity.wf`, manifest id
@@ -2926,6 +2930,11 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   ADDED `tests/conformance/cases/gram4-neg-bare-relation-premise.wf`, manifest
   id `gram4-neg-bare-relation-premise`, rules GRAM-4, PRF-1, expect reject
   GRAM-4: an undelimited relation premise.
+  ADDED `tests/conformance/cases/gram4-neg-typed-multiplicity.wf`, manifest id
+  `gram4-neg-typed-multiplicity`, rules GRAM-4, PRF-1, expect reject GRAM-4: a
+  suffixed literal where a bare-decimal multiplicity is required, pinning the
+  citation to the position's own rule now that `const` is no longer the sole
+  production using the pattern predicate.
   MODIFIED, all to the new spelling with their recorded verdicts unchanged:
   `gram4-neg-multiplied-use-relation-bare.wf` (still reject GRAM-4; its bare
   relation is now written after `times`, and its manifest doc is restated),
@@ -2936,4 +2945,4 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   `prf1-pos-multiplied-relation-use.wf` (manifest doc restated), and
   `reject-gram11-unnamed-call.wf` (a doc-string repair only). Rule coverage is
   136/136 before and after.
-ACTIVE-SPEC: v0.48 fe7149d23d623acfd7648704813d12b5d37f485b347e3b1e65522c7c5c565ebf 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5
+ACTIVE-SPEC: v0.48 8102bf5f5aa32a8a220fa03c57965782f2de1969c67ea6f9455037f86af97f88 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5
