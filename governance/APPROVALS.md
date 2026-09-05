@@ -3500,4 +3500,81 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   unchanged in id, expectation and status, rule coverage stays complete at
   148/148, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0:
   no verdict of either corpus moved.
+- CONTENT (B8b, the region a result carries and the subscripted place): v0.45
+  amends five rules in place and adds and retires none, so META-5's counts do
+  not move; [OWN-7] joins its amended-rule list, which already names [FN-2],
+  and [MSR-1], [LIV-2] and [PROV-1] are rules this version itself adds. No
+  DEFERRED clause lands and none is added. [FN-2] states that the region
+  arguments one call determines are substituted into every position of the
+  callee's signature at that call — every output position exactly as much as
+  every input position, and at any depth of each: through a PRE-1 nominal's
+  arguments, into a source nominal instance's own region arguments, into a
+  run's element position and into every ordinal of a declared result list — so
+  a result carries the region that call fixed and never the declaration's own
+  formal region. [PROV-1] states the consequence where a value is produced: a
+  call's result carries the store region that call determined, so
+  `fn f['s: affine](store: &uniq Arena<'s, bytes, align>) -> made: own
+  BlockPool<'s>` names one type per extent. [MSR-1] states that a subscript
+  occurring inside a measure place owes [OP-4]'s own obligation, submitted to
+  [MSR-4] where the place is formed, and fixes which offsets such a place
+  admits — a written literal, a live `own` fragment-integer place, or an
+  in-scope const generic — because the place's identity is decided over them by
+  [OWN-7] and [ENT-5]. [OWN-7] states its overlap relation over the complete
+  path: two places fail to overlap exactly when some step of their common
+  prefix provably selects two different storages, so `grid[k]` and `grid[i][j]`
+  are decided at `k` against `i`. [LIV-2]'s second condition reads that
+  relation over the complete path for the same reason.
+- CONSEQUENCE (B8b, two soundness repairs the compiler owed the rules above):
+  the region substitution was landed for results, which closes a hole B8a left:
+  a nominal result kept the declaration's formal region, so two calls at two
+  extents produced results of one type and a run of one store could be typed
+  later as a run of another. The erasure that makes two instances of one
+  declaration one IR nominal widened with it, because a substituted result is
+  as often a PRE-1 instance or a compiler-owned result-list nominal as it is a
+  source instance. Separately, [OP-4]'s obligation was not submitted at all for
+  a run's element *read*: `let run = fixed_vector::<u8, 4>(); let seen =
+  run[0_u64];` compiled, linked and ran, reading a slot outside an empty run's
+  window. The judgment a target already had is now made at a read, and
+  `tests/programs/run_queue.wf`, whose `grown[2_u64]` was standing on that hole,
+  publishes the length relation its own `place_back` establishes and derives the
+  subscript from it. The subscripted place is landed through the whole path —
+  the tracked place's own step domain, [ENT-5]'s offset support, [MSR-2]'s
+  element-position kill, [LIV-2]'s read-out and second condition, and a lowering
+  that reads a descriptor through a slot address — so `len_of(grid[0])` is a
+  term and `grid[i][j]` reads and writes. One position is not reached: an
+  [INV-1] affine factor is checked without the enclosing concrete instance in
+  hand, so a subscript inside a measure place there keeps its explicit
+  unsupported report.
+- CONFORMANCE BOUNDARY (B8b): this batch ADDS nine conformance cases and their
+  nine manifest rows, and MODIFIES, DELETES and RENAMES none. No existing
+  case's source, id, expectation, rule citation, status or doc changes, and no
+  adapter, runner, or collection wiring changes. The added ids are
+  `fn2-neg-two-stores-give-two-result-types`
+  (`{"kind": "reject", "rule": "TYPE-5"}`),
+  `fn2-pos-a-result-only-region-is-written-at-the-call`
+  (`{"kind": "run", "exit": 0}`),
+  `op4-neg-a-run-element-read-carries-its-obligation`
+  (`{"kind": "reject", "rule": "OP-4"}`),
+  `op4-pos-a-run-element-read-is-discharged-by-a-published-length`
+  (`{"kind": "run", "exit": 0}`),
+  `msr1-pos-a-measure-over-a-subscripted-place-is-a-term`
+  (`{"kind": "run", "exit": 0}`),
+  `msr1-neg-a-subscript-inside-a-measure-place-owes-its-obligation`
+  (`{"kind": "reject", "rule": "OP-4"}`),
+  `msr2-neg-an-element-store-kills-the-element-s-own-length`
+  (`{"kind": "reject", "rule": "OP-4"}`),
+  `liv2-pos-two-elements-of-two-inner-runs-are-distinct-targets`
+  (`{"kind": "run", "exit": 0}`) and
+  `liv2-neg-two-subscripted-targets-of-one-inner-run-overlap`
+  (`{"kind": "reject", "rule": "LIV-2"}`), each status runnable. Before this
+  batch the corpus holds 620 cases with the native adapter reporting Pass=618,
+  Xfail=1, Skip=1; after it the corpus holds 629 with the adapter reporting
+  Pass=627, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, rule coverage stays complete at
+  148/148, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0:
+  no verdict of either corpus moved. One program of the executable corpus,
+  `tests/programs/run_queue.wf`, gains the `ensures` its own subscript now
+  needs and keeps its recorded behaviour; it is outside the conformance
+  boundary.
 ACTIVE-SPEC: v0.45 34577fe6bb2739804784c249d1de29f1ebc112c02eac6737714416af86532e9b 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

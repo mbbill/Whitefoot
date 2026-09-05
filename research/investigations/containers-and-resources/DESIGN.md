@@ -870,6 +870,20 @@ rather than over the word *element*.
 > condition 2 over `grid[i][j]`, and B4's affine element read-out is the *other* change,
 > which is one change and not four.
 
+> **Correction, decided 2026-09-05, from B8b's implementation: it is landed, and one thing
+> the design did not say is now a rule.** A tracked place is a root plus **field selections
+> and subscripts** in written order, so `len_of(table[i])` is a term, `grid[i][j]` reads and
+> writes, [MSR-2]'s element-position kill is the overlap relation itself rather than a flag,
+> and [OWN-7] and [LIV-2] condition 2 read the complete path. What the design left unstated
+> is which offsets such a place admits: [OWN-7] decides two subscripted places by their
+> offsets and [ENT-5] takes each offset's own support into every measure term it occurs in,
+> so an offset neither relation can name would make two measures of two elements **one
+> term**. [MSR-1] therefore admits a written literal, a live `own` fragment-integer place,
+> and an in-scope const generic there, and every other offset in a measure place is a place
+> this version does not represent. One position is not reached: an [INV-1] affine factor is
+> checked without the enclosing concrete instance in hand, so a subscript inside a measure
+> place written in an `invariant` keeps its explicit unsupported report.
+
 *Judgment:* the [OP-4] admission above at every subscripted measure place; the
 injectivity sentence is a definition proved by `len_of <= cap_of`, which [MSR-2] publishes as a
 standing fact. *Publishes:* the four terms, the logical coordinate system, the
@@ -7080,6 +7094,104 @@ different clause. The DEFERRED clause therefore stands and META-5's count does n
 **Verdicts.** The adapter moves from Pass=610 over 612 cases to Pass=618 over 620, with the
 one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491, Flip=0. No
 corpus verdict moved.
+
+### 6.0n B8b landed (v0.45)
+
+**The subscripted place, and the two soundness holes the batch found on the way
+to it.** 6.0l and 6.0m both said the same thing about the item that was left:
+[MSR-1]'s `len_of(table[i])`, [MSR-2]'s element-position kill at that
+granularity and [LIV-2] condition 2's `grid[k]` against `grid[i][j]` are one
+change to the proof engine's place representation. This batch is that change,
+and two repairs it uncovered.
+
+- **A result's region is the actual's.** 6.0m recorded that a nominal result
+  keeps the declaration's own instance and that "the caller's next transfer
+  substitutes it from the actual it holds". That is a hole, not a design: two
+  calls of `fn f['s: affine](store: &uniq Arena<'s, ...>) -> made: own
+  BlockPool<'s>` at two extents produced results of **one** type, so a run taken
+  from arena A could be typed later as a run of arena B. [FORM-8] already said a
+  call's undetermined region parameters are fixed by its own actuals and that a
+  related result region reaches as far as its inputs allow; what was missing was
+  the sentence carrying that into the result *type* and the substitution to
+  match. The substitution is now structural over the whole checked type domain —
+  under `Option` and `Result`, into a source instance's own region arguments and
+  its type arguments, into a run's element position, into a `box` referent and an
+  `arena`'s content, and into every ordinal of the compiler-owned result-list
+  nominal — and a run's release class is re-read from the substituted region
+  rather than carried across. A parameter position one level down takes it too:
+  every region a call has already fixed is substituted into the whole of each
+  later parameter type, which is what makes `absorb(store: &uniq Arena<'s, ...>,
+  spare: own Option<Vector<'s, u8>>)` type. **The erasure had to widen with it:**
+  B8a related two source instances of one declaration, and a substituted result
+  is as often a prelude instance or a result-list nominal, so the relation now
+  reads a name shape — one declaration at two regions, one prelude shape, one
+  result list with the same ordinal names, one `box` or one `arena` — and then
+  the same region-blind content comparison.
+
+- **A run's element read owed nothing.** [OP-4] says in one sentence that a
+  target's discharge judgment is *identical* to a read's. B7a3b landed the
+  element-position store with that judgment and the element read without it: the
+  entailment had an arm for `ArrayIndex`, one for `BufferIndex`, one for
+  `SliceIndex` and none for `RunIndex`, so every source read of a run element
+  fell to the walk-the-children default and submitted nothing.
+  `let run = fixed_vector::<u8, 4>(); let seen = run[0_u64];` compiled, linked
+  and ran, reading a raw slot outside an empty run's window. One program of the
+  executable corpus was standing on it — `run_queue.wf` read `grown[2_u64]`
+  where `append` published nothing about its result's length — and it now
+  publishes the relation its own `place_back` establishes.
+
+- **The place gains a step, and the step gains an offset.** A tracked place's
+  path is field selections and subscripts in written order, and a subscript
+  carries the offset the relations read: a written literal, a live `own`
+  fragment-integer binding, or an in-scope const generic. That restriction is
+  not a convenience — [OWN-7] decides two subscripted places by their offsets
+  and [ENT-5] takes each offset's own support into every measure term it occurs
+  in, so an offset neither relation can name would intern two measures of two
+  elements as one term. The domain reaches `ProjectedPlaceTerm`,
+  `GoalProjection`, `CallDatumProjection`, the checked container root and the
+  publication table's operand key; B8a's `CommitOffset` is superseded in place
+  by the offset the places now carry.
+
+- **[MSR-2]'s granularity is the overlap relation, not a flag.** Every element
+  write carries the element's own place — `P[i]`, with the offset a run target
+  wrote and the opaque offset a callee's projected write names — and a measure
+  dies exactly when the written place reaches its support. A measure of `P[i]`
+  dies at that write, a measure of `P` does not, and a whole-value write of `P`
+  kills both. The old "an element write kills no measure at all" clause is gone;
+  it was only ever true of a table with no measured element type.
+
+- **[OWN-7] over the complete path.** Two places fail to overlap exactly when
+  some step of their common prefix provably selects two different storages, so
+  `grid[k]` and `grid[i][j]` are decided at `k` against `i` and never at their
+  last offsets. [LIV-2]'s second condition and its element read-out both read
+  that path, which is what makes
+  `set (grid[0][1], grid[1][1]) = 9_u8, 8_u8;` two targets and the same pair at
+  one offset one. The lowering projects a measured place step by step and writes
+  an element store back the same way, so a descriptor is read through the slot
+  address that holds it and `grid[i][j]` reads and writes.
+
+**What this batch did not reach.** An [INV-1] affine factor is checked without
+the enclosing concrete instance in hand — the affine reader threads a
+`GenericSubstitution` and not a signature — so a subscript inside a measure
+place written in an `invariant` keeps its explicit unsupported report. That is
+the one position of the change, and it is a threading question rather than a
+representation one.
+
+**A third soundness hole, found and left where it lies.** It is older than this
+batch and outside it: a function that calls `arena_vector_proved` discharges
+*every* [OP-4] obligation it contains, whatever the base and whatever the
+offset. `region 'a { let workspace = arena_frame::<8192, 16, 'a>(); let table =
+array_new::<u8, 4>(0_u8); region { let first =
+arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64); let seen =
+table[9_u64]; ... } }` compiles, links and runs at the batch's own base commit,
+reading nine slots into a four-slot array. The row's published relations are
+therefore making the fact state universally discharging — which [MSR-4] says is
+a contradiction to be *stated first and once*, not a proof — and the repair
+belongs with that row and its own conformance evidence rather than here.
+
+**Verdicts.** The adapter moves from Pass=618 over 620 cases to Pass=627 over
+629, with the one xfail and the one skip unchanged, and the snapshot corpus
+stays at Pass=491, Flip=0. No corpus verdict moved.
 
 ### 6.1 What the compiler did in this session
 

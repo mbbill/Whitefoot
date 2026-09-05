@@ -190,14 +190,17 @@ IR nominal. **3.L.4's block pool now runs with `BlockPool['s]` and
 **The general store is what remains of the store
 half:** [FN-7]'s `command.heap` row is still unwritable, because `heap` is the
 atom [EFF-1] fixes for `allocates(heap)` and [FORM-3] therefore excludes it
-from IDENT. Beside it stand the confinement rule, the retirement of the old
-container types, and the second of B7a6's two items: a **subscripted measured
-place**, which [MSR-1] admits and which [MSR-2]'s support, [OWN-7]'s overlap and
-[ENT-5]'s kill all key on, so `len_of(table[i])` and [LIV-2] condition 2 over
-`grid[i][j]` are one change to the proof engine's place model rather than two.
-B8a lands the affine element read-out that waited beside them — `set (v[i],
+from IDENT. Beside it stand the confinement rule and the retirement of the old
+container types. B8a lands the affine element read-out — `set (v[i],
 v[j]) = move v[j], move v[i];` is the direct element swap — because the offsets
-[LIV-2] can decide are literals and a target already carries its own.
+[LIV-2] can decide are literals and a target already carries its own, and **B8b
+lands the second of B7a6's two items**: a tracked place is a root plus field
+selections and subscripts, so `len_of(table[i])` is a term, [MSR-2]'s
+element-position kill is the overlap relation rather than a flag, [OWN-7] and
+[LIV-2] condition 2 read the complete path over `grid[i][j]`, and the lowering
+reads a descriptor through the slot address. B8b also closes two soundness
+holes: a call's region arguments now reach every result position, and a run's
+element read owes the bounds obligation only its target owed.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

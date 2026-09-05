@@ -1407,10 +1407,30 @@ fn pool_take['s: affine](free: own FixedVector<Vector<'s, u8>, 8>)
     -> (rest: own FixedVector<Vector<'s, u8>, 8>, leased: own Option<Vector<'s, u8>>)
 ```
 
-Two limits are worth knowing before you design around them. One level is what
-exists: a run of runs of runs is an unsupported capability. And a measure of an
-element — `len_of(free[i])` — is not writable yet, so a figure you need about
-an element is read after you have taken it out, or carried beside the run.
+A measure of an element is an ordinary term — `len_of(free[i])`, `cap_of(free[i])`
+— so a figure about one slot is read in place and the element does not have to
+come out for it:
+
+```whitefoot
+let rows = len_of(grid);
+if rows > 0_u64 {
+  let width = len_of(grid[0_u64]);          // the element's own descriptor
+  let cell = grid[0_u64][0_u64];            // and, for a copy element, its slot
+}
+```
+
+Three things follow from that and are worth knowing before you design around
+them. The subscript inside the place owes the same `i < len_of(base)` every
+written subscript owes, so the branch above is what pays for it. Its offset must
+be one the rules can name — a written literal, a live `own u64` binding, or a
+const generic — because two such places are told apart by their offsets; an
+offset a call computes is not a place this version represents. And a write at
+one slot kills that slot's measures and none of the run's own, so a
+`replace grid[i] = e;` costs you `len_of(grid[i])` and leaves `len_of(grid)`
+standing.
+
+One limit remains: one level of *element* is what exists, so a run of runs of
+runs is an unsupported capability.
 
 Replaces: an `Option<T>` slot array standing in for a run of runs, and a
 parallel array of lengths beside a run of buffers.
@@ -1486,6 +1506,18 @@ its target's reads nothing out, which leaves the live affine target its ordinary
 refusal. For an offset a loop computes, take the elements out with `take_back`
 and put them back (P28), or exchange one at a time with
 `let old = replace v[i] = e;`.
+
+Two targets of a run of runs are compared over their **complete paths**, first
+step first, so `grid[0][1]` and `grid[1][1]` are two storages even though their
+last offsets agree:
+
+```whitefoot
+set (grid[0_u64][1_u64], grid[1_u64][1_u64]) = 9_u8, 8_u8;
+```
+
+Write the offset that distinguishes them as early in the path as you can: two
+targets that agree at every decidable step overlap, however their later steps
+read.
 
 Replaces: `take_back` / `replace` / `place_back` for a swap of two known
 positions, and an `Option<T>` slot standing in for a temporarily empty one.

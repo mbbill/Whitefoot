@@ -348,13 +348,40 @@ with.
 An affine element leaves its slot through one further route: the [LIV-2]
 read-out of an element target of the same `set`, so
 `set (v[i], v[j]) = move v[j], move v[i];` exchanges two elements in one commit
-when the two offsets are literals with unequal values. A measure over a
-subscripted place — `len_of(table[i])`, which [MSR-1] admits and [MSR-2] gives
-its own storage granularity — still stops as an unsupported capability, and
-`grid[i][j]` with it, because a measured or targeted place is a binding plus
-field selections here and carries no subscript. That one representation is what
-[MSR-1]'s subscripted measure, [MSR-2]'s element-position kill at that
-granularity and [LIV-2] condition 2's nested subscript all wait on.
+when the two offsets are literals with unequal values.
+
+A tracked place is a root plus **field selections and subscripts** in written
+order, so `len_of(table[i])` is a term and `grid[i][j]` reads and writes. The
+offset a subscript carries in a place is a written literal, a live `own`
+fragment-integer binding, or an in-scope const generic, because the place's
+identity is decided over it: [OWN-7] decides two subscripted places by their
+offsets and [ENT-5] takes each offset's own support into every measure term it
+occurs in. [OWN-7]'s relation reads the complete path — two places fail to
+overlap exactly when some step of their common prefix provably selects two
+different storages — so `grid[k]` and `grid[i][j]` are decided at `k` against
+`i` and never at their last offsets, which is what [LIV-2]'s second condition
+and its element read-out both read. [MSR-2]'s granularity is that relation
+rather than a flag: an element write carries the element's own place, so it
+kills every measure of `P[i]` and no measure of `P`, and a whole-value write of
+`P` kills both. A subscript inside a measured place owes [OP-4]'s obligation
+against the prefix that reaches its base, submitted where the place is formed,
+and the lowering projects a measured place step by step — a field selection is
+the ordinary struct projection and a subscript is [BLK-1]'s element read — so a
+descriptor is read through the slot address that holds it. One position is not
+reached: an [INV-1] affine factor is checked without the enclosing concrete
+instance in hand, so a subscript inside a measure place there is an explicit
+unsupported capability.
+
+Two soundness repairs landed with that path. A call's region arguments are
+substituted into **every** position of the callee's signature, results included
+and at any depth — through `Option`, into a nominal instance's own region
+arguments, into a run's element position and into every ordinal of a declared
+result list — so two calls of one declaration at two extents hand back two
+types; a result used to keep the declaration's own formal region, which let a
+run of one store be typed later as a run of another. And a run's element
+**read** now owes [OP-4]'s bounds obligation, which only its element-position
+target did: `let run = fixed_vector::<u8, 4>(); let seen = run[0_u64];`
+compiled, linked and ran, reading a slot outside an empty run's window.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 
