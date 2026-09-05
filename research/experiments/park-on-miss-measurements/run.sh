@@ -16,7 +16,7 @@
 #   sh run.sh              every section
 #   sh run.sh park compute one or more sections by name
 #
-# Sections: park compute lanes io chain stacks ledger
+# Sections: park compute lanes io chain stacks ledger spin
 #
 # Slice 4b deleted the compile-time variants of the scheduler core, so the
 # sections that swept them -- the per-form gate table and the per-form liveness
@@ -69,6 +69,25 @@ CHAIN_STACKS=${CHAIN_STACKS:-72}
 ADMITTED_FORMS=${ADMITTED_FORMS:-"shipped"}
 PARK_FORMS=${PARK_FORMS:-"shipped"}
 LANE_SLOT_COUNTS=${LANE_SLOT_COUNTS:-"2 4 8 16"}
+
+# The idle spin's sweep: `WF_SCHED_IDLE_SPIN_ROUNDS` and
+# `WF_SCHED_IDLE_YIELD_ROUNDS` of `compiler/src/backend/sched/core.h`, as the
+# pair of defines each form is built with. `spin-0-0` is the form the tree
+# shipped before the spin existed -- the idle window parks the moment its last
+# look misses -- and is the reference every line here is read against.
+SPIN_ROUNDS=${SPIN_ROUNDS:-"0 256 1024 4096 16384"}
+SPIN_YIELDS=${SPIN_YIELDS:-"0 16 64"}
+spin_forms() {
+    for rounds in $SPIN_ROUNDS; do
+        for yields in $SPIN_YIELDS; do
+            printf 'spin-%s-%s ' "$rounds" "$yields"
+        done
+    done
+}
+SPIN_FORMS=${SPIN_FORMS:-$(spin_forms)}
+# The mixed program's tree: two files of MIXED_KIB KiB, which is what
+# `programs/windows_runtime_mixed.wf` reads (4096 blocks of 4096 bytes).
+MIXED_KIB=${MIXED_KIB:-16384}
 
 define_of() {
     case $1 in
@@ -391,11 +410,12 @@ section_ledger() {
     done
 }
 
-sections=${*:-park compute lanes io chain stacks ledger}
+sections=${*:-park compute lanes io chain stacks ledger spin}
 prepare
 for section in $sections; do
     case $section in
     park) section_park ;;
+    spin) section_spin ;;
     compute) section_compute ;;
     lanes) section_lanes ;;
     io) section_io ;;

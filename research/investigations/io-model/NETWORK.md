@@ -70,7 +70,7 @@ Types beside the existing ones, and two renamed:
   `socket_address_v6(...)` with no host call. No name resolution in this
   batch.
 - `TcpListener`: a state resource with one live state, one credit.
-- `TcpReceive` and `TcpSend`: the two halves of one connection, each a state
+- `TcpConnection`: a system-declared struct of two fields, `receive: TcpReceive` and `send: TcpSend`; each half is a state
   resource with one live state; the pair holds one credit.
 - The descriptor factory and its permit, renamed from `FileFactory` and
   `FilePermit` because sockets draw from the same table (decision 3 below).
@@ -91,23 +91,40 @@ fn tcp_accept(permit: own HandlePermit, listener: &TcpListener) -> result: own A
 fn tcp_connect(permit: own HandlePermit, address: &SocketAddress) -> result: own ConnectOutcome reads(permit, address), writes(permit);
 fn receive_next(receive: &uniq TcpReceive, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own ReadOutcome reads(receive, destination), writes(receive, destination);
 fn send_once(send: &uniq TcpSend, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(send, source), writes(send);
-fn close_connection(receive: own TcpReceive, send: own TcpSend) -> result: own HandlePermit reads(receive, send), writes(receive, send);
+fn close_connection(connection: own TcpConnection) -> result: own HandlePermit reads(connection), writes(connection);
 fn close_listener(listener: own TcpListener) -> result: own HandlePermit reads(listener), writes(listener);
 
 enum ListenOutcome { Listening(listener: TcpListener); ListenFailed(error: IoError, permit: HandlePermit); }
-enum AcceptOutcome { Accepted(receive: TcpReceive, send: TcpSend, peer: SocketAddress); AcceptFailed(error: IoError, permit: HandlePermit); }
-enum ConnectOutcome { Connected(receive: TcpReceive, send: TcpSend); ConnectFailed(error: IoError, permit: HandlePermit); }
+enum AcceptOutcome { Accepted(connection: TcpConnection, peer: SocketAddress); AcceptFailed(error: IoError, permit: HandlePermit); }
+enum ConnectOutcome { Connected(connection: TcpConnection); ConnectFailed(error: IoError, permit: HandlePermit); }
 ```
 
-`close_connection` takes both halves of one connection; passing the halves
-of two different connections is a source error the checker cannot see, so
-the operation's contract states that its outcome is defined only for a pair
-one accept or connect produced, and the runtime terminates on any other pair
-as a trusted-computing-base defect, never as a typed outcome. If the owner
-wants that relation on the API instead, the alternative is a
-`TcpConnection` value that owns both halves and is the only thing the close
-takes, with `split` and `join` operations between the two forms; that is
-more spelling for the same accounting and is not proposed.
+The pairing is on the API, by the owner's decision of 2026-09-05: the
+connection is a system-declared struct with two fields,
+
+```
+struct TcpConnection { receive: TcpReceive; send: TcpSend; }
+```
+
+so `accept` and `connect` return one `TcpConnection`, the program borrows
+`&uniq connection.receive` and `&uniq connection.send` as two places (an
+effect path names a struct field, [EFF-1]; two exclusive loans on disjoint
+fields coexist under [OWN-5]), and the close takes the whole value:
+
+```
+fn close_connection(connection: own TcpConnection) -> result: own HandlePermit reads(connection), writes(connection);
+enum AcceptOutcome { Accepted(connection: TcpConnection, peer: SocketAddress); AcceptFailed(error: IoError, permit: HandlePermit); }
+enum ConnectOutcome { Connected(connection: TcpConnection); ConnectFailed(error: IoError, permit: HandlePermit); }
+```
+
+Moving one half out of the record is the language's own partial move,
+which kills the whole binding ([OWN] rules: "partial moves kill the whole
+binding"), so a broken pair can never reach the explicit close; the moved
+half lives on as an ordinary owner, the remainder is derived-released, and
+the credit is spent, exactly as derived release spends it for a file. No
+`split` or `join` operation exists. A system-declared struct is a new
+category of system nominal beside the opaque and enum ones, and the
+amendment's META-5 delta declares it.
 
 The forms follow what the specification already has: the open outcomes hand
 the permit back on failure exactly as `FileOpenOutcome` does; the explicit
@@ -206,15 +223,9 @@ no UDP and no name resolution; the backlog is target-fixed; full duplex is
 designed in from the start as two halves (§3); the reference is the fastest
 existing solution regardless of language.
 
-Still open:
-
-1. The spelling of the renamed descriptor factory, its permit, its entry
-   ordinal and its reserve: `HandleFactory` / `HandlePermit` /
-   `command.handles` / `reserve_handle` (working names above), or
-   `DescriptorFactory` / `DescriptorPermit` / `command.descriptors` /
-   `reserve_descriptor` (the specification says "native descriptor"
-   throughout), or another word. This renames the v0.45 surface across the
-   conformance corpus and the programs in the same amendment.
-2. The pair close: `close_connection(receive, send)` with the unpaired case
-   a runtime defect (proposed), or a `TcpConnection` value with `split` and
-   `join` so the pairing is on the API.
+Settled in the second round, 2026-09-05: `HandleFactory`, `HandlePermit`,
+`command.handles`, `reserve_handle`, renaming the v0.45 surface across the
+conformance corpus and the programs in the same amendment; the connection
+is the two-field struct of §4, so the pairing is on the API and no split or
+join exists; the operation names of §4; the reference of §6. Nothing is
+open; slice 1 starts.
