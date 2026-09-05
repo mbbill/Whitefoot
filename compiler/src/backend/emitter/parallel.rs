@@ -621,6 +621,8 @@ impl FunctionEmitter<'_, '_> {
     /// A granted lane is waited for, read, and given back; a refused one runs
     /// the same call on this thread. Either way the group's values exist from
     /// here on, and no exit edge of the block is reachable before this point.
+    /// The order the queue is completed in is [`compute_join_order`]'s and
+    /// nothing here decides it.
     pub(super) fn emit_overlap_joins(
         &mut self,
         join_site: IrValueId,
@@ -628,7 +630,10 @@ impl FunctionEmitter<'_, '_> {
         if !self.is_overlap_join_site(join_site) {
             return Ok(());
         }
-        for pending in std::mem::take(&mut self.handed_out) {
+        let queue = compute_join_order(std::mem::take(&mut self.handed_out), |pending| {
+            matches!(pending, HandedOut::Compute(_))
+        });
+        for pending in queue {
             let pending = match pending {
                 HandedOut::Compute(pending) => pending,
                 HandedOut::Completion(pending) => {
@@ -669,6 +674,53 @@ impl FunctionEmitter<'_, '_> {
         }
         Ok(())
     }
+}
+
+/// The order a group's members are joined in: its compute members newest
+/// first, its completion members exactly where they were published.
+///
+/// The compute deque is Chase-Lev. Its owner pushes and pops at the newest
+/// end while thieves take from the oldest, so what has been stolen is always
+/// a prefix of the publish order and what the owner still holds is the
+/// suffix. Joining in publish order therefore asks for the oldest entry
+/// first, the one entry the owner cannot reach without digging past
+/// everything it published after it. Joining the compute members newest
+/// first instead — publish J1, J2, J3, join J3, J2, J1 — means that at every
+/// compute join the target is either the newest entry of the owner's deque or
+/// it has already been stolen, and never present but buried under something
+/// newer. The runtime needs no notion of a group: it looks at the newest end
+/// once. (The property is stated for a join taken on the target's home lane
+/// with nothing else having pushed onto that lane in between; where that
+/// fails the join simply parks, which costs one park and nothing else.)
+///
+/// A completion member holds no deque entry, so the deque places no
+/// constraint on where it is joined and it keeps the position it was
+/// published at. Only the compute members move, and only among the positions
+/// they already occupy: the queue `[C1, IO1, C2, C3]` is joined as
+/// `[C3, IO1, C2, C1]`. Join order is not observable — [PAR-1] fixes every
+/// value to the source-order result — so this is an emitter choice, and it is
+/// made here once. Every site that needs a group's join order consumes this
+/// function rather than encoding one of its own.
+pub(super) fn compute_join_order<T>(
+    mut members: Vec<T>,
+    is_compute: impl Fn(&T) -> bool,
+) -> Vec<T> {
+    let compute: Vec<usize> = members
+        .iter()
+        .enumerate()
+        .filter(|(_, member)| is_compute(member))
+        .map(|(position, _)| position)
+        .collect();
+    // Reverse the compute members in place across the positions they hold,
+    // which leaves every other position untouched.
+    let mut oldest = 0;
+    let mut newest = compute.len();
+    while oldest + 1 < newest {
+        newest -= 1;
+        members.swap(compute[oldest], compute[newest]);
+        oldest += 1;
+    }
+    members
 }
 
 /// One outlined call over its frame.
@@ -722,4 +774,90 @@ fn par_wait_label(value: IrValueId) -> String {
 /// its predecessor when the join is the last split of its block.
 pub(super) fn par_done_label(value: IrValueId) -> String {
     format!("par.done.v{}", value.ordinal())
+}
+
+#[cfg(test)]
+mod join_order_tests {
+    use super::compute_join_order;
+
+    /// One member of a group's publish queue, kept abstract because
+    /// `compute_join_order` is: all it may ask of a member is whether it is a
+    /// compute member.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum Member {
+        Compute(u32),
+        Completion(u32),
+    }
+
+    fn joined(queue: &[Member]) -> Vec<Member> {
+        compute_join_order(queue.to_vec(), |member| {
+            matches!(member, Member::Compute(_))
+        })
+    }
+
+    /// The three queues design §4 states the rule with.
+    ///
+    /// Compute members are joined newest first; a completion member holds no
+    /// deque entry and is joined where it was published, so the permutation
+    /// touches only the compute positions.
+    #[test]
+    fn compute_members_reverse_and_completion_members_hold_their_positions() {
+        use Member::{Completion, Compute};
+
+        assert_eq!(
+            joined(&[Compute(1), Completion(1), Compute(2), Compute(3)]),
+            vec![Compute(3), Completion(1), Compute(2), Compute(1)],
+            "the compute members reverse across the positions they hold"
+        );
+        assert_eq!(
+            joined(&[Completion(1), Compute(1), Completion(2)]),
+            vec![Completion(1), Compute(1), Completion(2)],
+            "one compute member has nothing to reverse with"
+        );
+        assert_eq!(
+            joined(&[Compute(1), Compute(2)]),
+            vec![Compute(2), Compute(1)],
+            "the newest published compute member is joined first"
+        );
+    }
+
+    /// The order is a permutation: every member is joined exactly once, and a
+    /// queue with no compute member to move is returned as it came.
+    #[test]
+    fn the_order_joins_every_member_exactly_once() {
+        use Member::{Completion, Compute};
+
+        let queue = [
+            Compute(1),
+            Completion(1),
+            Compute(2),
+            Completion(2),
+            Compute(3),
+        ];
+        let mut order = joined(&queue);
+        assert_eq!(
+            order,
+            vec![
+                Compute(3),
+                Completion(1),
+                Compute(2),
+                Completion(2),
+                Compute(1)
+            ]
+        );
+        order.sort_by_key(|member| match member {
+            Compute(index) => (0, *index),
+            Completion(index) => (1, *index),
+        });
+        let mut expected = queue.to_vec();
+        expected.sort_by_key(|member| match member {
+            Compute(index) => (0, *index),
+            Completion(index) => (1, *index),
+        });
+        assert_eq!(order, expected, "no member is dropped or duplicated");
+
+        let completions = [Completion(1), Completion(2)];
+        assert_eq!(joined(&completions), completions.to_vec());
+        assert_eq!(joined(&[]), Vec::new());
+    }
 }

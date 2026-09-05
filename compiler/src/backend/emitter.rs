@@ -59,8 +59,8 @@ pub use floor::{FLOOR_RUNTIME_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE};
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
     PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
-    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
-    sequential_clone_symbol,
+    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, compute_join_order, par_done_label,
+    sequential_clone_set, sequential_clone_symbol,
 };
 pub use parallel::{
     PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
@@ -2250,14 +2250,37 @@ fn variant_field_base(
 /// The last handed-out member of the overlap group `result` joins, if it is a
 /// join site at all. Its `par.done` block is where the block continues.
 ///
+/// The group's members are joined in [`compute_join_order`], so the last one
+/// is that order's last member and not the publish queue's — with two or more
+/// compute members it is the *first* published compute member. `emit_overlap_joins`
+/// reads the same order from the same function, so the label named here is the
+/// one emission actually ends at.
+///
+/// A member is a completion member exactly when it is a completion step that
+/// submits, which is the test `emit_instruction` itself takes before it can
+/// reach a compute hand-out; `completion_steps` is passed in rather than
+/// guessed at from the value id.
+///
 /// `overlaps` is the emitting world's set, never `IrFunction::overlaps`: a
 /// clone actualizes nothing, so it emits no `par.done` block and must not name
 /// one either.
-fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValueId> {
-    overlaps
+fn overlap_join_tail(
+    overlaps: &[IrOverlap],
+    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    result: IrValueId,
+) -> Option<IrValueId> {
+    let members = overlaps
         .iter()
-        .find(|overlap| overlap.join_site() == Some(result))
-        .and_then(|overlap| overlap.handed_out().last().copied())
+        .find(|overlap| overlap.join_site() == Some(result))?
+        .handed_out()
+        .to_vec();
+    compute_join_order(members, |member| {
+        !completion_steps
+            .get(member)
+            .is_some_and(IrCompletionStep::submit)
+    })
+    .last()
+    .copied()
 }
 
 /// Where a block's terminator is actually emitted.
@@ -2323,7 +2346,7 @@ fn block_exit_label(
         // The overlap join rides its last member's own emission, so it settles
         // the label after whatever that emission left.
         if let IrInstruction::Define { result, .. } = instruction
-            && let Some(last) = overlap_join_tail(overlaps, *result)
+            && let Some(last) = overlap_join_tail(overlaps, completion_steps, *result)
         {
             label = par_done_label(last);
         }

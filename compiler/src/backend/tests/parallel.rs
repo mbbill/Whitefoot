@@ -28,7 +28,8 @@ use super::system::{with_ir, with_parallel_ir};
 use super::{
     HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
     append_completion_runtime, build_executable, compile_and_run, emit, emit_with_overlap,
-    module_requires_parallel_runtime, module_requires_writer_scheduler, test_directory,
+    emitted_function, module_requires_parallel_runtime, module_requires_writer_scheduler,
+    test_directory,
 };
 
 /// A pure recursive fold over a heap tree, the smallest shape that has
@@ -601,6 +602,143 @@ fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
     }
     identical(&runs).expect("an if-condition join must not move one byte of the result");
 
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A group of three sibling calls whose values a loop carries: two members are
+/// handed out, the third runs on this thread, and the loop header's phis name
+/// the label the group's joins actually end at.
+///
+/// The loop is what makes the exit label observable. `main`'s entry block
+/// reaches the header, so every carried value's phi has to name the label the
+/// entry block ends at, and that label is decided before the joins are
+/// written.
+const THREE_MEMBER_GROUP_BEFORE_A_LOOP: &[u8] =
+    br#"fn choose(value: own u64) -> result: own u64 pure {
+  return imax(value, value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = choose(value: 1_u64);
+  let b = choose(value: 2_u64);
+  let c = choose(value: 3_u64);
+  let ab = imax(a, b);
+  let acc = imax(ab, c);
+  let i = 0_u64;
+  loop @spin {
+    let done = i >= 4_u64;
+    if done {
+      break @spin;
+    }
+    set acc = acc +wrap 1_u64;
+    set i = i +wrap 1_u64;
+  }
+  match cvt::<u64, u8>(acc) {
+    Ok(value: code) => {
+      return exit_status(code: code);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 255_u8);
+    }
+  }
+}
+"#;
+
+/// A group's compute members are joined newest first, and the block continues
+/// at the *first* published member's `par.done`.
+///
+/// This is design §4's order: the compute deque is Chase-Lev, so the owner can
+/// only pop the newest end, and joining the newest hand-out first is what keeps
+/// every join's target either at that end or already stolen. The order lives in
+/// `compute_join_order`, and this pins what the emitter does with it — both the
+/// sequence of joins and the label the two sites that predict it agree on. The
+/// prediction is not cosmetic: a phi naming a block its predecessor does not
+/// end at is a module `clang` rejects, so linking is part of the assertion.
+///
+/// A group with a completion member interleaved between two compute members
+/// would be the mixed case, and `compute_join_order`'s own unit test carries
+/// it; no source produces one today, because a permitted run that mixes a
+/// target operation with compute calls lowers to a completion schedule and
+/// hands no compute member out at all.
+#[test]
+fn a_group_joins_its_compute_members_newest_first_and_continues_at_the_oldest() {
+    // The group's hand-outs in publish order, read from the IR the emitter is
+    // about to be handed, so the labels below are named rather than guessed.
+    let handed_out = with_parallel_ir(THREE_MEMBER_GROUP_BEFORE_A_LOOP, |program| {
+        program
+            .functions()
+            .iter()
+            .flat_map(crate::IrFunction::overlaps)
+            .map(|overlap| {
+                overlap
+                    .handed_out()
+                    .iter()
+                    .map(|member| member.ordinal())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+    let [group] = handed_out.as_slice() else {
+        panic!("the source must lower to exactly one overlap group: {handed_out:?}");
+    };
+    let [first, second] = group.as_slice() else {
+        panic!("the group must hand two of its three members out: {group:?}");
+    };
+
+    let module = emit_with_overlap(THREE_MEMBER_GROUP_BEFORE_A_LOOP);
+    let body = emitted_function(&module, "main");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
+    };
+
+    // Publish order is source order: the first member is offered a lane first.
+    assert!(
+        at(&format!("par.offer.v{first}:")) < at(&format!("par.offer.v{second}:")),
+        "the members must be published in source order:\n{body}"
+    );
+    // Join order is the reverse: design §4's order, newest hand-out first.
+    assert!(
+        at(&format!("par.wait.v{second}:")) < at(&format!("par.wait.v{first}:")),
+        "the newest hand-out must be joined first:\n{body}"
+    );
+    assert!(
+        at(&format!("par.done.v{second}:")) < at(&format!("par.done.v{first}:")),
+        "the newest hand-out's value must exist before the oldest is joined:\n{body}"
+    );
+
+    // The block therefore continues at the oldest hand-out's `par.done`, and
+    // the loop header's phis are where that prediction is spent.
+    let carried = body
+        .lines()
+        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
+        .collect::<Vec<_>>();
+    assert!(
+        !carried.is_empty(),
+        "the loop must carry values out of the group's block:\n{body}"
+    );
+    for phi in carried {
+        assert!(
+            phi.contains(&format!(", %par.done.v{first} ]")),
+            "the group's block ends at the first published member's join: {phi}"
+        );
+    }
+
+    // Join order is not observable [PAR-1]: the program's value is the
+    // source-order one whether a lane was granted or refused.
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the three-member group");
+        assert_eq!(
+            output.status.code(),
+            Some(7),
+            "WF_WORKERS={workers}: the loop must report the source-order result"
+        );
+    }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
 
