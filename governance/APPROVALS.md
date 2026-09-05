@@ -3412,4 +3412,92 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
   unchanged in id, expectation and status, and the recorded-verdict snapshot
   corpus reports Pass=491, Flip=0: no verdict of either corpus moved.
-ACTIVE-SPEC: v0.45 6bacc8cb1b40fc8081749a866196ddef9a3262bcaf5ff4907491b1b79c46ac92 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+- CONTENT (B8a, the nominal region axis and the affine element read-out): v0.45
+  gains no rule, no production, no atom, no operation spelling and no
+  declaration record; six clauses stay DEFERRED and no count moves. Numbered
+  rules +0/-0 (148 remain); grammar productions +0/-0 (88 remain); unique fixed
+  lowercase grammar atoms +0/-0 (59 remain); kernel declaration records +0/-0
+  (44 remain); writer operation spellings +0/-0. Five rules are amended, three
+  of them ([PROV-1], [LIV-2], [BLK-3]) among the twelve this version adds and
+  two ([TYPE-2], [TYPE-5]) already named in the META-5 amended-rule list, so
+  that list is unchanged too. [TYPE-2] states that a nominal's `region_params`
+  being components of its type name fixes its instance: an instance is keyed on
+  its region arguments beside its type and const arguments, two instances of one
+  declaration at two regions are two types, every position of the declaration
+  naming a region parameter carries that instance's own argument, and the
+  arguments are written as the leading members of the same `targs` list the two
+  runs and the two providers already use, at every `type` position and at every
+  `construct`. [TYPE-5] states that a `construct` of such a nominal writes them
+  on exactly the ground it gives a construct's type arguments — construction
+  consults no expected nominal type — that this is [FORM-8] unchanged rather
+  than a second region-spelling rule, and that a parameter type naming a nominal
+  with exactly one region argument determines it from the actual while one
+  naming two or more determines none. [PROV-1] extends its store-identity
+  sentence to a source nominal's region argument and states that a nominal is
+  generic over its store on the terms every other type is. [TYPE-2]'s affine
+  element sentence gains the second route by which such an element leaves its
+  slot, and [LIV-2] states that route: a subscripted target `P[i]` is read out
+  by a `move` of `P[j]` exactly when the two offsets are provably the same —
+  two written literals of equal value — an offset the rule cannot decide reads
+  out nothing and leaves [STOR-1]'s rejection at that target, and the read-out
+  is the [SET-1] assignment half of [BLK-1]'s element-position commit standing
+  on [SET-2]'s own ground. [BLK-3]'s element-swap sentence is replaced by that
+  one commit, `set (v[i], v[j]) = move v[j], move v[i];`, in place of
+  `take_back`, one `replace` and `place_back`.
+- CONSEQUENCE (B8a, the compiler and the design beneath the amendment): a
+  nominal instance's key gains a region axis, the symbolic instance binds each
+  region parameter to itself, a field type is parsed under that substitution so
+  its store region and its [PROV-6] release class follow the instance, and a
+  parameter position substitutes a formal nominal with the actual's own instance
+  when the two agree in everything but the region. A store region is invariant
+  at a call: the first parameter position naming a formal fixes it, so a second
+  store there is the ordinary [TYPE-5] mismatch where before the least of the
+  two regions was taken and two runs of two extents satisfied one `'s` — a
+  soundness repair to [PROV-1]'s own sentence. The region leaves the program at
+  the lowering: two instances of one declaration that differ only in their
+  region arguments, and in nothing a run time can see, are one IR nominal,
+  which is what lets a callee's formal-region instance and a caller's
+  actual-region instance meet without monomorphizing a function over its
+  regions; the predicate compares the two instances' lowered content, so two
+  whose release classes differ are two representations and are neither erased
+  together nor substituted for one another. Two older defects the pool exposed
+  are fixed with it: a destructuring consume written inside a `match` arm
+  classified its binder as an arm binder because the resolver asked whether an
+  `arm` was anywhere above it rather than which construct owned its `fieldbind`
+  list, and a caller's contract instantiation did not substitute a nominal's
+  region arguments. `tests/programs/block_pool.wf` is 3.L.4 entire —
+  `BlockPool['s]`, `linear struct Lease['s]`, and three operations generic over
+  the store — and the design records four spellings of that section that moved,
+  two of them real bounds on the shape: a loop that allocates from a `&uniq`
+  store parameter has one statement per iteration [OWN-6], and a clause naming a
+  measure over a *result*'s field is [CALL-4]'s own first DEFERRED admission.
+  6.0m records that [CALL-4]'s per-variant route is not the small step 6.0l
+  asked about, and that landing it would not discharge the pool's requirement
+  either, because that clause needs the result-field measure as well.
+- CONFORMANCE BOUNDARY (B8a): this batch ADDS eight conformance cases and their
+  eight manifest rows, and MODIFIES, DELETES and RENAMES none. No existing
+  case's source, id, expectation, rule citation, status or doc changes, and no
+  adapter, runner, or collection wiring changes. The added ids are
+  `type2-pos-a-nominal-is-generic-over-its-store` (`{"kind": "run", "exit": 0}`),
+  `type5-neg-two-nominal-instances-at-two-regions`
+  (`{"kind": "reject", "rule": "TYPE-5"}`),
+  `type5-neg-a-construct-elides-its-nominal-region-argument`
+  (`{"kind": "reject", "rule": "TYPE-5"}`),
+  `prov1-neg-two-runs-of-two-stores-at-one-formal-region`
+  (`{"kind": "reject", "rule": "TYPE-5"}`),
+  `liv2-pos-an-affine-element-read-out-swaps-two-slots`
+  (`{"kind": "run", "exit": 0}`),
+  `type2-neg-an-affine-element-moved-outside-its-own-commit`
+  (`{"kind": "reject", "rule": "TYPE-2"}`),
+  `stor1-neg-an-affine-element-target-with-no-read-out`
+  (`{"kind": "reject", "rule": "STOR-1"}`) and
+  `liv2-neg-one-element-target-is-read-out-at-most-once`
+  (`{"kind": "reject", "rule": "TYPE-2"}`), each status runnable. Before this
+  batch the corpus holds 612 cases with the native adapter reporting Pass=610,
+  Xfail=1, Skip=1; after it the corpus holds 620 with the adapter reporting
+  Pass=618, Xfail=1, Skip=1. The one xfail
+  (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the one skip are
+  unchanged in id, expectation and status, rule coverage stays complete at
+  148/148, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0:
+  no verdict of either corpus moved.
+ACTIVE-SPEC: v0.45 1e7a66c75661f0906cf56099864e979163c77493b250ae403651792829a5744d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

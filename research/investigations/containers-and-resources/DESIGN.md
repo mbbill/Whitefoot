@@ -4242,6 +4242,22 @@ condition — an affine nominal, never a tag-only enum (probe `q11`) — is [PRO
 for every other, and a compiler flag would make acceptance a function of the invocation.
 **S20**: a store's identity is in the type [PROV-1] and a nominal holding a store-backed
 value must name that store; probes `r2_6` and `m05` are the parse errors today.
+
+> **Correction, decided 2026-09-05, from B8a's implementation: what "on a nominal" means
+> for a *use*.** Declaring `region_params` was the whole of S20 as adopted, and B7a6 found
+> that nothing instantiated them. The rule that closes it needs no further surface: a
+> nominal's region arguments are components of its type name [TYPE-2] and are written
+> where the two runs and the two providers already write theirs — as the **leading members
+> of the same `targs` list**, at every `type` position and at every `construct`. A
+> `construct` writes them on exactly [TYPE-5]'s own ground for a construct's type
+> arguments, which is that construction consults no expected nominal type; a *parameter*
+> type naming a nominal with one region argument determines it from the actual and the
+> caller writes nothing, which is [FORM-8] unchanged. Two instances of one declaration at
+> two regions are two types, and a store region is **invariant** at a call: the first
+> position that names a formal fixes it, and a second position naming a second store is
+> the ordinary [TYPE-5] mismatch. That last sentence was [PROV-1]'s all along and was not
+> being enforced — a formal region occupying two container positions took the *least*
+> actual, so two runs of two extents satisfied one `'s`.
 **S21**: every capacity-parametric function reads its bound as a value, a loop endpoint
 or a clause operand (probe `q10`). **S22**: the heap must enter as a value and [FN-7]'s
 entry table is closed; **`main` declares no region parameter**, and [PROV-1]'s brand
@@ -4901,6 +4917,41 @@ the open.
 > prices for the block's *capacity*, paid once more for its room. The argument that the
 > proved spelling makes the return unavoidable is unchanged; what is deferred is the
 > premise that makes the branch unnecessary.
+
+> **Correction, decided 2026-09-05, from B8a's implementation: the two nominals land, and
+> four spellings in the block above move.** `tests/programs/block_pool.wf` is now this
+> section entire — `linear struct Lease['s]`, `struct BlockPool['s]`, `pool_new`,
+> `pool_take` and `pool_release`, all three generic over the store — and the `linear`
+> modifier does exactly what 3.L.7 says it does: the one path that does not return the
+> lease has to take it apart, and dropping it is refused. The superseded correction above
+> stands as the record of what B7a6 reached. What moved:
+>
+> - **`pool_new`'s store parameter is `store`, not `arena`.** `arena` is a fixed grammar
+>   atom [FORM-3] excludes from IDENT, so no parameter, field or callee can be spelled
+>   with it. This is the same reading S38 already applied to the kernel rows' one provider
+>   operand; the block above was written before it and is corrected here.
+> - **`pool_new`'s loop body is one statement.** `let taken = arena_vector(...);` followed
+>   by `match taken { ... }` is two statements, and the `&uniq deref(store)` in the first
+>   is a child reborrow whose region is the loop body's own — a region whose block extends
+>   beyond that statement, which [OWN-6] refuses. The body is therefore
+>   `match arena_vector::<u8>(store: &uniq deref(store), count: 256_u64) { ... }`: one
+>   statement, whose region is exactly it. **This is a real bound on the shape and not a
+>   spelling preference** — a loop that allocates from a `&uniq` store parameter has one
+>   statement per iteration or it has none, because the intermediate binding a second
+>   statement would need cannot outlive the region the borrow demands.
+> - **Every clause naming a *result's* field measure is dropped.** `ensures when
+>   Some(value: pool): len_of(pool.free) >= 8_u64` and `ensures head_of(rest.free) ==
+>   head_of(pool.free)` name a measure over a result place formed with a field-selection
+>   `psuffix`, which is [CALL-4]'s own first DEFERRED admission. The landed program states
+>   none of them and `main` reads `len_of(pool.free)` and `room_of(rest.free)` and
+>   branches, which is the price this section already names twice. `pool_release`'s
+>   `requires room_of(pool.free) > 0_u64` is *not* affected: a measure over a **parameter**'s
+>   field is an ordinary [MSR-1] place and it is what the call site discharges.
+> - **A construct writes its nominal's region argument.** `BlockPool<'s>(free: move free)`
+>   and `Lease<'s>(run: move one)` are the canonical spellings, on exactly the ground
+>   [TYPE-5] gives a construct's type arguments: construction consults no expected nominal
+>   type, so the written arguments are the only supply there is. The block above already
+>   writes them.
 
 ```wf-design
 fn try_place<T: affine, const n: u64>(vector: own FixedVector<T, n>, value: own T)
@@ -6939,6 +6990,96 @@ half of the blocker and left that one standing, visible on its own.
 **Verdicts.** The adapter moves from Pass=605 over 607 cases to Pass=610 over 612, with
 the one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491,
 Flip=0. No corpus verdict moved in either half of the batch.
+
+### 6.0m B8a landed (v0.45)
+
+**A nominal is generic over its store, and the block pool is 3.L.4 entire.** B7a6 left two
+items standing where 6.0k had listed four; this batch closes the first of them and one
+piece of the second, and says exactly what the rest costs.
+
+- **[S20]'s region axis is instantiated.** A nominal's `region_params` are components of
+  its type name [TYPE-2], so an instance is keyed on its region arguments beside its type
+  and const arguments; two instances of one declaration at two regions are two types under
+  the exact identity [TYPE-5] and [OWN-12] already perform; a `type` and a `construct`
+  write those arguments as the **leading members of the same `targs` list** the two runs
+  and the two providers already use; and a parameter position naming a nominal with one
+  region argument determines it from the actual, so [FORM-8] writes nothing at the call.
+  A `construct` writes them on exactly [TYPE-5]'s own ground for a construct's type
+  arguments — construction consults no expected nominal type — which is also why no
+  elision rule was added for that position.
+
+- **A store region is invariant at a call, and was not.** [PROV-1] has said since B7 that
+  two values have the same store exactly when their types name the same region, decided by
+  exact identity. The call path bound a formal region occupying a *container* position by
+  the ordinary least-region observation, so `fn wider['s](one: own Vector<'s, u8>, two:
+  own Vector<'s, u8>)` accepted two runs of two different extents whenever one region
+  outlived the other. The first store position now fixes the formal and every later one is
+  substituted with it, which makes a second store the ordinary [TYPE-5] argument mismatch.
+  `prov1-neg-two-runs-of-two-stores-at-one-formal-region` is that case, and it is a
+  soundness repair rather than a new rule.
+
+- **Where the region leaves the program is the lowering.** A region names a store for the
+  proof and nothing at run time, exactly as `IrType::Vector` has always erased one. Two
+  instances of one declaration that differ only in their region arguments — and in nothing
+  a run time can see — are therefore **one IR nominal**, which is what lets a callee's own
+  formal-region instance and a caller's actual-region instance meet at the boundary
+  between them without monomorphizing every function over its regions. The predicate is
+  content-checked and not assumed: a run's release class is read off its region's
+  declaration [PROV-6], so two instances whose classes differ are two representations, are
+  not erased together, and are not substituted for one another either.
+
+- **Two defects the pool exposed, both older than this batch.** A destructuring consume
+  written inside a `match` arm — `let Lease(run: back) = move lease;` — classified its
+  binder as an arm binder rather than a `let` binder, because the resolver asked whether an
+  `arm` was anywhere above it instead of which construct owned its `fieldbind` list; the
+  program stopped as an internal failure. And a caller's contract instantiation did not
+  substitute a nominal's region arguments, so `pool_release`'s own `requires` could not be
+  read at a call whose actual named a different region.
+
+- **`tests/programs/block_pool.wf` is 3.L.4 with its two nominals**, and the `linear`
+  modifier does what 3.L.7 says: the one path that does not return the lease has to take
+  it apart, and dropping it is refused. Four spellings in 3.L.4 moved and are corrected
+  there — `store` rather than `arena` for the parameter name [FORM-3], a one-statement
+  loop body, no clause naming a *result*'s field measure, and a written region argument at
+  each construct — and the first two are real bounds on the shape rather than preferences.
+
+- **B4's affine element read-out landed, and it is the only part of the subscripted place
+  that did.** `set (v[i], v[j]) = move v[j], move v[i];` exchanges two elements in one
+  commit: each `move` is the read-out of the target whose offset it provably names, and
+  the offsets [LIV-2] can decide are written literals, which is the same relation its
+  second condition already stated. It landed without the place model changing because a
+  `set` target already carries its own offset — the read-out is matched between two things
+  the statement holds, not between two resolved places. [TYPE-2], [LIV-2] and [BLK-3] are
+  amended for it: the direct swap replaces that rule's `take_back`/`replace`/`place_back`
+  route.
+
+**What did not land, and what it costs.** [MSR-1]'s `len_of(P[i])`, [MSR-2]'s
+element-position kill at that granularity and [LIV-2] condition 2's `grid[k]` against
+`grid[i][j]` are still one item and still the same one: a measured or targeted place is a
+`BindingId` plus a `Vec<u32>` of field selections, and every consumer of that vector —
+[MSR-2]'s support, [OWN-7]'s overlap, [ENT-5]'s kill, the checked container root, the
+element read and the release walk — is keyed on its shape. Admitting a subscript there is
+a change to that vector's element type and to `resolve_struct_path`, which is the one
+function that turns a written suffix chain into it, and it carries an [OP-4] obligation per
+subscript into a place that has no room for one today. The read-out above is the piece of
+that list which did **not** need it.
+
+**[CALL-4]'s per-variant route is not a small step.** 6.0l left the question of whether the
+routed relation over a non-prelude variant is now reachable, since the mechanism exists for
+`Ok`. It is not: the admitted route is `Ok` by prelude declaration identity, over a result
+whose type is `Result<T, E>` with `T` a fragment integer, with the payload field spelled
+`value` and the checked selector carrying a `PreludeDeclarationId` as its variant. Widening
+it to any variant of any returned enum moves the variant identity to the general
+constructor domain, widens the admission classification to a payload of any type, and
+changes what [CALL-6] restricts to an arm — four places, not one. **And it would not help
+the pool even so:** 3.L.4 discharges `pool_release`'s requirement from
+`when leased is Some(value: got): room_of(rest.free) >= 1_u64`, whose left side is a
+measure over a *result*'s field, which is [CALL-4]'s **first** DEFERRED admission and a
+different clause. The DEFERRED clause therefore stands and META-5's count does not move.
+
+**Verdicts.** The adapter moves from Pass=610 over 612 cases to Pass=618 over 620, with the
+one xfail and the one skip unchanged, and the snapshot corpus stays at Pass=491, Flip=0. No
+corpus verdict moved.
 
 ### 6.1 What the compiler did in this session
 

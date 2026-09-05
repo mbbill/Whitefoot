@@ -178,18 +178,26 @@ whole vocabulary -- a derivation is `X_of(v)`, a transformation is
 lift: a slot may hold a run, so `FixedVector<Vector<'s, u8>, 8>` is a free list
 of store-backed blocks, [PROV-6]'s release walk over a window is emitted rather
 than refused, and a formal region a parameter names one level down is
-determined by its actual. 3.L.4's block pool runs on that.
+determined by its actual. 3.L.4's block pool runs on that. B8a lands the first
+of the two items B7a6 separated: a nominal's `region_params` are components of
+its type name, so an instance is keyed on its region arguments, two instances at
+two regions are two types, a `type` and a `construct` write those arguments where
+the runs and providers already write theirs, and a parameter position determines
+one from its actual. A store region is invariant at a call with it, and the
+region is erased at lowering, where two instances differing only in it are one
+IR nominal. **3.L.4's block pool now runs with `BlockPool['s]` and
+`linear struct Lease['s]`**, which is what makes its lease must-return.
 **The general store is what remains of the store
 half:** [FN-7]'s `command.heap` row is still unwritable, because `heap` is the
 atom [EFF-1] fixes for `allocates(heap)` and [FORM-3] therefore excludes it
 from IDENT. Beside it stand the confinement rule, the retirement of the old
-container types, and two items B7a6 separated from each other: a **source
-nominal generic over its store region**, which [S20] declares and nothing
-instantiates, so the pool's `BlockPool['s]` and `Lease['s]` are undeclarable at
-a caller's store; and a **subscripted measured place**, which [MSR-1] admits and
-which [MSR-2]'s support, [OWN-7]'s overlap and [ENT-5]'s kill all key on, so
-`len_of(table[i])`, [LIV-2] condition 2 over `grid[i][j]` and the affine element
-read-out are one change to the proof engine's place model rather than three.
+container types, and the second of B7a6's two items: a **subscripted measured
+place**, which [MSR-1] admits and which [MSR-2]'s support, [OWN-7]'s overlap and
+[ENT-5]'s kill all key on, so `len_of(table[i])` and [LIV-2] condition 2 over
+`grid[i][j]` are one change to the proof engine's place model rather than two.
+B8a lands the affine element read-out that waited beside them — `set (v[i],
+v[j]) = move v[j], move v[i];` is the direct element swap — because the offsets
+[LIV-2] can decide are literals and a target already carries its own.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

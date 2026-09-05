@@ -1415,6 +1415,81 @@ an element is read after you have taken it out, or carried beside the run.
 Replaces: an `Option<T>` slot array standing in for a run of runs, and a
 parallel array of lengths beside a run of buffers.
 
+## P29. Give a nominal the store its contents live in
+
+A struct or enum that holds a store-backed value must name that store, and it
+names it the way every other type does: as a region parameter that becomes a
+component of its type name.
+
+```whitefoot
+linear struct Lease['s] {
+  run: Vector<'s, u8>;
+}
+
+struct BlockPool['s] {
+  free: FixedVector<Vector<'s, u8>, 8>;
+}
+```
+
+Write the region argument at every `type` position and at every `construct`,
+as the leading member of the same `<...>` list a type argument goes in:
+`BlockPool<'a>` names the type, `BlockPool<'a>(free: move free)` builds one,
+and `Some<BlockPool<'a>>(value: move pool)` carries one. Construction consults
+no expected type, so those written arguments are the only thing that fixes the
+instance.
+
+At a call you write **nothing**: a parameter whose type names the nominal's
+region determines it from the actual, exactly as `Vector<'s, T>` does.
+
+```whitefoot
+fn pool_take['s: affine](pool: own BlockPool<'s>)
+    -> (rest: own BlockPool<'s>, leased: own Option<Lease<'s>>)
+```
+
+Two instances at two regions are two types, and a store region is invariant: a
+formal region occupying two parameter positions is fixed by the first actual, so
+one function cannot be handed a pool of one arena and a lease of another.
+
+`linear` on such a nominal is what buys must-return: a path that neither returns
+the lease nor takes it apart with `let Lease(run: back) = move lease;` is
+refused, which is how a pool gets its blocks back.
+
+Two shapes to design around. A loop that allocates from a `&uniq` store
+parameter has **one statement per iteration** — a child reborrow's region cannot
+extend beyond its own statement, so write the loop body as one `match` over the
+acquiring call itself rather than a `let` and then a `match` on its binding. And
+a contract clause may name a measure of a **parameter**'s field
+(`requires room_of(pool.free) > 0_u64;`) but not of a *result*'s, so a caller
+that needs a figure about a returned nominal reads it and branches.
+
+Replaces: threading the bare container the struct would have held through every
+signature, and a store-blind wrapper that cannot say which arena its contents
+came from.
+
+## P30. Swap two elements in one commit
+
+Two elements of one run exchange slots in a single `set`, and the read-out is
+what makes it legal:
+
+```whitefoot
+set (v[0_u64], v[1_u64]) = move v[1_u64], move v[0_u64];
+```
+
+Each `move` is the read-out of the target whose offset it names, so the affine
+element leaves its slot and the same statement's one commit fills it again; no
+program point between them sees a slot empty.
+
+The offsets must be **written literals with unequal values**. That is the whole
+of what the rule can decide: two targets whose offsets it cannot tell apart
+overlap and are refused, and a `move v[i]` whose offset does not provably match
+its target's reads nothing out, which leaves the live affine target its ordinary
+refusal. For an offset a loop computes, take the elements out with `take_back`
+and put them back (P28), or exchange one at a time with
+`let old = replace v[i] = e;`.
+
+Replaces: `take_back` / `replace` / `place_back` for a swap of two known
+positions, and an `Option<T>` slot standing in for a temporarily empty one.
+
 ## Known gaps (findings, not yet patterns)
 
 - In-place mutation interleaved with traversal of the same structure (graph

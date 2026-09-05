@@ -315,19 +315,46 @@ that resolves to no binding becomes an ordinary `let` declaration there.
 `tests/programs/arena_workspace.wf` is the store-backed companion: it reserves
 an extent, reads the store's own cursor across each take, fills a taken run and
 observes that a refused take leaves the cursor where it was.
-`tests/programs/block_pool.wf` is 3.L.4's block pool over the lift: eight
-arena-backed runs carved into one frame-resident run of runs, a block leased off
-the back boundary and returned to a free list the callee proved had room, with
-both pool operations generic over the store. It is the pool **without its two
-nominals**, which is what this compiler cannot spell: a source nominal's region
-parameter is a fixed formal region that no call instantiates, so
-`struct BlockPool['s]` declares but no value of it can be built at a caller's
-store, and `linear struct Lease['s]` waits with it. That is the container gap
-this batch leaves, and it is a nominal-generics gap rather than a container one.
-A measure over a subscripted place — `len_of(table[i])`, which [MSR-1] admits
-and [MSR-2] gives its own storage granularity — also stops as an unsupported
-capability, because a measured place is a binding plus field selections here and
-carries no subscript.
+`tests/programs/block_pool.wf` is 3.L.4's block pool **entire**, its two
+nominals included: `struct BlockPool['s]` holds the free list,
+`linear struct Lease['s]` holds the leased run, and `pool_new`, `pool_take` and
+`pool_release` are all three generic over the store. A source nominal's
+`region_params` are components of its type name, so an instance is keyed on its
+region arguments beside its type and const arguments and two instances at two
+regions are two types; a `type` and a `construct` write those arguments as the
+leading members of the same `targs` list the two runs and the two providers
+already use, and a parameter type naming such a nominal determines its region
+from the actual exactly as `Vector<'s, T>` does. Where the axis leaves the
+program is the lowering: a region names a store for the proof and nothing at run
+time, so two instances that differ only in their region arguments — and in
+nothing a run time can see, a run's release class included — are **one IR
+nominal**, which is what lets a callee's own formal-region instance and a
+caller's actual-region instance meet at the boundary between them. A store
+region is also invariant at a call now: the first parameter position that names
+a formal fixes it, so two runs of two extents no longer satisfy one `'s` by
+taking the least region.
+
+Two source-shape bounds the pool met are worth naming. A loop that allocates
+from a `&uniq` store parameter has **one statement per iteration**, because a
+child reborrow's region may not extend beyond its own statement [OWN-6] and a
+loop body's own region extends over the whole body; `pool_new`'s body is
+therefore one `match` over the acquiring row's own call. And every clause naming
+a measure over a *result*'s field — `ensures head_of(rest.free) == ...` — is
+[CALL-4]'s own first DEFERRED admission, so the pool states none and its caller
+reads `room_of(rest.free)` and branches; a `requires` over a **parameter**'s
+field measure is an ordinary [MSR-1] place and is what `pool_release` proves
+with.
+
+An affine element leaves its slot through one further route: the [LIV-2]
+read-out of an element target of the same `set`, so
+`set (v[i], v[j]) = move v[j], move v[i];` exchanges two elements in one commit
+when the two offsets are literals with unequal values. A measure over a
+subscripted place — `len_of(table[i])`, which [MSR-1] admits and [MSR-2] gives
+its own storage granularity — still stops as an unsupported capability, and
+`grid[i][j]` with it, because a measured or targeted place is a binding plus
+field selections here and carries no subscript. That one representation is what
+[MSR-1]'s subscripted measure, [MSR-2]'s element-position kill at that
+granularity and [LIV-2] condition 2's nested subscript all wait on.
 It has no termination checker and emits no `willreturn` or effect-derived alias
 attributes.
 
