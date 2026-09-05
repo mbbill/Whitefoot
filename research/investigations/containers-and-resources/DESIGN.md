@@ -7835,9 +7835,12 @@ assertion moved, and it moved to the parse stage through a helper added for it.
   a `heap-unreachable` unit could not declare the type at all. **The design should either
   name a store-backed single-value form or state that the one-element run is it and
   accept the descriptor.** Recorded here as the gap it is.
-- **`ConfinedTypeWithoutStore` is stated and unexercised.** Every unit in the corpus that
-  declares a run-holding nominal also receives the general store, so the refusal has no
-  witness; it is written where it belongs rather than where a test could reach it.
+- **`ConfinedTypeWithoutStore` landed and moved two corpus sources.** The refusal is
+  taken at the field's own `type`, over the whole-program fact that the entry selects no
+  `command.heap` row, so the two positive cases that declared a `Vector<u8>` field in a
+  unit with no heap — `prov1-pos-a-store-branded-run-in-a-field` and
+  `blk1-pos-both-runs-are-nameable-types` — take the row in their entries. Both keep their
+  recorded `accept` verdicts; the repair is the one the rule's own restructuring names.
 
 ### 6.1 What the compiler did in this session
 

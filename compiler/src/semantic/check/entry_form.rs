@@ -441,14 +441,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.decoded(tail)
     }
 
-    fn decoded(&self, terminal: usize) -> Result<String, CheckStop> {
+    pub(super) fn decoded(&self, terminal: usize) -> Result<String, CheckStop> {
         std::str::from_utf8(self.tree.token_bytes(terminal)?)
             .map(str::to_owned)
             .map_err(|_| SemanticCompilerFailure::InvalidSourceEncoding.into())
     }
 
     /// Returns every node of one production in finalized node order.
-    fn nodes_with(&self, production: Production) -> Result<Vec<NodeId>, CheckStop> {
+    pub(super) fn nodes_with(&self, production: Production) -> Result<Vec<NodeId>, CheckStop> {
         let mut nodes = Vec::new();
         for index in 0..self.tree.topology().nodes.len() {
             let node = NodeId::from_index(index).ok_or(SemanticCompilerFailure::CounterOverflow)?;

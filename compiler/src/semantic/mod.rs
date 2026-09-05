@@ -680,6 +680,12 @@ pub enum SemanticIssueKind {
         /// Exact restructuring required by BLK-4.
         mechanical_fix: &'static str,
     },
+    /// [BLK-4] a stored position whose brand resolves to the entry heap's
+    /// store region in a unit whose entry selects no `command.heap` row.
+    ConfinedTypeWithoutStore {
+        /// Exact restructuring required by BLK-4.
+        mechanical_fix: &'static str,
+    },
     /// [PROV-6] a `dispose` whose operand releases to a store no live
     /// binding of this scope holds the provider of.
     DisposeHasNoProvider {

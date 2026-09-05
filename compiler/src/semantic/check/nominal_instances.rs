@@ -957,6 +957,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             self.reject_region_bearing_storage_type(ty, substitution)?;
             self.ensure_nominal_type(ty, substitution)?;
             let parsed = self.parse_type_with(ty, substitution)?;
+            self.reject_confined_type_without_store(parsed, ty)?;
             fields.push(CheckedField { name, ty: parsed });
         }
         Ok(fields)
@@ -999,6 +1000,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     self.reject_region_bearing_storage_type(ty, substitution)?;
                     self.ensure_nominal_type(ty, substitution)?;
                     let parsed = self.parse_type_with(ty, substitution)?;
+                    self.reject_confined_type_without_store(parsed, ty)?;
                     fields.push(CheckedField {
                         name: field_name,
                         ty: parsed,

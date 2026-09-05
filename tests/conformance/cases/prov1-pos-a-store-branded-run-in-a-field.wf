@@ -7,7 +7,7 @@ struct Frame {
   page: Vector<u8>;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  doc "Names two nominals whose fields hold entry-heap runs.";
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
+  doc "Names two nominals whose fields hold entry-heap runs. The entry receives the general store, which is what [BLK-4] requires of a unit declaring a position branded to it.";
   return exit_status(code: 0_u8);
 }

@@ -686,6 +686,10 @@ struct Checker<'unit, 'classified, 'lexed, 'source> {
     /// everywhere else, where the brand resolves to the entry heap's store
     /// region.
     elided_store_brand: std::cell::Cell<Option<DeclarationId>>,
+    /// [BLK-4] whether this unit's entry selects [FN-7]'s `heap` standard
+    /// input, memoized because the answer is one whole-program fact and the
+    /// scan that reads it is over the unit's own `input_label` nodes.
+    general_store_reachable: std::cell::Cell<Option<bool>>,
     /// [FN-2, OWN-1, S37] whether the body now being checked is a *concrete
     /// instance* of a generic template whose spelling one symbolic instance
     /// has already judged.
@@ -1187,6 +1191,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             arena_storage_nominal: None,
             pending_nominals: RefCell::new(Vec::new()),
             elided_store_brand: std::cell::Cell::new(None),
+            general_store_reachable: std::cell::Cell::new(None),
             template_spelling_authority: std::cell::Cell::new(false),
             commit_read_outs: RefCell::new(Vec::new()),
             prelude_nominals: HashMap::new(),

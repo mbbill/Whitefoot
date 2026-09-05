@@ -3,7 +3,7 @@ struct Frame {
   taken: Vector<u8>;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  doc "Names both runs in one nominal: one frame-resident, one store-resident.";
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus pure {
+  doc "Names both runs in one nominal: one frame-resident, one store-resident. The entry receives the general store, which is what [BLK-4] requires of a unit declaring a position branded to it.";
   return exit_status(code: 0_u8);
 }

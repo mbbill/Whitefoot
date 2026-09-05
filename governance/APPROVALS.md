@@ -4119,8 +4119,8 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   them would leave this specification and the compiler disagreeing about several
   hundred accepted programs, which is the defect the branch rule forbids. Every
   one of those clauses keeps its DEFERRED entry and its stated delta.
-- CONFORMANCE BOUNDARY (B7b): seven added cases, no deleted case, no rename,
-  eight rewritten cases whose recorded expectations are unchanged, and 126
+- CONFORMANCE BOUNDARY (B7b): ten added cases, no deleted case, no rename,
+  eight rewritten cases whose recorded expectations are unchanged, and 128
   modified case sources whose expectations are unchanged.
   Added:
   `blk4-neg-a-unique-parameter-reaches-a-run`
@@ -4136,7 +4136,13 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `prov6-neg-a-store-backed-run-reaches-an-exit-without-the-capability`
   (`{"kind": "reject", "rule": "PROV-6"}`) and
   `prov6-pos-a-scope-holding-the-provider-takes-the-derived-release`
-  (`{"kind": "run", "exit": 0}`), each status runnable.
+  (`{"kind": "run", "exit": 0}`),
+  `blk4-neg-a-field-branded-to-a-heap-the-unit-cannot-reach`
+  (`{"kind": "reject", "rule": "BLK-4"}`),
+  `prov6-pos-an-early-release-of-a-store-backed-run`
+  (`{"kind": "run", "exit": 5}`) and
+  `prov6-neg-a-dispose-with-no-provider-in-scope`
+  (`{"kind": "reject", "rule": "PROV-6"}`), each status runnable.
   Rewritten, source replaced and expectation unchanged: the eight cases that
   pinned the retired `heap` atom — `eff1-neg-wrong-order-row`
   (`{"kind": "reject", "rule": "EFF-1"}`), `x-eff-trailing-comma-row`
@@ -4153,14 +4159,18 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   (`{"kind": "reject", "rule": "FN-3"}`). Each now names a provider path over
   the general store in place of the atom, and each keeps its recorded kind,
   rule and status.
-  Modified, source only: 126 case sources, of which 125 lose the
-  `allocates(heap)` entry the ambient heap no longer writes and one,
-  `prov6-pos-a-region-argument-names-a-bump-extent`
-  (`{"kind": "run", "exit": 0}`), gains the `allocates(store)` its
-  `arena_vector` call exhibits. No expectation, rule list or status changed.
+  Modified, source only: 128 case sources. 125 lose the `allocates(heap)` entry
+  the ambient heap no longer writes; `prov6-pos-a-region-argument-names-a-bump-extent`
+  (`{"kind": "run", "exit": 0}`) gains the `allocates(store)` its `arena_vector`
+  call exhibits; and `prov1-pos-a-store-branded-run-in-a-field`
+  (`{"kind": "accept"}`) and `blk1-pos-both-runs-are-nameable-types`
+  (`{"kind": "accept"}`) take [FN-7]'s `heap` row in their entries, which is the
+  repair [BLK-4]'s `ConfinedTypeWithoutStore` refusal names for a field branded
+  to a heap the unit cannot otherwise reach. No expectation, rule list or status
+  changed.
   Before this batch the corpus holds 667 cases with the native adapter
-  reporting Pass=663, Xfail=1, Skip=3; after it the corpus holds 674 with the
-  adapter reporting Pass=670, Xfail=1, Skip=3. The one xfail
+  reporting Pass=663, Xfail=1, Skip=3; after it the corpus holds 677 with the
+  adapter reporting Pass=673, Xfail=1, Skip=3. The one xfail
   (`ent5-neg-callee-uniq-buffer-replace-kills-length`) and the three skips are
   unchanged in id, expectation and status. Rule coverage stays complete at
   153/153, and the recorded-verdict snapshot corpus reports Pass=491, Flip=0
