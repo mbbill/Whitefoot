@@ -66,12 +66,24 @@ void *wf_prim_prepare_stack(
     return wf_switch_prepare(top, entry, argument);
 }
 
-/* The floor's per-stack half. The floor exports the setter once the core is
- * linked into programs (design §5); until then the weak answer does nothing,
- * so a core linked without the floor still switches. */
+/* The floor's two halves. The floor exports both once the core is linked into
+ * programs (design §5); until then the weak answers do nothing, so a core
+ * linked without the floor still switches and `entry.c` still starts its
+ * threads. This leaf is the one unit of a link that names the floor's attach,
+ * and `wf_prim_floor_attach` is how `entry.c` reaches it: the Windows leaf
+ * has to arm every pool fiber itself, one link admits one weak default per
+ * symbol (MSVC, LNK1227), and a PE weak default satisfies only references from
+ * its own unit (GNU ld), so each platform leaf carries the pair and every
+ * caller above goes through it. */
+__attribute__((weak)) void wf__floor_attach_thread(void) {}
+
 __attribute__((weak)) void wf__floor_set_stack_bounds(unsigned char *low, unsigned char *high) {
     (void)low;
     (void)high;
+}
+
+void wf_prim_floor_attach(void) {
+    wf__floor_attach_thread();
 }
 
 void wf_prim_set_bounds(unsigned char *low, unsigned char *high) {

@@ -359,6 +359,17 @@ int wf_prim_thread_start(
 void wf_prim_thread_attach(void);
 void wf_prim_thread_detach(void);
 
+/* P2's second name: the floor's per-thread half, reached through this layer
+ * as the per-stack half is reached through `wf_prim_set_bounds`. `entry.c`
+ * calls it once at each worker's start, and the floor calls its own attach on
+ * the entry thread before the core starts. On the host it is the alternate
+ * signal stack the guard-page handler runs on; on Windows it is the stack
+ * guarantee, which that leaf also arms on every pool fiber it starts, because
+ * Windows keeps a guarantee per thread or fiber. The platform leaf is the one
+ * unit of a link that names the floor's attach and the one that carries its
+ * weak answer for a core linked without the floor. */
+void wf_prim_floor_attach(void);
+
 /* P3. How many CPUs this process may be scheduled on right now, or 0 when the
  * platform will not say. `sysctlbyname`/`sysconf` on the host,
  * `GetActiveProcessorCount` on Windows. */

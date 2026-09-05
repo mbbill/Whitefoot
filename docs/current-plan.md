@@ -554,8 +554,10 @@ before the code lands.
    stack, found on the real host on 2026-09-05 after the port landed, is its
    emergency stack on each pool fiber: Windows keeps a stack guarantee for the
    calling thread or fiber and a fiber takes it only when set from inside, so
-   `wf_prim_fiber_main` calls `wf__floor_attach_thread` as every pool fiber's
-   first frame. Before it did, the io-hosts overflow proof passed on one push
+   `wf_prim_fiber_main` runs the floor's attach as every pool fiber's first
+   frame, and `entry.c` reaches that attach through `wf_prim_floor_attach`
+   rather than naming it, because one link admits one weak default per symbol
+   and a PE weak default satisfies only its own unit's references. Before it did, the io-hosts overflow proof passed on one push
    and segfaulted on the next with the same bytes, because a pool fiber
    overflowed with only what was left of the guard page under the handler;
    the job now runs each configuration five times. One rule now covers WF_WORKERS,

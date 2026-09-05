@@ -93,8 +93,11 @@ void wf_prim_switch(void **save, void *load) {
  * and the attach is the emergency stack `SetThreadStackGuarantee` reserves for
  * the calling thread or fiber, which is why `wf_prim_fiber_main` below calls
  * it. The weak answers here are for a core linked without the floor -- the
- * adapter probe -- exactly as on the host, where `entry.c` carries the
- * attach's weak answer and `prim_host.c` the bounds'. */
+ * adapter probe -- exactly as `prim_host.c` carries the same pair on the
+ * host. This leaf is the one unit of a link that names the floor's attach,
+ * and `wf_prim_floor_attach` is how `entry.c` reaches it: one link admits one
+ * weak default per symbol (MSVC, LNK1227), and a PE weak default satisfies
+ * only references from its own unit (GNU ld). */
 __attribute__((weak)) void wf__floor_attach_thread(void) {}
 
 __attribute__((weak)) void wf__floor_set_stack_bounds(
@@ -103,6 +106,10 @@ __attribute__((weak)) void wf__floor_set_stack_bounds(
 ) {
     (void)low;
     (void)high;
+}
+
+void wf_prim_floor_attach(void) {
+    wf__floor_attach_thread();
 }
 
 /* What a prepared stack runs, and where its two words live.

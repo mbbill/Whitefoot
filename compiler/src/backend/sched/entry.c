@@ -39,11 +39,16 @@ __attribute__((weak)) size_t wf__floor_stack_bytes(void) {
     return WF_SCHED_ENTRY_FALLBACK_STACK_BYTES;
 }
 
-/* The per-thread half of the floor's attach: the alternate signal stack a
+/* The per-thread half of the floor's attach -- the alternate signal stack a
  * guard-page handler runs on, installed once at thread start (§7's
- * `wf__floor_attach_thread` bullet). The per-stack half is the bounds, and
- * those the switch writes. */
-__attribute__((weak)) void wf__floor_attach_thread(void) {}
+ * `wf__floor_attach_thread` bullet), or on Windows the emergency stack a
+ * guarantee reserves -- is reached through `wf_prim_floor_attach`, primitive
+ * P2's second name, exactly as the per-stack half is reached through
+ * `wf_prim_set_bounds`. This unit names the floor's attach nowhere: the
+ * platform leaf is the one unit that references it and the one that carries
+ * its weak answer, because the Windows leaf has to arm every pool fiber
+ * itself, one link admits one weak default per symbol (MSVC, LNK1227), and a
+ * PE weak default satisfies only references from its own unit (GNU ld). */
 
 /* The per-stack half is the bounds, and this unit reaches them through
  * `wf_prim_set_bounds` -- primitive 2's third name -- rather than through the
@@ -369,7 +374,7 @@ static void wf__sched_worker_main(void *argument) {
      * stack. The bounds it captures here are this thread's *host* stack, which
      * is where the handler runs until the first switch and where nothing
      * Whitefoot ever runs (§5). */
-    wf__floor_attach_thread();
+    wf_prim_floor_attach();
     wf__sched_ready_report();
     /* Never returns: a worker's scheduler loop is the program's, and the
      * thread is detached. */
