@@ -3,7 +3,7 @@ fn id(x: own i32) -> function_result: own i32 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "A user-fn call must use (named args [GRAM-11]); positional is rejected.";
+  doc "A user-fn call must use named args [GRAM-11]; positional is rejected.";
   let a = id(40_i32);
   return exit_status(code: 0_u8);
 }

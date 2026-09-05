@@ -28,7 +28,8 @@ use super::super::model::{
     CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor, CheckedEnumType,
     CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
     CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedNumericType, CheckedProofUseSource, CheckedSetTarget,
+    CheckedNominalKind, CheckedNumericType, CheckedProofMultiplicity, CheckedProofUseSource,
+    CheckedSetTarget,
     CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, ValueInitializerKind,
 };
 use super::super::places::{BindingSummary, PlaceMap, ResolvedPlace};
@@ -42,6 +43,7 @@ use super::affine::{
     integer_tightenings, interval_maximum, interval_proves, sum_explicit_inequalities,
     sum_explicit_scaled_inequalities,
 };
+use super::polynomial::{CertificatePolynomial, PolynomialError};
 use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
@@ -490,6 +492,67 @@ struct AffineIntegerProduct {
     ty: IntegerType,
 }
 
+/// One written multiplicity, resolved where the certificate is checked.
+///
+/// A named multiplicity carries the value image its binding holds at the
+/// entering program point, so the scaling step reads a value rather than a
+/// name and a later write cannot change what was scaled.
+#[derive(Clone, Debug)]
+enum CertificateMultiplicity {
+    Literal(i128),
+    Value(AffineForm),
+}
+
+/// The accumulated [PRF-1] certificate sum.
+///
+/// A bare-decimal certificate stays in `Affine` for its whole accumulation and
+/// reaches the residual as the inequality it always formed. The first term
+/// multiplicity moves the accumulation to `Nonlinear`, where it stays until
+/// the nonlinear monomials fold back to admitted products.
+enum CertificateSum {
+    Empty,
+    Affine(AffineInequality),
+    Nonlinear(CertificatePolynomial),
+}
+
+/// Why one accumulation step could not form, before it is attributed to the
+/// written entry that caused it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CertificateStepFailure {
+    Overflow,
+    UseCapacity,
+    Formation,
+    InvalidFactor,
+}
+
+impl From<AffineCheckError> for CertificateStepFailure {
+    fn from(error: AffineCheckError) -> Self {
+        match error {
+            AffineCheckError::ArithmeticOverflow => Self::Overflow,
+            AffineCheckError::LimitExceeded(AffineCheckLimit::CertificatePremises) => {
+                Self::UseCapacity
+            }
+            AffineCheckError::LimitExceeded(_) | AffineCheckError::CoefficientMismatch => {
+                Self::Formation
+            }
+            AffineCheckError::InvalidCertificateFactor => Self::InvalidFactor,
+        }
+    }
+}
+
+impl From<PolynomialError> for CertificateStepFailure {
+    fn from(error: PolynomialError) -> Self {
+        match error {
+            PolynomialError::ArithmeticOverflow => Self::Overflow,
+            // A degree-three product means one written multiplicity scaled a
+            // premise that already carried a nonlinear monomial; nothing in
+            // [PRF-1] forms such a step, so it stops as a formation failure
+            // rather than as a claim about the writer's factor.
+            PolynomialError::DegreeExceeded | PolynomialError::LimitExceeded => Self::Formation,
+        }
+    }
+}
+
 /// What the fixed interval-product rule proved about one admitted
 /// multiplication: the inclusive interval its four endpoint products bound,
 /// and the affine consequences that proved the operand endpoints.
@@ -744,6 +807,8 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         derivations: DerivationLedger::default(),
         obligations: Vec::new(),
         product_intervals: HashMap::new(),
+        product_operands: HashMap::new(),
+        product_atoms: HashMap::new(),
         call_goals: Vec::new(),
         counted_derivations: Vec::new(),
         loop_invariants: Vec::new(),
@@ -978,6 +1043,21 @@ struct Analyzer<'check, 'unit> {
     /// establishes at the binding the walk then reaches, so the measurement
     /// waits here between the two rather than being proved again.
     product_intervals: HashMap<crate::NodePath, AffineProductInterval>,
+    /// The two operand atoms of each admitted exact multiplication whose
+    /// operands are themselves single value images, keyed by that operation's
+    /// own node. Read once at the binding the walk then reaches, exactly as
+    /// the interval above is.
+    product_operands: HashMap<crate::NodePath, (AffineTermId, AffineTermId)>,
+    /// What every admitted exact product equals, as value identities: the atom
+    /// the multiplication bound, and the two operand atoms it is the product
+    /// of.
+    ///
+    /// An `AffineTermId` names one immutable value, so this map needs no kill
+    /// and no join: a write to the product or to an operand mints a new atom,
+    /// which is simply absent here, while the old atoms keep denoting the old
+    /// values and the recorded equality stays true. [PRF-1] reads it to fold a
+    /// term-scaled premise's nonlinear monomials back to affine.
+    product_atoms: HashMap<AffineTermId, (AffineTermId, AffineTermId)>,
     call_goals: Vec<CallGoalOutcome>,
     counted_derivations: Vec<CountedDerivationSet>,
     loop_invariants: Vec<LoopInvariantOutcome>,
@@ -6991,6 +7071,13 @@ impl Analyzer<'_, '_> {
         let discharged = outcome.disposition == ProofDisposition::Proved;
         let refuted = outcome.disposition == ProofDisposition::Refuted;
         let contradictory = outcome.route == Some(ProofRoute::Contradiction);
+        // Both records below describe this walk of this operation. A loop body
+        // is walked more than once and the same node then carries different
+        // operand values each time, so the previous walk's measurement is
+        // dropped before this one decides: a judgment that does not discharge
+        // must leave nothing behind for the binding to read.
+        self.product_intervals.remove(node_path);
+        self.product_operands.remove(node_path);
         // [ENT-3.S14] publishes only what an admitted multiplication proved,
         // so the interval is retained exactly when this obligation discharged
         // through the interval-product route.
@@ -6998,6 +7085,22 @@ impl Analyzer<'_, '_> {
             && let Some(interval) = outcome.product_interval.clone()
         {
             self.product_intervals.insert(node_path.clone(), interval);
+        }
+        // What the exact multiplication equals, for [PRF-1] to fold a
+        // term-scaled premise with. Recorded only when the domain discharged
+        // through an affine route, which is what committed `prepared_affine`
+        // and so kept the operand atoms these names refer to; the operands
+        // must each be one atom, because two atoms are all a degree-two
+        // monomial can name.
+        if discharged
+            && outcome.route == Some(ProofRoute::Affine)
+            && operation == CheckedIntegerOperation::MultiplyExact
+            && let Some(product) = affine_product.as_ref()
+            && let (Some(left), Some(right)) =
+                (product.left.unit_term(), product.right.unit_term())
+        {
+            self.product_operands
+                .insert(node_path.clone(), (left.min(right), left.max(right)));
         }
         let ordinal = u32::try_from(self.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
@@ -8830,6 +8933,32 @@ impl Analyzer<'_, '_> {
         self.affine_pre_domain_form(dividend, state)
     }
 
+    /// Records what one admitted exact multiplication's bound value equals.
+    ///
+    /// The domain judgment already measured the operands where the product was
+    /// formed; this pairs that measurement with the atom the binding took, so
+    /// [PRF-1] can recognize `n*p` in a certificate sum as the value `base`
+    /// already holds. A product whose result image is not one atom — a
+    /// conversion, a further operation — records nothing, because there is
+    /// then no single value the monomial equals.
+    fn record_product_atom(
+        &mut self,
+        binding: BindingId,
+        value: &CheckedExpression,
+        state: &AffineFlowState,
+    ) {
+        let CheckedExpression::IntegerOperation { carrier, .. } = value else {
+            return;
+        };
+        let Some(operands) = self.product_operands.get(carrier).copied() else {
+            return;
+        };
+        let Some(product) = state.values.get(&binding).and_then(AffineForm::unit_term) else {
+            return;
+        };
+        self.product_atoms.insert(product, operands);
+    }
+
     /// Retains the second fixed consequence of one S7 unsigned division:
     /// for `q = a / k` with a positive written literal `k`, `k*q <= a`.
     /// Both sides are the exact affine value images computed at this program
@@ -9315,8 +9444,8 @@ impl Analyzer<'_, '_> {
     /// factors. It deliberately runs before premise availability is judged.
     fn source_proof_sum(
         &self,
-        premises: &[(AffineInequality, i128)],
-    ) -> Result<AffineInequality, (SourceProofCertificateFailure, u32)> {
+        premises: &[(AffineInequality, CertificateMultiplicity)],
+    ) -> Result<CertificateSum, (SourceProofCertificateFailure, u32)> {
         let actual = u32::try_from(premises.len()).unwrap_or(u32::MAX);
         if premises.len() > MAX_CERTIFICATE_PREMISES {
             let maximum =
@@ -9328,9 +9457,12 @@ impl Analyzer<'_, '_> {
         }
 
         let mut first_by_premise = HashMap::new();
-        for (index, (premise, factor)) in premises.iter().enumerate() {
+        for (index, (premise, multiplicity)) in premises.iter().enumerate() {
             let index = u32::try_from(index).expect("certificate capacity fits u32");
-            if *factor <= 0 {
+            // A term multiplicity is unsigned by [PRF-1], so only the written
+            // decimal can be degenerate. A runtime zero drops its premise and
+            // the sum stays sound, which is why nothing rejects it here.
+            if matches!(multiplicity, CertificateMultiplicity::Literal(factor) if *factor <= 0) {
                 return Err((
                     SourceProofCertificateFailure::InvalidFactor { use_index: index },
                     index,
@@ -9350,54 +9482,192 @@ impl Analyzer<'_, '_> {
         // Build the written sum one source entry at a time. Besides preserving
         // source order, this records the exact entry whose scale or addition
         // first exceeds the proof arithmetic or affine formation domain.
-        let mut sum = None;
-        for (index, (inequality, factor)) in premises.iter().enumerate() {
+        //
+        // The accumulator starts affine and becomes a degree-two polynomial at
+        // the first term multiplicity, if there is one; a certificate written
+        // entirely with bare decimals therefore never leaves the affine arm
+        // and forms exactly the inequality it always did.
+        let mut sum = CertificateSum::Empty;
+        for (index, (inequality, multiplicity)) in premises.iter().enumerate() {
             let index = u32::try_from(index).expect("certificate capacity fits u32");
-            let written = ScaledAffinePremise {
-                inequality,
-                factor: *factor,
-            };
-            let mut check = AffineCheckState::new();
-            let formed = if let Some(previous) = sum.as_ref() {
-                sum_explicit_scaled_inequalities(
-                    &[
-                        ScaledAffinePremise {
-                            inequality: previous,
-                            factor: 1,
-                        },
-                        written,
-                    ],
-                    &mut check,
-                )
-            } else {
-                sum_explicit_scaled_inequalities(&[written], &mut check)
-            };
-            sum = Some(formed.map_err(|error| {
-                let failure = match error {
-                    AffineCheckError::ArithmeticOverflow => {
-                        SourceProofCertificateFailure::ArithmeticOverflow
-                    }
-                    AffineCheckError::LimitExceeded(AffineCheckLimit::CertificatePremises) => {
-                        SourceProofCertificateFailure::UseCapacity {
-                            maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
-                                .expect("certificate capacity fits u32"),
-                            actual,
-                        }
-                    }
-                    AffineCheckError::LimitExceeded(_) => {
-                        SourceProofCertificateFailure::FormationCapacity
-                    }
-                    AffineCheckError::InvalidCertificateFactor => {
-                        SourceProofCertificateFailure::InvalidFactor { use_index: index }
-                    }
-                    AffineCheckError::CoefficientMismatch => {
-                        SourceProofCertificateFailure::FormationCapacity
+            sum = Self::extend_certificate_sum(sum, inequality, multiplicity)
+                .map_err(|failure| {
+                    (
+                        Self::certificate_step_failure(failure, index, actual),
+                        index,
+                    )
+                })?;
+        }
+        match sum {
+            CertificateSum::Empty => {
+                Err((SourceProofCertificateFailure::FormationCapacity, 0))
+            }
+            formed => Ok(formed),
+        }
+    }
+
+    /// Adds one written entry to the accumulated certificate sum.
+    fn extend_certificate_sum(
+        sum: CertificateSum,
+        inequality: &AffineInequality,
+        multiplicity: &CertificateMultiplicity,
+    ) -> Result<CertificateSum, CertificateStepFailure> {
+        if let CertificateMultiplicity::Literal(factor) = *multiplicity {
+            match sum {
+                CertificateSum::Empty => {
+                    let mut check = AffineCheckState::new();
+                    return Ok(CertificateSum::Affine(sum_explicit_scaled_inequalities(
+                        &[ScaledAffinePremise { inequality, factor }],
+                        &mut check,
+                    )?));
+                }
+                CertificateSum::Affine(previous) => {
+                    let mut check = AffineCheckState::new();
+                    return Ok(CertificateSum::Affine(sum_explicit_scaled_inequalities(
+                        &[
+                            ScaledAffinePremise {
+                                inequality: &previous,
+                                factor: 1,
+                            },
+                            ScaledAffinePremise { inequality, factor },
+                        ],
+                        &mut check,
+                    )?));
+                }
+                CertificateSum::Nonlinear(previous) => {
+                    let scaled = CertificatePolynomial::from_inequality(inequality)?.scale(factor)?;
+                    return Ok(CertificateSum::Nonlinear(previous.add(&scaled)?));
+                }
+            }
+        }
+        let CertificateMultiplicity::Value(value) = multiplicity else {
+            unreachable!("the literal arm returned above");
+        };
+        let scaled = CertificatePolynomial::from_inequality(inequality)?
+            .multiply(&CertificatePolynomial::from_form(value)?)?;
+        let previous = match sum {
+            CertificateSum::Empty => CertificatePolynomial::zero(),
+            CertificateSum::Affine(previous) => CertificatePolynomial::from_inequality(&previous)?,
+            CertificateSum::Nonlinear(previous) => previous,
+        };
+        Ok(CertificateSum::Nonlinear(previous.add(&scaled)?))
+    }
+
+    fn certificate_step_failure(
+        failure: CertificateStepFailure,
+        index: u32,
+        actual: u32,
+    ) -> SourceProofCertificateFailure {
+        match failure {
+            CertificateStepFailure::Overflow => {
+                SourceProofCertificateFailure::ArithmeticOverflow
+            }
+            CertificateStepFailure::UseCapacity => SourceProofCertificateFailure::UseCapacity {
+                maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
+                    .expect("certificate capacity fits u32"),
+                actual,
+            },
+            CertificateStepFailure::Formation => {
+                SourceProofCertificateFailure::FormationCapacity
+            }
+            CertificateStepFailure::InvalidFactor => {
+                SourceProofCertificateFailure::InvalidFactor { use_index: index }
+            }
+        }
+    }
+
+    /// Resolves one written multiplicity where the certificate is checked.
+    ///
+    /// A named multiplicity reads the value image its binding holds in the
+    /// entering context, minting the atom if this is the first read of it, so
+    /// the scaling step is over the same immutable value identity every other
+    /// affine premise names.
+    fn certificate_multiplicity(
+        &mut self,
+        multiplicity: CheckedProofMultiplicity,
+        state: &mut AffineFlowState,
+    ) -> Option<CertificateMultiplicity> {
+        match multiplicity {
+            CheckedProofMultiplicity::Literal(factor) => {
+                Some(CertificateMultiplicity::Literal(factor))
+            }
+            CheckedProofMultiplicity::Value { binding, .. } => {
+                let value = match state.values.get(&binding) {
+                    Some(value) => value.clone(),
+                    None => {
+                        let value = self.new_affine_binding_atom(binding)?;
+                        state.values.insert(binding, value.clone());
+                        value
                     }
                 };
-                (failure, index)
-            })?);
+                Some(CertificateMultiplicity::Value(value))
+            }
         }
-        sum.ok_or((SourceProofCertificateFailure::FormationCapacity, 0))
+    }
+
+    /// Brings the accumulated certificate sum back to one affine inequality
+    /// and checks the writer-selected residual against it.
+    ///
+    /// A nonlinear accumulation folds first: each degree-two monomial must be
+    /// the value image of an admitted exact product, which is the only way a
+    /// term-scaled premise can meet an affine target. Once folded, the residual
+    /// is the same one a bare-decimal certificate reaches, proved by the same
+    /// route; a monomial with no such product is a refusal, not a weaker check.
+    fn source_proof_certificate_residual(
+        &mut self,
+        target: &AffineInequality,
+        sum: &CertificateSum,
+        values: &AffineFlowState,
+        facts: &FactState,
+    ) -> Result<bool, SourceProofCertificateFailure> {
+        let folded;
+        let sum = match sum {
+            CertificateSum::Empty => {
+                return Err(SourceProofCertificateFailure::FormationCapacity);
+            }
+            CertificateSum::Affine(sum) => sum,
+            CertificateSum::Nonlinear(polynomial) => {
+                folded = self.folded_certificate_sum(polynomial)?;
+                &folded
+            }
+        };
+        self.source_proof_residual(target, sum, values, facts)
+    }
+
+    /// Folds a nonlinear certificate sum to the affine inequality it equals.
+    fn folded_certificate_sum(
+        &self,
+        polynomial: &CertificatePolynomial,
+    ) -> Result<AffineInequality, SourceProofCertificateFailure> {
+        let mut products = std::collections::BTreeMap::new();
+        for (product, operands) in &self.product_atoms {
+            // Several bindings can hold the same product; the least atom is
+            // one deterministic choice among equal values, and every one of
+            // them satisfies the target that names any of them.
+            products
+                .entry(*operands)
+                .and_modify(|chosen: &mut AffineTermId| *chosen = (*chosen).min(*product))
+                .or_insert(*product);
+        }
+        let folded = polynomial
+            .fold_products(&products)
+            .map_err(Self::certificate_fold_failure)?;
+        let mut check = AffineCheckState::new();
+        match folded.into_inequality(&mut check) {
+            Some(formed) => formed.map_err(Self::certificate_fold_failure),
+            None => Err(SourceProofCertificateFailure::NonlinearResidual),
+        }
+    }
+
+    fn certificate_fold_failure(error: PolynomialError) -> SourceProofCertificateFailure {
+        match error {
+            PolynomialError::ArithmeticOverflow => {
+                SourceProofCertificateFailure::ArithmeticOverflow
+            }
+            PolynomialError::DegreeExceeded | PolynomialError::LimitExceeded => {
+                SourceProofCertificateFailure::FormationCapacity
+            }
+        }
     }
 
     /// Checks the final writer-selected residual after every source proposition
@@ -10249,6 +10519,9 @@ impl Analyzer<'_, '_> {
                         &mut state.affine,
                     );
                 }
+                if judgment.reached {
+                    self.record_product_atom(*binding, value, &state.affine);
+                }
                 true
             }
             CheckedStatement::PropagateLet {
@@ -10394,12 +10667,23 @@ impl Analyzer<'_, '_> {
                         matches!(&written_use.source, CheckedProofUseSource::Named(_))
                     })
                     .collect::<Vec<_>>();
+                let multiplicities = proof
+                    .uses
+                    .iter()
+                    .map(|written_use| {
+                        self.certificate_multiplicity(written_use.multiplicity, &mut state.affine)
+                    })
+                    .collect::<Vec<_>>();
                 let certificate_premises = proof
                     .uses
                     .iter()
                     .zip(&premises)
-                    .map(|(written_use, premise)| {
-                        premise.clone().map(|premise| (premise, written_use.factor))
+                    .zip(&multiplicities)
+                    .map(|((_, premise), multiplicity)| {
+                        premise
+                            .clone()
+                            .zip(multiplicity.clone())
+                            .map(|(premise, multiplicity)| (premise, multiplicity))
                     })
                     .collect::<Option<Vec<_>>>();
 
@@ -10465,7 +10749,12 @@ impl Analyzer<'_, '_> {
                         certificate_sum.as_ref().and_then(|sum| sum.as_ref().ok()),
                     ) {
                         (Some(target), Some(sum)) => {
-                            self.source_proof_residual(target, sum, &state.affine, &state.facts)
+                            self.source_proof_certificate_residual(
+                                target,
+                                sum,
+                                &state.affine,
+                                &state.facts,
+                            )
                         }
                         _ => Err(SourceProofCertificateFailure::FormationCapacity),
                     }

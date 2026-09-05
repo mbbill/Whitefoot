@@ -234,7 +234,22 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // before lowering. No system operation, resource representation, release
 // row, result shape, entry form, or host ABI mapping changes, so the v0.46
 // mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.47";
+// v0.48 use-premise review (2026-09-05): both amendments are front-end. GRAM-4
+// gains the `use_premise` production and the fixed atom `times`, which changes
+// only how a certificate is written: `proof_use` is proof syntax, ENT-1 erases
+// it before lowering, and no operation, expression form, or type is reachable
+// through it. PRF-1's named multiplicity makes the certificate accumulator a
+// degree-two polynomial that must fold back to an affine inequality before the
+// residual forms; that polynomial exists only inside the check and no fact,
+// published conclusion, or invariant target can hold one, so nothing nonlinear
+// reaches the value graph. The amendment only admits programs previously
+// refused, and every operation those programs emit is a shape this mapping
+// already qualifies — a `let base = n * p;` still passes its own static OP-2
+// domain obligation before emission, which is the very fact the fold reads. No
+// system operation, resource representation, release row, result shape, entry
+// form, or host ABI mapping changes, so the v0.47 mapping carries forward
+// complete.
+const REVIEWED_FOR: &str = "v0.48";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

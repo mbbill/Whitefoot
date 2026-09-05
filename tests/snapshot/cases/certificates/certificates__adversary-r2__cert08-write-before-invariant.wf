@@ -2,7 +2,7 @@ fn write_then_use(first: own u8, first_limit: own u8, second: own u8, second_lim
   requires first <= first_limit;
   requires second <= second_limit;
 } {
-  doc "Expect REJECT: the premise fact first <= first_limit is killed by the `set first = replacement;` write that happens BEFORE the invariant's use (block cites it, so the fact is not live in the pre-invariant snapshot); concrete violation if wrongly accepted: first_limit=1_u8, second=1_u8, second_limit=1_u8, replacement=200_u8 makes scaled_bound's claim about the (stale) first-bound false for the new first value.";
+  doc "Expect REJECT: the premise fact first <= first_limit is killed by the `set first = replacement;` write that happens BEFORE the invariant's use block cites it, so the fact is not live in the pre-invariant snapshot; concrete violation if wrongly accepted: first_limit=1_u8, second=1_u8, second_limit=1_u8, replacement=200_u8 makes scaled_bound's claim about the (stale) first-bound false for the new first value.";
   invariant pair_bound: first + second <= first_limit + second_limit;
   set first = replacement;
   invariant scaled_bound: 3_u8 * first + 3_u8 * second <= 3_u8 * first_limit + 3_u8 * second_limit {

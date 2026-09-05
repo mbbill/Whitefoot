@@ -1,12 +1,8 @@
-# Kernel Specification v0.48
+# Kernel Specification v0.47
 
-Status: ACTIVE v0.48
+Status: ACTIVE v0.47
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (136 remain); grammar productions +1/-0 (85 remain); changed productions 1; unique fixed lowercase grammar atoms +1/-0 (55 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. [ENT-3] gains no source. [GRAM-4] and [PRF-1] are amended; no rule id is retired.
-This version gives a `use` one shape and one meaning. A `proof_use` cites exactly one premise — the new `use_premise` production, an invariant name or a delimited relation — and states its multiplicity as `N times` before it. The multiplicity was spelled with `*`, which was a category error: it is how many times a premise is added into the certificate sum, not a multiplication, and its right operand is a relation rather than a number. Three defects followed from that one pose. The form read as `n * bool`, which means nothing in the main language. A term multiplicity was unparseable, because after `use IDENT *` the token that separates a certificate step from an affine relation source is arbitrarily far away and these tables are strong-LL(2). And telling the two apart needed the stated space before `(` to carry a distinction the parser could not see. `times` removes all three, and the whitespace rule becomes the ordinary keyword-paren space a `for_stmt` header already states. Parentheses become mandatory on the relation premise for the same reason: the bare-when-unmultiplied split was the second scar from the same ambiguity, and a premise deserves one shape.
-The multiplicity may now name an unsigned integer value. Scaling a normalized premise by a value makes the accumulated sum a polynomial of degree at most two; every nonlinear monomial must fold to the value image an admitted exact multiplication [ENT-6] already bound, and a sum that keeps one rejects. Nothing else in this specification carries a nonlinear term: no fact, no published conclusion, no invariant target, no `affine_expr`. The unsigned restriction is what keeps the scaling step free of a new obligation, because nonnegativity then comes from the written type.
-Selection ground: evidence-selected, recorded in `research/investigations/binary-arithmetic/`. The measured case is a matrix multiply's inner index at a runtime stride, `n*p + j < n*k`, whose certificate is one term-scaled premise and one plain one and whose residual cancels to zero. The identical certificate at a literal stride already compiled, so what was missing was only that the multiplicity could not be a term. `times` is evidence-selected rather than chosen: it has zero uses as an identifier anywhere in the corpus, and four of its fifteen doc-string appearances are the corpus explaining this very construct in prose. The mandatory parentheses were measured against the whole corpus, where 61 of 124 `use` sites are bare relations, 29 are names, 29 are name-with-multiplicity, and 5 are relation-with-multiplicity. Prior selection ground for v0.47's named const, for v0.46's clause relation and measure atom, for v0.45's product interval, for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
 META-5 delta declaration: numbered rules +0/-0 (136 remain); grammar productions +0/-0 (84 remain); changed productions 0; unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. [ENT-3] gains no source. [INV-1] is amended; no rule id is retired.
 This version admits an integer-typed named const as an affine atom. It is already an [ENT-2] constant term — clause (c) names the mathematical value of an integer literal or of an integer-typed named const in the same breath — so the exclusion made one declared value mean a number everywhere except in the relations written about it, and a limit declared once had to have its digits rewritten inline in every invariant and every `use` that named it. The const folds to its value at formation, so nothing downstream sees a new atom kind and no derivation, image, kill, or join changes; a relation naming a const renders exactly as the same relation naming its literal. A const-generic parameter is symbolic rather than closed and is not this admission: an affine factor is a number, and a symbolic constant would need an atom of its own.
 Selection ground: evidence-selected, recorded in `research/investigations/binary-arithmetic/`. The accumulator sweep measured the cost as a writer-form defect rather than a proof gap: a named const in a header relation was an [INV-1] unresolved use, and binding it to a local turned the relation non-affine again, so the only surviving spelling duplicated the digits at every site. The check is that the two spellings now agree: the same loop written over `cap` and over `255_u64` produces the same required relation, byte for byte, including its rendering in a failure. Prior selection ground for v0.46's clause relation and measure atom, for v0.45's product interval, for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
@@ -85,7 +81,7 @@ An `invariant_stmt` ending in `;` renders completely on one line.
 An `invariant_stmt` carrying a proof block renders its introducer through `{` on one line, each `proof_use` on a following line at depth plus one, and `}` on its own line at the original depth.
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
-A `proof_use` whose `use_premise` is a delimited relation renders exactly one space before that premise's `(`, `use (a <= b);` and `use 3 times (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, exactly as the `for_stmt` space above does, while the relation's own affine parentheses keep the generic attachment.
+A `proof_use` whose multiplied source is a parenthesized relation renders exactly one space between its `*` and that `(`, `use 3 * (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, while the relation's own affine parentheses keep the generic attachment.
 A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
 A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 An ordinary `loop_stmt` without a parenthesized invariant header keeps the one-line introducer `loop` plus optional label through `{`.
@@ -199,7 +195,7 @@ Otherwise each byte in `(`, `)`, `{`, `}`, `[`, `]`, `<`, `>`, `,`, `:`, `;`, `.
 
 In source EBNF, each quoted fixed atom denotes the unique sequence of raw formed tokens whose concatenated bytes equal that atom.
 In particular, `"&uniq"` expands to the punctuation token `&` followed by the fixed lower-word token `uniq`, while `"->"`, `"=>"`, `".."`, `"=="`, `"!="`, `"<="`, `">="`, and `"::"` each denote one compound punctuation token.
-The quoted `"[0-9]+"` occurrences in the `const` production and the optional multiplicity position of `proof_use` share the grammar's sole pattern predicate: each denotes one numeric-form token whose complete bytes match `[0-9]+`, and neither is a fixed atom.
+The quoted `"[0-9]+"` occurrences in the `const` production and the optional multiplier position of `proof_use` share the grammar's sole pattern predicate: each denotes one numeric-form token whose complete bytes match `[0-9]+`, and neither is a fixed atom.
 `SELECT_2` and the two-token parser bound count the expanded raw formed tokens, not quoted-atom occurrences.
 An external terminal denotes one predicate over one formed token.
 
@@ -290,8 +286,8 @@ for_binding := IDENT "in" atom ".." atom
 header_invariant := "invariant" IDENT ":" affine_expr compare_op affine_expr
 invariant_stmt := "invariant" IDENT ":" affine_expr compare_op affine_expr
                   (";" | "{" proof_use+ "}")
-proof_use   := "use" (("[0-9]+" | IDENT) "times")? use_premise ";"
-use_premise := IDENT | "(" affine_expr compare_op affine_expr ")"
+proof_use   := "use" ( "[0-9]+" "*" (IDENT | "(" affine_expr compare_op affine_expr ")")
+             | IDENT | affine_expr compare_op affine_expr ) ";"
 affine_expr := affine_term (affine_add_op affine_term)*
 affine_term := affine_factor ("*" affine_factor)?
 affine_factor := literal | IDENT | "(" affine_expr ")"
@@ -460,7 +456,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | contract TYPEID | source `contract_decl` names and PRE-1 contract names, including `Int` and `Float` | the optional bound TYPEID of a type `gparam` and the contract TYPEID of `conform_decl` |
 | REGIONID | `region_params` and a named `region_stmt` | every written REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` [FORM-8] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
-| invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the IDENT premise alternative of `use_premise` |
+| invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the bare-IDENT source of `proof_use` |
 
 A source struct contributes one declaration event that adds one nominal-type entry and one constructor entry with the same spelling.
 Those entries do not collide because the grammar distinguishes a `type` role from a `construct` or `arm` role.
@@ -508,7 +504,7 @@ The resolved loop's structural identity, not a LABEL declaration, is the target 
 A `header_invariant` name is a proof-only declaration in a separate invariant-name domain.
 All names in one header must be distinct; none is visible in the header itself or before the loop, and after the complete header all become visible simultaneously throughout that loop body only.
 An `invariant_stmt` name becomes visible only after its complete statement through the remainder of its lexical block and nested blocks.
-An invariant name never denotes a runtime value, place, ownership object, label, or callable, and it is referenced only by the IDENT premise alternative of `use_premise` under [PRF-1].
+An invariant name never denotes a runtime value, place, ownership object, label, or callable, and it is referenced only by the bare-IDENT source alternative of `proof_use` under [PRF-1].
 Within the invariant-name domain a new live declaration may not shadow another live declaration, while disjoint expired scopes may reuse a spelling.
 Adding, removing, or changing a loop label cannot change any invariant binding.
 A named const becomes visible only after its complete `const_decl`, preserving CONST-2's explicitly-earlier rule.
@@ -1842,9 +1838,8 @@ For one lexical-use event the closed lookup rank is:
 | `fn_bind` right IDENT | FN-3 |
 | FORM-5 generic-numeric TYPEID suffix | FORM-5 |
 | affine IDENT in a `header_invariant` or `invariant_stmt` target | INV-1 |
-| affine IDENT in a relation-form `use_premise` | PRF-1 |
-| the named multiplicity IDENT of `proof_use` | PRF-1 |
-| IDENT premise of `use_premise`, an invariant name | INV-1 |
+| affine IDENT in a relation-form `proof_use` source | PRF-1 |
+| bare-IDENT `proof_use` invariant source | INV-1 |
 
 A successful non-LABEL lookup has exactly one visible admissible target; a successful LABEL lookup has exactly one enclosing target.
 A rank-1 payload is `(spelling, lexical_use_role, ordered_admissible_classes, ordered_nonempty_invisible_origins)`.
@@ -1870,7 +1865,7 @@ No result datum is visible in a contract definition, requirement, function body,
 The table-checked carriers are exactly the `program_kind` IDENT and both IDENTs of an `input_label`.
 Each produces one record for later [FN-7] table checking; none produces a declaration, lexical-use, dependent-declaration, or deferred-use record, none enters or queries a lexical name domain, and none participates in FORM-3's reservation inventory.
 The name of every `header_invariant` and `invariant_stmt` produces one proof-only invariant declaration record that uses TYPE-6's inventory and scope machinery; [INV-1] owns collision and lookup failure in this domain.
-An IDENT premise of `use_premise` produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling. A `proof_use`'s own IDENT is the named multiplicity and queries the value domain instead, so the two positions never compete for one spelling.
+A bare-IDENT `proof_use` source produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling.
 These records have no runtime declaration or value identity, but they participate in FORM-3 reservation and deterministic lexical resolution exactly at their stated scopes.
 The lexical generic suffix inside a deferred literal law argument additionally receives its ordinary lexical-use record; this X09/U18 pair is the only same-token overlap and produces two distinct role records.
 In an `arm` or `result_route`, the leading TYPEID first resolves globally to an enum variant.
@@ -3267,7 +3262,7 @@ Internal derivation metadata is only the diagnostic explanation of that acceptan
 A loop-header placement additionally creates induction obligations because control may enter that point from the preheader and from a backedge; a body placement creates only the one ordinary program-point obligation in its entering ProofContext.
 The spelling `invariant` therefore describes the writer-visible meaning in both positions, while the control-flow owner determines how many incoming-edge obligations exist.
 
-The `compare_op` of a `header_invariant`, an `invariant_stmt`, or a relation-form `use_premise` must be exactly `<=`, `<`, `>=`, or `>`; it selects a proof-domain relation over its two affine expressions and performs no [OP-1] operation, and `==` or `!=` in that position is a hard error citing INV-1 at the `compare_op` node.
+The `compare_op` of a `header_invariant`, an `invariant_stmt`, or a relation-form `proof_use` must be exactly `<=`, `<`, `>=`, or `>`; it selects a proof-domain relation over its two affine expressions and performs no [OP-1] operation, and `==` or `!=` in that position is a hard error citing INV-1 at the `compare_op` node.
 The checker normalizes `a <= b` to `a-b <= 0`, `a < b` to `a-b <= -1`, `a >= b` to `b-a <= 0`, and `a > b` to `b-a <= -1`.
 Equality, disequality, and every other Bool root are outside this version's invariant surface.
 
@@ -3334,18 +3329,18 @@ The second uses one explicit non-unit factor, which `AUTO` never guesses:
 
 ```wf
 invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
-  use (first <= first_limit);
-  use (second <= second_limit);
-  use (third <= third_limit);
+  use first <= first_limit;
+  use second <= second_limit;
+  use third <= third_limit;
 }
 
 invariant pair_bound: first + second <= first_limit + second_limit;
 invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
-  use 3 times pair_bound;
+  use 3 * pair_bound;
 }
 ```
 
-An IDENT premise of `use_premise` resolves in the invariant-name domain to the exact immutable normalized target published by that dominating invariant declaration; it is not reparsed using the current value bound to each source spelling.
+A bare-IDENT source in `proof_use` resolves in the invariant-name domain to the exact immutable normalized target published by that dominating invariant declaration; it is not reparsed using the current value bound to each source spelling.
 The checked reference stores `(concrete function instance, invariant declaration identity)` obtained from that lexical resolution, never the IDENT spelling or a later spelling lookup.
 Inside a loop body a header declaration identity denotes the currently activated arbitrary-iteration header theorem, not its base value images and not the still-unproved next-header target.
 A relation-form source in `proof_use` uses INV-1's exact affine formation and normalization rules, including substitution of every referenced local's current value image before canonical normalization. It is owned diagnostically by PRF-1 and must itself be proved by `AUTO`.
@@ -3353,26 +3348,15 @@ A named source must be in lexical scope and its published fact must be available
 Every use, named or written, is checked against the same snapshot immediately before the owning `invariant_stmt`.
 No use publishes a fact, and no earlier use can help prove a later use.
 
-A `proof_use` cites exactly one premise, its `use_premise`, and states how many times that premise is added into the certificate sum.
-A relation premise is always delimited, `use (a <= b);` and `use 3 times (a <= b);`, and a named premise never is [GRAM-4]; the delimiting parentheses are the grammar's own and are not an affine grouping.
-The optional `N times` prefix is that multiplicity, and it is written either as a bare decimal or as a name.
-A bare-decimal multiplicity is a proof-domain positive integer factor: its canonical spelling is one decimal with no leading zero, its value must be in `2..=i128::MAX`, and omission alone means one.
+The optional bare-decimal multiplier in `proof_use` is a proof-domain positive integer factor.
+A multiplied relation-form source writes its relation in parentheses, `use 3 * (a <= b);`, an unmultiplied relation-form source is bare, `use a <= b;`, and a named source is never parenthesized [GRAM-4]; those parentheses delimit the premise the factor scales and are the grammar's own, not an affine grouping.
+Its canonical spelling is one bare decimal with no leading zero, its value must be in `2..=i128::MAX`, and omission alone means one.
 It is neither a source integer literal nor a runtime type.
 Zero, an explicit one, a leading zero, an out-of-range factor, a negative or typed literal, and arithmetic overflow reject.
-A named multiplicity denotes the value image its declaration holds in the same entering ProofContext every premise is checked against.
-It must be a live own local, parameter, or integer `const` of an **unsigned** integer type; a signed type, a borrow, a moved local, and a non-integer type each reject.
-That restriction is what makes the scaling step sound without a further obligation: multiplying a normalized `p <= 0` by a value known nonnegative from its written type yields `m*p <= 0`, while a negative multiplier would reverse the premise.
-A runtime multiplicity of zero drops its premise and is not a rejection, because no written text asserts that it is nonzero.
-No two `proof_use` entries may resolve to the same normalized premise, regardless of multiplicity; their total scaling must be expressed by one multiplicity on one use.
+No two `proof_use` entries may resolve to the same normalized premise, regardless of factor; their total scaling must be expressed by one factor on one use.
 No global or subset-minimality judgment is performed on the remaining list.
 
-The checker forms S independently of premise admission by multiplying each normalized premise by its written multiplicity and adding the results in source order with checked `i128` arithmetic; acceptance additionally requires every source to be independently admitted.
-A bare-decimal multiplicity keeps that accumulation affine.
-A named multiplicity does not: scaling a normalized premise by a value introduces products of two value images, so the accumulation is a polynomial of degree at most two whose nonlinear monomials exist only while S is being formed.
-Before S is used, every such monomial is folded to the one value that already equals it: the value image bound by an admitted exact multiplication [ENT-6] of the same two operand images, where each operand image is itself a single value image and that multiplication's own [OP-2] domain discharged through an affine route.
-When several bindings hold that product, the least such value image is chosen; they are equal values, so the choice is a canonical form and not a search.
-S is that folded accumulation, and it must be an affine inequality: a certificate that leaves any nonlinear monomial unfolded rejects and proves nothing.
-Nothing else in this specification carries a nonlinear term — no fact, no published conclusion, no invariant target, and no `affine_expr` [INV-1] — so the accumulation above is the complete extent of degree two in the language.
+The checker forms S independently of premise admission by multiplying each normalized premise by its written positive factor and adding the results in source order with checked `i128` arithmetic; acceptance additionally requires every source to be independently admitted.
 Let S be that one accumulated inequality and T the owning invariant target.
 The certificate succeeds exactly when `DIRECT(T - S)` succeeds in the same entering ProofContext, or when `DIRECT(T - S/k)` succeeds there for one of the two integer-tightening factors k that [ENT-6] fixes for S and T.
 In particular, when S's coefficient vector is exactly k times T's, that tightened residual is constant and the target is admitted whenever the mathematical floor of S's bound divided by k is no greater than T's bound.
@@ -3388,7 +3372,7 @@ At most 4096 `proof_use` entries are admitted by one block; this is a source str
 Only the owning invariant target is published after a successful certificate.
 The `proof_use` list and all of its intermediate arithmetic are erased with the invariant and have no runtime semantics.
 An unresolved invariant name is the ordinary INV-1 lexical-scope failure and forms no certificate source.
-A resolved but unavailable named source, undischarged or malformed relation source, invalid multiplicity, duplicate source, arithmetic or structural overflow, unfolded nonlinear monomial in S, failed final `DIRECT` residual, or redundant block cites PRF-1 at the smallest owning source node and publishes no target.
+A resolved but unavailable named source, undischarged or malformed relation source, invalid factor, duplicate source, arithmetic or structural overflow, failed final `DIRECT` residual, or redundant block cites PRF-1 at the smallest owning source node and publishes no target.
 
 ## 19. Worked example (normative bytes)
 

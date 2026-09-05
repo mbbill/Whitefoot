@@ -2,7 +2,7 @@ fn use_then_write(first: own u8, first_limit: own u8, second: own u8, second_lim
   requires first <= first_limit;
   requires second <= second_limit;
 } {
-  doc "Expect ACCEPT: the use (block cites pair_bound and proves scaled_bound BEFORE the write to `first`); the later `set first = replacement;` must not retroactively invalidate the already-proven invariant.";
+  doc "Expect ACCEPT: the use block cites pair_bound and proves scaled_bound BEFORE the write to `first`; the later `set first = replacement;` must not retroactively invalidate the already-proven invariant.";
   invariant pair_bound: first + second <= first_limit + second_limit;
   invariant scaled_bound: 3_u8 * first + 3_u8 * second <= 3_u8 * first_limit + 3_u8 * second_limit {
     use 3 times pair_bound;

@@ -2871,3 +2871,65 @@ ACTIVE-SPEC: v0.46 b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3c
   exit 0: a header relation names a declared limit instead of repeating its
   digits. Rule coverage is 136/136 before and after.
 ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5 b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65
+
+## 2026-09-05 — merge-time approval content: activate v0.48 (a `use` cites one premise and states its multiplicity as `N times`; the multiplicity may name an unsigned value; no rule id added or retired, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.48 at exact SHA-256
+  `742e7d4e3d792f4a743e30d239999d9a06096ff29638f069b6f4a0cd94245d63`.
+  It supersedes active v0.47 at SHA-256
+  `8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.47.md`. [GRAM-4] gains the `use_premise` production and
+  the fixed lowercase atom `times`, so a `proof_use` is `"use" (("[0-9]+" |
+  IDENT) "times")? use_premise ";"` and a relation premise is always
+  delimited. [PRF-1] admits a named multiplicity of unsigned integer type: the
+  accumulated certificate sum is then a polynomial of degree at most two, and
+  every nonlinear monomial must fold to the value image an admitted exact
+  multiplication [ENT-6] already bound before the residual is formed. A sum
+  that keeps one rejects. No numbered rule is added or retired; grammar
+  productions go 84 to 85, unique fixed lowercase atoms 54 to 55, and the
+  [FORM-2] whitespace rule that told a multiplied premise from an affine
+  relation is replaced by the ordinary keyword-paren space a `for_stmt` header
+  already states. [ENT-3] gains no source.
+- SELECTION GROUND: evidence-selected, recorded in
+  `research/investigations/binary-arithmetic/`, whose `PROOF-SURFACE.md`
+  carries the design and its measured alternatives. The capability is a matrix
+  multiply's inner index at a runtime stride, `n*p + j < n*k`: its certificate
+  is one term-scaled premise and one plain one, and the residual cancels to
+  zero. The same certificate at a literal stride already compiled, so the only
+  missing piece was that the multiplicity could not be a term. `times` is
+  evidence-selected rather than chosen — zero identifier uses in the corpus,
+  and four of its fifteen doc-string appearances are the corpus explaining
+  this very construct in prose. The mandatory parentheses were measured
+  against all 124 `use` sites in the corpus: 61 bare relations, 29 names, 29
+  name-with-multiplicity, 5 relation-with-multiplicity.
+- CONFORMANCE BOUNDARY: this merge adds four conformance cases and modifies
+  eleven; it deletes and renames none, and changes no manifest schema,
+  adapter, runner, or collection wiring.
+  ADDED `tests/conformance/cases/prf1-pos-term-multiplicity.wf`, manifest id
+  `prf1-pos-term-multiplicity`, rules PRF-1, ENT-6, ENT-3, expect run exit 0:
+  the matrix inner index at a runtime stride.
+  ADDED `tests/conformance/cases/prf1-neg-signed-multiplicity.wf`, manifest id
+  `prf1-neg-signed-multiplicity`, rules PRF-1, expect reject PRF-1: the same
+  certificate over signed operands.
+  ADDED `tests/conformance/cases/prf1-neg-unfolded-nonlinear-sum.wf`, manifest
+  id `prf1-neg-unfolded-nonlinear-sum`, rules PRF-1, expect reject PRF-1: a
+  monomial no admitted multiplication in scope equals.
+  ADDED `tests/conformance/cases/gram4-neg-bare-relation-premise.wf`, manifest
+  id `gram4-neg-bare-relation-premise`, rules GRAM-4, PRF-1, expect reject
+  GRAM-4: an undelimited relation premise.
+  MODIFIED, all to the new spelling with their recorded verdicts unchanged:
+  `gram4-neg-multiplied-use-relation-bare.wf` (still reject GRAM-4; its bare
+  relation is now written after `times`, and its manifest doc is restated),
+  `prf1-neg-explicit-factor-one.wf`, `prf1-neg-fact-killed-by-write.wf`,
+  `prf1-neg-inexact-combination.wf`, `prf1-neg-redundant-use-block.wf`,
+  `prf1-neg-unproved-premise.wf`, `prf1-pos-explicit-affine-proof.wf`,
+  `prf1-pos-explicit-factor.wf`, `prf1-pos-integer-tightening-midpoint.wf`,
+  `prf1-pos-multiplied-relation-use.wf` (manifest doc restated), and
+  `reject-gram11-unnamed-call.wf` (a doc-string repair only). Rule coverage is
+  136/136 before and after.
+ACTIVE-SPEC: v0.48 742e7d4e3d792f4a743e30d239999d9a06096ff29638f069b6f4a0cd94245d63 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5

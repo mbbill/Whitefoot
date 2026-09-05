@@ -4,7 +4,7 @@ The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
 are the chain tail in `governance/APPROVALS.md`; each superseded version is
-archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.47 amendments
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.48 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -14,7 +14,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 through v0.47 amendments below and the active
+the v0.40 through v0.48 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -23,6 +23,10 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
+**v0.48 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.48 adds and retires no rule and moves no row's status. It
+amends [GRAM-4] and [PRF-1] in place, so every derivation status carries over
+from v0.47.)
 **v0.47 statistics: 81 derived · 55 existence-only · 0 underived**
 (136 rules: v0.47 adds and retires no rule and moves no row's status. It
 amends [INV-1] in place, so every derivation status carries over from v0.46.)
@@ -1962,3 +1966,21 @@ moves no row's status.
 | Amendment | Statement | Status | Derivation | Open |
 | --- | --- | --- | --- | --- |
 | INV-1 named const atom | An integer-typed named const is an affine atom, folded at formation to the one closed value it declares; a const-generic parameter is symbolic and is not this admission | 🟢 derived | Derived from R3 and from [ENT-2] clause (c), which already names the mathematical value of an integer literal and of an integer-typed named const in the same breath. The const was therefore a constant term everywhere except in the relations written about it, which made one value have two spellings — the declared name in the body, the repeated digits in every invariant and every `use` — and R3 admits one way to say anything. W1 supplies the cost: the surviving spelling was the worse one, since a limit declared once had to be maintained in every site that reasoned about it, and a stale digit is a silent divergence between what the code enforces and what the proof states. Folding at formation is what keeps the admission free of consequence: no atom kind, image, kill, or join changes, and the same relation over a const and over its literal is byte-identical, including in a failure's rendered residual. The const-generic exclusion is the same sentence read from the other side: an affine factor is a number, and a symbolic constant has no number to fold to. | Registered: a const-generic parameter would need an atom of its own with the [ENT-2] symbolic-constant identity carried into the affine domain; no corpus program has asked for it. |
+
+## v0.48 amendment — a use cites one premise (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.48, at
+SHA-256 `742e7d4e3d792f4a743e30d239999d9a06096ff29638f069b6f4a0cd94245d63`,
+superseding v0.47
+(`8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`), whose
+bytes are archived at `spec/kernel-spec-v0.47.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [GRAM-4] and [PRF-1]
+in place and moves no row's status.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| GRAM-4 use premise | A `proof_use` cites one `use_premise` — an invariant name or a delimited relation — optionally prefixed by `N times`; the multiplicity is written as a bare decimal or a name | 🟢 derived | Derived from R3 and from what the form denotes. The multiplicity is how many times a premise is added into the certificate sum, and spelling it `*` claimed it was a multiplication whose right operand is a relation, which is not a thing the language has. Three defects followed from the one pose and each is removed by naming it: the form read as `n * bool`; a term multiplicity was undecidable in strong-LL(2) because after `use IDENT *` the token separating a certificate step from an affine relation source is arbitrarily far away; and the [FORM-2] stated space before `(` existed to carry a distinction the parser could not see, so the rendering rule was load-bearing for meaning. `times` is a fixed atom, so it can never be the second token of a premise name or of a relation, which decides every form within two tokens of `use`. Mandatory parentheses on the relation premise are the same sentence: the bare-when-unmultiplied split was a second consequence of the ambiguity, and R3 admits one way to say a premise. META-5 counts the new production and the new atom, and R3 selects the spelling by evidence under W1 — `times` has zero identifier uses in the corpus and the corpus's own doc strings already reach for the word to describe this construct. | Registered: `times` still reads as an operator binding looser than `*`, which is a pose the parentheses reduce but do not remove; `use 3 times x;` where `x` is a value and `use a + 3 times (b <= c);` are caught after parsing rather than by the grammar. |
+| PRF-1 named multiplicity | A multiplicity may name an unsigned integer value; the certificate sum is then a degree-two polynomial whose nonlinear monomials must fold to admitted exact products before the residual forms | 🟢 derived | Derived from the verify-never-search principle and from R1. Scaling a written premise by a value is still verification: the writer names the premise and the multiplier, and the checker multiplies and adds, so acceptance stays a function of the written text and the [ENT-1] monotonicity obligation is discharged structurally. Two restrictions keep the addition free of anything new. The unsigned type is what makes the step sound without an obligation, because `m*p <= 0` follows from `p <= 0` exactly when `m` is nonnegative, and taking that from the written type keeps it structural rather than proved. The fold is what keeps the polynomial transient: a monomial is replaced by the value image an admitted exact multiplication already bound, which is an equality substitution, and folding the sum rather than expanding the target means the substitution only ever removes monomials, so a residual provable before the fold stays provable. What comes out is an ordinary affine inequality, so the residual, its integer tightenings, and the L0 route are the same ones a bare-decimal certificate uses, and no fact, published conclusion, invariant target, or `affine_expr` ever carries a nonlinear term. R1 supplies the necessity: a matrix multiply's inner index at a runtime stride is unwritable without it, and the identical certificate at a literal stride already compiled. | Registered: the fold needs each operand image to be a single value image, so a product of a derived expression such as `(n + 1) * p` records nothing and the writer must bind the sum first; and a product admitted through the finite L0 route rather than an affine one is not recorded either. Neither restriction has been asked for by a corpus program. |
