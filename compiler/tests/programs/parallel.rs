@@ -248,6 +248,7 @@ const CORPUS_UNITS: &[&[&str]] = &[
     &["dir_walk.wf"],
     &["feedback_controller.wf"],
     &["fir_filter.wf"],
+    &["fixed_run_library.wf"],
     &["generic_instances.wf"],
     &["generic_nominals.wf"],
     &["geometry_vectors.wf"],
