@@ -15,7 +15,7 @@ use super::super::super::model::{
     CheckedMode, CheckedProofUse, CheckedProofUseSource, CheckedSourceProof, CheckedStatement,
     CheckedType, CheckedValue, IntegerType,
 };
-use super::super::{CheckStop, Checker, EffectSet, LocalBinding};
+use super::super::{CheckStop, Checker, EffectSet, FunctionSignature, LocalBinding};
 use super::StatementResult;
 
 /// The semantic owner of the shared proof-only affine expression grammar.
@@ -47,7 +47,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
     ) -> Result<StatementResult, CheckStop> {
         let declaration = self.declaration_at(node, crate::DeclarationRole::Invariant)?;
         let identifiers = self.tree.direct_identifiers(node)?;
@@ -66,7 +67,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
             bindings,
             &allowed_values,
-            substitution,
+            function,
+            loop_depth,
             AffineProofOwner::InvariantTarget,
         )?;
         let premise_nodes = self.tree.children_with(node, Production::ProofUse)?;
@@ -85,7 +87,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                     premise_node,
                     bindings,
                     &allowed_values,
-                    substitution,
+                    function,
+                    loop_depth,
                     AffineProofOwner::ProofUse,
                 )?)
             } else {
@@ -219,12 +222,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<CheckedAffineRelation, CheckStop> {
         let normalization = self.ordered_relation_normalization(owner, node)?;
         let mut relation =
-            self.form_affine_relation(node, bindings, allowed_values, substitution, owner)?;
+            self.form_affine_relation(node, bindings, allowed_values, function, loop_depth, owner)?;
         if normalization.reverse {
             std::mem::swap(&mut relation.left, &mut relation.right);
         }
@@ -238,7 +242,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<CheckedAffineRelation, CheckStop> {
         let expressions = self.tree.children_with(node, Production::AffineExpr)?;
@@ -249,14 +254,16 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             *left_node,
             bindings,
             allowed_values,
-            substitution,
+            function,
+            loop_depth,
             owner,
         )?;
         let right = self.check_affine_expression(
             *right_node,
             bindings,
             allowed_values,
-            substitution,
+            function,
+            loop_depth,
             owner,
         )?;
         Ok(CheckedAffineRelation {
@@ -313,7 +320,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<CheckedAffineExpression, CheckStop> {
         let children = self.tree.children(node)?;
@@ -324,7 +332,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         }
         let mut expression =
-            self.check_affine_term(first, bindings, allowed_values, substitution, owner)?;
+            self.check_affine_term(first, bindings, allowed_values, function, loop_depth, owner)?;
         let mut cursor = 1;
         while cursor < children.len() {
             let Some(operator) = children.get(cursor).copied() else {
@@ -338,8 +346,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             }
-            let right =
-                self.check_affine_term(term, bindings, allowed_values, substitution, owner)?;
+            let right = self.check_affine_term(
+                term,
+                bindings,
+                allowed_values,
+                function,
+                loop_depth,
+                owner,
+            )?;
             let [operator_token] = self.tree.direct_token_indices(operator)? else {
                 return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
             };
@@ -366,27 +380,37 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<CheckedAffineExpression, CheckStop> {
         let factors = self.tree.children_with(node, Production::AffineFactor)?;
         match factors.as_slice() {
             [factor] => self
-                .check_affine_factor(*factor, bindings, allowed_values, substitution, owner)
+                .check_affine_factor(
+                    *factor,
+                    bindings,
+                    allowed_values,
+                    function,
+                    loop_depth,
+                    owner,
+                )
                 .map(|(expression, _)| expression),
             [left_node, right_node] => {
                 let (left, left_literal) = self.check_affine_factor(
                     *left_node,
                     bindings,
                     allowed_values,
-                    substitution,
+                    function,
+                    loop_depth,
                     owner,
                 )?;
                 let (right, right_literal) = self.check_affine_factor(
                     *right_node,
                     bindings,
                     allowed_values,
-                    substitution,
+                    function,
+                    loop_depth,
                     owner,
                 )?;
                 let (constant, constant_ty, value) = match (left_literal, right_literal) {
@@ -419,7 +443,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<(CheckedAffineExpression, Option<(i128, IntegerType)>), CheckStop> {
         // [GRAM-4, MSR-5] the factor production is shared with a contract
@@ -429,14 +454,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // and a `construct`, is a rule rejection at this factor and not a
         // parse rejection.
         if let Some(atom) = self.tree.first_child_with(node, Production::Atom)? {
-            return self.check_affine_atom(
-                node,
-                atom,
-                bindings,
-                allowed_values,
-                substitution,
-                owner,
-            );
+            return self.check_affine_atom(node, atom, bindings, allowed_values, function, owner);
         }
         if self
             .tree
@@ -456,7 +474,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // resolved place and the measure row and stops there: no loan access,
         // no effect, and no goal.
         if let Some(call) = self.tree.first_child_with(node, Production::Call)? {
-            let expression = self.check_affine_measure(call, bindings, allowed_values, owner)?;
+            let expression = self.check_affine_measure(
+                call,
+                bindings,
+                allowed_values,
+                function,
+                loop_depth,
+                owner,
+            )?;
             return Ok((
                 CheckedAffineExpression {
                     node_path: self.tree.path(node)?.clone(),
@@ -470,8 +495,14 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             .tree
             .first_child_with(node, Production::AffineExpr)?
             .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-        let expression =
-            self.check_affine_expression(nested, bindings, allowed_values, substitution, owner)?;
+        let expression = self.check_affine_expression(
+            nested,
+            bindings,
+            allowed_values,
+            function,
+            loop_depth,
+            owner,
+        )?;
         Ok((expression, None))
     }
 
@@ -483,7 +514,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         atom: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
         owner: AffineProofOwner,
     ) -> Result<(CheckedAffineExpression, Option<(i128, IntegerType)>), CheckStop> {
         if let Some(literal) = self
@@ -570,7 +601,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // symbolic instance keeps the declaration-anchored constant term.
         if class == DeclarationClass::ConstGeneric {
             let ty = self.const_generic_type(declaration)?;
-            let kind = match substitution.const_argument(declaration) {
+            let kind = match function.substitution.const_argument(declaration) {
                 Some(crate::semantic::CheckedConst::Value(value)) => {
                     CheckedAffineExpressionKind::Constant {
                         value: i128::from(value),
@@ -650,6 +681,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         call: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
+        function: &FunctionSignature,
+        loop_depth: usize,
         owner: AffineProofOwner,
     ) -> Result<CheckedExpression, CheckStop> {
         let callee = self
@@ -684,15 +717,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         self.reject_named_operation_arguments(call, spelling)?;
         self.reject_written_operation_type_argument(call)?;
         let atoms = self.operation_atoms(call, 1)?;
-        // [INV-1] an affine factor is checked without the enclosing instance
-        // in hand, so a subscript inside the measured place keeps its own
-        // unsupported report rather than being formed here from a different
-        // premise set.
-        let place = self.check_indexed_atom_place(
-            atoms[0],
-            bindings,
-            super::super::expressions::flat_storage::PlaceOffsetContext::ProofOnly,
-        )?;
+        // [INV-1, MSR-1] a subscript inside the measured place is an ordinary
+        // [OP-4] occurrence and its offset an ordinary operand, so it is
+        // formed under the enclosing concrete instance and at the enclosing
+        // loop depth — the same premise set the same place has anywhere else.
+        let place = self.check_indexed_atom_place(atoms[0], bindings, function, loop_depth)?;
         // [INV-1] the place resolves in the same context an IDENT does, and
         // its root is one of the values that context admits.
         if let Some(declaration) = place.root_declaration()

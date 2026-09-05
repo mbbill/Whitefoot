@@ -7209,6 +7209,51 @@ impl Analyzer<'_, '_> {
         self.measure_term(measure, base, measured, array_length)
     }
 
+    /// [OP-4, MSR-4, INV-1] the same obligation, over the measure places one
+    /// written affine relation names.
+    ///
+    /// An invariant evaluates nothing and reads no storage, but
+    /// `len_of(table[i])` is a term there on exactly the terms it is one at a
+    /// measure former the program executes: a measure over a place whose
+    /// subscripts are not all discharged is no term, so the relation names a
+    /// slot the run has or it names nothing. The judgment is made once, at
+    /// the point the relation is written — a `loop`'s header invariant in its
+    /// entering context, a local `invariant` at its own statement.
+    fn judge_affine_relation_subscripts(
+        &mut self,
+        relation: &CheckedAffineRelation,
+        states: &mut ProofFlowState,
+    ) {
+        for side in [&relation.left, &relation.right] {
+            self.judge_affine_expression_subscripts(side, states);
+        }
+    }
+
+    fn judge_affine_expression_subscripts(
+        &mut self,
+        expression: &CheckedAffineExpression,
+        states: &mut ProofFlowState,
+    ) {
+        match &expression.kind {
+            CheckedAffineExpressionKind::Constant { .. }
+            | CheckedAffineExpressionKind::Local { .. }
+            | CheckedAffineExpressionKind::ConstGeneric { .. } => {}
+            CheckedAffineExpressionKind::Measure(measure) => {
+                if let CheckedExpression::ContainerMeasure { root, .. } = measure.as_ref() {
+                    self.judge_place_subscripts(root, states);
+                }
+            }
+            CheckedAffineExpressionKind::Add(left, right)
+            | CheckedAffineExpressionKind::Subtract(left, right) => {
+                self.judge_affine_expression_subscripts(left, states);
+                self.judge_affine_expression_subscripts(right, states);
+            }
+            CheckedAffineExpressionKind::MultiplyByConstant { value, .. } => {
+                self.judge_affine_expression_subscripts(value, states);
+            }
+        }
+    }
+
     /// [OP-4, MSR-4] the obligation each subscript occurring *inside* a
     /// measured place owes, judged where the place is formed.
     ///
@@ -11776,6 +11821,12 @@ impl Analyzer<'_, '_> {
                 true
             }
             CheckedStatement::Proof(proof) => {
+                self.judge_affine_relation_subscripts(&proof.target, state);
+                for written_use in &proof.uses {
+                    if let CheckedProofUseSource::Relation(relation) = &written_use.source {
+                        self.judge_affine_relation_subscripts(relation, state);
+                    }
+                }
                 let source_ordinal = u32::try_from(self.source_proofs.len())
                     .expect("local invariant count exceeds the u32 identity space");
                 let l0_premises = proof
@@ -12148,6 +12199,9 @@ impl Analyzer<'_, '_> {
                 body,
                 ..
             } => {
+                for invariant in invariants {
+                    self.judge_affine_relation_subscripts(&invariant.relation, state);
+                }
                 let base = self.prove_loop_invariant_bases(invariants, state);
                 let base_batch = base.iter().all(|proved| *proved);
 
@@ -12292,6 +12346,9 @@ impl Analyzer<'_, '_> {
                         == ProofDisposition::Proved
                 });
 
+                for invariant in invariants {
+                    self.judge_affine_relation_subscripts(&invariant.relation, state);
+                }
                 let base = self.prove_loop_invariant_bases(invariants, state);
                 let base_batch = base.iter().all(|proved| *proved);
 

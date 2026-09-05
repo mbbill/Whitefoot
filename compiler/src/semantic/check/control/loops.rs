@@ -35,7 +35,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         loop_id: CheckedLoopId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
     ) -> Result<Vec<CheckedLoopInvariant>, CheckStop> {
         let mut names = HashSet::new();
         let mut invariants = Vec::with_capacity(nodes.len());
@@ -45,7 +46,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 loop_id,
                 bindings,
                 allowed_values,
-                substitution,
+                function,
+                loop_depth,
                 &mut names,
             )?);
         }
@@ -137,7 +139,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             &body_bindings,
             &allowed_invariant_values,
-            &function.substitution,
+            function,
+            scope.loops.len(),
         )?;
         let mut checked = self.check_block(
             function,
@@ -267,13 +270,15 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn check_loop_invariant(
         &self,
         node: NodeId,
         loop_id: CheckedLoopId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
         allowed_values: &HashSet<DeclarationId>,
-        substitution: &super::super::generics::GenericSubstitution,
+        function: &FunctionSignature,
+        loop_depth: usize,
         names: &mut HashSet<String>,
     ) -> Result<CheckedLoopInvariant, CheckStop> {
         let declaration = self.declaration_at(node, DeclarationRole::Invariant)?;
@@ -295,7 +300,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             node,
             bindings,
             allowed_values,
-            substitution,
+            function,
+            loop_depth,
             AffineProofOwner::InvariantTarget,
         )?;
 
@@ -484,7 +490,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             id,
             &body_bindings,
             &allowed_invariant_values,
-            &function.substitution,
+            function,
+            scope.loops.len(),
         )?;
         let mut checked = self.check_block(
             function,

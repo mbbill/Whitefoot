@@ -118,14 +118,7 @@ inside the `region` block whose region it takes",
         self.check_direct_slice_borrow_lifetime(function, region, owner, borrow, loop_depth)?;
         let suffixes = self.tree.children_with(place_node, Production::Psuffix)?;
         let indexed = self.check_indexed_place(
-            place_node,
-            bindings,
-            &suffixes,
-            place_node,
-            super::PlaceOffsetContext::Executable {
-                function,
-                loop_depth,
-            },
+            place_node, bindings, &suffixes, place_node, function, loop_depth,
         )?;
         // [OP-2] the element is the viewed place's, and [STOR-4] still confines
         // a slice to flat elements — now judged on the derived one.

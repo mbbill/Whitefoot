@@ -77,23 +77,6 @@ pub(in crate::semantic::check) enum CheckedIndexedPlace {
     Container(CheckedContainerPlace),
 }
 
-/// What a place-forming judgment knows about the offsets it may meet
-/// [MSR-1, OP-4].
-///
-/// A subscript inside a measured place is an ordinary [OP-4] occurrence and
-/// its offset is an ordinary operand, so forming one needs the enclosing
-/// concrete instance the operand is checked under. The affine-proof reader
-/// [INV-1] has no such instance, so a subscript there keeps its own explicit
-/// unsupported report; nothing is admitted from a different premise set.
-#[derive(Clone, Copy)]
-pub(in crate::semantic::check) enum PlaceOffsetContext<'signature> {
-    Executable {
-        function: &'signature FunctionSignature,
-        loop_depth: usize,
-    },
-    ProofOnly,
-}
-
 #[derive(Clone)]
 pub(in crate::semantic::check) struct CheckedContainerPlace {
     root: CheckedContainerRoot,
@@ -683,14 +666,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         // [OP-2] a measure former's selected element type is the base place's
         // own; the result is `own u64` for every row, so nothing else consults
         // it.
-        let place = self.check_indexed_atom_place(
-            atoms[0],
-            bindings,
-            PlaceOffsetContext::Executable {
-                function: _function,
-                loop_depth: _loop_depth,
-            },
-        )?;
+        let place = self.check_indexed_atom_place(atoms[0], bindings, _function, _loop_depth)?;
         let mut effects = EffectSet::NONE;
         match &place {
             CheckedIndexedPlace::Array(_) => {}
@@ -875,10 +851,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             &suffixes[..subscript],
             suffix,
-            PlaceOffsetContext::Executable {
-                function,
-                loop_depth: options.loop_depth,
-            },
+            function,
+            options.loop_depth,
         )?;
         // [LIV-2, BLK-1] the one affine element read a subscript admits: a
         // `move P[i]` in the right-hand side of the `set` whose own target is
@@ -1136,10 +1110,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             bindings,
             &suffixes[..subscript],
             suffix,
-            PlaceOffsetContext::Executable {
-                function,
-                loop_depth,
-            },
+            function,
+            loop_depth,
         )?;
         match &indexed {
             CheckedIndexedPlace::Array(array) => {
@@ -1349,7 +1321,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         suffixes: &[NodeId],
         mut ty: CheckedType,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        context: PlaceOffsetContext<'_>,
+        function: &FunctionSignature,
+        loop_depth: usize,
     ) -> Result<(Vec<CheckedPlaceStep>, CheckedType, CarriedOperands), CheckStop> {
         let mut path = Vec::new();
         let mut carried = CarriedOperands::default();
@@ -1360,13 +1333,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 path.extend(fields.into_iter().map(CheckedPlaceStep::Field));
                 ty = selected;
                 continue;
-            };
-            let PlaceOffsetContext::Executable {
-                function,
-                loop_depth,
-            } = context
-            else {
-                return self.unsupported(UnsupportedSemanticFeature::CompositeValues, suffix);
             };
             // [OP-4] a subscript inside a place indexes one of the two runs:
             // every other indexable base has a flat element [TYPE-2], which
@@ -1449,7 +1415,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         &self,
         node: NodeId,
         bindings: &HashMap<DeclarationId, LocalBinding>,
-        context: PlaceOffsetContext<'_>,
+        function: &FunctionSignature,
+        loop_depth: usize,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         if self.has_fixed(node, FixedTerminal::Move)? {
             return self.issue_node(
@@ -1475,7 +1442,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 )
             })?;
         let suffixes = self.tree.children_with(place, Production::Psuffix)?;
-        self.check_indexed_place(place, bindings, &suffixes, place, context)
+        self.check_indexed_place(place, bindings, &suffixes, place, function, loop_depth)
     }
 
     /// Checks "pbase plus the given suffix run" as one place of indexable
@@ -1488,7 +1455,8 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         bindings: &HashMap<DeclarationId, LocalBinding>,
         base_suffixes: &[NodeId],
         anchor: NodeId,
-        context: PlaceOffsetContext<'_>,
+        function: &FunctionSignature,
+        loop_depth: usize,
     ) -> Result<CheckedIndexedPlace, CheckStop> {
         let pbase = self
             .tree
@@ -1519,8 +1487,13 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                let (path, ty, offsets) =
-                    self.resolve_measured_path(base_suffixes, local.ty, bindings, context)?;
+                let (path, ty, offsets) = self.resolve_measured_path(
+                    base_suffixes,
+                    local.ty,
+                    bindings,
+                    function,
+                    loop_depth,
+                )?;
                 // A borrow holder written where its indexable referent is
                 // required is the [TYPE-7] implicit read; a borrow of
                 // something no `index` could reach falls through to the
