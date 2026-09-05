@@ -438,8 +438,7 @@ impl LocalBinding {
     /// value's liveness — and therefore its loan's extent — begins.
     fn hold_slice_loans(&mut self, holder: DeclarationId, places: &[ResolvedPlace]) {
         for loan in &mut self.slice_loans {
-            if places.iter().any(|place| *place == loan.place)
-                && !loan.descriptors.contains(&holder)
+            if places.contains(&loan.place) && !loan.descriptors.contains(&holder)
             {
                 loan.descriptors.push(holder);
             }
