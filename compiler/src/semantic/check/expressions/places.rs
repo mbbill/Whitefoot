@@ -79,8 +79,17 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             )?;
         }
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&place.resolved, bindings)? {
-            effects.add_read(path);
+        // [EFF-1] a loan-bearing parameter's effect path names the viewed
+        // backing state and not the descriptor, and merely moving, returning
+        // or structurally repacking that value observes none of it: a read
+        // *through* the view is the subscript's own attribution. Before the
+        // shared view became copy this arm was reached only by a consume,
+        // which exhibited the same wrong read; the copy spelling is what made
+        // an accepted program declare it.
+        if !Self::checked_type_is_loan_bearing(place.ty) {
+            for path in self.effect_paths_for_place(&place.resolved, bindings)? {
+                effects.add_read(path);
+            }
         }
         let (mode, borrow, holder) = if copy {
             (CheckedMode::Own, None, None)
@@ -197,8 +206,12 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             use_node,
         )?;
         let mut effects = EffectSet::NONE;
-        for path in self.effect_paths_for_place(&resolved, bindings)? {
-            effects.add_read(path);
+        // [EFF-1] as above: the descriptor read through a holder observes the
+        // viewed state no more than a direct one does.
+        if !Self::checked_type_is_loan_bearing(ty) {
+            for path in self.effect_paths_for_place(&resolved, bindings)? {
+                effects.add_read(path);
+            }
         }
         let expression = if !fields.is_empty() {
             CheckedExpression::Project {

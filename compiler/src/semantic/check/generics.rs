@@ -861,6 +861,33 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let [first_result, ..] = results.as_slice() else {
             return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
         };
+        // [VIEW-6] two results of the same view type at the same formal
+        // region are refused at the second `result_binding`: [FN-1]'s ceiling
+        // is stated over the type and the region, so each of them would carry
+        // every origin the other does and a demux written with one region
+        // would return views that all alias all of its inputs. The type's
+        // exact identity carries the strength, the region and the element
+        // [TYPE-5], so equality is the whole judgment.
+        //
+        // The whole list is judged before any per-ordinal capability refusal
+        // below, because a source-language rejection is never replaced by a
+        // compiler-capability stop.
+        for (ordinal, entry) in results.iter().enumerate() {
+            if matches!(entry.ty, super::super::model::CheckedType::Slice { .. })
+                && results[..ordinal]
+                    .iter()
+                    .any(|earlier| earlier.ty == entry.ty)
+            {
+                return self.issue_node(
+                    SemanticRule::View6,
+                    entry.rtype,
+                    SemanticIssueKind::SameRegionViewResults {
+                        result_type: self.checked_type_name(entry.ty)?,
+                        mechanical_fix: "give each result its own formal region",
+                    },
+                );
+            }
+        }
         let single = results.len() == 1;
         let rtype = first_result.rtype;
         let (result_mode, result, result_list) = if single {
@@ -878,11 +905,11 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         },
                     );
                 }
-                // A `slice` ordinal needs [FN-1]'s parameter-derived
-                // return-origin ceiling stated over an ordinal rather than
-                // over the one written result. That derivation is not built
-                // yet, so the ordinal is an explicit capability refusal here
-                // instead of an unchecked escape.
+                // A view ordinal at a region no other ordinal shares needs
+                // [FN-1]'s parameter-derived return-origin ceiling stated over
+                // an ordinal rather than over the one written result. That
+                // derivation is not built yet, so the ordinal is an explicit
+                // capability refusal here instead of an unchecked escape.
                 if matches!(entry.ty, super::super::model::CheckedType::Slice { .. }) {
                     return self
                         .unsupported(UnsupportedSemanticFeature::RegionsAndBorrows, entry.rtype);

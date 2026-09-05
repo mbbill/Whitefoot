@@ -1,9 +1,9 @@
 fn preserve<T: affine>(value: own T) -> result: own T pure {
-  return move value;
+  return value;
 }
 
 fn invalid['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
-  return preserve::<Slice<u8>>(value: move value);
+  return preserve::<Slice<u8>>(value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {

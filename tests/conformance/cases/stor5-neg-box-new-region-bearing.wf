@@ -1,5 +1,5 @@
 fn invalid(value: own Slice<u8>) -> function_result: own unit allocates(heap) {
-  box_new(move value);
+  box_new(value);
   return unit;
 }
 

@@ -18,7 +18,7 @@ fn slice_sum(data: own Slice<u8>) -> total: own u32 reads(data) {
 command fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&buffer_bytes);
-    let total = slice_sum(data: move view);
+    let total = slice_sum(data: view);
     if total == 15_u32 {
     } else {
       return exit_status(code: 1_u8);

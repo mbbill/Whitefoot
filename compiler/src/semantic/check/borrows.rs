@@ -178,30 +178,21 @@ impl SliceLoan {
     /// exclusive formation over a place a shared view already views the
     /// second formation's own conflict.
     ///
-    /// An exclusive loan refuses those and a *second view* of the range
-    /// besides, at either strength. Element writes through the exclusive view
-    /// reach storage a second view would read, and this version has no child
-    /// reborrow of a view: forming a shared `Slice` over a place a live
-    /// `MutSlice` views would be [OWN-6]'s shared child of a unique loan, and
-    /// nothing here establishes the parent's suspension or its resumption, so
-    /// the pair is refused rather than admitted unchecked.
+    /// An exclusive loan refuses those and, being exclusive, the unique
+    /// borrow a *second exclusive view* of the range would take. It admits a
+    /// **shared** second view, which is [OWN-6]'s shared child reborrow of a
+    /// unique loan applied to a view rather than to a place [S31]: the child
+    /// carries the parent's range, the parent may not write its elements
+    /// while the child lives, and the parent resumes where the child's own
+    /// liveness ends [PROV-3].
     ///
     /// A read of the origin is admitted at both strengths, which is what lets
     /// a view's own element read reach the storage it views.
     pub(super) const fn refuses(&self, access: AccessKind) -> bool {
-        match self.strength {
-            LoanStrength::Shared => matches!(
-                access,
-                AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
-            ),
-            LoanStrength::Exclusive => matches!(
-                access,
-                AccessKind::Write
-                    | AccessKind::Move
-                    | AccessKind::UniqueBorrow
-                    | AccessKind::SharedBorrow
-            ),
-        }
+        matches!(
+            access,
+            AccessKind::Write | AccessKind::Move | AccessKind::UniqueBorrow
+        )
     }
 }
 
@@ -1852,6 +1843,39 @@ and name it on the returned reborrow"
             for loan in &local.slice_loans {
                 if places_overlap(&loan.place, place)
                     && loan.refuses(access)
+                    && self.slice_loan_is_live(loan, bindings, node)?
+                {
+                    return self.issue_node(
+                        SemanticRule::Own5,
+                        node,
+                        SemanticIssueKind::BorrowConflict,
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// [S31, PROV-3] the freeze a shared child reborrow puts on its parent:
+    /// an element write through an exclusive view is refused while a shared
+    /// view of the same storage is live.
+    ///
+    /// The write reaches the origin through the parent's own data pointer, so
+    /// the parent's own exclusive loan is not the loan to ask about — this is
+    /// the one access an exclusive view's holder makes that its own loan
+    /// cannot answer. The only shared loan that can stand on storage an
+    /// exclusive view already views is a child reborrow of that view, so the
+    /// question is exactly whether such a child is still live.
+    pub(super) fn check_child_reborrow_freeze(
+        &self,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        origins: &[ResolvedPlace],
+        node: NodeId,
+    ) -> Result<(), CheckStop> {
+        for local in bindings.values() {
+            for loan in &local.slice_loans {
+                if loan.strength == LoanStrength::Shared
+                    && origins.iter().any(|origin| places_overlap(&loan.place, origin))
                     && self.slice_loan_is_live(loan, bindings, node)?
                 {
                     return self.issue_node(

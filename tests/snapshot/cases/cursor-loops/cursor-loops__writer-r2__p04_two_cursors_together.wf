@@ -51,7 +51,7 @@ command fn main() -> status: own ExitStatus allocates(heap) {
   region {
     let left_view = slice_of(&a);
     let right_view = slice_of(&b);
-    let matched = count_equal_prefix(left: move left_view, right: move right_view);
+    let matched = count_equal_prefix(left: left_view, right: right_view);
     let correct = matched == 3_u64;
     if correct {
     } else {

@@ -1398,7 +1398,18 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 let mut effects = EffectSet::NONE;
                 // [LIV-2, EFF-2] a read-out reads the target's own storage,
                 // exactly as [SET-2]'s exchange does, and the commit writes it.
-                if matches!(access_kind, AccessKind::Read) || read_out {
+                //
+                // [EFF-1] a loan-bearing value's effect path names the viewed
+                // backing state and not the descriptor, and merely moving,
+                // returning or structurally repacking that value observes
+                // none of it: a read *through* the view is the subscript's own
+                // attribution. Before [S27] made the shared view copy this
+                // guard was invisible, because a consume exhibited no read at
+                // all; the copy spelling is what would otherwise have made
+                // `return value;` declare a read of storage it never touches.
+                if (matches!(access_kind, AccessKind::Read) || read_out)
+                    && !Self::checked_type_is_loan_bearing(ty)
+                {
                     for path in self.effect_paths_for_place(&access, bindings)? {
                         effects.add_read(path);
                     }

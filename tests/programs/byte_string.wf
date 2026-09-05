@@ -244,14 +244,14 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region {
     let view = slice_of(&subject_head);
     region {
-      bs_append_slice(s: &uniq subject, text: move view);
+      bs_append_slice(s: &uniq subject, text: view);
     }
   }
   let tail = bs_new();
   region {
     let view = slice_of(&subject_tail);
     region {
-      bs_append_slice(s: &uniq tail, text: move view);
+      bs_append_slice(s: &uniq tail, text: view);
     }
   }
   region {
@@ -291,14 +291,14 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region {
     let view = slice_of(&needle_present);
     region {
-      bs_append_slice(s: &uniq present, text: move view);
+      bs_append_slice(s: &uniq present, text: view);
     }
   }
   let absent = bs_new();
   region {
     let view = slice_of(&needle_absent);
     region {
-      bs_append_slice(s: &uniq absent, text: move view);
+      bs_append_slice(s: &uniq absent, text: view);
     }
   }
   let present_at = 0_u64;
@@ -339,7 +339,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region {
     let view = slice_of(&label_length);
     region {
-      bs_append_slice(s: &uniq report, text: move view);
+      bs_append_slice(s: &uniq report, text: view);
     }
   }
   region {
@@ -348,7 +348,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region {
     let view = slice_of(&label_present);
     region {
-      bs_append_slice(s: &uniq report, text: move view);
+      bs_append_slice(s: &uniq report, text: view);
     }
   }
   region {
@@ -357,14 +357,14 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region {
     let view = slice_of(&label_absent);
     region {
-      bs_append_slice(s: &uniq report, text: move view);
+      bs_append_slice(s: &uniq report, text: view);
     }
   }
   if absent_found == 0_u8 {
     region {
       let view = slice_of(&word_none);
       region {
-        bs_append_slice(s: &uniq report, text: move view);
+        bs_append_slice(s: &uniq report, text: view);
       }
     }
   } else {
@@ -375,7 +375,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region {
     let view = slice_of(&line_end);
     region {
-      bs_append_slice(s: &uniq report, text: move view);
+      bs_append_slice(s: &uniq report, text: view);
     }
   }
   let published = 0_u64;

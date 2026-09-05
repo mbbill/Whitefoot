@@ -1298,6 +1298,13 @@ view",
             // 1386, while the target place stays the descriptor the statement
             // writes through.
             CheckedIndexedPlace::Slice(slice) => {
+                // [S31] the parent may not write its elements while a shared
+                // child reborrow of it lives.
+                self.check_child_reborrow_freeze(
+                    bindings,
+                    &slice.slice.effect_places(),
+                    node,
+                )?;
                 for origin in slice.slice.effect_places() {
                     for path in self.effect_paths_for_place(&origin, bindings)? {
                         effects.add_write(path.clone());

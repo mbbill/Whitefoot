@@ -18,7 +18,7 @@ fn find_sentinel(values: own Slice<u64>) -> found: own u64 reads(values) {
 command fn main() -> status: own ExitStatus pure {
   region {
     let view = slice_of(&data);
-    let found = find_sentinel(values: move view);
+    let found = find_sentinel(values: view);
     let correct = found == 2_u64;
     if correct {
     } else {
