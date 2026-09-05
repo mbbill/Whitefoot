@@ -1203,19 +1203,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let mut ordinary_lane_frames = HashMap::new();
         if sequential_clones.is_none() {
             for overlap in function.overlaps() {
-                if overlap
-                    .members()
-                    .iter()
-                    .any(|member| completion_steps.contains_key(member))
-                {
-                    continue;
-                }
+                // A group that also carries completion steps is not excluded
+                // here: a mixed group hands its compute members to lanes and
+                // its submitting members to the completion source, and
+                // `ordinary_overlap_lane_frames` is the one place that decides
+                // whether every member of this group can be handed out at all.
                 let Some(frames) = ordinary_overlap_lane_frames(
                     program,
                     qualification,
                     target,
                     function,
                     overlap,
+                    &completion_steps,
                 )?
                 else {
                     continue;
@@ -1515,7 +1514,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     return Err(BackendFailure::InvalidIr);
                 }
                 self.emit_handed_out_system_call(*result, *ty, *operation, arguments)?;
+            } else if self.is_overlap_join_site(*result) {
+                // A mixed group's join site is an ordinary step of the same
+                // schedule. Its definition is emitted exactly as below, and
+                // then the group's joins run through `compute_join_order`:
+                // compute members newest first, completion members where they
+                // were published (design section 4). `emit_overlap_joins`
+                // takes the whole queue, so the `finish` drain below finds no
+                // member of this group left and joins only what is outside it.
+                self.emit_definition_then_join(instruction, *result)?;
             } else {
+                // A compute member of the group is handed out by
+                // `emit_definition` itself, through the same
+                // `overlap_handed_out` test every other call takes.
                 self.emit_definition(*result, *ty, operation)?;
             }
             // Ordinary completion steps still finish at their source-owned
@@ -2061,7 +2072,23 @@ fn ordinary_overlap_lane_frames(
     target: TargetLayout,
     function: &IrFunction,
     overlap: &IrOverlap,
+    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
 ) -> Result<Option<Vec<(IrValueId, TargetAggregateLayout)>>, BackendFailure> {
+    // A submitting completion member carries the typed completion protocol and
+    // takes no lane frame at all, so it is the one member allowed to suspend.
+    // Every other member is an ordinary call this thread hands to a lane, and
+    // one that may suspend still declines the whole group.
+    let submits = |member: &IrValueId| {
+        completion_steps
+            .get(member)
+            .is_some_and(IrCompletionStep::submit)
+    };
+    // The group's joins ride the join site's own definition, which the submit
+    // arm of `emit_instruction` does not reach. A group whose last member
+    // submits therefore keeps today's pure completion lowering.
+    if overlap.join_site().is_some_and(|site| submits(&site)) {
+        return Ok(None);
+    }
     if overlap
         .members()
         .iter()
@@ -2072,7 +2099,9 @@ fn ordinary_overlap_lane_frames(
                 .functions()
                 .get(*callee as usize)
                 .is_none_or(|callee| callee.target_action().may_suspend()),
-            Some(IrOperation::SystemCall { target_action, .. }) => target_action.may_suspend(),
+            Some(IrOperation::SystemCall { target_action, .. }) => {
+                target_action.may_suspend() && !submits(member)
+            }
             _ => false,
         })
     {
@@ -2080,6 +2109,9 @@ fn ordinary_overlap_lane_frames(
     }
     let mut frames = Vec::with_capacity(overlap.handed_out().len());
     for member in overlap.handed_out() {
+        if submits(member) {
+            continue;
+        }
         let Some(IrOperation::Call {
             function: callee, ..
         }) = definition_operation(function, *member)
@@ -2313,8 +2345,9 @@ fn variant_field_base(
     Err(BackendFailure::InvalidIr)
 }
 
-/// The last handed-out member of the overlap group `result` joins, if it is a
-/// join site at all. Its `par.done` block is where the block continues.
+/// The member of the overlap group `result` joins whose join settles the
+/// block's label, if `result` is a join site at all. Its `par.done` block is
+/// where the block continues.
 ///
 /// The group's members are joined in [`compute_join_order`], so the last one
 /// is that order's last member and not the publish queue's — with two or more
@@ -2327,12 +2360,22 @@ fn variant_field_base(
 /// reach a compute hand-out; `completion_steps` is passed in rather than
 /// guessed at from the value id.
 ///
+/// Not every join opens a block, so the answer is the last member that
+/// *settles* a label rather than the last member joined. A compute member
+/// always ends at its own `par.done`. A completion member ends at one only
+/// when it is a branching completion — the single route that can reach an
+/// outcome without submitting — and every other completion join is
+/// straight-line and leaves the label where the join before it left it. A
+/// mixed group whose join order ends in a plain completion member therefore
+/// continues at the `par.done` of the last compute member before it.
+///
 /// `overlaps` is the emitting world's set, never `IrFunction::overlaps`: a
 /// clone actualizes nothing, so it emits no `par.done` block and must not name
 /// one either.
 fn overlap_join_tail(
     overlaps: &[IrOverlap],
     completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    branching_completions: &HashSet<IrValueId>,
     result: IrValueId,
 ) -> Option<IrValueId> {
     let members = overlaps
@@ -2340,13 +2383,14 @@ fn overlap_join_tail(
         .find(|overlap| overlap.join_site() == Some(result))?
         .handed_out()
         .to_vec();
-    compute_join_order(members, |member| {
-        !completion_steps
+    let submits = |member: &IrValueId| {
+        completion_steps
             .get(member)
             .is_some_and(IrCompletionStep::submit)
-    })
-    .last()
-    .copied()
+    };
+    let mut order = compute_join_order(members, |member| !submits(member));
+    order.retain(|member| !submits(member) || branching_completions.contains(member));
+    order.last().copied()
 }
 
 /// Where a block's terminator is actually emitted.
@@ -2395,7 +2439,9 @@ fn block_exit_label(
         .collect();
     for (index, instruction) in block.instructions().iter().enumerate() {
         // `emit_instruction` checks the completion step first and returns, so
-        // a step's call never reaches the compute-overlap join below.
+        // a step's call never reaches the compute-overlap join below; a step
+        // that is also its group's join site carries that join in this arm
+        // instead.
         if let IrInstruction::Define { result, .. } = instruction
             && let Some(step) = completion_steps.get(result)
         {
@@ -2412,6 +2458,24 @@ fn block_exit_label(
                 }
             } else {
                 definition_exit_label(block_id, index, instruction, &mut label);
+                // A mixed group's join site is an ordinary step, and its
+                // definition carries the group's joins. Those joins consume
+                // every member of the group, its completion members included,
+                // so they leave the outstanding set here as well as the label.
+                if let Some(overlap) = overlaps
+                    .iter()
+                    .find(|overlap| overlap.join_site() == Some(*result))
+                {
+                    outstanding.retain(|held| !overlap.handed_out().contains(held));
+                    if let Some(last) = overlap_join_tail(
+                        overlaps,
+                        completion_steps,
+                        branching_completions,
+                        *result,
+                    ) {
+                        label = par_done_label(last);
+                    }
+                }
             }
             if step.finish() {
                 drain_all_completions_except(
@@ -2427,7 +2491,8 @@ fn block_exit_label(
         // The overlap join rides its last member's own emission, so it settles
         // the label after whatever that emission left.
         if let IrInstruction::Define { result, .. } = instruction
-            && let Some(last) = overlap_join_tail(overlaps, completion_steps, *result)
+            && let Some(last) =
+                overlap_join_tail(overlaps, completion_steps, branching_completions, *result)
         {
             label = par_done_label(last);
         }

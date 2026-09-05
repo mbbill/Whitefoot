@@ -654,11 +654,12 @@ command fn main() -> status: own ExitStatus pure {
 /// prediction is not cosmetic: a phi naming a block its predecessor does not
 /// end at is a module `clang` rejects, so linking is part of the assertion.
 ///
-/// A group with a completion member interleaved between two compute members
-/// would be the mixed case, and `compute_join_order`'s own unit test carries
-/// it; no source produces one today, because a permitted run that mixes a
-/// target operation with compute calls lowers to a completion schedule and
-/// hands no compute member out at all.
+/// A group with a completion member interleaved between two compute members is
+/// the mixed case, which
+/// `a_mixed_group_hands_out_both_kinds_and_joins_them_newest_compute_first`
+/// carries over emitted code and
+/// `a_mixed_group_whose_completion_member_is_first_joins_it_where_it_was_published`
+/// carries in its other order. This case stays the pure-compute one.
 #[test]
 fn a_group_joins_its_compute_members_newest_first_and_continues_at_the_oldest() {
     // The group's hand-outs in publish order, read from the IR the emitter is
@@ -739,6 +740,344 @@ fn a_group_joins_its_compute_members_newest_first_and_continues_at_the_oldest() 
         );
     }
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// Two compute members around one `write_once`, with a fourth call closing the
+/// group and a loop after it that makes the group's exit label observable.
+///
+/// The permission judgment reads the four consecutive calls as one chain, so
+/// the group is `[C1, IO, C2, C3]`: `C3` runs on this thread and is the join
+/// site, and `C1`, `IO` and `C2` are all handed away. Every member's value
+/// reaches the exit status, so a member that were dropped, joined twice, or
+/// joined out of its dependency order moves the observed code.
+const MIXED_COMPUTE_AROUND_A_WRITE: &[u8] =
+    br#"fn choose(value: own u64) -> result: own u64 pure {
+  return imax(value, value);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let report = buffer_new(8_u64, 0_u8);
+  region 'o {
+    region {
+      let a = choose(value: 1_u64);
+      let w = write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64);
+      let b = choose(value: 2_u64);
+      let c = choose(value: 4_u64);
+      let partial = a +wrap b;
+      let acc = partial +wrap c;
+      let i = 0_u64;
+      loop @spin {
+        let done = i >= 4_u64;
+        if done {
+          break @spin;
+        }
+        set acc = acc +wrap 1_u64;
+        set i = i +wrap 1_u64;
+      }
+      match w {
+        Ok(value: next) => {
+          match cvt::<u64, u8>(acc) {
+            Ok(value: code) => {
+              return exit_status(code: code);
+            }
+            Err(error: problem) => {
+              return exit_status(code: 255_u8);
+            }
+          }
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
+/// The same group with its completion member published first: `[IO, C1, C2,
+/// C3]`. The compute members still reverse among their own positions, so the
+/// join order is `IO`, `C2`, `C1` and the completion member keeps the position
+/// it was published at rather than moving to either end.
+const MIXED_WRITE_BEFORE_COMPUTE: &[u8] =
+    br#"fn choose(value: own u64) -> result: own u64 pure {
+  return imax(value, value);
+}
+
+command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let report = buffer_new(8_u64, 0_u8);
+  region 'o {
+    region {
+      let w = write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64);
+      let a = choose(value: 1_u64);
+      let b = choose(value: 2_u64);
+      let c = choose(value: 4_u64);
+      let partial = a +wrap b;
+      let acc = partial +wrap c;
+      let i = 0_u64;
+      loop @spin {
+        let done = i >= 4_u64;
+        if done {
+          break @spin;
+        }
+        set acc = acc +wrap 1_u64;
+        set i = i +wrap 1_u64;
+      }
+      match w {
+        Ok(value: next) => {
+          match cvt::<u64, u8>(acc) {
+            Ok(value: code) => {
+              return exit_status(code: code);
+            }
+            Err(error: problem) => {
+              return exit_status(code: 255_u8);
+            }
+          }
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
+/// The one mixed overlap group of a fixture, as its handed-out compute members
+/// in publish order and its one handed-out completion member.
+///
+/// Read from the IR the emitter is about to be handed, so the labels the cases
+/// below name are the group's own rather than a guess at value numbering. A
+/// member is a completion member exactly when its completion step submits,
+/// which is the test the emitter itself takes.
+fn mixed_group_members(source: &[u8]) -> (Vec<u32>, u32) {
+    with_parallel_ir(source, |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| !function.overlaps().is_empty())
+            .expect("the source must lower to an overlap group");
+        let submitted = function
+            .completion_steps()
+            .iter()
+            .filter(|step| step.submit())
+            .map(crate::IrCompletionStep::call)
+            .collect::<Vec<_>>();
+        let [overlap] = function.overlaps() else {
+            panic!("the source must lower to exactly one overlap group");
+        };
+        let mut compute = Vec::new();
+        let mut completion = None;
+        for member in overlap.handed_out() {
+            if submitted.contains(member) {
+                assert!(
+                    completion.replace(member.ordinal()).is_none(),
+                    "the fixture must hand exactly one completion member out"
+                );
+            } else {
+                compute.push(member.ordinal());
+            }
+        }
+        (
+            compute,
+            completion.expect("the group must hand a completion member out"),
+        )
+    })
+}
+
+/// Runs one linked mixed fixture at three worker counts and demands the
+/// source-order exit status from each.
+///
+/// [PAR-1] fixes every value to the source-order result and states that the
+/// schedule is not an observation, so no worker count may move the status.
+/// `WF_WORKERS=0` is the refused-lane edge, where every hand-out runs at its
+/// own fallback call, and 4 is where a thief can reach one first.
+fn a_mixed_fixture_reports(module: &str, expected: i32) {
+    let directory = test_directory();
+    let executable = build_executable(module, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the mixed group");
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "WF_WORKERS={workers}: the mixed group must report the source-order result"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A group that mixes compute and completion members hands out both kinds and
+/// joins them in design §4's one order.
+///
+/// The permission judgment admits a run that interleaves a target operation
+/// with compute calls — the ledger reads it as
+/// `run(choose, write_once, choose, choose)`, one four-member chain — and
+/// every handed-out member of it is handed away by the mechanism its own kind
+/// uses: the compute members to worker lanes through
+/// `wf__par_acquire_lane`/`wf__par_publish`, the `write_once` to the
+/// completion source through its submit. Neither kind is lowered as the plain
+/// call it would be outside the group.
+///
+/// §4 then fixes the one order the group is joined in: its compute members
+/// newest first, because the compute deque is Chase-Lev and only its newest
+/// end is reachable by the owner, and its completion members exactly where
+/// they were published, because a completion member holds no deque entry and
+/// the deque constrains it not at all. So the queue `[C1, IO, C2]` is joined
+/// `[C2, IO, C1]`, and the block continues at `C1`'s `par.done`.
+///
+/// That last prediction is made twice — by `emit_overlap_joins`, which writes
+/// the joins, and by `block_exit_label`, which names the label a phi in a
+/// later block must use — and a phi naming a block its predecessor does not
+/// end at is a module `clang` rejects. The loop after the group is what spends
+/// the prediction, so linking and running the fixture is part of the case.
+#[test]
+fn a_mixed_group_hands_out_both_kinds_and_joins_them_newest_compute_first() {
+    let (compute, completion) = mixed_group_members(MIXED_COMPUTE_AROUND_A_WRITE);
+    let [first, second] = compute.as_slice() else {
+        panic!("the group must hand two compute members out: {compute:?}");
+    };
+
+    let module = emit_with_overlap(MIXED_COMPUTE_AROUND_A_WRITE);
+    let body = emitted_function(&module, "main");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
+    };
+
+    // Both compute members take the lane protocol, and only they do: two
+    // acquisitions and two publishes for a group of three hand-outs.
+    assert_eq!(
+        body.matches("call ptr @wf__par_acquire_lane(").count(),
+        2,
+        "both compute members must acquire a lane, and the completion member none:\n{body}"
+    );
+    assert_eq!(
+        body.matches("call void @wf__par_publish(").count(),
+        2,
+        "both compute members must be published:\n{body}"
+    );
+    for member in [first, second] {
+        assert!(
+            body.contains(&format!("par.offer.v{member}:")),
+            "compute member v{member} must be handed out:\n{body}"
+        );
+    }
+    // The completion member is submitted rather than called inline.
+    assert!(
+        body.contains("call void @wf__completion_file_write_submit("),
+        "the completion member v{completion} must be submitted:\n{body}"
+    );
+
+    // Publish order is source order.
+    assert!(
+        at(&format!("par.offer.v{first}:")) < at(&format!("par.offer.v{second}:")),
+        "the compute members must be published in source order:\n{body}"
+    );
+    // Join order is §4's: the newest compute member, then the completion
+    // member where it was published, then the oldest compute member.
+    assert!(
+        at(&format!("par.wait.v{second}:")) < at("call void @wf__completion_file_join("),
+        "the newest compute member must be joined before the completion member:\n{body}"
+    );
+    assert!(
+        at("call void @wf__completion_file_join(") < at(&format!("par.wait.v{first}:")),
+        "the completion member must be joined where it was published:\n{body}"
+    );
+    // One join each: the completion member must not also be drained by the
+    // schedule's finish after the group already joined it.
+    assert_eq!(
+        body.matches("call void @wf__completion_file_join(").count(),
+        1,
+        "the completion member must be joined exactly once:\n{body}"
+    );
+
+    // The block therefore continues at the oldest compute member's `par.done`,
+    // and the loop header's phis are where that prediction is spent.
+    let carried = body
+        .lines()
+        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
+        .collect::<Vec<_>>();
+    assert!(
+        !carried.is_empty(),
+        "the loop must carry values out of the group's block:\n{body}"
+    );
+    for phi in carried {
+        assert!(
+            phi.contains(&format!(", %par.done.v{first} ]")),
+            "the group's block ends at the oldest compute member's join: {phi}"
+        );
+    }
+
+    a_mixed_fixture_reports(&module, 11);
+}
+
+/// The same mixture with the completion member published first: it is joined
+/// first, and only the compute members reverse.
+///
+/// This is the half of §4 that the interleaved case cannot show. A completion
+/// member keeps its publish position whatever that position is, so a group
+/// published `[IO, C1, C2]` is joined `[IO, C2, C1]` — the completion join
+/// stays at the front rather than being carried to either end by the compute
+/// reversal happening around it.
+#[test]
+fn a_mixed_group_whose_completion_member_is_first_joins_it_where_it_was_published() {
+    let (compute, completion) = mixed_group_members(MIXED_WRITE_BEFORE_COMPUTE);
+    let [first, second] = compute.as_slice() else {
+        panic!("the group must hand two compute members out: {compute:?}");
+    };
+
+    let module = emit_with_overlap(MIXED_WRITE_BEFORE_COMPUTE);
+    let body = emitted_function(&module, "main");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
+    };
+
+    assert_eq!(
+        body.matches("call ptr @wf__par_acquire_lane(").count(),
+        2,
+        "both compute members must acquire a lane:\n{body}"
+    );
+    assert!(
+        body.contains("call void @wf__completion_file_write_submit("),
+        "the completion member v{completion} must be submitted:\n{body}"
+    );
+    // The completion member was published first, so it is joined first.
+    assert!(
+        at("call void @wf__completion_file_join(") < at(&format!("par.wait.v{second}:")),
+        "the completion member must be joined where it was published:\n{body}"
+    );
+    // The compute members still reverse among their own positions.
+    assert!(
+        at(&format!("par.wait.v{second}:")) < at(&format!("par.wait.v{first}:")),
+        "the newest compute member must be joined before the oldest:\n{body}"
+    );
+    assert_eq!(
+        body.matches("call void @wf__completion_file_join(").count(),
+        1,
+        "the completion member must be joined exactly once:\n{body}"
+    );
+
+    // The block continues at the oldest compute member's `par.done`, which is
+    // the last join of the group either way.
+    let carried = body
+        .lines()
+        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
+        .collect::<Vec<_>>();
+    assert!(
+        !carried.is_empty(),
+        "the loop must carry values out of the group's block:\n{body}"
+    );
+    for phi in carried {
+        assert!(
+            phi.contains(&format!(", %par.done.v{first} ]")),
+            "the group's block ends at the oldest compute member's join: {phi}"
+        );
+    }
+
+    a_mixed_fixture_reports(&module, 11);
 }
 
 /// A recursion that hands one of its two calls out at every level, spelled at

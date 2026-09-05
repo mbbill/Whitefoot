@@ -389,7 +389,15 @@ before the code lands.
    **Order and the Windows decision, 2026-09-05.** (i) The records-by-address
    step is in (`3acc3e9`, with the one lowering at `effe2e2`). (ii) An
    emitter defect found on the way, a mixed overlap group handing out none
-   of its compute members, is fixed as its own commit. (iii) The core becomes
+   of its compute members, is fixed as its own commit: the gate was in
+   `FunctionEmitter::new`, which dropped any group holding a completion
+   member (deliberately, and a test pinned it), so `overlap_handed_out` was
+   empty for every mixed run; the owner ruled on 2026-09-05 that I/O and
+   compute members overlap in one group, so a submitting member needs no
+   lane frame and is the one member allowed to suspend, the join site's
+   joins run through `compute_join_order`, and `block_exit_label` follows.
+   Two fixtures pin it, joined C2, IO, C1 and IO, C2, C1 at every worker
+   count. (iii) The core becomes
    the runtime on POSIX: `sched/entry.c` carries the `wf__par_*` ABI and the
    pool policy over `core.c`, the floor runs the entry on a pool stack when
    the core is linked, every I/O join parks through `wf_sched_join`, and
