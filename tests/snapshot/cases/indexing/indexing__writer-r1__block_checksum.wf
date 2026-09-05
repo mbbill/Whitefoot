@@ -1,4 +1,4 @@
-fn block_checksum(data: own buffer<u8>, block_size: own u64) -> total: own u32 reads(data) contract {
+fn block_checksum<const n: u64>(data: own FixedVector<u8, n>, block_size: own u64) -> total: own u32 reads(data) contract {
   requires block_size > 0_u64;
 } {
   doc "ACCEPT: sums a buffer in fixed-size blocks with a short final block; the checked stride is tested against the real length before every step, so a full block and the trailing remainder both stay in range without a written certificate.";
@@ -47,8 +47,18 @@ fn block_checksum(data: own buffer<u8>, block_size: own u64) -> total: own u32 r
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let data = buffer_new(10_u64, 1_u8);
-  let total = block_checksum(data: move data, block_size: 4_u64);
+  let data = fixed_vector::<u8, 10>();
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  set data = place_back(vector: move data, value: 1_u8);
+  let total = block_checksum::<10>(data: move data, block_size: 4_u64);
   if total == 10_u32 {
   } else {
     return exit_status(code: 1_u8);

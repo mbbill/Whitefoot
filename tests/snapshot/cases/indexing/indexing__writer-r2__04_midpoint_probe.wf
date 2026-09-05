@@ -1,5 +1,5 @@
-fn probe_midpoint(table: &buffer<u32>, lo: own u64, hi: own u64) -> found: own u32 reads(table) contract {
-  define spare = len_of(deref(table));
+fn probe_midpoint(table: own Slice<u32>, lo: own u64, hi: own u64) -> found: own u32 reads(table) contract {
+  define spare = len_of(table);
   requires lo < hi;
   requires hi <= spare;
 } {
@@ -7,15 +7,23 @@ fn probe_midpoint(table: &buffer<u32>, lo: own u64, hi: own u64) -> found: own u
   let half = span / 2_u64;
   let mid = lo + half;
   invariant inside: 2_u64 * mid + 1_u64 <= 2_u64 * hi;
-  let value = deref(table)[mid];
+  let value = table[mid];
   return value;
 }
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: lo < hi and hi <= spare let the automatic affine rule fold the division image 2*half <= span into 2*mid + 1 <= 2*hi, which with hi <= spare discharges the subscript [ENT-6, OP-4].";
-  let table = buffer_new(7_u64, 0_u32);
+  let table = fixed_vector::<u32, 7>();
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
+  set table = place_back(vector: move table, value: 0_u32);
   region {
-    let value = probe_midpoint(table: &table, lo: 1_u64, hi: 6_u64);
+    let table_view = slice_of(&table);
+    let value = probe_midpoint(table: table_view, lo: 1_u64, hi: 6_u64);
     if value == 0_u32 {
     } else {
       return exit_status(code: 1_u8);

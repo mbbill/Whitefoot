@@ -1,7 +1,7 @@
-fn sum_all(data: &buffer<u8>, chunk_size: own u64) -> total: own u32 reads(data) contract {
+fn sum_all(data: own Slice<u8>, chunk_size: own u64) -> total: own u32 reads(data) contract {
   requires chunk_size > 0_u64;
 } {
-  let length = len_of(deref(data));
+  let length = len_of(data);
   let sum = 0_u32;
   let cursor = 0_u64;
   loop (
@@ -9,7 +9,7 @@ fn sum_all(data: &buffer<u8>, chunk_size: own u64) -> total: own u32 reads(data)
   ) {
     let has_more = cursor < length;
     if has_more {
-      let byte = deref(data)[cursor];
+      let byte = data[cursor];
       let wide = cvt::<u8, u32>(byte);
       set sum = sum +wrap wide;
       set cursor = cursor +wrap 1_u64;
@@ -40,7 +40,14 @@ fn chunk_count(length: own u64, chunk_size: own u64) -> count: own u64 pure cont
 
 command fn main() -> status: own ExitStatus pure {
   doc "ACCEPT: sum_all walks cursor with an ordinary loop invariant (cursor <= length), so each subscript is discharged by the has_more branch; chunk_count is a pure division/remainder computation with no subscript at all.";
-  let data = buffer_new(7_u64, 0_u8);
+  let data = fixed_vector::<u8, 7>();
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
+  set data = place_back(vector: move data, value: 0_u8);
   set data[0_u64] = 1_u8;
   set data[1_u64] = 2_u8;
   set data[2_u64] = 3_u8;
@@ -49,7 +56,8 @@ command fn main() -> status: own ExitStatus pure {
   set data[5_u64] = 6_u8;
   set data[6_u64] = 7_u8;
   region {
-    let total = sum_all(data: &data, chunk_size: 3_u64);
+    let data_view = slice_of(&data);
+    let total = sum_all(data: data_view, chunk_size: 3_u64);
     if total == 28_u32 {
     } else {
       return exit_status(code: 1_u8);
