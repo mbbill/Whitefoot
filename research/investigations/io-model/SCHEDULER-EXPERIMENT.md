@@ -2130,5 +2130,7 @@ pinned IOCP checks. Gate, io-hosts and all io-bench jobs also passed. The memory
 measurement job stopped before timing: the network launcher omitted `compact`
 and `small` from its WF executable cases and returned status 2 at the first
 compact preflight. The launcher now dispatches both already-built candidates.
+Its final control selection also now includes memory, so the already-built
+compute/file controls actually run for that experiment.
 No timing or memory conclusion is drawn from that incomplete job; its logs
 remain in [run 34055042189](https://github.com/mbbill/Whitefoot/actions/runs/34055042189).
