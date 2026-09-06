@@ -1,4 +1,6 @@
-fn decode(out: &uniq MutSlice<u8>, src: own buffer<u8>) -> result: own u64 reads(src), writes(out) contract {
+const percent_input: FixedVector<u8, 11> =[65_u8, 37_u8, 52_u8, 50_u8, 37_u8, 52_u8, 97_u8, 37_u8, 122_u8, 122_u8, 37_u8];
+
+fn decode(out: &uniq MutSlice<u8>, src: own Slice<u8>) -> result: own u64 reads(src), writes(out) contract {
   define output_length = len_of(deref(out));
   define source_length = len_of(src);
   define sufficient = output_length >= source_length;
@@ -100,68 +102,76 @@ fn decode(out: &uniq MutSlice<u8>, src: own buffer<u8>) -> result: own u64 reads
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let input = buffer_new(11_u64, 0_u8);
-  set input[0_u64] = 65_u8;
-  set input[1_u64] = 37_u8;
-  set input[2_u64] = 52_u8;
-  set input[3_u64] = 50_u8;
-  set input[4_u64] = 37_u8;
-  set input[5_u64] = 52_u8;
-  set input[6_u64] = 97_u8;
-  set input[7_u64] = 37_u8;
-  set input[8_u64] = 122_u8;
-  set input[9_u64] = 122_u8;
-  set input[10_u64] = 37_u8;
-  let output = buffer_new(11_u64, 204_u8);
-  region {
-    let window = mut_slice_of(&uniq output);
+  region 'w {
+    let workspace = arena_frame::<11, 1, 'w>();
     region {
-      let produced = decode(out: &uniq window, src: move input);
-      if produced == 7_u64 {
+      let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 11_u64);
+      for @fill_output (
+        at in 0_u64..11_u64,
+        invariant grown: len_of(output) >= at,
+        invariant spare: room_of(output) + at >= 11_u64,
+        invariant flat: head_of(output) <= 0_u64
+      ) {
+        set output = place_back(vector: move output, value: 204_u8);
+      }
+      region {
+        let input = slice_of(&percent_input);
+        let window = mut_slice_of(&uniq output);
+        let window_length = len_of(window);
+        let input_length = len_of(input);
+        if window_length >= input_length {
+        } else {
+          return exit_status(code: 2_u8);
+        }
+        region {
+          let produced = decode(out: &uniq window, src: input);
+          if produced == 7_u64 {
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
+      let output_zero = output[0_u64];
+      let output_one = output[1_u64];
+      let output_two = output[2_u64];
+      let output_three = output[3_u64];
+      let output_four = output[4_u64];
+      let output_five = output[5_u64];
+      let output_six = output[6_u64];
+      let output_tail = output[7_u64];
+      if output_zero == 65_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output_one == 66_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output_two == 74_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output_three == 37_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output_four == 122_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output_five == 122_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output_six == 37_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output_tail == 204_u8 {
       } else {
         return exit_status(code: 1_u8);
       }
     }
-  }
-  let output_zero = output[0_u64];
-  let output_one = output[1_u64];
-  let output_two = output[2_u64];
-  let output_three = output[3_u64];
-  let output_four = output[4_u64];
-  let output_five = output[5_u64];
-  let output_six = output[6_u64];
-  let output_tail = output[7_u64];
-  if output_zero == 65_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output_one == 66_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output_two == 74_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output_three == 37_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output_four == 122_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output_five == 122_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output_six == 37_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output_tail == 204_u8 {
-  } else {
-    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

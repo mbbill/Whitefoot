@@ -50,34 +50,33 @@ command fn main() -> status: own ExitStatus pure {
       return exit_status(code: 1_u8);
     }
   }
-  let runtime_header = buffer_new(20_u64, 0_u8);
-  let offset = 0_u64;
-  loop @copy_header {
-    let done = offset == 20_u64;
-    if done {
-      break @copy_header;
-    }
-    let copy_ok = offset < 20_u64;
-    if copy_ok {
-    } else {
-      return exit_status(code: 2_u8);
-    }
-    let byte = ipv4_header[offset];
-    set runtime_header[offset] = byte;
-    set offset = offset +wrap 1_u64;
-  }
-  region {
-    let view = slice_of(&runtime_header);
-    let view_length = len_of(view);
-    let view_odd = iand(view_length, 1_u64);
-    if view_odd == 0_u64 {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-    let checksum = ipv4_checksum(header: view);
-    if checksum == 47248_u16 {
-    } else {
-      return exit_status(code: 1_u8);
+  region 'w {
+    let workspace = arena_frame::<20, 1, 'w>();
+    region {
+      let runtime_header = arena_vector_proved::<u8>(store: &uniq workspace, count: 20_u64);
+      for @copy_header (
+        at in 0_u64..20_u64,
+        invariant grown: len_of(runtime_header) >= at,
+        invariant spare: room_of(runtime_header) + at >= 20_u64,
+        invariant flat: head_of(runtime_header) <= 0_u64
+      ) {
+        let byte = ipv4_header[at];
+        set runtime_header = place_back(vector: move runtime_header, value: byte);
+      }
+      region {
+        let view = slice_of(&runtime_header);
+        let view_length = len_of(view);
+        let view_odd = iand(view_length, 1_u64);
+        if view_odd == 0_u64 {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+        let checksum = ipv4_checksum(header: view);
+        if checksum == 47248_u16 {
+        } else {
+          return exit_status(code: 1_u8);
+        }
+      }
     }
   }
   return exit_status(code: 0_u8);

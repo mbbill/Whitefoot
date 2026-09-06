@@ -1,3 +1,5 @@
+const pixel_input: FixedVector<u8, 24> =[0_u8, 0_u8, 0_u8, 255_u8, 255_u8, 255_u8, 255_u8, 0_u8, 0_u8, 0_u8, 255_u8, 0_u8, 0_u8, 0_u8, 255_u8, 255_u8, 255_u8, 0_u8, 1_u8, 2_u8, 3_u8, 254_u8, 253_u8, 252_u8];
+
 fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> result: own Result<u8, NarrowError> pure {
   let red_float = cvt::<u8, f32>(red);
   let green_float = cvt::<u8, f32>(green);
@@ -9,8 +11,8 @@ fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> result: own Resu
   return cvt::<f32, u8>(rounded);
 }
 
-fn grayscale(input: &buffer<u8>, output: &uniq MutSlice<u8>) -> result: own Result<unit, NarrowError> reads(input, output), writes(output) contract {
-  define input_length = len_of(deref(input));
+fn grayscale(input: own Slice<u8>, output: &uniq MutSlice<u8>) -> result: own Result<unit, NarrowError> reads(input, output), writes(output) contract {
+  define input_length = len_of(input);
   define output_length = len_of(deref(output));
   requires input_length >= 24_u64;
   requires output_length >= 8_u64;
@@ -24,28 +26,28 @@ fn grayscale(input: &buffer<u8>, output: &uniq MutSlice<u8>) -> result: own Resu
     let base = pixel *wrap 3_u64;
     let green_offset = base +wrap 1_u64;
     let blue_offset = base +wrap 2_u64;
-    let input_room = len_of(deref(input));
+    let input_room = len_of(input);
     let red_ok = base < input_room;
     if red_ok {
     } else {
       let error = NarrowError();
       return Err<unit, NarrowError>(error: error);
     }
-    let red = deref(input)[base];
+    let red = input[base];
     let green_ok = green_offset < input_room;
     if green_ok {
     } else {
       let error = NarrowError();
       return Err<unit, NarrowError>(error: error);
     }
-    let green = deref(input)[green_offset];
+    let green = input[green_offset];
     let blue_ok = blue_offset < input_room;
     if blue_ok {
     } else {
       let error = NarrowError();
       return Err<unit, NarrowError>(error: error);
     }
-    let blue = deref(input)[blue_offset];
+    let blue = input[blue_offset];
     let value = propagate grayscale_value(red: red, green: green, blue: blue);
     let output_room = len_of(deref(output));
     let pixel_ok = pixel < output_room;
@@ -61,66 +63,65 @@ fn grayscale(input: &buffer<u8>, output: &uniq MutSlice<u8>) -> result: own Resu
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let input = buffer_new(24_u64, 0_u8);
-  set input[3_u64] = 255_u8;
-  set input[4_u64] = 255_u8;
-  set input[5_u64] = 255_u8;
-  set input[6_u64] = 255_u8;
-  set input[10_u64] = 255_u8;
-  set input[14_u64] = 255_u8;
-  set input[15_u64] = 255_u8;
-  set input[16_u64] = 255_u8;
-  set input[18_u64] = 1_u8;
-  set input[19_u64] = 2_u8;
-  set input[20_u64] = 3_u8;
-  set input[21_u64] = 254_u8;
-  set input[22_u64] = 253_u8;
-  set input[23_u64] = 252_u8;
-  let output = buffer_new(8_u64, 0_u8);
-  region {
-    let window = mut_slice_of(&uniq output);
+  region 'w {
+    let workspace = arena_frame::<8, 1, 'w>();
     region {
-      let result = grayscale(input: &input, output: &uniq window);
-      match move result {
-        Ok(value: success) => {
-        }
-        Err(error: failure) => {
-          return exit_status(code: 1_u8);
+      let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      for @fill_output (
+        at in 0_u64..8_u64,
+        invariant grown: len_of(output) >= at,
+        invariant spare: room_of(output) + at >= 8_u64,
+        invariant flat: head_of(output) <= 0_u64
+      ) {
+        set output = place_back(vector: move output, value: 0_u8);
+      }
+      region {
+        let window = mut_slice_of(&uniq output);
+        region {
+          let view = slice_of(&pixel_input);
+          let result = grayscale(input: view, output: &uniq window);
+          match move result {
+            Ok(value: success) => {
+            }
+            Err(error: failure) => {
+              return exit_status(code: 1_u8);
+            }
+          }
         }
       }
+      if output[0_u64] == 0_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output[1_u64] == 255_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output[2_u64] == 85_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output[3_u64] == 85_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output[4_u64] == 85_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output[5_u64] == 170_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output[6_u64] == 2_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if output[7_u64] == 253_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
     }
-  }
-  if output[0_u64] == 0_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output[1_u64] == 255_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output[2_u64] == 85_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output[3_u64] == 85_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output[4_u64] == 85_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output[5_u64] == 170_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output[6_u64] == 2_u8 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if output[7_u64] == 253_u8 {
-  } else {
-    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }

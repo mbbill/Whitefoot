@@ -40,31 +40,31 @@ fn store_u32_be(out: &uniq MutSlice<u8>, offset: own u64, value: own u32) -> res
   return Ok<unit, NarrowError>(value: unit);
 }
 
-fn load_u32_be(input: &buffer<u8>, offset: own u64) -> result: own u32 reads(input) {
+fn load_u32_be(input: own Slice<u8>, offset: own u64) -> result: own u32 reads(input) {
   let second_offset = offset +wrap 1_u64;
   let third_offset = offset +wrap 2_u64;
   let fourth_offset = offset +wrap 3_u64;
-  let load_room = len_of(deref(input));
+  let load_room = len_of(input);
   if offset < load_room {
   } else {
     return 0_u32;
   }
-  let first_byte = deref(input)[offset];
+  let first_byte = input[offset];
   if second_offset < load_room {
   } else {
     return 0_u32;
   }
-  let second_byte = deref(input)[second_offset];
+  let second_byte = input[second_offset];
   if third_offset < load_room {
   } else {
     return 0_u32;
   }
-  let third_byte = deref(input)[third_offset];
+  let third_byte = input[third_offset];
   if fourth_offset < load_room {
   } else {
     return 0_u32;
   }
-  let fourth_byte = deref(input)[fourth_offset];
+  let fourth_byte = input[fourth_offset];
   let first = cvt::<u8, u32>(first_byte);
   let second = cvt::<u8, u32>(second_byte);
   let third = cvt::<u8, u32>(third_byte);
@@ -78,77 +78,93 @@ fn load_u32_be(input: &buffer<u8>, offset: own u64) -> result: own u32 reads(inp
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let packet = buffer_new(12_u64, 0_u8);
-  let temperature = 36.5_f32;
-  let temperature_bits = reinterpret::<f32, u32>(temperature);
-  region {
-    let window = mut_slice_of(&uniq packet);
+  region 'w {
+    let workspace = arena_frame::<12, 1, 'w>();
     region {
-      let stored = store_u32_be(out: &uniq window, offset: 0_u64, value: temperature_bits);
-      match move stored {
-        Ok(value: success) => {
+      let packet = arena_vector_proved::<u8>(store: &uniq workspace, count: 12_u64);
+      for @fill_packet (
+        at in 0_u64..12_u64,
+        invariant grown: len_of(packet) >= at,
+        invariant spare: room_of(packet) + at >= 12_u64,
+        invariant flat: head_of(packet) <= 0_u64
+      ) {
+        set packet = place_back(vector: move packet, value: 0_u8);
+      }
+      let temperature = 36.5_f32;
+      let temperature_bits = reinterpret::<f32, u32>(temperature);
+      region {
+        let window = mut_slice_of(&uniq packet);
+        region {
+          let stored = store_u32_be(out: &uniq window, offset: 0_u64, value: temperature_bits);
+          match move stored {
+            Ok(value: success) => {
+            }
+            Err(error: narrow) => {
+              return exit_status(code: 1_u8);
+            }
+          }
         }
-        Err(error: narrow) => {
+      }
+      let negative_zero = -0.0_f32;
+      let negative_zero_bits = reinterpret::<f32, u32>(negative_zero);
+      region {
+        let window = mut_slice_of(&uniq packet);
+        region {
+          let stored = store_u32_be(out: &uniq window, offset: 4_u64, value: negative_zero_bits);
+          match move stored {
+            Ok(value: success) => {
+            }
+            Err(error: narrow) => {
+              return exit_status(code: 1_u8);
+            }
+          }
+        }
+      }
+      let nan = fnan::<f32>();
+      let nan_bits = reinterpret::<f32, u32>(nan);
+      region {
+        let window = mut_slice_of(&uniq packet);
+        region {
+          let stored = store_u32_be(out: &uniq window, offset: 8_u64, value: nan_bits);
+          match move stored {
+            Ok(value: success) => {
+            }
+            Err(error: narrow) => {
+              return exit_status(code: 1_u8);
+            }
+          }
+        }
+      }
+      region {
+        let view = slice_of(&packet);
+        let bits = load_u32_be(input: view, offset: 0_u64);
+        let decoded = reinterpret::<u32, f32>(bits);
+        if feq(decoded, temperature) {
+        } else {
           return exit_status(code: 1_u8);
         }
       }
-    }
-  }
-  let negative_zero = -0.0_f32;
-  let negative_zero_bits = reinterpret::<f32, u32>(negative_zero);
-  region {
-    let window = mut_slice_of(&uniq packet);
-    region {
-      let stored = store_u32_be(out: &uniq window, offset: 4_u64, value: negative_zero_bits);
-      match move stored {
-        Ok(value: success) => {
-        }
-        Err(error: narrow) => {
+      region {
+        let view = slice_of(&packet);
+        let bits = load_u32_be(input: view, offset: 4_u64);
+        let decoded = reinterpret::<u32, f32>(bits);
+        let reciprocal = fdiv.strict(1.0_f32, decoded);
+        let infinity = finf::<f32>();
+        let negative_infinity = fneg(infinity);
+        if feq(reciprocal, negative_infinity) {
+        } else {
           return exit_status(code: 1_u8);
         }
       }
-    }
-  }
-  let nan = fnan::<f32>();
-  let nan_bits = reinterpret::<f32, u32>(nan);
-  region {
-    let window = mut_slice_of(&uniq packet);
-    region {
-      let stored = store_u32_be(out: &uniq window, offset: 8_u64, value: nan_bits);
-      match move stored {
-        Ok(value: success) => {
-        }
-        Err(error: narrow) => {
+      region {
+        let view = slice_of(&packet);
+        let bits = load_u32_be(input: view, offset: 8_u64);
+        let decoded = reinterpret::<u32, f32>(bits);
+        if fne(decoded, decoded) {
+        } else {
           return exit_status(code: 1_u8);
         }
       }
-    }
-  }
-  region {
-    let bits = load_u32_be(input: &packet, offset: 0_u64);
-    let decoded = reinterpret::<u32, f32>(bits);
-    if feq(decoded, temperature) {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  region {
-    let bits = load_u32_be(input: &packet, offset: 4_u64);
-    let decoded = reinterpret::<u32, f32>(bits);
-    let reciprocal = fdiv.strict(1.0_f32, decoded);
-    let infinity = finf::<f32>();
-    let negative_infinity = fneg(infinity);
-    if feq(reciprocal, negative_infinity) {
-    } else {
-      return exit_status(code: 1_u8);
-    }
-  }
-  region {
-    let bits = load_u32_be(input: &packet, offset: 8_u64);
-    let decoded = reinterpret::<u32, f32>(bits);
-    if fne(decoded, decoded) {
-    } else {
-      return exit_status(code: 1_u8);
     }
   }
   return exit_status(code: 0_u8);

@@ -1,4 +1,6 @@
-fn parse(out: &uniq MutSlice<u32>, src: own buffer<u8>) -> result: own u64 reads(out, src), writes(out) contract {
+const utf8_input: FixedVector<u8, 15> =[65_u8, 194_u8, 162_u8, 226_u8, 130_u8, 172_u8, 240_u8, 159_u8, 152_u8, 128_u8, 194_u8, 65_u8, 255_u8, 226_u8, 130_u8];
+
+fn parse(out: &uniq MutSlice<u32>, src: own Slice<u8>) -> result: own u64 reads(out, src), writes(out) contract {
   define source_length = len_of(src);
   define output_length = len_of(deref(out));
   define enough_output = output_length >= source_length;
@@ -209,67 +211,71 @@ fn parse(out: &uniq MutSlice<u32>, src: own buffer<u8>) -> result: own u64 reads
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let input = buffer_new(15_u64, 0_u8);
-  set input[0_u64] = 65_u8;
-  set input[1_u64] = 194_u8;
-  set input[2_u64] = 162_u8;
-  set input[3_u64] = 226_u8;
-  set input[4_u64] = 130_u8;
-  set input[5_u64] = 172_u8;
-  set input[6_u64] = 240_u8;
-  set input[7_u64] = 159_u8;
-  set input[8_u64] = 152_u8;
-  set input[9_u64] = 128_u8;
-  set input[10_u64] = 194_u8;
-  set input[11_u64] = 65_u8;
-  set input[12_u64] = 255_u8;
-  set input[13_u64] = 226_u8;
-  set input[14_u64] = 130_u8;
-  let output = buffer_new(15_u64, 99_u32);
-  region {
-    let window = mut_slice_of(&uniq output);
+  region 'w {
+    let workspace = arena_frame::<64, 4, 'w>();
     region {
-      let produced = parse(out: &uniq window, src: move input);
-      if produced == 6_u64 {
+      let output = arena_vector_proved::<u32>(store: &uniq workspace, count: 15_u64);
+      for @fill_output (
+        at in 0_u64..15_u64,
+        invariant grown: len_of(output) >= at,
+        invariant spare: room_of(output) + at >= 15_u64,
+        invariant flat: head_of(output) <= 0_u64
+      ) {
+        set output = place_back(vector: move output, value: 99_u32);
+      }
+      region {
+        let window = mut_slice_of(&uniq output);
+        region {
+          let input = slice_of(&utf8_input);
+          let window_length = len_of(window);
+          let input_length = len_of(input);
+          if window_length >= input_length {
+          } else {
+            return exit_status(code: 2_u8);
+          }
+          let produced = parse(out: &uniq window, src: input);
+          if produced == 6_u64 {
+          } else {
+            return exit_status(code: 1_u8);
+          }
+        }
+      }
+      let event_zero = output[0_u64];
+      let event_one = output[1_u64];
+      let event_two = output[2_u64];
+      let event_three = output[3_u64];
+      let event_four = output[4_u64];
+      let event_five = output[5_u64];
+      let event_tail = output[6_u64];
+      if event_zero == 65_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if event_one == 162_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if event_two == 8364_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if event_three == 128512_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if event_four == 1114112_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if event_five == 1114112_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+      if event_tail == 99_u32 {
       } else {
         return exit_status(code: 1_u8);
       }
     }
-  }
-  let event_zero = output[0_u64];
-  let event_one = output[1_u64];
-  let event_two = output[2_u64];
-  let event_three = output[3_u64];
-  let event_four = output[4_u64];
-  let event_five = output[5_u64];
-  let event_tail = output[6_u64];
-  if event_zero == 65_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if event_one == 162_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if event_two == 8364_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if event_three == 128512_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if event_four == 1114112_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if event_five == 1114112_u32 {
-  } else {
-    return exit_status(code: 1_u8);
-  }
-  if event_tail == 99_u32 {
-  } else {
-    return exit_status(code: 1_u8);
   }
   return exit_status(code: 0_u8);
 }
