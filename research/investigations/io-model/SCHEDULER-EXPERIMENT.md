@@ -1480,3 +1480,9 @@ including every maintained schedule configuration with zero bounded states,
 all helper configurations and the exact completion count checks. The default
 layout also passed the amended host smoke. These are correctness results;
 the M1 compatibility load client is not used for Linux performance claims.
+
+The first Linux launch (`34044699217`, artifact `9992763699`) passed the
+complete candidate suite and the io_uring, epoll and baseline correctness
+runs, then stopped before starting the candidate. The benchmark dispatcher
+still listed the retired `striped` form and rejected `spread` with exit 2.
+Correct that form name and rerun; no timed cohort was produced by this launch.

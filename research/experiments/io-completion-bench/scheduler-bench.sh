@@ -317,7 +317,7 @@ network_case() {
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|local|lanes|striped|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
+        base|local|lanes|spread|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
