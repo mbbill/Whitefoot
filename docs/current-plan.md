@@ -11,8 +11,8 @@ v0.43 the loop-body region block and the associative join, v0.44 the fact
 machinery ([MSR-3], [MSR-5], [CALL-4], [CALL-6]), v0.45 the interval an
 admitted product already proved ([ENT-3.S14]), v0.46 the clause relation
 and the measure atom that discharges it, v0.47 the named const as an affine
-atom, and v0.48 the `use` premise and its named multiplicity. Each superseded
-version is
+atom, v0.48 the `use` premise and its named multiplicity, and v0.49 the fold
+that names a declaration rather than its expansion. Each superseded version is
 archived at `spec/kernel-spec-vN.md` with its merge-time record in
 `governance/APPROVALS.md`. Nothing merges to `main` until the owner approves
 the exact revision and canonical `make check` passes on that revision. This
@@ -114,6 +114,27 @@ capability is a matrix multiply's inner index at a runtime stride, whose
 certificate is one term-scaled premise and one plain one; the evidence is in
 `research/investigations/binary-arithmetic/`, with the design in its
 `PROOF-SURFACE.md`.
+
+v0.49 adds and retires no rule (136 remain) and amends [PRF-1] in place. A
+multiplication's operand and a written multiplicity name the same value when
+they name the same declaration, not when their images coincide. v0.48 folded by
+the images, and a local's image is transparent — `let stride = width +
+padding;` gives `stride` the image `width + padding` — so a product over
+`stride` and a certificate scaling by `stride` arrived at the fold as different
+arithmetic and nothing matched. Measured on one shape with only the derivation
+varying, a stride copied from a parameter accepted while `width + padding`,
+`width + 4`, and `2 * width` all rejected; a stride is definitionally derived,
+so the feature reached matrix multiply, where the stride happens to be a
+parameter, and nothing else in its own domain. Each such binding now
+contributes one opaque handle that both sides name. The handle exists between
+the fold and the residual and is replaced by the image it stands for before
+anything is proved, so every other premise, the target, and the residual read
+exactly what they read before — which is why no snapshot or conformance verdict
+moves. Publishing the handle's defining equality as a fact and replacing the
+binding's image with it were both built first: the first is invisible to the
+residual, which is the direct L0 route by rule, and the second makes every
+ordinary premise about the binding need that equality to prove. The evidence is
+in `research/investigations/binary-arithmetic/`.
 
 ## Outcome
 

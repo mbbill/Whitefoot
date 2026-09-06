@@ -156,6 +156,27 @@ residual cancels to zero; the same certificate at a literal stride already
 compiled. The evidence is in `research/investigations/binary-arithmetic/`, with
 the design and its measured alternatives in its `PROOF-SURFACE.md`.
 
+v0.49 adds and retires no rule (136 remain) and amends [PRF-1] in place. A
+multiplication's operand and a written multiplicity name the same value when
+they name the same declaration, not when their images coincide. v0.48 folded by
+the images, and a local's image is transparent — `let stride = width +
+padding;` gives `stride` the image `width + padding` — so a product over
+`stride` and a certificate scaling by `stride` arrived at the fold as different
+arithmetic and nothing matched. Measured on one shape with only the derivation
+varying, a stride copied from a parameter accepted while `width + padding`,
+`width + 4`, and `2 * width` all rejected; a stride is definitionally derived,
+so the feature reached matrix multiply, where the stride happens to be a
+parameter, and nothing else in its own domain. Each such binding now
+contributes one opaque handle that both sides name. The handle exists between
+the fold and the residual and is replaced by the image it stands for before
+anything is proved, so every other premise, the target, and the residual read
+exactly what they read before — which is why no snapshot or conformance verdict
+moves. Publishing the handle's defining equality as a fact and replacing the
+binding's image with it were both built first: the first is invisible to the
+residual, which is the direct L0 route by rule, and the second makes every
+ordinary premise about the binding need that equality to prove. The evidence is
+in `research/investigations/binary-arithmetic/`.
+
 ## How to read this outline
 
 This file is the owner-facing map of Whitefoot's live directions. It answers:

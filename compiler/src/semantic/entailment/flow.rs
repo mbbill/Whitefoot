@@ -215,6 +215,19 @@ struct AffineFlowState {
     /// root binding rather than on an interned measure term is what lets a
     /// read resolve the atom without interning anything.
     length_values: HashMap<BindingId, AffineForm>,
+    /// One atom standing for the whole value of a binding whose image is not
+    /// already a single atom, minted on first demand.
+    ///
+    /// A local's image is transparent — `let stride = width + padding;` gives
+    /// `stride` the image `width + padding` — which is what an affine relation
+    /// wants and what [PRF-1]'s fold cannot use: a product over `stride`
+    /// distributes into its operands and no admitted multiplication matches
+    /// the pieces. This map is the opposite handle on the same binding, one
+    /// value the certificate can name, and the fact published beside it keeps
+    /// the transparent reading available to everything else. Keyed and killed
+    /// exactly as `values` is, so a write mints a fresh handle for a fresh
+    /// value.
+    opaque_values: HashMap<BindingId, AffineForm>,
     /// Every published affine conclusion at this control-flow point. Fact
     /// identity is only the canonical inequality over immutable value images;
     /// evidence is retained solely to explain a selected derivation.
@@ -807,8 +820,9 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         derivations: DerivationLedger::default(),
         obligations: Vec::new(),
         product_intervals: HashMap::new(),
-        product_operands: HashMap::new(),
+        product_operands: HashSet::new(),
         product_atoms: HashMap::new(),
+        handle_images: HashMap::new(),
         call_goals: Vec::new(),
         counted_derivations: Vec::new(),
         loop_invariants: Vec::new(),
@@ -1043,11 +1057,12 @@ struct Analyzer<'check, 'unit> {
     /// establishes at the binding the walk then reaches, so the measurement
     /// waits here between the two rather than being proved again.
     product_intervals: HashMap<crate::NodePath, AffineProductInterval>,
-    /// The two operand atoms of each admitted exact multiplication whose
-    /// operands are themselves single value images, keyed by that operation's
-    /// own node. Read once at the binding the walk then reaches, exactly as
-    /// the interval above is.
-    product_operands: HashMap<crate::NodePath, (AffineTermId, AffineTermId)>,
+    /// Which exact multiplications discharged their [OP-2] domain over affine
+    /// operand images, keyed by the operation's own node. Read once at the
+    /// binding the walk then reaches, exactly as the interval above is. It
+    /// records only that the domain held: which values the fold names is a
+    /// separate question the binding answers.
+    product_operands: HashSet<crate::NodePath>,
     /// What every admitted exact product equals, as value identities: the atom
     /// the multiplication bound, and the two operand atoms it is the product
     /// of.
@@ -1058,6 +1073,10 @@ struct Analyzer<'check, 'unit> {
     /// values and the recorded equality stays true. [PRF-1] reads it to fold a
     /// term-scaled premise's nonlinear monomials back to affine.
     product_atoms: HashMap<AffineTermId, (AffineTermId, AffineTermId)>,
+    /// What each minted opaque handle stands for. An `AffineTermId` is one
+    /// immutable value identity, so this needs no kill and no join, exactly as
+    /// `product_atoms` does.
+    handle_images: HashMap<AffineTermId, AffineForm>,
     call_goals: Vec<CallGoalOutcome>,
     counted_derivations: Vec<CountedDerivationSet>,
     loop_invariants: Vec<LoopInvariantOutcome>,
@@ -7086,20 +7105,16 @@ impl Analyzer<'_, '_> {
         if discharged && let Some(interval) = outcome.product_interval.clone() {
             self.product_intervals.insert(node_path.clone(), interval);
         }
-        // What the exact multiplication equals, for [PRF-1] to fold a
-        // term-scaled premise with. Recorded only when the domain discharged
-        // through an affine route, which is what committed `prepared_affine`
-        // and so kept the operand atoms these names refer to; the operands
-        // must each be one atom, because two atoms are all a degree-two
-        // monomial can name.
+        // That the exact multiplication's domain held, for [PRF-1] to fold a
+        // term-scaled premise against. Recorded only when the domain
+        // discharged through an affine route, which is what committed
+        // `prepared_affine` and so fixed the images the judgment read.
         if discharged
             && outcome.route == Some(ProofRoute::Affine)
             && operation == CheckedIntegerOperation::MultiplyExact
-            && let Some(product) = affine_product.as_ref()
-            && let (Some(left), Some(right)) = (product.left.unit_term(), product.right.unit_term())
+            && affine_product.is_some()
         {
-            self.product_operands
-                .insert(node_path.clone(), (left.min(right), left.max(right)));
+            self.product_operands.insert(node_path.clone());
         }
         let ordinal = u32::try_from(self.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
@@ -8245,6 +8260,56 @@ impl Analyzer<'_, '_> {
         Some(self.new_affine_atom(ty))
     }
 
+    /// The one atom that stands for a binding's whole value, for the length of
+    /// one certificate.
+    ///
+    /// A binding whose image is already a single atom is its own handle and
+    /// mints nothing. Otherwise a fresh atom is minted and the image it stands
+    /// for is remembered, so the handle can be unfolded again before anything
+    /// is proved.
+    ///
+    /// [PRF-1]'s fold needs this because a local's image is transparent by
+    /// design. `let stride = width + padding; let base = stride * row;` gives
+    /// the product the operands `width + padding` and `row`, so a certificate
+    /// scaling by `stride` distributes into pieces no admitted multiplication
+    /// matches. Naming the binding on both sides — the product it forms and
+    /// the multiplicity that scales by it — is what makes the two agree, and
+    /// it is the rule [PRF-1] already states one sentence away for a named
+    /// premise: resolve by the declaration the writer wrote, not by whatever
+    /// that declaration currently expands to.
+    ///
+    /// The handle is deliberately not published as a fact and does not replace
+    /// the binding's image. Both were tried and both cost more than they
+    /// bought: a published equality is invisible to the residual, which is the
+    /// direct L0 route by rule, and replacing the image makes every ordinary
+    /// premise about the binding need that equality to prove. Keeping it a
+    /// name that exists between the fold and the residual leaves the rest of
+    /// the checker reading exactly what it read before.
+    fn affine_opaque_handle(
+        &mut self,
+        binding: BindingId,
+        state: &mut AffineFlowState,
+    ) -> Option<AffineForm> {
+        if let Some(image) = state.values.get(&binding)
+            && image.unit_term().is_some()
+        {
+            return Some(image.clone());
+        }
+        if let Some(handle) = state.opaque_values.get(&binding) {
+            return Some(handle.clone());
+        }
+        let handle = self.new_affine_binding_atom(binding)?;
+        let Some(image) = state.values.get(&binding).cloned() else {
+            state.values.insert(binding, handle.clone());
+            state.opaque_values.insert(binding, handle.clone());
+            return Some(handle);
+        };
+        let atom = handle.unit_term()?;
+        self.handle_images.insert(atom, image);
+        state.opaque_values.insert(binding, handle.clone());
+        Some(handle)
+    }
+
     /// Intersects every published affine fact by canonical numeric content,
     /// then records representative predecessor evidence for diagnostics.
     ///
@@ -8420,6 +8485,10 @@ impl Analyzer<'_, '_> {
             values.insert(binding, value);
         }
         let mut length_values = HashMap::new();
+        // An opaque handle is a convenience for one certificate, not a fact,
+        // so a join keeps none: the next demand re-mints against whatever the
+        // joined image is.
+        let opaque_values: HashMap<BindingId, AffineForm> = HashMap::new();
         // A measure is not arithmetic-updated, so there is no spread for a
         // join delta to stand for: inputs that disagree disagree because some
         // branch replaced the object, and the next read mints a new unknown.
@@ -8448,6 +8517,7 @@ impl Analyzer<'_, '_> {
         AffineFlowState {
             values,
             length_values,
+            opaque_values,
             facts: self.join_affine_facts(states),
             published_invariants: first
                 .affine
@@ -8944,18 +9014,58 @@ impl Analyzer<'_, '_> {
         &mut self,
         binding: BindingId,
         value: &CheckedExpression,
-        state: &AffineFlowState,
+        state: &mut AffineFlowState,
     ) {
-        let CheckedExpression::IntegerOperation { carrier, .. } = value else {
+        let CheckedExpression::IntegerOperation {
+            carrier, arguments, ..
+        } = value
+        else {
             return;
         };
-        let Some(operands) = self.product_operands.get(carrier).copied() else {
+        if !self.product_operands.contains(carrier) {
+            return;
+        }
+        let [left, right] = arguments.as_slice() else {
+            return;
+        };
+        // What proved the domain and what the fold names are two questions.
+        // The domain judgment reads the transparent images, whose intervals are
+        // what admit the multiply at all; the record names the bindings, so a
+        // certificate scaling by one of them meets the same value here. Reading
+        // handles at the domain site instead was tried and costs the interval:
+        // an opaque operand is only bounded by its type, and the four endpoint
+        // products then leave the range.
+        let (Some(left), Some(right)) = (
+            self.affine_operand_handle(left, state),
+            self.affine_operand_handle(right, state),
+        ) else {
             return;
         };
         let Some(product) = state.values.get(&binding).and_then(AffineForm::unit_term) else {
             return;
         };
-        self.product_atoms.insert(product, operands);
+        self.product_atoms
+            .insert(product, (left.min(right), left.max(right)));
+    }
+
+    /// The atom a multiplication's operand contributes to the fold: the
+    /// binding's opaque handle when the operand is a plain read of one, and
+    /// nothing otherwise.
+    fn affine_operand_handle(
+        &mut self,
+        operand: &CheckedExpression,
+        state: &mut AffineFlowState,
+    ) -> Option<AffineTermId> {
+        let CheckedExpression::Binding { binding, ty, .. } = operand else {
+            return None;
+        };
+        let CheckedType::Integer(integer) = *ty else {
+            return None;
+        };
+        if self.affine_binding_type(*binding) != Some(integer) {
+            return None;
+        }
+        self.affine_opaque_handle(*binding, state)?.unit_term()
     }
 
     /// Retains the second fixed consequence of one S7 unsigned division:
@@ -9585,17 +9695,9 @@ impl Analyzer<'_, '_> {
             CheckedProofMultiplicity::Literal(factor) => {
                 Some(CertificateMultiplicity::Literal(factor))
             }
-            CheckedProofMultiplicity::Value { binding, .. } => {
-                let value = match state.values.get(&binding) {
-                    Some(value) => value.clone(),
-                    None => {
-                        let value = self.new_affine_binding_atom(binding)?;
-                        state.values.insert(binding, value.clone());
-                        value
-                    }
-                };
-                Some(CertificateMultiplicity::Value(value))
-            }
+            CheckedProofMultiplicity::Value { binding, .. } => Some(
+                CertificateMultiplicity::Value(self.affine_opaque_handle(binding, state)?),
+            ),
         }
     }
 
@@ -9666,6 +9768,19 @@ impl Analyzer<'_, '_> {
         }
         let folded = polynomial
             .fold_products(&products)
+            .map_err(Self::certificate_fold_failure)?;
+        let mut images = std::collections::BTreeMap::new();
+        for (handle, image) in &self.handle_images {
+            let mut weights = image
+                .terms()
+                .iter()
+                .map(|coefficient| (Some(coefficient.term()), coefficient.coefficient()))
+                .collect::<Vec<_>>();
+            weights.push((None, image.constant_value()));
+            images.insert(*handle, weights);
+        }
+        let folded = folded
+            .unfold_handles(&images)
             .map_err(Self::certificate_fold_failure)?;
         let mut check = AffineCheckState::new();
         match folded.into_inequality(&mut check) {
@@ -10270,6 +10385,11 @@ impl Analyzer<'_, '_> {
                 .iter()
                 .any(|event| Self::affine_event_kills_binding(*binding, event))
         });
+        state.opaque_values.retain(|binding, _| {
+            !events
+                .iter()
+                .any(|event| Self::affine_event_kills_binding(*binding, event))
+        });
         // Published facts name immutable AffineTermId value identities, not
         // mutable bindings. Removing the map above prevents a replacement
         // value from matching an old image; retaining each theorem preserves
@@ -10535,7 +10655,7 @@ impl Analyzer<'_, '_> {
                     );
                 }
                 if judgment.reached {
-                    self.record_product_atom(*binding, value, &state.affine);
+                    self.record_product_atom(*binding, value, &mut state.affine);
                 }
                 true
             }

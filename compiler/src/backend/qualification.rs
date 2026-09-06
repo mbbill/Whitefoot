@@ -249,7 +249,17 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // system operation, resource representation, release row, result shape, entry
 // form, or host ABI mapping changes, so the v0.47 mapping carries forward
 // complete.
-const REVIEWED_FOR: &str = "v0.48";
+// v0.49 fold-identity review (2026-09-05): the amendment is front-end and
+// narrower than v0.48's. It changes which of two equal spellings [PRF-1]'s
+// certificate names between its fold and its residual, and the handle it mints
+// for that span is replaced by the value image it stands for before any
+// residual forms, so nothing downstream ever sees it. The domain judgment that
+// admits a multiplication is untouched and still reads the transparent operand
+// images, which is what proves the interval; only the record the fold consults
+// changes. ENT-1 erases every certificate before lowering. No system
+// operation, resource representation, release row, result shape, entry form,
+// or host ABI mapping changes, so the v0.48 mapping carries forward complete.
+const REVIEWED_FOR: &str = "v0.49";
 
 /// The number of [SYS-2] opaque resource types, including the
 /// traversal-surface candidate's `DirectorySource`.

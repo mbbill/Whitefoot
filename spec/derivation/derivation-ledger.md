@@ -4,7 +4,7 @@ The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
 are the chain tail in `governance/APPROVALS.md`; each superseded version is
-archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.48 amendments
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.49 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -14,7 +14,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 through v0.48 amendments below and the active
+the v0.40 through v0.49 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -23,6 +23,9 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
+**v0.49 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.49 adds and retires no rule and moves no row's status. It
+amends [PRF-1] in place, so every derivation status carries over from v0.48.)
 **v0.48 statistics: 81 derived · 55 existence-only · 0 underived**
 (136 rules: v0.48 adds and retires no rule and moves no row's status. It
 amends [GRAM-4] and [PRF-1] in place, so every derivation status carries over
@@ -1984,3 +1987,20 @@ in place and moves no row's status.
 | --- | --- | --- | --- | --- |
 | GRAM-4 use premise | A `proof_use` cites one `use_premise` — an invariant name or a delimited relation — optionally prefixed by `N times`; the multiplicity is written as a bare decimal or a name | 🟢 derived | Derived from R3 and from what the form denotes. The multiplicity is how many times a premise is added into the certificate sum, and spelling it `*` claimed it was a multiplication whose right operand is a relation, which is not a thing the language has. Three defects followed from the one pose and each is removed by naming it: the form read as `n * bool`; a term multiplicity was undecidable in strong-LL(2) because after `use IDENT *` the token separating a certificate step from an affine relation source is arbitrarily far away; and the [FORM-2] stated space before `(` existed to carry a distinction the parser could not see, so the rendering rule was load-bearing for meaning. `times` is a fixed atom, so it can never be the second token of a premise name or of a relation, which decides every form within two tokens of `use`. Mandatory parentheses on the relation premise are the same sentence: the bare-when-unmultiplied split was a second consequence of the ambiguity, and R3 admits one way to say a premise. META-5 counts the new production and the new atom, and R3 selects the spelling by evidence under W1 — `times` has zero identifier uses in the corpus and the corpus's own doc strings already reach for the word to describe this construct. | Registered: `times` still reads as an operator binding looser than `*`, which is a pose the parentheses reduce but do not remove; `use 3 times x;` where `x` is a value and `use a + 3 times (b <= c);` are caught after parsing rather than by the grammar. |
 | PRF-1 named multiplicity | A multiplicity may name an unsigned integer value; the certificate sum is then a degree-two polynomial whose nonlinear monomials must fold to admitted exact products before the residual forms | 🟢 derived | Derived from the verify-never-search principle and from R1. Scaling a written premise by a value is still verification: the writer names the premise and the multiplier, and the checker multiplies and adds, so acceptance stays a function of the written text and the [ENT-1] monotonicity obligation is discharged structurally. Two restrictions keep the addition free of anything new. The unsigned type is what makes the step sound without an obligation, because `m*p <= 0` follows from `p <= 0` exactly when `m` is nonnegative, and taking that from the written type keeps it structural rather than proved. The fold is what keeps the polynomial transient: a monomial is replaced by the value image an admitted exact multiplication already bound, which is an equality substitution. Folding the sum rather than expanding the target is the direction that stays inside the domain, and that is a termination argument rather than a preference. A sum holds finitely many monomials and each fold removes one, so folding is bounded by construction; expanding is not, because an operand may itself be a product — `let a = n * p; let b = a * q;` expands `b` to `a*q` and then `a` to `n*p`, reaching a degree nothing in [PRF-1] can hold. Expansion also rewrites a proposition that was already affine, so it can turn a provable residual into an unprovable one, while folding only ever removes monomials. What comes out is an ordinary affine inequality, so the residual, its integer tightenings, and the L0 route are the same ones a bare-decimal certificate uses, and no fact, published conclusion, invariant target, or `affine_expr` ever carries a nonlinear term. R1 supplies the necessity: a matrix multiply's inner index at a runtime stride is unwritable without it, and the identical certificate at a literal stride already compiled. | Registered, and measured wider than first recorded: the fold needs each operand image to be a single value image, so `let stride = width + padding; let base = stride * row;` records no product at all — binding the sum, which this row first offered as the remedy, does not help, because the binding's image is still the sum. The only workaround found is passing the operand across a function boundary so the checker holds it opaquely, which costs a whole extra function. A stride sweep measured this as landing on essentially every natural formula in that domain — padding, DIB rounding, tile area, channel count, alignment — so the restriction refuses the static route exactly where the feature was meant to serve. The repair is to fold by the operand's binding identity rather than by its expanded image, which is the rule [PRF-1] already uses one sentence away for a named premise. The route restriction that reads like a second gap is not one, and was measured rather than assumed: a product the finite L0 route admits has at least one compile-time-known operand, and its value image is then already a constant or an affine scaling, so no monomial is formed and there is nothing to fold. With both operands constant the target needs no certificate at all and a written one is the redundant-block rejection. |
+
+## v0.49 amendment — fold by the declaration, not by the expansion (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.49, at
+SHA-256 `a318b7ab29b4a270a0857f56781a5301e502fd8e66f15d040af11f2637f173b2`,
+superseding v0.48
+(`1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`), whose
+bytes are archived at `spec/kernel-spec-v0.48.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [PRF-1] in place and
+moves no row's status.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| PRF-1 fold identity | A multiplication's operand and a written multiplicity name the same value when they name the same declaration; each such binding contributes one opaque handle, which exists between the fold and the residual and is replaced by its image before anything is proved | 🟢 derived | Derived from the rule [PRF-1] already states one sentence away. A named premise resolves to its declaration identity and is explicitly never reparsed from the current value of its spelling, for the same reason that arises here: a declaration is what the writer wrote, and what it currently expands to is a different thing. v0.48 folded by expansion and so refused every case where the two differ, which measurement showed is every case the feature was written for — a stride copied from a parameter accepted while `width + padding`, `width + 4`, and `2 * width` all rejected, and a stride is definitionally derived. R1 supplies the necessity: without this the feature reaches matrix multiply, where the stride happens to be a parameter, and nothing else in its own domain. The handle's transience is what keeps the admission free of consequence, and both alternatives were built and measured before it was chosen: publishing the handle's defining equality as a fact is invisible to the residual, which is the direct L0 route by rule, and replacing the binding's image with the handle makes every ordinary premise about that binding need the equality to prove. Naming it only between the fold and the residual leaves every other premise, the target, and the residual reading exactly what they read before, which is why no snapshot verdict and no conformance verdict moves. | Registered: an operand that is not a plain read of a binding — a field, an element, a conversion result — names no declaration and folds nothing; no program in the stride sweep wrote one, and the shape has no conformance case because the surrounding effect and contract ceremony refused every minimal form tried. |

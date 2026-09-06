@@ -115,6 +115,7 @@ own selection ground and merge-time record.
 | v0.46 | a clause states an affine relation, `len(P)` is an affine atom, and the affine route needs no L0 projection | 4 |
 | v0.47 | an integer-typed named const is an affine atom | 1 |
 | v0.48 | a `use` cites one premise, and its multiplicity may name an unsigned value | 2 new |
+| v0.49 | the fold names the declaration a writer wrote, not what it expands to | the stride domain |
 
 Seven of the 186 constructed probes move from refusal to acceptance through
 v0.45 to v0.47, and the snapshot corpus holds at 491 pass with zero flips

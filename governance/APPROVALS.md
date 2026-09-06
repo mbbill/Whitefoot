@@ -2957,3 +2957,45 @@ ACTIVE-SPEC: v0.47 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0
   `reject-gram11-unnamed-call.wf` (a doc-string repair only). Rule coverage is
   136/136 before and after.
 ACTIVE-SPEC: v0.48 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc 8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5
+
+## 2026-09-05 — merge-time approval content: activate v0.49 (a certificate folds by the declaration a writer named, not by what it expands to; no rule id added or retired, 136 remain)
+- EFFECT: this record becomes effective only when the owner approves the exact
+  revision containing it for merge into `main`. That merge approval is rule
+  2's approval and rule 4's approval of the content recorded here; this
+  record creates no separate approval step, and nothing in this record asserts
+  that the approval has been given.
+- SPECIFICATION: activate Whitefoot v0.49 at exact SHA-256
+  `a318b7ab29b4a270a0857f56781a5301e502fd8e66f15d040af11f2637f173b2`.
+  It supersedes active v0.48 at SHA-256
+  `1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`;
+  those outgoing bytes are preserved byte-for-byte as
+  `spec/kernel-spec-v0.48.md`. [PRF-1]'s fold matches a multiplication's
+  operand against a written multiplicity by the declaration each names rather
+  than by the images they expand to. Each such binding contributes one opaque
+  handle, minted at its type range on first demand and killed with the
+  binding's image; the handle exists between the fold and the residual and is
+  replaced by the image it stands for before anything is proved, so every
+  other premise, the target, and the residual are written in exactly the terms
+  they were written in before. An operand that is not a plain read of a
+  binding names no declaration, contributes no handle, and folds nothing. No
+  numbered rule is added or retired, no grammar production, atom, or token
+  changes, and [ENT-3] gains no source.
+- SELECTION GROUND: evidence-selected, recorded in
+  `research/investigations/binary-arithmetic/`. v0.48 folded by operand
+  images, and a local's image is transparent, so a product over a derived
+  binding and a certificate scaling by that same binding arrived at the fold
+  as different arithmetic. Measured on one shape with only the derivation
+  varying, a stride copied from a parameter accepted while `width + padding`,
+  `width + 4`, and `2 * width` all rejected — and a stride is definitionally
+  derived. A sweep of nineteen padded-bitmap, DIB, alignment, tiling, volume
+  and interleaved-audio programs found the restriction refused essentially
+  every natural formula in the domain the feature was written for, with an
+  extra function per stride as the only workaround.
+- CONFORMANCE BOUNDARY: this merge adds one conformance case and modifies,
+  deletes, or renames none; it changes no manifest schema, adapter, runner, or
+  collection wiring. ADDED
+  `tests/conformance/cases/prf1-pos-derived-multiplicity.wf`, manifest id
+  `prf1-pos-derived-multiplicity`, rules PRF-1, ENT-6, expect run exit 0: a
+  padded-bitmap row offset over a computed stride. Rule coverage is 136/136
+  before and after.
+ACTIVE-SPEC: v0.49 a318b7ab29b4a270a0857f56781a5301e502fd8e66f15d040af11f2637f173b2 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc

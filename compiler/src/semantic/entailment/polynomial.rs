@@ -195,6 +195,43 @@ impl CertificatePolynomial {
         Ok(folded)
     }
 
+    /// Replaces each opaque handle by the value image it stands for.
+    ///
+    /// The handle exists so the fold can recognize a product over a derived
+    /// binding; once the nonlinear monomials are gone it has done its work,
+    /// and leaving it in would make the residual carry the handle's defining
+    /// equation instead of zero. Substitution runs after the fold, so every
+    /// monomial left is the constant or one atom and an image can only be
+    /// affine: the degree cannot rise.
+    pub(crate) fn unfold_handles(
+        &self,
+        images: &BTreeMap<AffineTermId, Vec<(Option<AffineTermId>, i128)>>,
+    ) -> Result<Self, PolynomialError> {
+        let mut unfolded = Self::zero();
+        for (monomial, coefficient) in &self.terms {
+            let image = match monomial {
+                Monomial::Linear(atom) => images.get(atom),
+                Monomial::Constant | Monomial::Quadratic(_, _) => None,
+            };
+            match image {
+                Some(image) => {
+                    for (atom, weight) in image {
+                        let scaled = weight
+                            .checked_mul(*coefficient)
+                            .ok_or(PolynomialError::ArithmeticOverflow)?;
+                        let monomial = match atom {
+                            Some(atom) => Monomial::Linear(*atom),
+                            None => Monomial::Constant,
+                        };
+                        unfolded.add_monomial(monomial, scaled)?;
+                    }
+                }
+                None => unfolded.add_monomial(*monomial, *coefficient)?,
+            }
+        }
+        Ok(unfolded)
+    }
+
     pub(crate) fn scale(&self, factor: i128) -> Result<Self, PolynomialError> {
         let mut scaled = Self::zero();
         for (monomial, coefficient) in &self.terms {

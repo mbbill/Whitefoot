@@ -70,3 +70,36 @@ The repair this points at is not more proof power. [PRF-1] already resolves a
 current value; the same treatment applied to the **named multiplicity** and to
 the product's operands would fold `stride * row` to the binding the writer
 wrote rather than to whatever sum it currently denotes.
+
+## v0.49: the operand axis, closed
+
+The same controlled shape, re-measured after the fold began naming the
+declaration rather than its expansion:
+
+| `stride` | v0.48 | v0.49 |
+| --- | --- | --- |
+| `let stride = stride_src;` | accept | accept |
+| `let stride = stride_src + padding;` | reject | **accept** |
+| `let stride = stride_src + 4_u64;` | reject | **accept** |
+| `let stride = 2_u64 * stride_src;` | reject | **accept** |
+
+Two designs were built and measured before the one that shipped, and both are
+worth recording because each is the obvious first idea.
+
+**Publish the handle's defining equality as a fact.** The handle then is not an
+opaque unknown, and what was provable about `width + padding` stays provable
+about `stride`. It does not help: the residual is the direct L0 route by rule,
+and an affine fact is not something that route reads. Measured, the sum folded
+and the residual came out as exactly the published equality rather than zero.
+
+**Replace the binding's image with the handle.** Then every reader agrees and
+the residual closes. It costs the other side: an ordinary premise about the
+binding — `use (width <= stride);` — now needs the equality to prove, and
+measured, two of the four rows moved from a fold failure to a premise failure.
+Transparency helps premises and opacity helps the fold; picking one globally
+breaks the other.
+
+What shipped keeps the handle between the fold and the residual and unfolds it
+before anything is proved. The first axis above is unchanged by this: a
+multiplicity whose image carries a constant term still rejects, and still
+correctly, for the residual reason worked out there.
