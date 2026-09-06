@@ -361,7 +361,15 @@ command fn main() -> status: own ExitStatus pure {
 /// caller, the same true `band` guard proves the complete requirement.
 #[test]
 fn band_requirement_and_guard_share_the_same_conjuncts() {
-    let source = br#"fn pick(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure contract {
+    // The subscripted run is a [S34] const run rather than the retiring
+    // `array<u8, 8>` parameter. Both fix `len_of` at eight as a standing fact
+    // of the place, which is what lets the two conjuncts stay the literal
+    // bounds the members below pin; a run *parameter* would carry `len_of` as
+    // a descriptor word and the conjuncts would have to name it.
+    let source =
+        br#"const table: FixedVector<u8, 8> =[0_u8, 1_u8, 2_u8, 3_u8, 4_u8, 5_u8, 6_u8, 7_u8];
+
+fn pick(low: own u64, high: own u64) -> result: own u8 pure contract {
   define low_ok = low < 8_u64;
   define high_ok = high < 8_u64;
   define both = band(low_ok, high_ok);
@@ -371,12 +379,12 @@ fn band_requirement_and_guard_share_the_same_conjuncts() {
   return first;
 }
 
-fn caller(table: own array<u8, 8>, low: own u64, high: own u64) -> result: own u8 pure {
+fn caller(low: own u64, high: own u64) -> result: own u8 pure {
   let low_ok = low < 8_u64;
   let high_ok = high < 8_u64;
   let both = band(low_ok, high_ok);
   if both {
-    return pick(table: move table, low: low, high: high);
+    return pick(low: low, high: high);
   }
   return 0_u8;
 }
@@ -416,19 +424,19 @@ command fn main() -> status: own ExitStatus pure {
 ///
 /// Both halves are branch guards. The guard proves the decomposition directly:
 /// without the binding-read the conjoined half fails `[OP-4]` on
-/// `next < len_of(deref(input))` while the nested half still discharges.
+/// `next < len_of(input)` while the nested half still discharges.
 #[test]
 fn band_conjunct_over_a_derived_binding_discharges_like_the_single_bound_pair() {
     let conjoined =
-        br#"fn read_pair(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
+        br#"fn read_pair(input: own Slice<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let spare = len_of(deref(input));
+  let spare = len_of(input);
   let at_ok = at < spare;
   let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
-    let first = deref(input)[at];
-    let second = deref(input)[next];
+    let first = input[at];
+    let second = input[next];
     return first +wrap second;
   }
   return 0_u8;
@@ -439,15 +447,15 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
     let separate =
-        br#"fn read_pair(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
+        br#"fn read_pair(input: own Slice<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let spare = len_of(deref(input));
+  let spare = len_of(input);
   let at_ok = at < spare;
   let next_ok = next < spare;
   if at_ok {
     if next_ok {
-      let first = deref(input)[at];
-      let second = deref(input)[next];
+      let first = input[at];
+      let second = input[next];
       return first +wrap second;
     }
     return 0_u8;
@@ -480,15 +488,15 @@ command fn main() -> status: own ExitStatus pure {
 /// false edge, because `-band` carries only disjunctive content.
 #[test]
 fn band_guard_over_a_derived_binding_admits_the_true_edge_only() {
-    let source = br#"fn window(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
+    let source = br#"fn window(input: own Slice<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let spare = len_of(deref(input));
+  let spare = len_of(input);
   let at_ok = at < spare;
   let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
-    let first = deref(input)[at];
-    let second = deref(input)[next];
+    let first = input[at];
+    let second = input[next];
     return first +wrap second;
   }
   return 0_u8;
@@ -501,16 +509,17 @@ command fn main() -> status: own ExitStatus pure {
     let summary = entailment(source, "window");
     assert_eq!(summary.obligations.len(), 2);
     assert!(summary.obligations.iter().all(|o| o.discharged));
-    let else_edge = br#"fn window(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
+    let else_edge =
+        br#"fn window(input: own Slice<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let spare = len_of(deref(input));
+  let spare = len_of(input);
   let at_ok = at < spare;
   let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
     return 0_u8;
   } else {
-    return deref(input)[next];
+    return input[next];
   }
 }
 
@@ -535,16 +544,16 @@ command fn main() -> status: own ExitStatus pure {
 #[test]
 fn band_over_derived_bindings_proves_no_unnamed_bound() {
     let uncovered =
-        br#"fn read_three(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
+        br#"fn read_three(input: own Slice<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
   let far = at +wrap 2_u64;
-  let spare = len_of(deref(input));
+  let spare = len_of(input);
   let at_ok = at < spare;
   let next_ok = next < spare;
   let both = band(at_ok, next_ok);
   if both {
-    let first = deref(input)[at];
-    let third = deref(input)[far];
+    let first = input[at];
+    let third = input[far];
     return first +wrap third;
   }
   return 0_u8;
@@ -563,14 +572,14 @@ command fn main() -> status: own ExitStatus pure {
         summary.obligations
     );
     let disjoined =
-        br#"fn read_pair(input: &buffer<u8>, at: own u64) -> result: own u8 reads(input) {
+        br#"fn read_pair(input: own Slice<u8>, at: own u64) -> result: own u8 reads(input) {
   let next = at +wrap 1_u64;
-  let spare = len_of(deref(input));
+  let spare = len_of(input);
   let at_ok = at < spare;
   let next_ok = next < spare;
   let either = bor(at_ok, next_ok);
   if either {
-    return deref(input)[next];
+    return input[next];
   }
   return 0_u8;
 }

@@ -507,8 +507,8 @@ command fn main() -> status: own ExitStatus pure {
 /// over the integers, so the midpoint subscript needs no written certificate.
 #[test]
 fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
-    let source = br#"fn probe(table: &buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
-  define spare = len_of(deref(table));
+    let source = br#"fn probe(table: own Slice<u8>, lo: own u64, hi: own u64) -> found: own u8 reads(table) contract {
+  define spare = len_of(table);
   requires lo < hi;
   requires hi <= spare;
 } {
@@ -516,7 +516,7 @@ fn the_scaled_quotient_image_halves_into_an_automatic_midpoint_bound() {
   let half = span / 2_u64;
   let mid = lo + half;
   invariant inside: 2_u64 * mid + 1_u64 <= 2_u64 * hi;
-  let byte = deref(table)[mid];
+  let byte = table[mid];
   return byte;
 }
 
@@ -907,8 +907,18 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    let source = br#"fn increment(values: own array<u8, 1>) -> result: own u8 pure {
+fn a_fixed_run_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    // A `FixedVector` run replaces the retiring `array<u8, 1>`. A run's
+    // length is a descriptor word rather than a fact of its type [BLK-1], so
+    // the subscript's [OP-4] domain is stated as a requirement and the
+    // subscript exhibits the read an array subscript did not; the subject —
+    // one canonical index goal reused by the `+defined` guard and the exact
+    // addition — is unchanged, and the goal row is `RunIndex` where it was
+    // `ArrayIndex`.
+    let source =
+        br#"fn increment(values: own FixedVector<u8, 1>) -> result: own u8 reads(values) contract {
+  requires len_of(values) >= 1_u64;
+} {
   if values[0_u64] +defined 1_u8 {
     let result = values[0_u64] + 1_u8;
     return result;
@@ -918,7 +928,8 @@ fn an_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 1>(0_u8);
+  let empty = fixed_vector::<u8, 1>();
+  let values = place_back(vector: move empty, value: 0_u8);
   let result = increment(values: move values);
   return exit_status(code: result);
 }
@@ -942,7 +953,7 @@ command fn main() -> status: own ExitStatus pure {
             arguments.as_slice(),
             [
                 GoalExpression::Operation {
-                    row: GoalOperation::ArrayIndex { .. },
+                    row: GoalOperation::RunIndex { .. },
                     ..
                 },
                 GoalExpression::Datum(_)
@@ -953,7 +964,9 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
-    let source = br#"fn increment_after_write(values: own array<u8, 1>) -> result: own u8 pure {
+    let source = br#"fn increment_after_write(values: own FixedVector<u8, 1>) -> result: own u8 reads(values), writes(values) contract {
+  requires len_of(values) >= 1_u64;
+} {
   if values[0_u64] +defined 1_u8 {
     set values[0_u64] = 255_u8;
     let result = values[0_u64] + 1_u8;
@@ -964,7 +977,8 @@ fn writing_the_indexed_collection_invalidates_its_old_defined_fact() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 1>(0_u8);
+  let empty = fixed_vector::<u8, 1>();
+  let values = place_back(vector: move empty, value: 0_u8);
   let result = increment_after_write(values: move values);
   return exit_status(code: result);
 }
@@ -985,8 +999,11 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_buffer_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
-    let source = br#"fn increment(values: &buffer<u8>) -> result: own u8 reads(values) {
+fn a_store_run_indexed_defined_guard_discharges_the_same_structural_exact_operation() {
+    // The borrowed store-resident run replaces the retiring `&buffer<u8>`.
+    // Its measured kind is `Vector` where the fixed run above is
+    // `FixedVector`, so the two cases still pin two distinct index rows.
+    let source = br#"fn increment(values: &Vector<u8>) -> result: own u8 reads(values) {
   let spare = len_of(deref(values));
   if 0_u64 < spare {
     if deref(values)[0_u64] +defined 1_u8 {
@@ -1006,7 +1023,7 @@ command fn main() -> status: own ExitStatus pure {
 "#;
     with_semantics(source, |outcome| {
         let SemanticOutcome::Complete(checked) = outcome else {
-            panic!("the identical buffer element must retain one structural goal: {outcome:?}");
+            panic!("the identical store-run element must retain one structural goal: {outcome:?}");
         };
         let increment = named(&checked.data.functions, "increment");
         let exact = increment
@@ -1023,7 +1040,7 @@ command fn main() -> status: own ExitStatus pure {
             arguments.as_slice(),
             [
                 GoalExpression::Operation {
-                    row: GoalOperation::BufferIndex { .. },
+                    row: GoalOperation::RunIndex { .. },
                     ..
                 },
                 GoalExpression::Datum(_)
