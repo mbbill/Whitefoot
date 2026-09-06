@@ -91,20 +91,6 @@ _Static_assert(
     "WF_FILE_STATUS_CAPACITY must hold the host stat record"
 );
 
-/* The listen backlog, which is the target's own maximum.
- *
- * It is not a resource on this API: the accept queue is a kernel queue the
- * peer fills, and the program observes it only through accept's outcomes, so
- * a full backlog refuses the peer and never the program
- * (`research/investigations/io-model/NETWORK.md` §2).  Asking for the host's
- * own maximum is therefore the only answer that adds no bound of the
- * runtime's. */
-#if defined(SOMAXCONN)
-#define WF_SOCKET_BACKLOG SOMAXCONN
-#else
-#define WF_SOCKET_BACKLOG 128
-#endif
-
 /* One endpoint operation's two preparations: the host's own address record,
  * and one socket of that address's family.
  *

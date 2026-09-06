@@ -1309,7 +1309,7 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     // The staged tree keeps the repository's own two directories, because the
     // completion header reaches the scheduler core by the relative path it
     // uses in the tree: the completion record begins with a `wf_sched_record`.
-    let units: [(&str, &str); 19] = [
+    let units: [(&str, &str); 20] = [
         ("completion/contract.h", crate::COMPLETION_CONTRACT_HEADER),
         (
             "completion/file_adapter.h",
@@ -1318,6 +1318,10 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
         (
             "completion/file_posix.h",
             crate::COMPLETION_FILE_POSIX_HEADER,
+        ),
+        (
+            "completion/socket_address.h",
+            crate::COMPLETION_SOCKET_ADDRESS_HEADER,
         ),
         ("completion/bridge.h", crate::COMPLETION_BRIDGE_HEADER),
         (
@@ -2472,6 +2476,7 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
         ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
         ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
         ("file_posix.h", crate::COMPLETION_FILE_POSIX_HEADER),
+        ("socket_address.h", crate::COMPLETION_SOCKET_ADDRESS_HEADER),
         ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
         ("windows_iocp.h", crate::COMPLETION_WINDOWS_IOCP_HEADER),
         ("sched/core.h", crate::SCHED_CORE_HEADER),

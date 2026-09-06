@@ -959,6 +959,69 @@ fn a_facility_without_an_approved_record_is_a_missing_mapping() {
     });
 }
 
+/// Every TCP row is mapped on every recognized target column, and the emitted
+/// module names the same ABI symbol on each.
+///
+/// The Windows column mapped none of the seven while its completion-port route
+/// was open work, so a Windows link stopped at qualification
+/// (`research/investigations/io-model/NETWORK.md` §7, slice 3). It maps them
+/// now, and this states that as the property it is: an operation's ABI symbol
+/// is target-independent and which engine runs it is a runtime routing fact,
+/// so a target column that mapped a TCP row differently would be a second
+/// qualification path for one operation [QUAL-1].
+#[test]
+fn every_target_column_maps_the_tcp_rows_to_one_abi_symbol() {
+    let source = br#"command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9_u16);
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &address) {
+            Connected(connection: link) => {
+              let credit = close_connection(connection: move link);
+            }
+            ConnectFailed(error: problem, permit: handed_back) => {
+            }
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        for triple in [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu",
+            "x86_64-pc-windows-msvc",
+        ] {
+            let target = SystemTarget::for_triple(triple).expect("a recognized system target");
+            qualify_program(target, program)
+                .unwrap_or_else(|failure| panic!("{triple} must qualify a TCP row: {failure:?}"));
+            let module = emit_llvm_for_target(program, target)
+                .unwrap_or_else(|failure| panic!("{triple} must emit: {failure:?}"))
+                .into_string();
+            for symbol in [
+                "@wf.sys.tcp_connect.v1",
+                "@wf.sys.close_connection.v1",
+                "@wf__completion_socket_connect_submit",
+            ] {
+                assert!(
+                    module.contains(symbol),
+                    "{triple} must name {symbol}:\n{module}"
+                );
+            }
+        }
+    });
+}
+
 #[test]
 fn component_open_flags_are_target_exact() {
     // The descriptor-status ABI this used to pin beside the flags — the

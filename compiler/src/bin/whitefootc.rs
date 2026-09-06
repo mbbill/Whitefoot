@@ -7,9 +7,9 @@ use std::process::{Command, Stdio};
 use whitefoot::{
     Architecture, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER,
-    CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering,
-    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WINDOWS_IOCP_HEADER, CompilerLimits, FLOOR_STACK_BYTES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
     SCHED_PRIM_HEADER, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER,
     compile_with_io_notices, compile_with_permission_ledger, module_requires_completion_runtime,
     module_requires_parallel_runtime, stack_ledger,
@@ -135,6 +135,10 @@ const COMPLETION_SHARED_UNITS: &[RuntimeUnit] = &[
     unit("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
     unit("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
     unit(
+        "completion/socket_address.h",
+        COMPLETION_SOCKET_ADDRESS_HEADER,
+    ),
+    unit(
         "completion/linux_io_uring.h",
         COMPLETION_LINUX_IO_URING_HEADER,
     ),
@@ -185,12 +189,14 @@ const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-pthread"];
 #[cfg(target_os = "windows")]
 const TARGET_COMPILE_ARGUMENTS: &[&str] = &["-municode"];
 
-/// The libraries this host's link needs. Windows names none: every facility
-/// the runtime uses is in the import libraries clang links by default.
+/// The libraries this host's link needs. Windows names exactly one: every
+/// other facility the runtime uses is in the import libraries clang links by
+/// default, and Winsock is not — the TCP routes of [SYS-17] and [SYS-18] are
+/// what put it here.
 #[cfg(not(target_os = "windows"))]
 const TARGET_LINK_LIBRARIES: &[&str] = HOST_LINK_LIBRARIES;
 #[cfg(target_os = "windows")]
-const TARGET_LINK_LIBRARIES: &[&str] = &[];
+const TARGET_LINK_LIBRARIES: &[&str] = &["-lws2_32"];
 
 fn main() {
     let driver = match std::thread::Builder::new()

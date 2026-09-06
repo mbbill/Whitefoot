@@ -216,6 +216,207 @@ static unsigned char expected_byte(uint64_t offset) {
     return (unsigned char)(offset % 251u);
 }
 
+/* One loopback round trip through the bridge's own ABI: listen, connect,
+ * accept, send, receive, and the four releases that end the two connections
+ * and the listener [SYS-17, SYS-18].
+ *
+ * It is one text on every platform, which is the point: the same six request
+ * kinds reach the Linux ring's four opcodes, the Windows completion port's
+ * `ConnectEx`, `WSARecv` and `WSASend`, and the shared file adapter's own
+ * blocking calls, and every one of them owes this same sequence the same
+ * answers.  It is the only TCP evidence a cross-built run under wine can
+ * produce, and on POSIX it runs in `completion-default-route-test` beside the
+ * reads.
+ *
+ * Every step is submitted and joined before the next is submitted, and the
+ * order is chosen so that no step waits on a peer that has not acted yet: the
+ * connect completes against the listener's backlog, the accept takes a
+ * connection that is already waiting, and the receive reads bytes the send has
+ * already handed over.  So this probe needs no second thread and no timeout of
+ * its own.
+ *
+ * The specification declares no operation reporting a listener's own local
+ * address ([SYS-17]), so the port is chosen the only way a program can choose
+ * one: bind a candidate and take the host's answer.  A port another process
+ * holds answers `AddressInUse` and the next candidate is tried, which is that
+ * outcome being the program's own [SYS-17]. */
+#define PROBE_TCP_PORT_FIRST 45231u
+#define PROBE_TCP_PORT_TRIES 64u
+/* 127.0.0.1 in the portable layout `contract.h` fixes: byte `i` occupies bits
+ * `8 * (i % 8)` of word `i / 8`, so 127, 0, 0, 1 is this word. */
+#define PROBE_LOOPBACK_WORD UINT64_C(0x0100007f)
+
+static int probe_socket_step(
+    const char *what,
+    void *record,
+    int64_t *value
+) {
+    int error = 0;
+    wf__completion_file_join(record, value, &error);
+    if (*value < 0) {
+        (void)fprintf(
+            stderr,
+            "bridge default probe: loopback %s refused: value %lld error %d\n",
+            what,
+            (long long)*value,
+            error
+        );
+        return 1;
+    }
+    return 0;
+}
+
+static int probe_loopback_round_trip(unsigned *chosen_port) {
+    _Alignas(WF_COMPLETION_RECORD_ALIGN)
+        unsigned char record[WF_COMPLETION_RECORD_BYTES];
+    static const unsigned char sent[8] = {3u, 1u, 4u, 1u, 5u, 9u, 2u, 6u};
+    unsigned char received[8];
+    unsigned port;
+    int64_t listener = -1;
+    int64_t client = -1;
+    int64_t served = -1;
+    int64_t value = 0;
+    int error = 0;
+    uint64_t peer_low = 0;
+    uint64_t peer_high = 0;
+    uint32_t peer_tag = 0;
+    unsigned index;
+    int last_error = 0;
+
+    *chosen_port = 0;
+    for (index = 0; index < PROBE_TCP_PORT_TRIES; ++index) {
+        port = PROBE_TCP_PORT_FIRST + index;
+        wf__completion_socket_listen_submit(
+            PROBE_LOOPBACK_WORD,
+            0,
+            (uint32_t)port,
+            record
+        );
+        wf__completion_file_join(record, &listener, &error);
+        if (listener >= 0) {
+            break;
+        }
+        last_error = error;
+    }
+    if (listener < 0) {
+        (void)fprintf(
+            stderr,
+            "bridge default probe: no loopback port in %u candidates from "
+            "%u accepted a listen; the last refusal was %d\n",
+            PROBE_TCP_PORT_TRIES,
+            PROBE_TCP_PORT_FIRST,
+            last_error
+        );
+        return 1;
+    }
+    *chosen_port = port;
+
+    wf__completion_socket_connect_submit(
+        PROBE_LOOPBACK_WORD,
+        0,
+        (uint32_t)port,
+        record
+    );
+    if (probe_socket_step("connect", record, &client) != 0) {
+        return 1;
+    }
+
+    wf__completion_socket_accept_submit((int)listener, record);
+    wf__completion_socket_accept_join(
+        record,
+        &served,
+        &error,
+        &peer_low,
+        &peer_high,
+        &peer_tag
+    );
+    if (served < 0) {
+        (void)fprintf(
+            stderr,
+            "bridge default probe: loopback accept refused: value %lld "
+            "error %d\n",
+            (long long)served,
+            error
+        );
+        return 1;
+    }
+    /* The peer of a loopback connection is 127.0.0.1 on a port the host chose,
+     * in the same portable form on every engine: this is the one place the
+     * accept join's three scalars are read, and a target whose rewrite of the
+     * host record went wrong answers the all-zero address here. */
+    if (peer_low != PROBE_LOOPBACK_WORD || peer_high != 0
+        || (peer_tag & 0xffffu) == 0u) {
+        (void)fprintf(
+            stderr,
+            "bridge default probe: the accepted peer is not a loopback "
+            "address: low %llu high %llu tag %lu\n",
+            (unsigned long long)peer_low,
+            (unsigned long long)peer_high,
+            (unsigned long)peer_tag
+        );
+        return 1;
+    }
+
+    wf__completion_socket_send_submit(
+        (int)client,
+        sent,
+        (uint64_t)sizeof(sent),
+        record
+    );
+    if (probe_socket_step("send", record, &value) != 0) {
+        return 1;
+    }
+    if (value != (int64_t)sizeof(sent)) {
+        (void)fprintf(
+            stderr,
+            "bridge default probe: the loopback send accepted %lld of %u "
+            "bytes\n",
+            (long long)value,
+            (unsigned)sizeof(sent)
+        );
+        return 1;
+    }
+    memset(received, 0, sizeof(received));
+    wf__completion_socket_receive_submit(
+        (int)served,
+        received,
+        (uint64_t)sizeof(received),
+        record
+    );
+    if (probe_socket_step("receive", record, &value) != 0) {
+        return 1;
+    }
+    if (value != (int64_t)sizeof(received)
+        || memcmp(received, sent, sizeof(sent)) != 0) {
+        (void)fprintf(
+            stderr,
+            "bridge default probe: the loopback receive answered %lld bytes "
+            "and they are not the ones sent\n",
+            (long long)value
+        );
+        return 1;
+    }
+
+    /* Two releases per connection, which is what a `close_connection` lowers
+     * to: the first half-closes that direction and the second releases the
+     * target's object [SYS-18].  The listener's close is the ordinary one. */
+    for (index = 0; index < 2u; ++index) {
+        wf__completion_socket_shutdown_submit((int)client, index, record);
+        if (probe_socket_step("client half-close", record, &value) != 0) {
+            return 1;
+        }
+        wf__completion_socket_shutdown_submit((int)served, index, record);
+        if (probe_socket_step("served half-close", record, &value) != 0) {
+            return 1;
+        }
+    }
+    wf__completion_file_close_submit((int)listener, record);
+    if (probe_socket_step("listener close", record, &value) != 0) {
+        return 1;
+    }
+    return 0;
+}
+
 static void lane_main(void *context) {
     lane_context *self = context;
     unsigned round;
@@ -317,6 +518,8 @@ int main(int argc, char **argv) {
     unsigned submitted;
     uint64_t inline_executions;
     uint64_t helpers;
+    unsigned tcp_port = 0;
+    uint64_t tcp_ring_submissions = 0;
     /* The two settings this probe reads about itself, through the platform
      * layer's own setting read (`../sched/prim.h`, P4) rather than `getenv`,
      * which the MSVC ucrt marks deprecated. */
@@ -414,6 +617,16 @@ int main(int argc, char **argv) {
     submitted = atomic_load_explicit(&submitted_route, memory_order_relaxed);
     inline_executions = wf__completion_inline_executions();
     helpers = wf__completion_target_helper_count();
+
+    /* The loopback round trip runs after those counters are read, so that the
+     * read-route assertions above and below are about the reads and nothing
+     * else.  Its own share of the ring is the delta reported beside it. */
+    {
+        uint64_t before = ring_submissions;
+        failed |= probe_loopback_round_trip(&tcp_port);
+        tcp_ring_submissions =
+            wf__completion_native_ring_submissions() - before;
+    }
     /* The arm that exists to reach the adapter branch above has to have
      * reached the adapter.  Without this the Makefile could set
      * WF_IO_NO_NATIVE_RING, the bridge could ignore it, and the run would pass
@@ -472,14 +685,16 @@ int main(int argc, char **argv) {
             stderr,
             "bridge default probe: FAIL submitted=%u inline=%llu "
             "non-positioned=%u helpers=%llu submissions=%llu "
-            "ring=%llu adapter=%llu\n",
+            "ring=%llu adapter=%llu tcp-port=%u tcp-ring=%llu\n",
             submitted,
             (unsigned long long)inline_executions,
             atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
             (unsigned long long)helpers,
             (unsigned long long)wf__completion_file_submissions(),
             (unsigned long long)ring_submissions,
-            (unsigned long long)adapter_submissions
+            (unsigned long long)adapter_submissions,
+            tcp_port,
+            (unsigned long long)tcp_ring_submissions
         );
         return 1;
     }
@@ -487,7 +702,7 @@ int main(int argc, char **argv) {
         stderr,
         "bridge default probe: PASS submitted=%u inline=%llu "
         "non-positioned=%u helpers=%llu submissions=%llu "
-        "ring=%llu adapter=%llu route=%s\n",
+        "ring=%llu adapter=%llu tcp-port=%u tcp-ring=%llu route=%s\n",
         submitted,
         (unsigned long long)inline_executions,
         atomic_load_explicit(&nonpositioned_route, memory_order_relaxed),
@@ -495,6 +710,8 @@ int main(int argc, char **argv) {
         (unsigned long long)wf__completion_file_submissions(),
         (unsigned long long)ring_submissions,
         (unsigned long long)adapter_submissions,
+        tcp_port,
+        (unsigned long long)tcp_ring_submissions,
         ring_submissions != 0 ? "native-ring" : "posix-adapter"
     );
     return 0;

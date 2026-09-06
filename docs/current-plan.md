@@ -866,6 +866,45 @@ cold read waits briefly and uniformly.
 
 ## Batch 3: streams and TCP (specification v0.46)
 
+**Status 2026-09-06, slice 3: landed on this branch.** Every TCP operation
+runs on Windows, on both routes. `backend/qualification.rs` maps ordinals 22
+through 28 on the Windows column to the same ABI symbols the native column
+uses, because an operation's symbol is target-independent and which engine
+runs it is a runtime routing fact; the emitter is unchanged.
+`completion/file_windows.c` executes all six request kinds against Winsock
+(`WSASocketW` with `WSA_FLAG_OVERLAPPED` and `WSA_FLAG_NO_HANDLE_INHERIT`,
+`bind`, `listen(SOMAXCONN)`, `accept`, `connect`, `recv`, `send`, `shutdown`,
+`closesocket`), and `completion/windows_iocp.c` carries the connect, the
+receive and the send on the completion port with `ConnectEx`, `WSARecv` and
+`WSASend` on the record's own `OVERLAPPED`, the connect's socket created and
+bound to its family's wildcard in the submitting call and
+`SO_UPDATE_CONNECT_CONTEXT` set on the completion path. `backend/
+windows_runtime.c` holds the once-per-process `WSAStartup`, the socket open
+and close, the ledger's new `WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET` row, and the
+normalization that makes a `WSAGetLastError` code and the completion port's
+own Win32 code for one condition answer one [SYS-7] class. The address
+vocabulary is shared rather than twinned: it moved out of `file_posix.h` into
+`completion/socket_address.h`, which every engine on every platform includes.
+
+The accept stays on the shared file adapter on this platform, by measurement
+rather than preference: an `AcceptEx` address pair is
+`2 * (sizeof(sockaddr_in6) + 16)` = 88 bytes that must live until the
+operation completes, and the completion record is exactly 160 bytes with the
+accept's union arm at the 40-byte ceiling `contract.h` asserts and the
+ring-state block at 40 bytes already full of the `OVERLAPPED` and its handle.
+The record may not grow and the runtime allocates nothing at run time, so
+there is nowhere for those 88 bytes to go; refusing the accept on the port is
+the same class of fact as the Linux ring's refusal of a listen.
+
+`bridge_default_probe.c` gains a loopback round trip through the bridge's own
+ABI — listen, connect, accept, send, receive and the four releases — which is
+one text on every platform and is what `completion-windows-wine` and the POSIX
+`completion-default-route-test` both run; `.github/workflows/io-hosts.yml`'s
+`completion-windows` job gains a step that compiles `tcp_echo.wf` (plain and
+`--par`) and `tcp_refused.wf` with the production driver and runs each on the
+completion port and on the adapter against a `System.Net.Sockets` peer.
+Winsock is the one import library a Windows link now names.
+
 **Status 2026-09-05, slice 2: landed on this branch.** Every TCP operation
 lowers and runs on POSIX. `backend/qualification.rs` maps ordinals 22 through
 28 on the native column and leaves them unmapped on the Windows one, whose
@@ -945,7 +984,9 @@ move kills the whole binding under [OWN-1], and no `split` or `join` exists.
 2. **POSIX runtime: adapter route for every TCP kind, Linux ring route for
    accept, connect, receive and send; loopback tests in `tests/programs`.**
    Done. This is where a wait becomes a real ring wait for the first time.
-3. **Windows: the completion-port route; the io-hosts job proves it.**
+3. **Windows: the completion-port route; the io-hosts job proves it.** Done.
+   The port carries the connect, the receive and the send; the accept is the
+   adapter's for the record-size reason the status above states.
 4. **The control benchmark** against the io_uring and epoll references, in
    `io-completion-bench`, reported as a ratio to the io_uring reference.
 5. **Batch record.**

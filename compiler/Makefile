@@ -494,6 +494,11 @@ WINDOWS_LINK_SOURCES := \
 	src/backend/windows_runtime.c
 WINDOWS_CFLAGS := -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
 	-I$(COMPLETION_DIR) -Isrc/backend
+# Winsock is the one facility this target does not get from the import
+# libraries a link takes by default, so a link that carries the TCP routes
+# names it (`src/bin/whitefootc.rs`, TARGET_LINK_LIBRARIES, says the same for
+# the driver's own links).
+WINDOWS_LINK_LIBRARIES := -lws2_32
 
 # These two are deliberately explicit qualification-development targets rather
 # than part of `check`, and they are two rather than one because they prove
@@ -512,7 +517,8 @@ completion-windows-cross:
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		$(WINDOWS_LINK_SOURCES) \
 		$(COMPLETION_DIR)/bridge_default_probe.c \
-		-o "$(COMPLETION_TMP)/windows-default-route-probe.exe"
+		-o "$(COMPLETION_TMP)/windows-default-route-probe.exe" \
+		$(WINDOWS_LINK_LIBRARIES)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		$(SCHED_DIR)/core.c \
 		$(SCHED_DIR)/prim_windows.c \
@@ -520,8 +526,10 @@ completion-windows-cross:
 		$(COMPLETION_DIR)/wait_windows.c \
 		$(COMPLETION_DIR)/native_contract.c \
 		$(COMPLETION_DIR)/windows_iocp.c \
+		src/backend/windows_runtime.c \
 		$(COMPLETION_DIR)/native_adapter_probe.c \
-		-o "$(COMPLETION_TMP)/windows-adapter-probe.exe"
+		-o "$(COMPLETION_TMP)/windows-adapter-probe.exe" \
+		$(WINDOWS_LINK_LIBRARIES)
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		-c src/backend/wf_floor_windows.c \
 		-o "$(COMPLETION_TMP)/wf-floor-windows.o"
@@ -530,7 +538,8 @@ completion-windows-cross:
 		-o "$(COMPLETION_TMP)/windows-runtime.o"
 	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
 		src/backend/windows_namespace_probe.c \
-		-o "$(COMPLETION_TMP)/windows-namespace-probe.exe"
+		-o "$(COMPLETION_TMP)/windows-namespace-probe.exe" \
+		$(WINDOWS_LINK_LIBRARIES)
 	@imports="$$($(WINDOWS_OBJDUMP) -p \
 		"$(COMPLETION_TMP)/windows-default-route-probe.exe")"; \
 	for symbol in CreateIoCompletionPort GetQueuedCompletionStatus \
@@ -617,6 +626,22 @@ completion-windows-wine: completion-windows-cross
 		"$(COMPLETION_TMP)/windows-default-route-probe.exe" \
 		"$(COMPLETION_TMP)" 2>&1 | tee "$(COMPLETION_TMP)/windows-adapter.txt"; \
 	grep -q 'route=posix-adapter' "$(COMPLETION_TMP)/windows-adapter.txt"; \
+	echo "== the TCP round trip, on both routes =="; \
+	if ! grep -q 'tcp-port=[1-9]' "$(COMPLETION_TMP)/windows-ring.txt" \
+		|| ! grep -q 'tcp-port=[1-9]' "$(COMPLETION_TMP)/windows-adapter.txt"; then \
+		echo "wine ran no loopback round trip on one of the two routes" >&2; \
+		exit 1; \
+	fi; \
+	if grep -q 'tcp-ring=[1-9]' "$(COMPLETION_TMP)/windows-ring.txt"; then \
+		echo "wine's Winsock carried the connect, the receive and the send on the completion port"; \
+	else \
+		echo "wine's Winsock ran the loopback round trip but carried none of it on the completion port; a real Windows host is what judges that (.github/workflows/io-hosts.yml, completion-windows)"; \
+	fi; \
+	if ! grep -q 'tcp-ring=0' "$(COMPLETION_TMP)/windows-adapter.txt"; then \
+		echo "the refused-ring run still reached the completion port" >&2; \
+		exit 1; \
+	fi; \
+	echo "the accept is the shared file adapter's on every Windows host, not only under wine: an AcceptEx address pair is 88 bytes and the record has none to give (completion/windows_iocp.c, wf_windows_iocp_carries), so wine's own AcceptEx is not in question here"; \
 	echo "completion Windows wine run: PASS (wine is not Windows)"
 
 

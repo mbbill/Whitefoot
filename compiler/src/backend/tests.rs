@@ -50,16 +50,17 @@ use crate::{
     ACTIVE_KERNEL_SPEC_HASH, COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE,
     COMPLETION_CONTRACT_HEADER, COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
     COMPLETION_FILE_POSIX_HEADER, COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
-    COMPLETION_WINDOWS_IOCP_HEADER, CanonicalLimits, CanonicalOutcome, FLOOR_RUNTIME_SOURCE,
-    FinalizeLimits, FinalizeOutcome, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
-    OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome, SCHED_CORE_HEADER,
-    SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER,
-    SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SemanticOutcome, SourceBundle, SourceInput,
-    SourceLimits, TerminalLimits, TerminalOutcome, WINDOWS_RUNTIME_HEADER, audit_canonical,
-    check_semantics, check_semantics_arithmetic_obligations, check_semantics_division_obligations,
-    classify_terminals, compile as compile_program, emit_llvm, finalize, lower_checked,
-    module_requires_completion_runtime, module_requires_parallel_runtime, parse, resolve,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CanonicalLimits, CanonicalOutcome,
+    FLOOR_RUNTIME_SOURCE, FinalizeLimits, FinalizeOutcome, HOST_LINK_LIBRARIES,
+    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, ParseLimits, ParseOutcome, ResolutionOutcome,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SemanticOutcome, SourceBundle,
+    SourceInput, SourceLimits, TerminalLimits, TerminalOutcome, WINDOWS_RUNTIME_HEADER,
+    audit_canonical, check_semantics, check_semantics_arithmetic_obligations,
+    check_semantics_division_obligations, classify_terminals, compile as compile_program,
+    emit_llvm, finalize, lower_checked, module_requires_completion_runtime,
+    module_requires_parallel_runtime, parse, resolve,
 };
 
 const SOURCE_LIMITS: SourceLimits = SourceLimits {
@@ -378,6 +379,10 @@ pub(super) fn append_runtime_units(
             ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
             ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
             ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+            (
+                "completion/socket_address.h",
+                COMPLETION_SOCKET_ADDRESS_HEADER,
+            ),
             (
                 "completion/linux_io_uring.h",
                 COMPLETION_LINUX_IO_URING_HEADER,

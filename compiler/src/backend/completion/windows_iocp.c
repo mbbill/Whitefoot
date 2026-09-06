@@ -5,9 +5,18 @@
 #define _WIN32_WINNT 0x0602
 #endif
 
+/* Winsock ahead of `<windows.h>`, which `windows_iocp.h` includes: the address
+ * vocabulary this ring's socket requests are written in is the shared one, and
+ * it is the header that names the platform's socket declarations. */
+#include "socket_address.h"
+
 #include "windows_iocp.h"
 
 #if defined(_WIN32)
+
+#include "../windows_runtime.h"
+
+#include <mswsock.h>
 
 #include <errno.h>
 #include <limits.h>
@@ -206,26 +215,195 @@ int wf_windows_iocp_associate(
     return 0;
 }
 
-/* The one kind this ring carries.
+/* The extension entries this ring issues, obtained once per process.
  *
- * A positioned read is the whole of it, and that is not a gap: `write_once` is
- * an unpositioned stream write whose current-position contract the port's
- * positioned write does not have, an open is a namespace operation with no
- * overlapped form here, and a close and a status are in-memory answers.  Every
- * one of those goes to the shared file adapter, exactly as the POSIX bridge
- * routes what its ring refuses. */
+ * `ConnectEx` is not exported by any import library: it is asked of the
+ * provider behind the socket with `WSAIoctl(SIO_GET_EXTENSION_FUNCTION_POINTER)`,
+ * and the answer is the same for every socket of the same provider, so it is
+ * asked once.  The once is an `INIT_ONCE`, the path this platform already uses
+ * for a fact the whole process shares (`../windows_runtime.h`,
+ * `wf__windows_socket_startup`; `../wf_floor_windows.c`, the exception
+ * handler's install).
+ *
+ * `AcceptEx` is deliberately absent, and the reason is a measurement rather
+ * than a preference: it writes the local and the remote address into a caller
+ * buffer that must live until the operation completes, and its two length
+ * arguments must each be sixteen bytes past the largest address of the
+ * transport, which for the two families [SYS-16] admits is
+ * `2 * (sizeof(struct sockaddr_in6) + 16)` = 88 bytes.  The completion record
+ * is 160 bytes on this platform and holds exactly that today: the accept's own
+ * union arm is 40 bytes, which is the open's arm and therefore the ceiling
+ * `contract.h` asserts, and the ring-state block is 40 bytes of which this
+ * ring's `OVERLAPPED` and handle already occupy 40.  There is nowhere for 88
+ * bytes to go without growing the record, the record may not grow, and the
+ * runtime allocates nothing at run time.  So an accept is the shared file
+ * adapter's blocking `accept` on a helper thread, exactly as a listen, a bind
+ * and a half-close are on every platform, and this ring answers no for it. */
+typedef struct wf_windows_iocp_extensions {
+    LPFN_CONNECTEX connect_ex;
+} wf_windows_iocp_extensions;
+
+static INIT_ONCE wf_windows_extension_once = INIT_ONCE_STATIC_INIT;
+static wf_windows_iocp_extensions wf_windows_extensions;
+
+static BOOL CALLBACK wf_windows_load_extensions(
+    PINIT_ONCE once,
+    PVOID parameter,
+    PVOID *context
+) {
+    GUID connect_id = WSAID_CONNECTEX;
+    SOCKET probe;
+    DWORD answered = 0;
+    (void)once;
+    (void)parameter;
+    (void)context;
+    /* One socket of the family every provider carries, used to ask the
+     * question and closed again.  It is not the socket any request is issued
+     * on: the answer names the provider's entry, not this handle. */
+    probe = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, 0);
+    if (probe == INVALID_SOCKET) {
+        return TRUE;
+    }
+    if (WSAIoctl(
+            probe,
+            SIO_GET_EXTENSION_FUNCTION_POINTER,
+            &connect_id,
+            (DWORD)sizeof(connect_id),
+            &wf_windows_extensions.connect_ex,
+            (DWORD)sizeof(wf_windows_extensions.connect_ex),
+            &answered,
+            NULL,
+            NULL
+        ) != 0) {
+        wf_windows_extensions.connect_ex = NULL;
+    }
+    (void)closesocket(probe);
+    return TRUE;
+}
+
+static LPFN_CONNECTEX wf_windows_connect_ex(void) {
+    if (wf__windows_socket_startup() != 0) {
+        return NULL;
+    }
+    if (InitOnceExecuteOnce(
+            &wf_windows_extension_once,
+            wf_windows_load_extensions,
+            NULL,
+            NULL
+        ) == FALSE) {
+        return NULL;
+    }
+    return wf_windows_extensions.connect_ex;
+}
+
+/* The kinds this ring carries.
+ *
+ * A positioned read, and the three TCP kinds whose host call has an overlapped
+ * form worth a packet: the connect, the receive and the send [SYS-17, SYS-18].
+ * What is missing is not a gap: `write_once` is an unpositioned stream write
+ * whose current-position contract the port's positioned write does not have,
+ * an open is a namespace operation with no overlapped form here, a close and a
+ * status are in-memory answers, a listen and a half-close are immediate calls
+ * with nothing to wait for, and an accept is the record-size measurement above.
+ * Every one of those goes to the shared file adapter, exactly as the POSIX
+ * bridge routes what its ring refuses. */
 int wf_windows_iocp_carries(const wf_completion_record *record) {
     if (record == NULL) {
         return 0;
     }
-    if (record->request.kind != WF_FILE_PREAD) {
+    switch (record->request.kind) {
+    case WF_FILE_PREAD:
+        return record->request.operation.pread.descriptor >= 0
+            && record->request.operation.pread.count != 0
+            && record->request.operation.pread.count <= (size_t)MAXDWORD
+            && record->request.operation.pread.offset >= 0
+            && record->request.operation.pread.buffer != NULL;
+    /* A connect names no descriptor at submit, because it creates its own
+     * socket; this ring makes it in the submitting call for the same reason
+     * the Linux ring does (`linux_io_uring.c`, `wf_linux_io_uring_submit`),
+     * and on this platform for one more: the port has to take the handle
+     * before the request is issued on it. */
+    case WF_FILE_SOCKET_CONNECT:
+        return wf_windows_connect_ex() != NULL;
+    case WF_FILE_SOCKET_RECEIVE:
+        return record->request.operation.receive.descriptor >= 0
+            && record->request.operation.receive.count != 0
+            && record->request.operation.receive.count <= (size_t)MAXDWORD
+            && record->request.operation.receive.buffer != NULL;
+    case WF_FILE_SOCKET_SEND:
+        return record->request.operation.send.descriptor >= 0
+            && record->request.operation.send.count != 0
+            && record->request.operation.send.count <= (size_t)MAXDWORD
+            && record->request.operation.send.buffer != NULL;
+    default:
         return 0;
     }
-    return record->request.operation.pread.descriptor >= 0
-        && record->request.operation.pread.count != 0
-        && record->request.operation.pread.count <= (size_t)MAXDWORD
-        && record->request.operation.pread.offset >= 0
-        && record->request.operation.pread.buffer != NULL;
+}
+
+/* One connect's socket, created and bound in the submitting call.
+ *
+ * `ConnectEx` requires a socket that is already bound, so this binds it to the
+ * wildcard address of its own family -- which is what an ordinary `connect`
+ * does implicitly and therefore adds no decision of the runtime's.  Nothing
+ * here can wait: `WSASocketW` allocates a kernel object and `bind` of the
+ * wildcard picks an ephemeral port, so a second port round trip would cost
+ * more than the operation it wraps.
+ *
+ * The address record is not built here: the arm holds the portable value and
+ * the native one in one union, and this call may still be undone by
+ * `wf_windows_iocp_withdraw` when the port refuses the handle, after which the
+ * bounded adapter reads that portable value and makes the same two calls. */
+static int wf_windows_open_connect_socket(wf_completion_record *record) {
+    wf_socket_native_address wildcard;
+    unsigned wildcard_length;
+    int family = wf_socket_address_family(
+        &record->request.operation.endpoint.address.portable
+    );
+    int descriptor = wf__windows_socket_open(family);
+    if (descriptor < 0) {
+        return -1;
+    }
+    wildcard_length = wf_socket_native_wildcard(family, &wildcard);
+    if (bind(
+            (SOCKET)wf__windows_socket_handle(descriptor),
+            (const struct sockaddr *)wildcard.bytes,
+            (int)wildcard_length
+        ) != 0) {
+        (void)wf__windows_socket_close(descriptor);
+        return -1;
+    }
+    record->request.operation.endpoint.descriptor = descriptor;
+    return descriptor;
+}
+
+int wf_windows_iocp_issue_descriptor(wf_completion_record *record) {
+    if (record == NULL) {
+        return -1;
+    }
+    switch (record->request.kind) {
+    case WF_FILE_PREAD:
+        return record->request.operation.pread.descriptor;
+    case WF_FILE_SOCKET_RECEIVE:
+        return record->request.operation.receive.descriptor;
+    case WF_FILE_SOCKET_SEND:
+        return record->request.operation.send.descriptor;
+    case WF_FILE_SOCKET_CONNECT:
+        return wf_windows_open_connect_socket(record);
+    default:
+        return -1;
+    }
+}
+
+void wf_windows_iocp_withdraw(wf_completion_record *record) {
+    if (record == NULL || record->request.kind != WF_FILE_SOCKET_CONNECT) {
+        return;
+    }
+    if (record->request.operation.endpoint.descriptor >= 0) {
+        (void)wf__windows_socket_close(
+            record->request.operation.endpoint.descriptor
+        );
+        record->request.operation.endpoint.descriptor = -1;
+    }
 }
 
 /* Stores one record's terminal result and completes it.
@@ -241,16 +419,51 @@ static void wf_windows_complete_record(
     DWORD error_code
 ) {
     wf_file_result_head result;
+    int socket_kind = record->request.kind == WF_FILE_SOCKET_CONNECT
+        || record->request.kind == WF_FILE_SOCKET_RECEIVE
+        || record->request.kind == WF_FILE_SOCKET_SEND;
     /* A positioned read uses the Whitefoot/POSIX-shaped result contract:
      * reaching the file boundary is a successful zero-byte read.  Windows
      * reports that boundary as ERROR_HANDLE_EOF for overlapped disk I/O. */
-    if (error_code == ERROR_HANDLE_EOF) {
+    if (error_code == ERROR_HANDLE_EOF && !socket_kind) {
         error_code = 0;
         transferred = 0;
     }
     memset(&result, 0, sizeof(result));
     result.kind = record->request.kind;
-    if (error_code != 0) {
+    if (socket_kind && error_code != 0) {
+        /* One code per condition, whichever route produced it: the port's own
+         * Win32 spelling and the submitting call's `WSAGetLastError` are
+         * normalized together (`../windows_runtime.h`,
+         * `wf__windows_error_from_socket`). */
+        error_code = (DWORD)wf__windows_error_from_socket((int)error_code);
+    }
+    if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
+        /* This ring's connect answers the descriptor of the socket it created
+         * at submit, and a refusal disposes of it, because a connection that
+         * was never made holds no credit and the permit goes back to the
+         * program [SYS-10].  A connection that was made needs
+         * SO_UPDATE_CONNECT_CONTEXT before it behaves like any other socket:
+         * until it is set, the socket carries none of the properties the
+         * connect established, which `shutdown` and every later transfer
+         * read. */
+        int descriptor = record->request.operation.endpoint.descriptor;
+        if (error_code != 0) {
+            (void)wf__windows_socket_close(descriptor);
+            record->request.operation.endpoint.descriptor = -1;
+            result.value = -1;
+            result.error_code = (int)error_code;
+        } else {
+            (void)setsockopt(
+                (SOCKET)wf__windows_socket_handle(descriptor),
+                SOL_SOCKET,
+                SO_UPDATE_CONNECT_CONTEXT,
+                NULL,
+                0
+            );
+            result.value = descriptor;
+        }
+    } else if (error_code != 0) {
         result.value = -1;
         result.error_code = (int)error_code;
     } else {
@@ -264,6 +477,115 @@ static void wf_windows_complete_record(
     );
     record->result = result;
     wf_completion_record_complete(record);
+}
+
+/* Issues one record's request on `handle`, and answers whether the kernel
+ * completed it inside this call.
+ *
+ * The four calls below are the whole of what differs between this ring's
+ * kinds; everything around them -- the record's `OVERLAPPED`, the release that
+ * orders the submitter's writes, the inline-completion rule, the one
+ * publication -- is one text.  Each socket call is given the record's own
+ * `OVERLAPPED` and a `WSABUF` of this frame: Winsock captures the descriptor
+ * array before it returns and reads the bytes it points at until the operation
+ * completes, and those bytes are the submitting frame's own and outlive the
+ * join. */
+static BOOL wf_windows_issue(
+    wf_completion_record *record,
+    HANDLE handle,
+    wf_windows_iocp_state *state
+) {
+    switch (record->request.kind) {
+    case WF_FILE_SOCKET_CONNECT: {
+        LPFN_CONNECTEX connect_ex = wf_windows_connect_ex();
+        if (connect_ex == NULL) {
+            SetLastError(ERROR_NOT_SUPPORTED);
+            return FALSE;
+        }
+        return connect_ex(
+            (SOCKET)handle,
+            (const struct sockaddr *)
+                record->request.operation.endpoint.address.native.bytes,
+            (int)record->request.operation.endpoint.address_length,
+            NULL,
+            0,
+            NULL,
+            &state->overlapped
+        );
+    }
+    case WF_FILE_SOCKET_RECEIVE: {
+        WSABUF buffer;
+        DWORD flags = 0;
+        buffer.len = (ULONG)record->request.operation.receive.count;
+        buffer.buf = (char *)record->request.operation.receive.buffer;
+        return WSARecv(
+                   (SOCKET)handle,
+                   &buffer,
+                   1u,
+                   NULL,
+                   &flags,
+                   &state->overlapped,
+                   NULL
+               ) == 0
+            ? TRUE
+            : FALSE;
+    }
+    case WF_FILE_SOCKET_SEND: {
+        WSABUF buffer;
+        buffer.len = (ULONG)record->request.operation.send.count;
+        buffer.buf = (char *)record->request.operation.send.buffer;
+        return WSASend(
+                   (SOCKET)handle,
+                   &buffer,
+                   1u,
+                   NULL,
+                   (DWORD)WF_SOCKET_SEND_FLAGS,
+                   &state->overlapped,
+                   NULL
+               ) == 0
+            ? TRUE
+            : FALSE;
+    }
+    case WF_FILE_PREAD:
+    default:
+        return WF_WINDOWS_IOCP_READ_CALL(
+            handle,
+            record->request.operation.pread.buffer,
+            (DWORD)record->request.operation.pread.count,
+            NULL,
+            &state->overlapped
+        );
+    }
+}
+
+/* The byte count of one request the kernel answered inside the submitting
+ * call.  A socket asks Winsock rather than the file API, because a socket's
+ * overlapped result carries the receive flags beside the count and only
+ * `WSAGetOverlappedResult` reports them. */
+static BOOL wf_windows_issued_result(
+    wf_completion_record *record,
+    HANDLE handle,
+    wf_windows_iocp_state *state,
+    DWORD *transferred
+) {
+    if (record->request.kind == WF_FILE_SOCKET_CONNECT
+        || record->request.kind == WF_FILE_SOCKET_RECEIVE
+        || record->request.kind == WF_FILE_SOCKET_SEND) {
+        DWORD flags = 0;
+        return WSAGetOverlappedResult(
+            (SOCKET)handle,
+            &state->overlapped,
+            transferred,
+            FALSE,
+            &flags
+        );
+    }
+    return WF_WINDOWS_IOCP_RESULT_CALL(
+        handle,
+        &state->overlapped,
+        transferred,
+        FALSE
+    );
 }
 
 enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
@@ -291,9 +613,26 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
     record->open_error = 0;
     state = wf_windows_state_of(record);
     memset(state, 0, sizeof(*state));
-    offset.QuadPart = (ULONGLONG)record->request.operation.pread.offset;
-    state->overlapped.Offset = offset.LowPart;
-    state->overlapped.OffsetHigh = offset.HighPart;
+    if (record->request.kind == WF_FILE_PREAD) {
+        /* A positioned read names its offset in the `OVERLAPPED`; a socket
+         * request has none to name and leaves the two words zero. */
+        offset.QuadPart = (ULONGLONG)record->request.operation.pread.offset;
+        state->overlapped.Offset = offset.LowPart;
+        state->overlapped.OffsetHigh = offset.HighPart;
+    } else if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
+        /* The portable value is read out of the union before the native
+         * record is written back over it, because the two share the arm.
+         * This is the point of no return for the socket
+         * `wf_windows_iocp_issue_descriptor` created: from here the record is
+         * the port's and the bounded adapter will not see it. */
+        wf_socket_address portable =
+            record->request.operation.endpoint.address.portable;
+        record->request.operation.endpoint.address_length =
+            wf_socket_native_from_address(
+                &portable,
+                &record->request.operation.endpoint.address.native
+            );
+    }
     state->handle = handle;
 
     atomic_fetch_add_explicit(&adapter->in_flight, 1, memory_order_relaxed);
@@ -306,28 +645,19 @@ enum wf_windows_iocp_submit_result wf_windows_iocp_submit(
      * the submitting bridge before this call; this release is what orders
      * them before the reaper's acquire (`contract.h`, `issued`). */
     atomic_store_explicit(&record->issued, 1u, memory_order_release);
-    started = WF_WINDOWS_IOCP_READ_CALL(
-        handle,
-        record->request.operation.pread.buffer,
-        (DWORD)record->request.operation.pread.count,
-        NULL,
-        &state->overlapped
-    );
+    started = wf_windows_issue(record, handle, state);
     if (started != FALSE) {
         /* The association asked for no packet on a synchronous success, so
          * this operation is already complete and nobody else will publish it.
          * Its exact byte count is queried without waiting. */
-        if (WF_WINDOWS_IOCP_RESULT_CALL(
-                handle,
-                &state->overlapped,
-                &transferred,
-                FALSE
-            ) == FALSE) {
+        if (wf_windows_issued_result(record, handle, state, &transferred)
+            == FALSE) {
             error_code = GetLastError();
-            /* ReadFile returned TRUE, which guarantees the operation is
-             * complete.  Windows reporting otherwise would leave the record's
-             * OVERLAPPED and the caller's buffer live with no packet to come,
-             * so this is an invariant failure rather than an I/O result. */
+            /* The issuing call reported success, which guarantees the
+             * operation is complete.  Windows reporting otherwise would leave
+             * the record's OVERLAPPED and the caller's buffer live with no
+             * packet to come, so this is an invariant failure rather than an
+             * I/O result. */
             if (error_code == ERROR_IO_INCOMPLETE) {
                 wf_windows_iocp_fail(
                     "an inline-completed transfer reported that it is still incomplete"

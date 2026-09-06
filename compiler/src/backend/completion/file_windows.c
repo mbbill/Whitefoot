@@ -19,18 +19,34 @@
  * What this target does *not* qualify is refused as an outcome rather than as
  * a terminated process.  The emitter emits the whole seven-entry submit ABI on
  * every target and the Windows row admits an open, a positioned read, a stream
- * write, a close and a directory batch; a shape the row does not admit reaches
- * this switch and is published as a failed operation with the host's own
- * refusal code, exactly as `wf_bridge_complete_refused` publishes an offset the
- * target ABI cannot express.
+ * write, a close, a directory batch and the six TCP kinds; a shape the row does
+ * not admit reaches this switch and is published as a failed operation with the
+ * host's own refusal code, exactly as `wf_bridge_complete_refused` publishes an
+ * offset the target ABI cannot express.
+ *
+ * The socket arms are Winsock calls and nothing else, and they are the twin of
+ * `file_posix.c`'s in exactly the sense this unit is that unit's twin: the
+ * address conversion, the backlog, the send flags and the pair's two-count are
+ * shared (`socket_address.h`, `file_adapter.c`), and what is written here is
+ * the call.  A socket reached from this unit is a *blocking* socket:
+ * `WSA_FLAG_OVERLAPPED` says the completion port may carry a request issued
+ * with an `OVERLAPPED`, and says nothing about a call made without one, so
+ * `recv`, `send`, `accept` and `connect` here wait on the helper thread the
+ * bounded adapter exists to supply and post no packet to any port the handle
+ * is bound to.  That is why the `hEvent` low-bit rule the positioned read
+ * needs has no counterpart here: this unit issues no overlapped socket
+ * request.
  */
 
 #include "file_adapter.h"
+#include "socket_address.h"
 #include "../windows_runtime.h"
 
 #include <windows.h>
 
+#include <errno.h>
 #include <io.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -276,10 +292,33 @@ static wf_file_result wf_file_windows_write(const wf_file_request *request) {
     return result;
 }
 
+/* Whether one descriptor names a Winsock object this runtime created. */
+static int wf_file_windows_is_socket(int descriptor) {
+    unsigned descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_ANY;
+    return wf__windows_completion_descriptor_state(
+               descriptor,
+               &descriptor_class,
+               NULL
+           ) != 0
+        && descriptor_class == WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET;
+}
+
 static wf_file_result wf_file_windows_close(const wf_file_request *request) {
     wf_file_result result;
     memset(&result, 0, sizeof(result));
     result.head.kind = request->kind;
+    /* A listener's explicit close is the ordinary close every descriptor-shaped
+     * resource takes [SYS-17], and on this target the object behind it decides
+     * the call: a Winsock object is ended by `closesocket`, a file by the CRT's
+     * own close. */
+    if (wf_file_windows_is_socket(request->operation.close.descriptor)) {
+        result.head.value =
+            wf__windows_socket_close(request->operation.close.descriptor);
+        if (result.head.value < 0) {
+            result.head.error_code = *wf__windows_error_location();
+        }
+        return result;
+    }
     /* The registry row goes before the handle does, so the descriptor number
      * the host may hand out again starts with no class and no association. */
     wf__windows_completion_forget_descriptor(
@@ -288,6 +327,257 @@ static wf_file_result wf_file_windows_close(const wf_file_request *request) {
     result.head.value = _close(request->operation.close.descriptor);
     if (result.head.value < 0) {
         result.head.error_code = ERROR_INVALID_HANDLE;
+    }
+    return result;
+}
+
+/* ---------------------------------------------------------- the six TCP */
+
+/* The socket one request operates on, or INVALID_SOCKET. */
+static SOCKET wf_file_windows_socket(int descriptor) {
+    return (SOCKET)wf__windows_socket_handle(descriptor);
+}
+
+/* The host's own refusal of the socket call that just failed, in the one form
+ * both this route and the completion port report
+ * (`../windows_runtime.h`, `wf__windows_error_from_socket`). */
+static int wf_file_windows_socket_error(void) {
+    return wf__windows_error_from_socket(WSAGetLastError());
+}
+
+/* One endpoint operation's two preparations: the host's own address record,
+ * and one socket of that address's family.
+ *
+ * Both endpoint kinds do exactly these two things before their own host call,
+ * and both dispose of the socket on any refusal, because a listener or a
+ * connection that was never created holds no credit and the permit goes back
+ * to the program [SYS-10].  This is `file_posix.c`'s `wf_socket_endpoint` with
+ * this platform's socket call in place of that platform's. */
+static int wf_file_windows_endpoint(
+    const wf_file_request *request,
+    wf_socket_native_address *native,
+    unsigned *length
+) {
+    *length = wf_socket_native_from_address(
+        &request->operation.endpoint.address.portable,
+        native
+    );
+    return wf__windows_socket_open(
+        wf_socket_address_family(&request->operation.endpoint.address.portable)
+    );
+}
+
+/* One listen: a socket of the address's family, bound and listening, or the
+ * host's own refusal with nothing left behind. */
+static wf_file_result wf_file_windows_socket_listen(
+    const wf_file_request *request
+) {
+    wf_file_result result;
+    wf_socket_native_address native;
+    unsigned length = 0;
+    int endpoint;
+    int refusal;
+
+    memset(&result, 0, sizeof(result));
+    result.head.kind = request->kind;
+    result.head.value = -1;
+    endpoint = wf_file_windows_endpoint(request, &native, &length);
+    if (endpoint < 0) {
+        result.head.error_code = *wf__windows_error_location();
+        return result;
+    }
+    {
+        /* Every call below names the Winsock object; `endpoint` is the
+         * descriptor number the program's own accounting is written in. */
+        SOCKET native_socket = wf_file_windows_socket(endpoint);
+        if (bind(
+                native_socket,
+                (const struct sockaddr *)native.bytes,
+                (int)length
+            ) == 0
+            && listen(native_socket, WF_SOCKET_BACKLOG) == 0) {
+            result.head.value = endpoint;
+            return result;
+        }
+    }
+    refusal = wf_file_windows_socket_error();
+    (void)wf__windows_socket_close(endpoint);
+    result.head.error_code = refusal;
+    return result;
+}
+
+/* One connect, and the same disposal on refusal. */
+static wf_file_result wf_file_windows_socket_connect(
+    const wf_file_request *request
+) {
+    wf_file_result result;
+    wf_socket_native_address native;
+    unsigned length = 0;
+    int endpoint;
+    int refusal;
+
+    memset(&result, 0, sizeof(result));
+    result.head.kind = request->kind;
+    result.head.value = -1;
+    endpoint = wf_file_windows_endpoint(request, &native, &length);
+    if (endpoint < 0) {
+        result.head.error_code = *wf__windows_error_location();
+        return result;
+    }
+    if (connect(
+            wf_file_windows_socket(endpoint),
+            (const struct sockaddr *)native.bytes,
+            (int)length
+        ) == 0) {
+        result.head.value = endpoint;
+        return result;
+    }
+    refusal = wf_file_windows_socket_error();
+    (void)wf__windows_socket_close(endpoint);
+    result.head.error_code = refusal;
+    return result;
+}
+
+/* One accept.  The connection Winsock hands over is adopted into a descriptor
+ * of this runtime's own socket class, and the peer record the host wrote is
+ * rewritten in place as the portable form the accept join publishes -- the
+ * same rewrite every other engine makes, so the join reads one form. */
+static wf_file_result wf_file_windows_socket_accept(wf_file_request *request) {
+    wf_file_result result;
+    SOCKET listener;
+    SOCKET taken;
+    int length = (int)sizeof(request->operation.accept.peer.native);
+    int descriptor;
+
+    memset(&result, 0, sizeof(result));
+    result.head.kind = request->kind;
+    result.head.value = -1;
+    listener = wf_file_windows_socket(request->operation.accept.descriptor);
+    if (listener == INVALID_SOCKET) {
+        result.head.error_code = (int)ERROR_INVALID_HANDLE;
+        return result;
+    }
+    taken = accept(
+        listener,
+        (struct sockaddr *)request->operation.accept.peer.native.bytes,
+        &length
+    );
+    if (taken == INVALID_SOCKET) {
+        result.head.error_code = wf_file_windows_socket_error();
+        return result;
+    }
+    /* A connection inherits its listener's properties, so it is already
+     * overlapped and already not inherited; what it does not have is a
+     * descriptor number and a row in this runtime's own table. */
+    errno = 0;
+    descriptor = _open_osfhandle((intptr_t)taken, 0);
+    if (descriptor < 0
+        || wf__windows_completion_register_descriptor(
+               descriptor,
+               WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET
+           ) != 0) {
+        if (descriptor >= 0) {
+            (void)wf__windows_socket_close(descriptor);
+        } else {
+            (void)closesocket(taken);
+        }
+        result.head.error_code = (int)ERROR_NOT_ENOUGH_MEMORY;
+        return result;
+    }
+    request->operation.accept.peer_length = (unsigned)length;
+    wf_socket_publish_peer(request);
+    result.head.value = descriptor;
+    return result;
+}
+
+/* One transfer attempt on one direction of one connection [SYS-18].  Winsock
+ * counts bytes in an `int`, so a longer range is the host's own refusal and
+ * never a silent truncation. */
+static wf_file_result wf_file_windows_socket_transfer(
+    const wf_file_request *request
+) {
+    wf_file_result result;
+    SOCKET connection;
+    int receiving = request->kind == WF_FILE_SOCKET_RECEIVE;
+    size_t count = receiving ? request->operation.receive.count
+                             : request->operation.send.count;
+    int descriptor = receiving ? request->operation.receive.descriptor
+                               : request->operation.send.descriptor;
+    int transferred;
+
+    memset(&result, 0, sizeof(result));
+    result.head.kind = request->kind;
+    result.head.value = -1;
+    if (count == 0) {
+        result.head.value = 0;
+        return result;
+    }
+    if (count > (size_t)INT_MAX) {
+        result.head.error_code = (int)ERROR_INVALID_PARAMETER;
+        return result;
+    }
+    connection = wf_file_windows_socket(descriptor);
+    if (connection == INVALID_SOCKET) {
+        result.head.error_code = (int)ERROR_INVALID_HANDLE;
+        return result;
+    }
+    transferred = receiving
+        ? recv(
+              connection,
+              (char *)request->operation.receive.buffer,
+              (int)count,
+              0
+          )
+        : send(
+              connection,
+              (const char *)request->operation.send.buffer,
+              (int)count,
+              WF_SOCKET_SEND_FLAGS
+          );
+    if (transferred == SOCKET_ERROR) {
+        result.head.error_code = wf_file_windows_socket_error();
+        return result;
+    }
+    result.head.value = (int64_t)transferred;
+    return result;
+}
+
+/* One direction's half-close, and the close of the target's object when it is
+ * the pair's second release [SYS-18].
+ *
+ * The count is the shared one in `file_adapter.c` and is taken first, so two
+ * directions released on two threads agree on which of them is the second
+ * whatever order the two host calls below land in.  `SD_RECEIVE` and `SD_SEND`
+ * are this platform's spelling of `SHUT_RD` and `SHUT_WR`. */
+static wf_file_result wf_file_windows_socket_shutdown(
+    const wf_file_request *request
+) {
+    wf_file_result result;
+    SOCKET connection;
+    int descriptor = request->operation.shutdown.descriptor;
+    int direction =
+        request->operation.shutdown.direction == WF_SOCKET_DIRECTION_SEND
+        ? SD_SEND
+        : SD_RECEIVE;
+    int last;
+
+    memset(&result, 0, sizeof(result));
+    result.head.kind = request->kind;
+    result.head.value = -1;
+    connection = wf_file_windows_socket(descriptor);
+    if (connection == INVALID_SOCKET) {
+        result.head.error_code = (int)ERROR_INVALID_HANDLE;
+        return result;
+    }
+    last = wf_file_connection_release(descriptor);
+    (void)shutdown(connection, direction);
+    if (last == 0) {
+        result.head.value = 0;
+        return result;
+    }
+    result.head.value = wf__windows_socket_close(descriptor);
+    if (result.head.value < 0) {
+        result.head.error_code = *wf__windows_error_location();
     }
     return result;
 }
@@ -340,27 +630,26 @@ wf_file_result wf_file_execute_direct(wf_file_request *request) {
     case WF_FILE_DIRECTORY_NEXT:
         return wf_file_windows_directory_next(request);
 #endif
-    case WF_FILE_PWRITE:
-    case WF_FILE_STATUS:
     case WF_FILE_SOCKET_LISTEN:
+        return wf_file_windows_socket_listen(request);
     case WF_FILE_SOCKET_ACCEPT:
+        return wf_file_windows_socket_accept(request);
     case WF_FILE_SOCKET_CONNECT:
+        return wf_file_windows_socket_connect(request);
     case WF_FILE_SOCKET_RECEIVE:
     case WF_FILE_SOCKET_SEND:
+        return wf_file_windows_socket_transfer(request);
     case WF_FILE_SOCKET_SHUTDOWN:
+        return wf_file_windows_socket_shutdown(request);
+    case WF_FILE_PWRITE:
+    case WF_FILE_STATUS:
     default:
         /* The shapes the Windows target row does not qualify: a positioned
          * write (the row's write is `write_once`, which has the stream's own
-         * current position), a status (the row reports no `stat` record), and
-         * the six TCP kinds, whose completion-port route is slice 3 of the
-         * streams-and-TCP batch
-         * (`research/investigations/io-model/NETWORK.md` §7).  Each is refused
-         * as an outcome the program sees, because the emitter can name any
-         * submit entry on any target and a refusal is not a defect of the
-         * runtime.  No Windows program reaches the six: `backend/
-         * qualification.rs` maps no TCP operation on the Windows column, so a
-         * Windows link is refused at qualification and this arm is the
-         * runtime's own honest answer rather than the program's stop. */
+         * current position) and a status (the row reports no `stat` record).
+         * Each is refused as an outcome the program sees, because the emitter
+         * can name any submit entry on any target and a refusal is not a defect
+         * of the runtime. */
         return wf_file_windows_refused(request, ERROR_NOT_SUPPORTED);
     }
 }

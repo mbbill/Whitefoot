@@ -594,13 +594,22 @@ static int wf_bridge_windows_port_handle(int descriptor, HANDLE *handle) {
 
 static int wf_bridge_ring_offer(wf_completion_record *record) {
     HANDLE handle;
+    int descriptor;
     if (!wf_bridge_ring_ready() || !wf_windows_iocp_carries(record)) {
         return 0;
     }
-    if (!wf_bridge_windows_port_handle(
-            record->request.operation.pread.descriptor,
-            &handle
-        )) {
+    /* The descriptor this request will be issued on.  A connect has none until
+     * the ring makes its socket, which it does here for the same reason the
+     * Linux ring makes it in its own submit and for one more: the port takes a
+     * handle before a request is issued on it.  A record the port then refuses
+     * has that socket taken back, so the bounded adapter sees exactly what was
+     * offered (`windows_iocp.h`). */
+    descriptor = wf_windows_iocp_issue_descriptor(record);
+    if (descriptor < 0) {
+        return 0;
+    }
+    if (!wf_bridge_windows_port_handle(descriptor, &handle)) {
+        wf_windows_iocp_withdraw(record);
         return 0;
     }
     if (wf_windows_iocp_submit(&wf_bridge_windows_adapter, record, handle)

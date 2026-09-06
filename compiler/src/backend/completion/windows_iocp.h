@@ -93,6 +93,25 @@ int wf_windows_iocp_associate(
  * after the operation was already the ring's. */
 int wf_windows_iocp_carries(const wf_completion_record *record);
 
+/* The descriptor this record's request will be issued on, or -1.
+ *
+ * Every kind but the connect already has one.  A connect names none at submit,
+ * because it creates its own socket; this makes it, and binds it to the
+ * wildcard address of its family because `ConnectEx` requires a bound socket.
+ * It is a separate call from the submit below because the port has to take the
+ * handle before the request is issued on it, and taking it happens under the
+ * descriptor table's own lock (`../windows_runtime.h`,
+ * `wf__windows_completion_ring_handle`).
+ *
+ * The socket it creates is undone by `wf_windows_iocp_withdraw` when the port
+ * refuses the handle, so the record reaches the bounded adapter exactly as it
+ * was offered. */
+int wf_windows_iocp_issue_descriptor(wf_completion_record *record);
+
+/* Undoes what `wf_windows_iocp_issue_descriptor` created for a record the
+ * ring did not take.  Nothing was published and nothing is left half-owned. */
+void wf_windows_iocp_withdraw(wf_completion_record *record);
+
 /* Hands one record to the ring, on a handle the port has taken.  It cannot
  * answer capacity: the record is the frame's and the port holds no pool. */
 enum wf_windows_iocp_submit_result wf_windows_iocp_submit(

@@ -18,6 +18,12 @@ extern "C" {
 #define WF_WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE 3u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_OUTPUT 4u
 #define WF_WINDOWS_DESCRIPTOR_CLASS_INPUT 5u
+/* One Winsock object [SYS-17, SYS-18]: a listener, or one direction pair of a
+ * connection.  It is a class of its own because the completion port carries a
+ * socket's transfers and a file's transfers through different calls, and
+ * because a socket is ended by `closesocket` and a file by the CRT's own
+ * close. */
+#define WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET 6u
 
 /* What the runtime remembers about one descriptor it produced.
  *
@@ -103,6 +109,53 @@ int wf__windows_relative_path_valid(
     const uint16_t *text,
     uint64_t unit_count
 );
+
+/* ------------------------------------------------------------- Winsock */
+
+/* Starts Winsock for this process, once.  Returns 0, or the Win32 error
+ * `WSAStartup` reported.
+ *
+ * Every socket operation calls it before its first host call and none of them
+ * makes the host call twice: the once is an `INIT_ONCE`, which is the path
+ * this platform already uses for a fact the whole process shares (the floor's
+ * exception handler in `wf_floor_windows.c`).  A program that opens no socket
+ * never reaches it and never loads Winsock.
+ *
+ * There is no matching `WSACleanup`: the process's exit releases the library
+ * exactly as it releases every other handle this runtime holds, and a
+ * teardown call would be a second order to keep correct for no gain. */
+int wf__windows_socket_startup(void);
+
+/* One stream socket of `family` (`AF_INET` or `AF_INET6`), overlapped and not
+ * inherited, adopted into a CRT descriptor and registered under
+ * WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET.  Returns the descriptor, or -1 with the
+ * host's own refusal in `wf__windows_error_location`.
+ *
+ * The overlapped flag is what lets the completion port carry this socket's
+ * transfers; the no-inherit flag is this platform's spelling of the
+ * close-on-exec the POSIX leaf asks `socket` for.  `SO_REUSEADDR` is
+ * deliberately not set, for the reason `completion/file_posix.h` states at
+ * `wf_socket_open`: [SYS-17] already fixes what a second bind of one port
+ * means. */
+int wf__windows_socket_open(int family);
+
+/* The native socket behind a descriptor, or INVALID_SOCKET. */
+uintptr_t wf__windows_socket_handle(int descriptor);
+
+/* Ends one socket: `closesocket` on the Winsock object, then the release of
+ * the descriptor number the program's permit accounting is written in.
+ * Returns 0, or -1 with the host's own refusal recorded. */
+int wf__windows_socket_close(int descriptor);
+
+/* One code per condition, whichever route produced it.
+ *
+ * A socket request that fails on the adapter route reports `WSAGetLastError`,
+ * and the same request failing on the completion port reports the Win32 code
+ * `GetQueuedCompletionStatus` gives for it.  They are different numbers for
+ * one condition, so both are normalized here onto the single code the
+ * [SYS-7] class table in `backend/qualification.rs` reads.  A code this
+ * function does not name is its own answer, so nothing is hidden. */
+int wf__windows_error_from_socket(int error_code);
 
 int *wf__windows_error_location(void);
 int wf__windows_open_cwd(const void *unused_path, int flags, ...);

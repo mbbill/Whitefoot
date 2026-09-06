@@ -13,6 +13,12 @@
 
 #include "windows_runtime.h"
 
+/* Winsock first, so that `<windows.h>` cannot pull the version-1 declarations
+ * in ahead of it.  WIN32_LEAN_AND_MEAN above already excludes them; this order
+ * makes that independent of the macro. */
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include <windows.h>
 #include <winternl.h>
 
@@ -201,6 +207,182 @@ static DWORD wf_windows_error_from_errno(int error_code) {
     }
 }
 
+/* One code per condition, whichever route produced it; `windows_runtime.h`
+ * says at the declaration why the two routes need it.
+ *
+ * The right column is the code the [SYS-7] Windows class table in
+ * `backend/qualification.rs` already carries for that condition, so this adds
+ * no class and moves no existing mapping.  The two address refusals keep their
+ * Winsock numbers, because bind and listen never reach the completion port and
+ * those are the numbers that table already names. */
+int wf__windows_error_from_socket(int error_code) {
+    switch (error_code) {
+    /* A peer that refused the connection. */
+    case WSAECONNREFUSED:
+    case (int)ERROR_CONNECTION_REFUSED:
+        return (int)ERROR_CONNECTION_REFUSED;
+    /* A peer that reset the connection, and the port's own spelling of it. */
+    case WSAECONNRESET:
+    case WSAENETRESET:
+    case (int)ERROR_NETNAME_DELETED:
+        return (int)ERROR_NETNAME_DELETED;
+    /* An aborted connection.  Both spellings answer ERROR_REQUEST_ABORTED,
+     * which is the code that table classifies `ConnectionAborted`; the port's
+     * own ERROR_CONNECTION_ABORTED is classified `ConnectionReset` there, and
+     * one condition may not answer two classes depending on its route. */
+    case WSAECONNABORTED:
+    case (int)ERROR_CONNECTION_ABORTED:
+        return (int)ERROR_REQUEST_ABORTED;
+    /* A send on a direction this program has already shut down, which is what
+     * `BrokenPipe` means [SYS-8]. */
+    case WSAESHUTDOWN:
+    case (int)ERROR_GRACEFUL_DISCONNECT:
+    case (int)ERROR_NO_DATA:
+        return (int)ERROR_BROKEN_PIPE;
+    case WSAETIMEDOUT:
+    case (int)ERROR_TIMEOUT:
+        return (int)ERROR_SEM_TIMEOUT;
+    case WSAENOTCONN:
+        return (int)ERROR_NOT_CONNECTED;
+    case WSAEACCES:
+        return (int)ERROR_ACCESS_DENIED;
+    case WSAEMFILE:
+        return (int)ERROR_TOO_MANY_OPEN_FILES;
+    case WSAENOBUFS:
+        return (int)ERROR_NOT_ENOUGH_MEMORY;
+    case WSAEINVAL:
+        return (int)ERROR_INVALID_PARAMETER;
+    case WSAEAFNOSUPPORT:
+    case WSAEPROTONOSUPPORT:
+    case WSAEOPNOTSUPP:
+        return (int)ERROR_NOT_SUPPORTED;
+    /* Every other code is its own answer, so a condition with no portable
+     * distinction reaches source as `Other` rather than as something else. */
+    default:
+        return error_code;
+    }
+}
+
+/* ------------------------------------------------------------- Winsock */
+
+static INIT_ONCE wf_windows_socket_once = INIT_ONCE_STATIC_INIT;
+static DWORD wf_windows_socket_startup_error;
+
+static BOOL CALLBACK wf_windows_socket_startup_once(
+    PINIT_ONCE once,
+    PVOID parameter,
+    PVOID *context
+) {
+    WSADATA data;
+    int started;
+    (void)once;
+    (void)parameter;
+    (void)context;
+    memset(&data, 0, sizeof(data));
+    started = WSAStartup(MAKEWORD(2, 2), &data);
+    wf_windows_socket_startup_error = started == 0 ? ERROR_SUCCESS
+                                                   : (DWORD)started;
+    /* The once has run either way: a refusal is remembered above and reported
+     * to every caller, rather than re-attempted per operation. */
+    return TRUE;
+}
+
+int wf__windows_socket_startup(void) {
+    if (InitOnceExecuteOnce(
+            &wf_windows_socket_once,
+            wf_windows_socket_startup_once,
+            NULL,
+            NULL
+        ) == FALSE) {
+        return (int)ERROR_GEN_FAILURE;
+    }
+    if (wf_windows_socket_startup_error != ERROR_SUCCESS) {
+        return (int)wf_windows_socket_startup_error;
+    }
+    return 0;
+}
+
+uintptr_t wf__windows_socket_handle(int descriptor) {
+    HANDLE native = wf__windows_completion_descriptor_handle(descriptor);
+    return native == INVALID_HANDLE_VALUE ? (uintptr_t)INVALID_SOCKET
+                                          : (uintptr_t)native;
+}
+
+int wf__windows_socket_open(int family) {
+    SOCKET created;
+    int descriptor;
+    int startup = wf__windows_socket_startup();
+    if (startup != 0) {
+        wf_windows_record_error((DWORD)startup);
+        return -1;
+    }
+    created = WSASocketW(
+        family,
+        SOCK_STREAM,
+        IPPROTO_TCP,
+        NULL,
+        0,
+        WSA_FLAG_OVERLAPPED | WSA_FLAG_NO_HANDLE_INHERIT
+    );
+    if (created == INVALID_SOCKET) {
+        wf_windows_record_error(
+            (DWORD)wf__windows_error_from_socket(WSAGetLastError())
+        );
+        return -1;
+    }
+    /* The descriptor number is the CRT's, because every writer-visible
+     * resource on this target is a CRT i32 descriptor and the [SYS-10] handle
+     * factory's capacity argument is written in that one numbering
+     * (`completion/file_adapter.h`, WF_FILE_CONNECTION_DESCRIPTORS).  The
+     * adoption stores this socket's handle in that table and nothing else;
+     * every host call below reaches the socket through it. */
+    errno = 0;
+    descriptor = _open_osfhandle((intptr_t)created, 0);
+    if (descriptor < 0) {
+        int saved_errno = errno;
+        (void)closesocket(created);
+        wf_windows_record_error(wf_windows_error_from_errno(saved_errno));
+        return -1;
+    }
+    {
+        int registered = wf__windows_completion_register_descriptor(
+            descriptor,
+            WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET
+        );
+        if (registered != 0) {
+            (void)wf__windows_socket_close(descriptor);
+            wf_windows_record_error((DWORD)registered);
+            return -1;
+        }
+    }
+    return descriptor;
+}
+
+int wf__windows_socket_close(int descriptor) {
+    SOCKET native = (SOCKET)wf__windows_socket_handle(descriptor);
+    int refusal = 0;
+    if (native == INVALID_SOCKET) {
+        wf_windows_record_error(ERROR_INVALID_HANDLE);
+        return -1;
+    }
+    /* The registry row goes before the object does, so the descriptor number
+     * the host may hand out again starts with no class and no association. */
+    wf__windows_completion_forget_descriptor(descriptor);
+    if (closesocket(native) != 0) {
+        refusal = wf__windows_error_from_socket(WSAGetLastError());
+    }
+    /* `closesocket` ends the Winsock object; this releases the CRT row the
+     * number lives in.  Its own `CloseHandle` necessarily fails, because the
+     * object it names is already gone -- the number is what this call is for,
+     * and the operation's outcome is the one `closesocket` reported. */
+    (void)_close(descriptor);
+    if (refusal != 0) {
+        wf_windows_record_error((DWORD)refusal);
+        return -1;
+    }
+    return 0;
+}
+
 static int wf_windows_nt_success(NTSTATUS status) {
     return status >= 0;
 }
@@ -351,6 +533,11 @@ int wf__windows_completion_descriptor_state(
  * would re-ask `GetFileType` and re-attempt the bind.  A row under any other
  * class is a directory or an output, which this ring does not carry.
  *
+ * A socket is admitted on its class alone and never on `GetFileType`, which
+ * answers FILE_TYPE_PIPE for one: the class is the fact that this runtime
+ * created it with `WSA_FLAG_OVERLAPPED`, which is what the port needs
+ * [SYS-17, SYS-18].
+ *
  * The lock is held across three host calls.  This is once per descriptor, not
  * once per operation: the second and every later offer on the same descriptor
  * takes the already-bound answer and makes no host call at all. */
@@ -385,6 +572,8 @@ int wf__windows_completion_ring_handle(
         wf_windows_registry[descriptor].present = 1u;
     } else if (wf_windows_registry[descriptor].descriptor_class
                    != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
+               && wf_windows_registry[descriptor].descriptor_class
+                   != WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET
                && wf_windows_registry[descriptor].descriptor_class
                    != WF_WINDOWS_DESCRIPTOR_CLASS_ANY) {
         ReleaseSRWLockExclusive(&wf_windows_registry_lock);

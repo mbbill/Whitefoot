@@ -17,6 +17,19 @@
 //! server program cannot tell the harness which port it took. The harness
 //! therefore picks a free port itself and passes it as an argument, which is
 //! the same fact from the other side.
+//!
+//! Nothing these cases *do* is POSIX: the peer is `std::net`, the port comes
+//! from a bound-and-released listener, the half-close is
+//! `Shutdown::Write`, and the port argument reaches the program through
+//! `support::invocation_argument`, which is text on a family whose arguments
+//! are not bytes. What is still POSIX is the harness's own link
+//! (`support.rs`, `stage_runtime_units` and `link_module`): it stages the
+//! POSIX runtime units and names an absolute `clang`, so these cases build
+//! nowhere else yet. That is one bounded piece of harness work and not a
+//! property of the cases; the Windows evidence for the same programs is
+//! `.github/workflows/io-hosts.yml`'s `completion-windows` job, which
+//! compiles `tcp_echo.wf` and `tcp_refused.wf` with the production driver and
+//! runs them on both routes against a `System.Net.Sockets` peer.
 
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};

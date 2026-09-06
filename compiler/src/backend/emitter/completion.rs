@@ -24,6 +24,8 @@ pub const COMPLETION_LINUX_IO_URING_HEADER: &str = include_str!("../completion/l
 pub const COMPLETION_WINDOWS_IOCP_HEADER: &str = include_str!("../completion/windows_iocp.h");
 /// The typed file-adapter's POSIX leaf contract embedded in the compiler.
 pub const COMPLETION_FILE_POSIX_HEADER: &str = include_str!("../completion/file_posix.h");
+/// The address vocabulary every socket engine shares, on every platform.
+pub const COMPLETION_SOCKET_ADDRESS_HEADER: &str = include_str!("../completion/socket_address.h");
 /// The finite completion core implementation embedded in the compiler.
 pub const COMPLETION_RUNTIME_SOURCE: &str = include_str!("../completion/runtime.c");
 /// The host's one wait set, which `runtime.c` and the file adapter sleep on.

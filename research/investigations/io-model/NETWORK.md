@@ -7,8 +7,10 @@ under [SYS-15] through [SYS-18], with the merge-time record in
 `governance/APPROVALS.md` and the derivation rows in
 `spec/derivation/derivation-ledger.md`. Slice 2 landed on the same branch on
 2026-09-05: every TCP operation lowers and runs on POSIX, on both the ring and
-the adapter routes §5 names. Slices 3 through 5 are open, and the owner
-decisions at the end are the ones the amendment implements. Where this
+the adapter routes §5 names. Slice 3 landed on 2026-09-06: every TCP operation
+runs on Windows too, on the completion port and on the adapter. Slices 4 and 5
+are open, and the owner decisions at the end are the ones the amendment
+implements. Where this
 document and the specification differ, the specification is the language.
 
 ## 1. Why the network first
@@ -190,9 +192,36 @@ receive, send, stream read, half-close) and the routes are:
   `native_adapter_probe.c` runs a loopback connect, accept, send and receive on
   the ring; `harness.c` runs the whole lifecycle and the pair's accounting at
   the bridge's own ABI.
-- Windows: `AcceptEx`, `ConnectEx`, `WSARecv`, `WSASend` on the completion
-  port; the standard input handle through the adapter (a console handle has
-  no overlapped form).
+- Windows: `ConnectEx`, `WSARecv`, `WSASend` on the completion port; the
+  standard input handle through the adapter (a console handle has no
+  overlapped form).
+
+  **Landed for Windows, 2026-09-06 (slice 3).** `file_windows.c` executes all
+  six kinds against Winsock — `WSASocketW` with `WSA_FLAG_OVERLAPPED` and
+  `WSA_FLAG_NO_HANDLE_INHERIT`, `bind`, `listen(SOMAXCONN)`, `accept`,
+  `connect`, `recv`, `send`, `shutdown`, `closesocket`, IPv4 and IPv6 — and
+  `windows_iocp.c` carries the connect, the receive and the send on the
+  completion port with `ConnectEx`, `WSARecv` and `WSASend`, each on the
+  record's own `OVERLAPPED`, the connect's socket created and bound to its
+  family's wildcard address in the submitting call exactly as the ring's
+  connect creates its socket at submit. `windows_runtime.c` holds the socket
+  half of the Windows leaf: `WSAStartup` behind an `INIT_ONCE`, the socket
+  open and close, the new `WF_WINDOWS_DESCRIPTOR_CLASS_SOCKET` row of the
+  descriptor ledger, and the one normalization that makes a `WSAGetLastError`
+  code and the port's own Win32 code for one condition answer one [SYS-7]
+  class. The address vocabulary is shared, not twinned: the conversions,
+  the peer publish, the backlog and the send flags moved out of `file_posix.h`
+  into `socket_address.h`, which every engine on every platform includes.
+
+  `AcceptEx` is **not** used, and the reason is a measurement: its address
+  pair is `2 * (sizeof(sockaddr_in6) + 16)` = 88 bytes of caller storage that
+  must live until the operation completes, the completion record is exactly
+  160 bytes on this platform with the accept's union arm at the 40-byte
+  ceiling `contract.h` asserts and the ring-state block at 40 bytes fully
+  occupied by the `OVERLAPPED` and its handle, and the record may not grow.
+  So the accept is the shared file adapter's blocking `accept` on a helper
+  thread, which is the same class of fact as the Linux ring's refusal of a
+  listen: it selects an engine, not a qualification.
 - Darwin: the shared file adapter's helpers make the blocking calls until a
   kqueue route exists; this is the route `WF_IO_NO_NATIVE_RING` runs on Linux
   and is not a second lowering.
@@ -251,7 +280,9 @@ rule itself does not stage.
 2. POSIX runtime: adapter route for every kind, Linux ring route for accept,
    connect, receive, send and stream read; loopback tests in `tests/programs`.
    Landed 2026-09-05; §5 names the routes and the units that carry them.
-3. Windows: the completion-port route; the io-hosts job proves it.
+3. Windows: the completion-port route; the io-hosts job proves it. Landed
+   2026-09-06; §5's Windows entry names the units and states why the accept
+   is the adapter's.
 4. The control benchmark against the io_uring and epoll references, in
    io-completion-bench.
 5. Batch record.

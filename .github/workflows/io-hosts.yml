@@ -160,7 +160,8 @@ jobs:
             -I compiler/src/backend/completion \
             $WINDOWS_UNITS \
             compiler/src/backend/completion/bridge_default_probe.c \
-            -o "$RUNNER_TEMP/completion/windows-default-route-probe.exe"
+            -o "$RUNNER_TEMP/completion/windows-default-route-probe.exe" \
+            -lws2_32
 
       - name: Run the Windows default-route probe on both routes
         run: |
@@ -203,6 +204,12 @@ jobs:
       # The ring alone, with no bridge at all: a real positioned transfer found
       # by the record's own address, published through the scheduler core, and
       # waited for on the ring's own park.
+      #
+      # `windows_runtime.c` is in this link and is not the bridge: the ring's
+      # socket requests reach Winsock through that leaf's descriptor ledger,
+      # and the cross target's nm check is what states that the leaf reaches
+      # neither the bridge nor the core in return (`compiler/Makefile`,
+      # `completion-windows-cross`).
       - name: Build the Windows native adapter probe
         run: |
           clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
@@ -214,8 +221,10 @@ jobs:
             compiler/src/backend/completion/wait_windows.c \
             compiler/src/backend/completion/native_contract.c \
             compiler/src/backend/completion/windows_iocp.c \
+            compiler/src/backend/windows_runtime.c \
             compiler/src/backend/completion/native_adapter_probe.c \
-            -o "$RUNNER_TEMP/completion/windows-adapter-probe.exe"
+            -o "$RUNNER_TEMP/completion/windows-adapter-probe.exe" \
+            -lws2_32
 
       - name: Run the Windows native adapter probe
         run: |
@@ -309,7 +318,8 @@ jobs:
             compiler/src/backend/windows_runtime.c \
             compiler/src/backend/completion/windows_bridge_init_fail_stop_probe.c \
             "$fault_dir/bridge.o" \
-            -o "$fault_dir/windows-bridge-init-fail-stop-probe.exe"
+            -o "$fault_dir/windows-bridge-init-fail-stop-probe.exe" \
+            -lws2_32
 
       - name: Require Windows bridge initialization to fail stop
         run: |
@@ -404,6 +414,167 @@ jobs:
             fail_e2e "the compiled program produced the wrong bytes" "$?"
           test ! -s "$RUNNER_TEMP/whitefoot-e2e/diagnostics.txt" || \
             fail_e2e "the compiled program wrote diagnostics" "$?"
+
+      # The TCP routes on the real host, in the same shape as the step above:
+      # the production driver compiles a real .wf server and a real .wf client
+      # of a port nothing is listening on, and each is run twice -- once on the
+      # completion port under the opt-in assertion that the run reached it, and
+      # once with the port refused so the same program runs through the shared
+      # file adapter's own Winsock calls. The peer is this runner's own
+      # `System.Net.Sockets` client, which is the controlled other side
+      # `research/investigations/io-model/NETWORK.md` section 6 asks for.
+      #
+      # Every run shows both channels and its exit status before it is judged,
+      # and every failure names the site: a runtime fail-stop writes one line
+      # on stderr and a step that exits on the status alone throws it away.
+      - name: Compile and run the TCP routes on both engines
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $directory = Join-Path $env:RUNNER_TEMP "whitefoot-e2e/tcp"
+          [void](New-Item -ItemType Directory -Force -Path $directory)
+          $compiler = ".\compiler\target\debug\whitefootc.exe"
+          $echo = Join-Path $directory "tcp-echo.exe"
+          $echoPar = Join-Path $directory "tcp-echo-par.exe"
+          $refused = Join-Path $directory "tcp-refused.exe"
+
+          function Fail($stage) {
+            Write-Host "::error title=Windows TCP routes::$stage"
+            exit 1
+          }
+          function Show-Run($label, $out, $err, $status) {
+            Write-Host "--- ${label}: stdout ---"
+            Get-Content $out -ErrorAction SilentlyContinue
+            Write-Host "--- ${label}: stderr ---"
+            Get-Content $err -ErrorAction SilentlyContinue
+            Write-Host "--- ${label}: exit status: $status ---"
+          }
+
+          & $compiler "tests/programs/tcp_echo.wf" -o $echo
+          if ($LASTEXITCODE -ne 0) { Fail "tcp_echo.wf did not compile or link" }
+          & $compiler --par "tests/programs/tcp_echo.wf" -o $echoPar
+          if ($LASTEXITCODE -ne 0) { Fail "tcp_echo.wf did not compile or link under --par" }
+          & $compiler "tests/programs/tcp_refused.wf" -o $refused
+          if ($LASTEXITCODE -ne 0) { Fail "tcp_refused.wf did not compile or link" }
+
+          # The specification declares no operation reporting a listener's own
+          # local address ([SYS-17]), so the harness picks the port and passes
+          # it as an argument, exactly as `compiler/tests/programs/network.rs`
+          # does. A listener that never accepted leaves no connection in
+          # TIME_WAIT, so the port is free the moment this releases it.
+          function Get-FreePort {
+            $reserve = [System.Net.Sockets.TcpListener]::new(
+              [System.Net.IPAddress]::Loopback, 0)
+            $reserve.Start()
+            $port = $reserve.LocalEndpoint.Port
+            $reserve.Stop()
+            return $port
+          }
+
+          function Start-Program($program, $port, $stem, $variable) {
+            Set-Item -Path "Env:$variable" -Value "1"
+            $started = Start-Process -FilePath $program -ArgumentList "$port" `
+              -RedirectStandardOutput (Join-Path $directory "$stem.out") `
+              -RedirectStandardError (Join-Path $directory "$stem.err") `
+              -NoNewWindow -PassThru
+            Remove-Item -Path "Env:$variable" -ErrorAction SilentlyContinue
+            return @{
+              Process = $started
+              Out = Join-Path $directory "$stem.out"
+              Err = Join-Path $directory "$stem.err"
+              Port = $port
+            }
+          }
+
+          $payload = New-Object byte[] 10000
+          for ($index = 0; $index -lt $payload.Length; $index += 1) {
+            $payload[$index] = [byte]($index % 251)
+          }
+
+          function Invoke-Echo($program, $label, $stem, $variable) {
+            $run = Start-Program $program (Get-FreePort) $stem $variable
+            $client = $null
+            $deadline = (Get-Date).AddSeconds(30)
+            while ($null -eq $client) {
+              try {
+                $client = [System.Net.Sockets.TcpClient]::new(
+                  "127.0.0.1", $run.Port)
+              } catch {
+                if ((Get-Date) -gt $deadline) {
+                  [void]$run.Process.WaitForExit(5000)
+                  Show-Run $label $run.Out $run.Err $run.Process.ExitCode
+                  Fail "${label}: the program never listened on port $($run.Port)"
+                }
+                Start-Sleep -Milliseconds 50
+              }
+            }
+            $stream = $client.GetStream()
+            $stream.Write($payload, 0, $payload.Length)
+            $stream.Flush()
+            # The connection's receiving direction ends where this peer stops
+            # sending, and the server's `receive_next` answers `ReadEnd` for
+            # exactly that [SYS-8, SYS-18].
+            $client.Client.Shutdown([System.Net.Sockets.SocketShutdown]::Send)
+            $returned = New-Object System.IO.MemoryStream
+            $chunk = New-Object byte[] 4096
+            while ($true) {
+              $read = $stream.Read($chunk, 0, $chunk.Length)
+              if ($read -le 0) { break }
+              $returned.Write($chunk, 0, $read)
+            }
+            $client.Close()
+            if (-not $run.Process.WaitForExit(60000)) {
+              Show-Run $label $run.Out $run.Err "still running"
+              Fail "${label}: the program did not finish within sixty seconds"
+            }
+            $status = $run.Process.ExitCode
+            Show-Run $label $run.Out $run.Err $status
+            if ($status -ne 0) { Fail "${label}: the program exited $status" }
+            $actual = $returned.ToArray()
+            if ($actual.Length -ne $payload.Length) {
+              Fail "${label}: the echo returned $($actual.Length) of $($payload.Length) bytes"
+            }
+            for ($index = 0; $index -lt $payload.Length; $index += 1) {
+              if ($actual[$index] -ne $payload[$index]) {
+                Fail "${label}: the echo changed the byte at $index"
+              }
+            }
+            if ((Get-Item $run.Err).Length -ne 0) {
+              Fail "${label}: the program wrote diagnostics"
+            }
+          }
+
+          function Invoke-Refused($label, $stem, $variable) {
+            # A port this step reserved and released: nothing is listening on
+            # it, so the host answers the connect with its own refusal. The
+            # program exits zero only when both attempts answered
+            # `ConnectFailed(ConnectionRefused, permit)` and the second used
+            # the very permit the first handed back [SYS-10, SYS-17].
+            $run = Start-Program $refused (Get-FreePort) $stem $variable
+            if (-not $run.Process.WaitForExit(60000)) {
+              Show-Run $label $run.Out $run.Err "still running"
+              Fail "${label}: the program did not finish within sixty seconds"
+            }
+            $status = $run.Process.ExitCode
+            Show-Run $label $run.Out $run.Err $status
+            if ($status -ne 0) {
+              Fail "${label}: a refused connect did not reach source as its own outcome (exit $status)"
+            }
+            if ((Get-Item $run.Err).Length -ne 0) {
+              Fail "${label}: the program wrote diagnostics"
+            }
+          }
+
+          Invoke-Echo $echo "tcp echo, completion port" "echo-ring" `
+            "WF_REQUIRE_WINDOWS_IOCP"
+          Invoke-Echo $echoPar "tcp echo, completion port, --par" "echo-ring-par" `
+            "WF_REQUIRE_WINDOWS_IOCP"
+          Invoke-Echo $echo "tcp echo, bounded adapter" "echo-adapter" `
+            "WF_IO_NO_NATIVE_RING"
+          Invoke-Refused "tcp refused, completion port" "refused-ring" `
+            "WF_REQUIRE_WINDOWS_IOCP"
+          Invoke-Refused "tcp refused, bounded adapter" "refused-adapter" `
+            "WF_IO_NO_NATIVE_RING"
 
       # U+4241 is one native UTF-16 code unit whose little-endian memory bytes
       # are 0x41, 0x42. The program measures the HostString, copies its complete
@@ -612,7 +783,8 @@ jobs:
             compiler/src/backend/sched/grant_observer.c \
             -x ir "$par_dir/par-layout.ll" \
             -Wno-override-module \
-            -o "$par_dir/par-layout-observed.exe" || \
+            -o "$par_dir/par-layout-observed.exe" \
+            -lws2_32 || \
             fail_par "the observed executable did not link" "$?"
           set +e
           WF_WORKERS=4 "$par_dir/par-layout-observed.exe" \
@@ -645,6 +817,7 @@ jobs:
               -x ir "$par_dir/par-layout.ll" \
               -Wno-override-module \
               -o "$par_dir/par-layout-control.exe" \
+              -lws2_32 \
               > "$par_dir/control-link.txt" 2>&1 \
               && {
                 set +e
@@ -678,6 +851,7 @@ jobs:
               -x ir "$par_dir/par-layout.ll" \
               -Wno-override-module \
               -o "$par_dir/par-layout-asan.exe" \
+              -lws2_32 \
               > "$par_dir/asan-link.txt" 2>&1; then
               set +e
               PATH="/c/Program Files/LLVM/bin:$PATH" \

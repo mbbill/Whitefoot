@@ -240,6 +240,21 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // Linux ring for accept, connect, receive and send, the shared file adapter
 // for listen, bind and the half-close — which is a target column of the same
 // rows and not a second qualification path.
+//
+// v0.46 slice 3 (Windows TCP routes): the seven TCP rows are now mapped on the
+// Windows column as well, to the same ABI symbols, because the runtime carries
+// every one of the six request kinds against Winsock (`file_windows.c`) and
+// the completion port carries the connect, the receive and the send
+// (`windows_iocp.c`). The accept stays on the shared file adapter on this
+// platform, for the record-size reason `windows_iocp.c` states at
+// `wf_windows_iocp_carries`; that is the same class of fact as the Linux
+// ring's refusal of a listen, and it selects an engine rather than a
+// qualification. Nothing else in this table moves: the symbols, ordinals,
+// representations, release actions and entry forms are the ones slice 2
+// approved, and the [SYS-7] Windows class table below gains no class — the
+// leaf normalizes a Winsock code onto the Win32 code that table already
+// carries for the same condition (`../windows_runtime.h`,
+// `wf__windows_error_from_socket`).
 const REVIEWED_FOR: &str = "v0.46";
 
 /// The number of [SYS-2] opaque resource types with a release row.
@@ -490,8 +505,14 @@ const LINUX_ERROR_CLASSES: [PortableErrorClass; 28] = [
 ];
 
 /// The Win32 error-code mapping used by the compiler-owned Windows runtime.
-/// Winsock values are included because the closed source vocabulary already
-/// contains those classes even though v0.39 exposes no network operation.
+///
+/// Two Winsock values appear directly — the two address refusals a bind
+/// reports, which never reach the completion port and so have no Win32
+/// spelling of their own. Every other socket condition arrives here as the
+/// Win32 code the port reports for it, because the runtime's leaf normalizes
+/// the adapter route's `WSAGetLastError` onto that same code
+/// (`backend/windows_runtime.h`, `wf__windows_error_from_socket`): one
+/// condition answers one class whichever engine ran the operation.
 const WINDOWS_ERROR_CLASSES: [PortableErrorClass; 28] = [
     class("NotFound", &[2, 3]),
     class("PermissionDenied", &[5, 65, 1314]),
@@ -1520,19 +1541,13 @@ fn operation_row(
     }
     // Ordinals 22 through 28 are `tcp_listen`, `tcp_accept`, `tcp_connect`,
     // `receive_next`, `send_once`, `close_connection` and `close_listener`.
-    // The POSIX routes are the rows below; the Windows completion-port route
-    // is slice 3 of the streams-and-TCP batch
-    // (`research/investigations/io-model/NETWORK.md` §7), so the Windows
-    // column maps none of the seven and a Windows submission stops here.
-    // An unmapped row is a target-qualification stop, not a source-language
-    // rejection: it cites no language rule and nothing weaker is substituted
-    // for the unqualified operation [QUAL-1]. The runtime's Windows leaf
-    // refuses the six request kinds as an outcome too (`file_windows.c`), so
-    // a shape that reached it would be answered rather than aborted; no
-    // program does, because this stop comes first.
-    if matches!(operation, 22..=28) && target.is_windows() {
-        return Err(QualificationFailure::MissingMapping(facility));
-    }
+    // Every column maps them to the rows below: the ABI symbol of a system
+    // operation is target-independent, and one wrapper per operation is
+    // emitted on every target (`emitter/system.rs`). What differs is which
+    // engine behind that symbol runs it — the Linux ring, the Windows
+    // completion port, or the shared file adapter — and that is a runtime
+    // routing fact rather than a qualification one
+    // (`research/investigations/io-model/NETWORK.md` §5).
     let symbol = match operation {
         0 => "wf.sys.args_count.v1",
         1 => "wf.sys.arg_get.v1",

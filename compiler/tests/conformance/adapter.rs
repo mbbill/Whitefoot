@@ -43,12 +43,13 @@ use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE,
-    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, SCHED_CORE_HEADER, SCHED_CORE_SOURCE,
-    SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE,
-    SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailureKind,
+    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
+    WINDOWS_RUNTIME_HEADER, compile, module_requires_completion_runtime,
+    module_requires_parallel_runtime,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -255,6 +256,10 @@ fn link(module: &str, directory: &Path) -> PathBuf {
             ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
             ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
             ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+            (
+                "completion/socket_address.h",
+                COMPLETION_SOCKET_ADDRESS_HEADER,
+            ),
             (
                 "completion/linux_io_uring.h",
                 COMPLETION_LINUX_IO_URING_HEADER,

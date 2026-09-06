@@ -1,5 +1,6 @@
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
@@ -9,18 +10,40 @@ use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
     COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
     COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
-    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_WAIT_HOST_SOURCE,
-    COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailure, CompilerLimits, FLOOR_RUNTIME_SOURCE,
-    HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, SCHED_CORE_HEADER,
-    SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER,
-    SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput, WINDOWS_RUNTIME_HEADER, compile,
-    compile_with_overlap, compile_with_permission_ledger, module_requires_completion_runtime,
-    module_requires_parallel_runtime,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailure,
+    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
+    WINDOWS_RUNTIME_HEADER, compile, compile_with_overlap, compile_with_permission_ledger,
+    module_requires_completion_runtime, module_requires_parallel_runtime,
 };
 // Read by the superseded-inventory rejection in the directory-walking cases.
 use whitefoot::{Inventory, compile_with_inventory};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
+
+/// One invocation argument, from the bytes a case names to the host's own
+/// argument value.
+///
+/// A case that means a byte sequence no other encoding can carry — the
+/// wider-code-unit and byte-named cases — is a POSIX fact and says so through
+/// the fixture helpers below. Every other case, the loopback ones included,
+/// names ASCII text, and this is what keeps those cases from assuming the
+/// host's arguments are bytes: on a family whose arguments are not, the bytes
+/// are read as UTF-8 and handed over as text, which is the same argument.
+#[cfg(unix)]
+fn invocation_argument(bytes: &[u8]) -> OsString {
+    OsStr::from_bytes(bytes).to_os_string()
+}
+
+#[cfg(not(unix))]
+fn invocation_argument(bytes: &[u8]) -> OsString {
+    OsString::from(
+        std::str::from_utf8(bytes)
+            .expect("an invocation argument this host can carry must be text"),
+    )
+}
 
 /// Stages the compiler-owned runtime units into one link on exactly the
 /// conditions the driver uses.
@@ -55,6 +78,10 @@ fn stage_runtime_units(
             ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
             ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
             ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+            (
+                "completion/socket_address.h",
+                COMPLETION_SOCKET_ADDRESS_HEADER,
+            ),
             (
                 "completion/linux_io_uring.h",
                 COMPLETION_LINUX_IO_URING_HEADER,
@@ -436,7 +463,7 @@ impl CompiledProgram {
     pub fn run(&self, working_directory: &Path, arguments: &[&[u8]]) -> Output {
         Command::new(&self.executable)
             .current_dir(working_directory)
-            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
             .output()
             .expect("run compiled program")
     }
@@ -470,7 +497,7 @@ impl CompiledProgram {
         let mut command = Command::new(&self.executable);
         command
             .current_dir(&self.directory)
-            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)));
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)));
         match workers {
             Some(count) => command.env("WF_WORKERS", count),
             None => command.env_remove("WF_WORKERS"),
@@ -492,7 +519,7 @@ impl CompiledProgram {
         let mut command = Command::new(&self.executable);
         command
             .current_dir(&self.directory)
-            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -524,7 +551,7 @@ impl CompiledProgram {
         drop(reader);
         let mut child = Command::new(&self.executable)
             .current_dir(working_directory)
-            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
             .stdout(Stdio::from(writer))
             .stderr(Stdio::piped())
             .spawn()
@@ -622,6 +649,11 @@ impl FixtureDirectory {
     }
 
     /// Writes one fixture file, whose name may be any byte sequence.
+    ///
+    /// This one names POSIX on purpose and is not an assumption the harness
+    /// makes elsewhere: a name that is any byte sequence is a fact about a
+    /// POSIX file system, and it is the subject of the cases that call it.
+    /// No loopback case reaches it.
     pub fn write(&self, name: &[u8], bytes: &[u8]) -> PathBuf {
         let path = self.path.join(OsStr::from_bytes(name));
         std::fs::write(&path, bytes).expect("write fixture file");
