@@ -138,8 +138,23 @@ fn entry() -> &'static str {
 /// fused the literal match into `main`'s scan walk: `line_matches` is no
 /// longer declared. Per task 0016's rule the list moves only by source
 /// derivation, never by relaxation.
+///
+/// B7c4b re-derived it again, off the migrated source, and the derivation
+/// added five names. Two are the store surface's own: `zeroed_bytes` and
+/// `zeroed_words` are where the take from the general store and the zero fill
+/// that follows it now live, and `zeroed_bytes` is the first `wfgrep` helper
+/// the host inliner leaves out of line at some of its call sites, so a list
+/// that omitted it would have made `program()` blind to an allocation and the
+/// census blind to a call target. Three — `append_trailing_newline`,
+/// `scan_line`, and `shift_input_tail` — were declared before this batch and
+/// were never listed; both readers of this list are complete over what it
+/// names, so the omission was a hole in the list rather than in the program,
+/// and it is closed here rather than left for the next inlining decision to
+/// expose.
 const DECLARED_FUNCTIONS: &[&str] = &[
     "io_class",
+    "zeroed_bytes",
+    "zeroed_words",
     "append_slice",
     "copy_range",
     "publish_all",
@@ -147,6 +162,9 @@ const DECLARED_FUNCTIONS: &[&str] = &[
     "name_before",
     "put_decimal",
     "assemble_failure",
+    "append_trailing_newline",
+    "scan_line",
+    "shift_input_tail",
     "search_file",
     "open_source_from_factory",
     "open_file_from_factory",
@@ -798,17 +816,33 @@ fn each_transfer_is_one_host_call_with_a_cold_outcome_mapper() {
 fn every_release_close_is_one_discarded_attempt() {
     // The three closing resource kinds close: `DirectoryRead`, `DirectorySource`,
     // and `ReadFile`. Across the command and its retained helper definitions,
-    // the optimizer retains nine compiler-derived release sites. FilePermit
+    // the optimizer retains seventeen compiler-derived release sites. FilePermit
     // itself erases before emission. The typed file adapter now validates a
     // provisional descriptor before publishing it as a Whitefoot value, so
     // its failure cleanup belongs to the adapter rather than to this IR.
+    //
+    // The count was nine until B7c4b moved `wfgrep`'s eleven scratch runs off
+    // the ambient heap onto the general store, and the whole of the growth is
+    // in `main`, re-derived from source rather than relaxed. An ambient
+    // `buffer_new` was one expression that either produced a run or aborted
+    // the process, so it left `main`'s control flow alone. A take from the
+    // store is a `match` on an `Option` with a refusal arm, followed by the
+    // window-viewability test the source writes before it forms a view, and
+    // `main` makes four of them. That is eight new source edges leaving
+    // `main`, each carrying the release of the `command.cwd` `DirectoryRead`
+    // the entry holds for the whole run [STOR-3], so the emitted entry's
+    // release sites go from seven to fifteen while `walk`'s three are
+    // untouched. The optimizer proves one of the fifteen dead and retains
+    // fourteen, which with `walk`'s three is the seventeen asserted here. No
+    // resource gained a release and none lost one: the same three kinds close
+    // on more edges because the store surface gave `main` more ways to leave.
     let closes = program()
         .matches("@wf__completion_file_close_direct(")
         .count();
     assert_eq!(
         closes,
-        9,
-        "all nine closing return edges must remain:\n{}",
+        17,
+        "all seventeen closing return edges must remain:\n{}",
         program()
     );
     // Every close result is named once and never read again. Nothing compares
@@ -849,8 +883,8 @@ fn every_release_close_is_one_discarded_attempt() {
         }
     }
     assert_eq!(
-        releases, 9,
-        "all nine resource closes must be compiler-derived releases"
+        releases, 17,
+        "all seventeen resource closes must be compiler-derived releases"
     );
     assert_eq!(
         provisional_cleanups, 0,
@@ -901,14 +935,32 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
     // their own bodies are not scanned, so a host call reaching a program's
     // failure arm after outlining would not be seen here.
     //
-    // `@wf_resource_abort` is exempt because it is `noreturn`, checked just
-    // below rather than argued: a call to it cannot return, so no execution
-    // that reaches it also finishes, and it is on no success path by
-    // construction rather than by inspection of its callers.
+    // `@wf_resource_abort` was exempt because it is `noreturn`: a call to it
+    // cannot return, so no execution that reaches it also finishes. The
+    // exemption is still recorded below, and the property is still checked
+    // rather than argued — but it is now checked where the symbol exists.
+    //
+    // B7c4b removed the last thing in `wfgrep` that could reach it. An
+    // ambient-heap acquisition had no refusal a writer could take, so a
+    // refused allocation aborted the process and every `buffer_new` site
+    // carried an edge into this abort. A take from the general store hands
+    // back an `Option`, and `wfgrep` answers `None` with exit 70, so the
+    // program has no call site left. The emitter still defines the symbol —
+    // it belongs to the runtime, not to this program — and still declares it
+    // `noreturn`, which is asserted on the emitted module; the optimized
+    // module no longer defines it at all, because a private definition
+    // nothing calls is deleted. So the census exemption is now vacuous, and
+    // that is asserted too: nothing in the program calls it.
     assert!(
-        definition_is_noreturn(optimized(), "wf_resource_abort"),
+        definition_is_noreturn(emitted(), "wf_resource_abort"),
         "the resource abort must be noreturn, or its census exemption is an \
          argument rather than a property"
+    );
+    assert_eq!(
+        program.matches("@wf_resource_abort(").count(),
+        0,
+        "a refused take is an Option arm the source answers, so no edge of \
+         wfgrep reaches the resource abort"
     );
     // `@exit` is exempt on the same terms, and for the same reason it is a
     // property rather than an argument: the emitter declares it `noreturn`,
@@ -942,8 +994,11 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
             | "__error" | "__errno_location"
             // The lease length pass and the path NUL scan.
             | "strlen" | "memchr"
-            // Buffer allocation and language cleanup.
-            | "calloc" | "free"
+            // The general store's own take and give-back. The take is
+            // `malloc` and not `calloc` since B7c4b: a store hands out raw
+            // slots and the zero fill is the source's own `zeroed_bytes`
+            // loop, which is where this program's initialization now lives.
+            | "malloc" | "free"
             // External resource exhaustion and the final process abort.
             | "wf_resource_record_abort" | "abort"
             // The [PROG-3] start failure: an initial working directory the
@@ -1029,14 +1084,14 @@ fn releasing_a_value_or_an_output_reaches_no_host_facility() {
 #[test]
 fn the_reused_buffers_are_initialized_once_at_allocation() {
     let program = program();
-    // `wfgrep` asks for exactly eleven buffers, and gets exactly eleven
-    // allocations, each carrying its own initialization in the allocation
-    // itself. Derived from source, function by function: `main` allocates the
+    // `wfgrep` asks for exactly eleven runs, and gets exactly eleven store
+    // takes. Derived from source, function by function: `main` takes the
     // pattern (4096), the root name (256), the root path (1024), and the
-    // diagnostic report (1280); `walk` allocates its enumeration batch (8192),
+    // diagnostic report (1280); `walk` takes its enumeration batch (8192),
     // its collected names (65664), its visit order (64 u64 slots, 512
-    // bytes), one child path (1024), and its own report (1280); `search_file`
-    // allocates the read input (4096) and the publication batch (8192).
+    // bytes), one child path (1024), and its own report (1280);
+    // `search_file` takes the read input (4096) and the publication batch
+    // (8192).
     //
     // This is where the recursive search moved the cost: `walk`'s five and
     // `search_file`'s two are per call, so a walk of D directories holding F
@@ -1044,19 +1099,61 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // four times for the whole run. That is a measured property of the new
     // shape, recorded here rather than hidden — it is one of the numbers the
     // flagship re-attribution has to explain.
+    //
+    // B7c4b moved these eleven from the ambient heap to the general store,
+    // and the count is unchanged while its two halves are not. The
+    // allocation is now `@malloc`, because a store hands out raw slots; the
+    // initialization is the source's own `zeroed_bytes` and `zeroed_words`
+    // fill loop, which is why the eleven sites no longer read as eleven
+    // literal `@calloc`s. Every take goes through one of those two helpers,
+    // and the host inliner expanded eight of the eleven call sites and left
+    // three as calls, so the eleven appear here as eight `@malloc`s of the
+    // eight expanded sizes plus three calls to the out-of-line
+    // `wf_zeroed_bytes`, whose own take is the one `@malloc` of a
+    // non-constant size in the program. That split is an inlining fact and
+    // not a source one, so both halves are asserted and their sum is the
+    // eleven the source writes.
+    let mut expanded = 0;
+    let mut out_of_line = 0;
+    let mut helper_takes = 0;
+    for function in program_functions() {
+        let signature = function.lines().next().unwrap_or_default();
+        let helper =
+            signature.contains(" @wf_zeroed_bytes(") || signature.contains(" @wf_zeroed_words(");
+        for line in function.lines() {
+            if call_target(line) == Some("malloc") {
+                if helper {
+                    helper_takes += 1;
+                } else {
+                    expanded += 1;
+                }
+            }
+            if matches!(
+                call_target(line),
+                Some("wf_zeroed_bytes" | "wf_zeroed_words")
+            ) {
+                out_of_line += 1;
+            }
+        }
+    }
     assert_eq!(
-        program.matches("@calloc(").count(),
-        11,
-        "eleven source buffers, eleven allocations"
+        helper_takes, 1,
+        "the retained helper holds exactly its own take"
     );
+    assert_eq!(
+        expanded + out_of_line,
+        11,
+        "eleven source runs, eleven store takes"
+    );
+    assert_eq!(expanded, 8, "eight takes are expanded at their call site");
+    assert_eq!(out_of_line, 3, "three takes remain calls into the helper");
     for (size, count) in [
-        ("@calloc(i64 1, i64 4096)", 2),
-        ("@calloc(i64 1, i64 8192)", 2),
-        ("@calloc(i64 1, i64 1280)", 2),
-        ("@calloc(i64 1, i64 1024)", 2),
-        ("@calloc(i64 1, i64 65664)", 1),
-        ("@calloc(i64 1, i64 512)", 1),
-        ("@calloc(i64 1, i64 256)", 1),
+        ("@malloc(i64 4096)", 2),
+        ("@malloc(i64 8192)", 2),
+        ("@malloc(i64 1024)", 1),
+        ("@malloc(i64 65664)", 1),
+        ("@malloc(i64 512)", 1),
+        ("@malloc(i64 256)", 1),
     ] {
         assert_eq!(
             program.matches(size).count(),
@@ -1064,13 +1161,18 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
             "allocation {size} must appear {count} times"
         );
     }
-    // Nothing reallocates, and nothing re-initializes: there is no fill loop,
-    // no `memset`, and no second allocation anywhere in the module, so a
-    // per-read re-initialization or a reallocation after a flush cannot be
-    // hiding in a path this test did not walk. `@malloc` is on the list
-    // because a buffer whose fill byte is not zero would take it, and no
-    // buffer in this program does.
-    for forbidden in ["@malloc(", "@realloc(", "@reallocf(", "memset", "bzero"] {
+    // Nothing reallocates, and nothing re-initializes. That the fill runs once
+    // per take is a source fact under this surface rather than an allocator
+    // guarantee: the fill loop is inside `zeroed_bytes` and `zeroed_words`,
+    // between the take and the hand-back, so a caller cannot reach a filled
+    // run without having taken it and cannot re-reach the fill without taking
+    // another. What the module can still be asked is that no *second* filling
+    // agent exists: no reallocation, and no bulk fill primitive anywhere. The
+    // source's fill is a `place_back` chain, which moves the run's length word
+    // on every iteration and is therefore not a plain byte store the host
+    // optimizer can contract into `memset`; if a later host ever does contract
+    // it, this row is re-derived against that module rather than relaxed here.
+    for forbidden in ["@realloc(", "@reallocf(", "memset", "bzero"] {
         assert!(
             !optimized().contains(forbidden),
             "the reused buffers must not reach {forbidden}"
@@ -1090,7 +1192,11 @@ fn the_reused_buffers_are_initialized_once_at_allocation() {
     // read is a source fact — every buffer is bound at its function's entry —
     // which no inspection of the merged module can restate.
     for function in program_functions() {
-        let Some(first_allocation) = function.find("@calloc(") else {
+        let Some(first_allocation) = ["@malloc(", "@wf_zeroed_bytes(", "@wf_zeroed_words("]
+            .iter()
+            .filter_map(|site| function.find(site))
+            .min()
+        else {
             continue;
         };
         for transfer in [
