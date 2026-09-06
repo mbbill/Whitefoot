@@ -290,93 +290,9 @@ pub(super) fn type_requires_cleanup(
     program: &IrProgram<'_, '_, '_>,
     ty: IrType,
 ) -> Result<bool, BackendFailure> {
-    let mut pending = vec![ty];
-    let mut visited = HashSet::new();
-    while let Some(current) = pending.pop() {
-        match current {
-            IrType::Buffer { .. } => return Ok(true),
-            // A run's own backing action is its release class [PROV-6]: a
-            // general store's run spends that store's provider capability, and
-            // a bump extent's run is reclaimed by its own region reset, which
-            // is no action at all. A frame-resident run reclaims none of its
-            // own either. Every run still needs a walk when its window holds
-            // values that derive one, and [PROV-6] visits those elements
-            // before the backing is released [STOR-3, BLK-1].
-            IrType::Vector {
-                release: IrReleaseClass::General,
-                ..
-            } => return Ok(true),
-            IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
-                pending.push(element.ty());
-            }
-            IrType::Provider => {}
-            // S39 a cell needs a release exactly when its own storage or
-            // its referent does: a bump extent's cell whose referent derives
-            // nothing needs no walk at all.
-            IrType::Nominal(id)
-                if matches!(
-                    program.nominal(id).map(|nominal| nominal.kind()),
-                    Some(IrNominalKind::Box {
-                        release: IrReleaseClass::General,
-                        ..
-                    })
-                ) =>
-            {
-                return Ok(true);
-            }
-            IrType::Nominal(id)
-                if matches!(
-                    program.nominal(id).map(|nominal| nominal.kind()),
-                    Some(IrNominalKind::Box { .. })
-                ) =>
-            {
-                let Some(IrNominalKind::Box { referent, .. }) =
-                    program.nominal(id).map(|nominal| nominal.kind())
-                else {
-                    return Err(BackendFailure::InvalidIr);
-                };
-                pending.push(*referent);
-            }
-            IrType::Nominal(id) if visited.insert(id) => {
-                let nominal = program.nominal(id).ok_or(BackendFailure::InvalidIr)?;
-                match nominal.kind() {
-                    IrNominalKind::Struct { fields } => {
-                        pending.extend(fields.iter().map(|field| field.ty()));
-                    }
-                    IrNominalKind::Enum { variants } => {
-                        pending.extend(
-                            variants
-                                .iter()
-                                .flat_map(|variant| variant.fields())
-                                .map(|field| field.ty()),
-                        );
-                    }
-                    // Every [SYS-5] release action is an explicit release the
-                    // target stage must emit, including a logical consume that
-                    // emits nothing.
-                    IrNominalKind::Box { .. }
-                    | IrNominalKind::SystemResource(_)
-                    // The allocation-list drop is the region's storage
-                    // release [STOR-3]: walk and free.
-                    | IrNominalKind::ArenaStorage => {
-                        return Ok(true);
-                    }
-                    // An arena value's storage is released with its region,
-                    // never by an owner-scope cleanup [STOR-3, STOR-4].
-                    IrNominalKind::Arena { .. } => {}
-                }
-            }
-            IrType::Unit
-            | IrType::Bool
-            | IrType::Integer { .. }
-            | IrType::Float { .. }
-            | IrType::Array { .. }
-            | IrType::Slice { .. }
-            | IrType::Address(_)
-            | IrType::Nominal(_) => {}
-        }
-    }
-    Ok(false)
+    // One reading, shared with the staged lowering: whether a value of this
+    // type derives any release work at all [STOR-3, PROV-6].
+    crate::lowering::type_derives_release(program.nominals(), ty).ok_or(BackendFailure::InvalidIr)
 }
 
 pub(super) fn drop_helper_symbol(nominal: IrNominalId) -> String {

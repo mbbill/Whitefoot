@@ -403,6 +403,99 @@ fn lower_flat_element(
     })
 }
 
+/// Whether a value of this type derives any release work at all [STOR-3].
+///
+/// This is the single reading of "does dropping this value do something": the
+/// target stage asks it to decide whether a drop emits a cleanup, and the
+/// staged lowering asks it to decide whether a region's fallthrough drops are
+/// work a split body would lose. A `None` answer is a malformed nominal
+/// reference, which each caller reports in its own vocabulary; no caller may
+/// read it as "no release", because unknown must never be silently inert.
+pub(crate) fn type_derives_release(nominals: &[IrNominal], ty: IrType) -> Option<bool> {
+    let nominal_kind = |id: IrNominalId| nominals.get(id.index()).map(IrNominal::kind);
+    let mut pending = vec![ty];
+    let mut visited = std::collections::HashSet::new();
+    while let Some(current) = pending.pop() {
+        match current {
+            IrType::Buffer { .. } => return Some(true),
+            // A run's own backing action is its release class [PROV-6]: a
+            // general store's run spends that store's provider capability, and
+            // a bump extent's run is reclaimed by its own region reset, which
+            // is no action at all. A frame-resident run reclaims none of its
+            // own either. Every run still needs a walk when its window holds
+            // values that derive one, and [PROV-6] visits those elements
+            // before the backing is released [STOR-3, BLK-1].
+            IrType::Vector {
+                release: IrReleaseClass::General,
+                ..
+            } => return Some(true),
+            IrType::Vector { element, .. } | IrType::FixedVector { element, .. } => {
+                pending.push(element.ty());
+            }
+            IrType::Provider => {}
+            // S39 a cell needs a release exactly when its own storage or
+            // its referent does: a bump extent's cell whose referent derives
+            // nothing needs no walk at all.
+            IrType::Nominal(id)
+                if matches!(
+                    nominal_kind(id),
+                    Some(IrNominalKind::Box {
+                        release: IrReleaseClass::General,
+                        ..
+                    })
+                ) =>
+            {
+                return Some(true);
+            }
+            IrType::Nominal(id)
+                if matches!(nominal_kind(id), Some(IrNominalKind::Box { .. })) =>
+            {
+                let Some(IrNominalKind::Box { referent, .. }) = nominal_kind(id) else {
+                    return None;
+                };
+                pending.push(*referent);
+            }
+            IrType::Nominal(id) if visited.insert(id) => match nominal_kind(id)? {
+                IrNominalKind::Struct { fields } => {
+                    pending.extend(fields.iter().map(IrField::ty));
+                }
+                IrNominalKind::Enum { variants } => {
+                    pending.extend(
+                        variants
+                            .iter()
+                            .flat_map(IrVariant::fields)
+                            .map(IrField::ty),
+                    );
+                }
+                // Every [SYS-5] release action is an explicit release the
+                // target stage must emit, including a logical consume that
+                // emits nothing.
+                IrNominalKind::Box { .. }
+                | IrNominalKind::SystemResource(_)
+                // The allocation-list drop is the region's storage
+                // release [STOR-3]: walk and free.
+                | IrNominalKind::ArenaStorage => {
+                    return Some(true);
+                }
+                // An arena value's storage is released with its region,
+                // never by an owner-scope cleanup [STOR-3, STOR-4].
+                IrNominalKind::Arena { .. } => {}
+            },
+            IrType::Unit
+            | IrType::Bool
+            | IrType::Integer { .. }
+            | IrType::Float { .. }
+            | IrType::Array { .. }
+            // [VIEW-1, PROV-3] a view is loan-bearing: it owns no storage and
+            // no element, so nothing of it is ever released.
+            | IrType::Slice { .. }
+            | IrType::Address(_)
+            | IrType::Nominal(_) => {}
+        }
+    }
+    Some(false)
+}
+
 fn lower_type(erasure: &[IrNominalId], value: CheckedType) -> Result<IrType, LoweringFailure> {
     Ok(match value {
         CheckedType::Unit => IrType::Unit,

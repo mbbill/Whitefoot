@@ -196,7 +196,15 @@ impl IrBuilder<'_> {
         let Some(cut) = self.unique_staged_cut(id) else {
             return Ok(false);
         };
-        let Some(direct) = direct_staged_match(body, &cut, id) else {
+        let Some(direct) = direct_staged_match(
+            body,
+            &cut,
+            id,
+            StagedScope {
+                erasure: self.erasure,
+                nominals: self.nominals,
+            },
+        ) else {
             return Ok(false);
         };
         // Which form this is is decided by the cut's own kind and never by how
@@ -1258,6 +1266,37 @@ struct DirectStagedMatch<'body> {
     tail: StagedTail<'body>,
 }
 
+/// What the staged walk needs from the program to read a drop record: the
+/// nominal erasure that lowers a checked type and the lowered nominal table
+/// the release question is asked against.
+#[derive(Clone, Copy)]
+struct StagedScope<'program> {
+    erasure: &'program [crate::IrNominalId],
+    nominals: &'program [crate::IrNominal],
+}
+
+impl StagedScope<'_> {
+    /// Whether every one of these compiler-derived releases performs nothing.
+    ///
+    /// The staged form splits one body across the issue stage and the drain,
+    /// so a region the walk enters no longer has an edge of its own to run its
+    /// fallthrough releases on. That is a loss exactly when a release does
+    /// something: a view owns no storage and a bump extent's run is reclaimed
+    /// by its own region reset, so neither has an action to lose [VIEW-1,
+    /// PROV-3, BLK-2, STOR-3], while a general store's run and any value
+    /// holding a system resource do and keep the loop out of the staged form.
+    /// A type the table cannot answer for counts as releasing something, so an
+    /// unknown never silently stages.
+    fn drops_release_nothing(self, drops: &[CheckedDrop]) -> bool {
+        drops.iter().all(|drop| {
+            lower_type(self.erasure, drop.ty).is_ok_and(|ty| {
+                drop.release == SystemRelease::NONE
+                    && crate::lowering::type_derives_release(self.nominals, ty) == Some(false)
+            })
+        })
+    }
+}
+
 /// Recognizes the target-independent topology the bounded-batch driver owns:
 /// a prologue of straight-line statements and exiting gates, followed by the
 /// selected staged call and its remainder. This is an optimization eligibility
@@ -1267,9 +1306,10 @@ fn direct_staged_match<'body>(
     body: &'body [CheckedStatement],
     cut: &NodePath,
     loop_id: CheckedLoopId,
+    scope: StagedScope<'_>,
 ) -> Option<DirectStagedMatch<'body>> {
     let mut prologue = Vec::new();
-    let tail = direct_staged_tail(body, cut, loop_id, &mut prologue)?;
+    let tail = direct_staged_tail(body, cut, loop_id, scope, &mut prologue)?;
     Some(DirectStagedMatch { prologue, tail })
 }
 
@@ -1301,6 +1341,7 @@ fn direct_staged_tail<'body>(
     body: &'body [CheckedStatement],
     cut: &NodePath,
     loop_id: CheckedLoopId,
+    scope: StagedScope<'_>,
     prologue: &mut Vec<PrologueItem<'body>>,
 ) -> Option<StagedTail<'body>> {
     // The bound form first, because the cut is then in the middle of this
@@ -1326,9 +1367,9 @@ fn direct_staged_tail<'body>(
         body,
         fallthrough_drops,
     } = last
-        && fallthrough_drops.is_empty()
+        && scope.drops_release_nothing(fallthrough_drops)
     {
-        return direct_staged_tail(body, cut, loop_id, prologue);
+        return direct_staged_tail(body, cut, loop_id, scope, prologue);
     }
     let CheckedStatement::Match {
         scrutinee,
@@ -1363,8 +1404,8 @@ fn direct_staged_tail<'body>(
     let mut continuing = None;
     for (index, arm) in arms.iter().enumerate() {
         let mut inner = Vec::new();
-        if let Some(tail) = direct_staged_tail(&arm.body, cut, loop_id, &mut inner) {
-            if continuing.is_some() || !arm.fallthrough_drops.is_empty() {
+        if let Some(tail) = direct_staged_tail(&arm.body, cut, loop_id, scope, &mut inner) {
+            if continuing.is_some() || !scope.drops_release_nothing(&arm.fallthrough_drops) {
                 return None;
             }
             continuing = Some((index, inner, tail));
