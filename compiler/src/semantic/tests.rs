@@ -582,13 +582,13 @@ fn function_control_and_main_contract_are_checked_before_lowering() {
 #[test]
 fn loops_enforce_own11_for_outer_affine_moves() {
     assert_rule(
-        br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+        br#"fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
   let n = len_of(cell);
   return n;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let c = buffer_new(4_u64, 0_u8);
+  let c = fixed_vector::<u8, 4>();
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
   }
@@ -604,16 +604,16 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
     with_semantics(
-        br#"fn measure(cell: own buffer<u8>) -> size: own u64 reads(cell) {
+        br#"fn measure(cell: own FixedVector<u8, 4>) -> size: own u64 reads(cell) {
   let n = len_of(cell);
   return n;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let c = buffer_new(4_u64, 0_u8);
+  let c = fixed_vector::<u8, 4>();
   for (i in 0_u64..2_u64) {
     let taken = measure(cell: move c);
-    set c = buffer_new(4_u64, 0_u8);
+    set c = fixed_vector::<u8, 4>();
   }
   return exit_status(code: 0_u8);
 }
@@ -918,12 +918,12 @@ fn nominal_adjacent_unimplemented_behavior_stays_non_language_failure() {
     // its committed value carries the callee's, which no rule of this version
     // joins.
     assert_unsupported(
-        br#"fn consume(cell: own buffer<u8>) -> out: own buffer<u8> pure {
+        br#"fn consume(cell: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
   return move cell;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let c = buffer_new(4_u64, 0_u8);
+  let c = fixed_vector::<u8, 4>();
   for (i in 0_u64..2_u64) {
     set c = consume(cell: move c);
   }
@@ -968,16 +968,16 @@ fn checked_system_programs_complete_semantic_checking() {
 }
 
 #[test]
-fn propagate_of_a_box_holder_is_a_type7_missing_dereference() {
+fn propagate_of_a_cell_holder_is_a_type7_missing_dereference() {
     // ERR-3: a borrow or box holder used without `deref` retains its TYPE-7
     // judgment; the propagate path previously fell through to ERR-3
-    // invalid-propagation for a box<Result<..>> operand (task 0019, bucket 4).
+    // invalid-propagation for a Box<Result<..>> operand (task 0019, bucket 4).
     assert_rule(
         br#"enum StepError {
   Failed();
 }
 
-fn unwrap(holder: own box<Result<i32, StepError>>) -> result: own Result<i32, StepError> pure {
+fn unwrap(holder: own Box<Result<i32, StepError>>) -> result: own Result<i32, StepError> pure {
   let accepted = propagate holder;
   return Ok<i32, StepError>(value: accepted);
 }
@@ -994,9 +994,9 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn match_and_index_of_a_box_holder_are_type7_missing_dereferences() {
+fn match_and_index_of_a_cell_holder_are_type7_missing_dereferences() {
     // TYPE-7 owns the implicit-read case exclusively at every position that
-    // states the exclusivity, so a box holder written where its referent enum
+    // states the exclusivity, so a cell holder written where its referent enum
     // or its referent indexable would be required cites TYPE-7 and the
     // position's own wrong-type judgment forms no rejection.
     assert_rule(
@@ -1004,7 +1004,7 @@ fn match_and_index_of_a_box_holder_are_type7_missing_dereferences() {
   Ready();
 }
 
-fn inspect(holder: own box<State>) -> result: own unit pure {
+fn inspect(holder: own Box<State>) -> result: own unit pure {
   match holder {
     Ready() => {
     }
@@ -1022,7 +1022,7 @@ command fn main() -> status: own ExitStatus pure {
         },
     );
     assert_rule(
-        br#"fn read(holder: own box<buffer<u8>>) -> result: own u8 pure {
+        br#"fn read(holder: own Box<FixedVector<u8, 4>>) -> result: own u8 pure {
   return holder[0_u64];
 }
 
@@ -1303,12 +1303,12 @@ fn a_read_out_target_is_dead_for_the_rest_of_the_right_hand_side() {
         mechanical_fix: "introduce a new `let` binding before reuse",
     };
     assert_rule(
-        br#"fn pair(left: own buffer<u8>, right: own buffer<u8>) -> out: own buffer<u8> pure {
+        br#"fn pair(left: own FixedVector<u8, 4>, right: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
   return move left;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let c = buffer_new(4_u64, 0_u8);
+  let c = fixed_vector::<u8, 4>();
   set c = pair(left: move c, right: move c);
   return exit_status(code: 0_u8);
 }
@@ -1318,15 +1318,15 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_rule(
         br#"struct Holder {
-  run: buffer<u8>;
+  run: FixedVector<u8, 4>;
 }
 
-fn pair(left: own buffer<u8>, right: own buffer<u8>) -> out: own buffer<u8> pure {
+fn pair(left: own FixedVector<u8, 4>, right: own FixedVector<u8, 4>) -> out: own FixedVector<u8, 4> pure {
   return move left;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(4_u64, 0_u8);
+  let first = fixed_vector::<u8, 4>();
   let holder = Holder(run: move first);
   set holder.run = pair(left: move holder.run, right: move holder.run);
   return exit_status(code: 0_u8);
@@ -1337,17 +1337,17 @@ command fn main() -> status: own ExitStatus pure {
     );
     assert_rule(
         br#"struct Holder {
-  run: buffer<u8>;
-  spare: buffer<u8>;
+  run: FixedVector<u8, 4>;
+  spare: FixedVector<u8, 4>;
 }
 
-fn take(left: own buffer<u8>, right: own Holder) -> out: own buffer<u8> pure {
+fn take(left: own FixedVector<u8, 4>, right: own Holder) -> out: own FixedVector<u8, 4> pure {
   return move left;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(4_u64, 0_u8);
-  let second = buffer_new(4_u64, 0_u8);
+  let first = fixed_vector::<u8, 4>();
+  let second = fixed_vector::<u8, 4>();
   let holder = Holder(run: move first, spare: move second);
   set holder.run = take(left: move holder.run, right: move holder);
   return exit_status(code: 0_u8);
