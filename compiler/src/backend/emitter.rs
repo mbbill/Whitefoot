@@ -797,7 +797,13 @@ impl FunctionFramePlan {
                     | IrOperation::SliceFromRun { run } => {
                         let run_type =
                             function.value_type(*run).ok_or(BackendFailure::InvalidIr)?;
-                        if matches!(run_type, IrType::FixedVector { .. }) {
+                        // Read the storage the run's own type names rather
+                        // than naming the run types that keep slots inline
+                        // here: the emission that consumes this slot decides
+                        // the same question through the shape table, and two
+                        // readings of one fact go out of step at the third
+                        // run storage.
+                        if runs::run_keeps_its_slots_inline(run_type) {
                             push_function_slot(
                                 &mut specifications,
                                 &mut ordered,

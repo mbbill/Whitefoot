@@ -14,6 +14,18 @@ use crate::{IrBoundary, IrElement, IrMeasure};
 
 use super::*;
 
+/// Does a run of this type keep its slots inline in its owner's frame?
+///
+/// The question is answered from the storage the type names and never from a
+/// list of type spellings: [`RunShape::of`] is the one place that decides what
+/// a run's slots are behind, and a frame slot is needed exactly where that
+/// answer is `Inline`. An emission that needs the address of a run's slots
+/// asks this rather than restating the shape table by name, so a third run
+/// storage would reach both readers or neither [BLK-1, STOR-1].
+pub(super) const fn run_keeps_its_slots_inline(ty: IrType) -> bool {
+    matches!(RunShape::of(ty), Some(RunShape::Inline { .. }))
+}
+
 /// The two shapes a run takes at run time [BLK-1, OP-9].
 #[derive(Clone, Copy)]
 enum RunShape {

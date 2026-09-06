@@ -199,3 +199,65 @@ command fn main() -> status: own ExitStatus pure {
     assert!(output.stdout.is_empty());
     assert!(output.stderr.is_empty());
 }
+
+/// A view of a frame-resident run reaches that run's own slots, and it does so
+/// across a may-suspend call [VIEW-2, SYS-8].
+///
+/// The frame-slot planner and the emission that consumes the slot each decide
+/// whether a run keeps its slots inline; a view that the planner did not see
+/// would take the address of a slot no entry reserved. The pin is the whole
+/// path: the emitted view is a `getelementptr` into the run's own frame slot
+/// rather than a copy of a descriptor's pointer word, the run is the source
+/// operand of a `write_once` that is `may-suspend` and therefore reaches the
+/// completion runtime, and the process publishes exactly the bytes the fill
+/// loop wrote.
+#[test]
+fn a_view_of_a_frame_resident_run_reaches_its_own_slots_across_a_may_suspend_call() {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
+  doc "Publishes a frame-resident run through a shared view held across the may-suspend write.";
+  let page = fixed_vector::<u8, 4>();
+  for @fill (
+    at in 0_u64..4_u64,
+    invariant grown: len_of(page) >= at,
+    invariant spare: room_of(page) + at >= 4_u64,
+    invariant flat: head_of(page) <= 0_u64
+  ) {
+    set page = place_back(vector: move page, value: 65_u8);
+  }
+  region 'o {
+    let window = slice_of(&page);
+    region {
+      match write_once(output: &uniq 'o out, source: &window, start: 0_u64, end: 4_u64) {
+        Ok(value: written) => {
+          if written != 4_u64 {
+            return exit_status(code: 1_u8);
+          }
+        }
+        Err(error: problem) => {
+          return exit_status(code: 2_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    let llvm = compile(source);
+    let main = emitted_function(&llvm, "main");
+    // The run's slots are inline, so forming the view stores the aggregate
+    // into the frame slot the planner reserved and indexes there. A run whose
+    // slots live behind a descriptor pointer would `extractvalue` instead, so
+    // this is the shape assertion and not a spelling one.
+    assert!(
+        main.contains("getelementptr inbounds { [4 x i8], i64, i64 }, ptr %"),
+        "the view must index the run's own frame slot:\n{main}"
+    );
+    // Nothing is allocated or freed: a frame-resident run owns no store
+    // storage and a view owns none at all [STOR-1].
+    assert!(!main.contains("call void @free"));
+
+    let output = compile_and_run(&llvm);
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"AAAA");
+    assert!(output.stderr.is_empty());
+}
