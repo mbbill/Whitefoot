@@ -231,7 +231,7 @@ spec-archive-integrity:
 # went stale at every activation and forced a six-file edit to keep in step
 # (found landed: the derivation ledger still described v0.28 as the installed
 # authority after the v0.29 activation; retired 2026-09-04 in favour of this
-# negative check). Frozen history — docs/done/, research records, archived
+# negative check). Frozen history — archive/done/, research records, archived
 # specifications, the approval record, and the derivation ledger's per-version
 # amendment bindings — legitimately quotes superseded identities; only the
 # ledger's "active authority" sentence is live prose, so the ledger is held to

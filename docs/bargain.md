@@ -1,8 +1,8 @@
 # The bargain ledger
 
 Status: DATED, NON-AUTHORITATIVE SYNTHESIS. The living
-[`Direction Outline`](roadmap.md) owns current status and candidate placement;
-[`current-plan.md`](current-plan.md) records the latest high-level plan. Status words and
+[`Direction Outline`](roadmap.md) owns current status and candidate placement.
+Status words and
 phase references below describe the ledger when compiled and must not be used
 as current instructions. Compiled 2026-07-28 from the founding directives,
 the round-2/3/4 design debates, the headline brainstorms, the research backlog,

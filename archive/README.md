@@ -19,6 +19,19 @@ developer's absolute directory.
   `/THE-PLAN.md`.
 - `tools/verify_performance_research_status.py` — the old duplicated-status
   verifier, replaced by `/tools/verify_project_state.py`.
+- `done/` — the per-batch record, retired 2026-09-06 when `mcts_mem/` became
+  the single home for decisions. One hundred records, moved from `docs/done/`
+  with their filenames unchanged, so a citation written as `docs/done/0024`
+  resolves here as `archive/done/0024`. They are still cited: seven times by
+  `governance/APPROVALS.md`, which is append-only and whose existing paths
+  therefore keep the old spelling, once by `spec/derivation/derivation-ledger.md`,
+  and once by a comment in `compiler/src/backend/completion/file_adapter.h`
+  naming the measurement that justifies the code. Frozen; not written to again.
+- `current-plan.md` — the rolling execution plan, retired 2026-09-06. Its own
+  plan was delivered as v0.40 and never replaced, so it survived by having each
+  later version appended to it as a changelog. Work is no longer planned in a
+  document up front: a selected direction goes to
+  `research/investigations/<name>/` and what it settles goes to `mcts_mem/`.
 - `research/` — the evidence-first research era: multi-agent debates
   (`debates/`), source papers (`sources/`), feature matrices, synthesis
   notes. This produced the corpus that CONSTITUTION.md and the spec derive

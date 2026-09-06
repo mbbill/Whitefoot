@@ -44,18 +44,29 @@ probably not the next work.
 
 - `docs/roadmap.md` records the project's current landscape: active
   specification, direction status, gaps, evidence links, and candidate
-  projects. `docs/current-plan.md` records the latest high-level plan. Neither
-  file grants or withholds permission to work on a branch.
+  projects. It does not grant or withhold permission to work on a branch. Work
+  is not planned in a document up front: a selected direction goes to
+  `research/investigations/<name>/` for its design, measurements, and
+  rejected alternatives, and the reasoning that survives it is written to
+  `mcts_mem/`.
 - The active specification at `spec/kernel-spec.md`, named by
   `docs/roadmap.md`, defines the language. Compiler behavior, tests, archived
   code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.
-- `docs/done/`, architecture dossiers, `mcts_mem/`, and
-  `archive/governance/decision-log.md` preserve current or historical evidence
-  and rationale. They do not define live approval or workflow requirements.
-  Any imperative process wording retained in those evidence artifacts is
-  historical and superseded by the four rules below.
+- `mcts_mem/` is where decisions are recorded: what was tried, what was
+  concluded, why a form was chosen, and which implementations it replaced.
+  Write there when a question is settled, not when a batch ends.
+- Architecture dossiers, `archive/done/`, and
+  `archive/governance/decision-log.md` preserve historical evidence and
+  rationale. `archive/done/` is the retired per-batch record: frozen, not
+  written to again, and not cited. A finished task is not evidence — a claim
+  that needs support cites the specification, a conformance case, a measured
+  result under `research/experiments/`, a design under
+  `research/investigations/`, or a decision in `mcts_mem/`. None of these
+  defines live approval or workflow requirements. Any imperative process
+  wording retained in those evidence artifacts is historical and superseded by
+  the four rules below.
 - `governance/APPROVALS.md` is an append-only historical record and the home
   for the merge-time records required below. Historical entries do not impose
   current process.

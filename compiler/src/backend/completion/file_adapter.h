@@ -155,10 +155,10 @@ static inline int wf_file_open_kind_flags(enum wf_file_expected_kind expected) {
  * exact text "1" — is today's behaviour exactly, with no host call made at
  * all.
  *
- * It exists because every file measurement in docs/done/0084 and 0086 ran
- * against a warm page cache, where a read is a memory copy and a completion
- * model that overlaps waits has nothing to overlap. Measuring the completion
- * framework needs reads that wait on a device.
+ * It exists because the file measurements this framework was tuned against
+ * all ran with a warm page cache, where a read is a memory copy and a
+ * completion model that overlaps waits has nothing to overlap. Measuring the
+ * completion framework needs reads that wait on a device.
  *
  * Darwin gets F_NOCACHE, which is a mode of the descriptor: every read
  * through it bypasses the unified buffer cache for the whole life of the

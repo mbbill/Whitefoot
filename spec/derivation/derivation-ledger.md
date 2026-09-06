@@ -1669,8 +1669,8 @@ this function, or does its truth import an unstated property of something a
 callable boundary returned? v0.38 answered that question partly by position: a
 selector's witness joined every binder, delivered value, and storage write
 whose reaching definition was selected by its edge, and "post-join state" was
-named among them. The differential-fuzz campaign of
-`docs/done/0097-differential-fuzz.md` showed what that answer costs. All 63 of
+named among them. The differential-fuzz campaign in
+`research/experiments/differential-fuzz/` showed what that answer costs. All 63 of
 its rejections over 2004 generated programs were one shape: a `match` on a
 system-call result whose `Err` arm returned, followed by definitions built
 entirely from literals, whose claim was refused although nothing the system

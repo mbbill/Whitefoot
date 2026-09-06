@@ -6,7 +6,7 @@ This document preserves the useful conclusions of the archive audit outside
 `archive/`. It is not a work queue and it grants no implementation or language
 authority. Current direction status lives in the
 [`Direction Outline`](../docs/roadmap.md), while the status line in
-[`docs/current-plan.md`](../docs/current-plan.md) distinguishes a proposal from
+[`docs/roadmap.md`](../docs/roadmap.md) distinguishes a proposal from
 approved execution sequencing. Neither this evidence nor the outline alone
 authorizes implementation. The active numbered specification defines the
 language and [`docs/constitution.md`](../docs/constitution.md) defines project

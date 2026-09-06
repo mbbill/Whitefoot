@@ -49,8 +49,9 @@ not current goals.
 
 [docs/roadmap.md](docs/roadmap.md) is the living Direction Outline: the current
 map of capabilities, open directions, evidence, and candidate projects.
-[docs/current-plan.md](docs/current-plan.md) records the latest high-level plan;
-neither document grants or withholds permission to work on a branch.
+It does not grant or withhold permission to work on a branch. A selected
+direction is worked in [research/investigations/](research/investigations/),
+and what it settles is written to [mcts_mem/](mcts_mem/).
 [docs/WORKFLOW.md](docs/WORKFLOW.md) defines the complete four-rule branch and
 `main` boundary. [AGENTS.md](AGENTS.md) records the project's technical
 priorities and repository discipline.
@@ -170,7 +171,7 @@ live next to what they check.
 
 | Directory | What it is |
 |---|---|
-| [docs/](docs/) | The living [Direction Outline](docs/roadmap.md), rolling [Current Plan](docs/current-plan.md), project law ([constitution](docs/constitution.md)), seeded writer forms ([patterns](docs/patterns.md)), supporting direction notes ([ideas](docs/ideas.md)), and dated design synthesis ([why-whitefoot](docs/why-whitefoot.md)) |
+| [docs/](docs/) | The living [Direction Outline](docs/roadmap.md), project law ([constitution](docs/constitution.md)), seeded writer forms ([patterns](docs/patterns.md)), supporting direction notes ([ideas](docs/ideas.md)), and dated design synthesis ([why-whitefoot](docs/why-whitefoot.md)) |
 | [spec/](spec/) | The language: one stable active kernel specification, immutable flat version archives, and the rule-derivation ledger under `spec/derivation/` |
 | [compiler/](compiler/README.md) | The safe-Rust compiler: frontend, resolver, first semantic/IR slice, LLVM backend, and `whitefootc` |
 | [tests/](tests/) | Test evidence: the active compiler-independent `conformance/` behavior corpus, plus preserved `codegen/` source cases awaiting production-compiler integration |

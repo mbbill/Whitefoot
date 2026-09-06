@@ -11,9 +11,7 @@ are the tail of the `ACTIVE-SPEC:` chain in
 [`governance/APPROVALS.md`](../governance/APPROVALS.md), where each
 activation's merge-time record lives and becomes effective with the owner's
 merge approval of the exact revision containing it. Superseded versions are
-archived byte-for-byte as `spec/kernel-spec-vN.md`. The batch record for v0.39
-remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
-[`docs/current-plan.md`](current-plan.md). Project law is the
+archived byte-for-byte as `spec/kernel-spec-vN.md`. Project law is the
 [`Constitution`](constitution.md), and the operational process is
 [`WORKFLOW.md`](WORKFLOW.md).
 
@@ -35,9 +33,11 @@ This file is the owner-facing map of Whitefoot's live directions. It answers:
 - what evidence exists and whether it is current or historical; and
 - what is missing before a direction can advance.
 
-This outline records the landscape; `current-plan.md` records technical
-sequencing. Neither file grants or withholds permission to work on a branch or
-adds a merge condition beyond the four rules in `WORKFLOW.md`. A project can
+This outline records the landscape. A selected direction is worked in
+`research/investigations/<name>/`, where its design, measurements and rejected
+alternatives live, and what is settled by it is written to `mcts_mem/`. Neither
+this outline nor those records grants or withholds permission to work on a
+branch or adds a merge condition beyond the four rules in `WORKFLOW.md`. A project can
 expose a missing capability, but cannot by itself change the language or
 justify a project-shaped compiler special case.
 
@@ -96,7 +96,7 @@ Which gap matters next is selected by a project, never by checklist length.
 - outline:CAND-1 records the completed flagship selection. outline:CAND-8 remains the selected
   flagship and pressure source. outline:PROOF-8's selected obligation-discharge
   sequence is now complete, so outline:CAND-8 is unparked; when its next
-  bounded slice is selected, `current-plan.md` records that sequence. Mapped
+  bounded slice is selected, its investigation directory carries it. Mapped
   direction items inform the choice but do not grant or withhold branch
   permission.
 - outline:PROOF-9 records the historical v0.33 successor to terminal
@@ -419,14 +419,11 @@ creating writer trust or weakening the checked safety envelope.
   specification is sole language authority; the v0.29 activation chain records
   its installed identity, and this outline records terminal `outline:PROOF-8` status.
 - **Missing / next:** none inside outline:PROOF-8. The direction is terminal and
-  `outline:CAND-8` is unparked. Record its next bounded technical sequence in
-  `current-plan.md` when selected.
+  `outline:CAND-8` is unparked. Its next bounded slice is worked in an
+  investigation directory of its own.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
-  [Stage 8b semantic freeze](done/0058-stage8b-normal-return-postconditions.md) ·
-  [Stage 9a deterministic claim ledger](done/0066-stage9a-deterministic-claim-ledger.md) ·
-  [Stage 9b strict partition](done/0067-stage9b-strict-partition-candidate.md) ·
   [W1 probes](../research/investigations/obligation-discharge/PROBE-W1.md) ·
   [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
   [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·
@@ -465,9 +462,7 @@ creating writer trust or weakening the checked safety envelope.
   retain their distinct semantics.
 - **Facts:** [contract surface design space](../research/investigations/contract-surface/DESIGN-SPACE.md) ·
   [terminal obligation-discharge direction](#outlineproof-8) ·
-  [unified host-boundary architecture](#outlinebound-1) ·
-  [batch 0072 closure](done/0072-searching-wfgrep.md) ·
-  [batch 0073 closure](done/0073-claim-only-contracts.md).
+  [unified host-boundary architecture](#outlinebound-1).
 
 ### outline:PROOF-10 — Historical runtime-assertion residual canonicality
 
@@ -541,8 +536,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Missing / next:** none inside this historical direction. outline:PROOF-11
   is the explicit successor and may remove this source and runtime surface once
   machine-checked replacements cover its legitimate clients.
-- **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md) ·
-  [batch 0073 claim-only closure](done/0073-claim-only-contracts.md).
+- **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md).
 
 ### outline:PROOF-11 — Source-carried safety proof, summaries, and erasure
 
@@ -620,7 +614,7 @@ creating writer trust or weakening the checked safety envelope.
   target-domain, parallel, and bounded queue/completion proof remain in scope.
   This is a temporary work boundary, not a change to the Constitution or the
   proof-carrying direction.
-- **Facts:** [current implementation plan](current-plan.md).
+- **Facts:** [proof-surface investigations](../research/investigations/).
 
 ## Verification and compiler trust
 
@@ -855,7 +849,7 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   concrete reopening witness (2026-08-06): sequential `wfgrep` cannot grow its
   line buffer — `buffer<T>` has no in-place growth and STOR-1 rejects
   rebinding an affine place — so it carries a fixed maximum line length where
-  real grep grows; see `docs/done/0015-sequential-wfgrep.md`.
+  real grep grows.
 - **Facts:** [promotion checklist](../research/archive-promotion-audit.md#4-storage-checklist-retained-as-direction-outline-reopening-input) ·
   [rejected owning-sequence experiment](../research/experiments/data-layout-owning-sequence/RESULTS.md).
 
@@ -904,7 +898,6 @@ and failure semantics survive the runtime implementation.
   [measured results](../research/investigations/proof-derived-parallelism/RESULTS.md) ·
   [deciding probes](../research/investigations/proof-derived-parallelism/probes/README.md) ·
   [permission and layer model](../research/investigations/proof-derived-parallelism/PAL.md) ·
-  [batch record 0074](done/0074-proof-derived-parallelism.md) ·
   [auto-parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md).
 
 ### outline:PAR-2 — Intra-object disjointness
@@ -931,8 +924,7 @@ and failure semantics survive the runtime implementation.
   not guess an injectivity lemma or search over index formulas.
 - **Facts:** [parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) ·
   [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns) ·
-  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
-  [batch record 0078](done/0078-loop-permission.md).
+  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md).
 
 Note the name collision, which the `outline:` prefix keeps formally distinct:
 this direction is `outline:PAR-2`, and the spec rule `[PAR-2]` the branch
@@ -959,8 +951,7 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   (element-write) half, and any non-commutative associative operation are open,
   each with a named re-entry condition in the design ruling.
 - **Facts:** [historical chunk-summary result](../research/experiments/port-study/wc-chunk-summary/RESULTS.md) ·
-  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
-  [batch record 0078](done/0078-loop-permission.md).
+  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md).
 
 ### outline:PAR-4 — Runtime, allocation, and dynamic fan-out
 
@@ -1052,14 +1043,15 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   evidence from the released v0.39 line, not a gate report for the v0.40 bytes.
   Whole programs
   were measured on both macOS and Linux with io_uring
-  ([batch 0084](done/0084-io-performance.md)): the shipped build is about
+  ([program-level measurement bundle](../research/experiments/io-completion-bench/README.md)):
+  the shipped build is about
   twice its own sequential build on a many-independent-files workload, and
   within 3.4 percent of a hand-written io_uring pipeline at the same queue
   depth the source can ask for. Measuring also found and fixed a join
   busy-wait, a default helper count pinned at the worst value, and an
   identifier collision that had made every Linux link of a completion program
   fail to compile. [SYS-14] directory enumeration is now qualified on both
-  families ([batch 0094](done/0094-linux-directory-row.md)): the Darwin row
+  families: the Darwin row
   reads the name length its `struct dirent` states, the Linux row derives it
   by one scan bounded by the extent `d_reclen` reports, because
   `struct linux_dirent64` states none — one normalizer text, one target-selected
@@ -1087,14 +1079,8 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   completion-width question is how to extend the implemented direct
   counted-loop batch to wider control flow, more operation families, and
   functions containing multiple staged loops without partial or ambiguous
-  transformation. The open API and target items are enumerated in [batch
-  0082](done/0082-unified-state-completion-io.md) and [batch
-  0084](done/0084-io-performance.md).
-- **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
-  [batch record 0084](done/0084-io-performance.md) ·
-  [batch record 0089](done/0089-loop-pipeline-batch0.md) ·
-  [batch record 0094](done/0094-linux-directory-row.md) ·
-  [Windows native runtime gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024878) ·
+  transformation.
+- **Facts:**   [Windows native runtime gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024878) ·
   [Windows paired performance gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024745) ·
   [program-level measurement bundle](../research/experiments/io-completion-bench/README.md) ·
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
@@ -1193,8 +1179,8 @@ justify a favorable subset, a monolithic rewrite, or any particular
 language, compiler, proof, runtime, or optimizer change. Completed plans
 through batch 0070 closed the bounded outline:PROOF-8 undertaking and the
 specified-gap/take-replace undertaking (v0.31 activated). When the next
-outline:CAND-8 slice is selected, `current-plan.md` records how it returns to
-the unchanged product comparison; that sequencing record is not branch-work
+outline:CAND-8 slice is selected, its investigation directory records how it
+returns to the unchanged product comparison; that record is not branch-work
 permission.
 
 Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
@@ -1220,8 +1206,8 @@ the goal or an additional approval step.
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
 - **Missing / next:** none; `outline:CAND-8` owns the preserved flagship sequence and
-  is unparked now that outline:PROOF-8 is terminal. Record its next selected
-  slice in `current-plan.md`.
+  is unparked now that outline:PROOF-8 is terminal. Its next selected slice is
+  worked in an investigation directory of its own.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
@@ -1262,8 +1248,8 @@ the goal or an additional approval step.
   complete outline:PROOF-8 obligation-discharge sequence selected in the Current Plan
   was implemented and verified. That sequence is now terminal, so the exact
   credited checkpoint and full 2x objective are unparked rather than replaced.
-  The next bounded wfgrep slice should be recorded in `current-plan.md` when
-  selected; neither this outline nor that plan grants or withholds branch
+  The next bounded wfgrep slice is worked in an investigation directory of its
+  own; neither this outline nor that record grants or withholds branch
   permission.
 - **Directions tested:** outline:PERF-1 owns the baseline and attribution; outline:BOUND-1 and
   outline:VERIFY-1 enter with the real CLI/filesystem path; outline:PAR-1 through outline:PAR-4 enter
