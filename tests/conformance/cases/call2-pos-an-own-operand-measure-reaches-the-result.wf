@@ -1,0 +1,20 @@
+fn measure<const n: u64>(source: own FixedVector<u8, n>) -> size: own u64 reads(source) contract {
+  ensures size == len_of(source);
+} {
+  doc "Consumes the run and hands back its length.";
+  let taken = len_of(source);
+  return taken;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[CALL-2] the result of a call carries exactly the callee's declared relations. The own argument is affine, so the call is a consuming use and every fact supported by line dies at it; the declared relation names that operand's measure, which at the caller denotes the call datum [MSR-3], and a datum has empty support, so the consume the same statement performs cannot kill it. The caller therefore knows size == 2 after the call and knows it only from the contract.";
+  let line = fixed_vector::<u8, 4>();
+  set line = place_back(vector: move line, value: 7_u8);
+  set line = place_back(vector: move line, value: 7_u8);
+  let size = measure::<4>(source: move line);
+  if size == 2_u64 {
+  } else {
+    return exit_status(code: 201_u8);
+  }
+  return exit_status(code: 0_u8);
+}

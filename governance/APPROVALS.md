@@ -4459,4 +4459,4 @@ ACTIVE-SPEC: v0.44 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa
   `completion_windows_capacity.wf` and `host_string_bytes.wf` — take the view
   forms at the same operations and keep their exit codes; no other program of
   that corpus changed behaviour or exit code, and none was added or removed.
-ACTIVE-SPEC: v0.45 e10d73f10fd761a859a26f9e81f03f339b2f032006170bf1a741a5635c2ea73c 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049
+ACTIVE-SPEC: v0.45 b3ae80744d881cbc83031047491a5cabf58c0a32d84ec8cf20aa512e453f998d 5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049

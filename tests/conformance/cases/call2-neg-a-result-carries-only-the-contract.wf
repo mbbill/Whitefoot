@@ -1,0 +1,15 @@
+fn shrink<const n: u64>(source: own FixedVector<u8, n>) -> smaller: own FixedVector<u8, 4> pure {
+  doc "Consumes the run and returns a shorter one, declaring no relation.";
+  let fresh = fixed_vector::<u8, 4>();
+  return move fresh;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[CALL-2] only the contract's facts exist on the result. The callee declares no relation, so nothing the caller knew about line reaches got: the result is a fresh binding and no fact of any argument flows to it. The subscript at offset 1 of the empty run the callee actually returned must therefore be rejected at [OP-4] with the residual 1_u64 < len_of(got), and a caller that wants a relation between what it handed over and what it got back reads it from a contract or does not have it.";
+  let line = fixed_vector::<u8, 4>();
+  set line = place_back(vector: move line, value: 7_u8);
+  set line = place_back(vector: move line, value: 7_u8);
+  let got = shrink::<4>(source: move line);
+  let tail = got[1_u64];
+  return exit_status(code: 0_u8);
+}
