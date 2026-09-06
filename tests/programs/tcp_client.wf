@@ -113,7 +113,7 @@ command fn main(command.args as args: own Args, command.stdout as out: own Outpu
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         region {
-          match host_copy_bytes(value: &text, destination: &uniq digits, start: 0_u64, end: 16_u64) {
+          match host_copy_utf8(value: &text, destination: &uniq digits, start: 0_u64, end: 16_u64) {
             Ok(value: written) => {
               set carried = written;
             }

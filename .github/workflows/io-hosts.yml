@@ -503,6 +503,16 @@ jobs:
                 if ((Get-Date) -gt $deadline) {
                   [void]$run.Process.WaitForExit(5000)
                   Show-Run $label $run.Out $run.Err $run.Process.ExitCode
+                  # A server still running listened somewhere or nowhere, and
+                  # which of the two names the defect. The first run of this
+                  # step hung with the port copied through host_copy_bytes,
+                  # which on this target hands the program UTF-16 code units,
+                  # so the decimal scan ended at the first zero byte; this
+                  # listing is what would have named the port it took.
+                  Get-NetTCPConnection -OwningProcess $run.Process.Id `
+                    -ErrorAction SilentlyContinue |
+                    Format-Table LocalAddress, LocalPort, State
+                  Stop-Process -Id $run.Process.Id -ErrorAction SilentlyContinue
                   Fail "${label}: the program never listened on port $($run.Port)"
                 }
                 Start-Sleep -Milliseconds 50
