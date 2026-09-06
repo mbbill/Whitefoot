@@ -111,7 +111,7 @@ fn tile(lo: own u64, hi: own u64, phase: own f64) -> result: own u32 pure {
   return total;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Counts the escaping points of a 2097152-point grid by counted loop, once per repetition, and publishes the running total as hexadecimal. Byte-for-byte the output of bench/wf/grid_d21_w256.wf.";
   let total = 0_u32;
   let phase = 0.0_f64;

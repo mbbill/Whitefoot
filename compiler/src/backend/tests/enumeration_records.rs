@@ -262,37 +262,43 @@ fn scripted_facility_defines() -> Vec<String> {
 ///
 /// The program is ordinary source: it names no target record and reads only
 /// the portable form [SYS-14] fixes.
-const PUBLISH_ONE_BATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
+const PUBLISH_ONE_BATCH: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
   doc "Publishes the portable record prefix of one enumeration batch.";
   let entries = buffer_new(4096_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
-        region {
-          match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 4096_u64) {
-            ListBytes(next: endpoint, entries: reported) => {
-              region {
-                match write_once(output: &uniq out, source: &entries, start: 0_u64, end: endpoint) {
-                  Ok(value: written) => {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        match open_directory_source(permit: move permit, directory: &cwd) {
+          SourceOpened(value: list) => {
+            region {
+              match directory_next(source: &uniq list, destination: &uniq entries, start: 0_u64, end: 4096_u64) {
+                ListBytes(next: endpoint, entries: reported) => {
+                  region {
+                    match write_once(output: &uniq out, source: &entries, start: 0_u64, end: endpoint) {
+                      Ok(value: written) => {
+                      }
+                      Err(error: problem) => {
+                        return exit_status(code: 2_u8);
+                      }
+                    }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 2_u8);
-                  }
+                }
+                ListEnd() => {
+                  return exit_status(code: 3_u8);
+                }
+                ListFailed(error: problem) => {
+                  return exit_status(code: 4_u8);
                 }
               }
             }
-            ListEnd() => {
-              return exit_status(code: 3_u8);
-            }
-            ListFailed(error: problem) => {
-              return exit_status(code: 4_u8);
-            }
+          }
+          SourceOpenFailed(error: problem, permit: refused) => {
+            return exit_status(code: 5_u8);
           }
         }
       }
-      Err(error: problem) => {
-        return exit_status(code: 5_u8);
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }

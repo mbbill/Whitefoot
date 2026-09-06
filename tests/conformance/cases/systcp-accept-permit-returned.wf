@@ -1,0 +1,56 @@
+command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
+  doc "SYS-10, SYS-17: `tcp_accept` borrows the listener shared and consumes one `HandlePermit` of its own, so several accepts may overlap on one listener; a refused accept hands its permit back inside `AcceptFailed` and that permit accepts again. `close_connection` returns the one credit the connection pair holds and `close_listener` the listener's. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9106_u16);
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: listen_permit) => {
+        region {
+          match tcp_listen(permit: move listen_permit, address: &address) {
+            Listening(listener: bound) => {
+              region 'l {
+                match reserve_handle(factory: &uniq handles) {
+                  Ok(value: accept_permit) => {
+                    region {
+                      match tcp_accept(permit: move accept_permit, listener: &'l bound) {
+                        Accepted(connection: link, peer: from) => {
+                          let credit = close_connection(connection: move link);
+                          let listener_credit = close_listener(listener: move bound);
+                          return exit_status(code: 0_u8);
+                        }
+                        AcceptFailed(error: problem, permit: handed_back) => {
+                          region {
+                            match tcp_accept(permit: move handed_back, listener: &'l bound) {
+                              Accepted(connection: retry, peer: retry_from) => {
+                                let credit = close_connection(connection: move retry);
+                                let listener_credit = close_listener(listener: move bound);
+                                return exit_status(code: 0_u8);
+                              }
+                              AcceptFailed(error: second_problem, permit: spent) => {
+                                let listener_credit = close_listener(listener: move bound);
+                                return exit_status(code: 3_u8);
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                  Err(error: problem) => {
+                    let listener_credit = close_listener(listener: move bound);
+                    return exit_status(code: 4_u8);
+                  }
+                }
+              }
+            }
+            ListenFailed(error: problem, permit: handed_back) => {
+              return exit_status(code: 5_u8);
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        return exit_status(code: 6_u8);
+      }
+    }
+  }
+}

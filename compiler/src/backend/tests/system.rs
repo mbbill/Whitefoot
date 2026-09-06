@@ -138,8 +138,9 @@ fn with_mutated_ir_for_overlap<ResultValue>(
     else {
         panic!("system test source must resolve");
     };
-    let SemanticOutcome::Complete(checked) = check_semantics(resolved) else {
-        panic!("system test source must check");
+    let checked = match check_semantics(resolved) {
+        SemanticOutcome::Complete(checked) => checked,
+        other => panic!("system test source must check: {other:?}"),
     };
     let mut ir = lower_checked(*checked, overlap).expect("checked system program must lower");
     run(&mut ir)
@@ -586,33 +587,38 @@ fn an_out_of_range_copy_is_a_static_sys8_rejection() {
 
 #[test]
 fn every_release_action_emits_exactly_its_contract() {
-    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus writes(cwd) {
+    let source = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
     // The one native close attempt is the `DirectoryRead` release; `Args`,
-    // both `Output` owners, `FileFactory`, and the returned `ExitStatus`
-    // release with no host call at all [SYS-5].
+    // both `OutputStream` owners, `HandleFactory`, and the returned `ExitStatus`
+    // release with no host call at all [SYS-5]. A close is submitted into the
+    // record the releasing frame reserved and joined there, like every other
+    // operation (`research/investigations/io-model/PARK-ON-MISS.md` §8), so
+    // the one attempt is one call of the one close helper.
+    assert_eq!(llvm.matches("call void @wf.sys.close(i32").count(), 1);
     assert_eq!(
-        llvm.matches("call i32 @wf__completion_file_close_direct(i32")
+        llvm.matches("call void @wf__completion_file_close_submit(i32")
             .count(),
         1
     );
-    assert!(llvm.contains("declare i32 @wf__completion_file_close_direct(i32)"));
+    assert!(llvm.contains("declare void @wf__completion_file_close_submit(i32, ptr)"));
+    assert!(llvm.contains("declare void @wf__completion_file_join(ptr, ptr, ptr)"));
     // A logical consume and a source detach are explicit releases that emit
     // no code; the drop marker is still present for each owner.
     assert_eq!(llvm.matches("  ; drop %v").count(), 5);
     assert!(
         llvm.contains("i32 %cwd, i32 1, i32 2, i1 true"),
-        "the bootstrap must supply the proof-only FileFactory after stderr"
+        "the bootstrap must supply the proof-only HandleFactory after stderr"
     );
 }
 
 #[test]
 fn the_command_bootstrap_normalizes_once_and_maps_the_returned_status_exactly() {
     let source =
-        br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+        br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {
   return exit_status(code: 42_u8);
 }
 "#;
@@ -754,15 +760,21 @@ fn a_target_without_the_argument_backing_guarantee_fails_qualification() {
 
 #[test]
 fn a_target_without_directory_relative_resolution_rejects_component_opening() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region {
-      let permit = reserve_file(factory: &uniq 'c files);
-      match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
-        Ok(value: file) => {
+      match reserve_handle(factory: &uniq 'c files) {
+        Ok(value: permit) => {
+          match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
+            FileOpened(value: file) => {
+            }
+            FileOpenFailed(error: problem, permit: refused_2) => {
+            }
+          }
         }
-        Err(error: problem) => {
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -790,7 +802,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
     // selected and before any use of an operation is emitted, and it now has
     // an approved implementation for every [SYS-2] identity on this target.
     // The I/O cluster's own emission evidence is in `system_io.rs`.
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -817,7 +829,7 @@ fn every_semantic_identity_resolves_before_layout_and_emission() {
 
 #[test]
 fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
-    let source = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+    let source = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   region 'o {
     region {
@@ -866,13 +878,19 @@ fn a_nonzero_transfer_returns_the_absolute_next_endpoint() {
 /// only ever standing in for, is the refusal below.
 #[test]
 fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        match open_directory_source(permit: move permit, directory: &cwd) {
+          SourceOpened(value: list) => {
+          }
+          SourceOpenFailed(error: problem, permit: refused_2) => {
+          }
+        }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -911,13 +929,19 @@ fn a_target_without_an_enumeration_facility_fails_the_enumeration_guarantee() {
 /// arm is reached through a probe rather than left unexecuted.
 #[test]
 fn a_facility_without_an_approved_record_is_a_missing_mapping() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        match open_directory_source(permit: move permit, directory: &cwd) {
+          SourceOpened(value: list) => {
+          }
+          SourceOpenFailed(error: problem, permit: refused_2) => {
+          }
+        }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -935,8 +959,79 @@ fn a_facility_without_an_approved_record_is_a_missing_mapping() {
     });
 }
 
+/// Every TCP row is mapped on every recognized target column, and the emitted
+/// module names the same ABI symbol on each.
+///
+/// The Windows column mapped none of the seven while its completion-port route
+/// was open work, so a Windows link stopped at qualification
+/// (`research/investigations/io-model/NETWORK.md` §7, slice 3). It maps them
+/// now, and this states that as the property it is: an operation's ABI symbol
+/// is target-independent and which engine runs it is a runtime routing fact,
+/// so a target column that mapped a TCP row differently would be a second
+/// qualification path for one operation [QUAL-1].
 #[test]
-fn component_open_flags_and_status_abis_are_target_exact() {
+fn every_target_column_maps_the_tcp_rows_to_one_abi_symbol() {
+    let source = br#"command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9_u16);
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &address) {
+            Connected(connection: link) => {
+              let credit = close_connection(connection: move link);
+            }
+            ConnectFailed(error: problem, permit: handed_back) => {
+            }
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_ir(source, |program| {
+        for triple in [
+            "aarch64-apple-darwin",
+            "x86_64-apple-darwin",
+            "aarch64-unknown-linux-gnu",
+            "x86_64-unknown-linux-gnu",
+            "x86_64-pc-windows-msvc",
+        ] {
+            let target = SystemTarget::for_triple(triple).expect("a recognized system target");
+            qualify_program(target, program)
+                .unwrap_or_else(|failure| panic!("{triple} must qualify a TCP row: {failure:?}"));
+            let module = emit_llvm_for_target(program, target)
+                .unwrap_or_else(|failure| panic!("{triple} must emit: {failure:?}"))
+                .into_string();
+            for symbol in [
+                "@wf.sys.tcp_connect.v1",
+                "@wf.sys.close_connection.v1",
+                "@wf__completion_socket_connect_submit",
+            ] {
+                assert!(
+                    module.contains(symbol),
+                    "{triple} must name {symbol}:\n{module}"
+                );
+            }
+        }
+    });
+}
+
+#[test]
+fn component_open_flags_are_target_exact() {
+    // The descriptor-status ABI this used to pin beside the flags — the
+    // facility symbol, the record size and the `st_mode` offset — is gone from
+    // the target row with the wrapper that read it. The kind an open promises
+    // is now stated as `expected_kind` on the submit and decided by whoever
+    // executes the operation, so no emitted code holds a `struct stat` or
+    // knows where its mode byte is
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The flags
+    // remain the target's own and are still pinned exactly.
     let cases = [
         (
             "aarch64-apple-darwin",
@@ -944,9 +1039,6 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "wf__completion_file_status_direct",
-            144,
-            4,
         ),
         (
             "x86_64-apple-darwin",
@@ -954,9 +1046,6 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0010_0000,
             0x0010_0100,
             0x0000_0104,
-            "wf__completion_file_status_direct",
-            144,
-            4,
         ),
         (
             "aarch64-unknown-linux-gnu",
@@ -964,9 +1053,6 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0000_4000,
             0x0000_c000,
             0x0000_8800,
-            "wf__completion_file_status_direct",
-            128,
-            16,
         ),
         (
             "x86_64-unknown-linux-gnu",
@@ -974,32 +1060,10 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             0x0001_0000,
             0x0003_0000,
             0x0002_0800,
-            "wf__completion_file_status_direct",
-            144,
-            24,
         ),
-        (
-            "x86_64-pc-windows-msvc",
-            510,
-            0,
-            1,
-            1,
-            "wf__completion_file_status_direct",
-            8,
-            0,
-        ),
+        ("x86_64-pc-windows-msvc", 510, 0, 1, 1),
     ];
-    for (
-        triple,
-        component_limit,
-        directory,
-        component_directory,
-        component_file,
-        status,
-        size,
-        mode,
-    ) in cases
-    {
+    for (triple, component_limit, directory, component_directory, component_file) in cases {
         let target = SystemTarget::for_triple(triple).expect("a supported target row");
         assert_eq!(target.component_limit(), component_limit, "{triple}");
         assert_eq!(target.directory_open_flags(), directory, "{triple}");
@@ -1014,15 +1078,12 @@ fn component_open_flags_and_status_abis_are_target_exact() {
             component_file,
             "{triple}"
         );
-        assert_eq!(target.file_status_symbol(), status, "{triple}");
-        assert_eq!(target.file_status_size(), size, "{triple}");
-        assert_eq!(target.file_status_mode_offset(), mode, "{triple}");
     }
 }
 
 #[test]
 fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus writes(cwd) {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -1054,7 +1115,7 @@ fn command_entry_rejects_abi_equivalent_but_semantically_wrong_ir_types() {
 
 #[test]
 fn system_calls_reject_abi_equivalent_but_semantically_wrong_ir_arguments() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(cwd, out), allocates(heap) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
     region {
@@ -1141,7 +1202,7 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
         ));
     });
 
-    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+    let composite = br#"command fn main(command.args as args: own Args, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
   region {
     match arg_get(args: &args, position: 0_u64) {
       Ok(value: text) => {
@@ -1203,15 +1264,21 @@ fn system_calls_reject_wrong_scalar_and_composite_result_identities() {
 
 #[test]
 fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let name = buffer_new(1_u64, 65_u8);
   region 'c {
     region {
-      let permit = reserve_file(factory: &uniq 'c files);
-      match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
-        Ok(value: file) => {
+      match reserve_handle(factory: &uniq 'c files) {
+        Ok(value: permit) => {
+          match open_file(permit: move permit, root: &'c cwd, name: &name, start: 0_u64, end: 1_u64) {
+            FileOpened(value: file) => {
+            }
+            FileOpenFailed(error: problem, permit: refused_2) => {
+            }
+          }
         }
-        Err(error: problem) => {
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -1230,22 +1297,33 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
             let llvm = emit_llvm_for_target(program, target)
                 .expect("open_file must qualify and emit")
                 .into_string();
-            assert!(llvm.contains("define private i1 @wf.sys.reserve_file.v1() alwaysinline"));
-            assert!(llvm.contains("call i1 @wf.sys.reserve_file.v1()"));
+            // The permit is one credit of the factory's capacity [SYS-10]: the
+            // wrapper answers the `Result` shape from the floor's count and
+            // performs no host call.
+            assert!(llvm.contains("@wf.sys.reserve_handle.v1() alwaysinline"));
+            assert!(llvm.contains("call i32 @wf__handle_reserve()"));
+            assert!(llvm.contains("@wf.sys.reserve_handle.v1()"));
             assert!(
                 !llvm.contains("@wf.sys.open_file.v1(i1"),
                 "the proof-only permit must not enter the qualified open ABI"
             );
-            assert!(llvm.contains("i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"));
+            // One lowering: the wrapper states the kind it expects on the
+            // submit and reads the outcome the join publishes; it holds no
+            // status record and closes nothing itself (design §8).
+            assert!(llvm.contains("i32 1, ptr %record)"));
+            assert!(llvm.contains(
+                "call void @wf__completion_file_open_join(ptr %record, ptr %raw.value, \
+                 ptr %raw.error, ptr %raw.outcome)"
+            ));
             assert!(llvm.contains("@wf.sys.open_file.completion"));
             assert!(llvm.contains("i32 3, label %kind.directory.return"));
             assert!(llvm.contains("i32 4, label %kind.other.return"));
             // The kind decision moved into the one shared rule every target
             // answers with, so the check that a provisional descriptor is
             // classified from its own mode now reads the shared header.
-            assert!(crate::COMPLETION_FILE_ADAPTER_HEADER.contains("S_ISREG(file_mode)"));
+            assert!(crate::COMPLETION_FILE_POSIX_HEADER.contains("S_ISREG(file_mode)"));
             assert_eq!(
-                crate::COMPLETION_FILE_ADAPTER_SOURCE
+                crate::COMPLETION_FILE_POSIX_SOURCE
                     .matches("(void)close(descriptor);")
                     .count(),
                 2,
@@ -1258,19 +1336,25 @@ fn open_file_validates_a_provisional_descriptor_before_publishing_it() {
 
 #[test]
 fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
-        region 'l {
-          region {
-            let outcome = directory_next(source: &uniq 'l list, destination: &uniq destination, start: 0_u64, end: 64_u64);
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        match open_directory_source(permit: move permit, directory: &cwd) {
+          SourceOpened(value: list) => {
+            region 'l {
+              region {
+                let outcome = directory_next(source: &uniq 'l list, destination: &uniq destination, start: 0_u64, end: 64_u64);
+              }
+            }
+          }
+          SourceOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1284,10 +1368,14 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
             .expect("Darwin must qualify and emit directory_next")
             .into_string()
     });
+    // One lowering, so one normalizer: the wrapper submits, joins, and hands
+    // the batch to the operation's own completion mapper, which is where the
+    // portable-record normalization lives (design §8). It used to be emitted
+    // twice because the wrapper carried a copy.
     assert_eq!(
         llvm.matches("%record.extent = zext").count(),
-        2,
-        "the direct wrapper and completion mapper validate the same native record"
+        1,
+        "the one completion mapper validates the native record"
     );
     assert!(llvm.contains("%bounded.batch = icmp ule i64 %filled, %extent"));
     assert!(llvm.contains("br i1 %bounded.batch, label %normalize, label %tcb.defect"));
@@ -1305,10 +1393,13 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
     assert!(llvm.contains("%target.name = getelementptr inbounds i8, ptr %target.record, i64 3"));
     assert!(llvm.contains("%copy.invalid = or i1 %copy.nul, %copy.separator"));
     assert!(llvm.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
-    assert!(llvm.contains("@wf__completion_directory_next_direct"));
+    // The enumeration facility has no target column of its own, so its submit
+    // is the runtime's on every target, exactly as its direct entry was
+    // (design §8); the shim never names the family facility itself.
+    assert!(llvm.contains("@wf__completion_directory_next_submit"));
     assert!(!llvm.contains("call i64 @__getdirentries64"));
     let optimized = host_optimized_module(&llvm);
-    assert!(optimized.contains("@wf__completion_directory_next_direct"));
+    assert!(optimized.contains("@wf__completion_directory_next_submit"));
 }
 
 /// The Linux row derives a name's length by one scan bounded by the record's
@@ -1322,19 +1413,25 @@ fn darwin_directory_next_keeps_range_and_record_extents_distinct_and_verifiable(
 /// rows embed, which the two counted assertions below state.
 #[test]
 fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   let destination = buffer_new(64_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
-        region 'l {
-          region {
-            let outcome = directory_next(source: &uniq 'l list, destination: &uniq destination, start: 0_u64, end: 64_u64);
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        match open_directory_source(permit: move permit, directory: &cwd) {
+          SourceOpened(value: list) => {
+            region 'l {
+              region {
+                let outcome = directory_next(source: &uniq 'l list, destination: &uniq destination, start: 0_u64, end: 64_u64);
+              }
+            }
+          }
+          SourceOpenFailed(error: problem, permit: refused_2) => {
           }
         }
       }
-      Err(error: problem) => {
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -1378,24 +1475,28 @@ fn linux_directory_next_derives_the_name_length_by_a_bounded_scan() {
     assert!(darwin.contains("%named.at = getelementptr inbounds i8, ptr %entry.record, i64 18"));
     assert!(darwin.contains("%named.native = load i16, ptr %named.at, align 1"));
     assert!(!darwin.contains("%name.span = sub nuw"));
-    // Both rows embed one walk, in both the direct route and the completion
-    // mapper: the record model varies, the normalization does not.
+    // Both rows embed one walk, in the one completion mapper the one lowering
+    // reaches: the record model varies, the normalization does not. It used to
+    // be emitted twice, once for the direct route the wrapper took and once
+    // for the mapper; the wrapper submits and joins now, so the mapper is the
+    // only place it lives (design §8).
     for module in [&linux, &darwin] {
-        assert_eq!(module.matches("%record.extent = zext").count(), 2);
+        assert_eq!(module.matches("%record.extent = zext").count(), 1);
         assert_eq!(
             module
                 .matches("%source.next = add i64 %source, %record.extent")
                 .count(),
-            2
+            1
         );
         assert_eq!(
             module
                 .matches("%fits = icmp ule i64 %after, %extent")
                 .count(),
-            2
+            1
         );
         assert!(module.contains("tcb.defect:\n  call void @abort()\n  unreachable"));
-        assert!(module.contains("@wf__completion_directory_next_direct"));
+        assert!(module.contains("call void @wf__completion_directory_next_submit(i32 %list, "));
+        assert!(module.contains("declare void @wf__completion_directory_next_submit"));
     }
     assert!(!linux.contains("call i64 @getdents64"));
 }

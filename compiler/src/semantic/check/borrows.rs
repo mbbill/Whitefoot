@@ -112,7 +112,7 @@ const OWN10_LOCAL_STORAGE: &str = "a borrow of local storage names a region intr
 /// which is exactly what `move permit` does, and the helper route is only the
 /// first third of the working idiom. `tests/programs/dir_walk.wf` pairs the
 /// helper with two more parts, and all three are named here.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
+const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_handle::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f HandleFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
 
 /// OWN-6's receiver condition: which calls admit a reborrow argument at all.
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
@@ -997,16 +997,23 @@ inside the `region` block whose region it takes",
                     nominal,
                 }
             }
+            // An opaque resource value is its own borrow, whether the
+            // binding is that resource or a field of one. A system struct's
+            // `receive` and `send` are ordinary field places [SYS-18], so a
+            // borrow of one carries the field path and nothing else changes:
+            // the loan `place` above already names the field, so [OWN-5]
+            // decides two loans on disjoint fields exactly as it does for a
+            // source struct.
             CheckedType::Nominal(nominal)
-                if fields.is_empty()
-                    && matches!(
-                        self.nominal(nominal)?.kind,
-                        CheckedNominalKind::SystemResource { .. }
-                    ) =>
+                if matches!(
+                    self.nominal(nominal)?.kind,
+                    CheckedNominalKind::SystemResource { .. }
+                ) =>
             {
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
+                    fields: fields.clone(),
                     state_origins: local.state_origins.clone(),
                     nominal,
                 }
@@ -1393,15 +1400,15 @@ and name it on the returned reborrow"
             // of a borrow-mode holder is that same inline value: there is no
             // content to address and nothing to reload [SYS-2, OWN-6].
             CheckedType::Nominal(nominal)
-                if fields.is_empty()
-                    && matches!(
-                        self.nominal(nominal)?.kind,
-                        CheckedNominalKind::SystemResource { .. }
-                    ) =>
+                if matches!(
+                    self.nominal(nominal)?.kind,
+                    CheckedNominalKind::SystemResource { .. }
+                ) =>
             {
                 CheckedExpression::BorrowSystemResource {
                     carrier: self.tree.path(carrier)?.clone(),
                     binding: local.binding,
+                    fields: fields.clone(),
                     state_origins: local.state_origins.clone(),
                     nominal,
                 }

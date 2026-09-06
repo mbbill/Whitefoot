@@ -95,7 +95,7 @@ fn inflate_status(error: own InflateError) -> result: own u8 pure {
   }
 }
 
-fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires length <= source_length;
 } {
@@ -121,7 +121,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
   return Ok<unit, IoError>(value: unit);
 }
 
-fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -> result: own unit reads(err, report), writes(err, report) {
+fn publish_reason(err: &uniq OutputStream, report: &uniq buffer<u8>, reason: own u8) -> result: own unit reads(err, report), writes(err, report) {
   doc "Publishes the static diagnostic that names one boundary outcome, selected by the status the outcome carries.";
   let length = 0_u64;
   let report_capacity = len(deref(report));
@@ -200,7 +200,7 @@ fn publish_reason(err: &uniq Output, report: &uniq buffer<u8>, reason: own u8) -
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
   doc "Reads one raw DEFLATE file named on the command line through the system read path; every boundary outcome reaches its own status.";
   let scratch = buffer_new(4097_u64, 0_u8);
   let report = buffer_new(128_u64, 0_u8);
@@ -225,46 +225,52 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         match relative_path(value: move text) {
           Ok(value: path) => {
             region {
-              let permit = reserve_file(factory: &uniq files);
-              match open_read(permit: move permit, root: &cwd, path: &path) {
-                Ok(value: file) => {
-                  let ended = 0_u8;
-                  loop @chunks {
-                    let within_scratch = filled <= 4097_u64;
-                    if within_scratch {
-                    } else {
-                      set ended = 2_u8;
-                      break @chunks;
-                    }
-                    let room = 4097_u64 -wrap filled;
-                    let full = room == 0_u64;
-                    if full {
-                      break @chunks;
-                    }
-                    region {
-                      match read_at(file: &file, destination: &uniq scratch, file_offset: file_offset, start: filled, end: 4097_u64) {
-                        ReadBytes(next: endpoint) => {
-                          let received = endpoint -wrap filled;
-                          set file_offset = file_offset +wrap received;
-                          set filled = endpoint;
-                        }
-                        ReadEnd() => {
-                          set ended = 1_u8;
-                        }
-                        ReadFailed(error: problem) => {
+              match reserve_handle(factory: &uniq files) {
+                Ok(value: permit) => {
+                  match open_read(permit: move permit, root: &cwd, path: &path) {
+                    FileOpened(value: file) => {
+                      let ended = 0_u8;
+                      loop @chunks {
+                        let within_scratch = filled <= 4097_u64;
+                        if within_scratch {
+                        } else {
                           set ended = 2_u8;
+                          break @chunks;
+                        }
+                        let room = 4097_u64 -wrap filled;
+                        let full = room == 0_u64;
+                        if full {
+                          break @chunks;
+                        }
+                        region {
+                          match read_at(file: &file, destination: &uniq scratch, file_offset: file_offset, start: filled, end: 4097_u64) {
+                            ReadBytes(next: endpoint) => {
+                              let received = endpoint -wrap filled;
+                              set file_offset = file_offset +wrap received;
+                              set filled = endpoint;
+                            }
+                            ReadEnd() => {
+                              set ended = 1_u8;
+                            }
+                            ReadFailed(error: problem) => {
+                              set ended = 2_u8;
+                            }
+                          }
+                        }
+                        if ended != 0_u8 {
+                          break @chunks;
                         }
                       }
+                      if ended == 2_u8 {
+                        set status = 2_u8;
+                      }
                     }
-                    if ended != 0_u8 {
-                      break @chunks;
+                    FileOpenFailed(error: problem, permit: refused_2) => {
+                      set status = 2_u8;
                     }
-                  }
-                  if ended == 2_u8 {
-                    set status = 2_u8;
                   }
                 }
-                Err(error: problem) => {
+                Err(error: spent) => {
                   set status = 2_u8;
                 }
               }

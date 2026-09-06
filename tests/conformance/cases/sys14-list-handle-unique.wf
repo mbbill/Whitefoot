@@ -1,28 +1,34 @@
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "`directory_next` takes an exclusive `DirectorySource` borrow because advancing enumeration changes that source's state. This negative case deliberately requests two simultaneous unique borrows of the same owner, so ordinary OWN-5 exclusivity rejects them.";
   let entries = buffer_new(1024_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
-        region {
-          let first = &uniq list;
-          let second = &uniq list;
-          match directory_next(source: &uniq deref(first), destination: &uniq entries, start: 0_u64, end: 1024_u64) {
-            ListBytes(next: bytes, entries: reported) => {
-              return exit_status(code: 0_u8);
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        match open_directory_source(permit: move permit, directory: &cwd) {
+          SourceOpened(value: list) => {
+            region {
+              let first = &uniq list;
+              let second = &uniq list;
+              match directory_next(source: &uniq deref(first), destination: &uniq entries, start: 0_u64, end: 1024_u64) {
+                ListBytes(next: bytes, entries: reported) => {
+                  return exit_status(code: 0_u8);
+                }
+                ListEnd() => {
+                  return exit_status(code: 0_u8);
+                }
+                ListFailed(error: problem) => {
+                  return exit_status(code: 3_u8);
+                }
+              }
             }
-            ListEnd() => {
-              return exit_status(code: 0_u8);
-            }
-            ListFailed(error: problem) => {
-              return exit_status(code: 3_u8);
-            }
+          }
+          SourceOpenFailed(error: problem, permit: refused) => {
+            return exit_status(code: 4_u8);
           }
         }
       }
-      Err(error: problem) => {
-        return exit_status(code: 4_u8);
+      Err(error: spent) => {
+        return exit_status(code: 5_u8);
       }
     }
   }

@@ -196,19 +196,25 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         match relative_path(value: move text) {
           Ok(value: path) => {
             region 'permit {
-              let permit = reserve_file<'permit>(factory: &uniq 'permit files);
-              region 'open {
-                match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
-                  Ok(value: handle) => {
-                    region 'copy {
-                      let counted = pump<'copy, 'copy, 'copy>(handle: &'copy handle, output: &uniq 'copy out, chunk: &uniq 'copy chunk);
-                      set lines = counted.lines;
-                      set status = counted.status;
+              match reserve_file<'permit>(factory: &uniq 'permit files) {
+                Ok(value: permit) => {
+                  region 'open {
+                    match open_read<'open, 'open>(permit: move permit, root: &'open cwd, path: &'open path) {
+                      FileOpened(value: handle) => {
+                        region 'copy {
+                          let counted = pump<'copy, 'copy, 'copy>(handle: &'copy handle, output: &uniq 'copy out, chunk: &uniq 'copy chunk);
+                          set lines = counted.lines;
+                          set status = counted.status;
+                        }
+                      }
+                      FileOpenFailed(error: problem, permit: refused) => {
+                        set status = 3_u8;
+                      }
                     }
                   }
-                  Err(error: problem) => {
-                    set status = 3_u8;
-                  }
+                }
+                Err(error: spent) => {
+                  set status = 6_u8;
                 }
               }
             }

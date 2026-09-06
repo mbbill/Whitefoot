@@ -1,0 +1,35 @@
+command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
+  doc "SYS-10, SYS-17: `tcp_connect` consumes one `HandlePermit` and hands it back inside `ConnectFailed` when the peer refuses or the target's ephemeral-port pool is empty, because no handle was taken; the returned permit connects again. `AddressUnavailable` is the target's own exhaustion and `ConnectionRefused` the peer's answer, and neither is the program's own descriptor accounting. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+  let first = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9107_u16);
+  let second = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9108_u16);
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &first) {
+            Connected(connection: link) => {
+              let credit = close_connection(connection: move link);
+              return exit_status(code: 0_u8);
+            }
+            ConnectFailed(error: problem, permit: handed_back) => {
+              region {
+                match tcp_connect(permit: move handed_back, address: &second) {
+                  Connected(connection: retry) => {
+                    let credit = close_connection(connection: move retry);
+                    return exit_status(code: 0_u8);
+                  }
+                  ConnectFailed(error: second_problem, permit: spent) => {
+                    return exit_status(code: 3_u8);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        return exit_status(code: 4_u8);
+      }
+    }
+  }
+}

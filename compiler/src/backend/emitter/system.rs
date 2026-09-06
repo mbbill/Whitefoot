@@ -18,8 +18,16 @@
 
 use super::super::qualification::{
     ApprovedImplementation, DirectoryEnumeration, EntryNameLength, ORIGIN_DESCRIPTOR_STATUS,
-    ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_WRITE, ProgramKind, Qualification,
-    ReleaseImplementation, SystemTarget, qualified_representation,
+    ORIGIN_DIRECTORY_OPEN, ORIGIN_NONE, ORIGIN_READ, ORIGIN_SOCKET_ACCEPT, ORIGIN_SOCKET_CONNECT,
+    ORIGIN_SOCKET_LISTEN, ORIGIN_WRITE, ProgramKind, Qualification, ReleaseImplementation,
+    ResourceRepresentation, SystemTarget, qualified_representation,
+};
+use super::completion::{
+    CompletionRetirement, DIRECTORY_NEXT_SUBMIT, FILE_JOIN, SOCKET_ACCEPT_JOIN,
+    SOCKET_ACCEPT_SUBMIT, SOCKET_CONNECT_SUBMIT, SOCKET_LISTEN_SUBMIT, SOCKET_RECEIVE_SUBMIT,
+    SOCKET_SEND_SUBMIT, SOCKET_SHUTDOWN_SUBMIT, WRAPPER_RAW_ERROR, WRAPPER_RAW_OUTCOME,
+    WRAPPER_RAW_VALUE, WRAPPER_RECORD, completion_retirement, completion_submit_call,
+    completion_transfer_target, completion_wrapper_reservation,
 };
 use super::*;
 use crate::ACTIVE_KERNEL_SPEC_VERSION;
@@ -64,7 +72,20 @@ const OPEN_DIRECTORY: u8 = 11;
 const OPEN_LIST: u8 = 12;
 const LIST_ONCE: u8 = 13;
 const OPEN_FILE: u8 = 14;
-const RESERVE_FILE: u8 = 15;
+const RESERVE_HANDLE: u8 = 15;
+const CLOSE_READ: u8 = 16;
+const CLOSE_DIRECTORY: u8 = 17;
+const CLOSE_DIRECTORY_SOURCE: u8 = 18;
+const READ_NEXT: u8 = 19;
+const SOCKET_ADDRESS_V4: u8 = 20;
+const SOCKET_ADDRESS_V6: u8 = 21;
+const TCP_LISTEN: u8 = 22;
+const TCP_ACCEPT: u8 = 23;
+const TCP_CONNECT: u8 = 24;
+const RECEIVE_NEXT: u8 = 25;
+const SEND_ONCE: u8 = 26;
+const CLOSE_CONNECTION: u8 = 27;
+const CLOSE_LISTENER: u8 = 28;
 
 /// The finite system operations the first typed file adapter can actualize.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -76,6 +97,14 @@ pub(super) enum CompletionFileOperation {
     OpenDirectorySource,
     DirectoryNext,
     OpenFile,
+    /// One transfer attempt on one direction of one connection [SYS-18].
+    ///
+    /// They are their own members rather than `Read` and `Write` because the
+    /// request they submit is its own kind on both engines; what a completion
+    /// of one *means* is the same, which is why they share the two transfer
+    /// mappers below.
+    Receive,
+    Send,
 }
 
 pub(super) fn completion_file_operation(
@@ -83,12 +112,22 @@ pub(super) fn completion_file_operation(
 ) -> Option<CompletionFileOperation> {
     match operation.ordinal() {
         OPEN_READ => Some(CompletionFileOperation::OpenRead),
-        READ_ONCE => Some(CompletionFileOperation::Read),
+        // `read_at` and `read_next` publish the same `ReadOutcome` from the
+        // same three raw scalars, so they share one completion mapper; what
+        // differs is the request they submit, not what its completion means.
+        READ_ONCE | READ_NEXT => Some(CompletionFileOperation::Read),
         WRITE_ONCE => Some(CompletionFileOperation::Write),
         OPEN_DIRECTORY => Some(CompletionFileOperation::OpenDirectory),
         OPEN_LIST => Some(CompletionFileOperation::OpenDirectorySource),
         LIST_ONCE => Some(CompletionFileOperation::DirectoryNext),
         OPEN_FILE => Some(CompletionFileOperation::OpenFile),
+        RECEIVE_NEXT => Some(CompletionFileOperation::Receive),
+        SEND_ONCE => Some(CompletionFileOperation::Send),
+        // The five remaining TCP rows have no hand-out form: a listen, an
+        // accept, a connect and the two explicit closes keep their qualified
+        // wrapper, which is the same submit-then-join lowering through the
+        // frame's own record. Nothing weaker is substituted and no judgment
+        // changes; a site simply holds one such operation at a time.
         _ => None,
     }
 }
@@ -102,6 +141,11 @@ pub(super) const fn completion_mapper_symbol(operation: CompletionFileOperation)
         CompletionFileOperation::OpenDirectorySource => OPEN_LIST_COMPLETION_MAPPER,
         CompletionFileOperation::DirectoryNext => DIRECTORY_NEXT_COMPLETION_MAPPER,
         CompletionFileOperation::OpenFile => OPEN_FILE_COMPLETION_MAPPER,
+        // A receive publishes the same `ReadOutcome` from the same three raw
+        // scalars a read does, and a send the same `Result<u64, IoError>` a
+        // write does, so each shares that operation's one mapper [SYS-8].
+        CompletionFileOperation::Receive => READ_COMPLETION_MAPPER,
+        CompletionFileOperation::Send => WRITE_COMPLETION_MAPPER,
     }
 }
 
@@ -124,9 +168,12 @@ const UTF8_VALIDATOR: &str = "wf.sys.utf8.valid";
 /// I/O implementation shares [QUAL-3].
 const IO_ERROR_MAPPER: &str = "wf.sys.io.error";
 
-/// Raw target-result mappers shared by the direct specialization and the
-/// finite completion route.  Keeping one mapper is what makes the two
-/// execution choices produce the same qualified Whitefoot outcome.
+/// Raw target-result mappers shared by the qualified wrapper and the
+/// handed-out completion site.  There is one lowering now
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §8) and therefore one
+/// place a raw target value, error and outcome become a typed Whitefoot
+/// outcome: whichever of the two submitted the operation, its join hands the
+/// three to the same mapper.
 const READ_COMPLETION_MAPPER: &str = "wf.sys.read.completion";
 const WRITE_COMPLETION_MAPPER: &str = "wf.sys.write.completion";
 const OPEN_READ_COMPLETION_MAPPER: &str = "wf.sys.open_read.completion";
@@ -134,18 +181,41 @@ const OPEN_DIRECTORY_COMPLETION_MAPPER: &str = "wf.sys.open_directory.completion
 const OPEN_LIST_COMPLETION_MAPPER: &str = "wf.sys.open_directory_source.completion";
 const DIRECTORY_NEXT_COMPLETION_MAPPER: &str = "wf.sys.directory_next.completion";
 const OPEN_FILE_COMPLETION_MAPPER: &str = "wf.sys.open_file.completion";
+const LISTEN_COMPLETION_MAPPER: &str = "wf.sys.tcp_listen.completion";
+const ACCEPT_COMPLETION_MAPPER: &str = "wf.sys.tcp_accept.completion";
+const CONNECT_COMPLETION_MAPPER: &str = "wf.sys.tcp_connect.completion";
 pub(super) const OPEN_EXPECT_REGULAR: u32 = 1;
 pub(super) const OPEN_EXPECT_DIRECTORY: u32 = 2;
 pub(super) const WINDOWS_DESCRIPTOR_CLASS_READ_FILE: u32 = 1;
 pub(super) const WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT: u32 = 2;
 pub(super) const WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE: u32 = 3;
 
-fn completion_open_declaration(target: SystemTarget, symbol: &str) -> String {
+/// The declaration of the open submit this target answers.
+///
+/// Windows carries one more argument, the descriptor class its runtime opens
+/// the handle under; every other argument, and the record address that closes
+/// the list, is the same on both families.
+fn completion_open_submit_declaration(target: SystemTarget) -> String {
+    let symbol = target.file_open_at_submit_symbol();
     if target.is_windows() {
-        format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, i32, ptr, ptr)")
+        format!("declare void @{symbol}(i32, ptr, i32, i32, i32, i32, i32, ptr)")
     } else {
-        format!("declare i32 @{symbol}(i32, ptr, i32, i32, i32, i32, ptr, ptr)")
+        format!("declare void @{symbol}(i32, ptr, i32, i32, i32, i32, ptr)")
     }
+}
+
+/// The declaration of the join a transferring or closing record is consumed
+/// through.
+fn completion_join_declaration(target: SystemTarget) -> String {
+    format!("declare void @{}(ptr, ptr, ptr)", target.file_join_symbol())
+}
+
+/// The declaration of the join an open's record is consumed through.
+fn completion_open_join_declaration(target: SystemTarget) -> String {
+    format!(
+        "declare void @{}(ptr, ptr, ptr, ptr)",
+        target.file_open_join_symbol()
+    )
 }
 
 fn windows_descriptor_class_argument(target: SystemTarget, descriptor_class: u32) -> String {
@@ -185,6 +255,8 @@ pub(super) fn emit_system_interface(
     // The command bootstrap and `open_directory_source` both name the self component, so
     // the constant is emitted once for whichever of them the program uses.
     let mut needs_working_directory = false;
+    // The one close every derived release and every explicit close reaches.
+    let mut needs_close = false;
 
     // [QUAL-3] establishes the emitted shape by inspection of emitted code and
     // symbols, so the module records which approved implementation each
@@ -230,6 +302,16 @@ pub(super) fn emit_system_interface(
     // the module resolves the `IoError` type once from whichever outcome the
     // program actually uses.
     let mut io_error = None;
+    // `read_at`, `read_next` and `receive_next` publish the same `ReadOutcome`
+    // through the one read completion mapper [SYS-8], and `write_once` and
+    // `send_once` the same `Result<u64, IoError>` through the one write
+    // mapper, so a program that uses several of them emits each mapper once.
+    // The shapes are the same interned types by construction.
+    let mut read_mapper: Option<ReadOutcomeShape> = None;
+    let mut write_mapper: Option<(OutcomeShape, IoErrorClass)> = None;
+    // The one half-close every [SYS-18] direction release and
+    // `close_connection` reaches.
+    let mut needs_half_close = false;
     for (ordinal, implementation) in qualification.used_operations() {
         let result = results
             .get(usize::from(ordinal))
@@ -281,24 +363,20 @@ pub(super) fn emit_system_interface(
             OPEN_READ => {
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
-                definitions.push_str(&emit_open_read(
-                    program,
-                    qualification,
-                    implementation,
-                    &shape,
-                    target,
-                    target_layout,
-                )?);
+                definitions.push_str(&emit_open_read(program, implementation, &shape, target)?);
             }
             READ_ONCE => {
                 let shape = read_outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.failed_type)?;
                 definitions.push_str(&emit_read_at(program, implementation, &shape, target)?);
+                read_mapper = Some(shape);
             }
             WRITE_ONCE => {
                 let shape = outcome_shape(program, result)?;
                 record_io_error(&mut io_error, shape.err_type)?;
+                let refused = write_zero_class(program, &shape)?;
                 definitions.push_str(&emit_write_once(program, implementation, &shape, target)?);
+                write_mapper = Some((shape, refused));
             }
             EXIT_STATUS => definitions.push_str(&emit_exit_status(implementation)),
             OPEN_DIRECTORY => {
@@ -319,11 +397,9 @@ pub(super) fn emit_system_interface(
                 needs_working_directory = true;
                 definitions.push_str(&emit_open_directory_source(
                     program,
-                    qualification,
                     implementation,
                     &shape,
                     target,
-                    target_layout,
                 )?);
             }
             LIST_ONCE => {
@@ -350,29 +426,135 @@ pub(super) fn emit_system_interface(
                     target_layout,
                 )?);
             }
-            RESERVE_FILE => definitions.push_str(&emit_reserve_file(implementation)),
+            READ_NEXT => {
+                let shape = read_outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.failed_type)?;
+                definitions.push_str(&emit_read_next(program, implementation, &shape, target)?);
+                read_mapper = Some(shape);
+            }
+            SOCKET_ADDRESS_V4 => {
+                definitions.push_str(&emit_socket_address_v4(implementation));
+            }
+            SOCKET_ADDRESS_V6 => {
+                definitions.push_str(&emit_socket_address_v6(implementation));
+            }
+            RESERVE_HANDLE => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_reserve_handle(program, implementation, &shape)?);
+            }
+            CLOSE_READ => {
+                needs_close = true;
+                definitions.push_str(&emit_close(implementation, SystemResourceType::ReadFile));
+            }
+            CLOSE_DIRECTORY => {
+                needs_close = true;
+                definitions.push_str(&emit_close(
+                    implementation,
+                    SystemResourceType::DirectoryRead,
+                ));
+            }
+            CLOSE_DIRECTORY_SOURCE => {
+                needs_close = true;
+                definitions.push_str(&emit_close(
+                    implementation,
+                    SystemResourceType::DirectorySource,
+                ));
+            }
+            TCP_LISTEN => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_socket_endpoint(
+                    program,
+                    implementation,
+                    &shape,
+                    SOCKET_LISTEN_SUBMIT,
+                    LISTEN_COMPLETION_MAPPER,
+                    ORIGIN_SOCKET_LISTEN,
+                )?);
+            }
+            TCP_ACCEPT => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_tcp_accept(program, implementation, &shape)?);
+            }
+            TCP_CONNECT => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                definitions.push_str(&emit_socket_endpoint(
+                    program,
+                    implementation,
+                    &shape,
+                    SOCKET_CONNECT_SUBMIT,
+                    CONNECT_COMPLETION_MAPPER,
+                    ORIGIN_SOCKET_CONNECT,
+                )?);
+            }
+            RECEIVE_NEXT => {
+                let shape = read_outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.failed_type)?;
+                definitions.push_str(&emit_receive_next(program, implementation, &shape)?);
+                read_mapper = Some(shape);
+            }
+            SEND_ONCE => {
+                let shape = outcome_shape(program, result)?;
+                record_io_error(&mut io_error, shape.err_type)?;
+                let refused = write_zero_class(program, &shape)?;
+                definitions.push_str(&emit_send_once(program, implementation, &shape)?);
+                write_mapper = Some((shape, refused));
+            }
+            CLOSE_CONNECTION => {
+                needs_half_close = true;
+                let connection = system_call_parameter_type(program, ordinal, 0)?;
+                definitions.push_str(&emit_close_connection(program, implementation, connection)?);
+            }
+            CLOSE_LISTENER => {
+                needs_close = true;
+                definitions.push_str(&emit_close(implementation, SystemResourceType::TcpListener));
+            }
             _ => return Err(BackendFailure::InvalidIr),
         }
         for declaration in operation_declarations(ordinal, target)? {
             declarations.insert(declaration);
         }
     }
+    if let Some(shape) = read_mapper.as_ref() {
+        definitions.push_str(&emit_read_completion_mapper(shape));
+    }
+    if let Some((shape, refused)) = write_mapper.as_ref() {
+        definitions.push_str(&emit_write_completion_mapper(shape, refused));
+    }
     if needs_validator {
         definitions.push_str(&emit_utf8_validator());
     }
     if let Some(error) = io_error {
-        declarations.insert(target.errno_declaration().to_owned());
         definitions.push_str(&emit_io_error_mapper(program, error, target)?);
     }
 
-    if let Some(symbol) = native_release_symbol(program, qualification)? {
-        declarations.insert(format!("declare i32 @{symbol}(i32)"));
+    if program_releases_with_close(program, qualification)? {
+        needs_close = true;
+    }
+    if needs_close {
+        for declaration in close_declarations(target) {
+            declarations.insert(declaration);
+        }
+        definitions.push_str(&emit_close_helper(target));
+    }
+    if program_releases_with_direction_close(program, qualification)? {
+        needs_half_close = true;
+    }
+    if needs_half_close {
+        for declaration in half_close_declarations() {
+            declarations.insert(declaration);
+        }
+        definitions.push_str(&emit_half_close_helper());
     }
 
     let IrEntry::Command { inputs, .. } = program.entry();
     if target.is_windows() {
         declarations.insert("declare i32 @wf__windows_stdout_descriptor()".to_owned());
         declarations.insert("declare i32 @wf__windows_stderr_descriptor()".to_owned());
+        declarations.insert("declare i32 @wf__windows_stdin_descriptor()".to_owned());
     } else {
         declarations.insert("declare ptr @signal(i32, ptr)".to_owned());
     }
@@ -460,57 +642,37 @@ fn operation_declarations(
         // prefix concatenated onto a path and resolved against an ambient
         // working directory.
         OPEN_READ | OPEN_LIST => {
-            let symbol = target.file_open_symbol();
             return Ok(vec![
-                if target.uses_typed_completion_file_adapter() {
-                    completion_open_declaration(target, symbol)
-                } else {
-                    format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
-                },
+                completion_open_submit_declaration(target),
+                completion_open_join_declaration(target),
                 "declare void @abort() noreturn".to_owned(),
             ]);
         }
-        OPEN_DIRECTORY => {
-            let symbol = target.file_open_symbol();
+        OPEN_DIRECTORY | OPEN_FILE => {
             return Ok(vec![
-                if target.uses_typed_completion_file_adapter() {
-                    completion_open_declaration(target, symbol)
-                } else {
-                    format!("declare i32 @{symbol}(i32, ptr, i32, ...)")
-                },
+                completion_open_submit_declaration(target),
+                completion_open_join_declaration(target),
                 "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
                 "declare void @abort() noreturn".to_owned(),
             ]);
-        }
-        OPEN_FILE => {
-            let open = target.file_open_symbol();
-            let mut declarations = vec![
-                if target.uses_typed_completion_file_adapter() {
-                    completion_open_declaration(target, open)
-                } else {
-                    format!("declare i32 @{open}(i32, ptr, i32, ...)")
-                },
-                "declare void @llvm.memcpy.p0.p0.i64(ptr, ptr, i64, i1)".to_owned(),
-                "declare void @abort() noreturn".to_owned(),
-            ];
-            if !target.uses_typed_completion_file_adapter() {
-                declarations.push(format!(
-                    "declare i32 @{}(i32, ptr)",
-                    target.file_status_symbol()
-                ));
-                declarations.push(format!("declare i32 @{}(i32)", target.close_symbol()));
-            }
-            return Ok(declarations);
         }
         READ_ONCE => {
             return Ok(vec![
-                format!("declare i64 @{}(i32, ptr, i64, i64)", target.pread_symbol()),
+                format!(
+                    "declare void @{}(i32, ptr, i64, i64, ptr)",
+                    target.file_pread_submit_symbol()
+                ),
+                completion_join_declaration(target),
                 "declare void @abort() noreturn".to_owned(),
             ]);
         }
         WRITE_ONCE => {
             return Ok(vec![
-                format!("declare i64 @{}(i32, ptr, i64)", target.write_symbol()),
+                format!(
+                    "declare void @{}(i32, ptr, i64, ptr)",
+                    target.file_write_submit_symbol()
+                ),
+                completion_join_declaration(target),
                 "declare void @abort() noreturn".to_owned(),
             ]);
         }
@@ -539,43 +701,134 @@ fn operation_declarations(
                 return Err(BackendFailure::InvalidIr);
             }
             return Ok(vec![
-                "declare i64 @wf__completion_directory_next_direct(i32, ptr, i64, ptr)".to_owned(),
+                format!("declare void @{DIRECTORY_NEXT_SUBMIT}(i32, ptr, i64, ptr, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
                 "declare void @abort() noreturn".to_owned(),
             ]);
+        }
+        READ_NEXT => {
+            return Ok(vec![
+                format!(
+                    "declare void @{}(i32, ptr, i64, ptr)",
+                    target.file_read_submit_symbol()
+                ),
+                completion_join_declaration(target),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
+        }
+        // The factory's credit count lives in the floor, linked into every
+        // program [SYS-10].
+        RESERVE_HANDLE => &["declare i32 @wf__handle_reserve()"],
+        CLOSE_READ | CLOSE_DIRECTORY | CLOSE_DIRECTORY_SOURCE | CLOSE_LISTENER => {
+            return Ok(close_declarations(target));
+        }
+        // The four TCP submits that reach a host object, and the two joins
+        // they retire through. None is a target column: a socket is one
+        // object with one contract on every host this compiler qualifies.
+        TCP_LISTEN => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_LISTEN_SUBMIT}(i64, i64, i32, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+            ]);
+        }
+        TCP_CONNECT => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_CONNECT_SUBMIT}(i64, i64, i32, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+            ]);
+        }
+        TCP_ACCEPT => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_ACCEPT_SUBMIT}(i32, ptr)"),
+                format!("declare void @{SOCKET_ACCEPT_JOIN}(ptr, ptr, ptr, ptr, ptr, ptr)"),
+            ]);
+        }
+        RECEIVE_NEXT => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_RECEIVE_SUBMIT}(i32, ptr, i64, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
+        }
+        SEND_ONCE => {
+            return Ok(vec![
+                format!("declare void @{SOCKET_SEND_SUBMIT}(i32, ptr, i64, ptr)"),
+                format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+                "declare void @abort() noreturn".to_owned(),
+            ]);
+        }
+        CLOSE_CONNECTION => {
+            return Ok(half_close_declarations());
         }
         _ => &[],
     };
     Ok(fixed.iter().map(|text| (*text).to_owned()).collect())
 }
 
-/// The close facility this program's releases reach, when any release the
-/// program derives is a native close attempt.
+/// The declarations one close needs: the submit its descriptor is handed to
+/// and the join that consumes the record it fills.
+fn close_declarations(target: SystemTarget) -> Vec<String> {
+    vec![
+        format!(
+            "declare void @{}(i32, ptr)",
+            target.file_close_submit_symbol()
+        ),
+        completion_join_declaration(target),
+    ]
+}
+
+/// The declarations one half-close needs: the runtime's own half-close submit
+/// and the join that consumes the record it fills.
 ///
-/// Every type whose [SYS-5] release is a close attempt resolves to the one
-/// facility the selected target's [QUAL-1] rows name, so a program never
-/// declares two close symbols.
-fn native_release_symbol(
+/// Neither is a target column: a connection is one object with one contract on
+/// every host this compiler qualifies, and the two engines that carry a socket
+/// are inside the runtime behind these names.
+fn half_close_declarations() -> Vec<String> {
+    vec![
+        format!("declare void @{SOCKET_SHUTDOWN_SUBMIT}(i32, i32, ptr)"),
+        format!("declare void @{FILE_JOIN}(ptr, ptr, ptr)"),
+    ]
+}
+
+/// Whether any release this program derives is a direction half-close
+/// [SYS-18].
+fn program_releases_with_direction_close(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
-) -> Result<Option<&'static str>, BackendFailure> {
-    let mut selected = None;
+) -> Result<bool, BackendFailure> {
     for nominal in program.nominals() {
         let IrNominalKind::SystemResource(contract) = nominal.kind() else {
             continue;
         };
-        let ReleaseImplementation::NativeClose(symbol) =
-            qualification.resource(contract.resource)?.release()
-        else {
-            continue;
-        };
-        if selected
-            .replace(symbol)
-            .is_some_and(|other| other != symbol)
+        if qualification.resource(contract.resource)?.release()
+            == ReleaseImplementation::NativeDirectionClose
         {
-            return Err(BackendFailure::InvalidIr);
+            return Ok(true);
         }
     }
-    Ok(selected)
+    Ok(false)
+}
+
+/// Whether any release this program derives is a native close attempt.
+///
+/// Every type whose [SYS-5] release is a close attempt reaches the one close
+/// helper below, so a program that derives one such release declares the close
+/// facility once and defines that helper once.
+fn program_releases_with_close(
+    program: &IrProgram<'_, '_, '_>,
+    qualification: &Qualification,
+) -> Result<bool, BackendFailure> {
+    for nominal in program.nominals() {
+        let IrNominalKind::SystemResource(contract) = nominal.kind() else {
+            continue;
+        };
+        if qualification.resource(contract.resource)?.release()
+            == ReleaseImplementation::NativeClose
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// The result type each used semantic identity produces in this program.
@@ -618,6 +871,26 @@ fn system_call_results(
     Ok(results)
 }
 
+/// The exact IR type of one system operation's parameter.
+///
+/// One caller: `close_connection` takes the whole `TcpConnection`, and a
+/// system struct's emitted type is its own nominal rather than the fixed
+/// representation an opaque resource has [SYS-18]. Reading the catalog row and
+/// resolving it against the program's retained nominals is the same route
+/// every other exact type here takes, so no source name or signature reaches
+/// it [QUAL-1].
+fn system_call_parameter_type(
+    program: &IrProgram<'_, '_, '_>,
+    ordinal: u8,
+    parameter: usize,
+) -> Result<IrType, BackendFailure> {
+    let declared = crate::SYSTEM_OPERATIONS
+        .get(usize::from(ordinal))
+        .and_then(|row| row.parameters.get(parameter))
+        .ok_or(BackendFailure::InvalidIr)?;
+    catalog_ir_type(program, declared.ty)
+}
+
 /// Resolves one exact [SYS-2] table type against retained IR identities.
 ///
 /// ABI-equivalent types are intentionally rejected: signed integers, buffer
@@ -630,6 +903,10 @@ fn catalog_ir_type(
     Ok(match ty {
         crate::SystemTypeRef::U8 => IrType::Integer {
             width: 8,
+            signed: false,
+        },
+        crate::SystemTypeRef::U16 => IrType::Integer {
+            width: 16,
             signed: false,
         },
         crate::SystemTypeRef::U32 => IrType::Integer {
@@ -688,13 +965,29 @@ fn system_nominal_ir_type(
         if nominal.identity() != crate::IrNominalIdentity::System(index) {
             return Ok(false);
         }
-        if declared.opaque {
+        if declared.is_opaque() {
             let expected =
                 crate::system_resource_contract(index).ok_or(BackendFailure::InvalidIr)?;
             return Ok(matches!(
                 nominal.kind(),
                 IrNominalKind::SystemResource(actual) if *actual == expected
             ));
+        }
+        // A system struct is an ordinary struct nominal whose fields come from
+        // the catalog [SYS-18]; nothing about matching it is special.
+        if declared.is_struct() {
+            let IrNominalKind::Struct { fields } = nominal.kind() else {
+                return Ok(false);
+            };
+            if fields.len() != declared.fields.len() {
+                return Ok(false);
+            }
+            for (field, expected) in fields.iter().zip(declared.fields) {
+                if field.ty() != catalog_ir_type(program, expected.ty)? {
+                    return Ok(false);
+                }
+            }
+            return Ok(true);
         }
         let IrNominalKind::Enum { variants } = nominal.kind() else {
             return Ok(false);
@@ -756,6 +1049,16 @@ struct OutcomeShape {
     err_index: usize,
     err_llvm: String,
     err_type: IrType,
+    /// The position of the permit an open outcome hands back beside its
+    /// error [SYS-10]; `None` for a plain `Result<T, E>`.
+    permit_index: Option<usize>,
+    /// The position and type of a second field on the succeeding variant.
+    ///
+    /// Exactly one outcome in the inventory has one: `Accepted(connection,
+    /// peer)` reports the address the target gave for the peer beside the
+    /// connection it created [SYS-17]. It is resolved from the program's own
+    /// IR like everything else here, and `None` everywhere else.
+    ok_extra: Option<(usize, String)>,
 }
 
 fn variants_of<'program>(
@@ -781,18 +1084,47 @@ fn outcome_shape(
     let [ok, err] = variants else {
         return Err(BackendFailure::InvalidIr);
     };
-    let ([ok_field], [err_field]) = (ok.fields(), err.fields()) else {
-        return Err(BackendFailure::InvalidIr);
+    // A succeeding variant carries the fresh owner the operation created, and
+    // `Accepted` carries the peer's address beside it [SYS-17].
+    let (ok_field, ok_second) = match ok.fields() {
+        [ok_field] => (ok_field, None),
+        [ok_field, peer_field] if matches!(peer_field.ty(), IrType::Nominal(_)) => {
+            (ok_field, Some(peer_field))
+        }
+        _ => return Err(BackendFailure::InvalidIr),
+    };
+    // A plain `Result<T, E>` carries one field on its failed variant; an open
+    // outcome [SYS-10] carries the error and, beside it, the permit it hands
+    // back. Both are resolved from the program's own IR, never a spelling.
+    let (err_field, carries_permit) = match err.fields() {
+        [err_field] => (err_field, false),
+        [err_field, permit_field] if matches!(permit_field.ty(), IrType::Nominal(_)) => {
+            (err_field, true)
+        }
+        _ => return Err(BackendFailure::InvalidIr),
+    };
+    let err_index = variant_field_base(variants, err.tag())?;
+    let ok_index = variant_field_base(variants, ok.tag())?;
+    let ok_extra = match ok_second {
+        Some(field) => Some((
+            ok_index
+                .checked_add(1)
+                .ok_or(BackendFailure::CounterOverflow)?,
+            llvm_type(program, field.ty())?,
+        )),
+        None => None,
     };
     Ok(OutcomeShape {
         llvm: llvm_type(program, ty)?,
         ok_tag: ok.tag(),
-        ok_index: variant_field_base(variants, ok.tag())?,
+        ok_index,
         ok_llvm: llvm_type(program, ok_field.ty())?,
         err_tag: err.tag(),
-        err_index: variant_field_base(variants, err.tag())?,
+        err_index,
         err_llvm: llvm_type(program, err_field.ty())?,
         err_type: err_field.ty(),
+        permit_index: carries_permit.then(|| err_index.checked_add(1)).flatten(),
+        ok_extra,
     })
 }
 
@@ -1361,6 +1693,7 @@ fn read_outcome_shape(
 
 /// One [SYS-7] class's identity and payload positions in one program's
 /// `IoError` value.
+#[derive(Clone, Copy)]
 struct IoErrorClass {
     spelling: &'static str,
     tag: u32,
@@ -1442,28 +1775,82 @@ fn io_error_value(
     )
 }
 
-/// Renders the two instructions that read the native error slot.
+/// The open submit every qualified open wrapper renders.
 ///
-/// The slot is read immediately after the failing facility call and only on
-/// the cold path [QUAL-3].
-fn native_error(target: SystemTarget, prefix: &str) -> (String, String) {
-    (
-        format!(
-            "  %{prefix}.slot = call ptr @{}()\n  \
-             %{prefix}.code = load i32, ptr %{prefix}.slot\n",
-            target.errno_location()
+/// The kind the row promises is the `expected_kind` argument, and deciding it
+/// — including the close of a provisional descriptor whose kind does not match
+/// — belongs to whoever answers the submit (design §8). The wrapper states the
+/// expectation and reads the outcome the join publishes; it holds no status
+/// record and performs no close of its own.
+fn open_submit_call(
+    target: SystemTarget,
+    directory: &str,
+    path: &str,
+    flags: i32,
+    expected_kind: u32,
+    descriptor_class: u32,
+) -> String {
+    let class = windows_descriptor_class_argument(target, descriptor_class);
+    completion_submit_call(
+        target.file_open_at_submit_symbol(),
+        &format!(
+            "i32 {directory}, ptr {path}, i32 {flags}, i32 0, i32 0, \
+             i32 {expected_kind}{class}, ptr {WRAPPER_RECORD}"
         ),
-        format!("%{prefix}.code"),
     )
+}
+
+/// The retirement every qualified open wrapper renders: the open join, the
+/// raw descriptor, error and outcome it publishes, and the operation's own
+/// completion mapper over the three.
+fn open_retirement(target: SystemTarget, llvm: &str, mapper: &str) -> String {
+    completion_retirement(&CompletionRetirement {
+        join: target.file_open_join_symbol(),
+        record: WRAPPER_RECORD,
+        raw_value: WRAPPER_RAW_VALUE,
+        raw_error: WRAPPER_RAW_ERROR,
+        open_outcome: Some((WRAPPER_RAW_OUTCOME, "%open.outcome")),
+        value: "%raw.descriptor",
+        error: "%open.error",
+        mapper,
+        mapper_arguments: "i64 %raw.descriptor, i32 %open.error, i32 %open.outcome",
+        result: "%mapped",
+        result_type: llvm,
+    })
+}
+
+/// The retirement a transferring wrapper renders: the join, the raw value and
+/// error it publishes, and the operation's own completion mapper over them and
+/// the wrapper's own proved endpoints.
+///
+/// `trailing` is empty for an operation whose mapper reads nothing but the two
+/// raw scalars — a listen and a connect, which carry no range.
+fn transfer_retirement(join: &str, llvm: &str, mapper: &str, trailing: &str) -> String {
+    let arguments = if trailing.is_empty() {
+        "i64 %completed.value, i32 %completed.error".to_owned()
+    } else {
+        format!("i64 %completed.value, i32 %completed.error, {trailing}")
+    };
+    completion_retirement(&CompletionRetirement {
+        join,
+        record: WRAPPER_RECORD,
+        raw_value: WRAPPER_RAW_VALUE,
+        raw_error: WRAPPER_RAW_ERROR,
+        open_outcome: None,
+        value: "%completed.value",
+        error: "%completed.error",
+        mapper,
+        mapper_arguments: &arguments,
+        result: "%outcome",
+        result_type: llvm,
+    })
 }
 
 fn emit_open_read(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
-    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let directory = representation(SystemResourceType::DirectoryRead);
     let path = representation(SystemResourceType::RelativePath);
@@ -1471,16 +1858,7 @@ fn emit_open_read(
     if shape.ok_llvm != file {
         return Err(BackendFailure::InvalidIr);
     }
-    let OutcomeShape {
-        llvm,
-        ok_tag,
-        ok_index,
-        err_tag,
-        err_index,
-        err_llvm,
-        ..
-    } = shape;
-    let (read_error, error) = native_error(target, "failure");
+    let OutcomeShape { llvm, .. } = shape;
     // [PATH-2]: the path is resolved against the supplied value's own directory
     // object through the target's own directory-relative facility. Nothing is
     // concatenated onto it and no ambient working directory is consulted, so a
@@ -1498,70 +1876,26 @@ fn emit_open_read(
         OPEN_READ_COMPLETION_MAPPER,
         SystemResourceType::ReadFile,
     )?;
-    let descriptor_class_argument =
-        windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_READ_FILE);
-    let wrapper = if target.uses_typed_completion_file_adapter() {
-        let prologue = render_named_target_frame(
-            program,
-            qualification,
-            target_layout,
-            &[
-                (
-                    "%open.error.slot",
-                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
-                ),
-                (
-                    "%open.outcome.slot",
-                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
-                ),
-            ],
-        )?;
-        format!(
-            "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
-             entry:\n\
-             {prologue}  \
-             %text = extractvalue {path} %path, 0\n  \
-             %descriptor = call {file} @{open}({directory} %root, ptr %text, i32 {flags}, \
-             i32 0, i32 0, i32 {OPEN_EXPECT_REGULAR}{descriptor_class_argument}, \
-             ptr %open.error.slot, \
-             ptr %open.outcome.slot)\n  \
-             %raw.descriptor = sext {file} %descriptor to i64\n  \
-             %open.error = load i32, ptr %open.error.slot, align 4\n  \
-             %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \
-             %mapped = call {llvm} @{OPEN_READ_COMPLETION_MAPPER}(i64 %raw.descriptor, \
-             i32 %open.error, i32 %open.outcome)\n  \
-             ret {llvm} %mapped\n\
-             }}\n\n",
-            symbol = implementation.symbol(),
-            open = target.file_open_symbol(),
-            flags = target.file_open_flags(),
-        )
-    } else {
-        format!(
-            "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
-         entry:\n  \
-         %text = extractvalue {path} %path, 0\n  \
-         %descriptor = call {file} @{open}({directory} %root, \
-         ptr %text, i32 {flags}, i32 0, i32 0)\n  \
-         %opened = icmp sge {file} %descriptor, 0\n  \
-         br i1 %opened, label %live, label %failure\n\
-         live:\n  \
-         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok = insertvalue {llvm} %ok.tag, {file} %descriptor, {ok_index}\n  \
-         ret {llvm} %ok\n\
-         failure:\n\
-         {read_error}  \
-         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
-         {ORIGIN_DIRECTORY_OPEN})\n  \
-         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
-         ret {llvm} %err\n\
+    let submit = open_submit_call(
+        target,
+        "%root",
+        "%text",
+        target.file_open_flags(),
+        OPEN_EXPECT_REGULAR,
+        WINDOWS_DESCRIPTOR_CLASS_READ_FILE,
+    );
+    let retirement = open_retirement(target, llvm, OPEN_READ_COMPLETION_MAPPER);
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({directory} %root, {path} %path) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %text = extractvalue {path} %path, 0\n\
+         {submit}{retirement}  \
+         ret {llvm} %mapped\n\
          }}\n\n",
-            symbol = implementation.symbol(),
-            open = target.file_open_symbol(),
-            flags = target.file_open_flags()
-        )
-    };
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(true),
+    );
     Ok(format!("{mapper}{wrapper}"))
 }
 
@@ -1585,6 +1919,7 @@ fn emit_open_completion_mapper(
         err_type,
         ..
     } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
     let classes = io_error_classes(program, *err_type)?;
     let directory_class = classes
         .iter()
@@ -1616,25 +1951,29 @@ fn emit_open_completion_mapper(
          open.failure:\n  \
          %open.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
          {ORIGIN_DIRECTORY_OPEN})\n  \
-         %open.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %open.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %open.tag = insertvalue {llvm} %open.base, i32 {err_tag}, 0\n  \
          %open.result = insertvalue {llvm} %open.tag, {err_llvm} %open.error, {err_index}\n  \
          ret {llvm} %open.result\n\
          status.failure:\n  \
          %status.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
          {ORIGIN_DESCRIPTOR_STATUS})\n  \
-         %status.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %status.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %status.tag = insertvalue {llvm} %status.base, i32 {err_tag}, 0\n  \
          %status.result = insertvalue {llvm} %status.tag, {err_llvm} %status.error, \
          {err_index}\n  \
          ret {llvm} %status.result\n\
          kind.directory.return:\n\
          {directory_value}  \
-         %kind.directory.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.directory.result.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %kind.directory.result.tag = insertvalue {llvm} %kind.directory.result.base, i32 {err_tag}, 0\n  \
          %kind.directory.result = insertvalue {llvm} %kind.directory.result.tag, {err_llvm} \
          {directory_error}, {err_index}\n  \
          ret {llvm} %kind.directory.result\n\
          kind.other.return:\n\
          {other_value}  \
-         %kind.other.result.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %kind.other.result.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %kind.other.result.tag = insertvalue {llvm} %kind.other.result.base, i32 {err_tag}, 0\n  \
          %kind.other.result = insertvalue {llvm} %kind.other.result.tag, {err_llvm} \
          {other_error}, {err_index}\n  \
          ret {llvm} %kind.other.result\n\
@@ -1661,64 +2000,97 @@ fn emit_read_at(
             },
         },
     )?;
-    let ReadOutcomeShape {
+    let ReadOutcomeShape { llvm, .. } = shape;
+    // The two call-site SYS-8 goals authorize this half-open range, so `sub
+    // nuw` needs no check: one obligation proves `start <= end` and the other
+    // `end <= len(buffer)`.
+    //
+    // One lowering and no branch before it (design §8). A zero-length range
+    // still reports `next = start` and a file offset the target ABI cannot
+    // express still reports the host's own refusal, but both are now the
+    // runtime's answers over the submitted record rather than a second arm
+    // here: an empty transfer is completed with no external action, and an
+    // offset above the signed maximum is published as `EINVAL`. The mapper
+    // turns either into the same outcome the wrapper used to build itself.
+    let prepared =
+        completion_transfer_target(&buffer, "%destination", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        target.file_pread_submit_symbol(),
+        &format!("{file} %file, ptr %target, i64 %extent, i64 %file_offset, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(
+        target.file_join_symbol(),
         llvm,
-        bytes_tag,
-        bytes_index,
-        ..
-    } = shape;
-    let entry = range_entry("");
-    let (read_error, error) = native_error(target, "failure");
-    let invalid_input = target
-        .error_classes()
-        .iter()
-        .find(|class| class.class == "InvalidInput")
-        .and_then(|class| class.codes.first())
-        .copied()
-        .ok_or(BackendFailure::InvalidIr)?;
-    // The two call-site SYS-8 goals authorize this half-open range. A
-    // zero-length range reports `next = start` and issues no host transfer.
-    // A nonempty range makes at most one positioned transfer attempt. The
-    // explicit file offset is checked before handoff and the operation never
-    // observes or changes an implicit cursor.
-    let mapper = emit_read_completion_mapper(shape);
-    let wrapper = format!(
+        READ_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    // The one read completion mapper is emitted once by the caller, because
+    // `read_at` and `read_next` share it [SYS-8].
+    Ok(format!(
         "define private {llvm} @{symbol}({file} %file, {buffer} %destination, i64 %file_offset, \
          i64 %start, i64 %end) alwaysinline {{\n\
-         {entry}\
-         measure:\n  \
-         %vacant = icmp eq i64 %extent, 0\n  \
-         br i1 %vacant, label %empty, label %offset\n\
-         empty:\n  \
-         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %empty.outcome = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
-         ret {llvm} %empty.outcome\n\
-         offset:\n  \
-         %offset.fits = icmp ule i64 %file_offset, 9223372036854775807\n  \
-         br i1 %offset.fits, label %transfer, label %invalid.offset\n\
-         invalid.offset:\n  \
-         %invalid.outcome = call {llvm} @{READ_COMPLETION_MAPPER}(i64 -1, i32 {invalid_input}, \
-         i64 %start, i64 %extent)\n  \
-         ret {llvm} %invalid.outcome\n\
-         transfer:\n  \
-         %base = extractvalue {buffer} %destination, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
-         %transferred = call i64 @{pread}({file} %file, ptr %target, i64 %extent, \
-         i64 %file_offset)\n  \
-         %failed = icmp slt i64 %transferred, 0\n  \
-         br i1 %failed, label %failure, label %complete\n\
-         failure:\n\
-         {read_error}  br label %complete\n\
-         complete:\n  \
-         %error = phi i32 [ 0, %transfer ], [ {error}, %failure ]\n  \
-         %outcome = call {llvm} @{READ_COMPLETION_MAPPER}(i64 %transferred, i32 %error, \
-         i64 %start, i64 %extent)\n  \
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
          ret {llvm} %outcome\n\
-        }}\n\n",
+         }}\n\n",
         symbol = implementation.symbol(),
-        pread = target.pread_symbol()
+        reservation = completion_wrapper_reservation(false),
+    ))
+}
+
+/// Emits `read_next`: one unpositioned transfer attempt at the stream's own
+/// position [SYS-15].
+///
+/// It is `read_at`'s wrapper with the offset removed and the runtime's
+/// unpositioned request kind in place of the positioned one, and it publishes
+/// the same `ReadOutcome` through the same mapper: an empty range answers
+/// `ReadBytes(start)` with no host transfer, a progress-producing attempt
+/// answers `ReadBytes(next)`, a host end answers `ReadEnd`, and a refusal
+/// answers `ReadFailed`. The stream's position is the descriptor's own, so
+/// nothing here carries or advances a cursor of its own.
+fn emit_read_next(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &ReadOutcomeShape,
+    target: SystemTarget,
+) -> Result<String, BackendFailure> {
+    let stream = representation(SystemResourceType::InputStream);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let ReadOutcomeShape { llvm, .. } = shape;
+    let prepared =
+        completion_transfer_target(&buffer, "%destination", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        target.file_read_submit_symbol(),
+        &format!("{stream} %input, ptr %target, i64 %extent, ptr {WRAPPER_RECORD}"),
     );
-    Ok(format!("{mapper}{wrapper}"))
+    let retirement = transfer_retirement(
+        target.file_join_symbol(),
+        llvm,
+        READ_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    Ok(format!(
+        "define private {llvm} @{symbol}({stream} %input, {buffer} %destination, \
+         i64 %start, i64 %end) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    ))
 }
 
 fn emit_read_completion_mapper(shape: &ReadOutcomeShape) -> String {
@@ -1778,7 +2150,7 @@ fn emit_write_once(
     shape: &OutcomeShape,
     target: SystemTarget,
 ) -> Result<String, BackendFailure> {
-    let output = representation(SystemResourceType::Output);
+    let output = representation(SystemResourceType::OutputStream);
     let buffer = llvm_type(
         program,
         IrType::Buffer {
@@ -1791,59 +2163,60 @@ fn emit_write_once(
     if shape.ok_llvm != "i64" {
         return Err(BackendFailure::InvalidIr);
     }
-    let classes = io_error_classes(program, shape.err_type)?;
-    let refused = classes
-        .iter()
-        .find(|class| class.spelling == "WriteZero")
-        .ok_or(BackendFailure::InvalidIr)?;
-    let OutcomeShape {
-        llvm,
-        ok_tag,
-        ok_index,
-        ..
-    } = shape;
-    let entry = range_entry("");
-    let (read_error, error) = native_error(target, "failure");
+    let OutcomeShape { llvm, .. } = shape;
     // A host zero-length write is `Err(WriteZero())`, which no native error
     // code produced: [SYS-7] leaves both detail fields zero when the target
     // supplies no value for them.
     // At most one host output attempt [SYS-12]. A zero-length range reports
-    // `next = start` and issues no host transfer; otherwise `Ok(next)` means
-    // exactly that the host accepted `[start, next)`, promising neither line
-    // atomicity nor durability. A closed destination arrives as
-    // the recoverable `BrokenPipe` class because the bootstrap installed the
-    // ignored write-to-closed-pipe disposition once, before entry [QUAL-3];
-    // this path performs no per-call signal-disposition operation.
-    let mapper = emit_write_completion_mapper(shape, refused);
-    let wrapper = format!(
+    // `next = start` and issues no host transfer — the runtime completes such
+    // a record with no external action, and the mapper builds that outcome
+    // (design §8). Otherwise `Ok(next)` means exactly that the host accepted
+    // `[start, next)`, promising neither line atomicity nor durability. A
+    // closed destination arrives as the recoverable `BrokenPipe` class because
+    // the bootstrap installed the ignored write-to-closed-pipe disposition
+    // once, before entry [QUAL-3]; this path performs no per-call
+    // signal-disposition operation.
+    //
+    // The mapper itself is emitted once by the caller, because `write_once`
+    // and `send_once` share it [SYS-8].
+    let prepared = completion_transfer_target(&buffer, "%source", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        target.file_write_submit_symbol(),
+        &format!("{output} %output, ptr %target, i64 %extent, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(
+        target.file_join_symbol(),
+        llvm,
+        WRITE_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    Ok(format!(
         "define private {llvm} @{symbol}({output} %output, {buffer} %source, i64 %start, \
          i64 %end) alwaysinline {{\n\
-         {entry}\
-         measure:\n  \
-         %vacant = icmp eq i64 %extent, 0\n  \
-         br i1 %vacant, label %empty, label %transfer\n\
-         empty:\n  \
-         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %empty.outcome = insertvalue {llvm} %empty.tag, i64 %start, {ok_index}\n  \
-         ret {llvm} %empty.outcome\n\
-         transfer:\n  \
-         %base = extractvalue {buffer} %source, 0\n  \
-         %target = getelementptr inbounds i8, ptr %base, i64 %start\n  \
-         %accepted = call i64 @{write}({output} %output, ptr %target, i64 %extent)\n  \
-         %failed = icmp slt i64 %accepted, 0\n  \
-         br i1 %failed, label %failure, label %complete\n\
-         failure:\n\
-         {read_error}  br label %complete\n\
-         complete:\n  \
-         %error = phi i32 [ 0, %transfer ], [ {error}, %failure ]\n  \
-         %outcome = call {llvm} @{WRITE_COMPLETION_MAPPER}(i64 %accepted, i32 %error, \
-         i64 %start, i64 %extent)\n  \
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
          ret {llvm} %outcome\n\
          }}\n\n",
         symbol = implementation.symbol(),
-        write = target.write_symbol()
-    );
-    Ok(format!("{mapper}{wrapper}"))
+        reservation = completion_wrapper_reservation(false),
+    ))
+}
+
+/// The [SYS-7] class one host write of zero bytes reports.
+///
+/// It is resolved from the program's own `IoError` and no native error code
+/// produced it: [SYS-7] leaves both detail fields zero when the target
+/// supplies no value for them.
+fn write_zero_class(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+) -> Result<IoErrorClass, BackendFailure> {
+    io_error_classes(program, shape.err_type)?
+        .into_iter()
+        .find(|class| class.spelling == "WriteZero")
+        .ok_or(BackendFailure::InvalidIr)
 }
 
 fn emit_write_completion_mapper(shape: &OutcomeShape, refused: &IoErrorClass) -> String {
@@ -1971,6 +2344,7 @@ fn invalid_component(
     program: &IrProgram<'_, '_, '_>,
     err_llvm: &str,
     err_type: IrType,
+    prefix: &str,
 ) -> Result<(String, String), BackendFailure> {
     let classes = io_error_classes(program, err_type)?;
     let class = classes
@@ -1980,10 +2354,57 @@ fn invalid_component(
     Ok(io_error_value(
         err_llvm,
         class,
-        "invalid",
+        prefix,
         "0",
         &ORIGIN_NONE.to_string(),
     ))
+}
+
+/// The same refused-name outcome, built at a completion hand-out site and
+/// stored in that operation's result slot.
+///
+/// An open by component name is the one completion shape that can reach its
+/// outcome without submitting anything: a name that is empty, over the target
+/// family's limit, or carrying a separator never becomes a host call. The
+/// sequential wrapper answers that from its own `invalid` block, and this
+/// builds the identical value from the same two functions rather than calling
+/// the wrapper for it, which is what lets a hand-out answer an invalid name
+/// without a second lowering
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §8). `prefix` makes the
+/// names unique per site, because unlike the wrapper's block this one is
+/// emitted into a function that may hold several such opens.
+pub(super) fn completion_invalid_component_outcome(
+    program: &IrProgram<'_, '_, '_>,
+    ty: IrType,
+    prefix: &str,
+    destination: &str,
+) -> Result<String, BackendFailure> {
+    let shape = outcome_shape(program, ty)?;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
+    let OutcomeShape {
+        llvm,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = &shape;
+    let (invalid_value, invalid_error) =
+        invalid_component(program, err_llvm, *err_type, &format!("{prefix}.path"))?;
+    let mut text = invalid_value;
+    text.push_str(&format!(
+        "  %{prefix}.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n"
+    ));
+    text.push_str(&format!(
+        "  %{prefix}.tag = insertvalue {llvm} %{prefix}.base, i32 {err_tag}, 0\n"
+    ));
+    text.push_str(&format!(
+        "  %{prefix}.outcome = insertvalue {llvm} %{prefix}.tag, {err_llvm} {invalid_error}, {err_index}\n"
+    ));
+    text.push_str(&format!(
+        "  store {llvm} %{prefix}.outcome, ptr {destination}\n"
+    ));
+    Ok(text)
 }
 
 /// Emits the component-name validation every [SYS-14] name operation shares.
@@ -2129,9 +2550,19 @@ fn emit_open_by_name(
     target_layout: TargetLayout,
     opened: SystemResourceType,
 ) -> Result<String, BackendFailure> {
-    let (flags, require_regular) = match opened {
-        SystemResourceType::DirectoryRead => (target.component_directory_open_flags(), false),
-        SystemResourceType::ReadFile => (target.component_file_open_flags(), true),
+    let (flags, mapper_symbol, expected_kind, descriptor_class) = match opened {
+        SystemResourceType::DirectoryRead => (
+            target.component_directory_open_flags(),
+            OPEN_DIRECTORY_COMPLETION_MAPPER,
+            OPEN_EXPECT_DIRECTORY,
+            WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT,
+        ),
+        SystemResourceType::ReadFile => (
+            target.component_file_open_flags(),
+            OPEN_FILE_COMPLETION_MAPPER,
+            OPEN_EXPECT_REGULAR,
+            WINDOWS_DESCRIPTOR_CLASS_READ_FILE,
+        ),
         _ => return Err(BackendFailure::InvalidIr),
     };
     let directory = representation(SystemResourceType::DirectoryRead);
@@ -2150,209 +2581,75 @@ fn emit_open_by_name(
     }
     let OutcomeShape {
         llvm,
-        ok_tag,
-        ok_index,
         err_tag,
         err_index,
         err_llvm,
         err_type,
         ..
     } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
     let terminator_bytes = if target.is_windows() { 2 } else { 1 };
     let slot = target.component_limit() + terminator_bytes;
     let component_align = if target.is_windows() { 2 } else { 1 };
     // One shared buffer per wrapper, and deliberately not the per-outstanding-
-    // operation storage the handed-out completion sites use. This wrapper's
-    // only host call is the synchronous direct open, which resolves the name
-    // inside the call and leaves no operation outstanding when it returns; the
-    // submitting path stages its own copy in the operation record besides. A
-    // wrapper that ever submits instead would have to index this the way
-    // `FunctionEmitter::completion_entry_slot` indexes a hand-out's storage.
-    let mut frame_slots = vec![(
+    // operation storage the handed-out completion sites use. This wrapper
+    // submits its open and joins it before returning, so exactly one operation
+    // of this site is ever outstanding inside it and the staged name is read
+    // only while that one operation is in flight. A site that hands out
+    // several at once indexes its own copy the way
+    // `FunctionEmitter::completion_entry_slot` does.
+    let frame_slots = [(
         "%component",
         TargetFrameSlot::aligned(TargetStorageType::bytes(slot), component_align),
     )];
-    // The typed adapter performs the descriptor-kind inspection before it
-    // publishes the outcome, so only the direct qualified wrapper owns a
-    // status record of its own.
-    if require_regular && !target.uses_typed_completion_file_adapter() {
-        frame_slots.push((
-            "%file.status",
-            TargetFrameSlot::aligned(TargetStorageType::bytes(target.file_status_size()), 8),
-        ));
-    }
-    if target.uses_typed_completion_file_adapter() {
-        frame_slots.push((
-            "%open.error.slot",
-            TargetFrameSlot::natural(TargetStorageType::integer(32)),
-        ));
-        frame_slots.push((
-            "%open.outcome.slot",
-            TargetFrameSlot::natural(TargetStorageType::integer(32)),
-        ));
-    }
     let prologue = render_named_target_frame(program, qualification, target_layout, &frame_slots)?;
-    let entry = range_entry(&prologue);
     let component = component_validation(&buffer, target);
-    let (read_error, error) = native_error(target, "failure");
-    let (invalid_value, invalid_error) = invalid_component(program, err_llvm, *err_type)?;
-    let opened_target = if require_regular { "inspect" } else { "live" };
-    let validation = if require_regular {
-        let (inspection_read_error, inspection_error) = native_error(target, "inspection");
-        let classes = io_error_classes(program, *err_type)?;
-        let directory_class = classes
-            .iter()
-            .find(|class| class.spelling == "IsDirectory")
-            .ok_or(BackendFailure::InvalidIr)?;
-        let other_class = classes
-            .iter()
-            .find(|class| class.spelling == "Other")
-            .ok_or(BackendFailure::InvalidIr)?;
-        let (directory_value, directory_error) =
-            io_error_value(err_llvm, directory_class, "kind.directory", "0", "0");
-        let (other_value, other_error) =
-            io_error_value(err_llvm, other_class, "kind.other", "0", "0");
-        let status = target.file_status_symbol();
-        let status_call = if target.uses_typed_completion_file_adapter() {
-            format!(
-                "call i32 @{status}(i32 %descriptor, ptr %file.status, i64 {})",
-                target.file_status_size()
-            )
-        } else {
-            format!("call i32 @{status}(i32 %descriptor, ptr %file.status)")
-        };
-        format!(
-            "inspect:\n  \
-             %inspection.result = {status_call}\n  \
-             %inspection.ok = icmp eq i32 %inspection.result, 0\n  \
-             br i1 %inspection.ok, label %classify, label %inspection.failure\n\
-             classify:\n  \
-             %mode.at = getelementptr inbounds i8, ptr %file.status, i64 {mode_offset}\n  \
-             %mode.native = load i16, ptr %mode.at, align 2\n  \
-             %mode = zext i16 %mode.native to i32\n  \
-             %file.kind = and i32 %mode, 61440\n  \
-             %regular = icmp eq i32 %file.kind, 32768\n  \
-             br i1 %regular, label %live, label %kind.failure\n\
-             inspection.failure:\n\
-             {inspection_read_error}  \
-             %inspection.close = call i32 @{close}(i32 %descriptor)\n  \
-             br label %inspection.error\n\
-             inspection.error:\n  \
-             %inspection.mapped = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {inspection_error}, \
-             i8 {ORIGIN_DESCRIPTOR_STATUS})\n  \
-             %inspection.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-             %inspection.outcome = insertvalue {llvm} %inspection.tag, {err_llvm} \
-             %inspection.mapped, {err_index}\n  \
-             ret {llvm} %inspection.outcome\n\
-             kind.failure:\n  \
-             %kind.directory = icmp eq i32 %file.kind, 16384\n  \
-             %kind.close = call i32 @{close}(i32 %descriptor)\n  \
-             br label %kind.select\n\
-             kind.select:\n  \
-             br i1 %kind.directory, label %kind.directory.return, label %kind.other.return\n\
-             kind.directory.return:\n\
-             {directory_value}  \
-             %kind.directory.outcome.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-             %kind.directory.outcome = insertvalue {llvm} %kind.directory.outcome.tag, \
-             {err_llvm} {directory_error}, {err_index}\n  \
-             ret {llvm} %kind.directory.outcome\n\
-             kind.other.return:\n\
-             {other_value}  \
-             %kind.other.outcome.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-             %kind.other.outcome = insertvalue {llvm} %kind.other.outcome.tag, {err_llvm} \
-             {other_error}, \
-             {err_index}\n  \
-             ret {llvm} %kind.other.outcome\n",
-            close = target.close_symbol(),
-            mode_offset = target.file_status_mode_offset(),
-        )
+    let (invalid_value, invalid_error) =
+        invalid_component(program, err_llvm, *err_type, "invalid")?;
+    let terminator = if target.is_windows() {
+        "store i16 0, ptr %terminator, align 1"
     } else {
-        String::new()
+        "store i8 0, ptr %terminator, align 1"
     };
-    if target.uses_typed_completion_file_adapter() {
-        let (mapper, expected_kind) = if require_regular {
-            (OPEN_FILE_COMPLETION_MAPPER, OPEN_EXPECT_REGULAR)
-        } else {
-            (OPEN_DIRECTORY_COMPLETION_MAPPER, OPEN_EXPECT_DIRECTORY)
-        };
-        let descriptor_class_argument = windows_descriptor_class_argument(
-            target,
-            if require_regular {
-                WINDOWS_DESCRIPTOR_CLASS_READ_FILE
-            } else {
-                WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_ROOT
-            },
-        );
-        let terminator = if target.is_windows() {
-            "store i16 0, ptr %terminator, align 1"
-        } else {
-            "store i8 0, ptr %terminator, align 1"
-        };
-        return Ok(format!(
-            "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %start, \
-             i64 %end) alwaysinline {{\n\
-             {entry}\
-             {component}\
-             open:\n  \
-             call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %extent, \
-             i1 false)\n  \
-             %terminator = getelementptr inbounds i8, ptr %component, i64 %extent\n  \
-             {terminator}\n  \
-             %descriptor = call {opened} @{open}({directory} %root, ptr %component, i32 {flags}, \
-             i32 0, i32 0, i32 {expected_kind}{descriptor_class_argument}, \
-             ptr %open.error.slot, \
-             ptr %open.outcome.slot)\n  \
-             %raw.descriptor = sext {opened} %descriptor to i64\n  \
-             %open.error = load i32, ptr %open.error.slot, align 4\n  \
-             %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \
-             %mapped = call {llvm} @{mapper}(i64 %raw.descriptor, i32 %open.error, \
-             i32 %open.outcome)\n  \
-             ret {llvm} %mapped\n\
-             invalid:\n\
-             {invalid_value}  \
-             %rejected.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-             %rejected.outcome = insertvalue {llvm} %rejected.tag, {err_llvm} \
-             {invalid_error}, {err_index}\n  \
-             ret {llvm} %rejected.outcome\n\
-             }}\n\n",
-            symbol = implementation.symbol(),
-            open = target.file_open_symbol(),
-        ));
-    }
+    // The descriptor-kind check and the close of a provisional descriptor that
+    // fails it are the runtime's, decided from the `expected_kind` this submit
+    // carries; the wrapper holds no status record and never closes anything
+    // (design §8).
+    let submit = open_submit_call(
+        target,
+        "%root",
+        "%component",
+        flags,
+        expected_kind,
+        descriptor_class,
+    );
+    let retirement = open_retirement(target, llvm, mapper_symbol);
     Ok(format!(
         "define private {llvm} @{symbol}({directory} %root, {buffer} %name, i64 %start, \
          i64 %end) alwaysinline {{\n\
-         {entry}\
+         entry:\n\
+         {prologue}\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n  \
+         br label %measure\n\
          {component}\
          open:\n  \
-         call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %extent, i1 false)\n  \
+         call void @llvm.memcpy.p0.p0.i64(ptr %component, ptr %text, i64 %extent, \
+         i1 false)\n  \
          %terminator = getelementptr inbounds i8, ptr %component, i64 %extent\n  \
-         store i8 0, ptr %terminator, align 1\n  \
-         %descriptor = call {opened} @{open}({directory} %root, \
-         ptr %component, i32 {flags}, i32 0, i32 0)\n  \
-         %opened = icmp sge {opened} %descriptor, 0\n  \
-         br i1 %opened, label %{opened_target}, label %failure\n\
-         {validation}\
-         live:\n  \
-         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok = insertvalue {llvm} %ok.tag, {opened} %descriptor, {ok_index}\n  \
-         ret {llvm} %ok\n\
-         failure:\n\
-         {read_error}  \
-         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
-         {ORIGIN_DIRECTORY_OPEN})\n  \
-         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
-         ret {llvm} %err\n\
+         {terminator}\n\
+         {submit}{retirement}  \
+         ret {llvm} %mapped\n\
          invalid:\n\
          {invalid_value}  \
-         %rejected.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %rejected.outcome = insertvalue {llvm} %rejected.tag, {err_llvm} {invalid_error}, \
-         {err_index}\n  \
+         %rejected.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %rejected.tag = insertvalue {llvm} %rejected.base, i32 {err_tag}, 0\n  \
+         %rejected.outcome = insertvalue {llvm} %rejected.tag, {err_llvm} \
+         {invalid_error}, {err_index}\n  \
          ret {llvm} %rejected.outcome\n\
          }}\n\n",
         symbol = implementation.symbol(),
-        open = target.file_open_symbol(),
+        reservation = completion_wrapper_reservation(true),
     ))
 }
 
@@ -2365,95 +2662,41 @@ fn emit_open_by_name(
 /// `ReadFile` does [SYS-10].
 fn emit_open_directory_source(
     program: &IrProgram<'_, '_, '_>,
-    qualification: &Qualification,
     implementation: ApprovedImplementation,
     shape: &OutcomeShape,
     target: SystemTarget,
-    target_layout: TargetLayout,
 ) -> Result<String, BackendFailure> {
     let directory = representation(SystemResourceType::DirectoryRead);
     let list = representation(SystemResourceType::DirectorySource);
     if shape.ok_llvm != list {
         return Err(BackendFailure::InvalidIr);
     }
-    let OutcomeShape {
-        llvm,
-        ok_tag,
-        ok_index,
-        err_tag,
-        err_index,
-        err_llvm,
-        ..
-    } = shape;
-    let (read_error, error) = native_error(target, "failure");
+    let OutcomeShape { llvm, .. } = shape;
     let mapper = emit_open_completion_mapper(
         program,
         shape,
         OPEN_LIST_COMPLETION_MAPPER,
         SystemResourceType::DirectorySource,
     )?;
-    let descriptor_class_argument =
-        windows_descriptor_class_argument(target, WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE);
-    let wrapper = if target.uses_typed_completion_file_adapter() {
-        let prologue = render_named_target_frame(
-            program,
-            qualification,
-            target_layout,
-            &[
-                (
-                    "%open.error.slot",
-                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
-                ),
-                (
-                    "%open.outcome.slot",
-                    TargetFrameSlot::natural(TargetStorageType::integer(32)),
-                ),
-            ],
-        )?;
-        format!(
-            "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
-             entry:\n\
-             {prologue}  \
-             %descriptor = call {list} @{open}({directory} %directory, \
-             ptr {WORKING_DIRECTORY}, i32 {flags}, i32 0, i32 0, \
-             i32 {OPEN_EXPECT_DIRECTORY}{descriptor_class_argument}, ptr %open.error.slot, \
-             ptr %open.outcome.slot)\n  \
-             %raw.descriptor = sext {list} %descriptor to i64\n  \
-             %open.error = load i32, ptr %open.error.slot, align 4\n  \
-             %open.outcome = load i32, ptr %open.outcome.slot, align 4\n  \
-             %mapped = call {llvm} @{OPEN_LIST_COMPLETION_MAPPER}(i64 %raw.descriptor, \
-             i32 %open.error, i32 %open.outcome)\n  \
-             ret {llvm} %mapped\n\
-             }}\n\n",
-            symbol = implementation.symbol(),
-            open = target.file_open_symbol(),
-            flags = target.directory_open_flags(),
-        )
-    } else {
-        format!(
-            "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
-         entry:\n  \
-         %descriptor = call {list} @{open}({directory} %directory, \
-         ptr {WORKING_DIRECTORY}, i32 {flags}, i32 0, i32 0)\n  \
-         %opened = icmp sge {list} %descriptor, 0\n  \
-         br i1 %opened, label %live, label %failure\n\
-         live:\n  \
-         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
-         %ok = insertvalue {llvm} %ok.tag, {list} %descriptor, {ok_index}\n  \
-         ret {llvm} %ok\n\
-         failure:\n\
-         {read_error}  \
-         %failure.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 \
-         {ORIGIN_DIRECTORY_OPEN})\n  \
-         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
-         %err = insertvalue {llvm} %err.tag, {err_llvm} %failure.error, {err_index}\n  \
-         ret {llvm} %err\n\
+    let submit = open_submit_call(
+        target,
+        "%directory",
+        WORKING_DIRECTORY,
+        target.directory_open_flags(),
+        OPEN_EXPECT_DIRECTORY,
+        WINDOWS_DESCRIPTOR_CLASS_DIRECTORY_SOURCE,
+    );
+    let retirement = open_retirement(target, llvm, OPEN_LIST_COMPLETION_MAPPER);
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({directory} %directory) alwaysinline {{\n\
+         entry:\n\
+         {reservation}\
+         {submit}{retirement}  \
+         ret {llvm} %mapped\n\
          }}\n\n",
-            symbol = implementation.symbol(),
-            open = target.file_open_symbol(),
-            flags = target.directory_open_flags()
-        )
-    };
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(true),
+    );
     Ok(format!("{mapper}{wrapper}"))
 }
 
@@ -2469,8 +2712,8 @@ fn emit_open_directory_source(
 /// validated against the reported extent before it is used, so a record the
 /// facility mis-sizes ends the walk instead of reading past the range.
 ///
-/// This is one text, emitted from one place, for both the direct route and the
-/// completion mapper and for every qualified target. The only target-selected
+/// This is one text, emitted from one place, into the one completion mapper
+/// every qualified target reaches. The only target-selected
 /// part is the `header` block's tail, which answers exactly one question:
 /// where the name's byte length comes from. Darwin's record states it in a
 /// field; Linux's states none and NUL-terminates the name inside the extent
@@ -2666,11 +2909,13 @@ fn emit_directory_record_normalizer(
 
 /// Emits the approved implementation of `directory_next` [SYS-14].
 ///
-/// The shape is [SYS-8]'s: enter the statically authorized range, obtain at
-/// most one progress-producing host transfer through the target-progress
-/// wrapper, then one outcome check and a cold mapper [QUAL-3]. Interruption and
-/// readiness refusal remain inside that wrapper. The one addition is
-/// normalization, which is [`emit_directory_record_normalizer`]'s one text.
+/// One lowering: the batch is submitted with the cursor cell the target
+/// family needs, joined, and handed to the operation's own completion mapper,
+/// which carries the portable-record normalization
+/// ([`emit_directory_record_normalizer`]'s one text). The wrapper therefore
+/// holds no normalizer of its own and no second arm for an empty range: such
+/// a record is completed by the runtime with no external action and the
+/// mapper answers `ListBytes(next: start, entries: 0)` for it (design §8).
 fn emit_directory_next(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
@@ -2689,20 +2934,7 @@ fn emit_directory_next(
             },
         },
     )?;
-    let enumeration = target
-        .directory_enumeration()
-        .ok_or(BackendFailure::InvalidIr)?;
-    let ListOutcomeShape {
-        llvm,
-        bytes_tag,
-        bytes_index,
-        end_tag,
-        failed_tag,
-        failed_index,
-        failed_llvm,
-        ..
-    } = shape;
-    let entries_index = bytes_index + 1;
+    let ListOutcomeShape { llvm, .. } = shape;
     let prologue = render_named_target_frame(
         program,
         qualification,
@@ -2712,49 +2944,35 @@ fn emit_directory_next(
             TargetFrameSlot::natural(TargetStorageType::integer(64)),
         )],
     )?;
-    let entry = range_entry(&prologue);
-    let (read_error, error) = native_error(target, "failure");
-    let normalizer = emit_directory_record_normalizer(shape, target, enumeration);
     let mapper = emit_directory_next_completion_mapper(program, shape, target)?;
+    let prepared =
+        completion_transfer_target(&buffer, "%destination", "%start", "%base", "%window");
+    // The enumeration facility has no target column of its own, so its submit
+    // and the join that consumes the record it filled are the runtime's on
+    // every target, exactly as its direct entry was.
+    let submit = completion_submit_call(
+        DIRECTORY_NEXT_SUBMIT,
+        &format!("{list} %list, ptr %window, i64 %extent, ptr %position, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(
+        FILE_JOIN,
+        llvm,
+        DIRECTORY_NEXT_COMPLETION_MAPPER,
+        &format!("{buffer} %destination, i64 %start, i64 %extent"),
+    );
     let wrapper = format!(
         "define private {llvm} @{symbol}({list} %list, {buffer} %destination, i64 %start, \
          i64 %end) alwaysinline {{\n\
-         {entry}\
-         measure:\n  \
-         store i64 0, ptr %position, align 8\n  \
-         %empty.range = icmp eq i64 %extent, 0\n  \
-         br i1 %empty.range, label %empty, label %transfer\n\
-         empty:\n  \
-         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
-         %empty.endpoint = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
-         %empty.outcome = insertvalue {llvm} %empty.endpoint, i64 0, {entries_index}\n  \
-         ret {llvm} %empty.outcome\n\
-         transfer:\n  \
-         %base = extractvalue {buffer} %destination, 0\n  \
-         %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
-         %filled = call i64 @wf__completion_directory_next_direct({list} %list, ptr %window, i64 %extent, \
-         ptr %position)\n  \
-         %progress = icmp sgt i64 %filled, 0\n  \
-         br i1 %progress, label %sanitize, label %quiet\n\
-         sanitize:\n  \
-         %bounded.batch = icmp ule i64 %filled, %extent\n  \
-         br i1 %bounded.batch, label %normalize, label %tcb.defect\n\
-         quiet:\n  \
-         %ended = icmp eq i64 %filled, 0\n  \
-         br i1 %ended, label %exhausted, label %failure\n\
-         exhausted:\n  \
-         %exhausted.outcome = insertvalue {llvm} zeroinitializer, i32 {end_tag}, 0\n  \
-         ret {llvm} %exhausted.outcome\n\
-         failure:\n\
-         {read_error}  \
-         %failure.error = call {failed_llvm} @{IO_ERROR_MAPPER}(i32 {error}, i8 {ORIGIN_READ})\n  \
-         %failed.tag = insertvalue {llvm} zeroinitializer, i32 {failed_tag}, 0\n  \
-         %failed.outcome = insertvalue {llvm} %failed.tag, {failed_llvm} %failure.error, \
-         {failed_index}\n  \
-         ret {llvm} %failed.outcome\n\
-         {normalizer}\
+         entry:\n\
+         {prologue}\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n  \
+         store i64 0, ptr %position, align 8\n\
+         {prepared}{submit}{retirement}  \
+         ret {llvm} %outcome\n\
          }}\n\n",
         symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
     );
     Ok(format!("{mapper}{wrapper}"))
 }
@@ -2778,17 +2996,35 @@ fn emit_directory_next_completion_mapper(
         .ok_or(BackendFailure::InvalidIr)?;
     let ListOutcomeShape {
         llvm,
+        bytes_tag,
+        bytes_index,
         end_tag,
         failed_tag,
         failed_index,
         failed_llvm,
         ..
     } = shape;
+    let entries_index = bytes_index + 1;
     let normalizer = emit_directory_record_normalizer(shape, target, enumeration);
+    // The empty-range arm is the same one the sequential wrapper answers from,
+    // and it is here because this mapper is now reached with an empty range.
+    // The handed-out lowering used to hold that range back and run the wrapper
+    // instead; with one lowering it submits, the runtime completes the record
+    // with no external action, and the outcome has to be the wrapper's own
+    // `ListBytes(next: start, entries: 0)` rather than the exhaustion a zero
+    // count means for a range that was not empty (design section 8).
     Ok(format!(
         "define private {llvm} @{DIRECTORY_NEXT_COMPLETION_MAPPER}(i64 %filled, i32 %error, \
          {buffer} %destination, i64 %start, i64 %extent) alwaysinline {{\n\
          entry:\n  \
+         %empty.range = icmp eq i64 %extent, 0\n  \
+         br i1 %empty.range, label %vacant, label %nonempty\n\
+         vacant:\n  \
+         %empty.tag = insertvalue {llvm} zeroinitializer, i32 {bytes_tag}, 0\n  \
+         %empty.endpoint = insertvalue {llvm} %empty.tag, i64 %start, {bytes_index}\n  \
+         %empty.outcome = insertvalue {llvm} %empty.endpoint, i64 0, {entries_index}\n  \
+         ret {llvm} %empty.outcome\n\
+         nonempty:\n  \
          %base = extractvalue {buffer} %destination, 0\n  \
          %window = getelementptr inbounds i8, ptr %base, i64 %start\n  \
          %progress = icmp sgt i64 %filled, 0\n  \
@@ -2872,6 +3108,477 @@ fn class_arm(io: &str, class: &IoErrorClass) -> String {
     format!("{prefix}:\n{value}  ret {io} {name}\n")
 }
 
+/// The [QUAL-1] representation of one `SocketAddress` [SYS-16].
+///
+/// Sixteen address bytes in two 64-bit words, then the port in the low sixteen
+/// bits of a 32-bit word whose bit 16 selects the family. Byte `i` of the
+/// address occupies bits `8 * (i % 8)` of word `i / 8`, so the same rule reads
+/// the value on either endianness and an IPv4 address simply leaves bytes 4
+/// through 15 zero. Nothing in source observes this layout [SYS-2]; it is the
+/// target column of the row, and the runtime routes of slice 2 read it by the
+/// same rule.
+const SOCKET_ADDRESS_FAMILY_V6: u32 = 1 << 16;
+
+fn emit_socket_address_v4(implementation: ApprovedImplementation) -> String {
+    let value = ResourceRepresentation::InternetAddress.llvm();
+    // The four bytes are the address in its conventional order, so byte 0 is
+    // `a` and byte 3 is `d`; bytes 4 through 15 stay zero and the family bit
+    // stays clear.
+    let mut body = String::new();
+    for (index, name) in ["%a", "%b", "%c", "%d"].into_iter().enumerate() {
+        let shift = 8 * index;
+        let _ = writeln!(
+            body,
+            "  {name}.w = zext i8 {name} to i64\n  \
+             {name}.s = shl nuw i64 {name}.w, {shift}"
+        );
+    }
+    format!(
+        "define private {value} @{symbol}(i8 %a, i8 %b, i8 %c, i8 %d, i16 %port) \
+         alwaysinline {{\n\
+         entry:\n\
+         {body}  \
+         %ab = or i64 %a.s, %b.s\n  \
+         %abc = or i64 %ab, %c.s\n  \
+         %word0 = or i64 %abc, %d.s\n  \
+         %port.wide = zext i16 %port to i32\n  \
+         %address.0 = insertvalue {value} zeroinitializer, i64 %word0, 0\n  \
+         %address.1 = insertvalue {value} %address.0, i64 0, 1\n  \
+         %address = insertvalue {value} %address.1, i32 %port.wide, 2\n  \
+         ret {value} %address\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    )
+}
+
+fn emit_socket_address_v6(implementation: ApprovedImplementation) -> String {
+    let value = ResourceRepresentation::InternetAddress.llvm();
+    // Group `i` occupies address bytes `2i` and `2i + 1`, high byte first,
+    // which is the conventional order of an IPv6 group.
+    let groups = ["%a", "%b", "%c", "%d", "%e", "%f", "%g", "%h"];
+    let mut body = String::new();
+    for (index, name) in groups.iter().enumerate() {
+        let high_shift = 8 * ((2 * index) % 8);
+        let low_shift = 8 * ((2 * index + 1) % 8);
+        let _ = writeln!(
+            body,
+            "  {name}.wide = zext i16 {name} to i64\n  \
+             {name}.low = and i64 {name}.wide, 255\n  \
+             {name}.high = lshr i64 {name}.wide, 8\n  \
+             {name}.hs = shl nuw i64 {name}.high, {high_shift}\n  \
+             {name}.ls = shl nuw i64 {name}.low, {low_shift}\n  \
+             {name}.packed = or i64 {name}.hs, {name}.ls"
+        );
+    }
+    format!(
+        "define private {value} @{symbol}(i16 %a, i16 %b, i16 %c, i16 %d, i16 %e, i16 %f, \
+         i16 %g, i16 %h, i16 %port) alwaysinline {{\n\
+         entry:\n\
+         {body}  \
+         %word0.ab = or i64 %a.packed, %b.packed\n  \
+         %word0.abc = or i64 %word0.ab, %c.packed\n  \
+         %word0 = or i64 %word0.abc, %d.packed\n  \
+         %word1.ef = or i64 %e.packed, %f.packed\n  \
+         %word1.efg = or i64 %word1.ef, %g.packed\n  \
+         %word1 = or i64 %word1.efg, %h.packed\n  \
+         %port.wide = zext i16 %port to i32\n  \
+         %tagged = or i32 %port.wide, {SOCKET_ADDRESS_FAMILY_V6}\n  \
+         %address.0 = insertvalue {value} zeroinitializer, i64 %word0, 0\n  \
+         %address.1 = insertvalue {value} %address.0, i64 %word1, 1\n  \
+         %address = insertvalue {value} %address.1, i32 %tagged, 2\n  \
+         ret {value} %address\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    )
+}
+
+/// The three scalars one emitted `SocketAddress` value is, extracted so a
+/// submit can carry them.
+///
+/// The runtime reads an address as exactly these three and never as a pointer
+/// into an emitted value's storage (`completion/bridge.h`), so the layout is
+/// stated once here and once in `wf_socket_address`, and neither side holds a
+/// pointer into the other's.
+fn socket_address_scalars(value: &str, prefix: &str) -> String {
+    let address = ResourceRepresentation::InternetAddress.llvm();
+    format!(
+        "  %{prefix}.low = extractvalue {address} {value}, 0\n  \
+         %{prefix}.high = extractvalue {address} {value}, 1\n  \
+         %{prefix}.tag = extractvalue {address} {value}, 2\n"
+    )
+}
+
+/// Emits `tcp_listen` or `tcp_connect` [SYS-17].
+///
+/// Both take one address by shared loan and one permit the target ABI erases,
+/// both create their own socket inside the runtime, and both publish the same
+/// two-variant outcome: the fresh owner, or the host's error beside the very
+/// permit the operation took. So they are one wrapper with two submit entries
+/// and two outcomes, exactly as the four opens are one `emit_open_by_name`.
+fn emit_socket_endpoint(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+    submit: &str,
+    mapper: &str,
+    origin: u8,
+) -> Result<String, BackendFailure> {
+    let address = ResourceRepresentation::InternetAddress.llvm();
+    let OutcomeShape { llvm, .. } = shape;
+    let mapper_text = emit_socket_endpoint_completion_mapper(program, shape, mapper, origin)?;
+    let scalars = socket_address_scalars("%address", "address");
+    let submit_call = completion_submit_call(
+        submit,
+        &format!("i64 %address.low, i64 %address.high, i32 %address.tag, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(FILE_JOIN, llvm, mapper, "");
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({address} %address) alwaysinline {{\n\
+         entry:\n\
+         {reservation}\
+         {scalars}{submit_call}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    );
+    Ok(format!("{mapper_text}{wrapper}"))
+}
+
+/// The mapper `tcp_listen` and `tcp_connect` publish through.
+///
+/// A descriptor the runtime hands back is the fresh owner; a negative value is
+/// the host's own refusal, and the permit comes back inside the failed variant
+/// because no handle was taken [SYS-10]. A connection is one descriptor and
+/// two owners, so `Connected` carries the pair built out of that one
+/// descriptor twice [SYS-18]; a listener is one owner and the pair is absent.
+fn emit_socket_endpoint_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+    symbol: &str,
+    origin: u8,
+) -> Result<String, BackendFailure> {
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        ok_llvm,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
+    let _ = io_error_classes(program, *err_type)?;
+    let created = socket_owner_value(ok_llvm, "%raw.descriptor", "fresh")?;
+    Ok(format!(
+        "define private {llvm} @{symbol}(i64 %raw.descriptor, i32 %error) alwaysinline {{\n\
+         entry:\n  \
+         %live = icmp sge i64 %raw.descriptor, 0\n  \
+         br i1 %live, label %created, label %refused\n\
+         created:\n\
+         {created}  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {ok_llvm} %fresh, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         refused:\n  \
+         %refused.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 {origin})\n  \
+         %refused.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %refused.tag = insertvalue {llvm} %refused.base, i32 {err_tag}, 0\n  \
+         %refused.result = insertvalue {llvm} %refused.tag, {err_llvm} %refused.error, \
+         {err_index}\n  \
+         ret {llvm} %refused.result\n\
+         }}\n\n"
+    ))
+}
+
+/// The instructions building one fresh socket owner out of the descriptor the
+/// runtime published.
+///
+/// A listener is that descriptor. A connection is the two-field system struct
+/// of [SYS-18], whose two directions name one target object, so both fields
+/// are that same descriptor and the runtime's own two-count is what decides
+/// which release closes it.
+fn socket_owner_value(owner: &str, raw: &str, name: &str) -> Result<String, BackendFailure> {
+    let descriptor = representation(SystemResourceType::TcpListener);
+    if owner == descriptor {
+        return Ok(format!("  %{name} = trunc i64 {raw} to {descriptor}\n"));
+    }
+    Ok(format!(
+        "  %{name}.descriptor = trunc i64 {raw} to {descriptor}\n  \
+         %{name}.receive = insertvalue {owner} zeroinitializer, {descriptor} \
+         %{name}.descriptor, 0\n  \
+         %{name} = insertvalue {owner} %{name}.receive, {descriptor} \
+         %{name}.descriptor, 1\n"
+    ))
+}
+
+/// Emits `tcp_accept` [SYS-17].
+///
+/// It is the endpoint wrapper with one thing added: the target's own answer
+/// about the peer, which the accept join publishes as the three scalars a
+/// `SocketAddress` value is, and which the mapper assembles into that value.
+fn emit_tcp_accept(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
+    let listener = representation(SystemResourceType::TcpListener);
+    let OutcomeShape { llvm, .. } = shape;
+    let mapper = emit_tcp_accept_completion_mapper(program, shape)?;
+    let submit = completion_submit_call(
+        SOCKET_ACCEPT_SUBMIT,
+        &format!("{listener} %listener, ptr {WRAPPER_RECORD}"),
+    );
+    let wrapper = format!(
+        "define private {llvm} @{symbol}({listener} %listener) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %peer.low = alloca i64, align 8\n  \
+         %peer.high = alloca i64, align 8\n  \
+         %peer.tag = alloca i32, align 4\n\
+         {submit}  \
+         call void @{SOCKET_ACCEPT_JOIN}(ptr {WRAPPER_RECORD}, ptr {WRAPPER_RAW_VALUE}, \
+         ptr {WRAPPER_RAW_ERROR}, ptr %peer.low, ptr %peer.high, ptr %peer.tag)\n  \
+         %completed.value = load i64, ptr {WRAPPER_RAW_VALUE}\n  \
+         %completed.error = load i32, ptr {WRAPPER_RAW_ERROR}\n  \
+         %peer.low.value = load i64, ptr %peer.low\n  \
+         %peer.high.value = load i64, ptr %peer.high\n  \
+         %peer.tag.value = load i32, ptr %peer.tag\n  \
+         %outcome = call {llvm} @{ACCEPT_COMPLETION_MAPPER}(i64 %completed.value, \
+         i32 %completed.error, i64 %peer.low.value, i64 %peer.high.value, \
+         i32 %peer.tag.value)\n  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    );
+    Ok(format!("{mapper}{wrapper}"))
+}
+
+fn emit_tcp_accept_completion_mapper(
+    program: &IrProgram<'_, '_, '_>,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
+    let address = ResourceRepresentation::InternetAddress.llvm();
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        ok_llvm,
+        err_tag,
+        err_index,
+        err_llvm,
+        err_type,
+        ..
+    } = shape;
+    let permit_index = shape.permit_index.ok_or(BackendFailure::InvalidIr)?;
+    let (peer_index, peer_llvm) = shape
+        .ok_extra
+        .as_ref()
+        .ok_or(BackendFailure::InvalidIr)?
+        .clone();
+    if peer_llvm != address {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let _ = io_error_classes(program, *err_type)?;
+    let taken = socket_owner_value(ok_llvm, "%raw.descriptor", "fresh")?;
+    Ok(format!(
+        "define private {llvm} @{ACCEPT_COMPLETION_MAPPER}(i64 %raw.descriptor, i32 %error, \
+         i64 %peer.low, i64 %peer.high, i32 %peer.tag) alwaysinline {{\n\
+         entry:\n  \
+         %live = icmp sge i64 %raw.descriptor, 0\n  \
+         br i1 %live, label %taken, label %refused\n\
+         taken:\n\
+         {taken}  \
+         %peer.0 = insertvalue {address} zeroinitializer, i64 %peer.low, 0\n  \
+         %peer.1 = insertvalue {address} %peer.0, i64 %peer.high, 1\n  \
+         %peer = insertvalue {address} %peer.1, i32 %peer.tag, 2\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok.connection = insertvalue {llvm} %ok.tag, {ok_llvm} %fresh, {ok_index}\n  \
+         %ok = insertvalue {llvm} %ok.connection, {address} %peer, {peer_index}\n  \
+         ret {llvm} %ok\n\
+         refused:\n  \
+         %refused.error = call {err_llvm} @{IO_ERROR_MAPPER}(i32 %error, i8 \
+         {ORIGIN_SOCKET_ACCEPT})\n  \
+         %refused.base = insertvalue {llvm} zeroinitializer, i1 true, {permit_index}\n  \
+         %refused.tag = insertvalue {llvm} %refused.base, i32 {err_tag}, 0\n  \
+         %refused.result = insertvalue {llvm} %refused.tag, {err_llvm} %refused.error, \
+         {err_index}\n  \
+         ret {llvm} %refused.result\n\
+         }}\n\n"
+    ))
+}
+
+/// Emits `receive_next`: one transfer attempt on one direction of one
+/// connection [SYS-18].
+///
+/// It is `read_next`'s wrapper with the connection's receiving direction in
+/// place of the stream and the runtime's own receive request kind in place of
+/// the unpositioned read, and it publishes the same `ReadOutcome` through the
+/// same mapper, because a completion of one means exactly what a completion of
+/// the other does [SYS-8].
+fn emit_receive_next(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &ReadOutcomeShape,
+) -> Result<String, BackendFailure> {
+    let receive = representation(SystemResourceType::TcpReceive);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    let ReadOutcomeShape { llvm, .. } = shape;
+    let prepared =
+        completion_transfer_target(&buffer, "%destination", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        SOCKET_RECEIVE_SUBMIT,
+        &format!("{receive} %receive, ptr %target, i64 %extent, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(
+        FILE_JOIN,
+        llvm,
+        READ_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    Ok(format!(
+        "define private {llvm} @{symbol}({receive} %receive, {buffer} %destination, \
+         i64 %start, i64 %end) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    ))
+}
+
+/// Emits `send_once`: one attempt on the sending direction [SYS-18].
+///
+/// It is `write_once`'s wrapper with the connection's sending direction in
+/// place of the output stream and the runtime's own send request kind in place
+/// of the write, publishing the same `Result<u64, IoError>` through the same
+/// mapper: `Ok(next)` means the local facility accepted `[start, next)`, a
+/// host write of zero is `WriteZero`, and a peer that has gone arrives as
+/// `BrokenPipe` through the same signal normalization [SYS-8].
+fn emit_send_once(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
+    let send = representation(SystemResourceType::TcpSend);
+    let buffer = llvm_type(
+        program,
+        IrType::Buffer {
+            element: crate::IrFlatElement::Integer {
+                width: 8,
+                signed: false,
+            },
+        },
+    )?;
+    if shape.ok_llvm != "i64" {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let OutcomeShape { llvm, .. } = shape;
+    let prepared = completion_transfer_target(&buffer, "%source", "%start", "%base", "%target");
+    let submit = completion_submit_call(
+        SOCKET_SEND_SUBMIT,
+        &format!("{send} %send, ptr %target, i64 %extent, ptr {WRAPPER_RECORD}"),
+    );
+    let retirement = transfer_retirement(
+        FILE_JOIN,
+        llvm,
+        WRITE_COMPLETION_MAPPER,
+        "i64 %start, i64 %extent",
+    );
+    Ok(format!(
+        "define private {llvm} @{symbol}({send} %send, {buffer} %source, i64 %start, \
+         i64 %end) alwaysinline {{\n\
+         entry:\n\
+         {reservation}  \
+         %extent = sub nuw i64 %end, %start\n\
+         {prepared}{submit}{retirement}  \
+         ret {llvm} %outcome\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+        reservation = completion_wrapper_reservation(false),
+    ))
+}
+
+/// The private symbol of the one half-close every [SYS-18] direction release
+/// and `close_connection` reaches.
+const HALF_CLOSE_HELPER: &str = "wf.sys.socket.half_close";
+
+/// The [SYS-18] direction one half-close releases, in the runtime's own
+/// spelling (`completion/contract.h`, `wf_socket_direction`).
+const DIRECTION_RECEIVE: u32 = 0;
+const DIRECTION_SEND: u32 = 1;
+
+/// Emits that one half-close.
+///
+/// It is the close helper with a direction: the record is reserved in this
+/// helper's own entry block, the descriptor and the direction are submitted,
+/// and the terminal completion is joined here — exactly one attempt, its
+/// diagnostic discarded, never retried [SYS-5]. The runtime keeps the pair's
+/// own two-count and releases the target's object on the second of the two
+/// releases, so nothing here decides which release closes.
+fn emit_half_close_helper() -> String {
+    let descriptor = representation(SystemResourceType::TcpReceive);
+    let submit = completion_submit_call(
+        SOCKET_SHUTDOWN_SUBMIT,
+        &format!("{descriptor} %descriptor, i32 %direction, ptr {WRAPPER_RECORD}"),
+    );
+    format!(
+        "define private void @{HALF_CLOSE_HELPER}({descriptor} %descriptor, i32 %direction) \
+         alwaysinline {{\n\
+         entry:\n\
+         {reservation}\
+         {submit}  \
+         call void @{FILE_JOIN}(ptr {WRAPPER_RECORD}, ptr {WRAPPER_RAW_VALUE}, \
+         ptr {WRAPPER_RAW_ERROR})\n  \
+         ret void\n\
+         }}\n\n",
+        reservation = completion_wrapper_reservation(false),
+    )
+}
+
+/// Emits `close_connection` [SYS-18].
+///
+/// It consumes the whole pair and performs the same two native attempts
+/// derived release of the two directions would perform, with the same
+/// discarded diagnostics: one half-close per direction, in field order. The
+/// second of them is the one the runtime's two-count turns into the close of
+/// the target's object, so the credit the pair held comes back as the one
+/// fresh permit this returns, which is the erased bit.
+fn emit_close_connection(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    connection: IrType,
+) -> Result<String, BackendFailure> {
+    let permit = representation(SystemResourceType::HandlePermit);
+    let descriptor = representation(SystemResourceType::TcpReceive);
+    let owner = llvm_type(program, connection)?;
+    Ok(format!(
+        "define private {permit} @{symbol}({owner} %connection) alwaysinline {{\n\
+         entry:\n  \
+         %receive = extractvalue {owner} %connection, 0\n  \
+         %send = extractvalue {owner} %connection, 1\n  \
+         call void @{HALF_CLOSE_HELPER}({descriptor} %receive, i32 {DIRECTION_RECEIVE})\n  \
+         call void @{HALF_CLOSE_HELPER}({descriptor} %send, i32 {DIRECTION_SEND})\n  \
+         ret {permit} true\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    ))
+}
+
 fn emit_exit_status(implementation: ApprovedImplementation) -> String {
     let status = representation(SystemResourceType::ExitStatus);
     // Total and pure: every `u8` is a valid command code, so there is no
@@ -2886,17 +3593,104 @@ fn emit_exit_status(implementation: ApprovedImplementation) -> String {
     )
 }
 
-/// The reservation value exists only in Whitefoot's ownership proof. The
-/// implementation performs no target action and returns one harmless opaque
-/// bit; target open wrappers erase the consumed permit before native calls.
-fn emit_reserve_file(implementation: ApprovedImplementation) -> String {
-    let permit = representation(SystemResourceType::FilePermit);
-    format!(
-        "define private {permit} @{}() alwaysinline {{\n\
+/// The permit is one credit of the factory's capacity [SYS-10]. The runtime
+/// keeps the count; this wrapper spends one credit without a host call and
+/// answers `Ok(permit)`, or `Err(ResourceExhausted)` when the factory is
+/// spent. The permit's own representation stays the erased bit: target open
+/// wrappers consume it in the checked program and pass nothing native.
+fn emit_reserve_handle(
+    program: &IrProgram<'_, '_, '_>,
+    implementation: ApprovedImplementation,
+    shape: &OutcomeShape,
+) -> Result<String, BackendFailure> {
+    let permit = representation(SystemResourceType::HandlePermit);
+    if shape.ok_llvm != permit {
+        return Err(BackendFailure::InvalidIr);
+    }
+    let classes = io_error_classes(program, shape.err_type)?;
+    let exhausted = classes
+        .iter()
+        .find(|class| class.spelling == "ResourceExhausted")
+        .ok_or(BackendFailure::InvalidIr)?;
+    let OutcomeShape {
+        llvm,
+        ok_tag,
+        ok_index,
+        err_tag,
+        err_index,
+        err_llvm,
+        ..
+    } = shape;
+    // A spent factory is a refusal, not a host error: no native code, and the
+    // origin that says so [SYS-7].
+    let (error_body, error_value) =
+        io_error_value(err_llvm, exhausted, "spent", "0", &ORIGIN_NONE.to_string());
+    Ok(format!(
+        "define private {llvm} @{symbol}() alwaysinline {{\n\
          entry:\n  \
+         %granted.native = call i32 @wf__handle_reserve()\n  \
+         %granted = icmp eq i32 %granted.native, 1\n  \
+         br i1 %granted, label %grant, label %refuse\n\
+         grant:\n  \
+         %ok.tag = insertvalue {llvm} zeroinitializer, i32 {ok_tag}, 0\n  \
+         %ok = insertvalue {llvm} %ok.tag, {permit} true, {ok_index}\n  \
+         ret {llvm} %ok\n\
+         refuse:\n\
+         {error_body}  \
+         %err.tag = insertvalue {llvm} zeroinitializer, i32 {err_tag}, 0\n  \
+         %err = insertvalue {llvm} %err.tag, {err_llvm} {error_value}, {err_index}\n  \
+         ret {llvm} %err\n\
+         }}\n\n",
+        symbol = implementation.symbol(),
+    ))
+}
+
+/// The private symbol of the one close every [SYS-5] derived release and
+/// every explicit close reaches.
+const CLOSE_HELPER: &str = "wf.sys.close";
+
+/// Emits that one close.
+///
+/// A close is an operation like every other one: the record is reserved in
+/// this helper's own entry block, the descriptor is submitted, and the
+/// terminal completion is joined here — exactly one attempt, its diagnostic
+/// discarded, never retried [SYS-5]. The helper is `alwaysinline` like every
+/// other qualified wrapper, so the record is a block of the frame that
+/// released the resource (design §5, §8).
+fn emit_close_helper(target: SystemTarget) -> String {
+    let descriptor = representation(SystemResourceType::ReadFile);
+    let submit = completion_submit_call(
+        target.file_close_submit_symbol(),
+        &format!("{descriptor} %descriptor, ptr {WRAPPER_RECORD}"),
+    );
+    format!(
+        "define private void @{CLOSE_HELPER}({descriptor} %descriptor) alwaysinline {{\n\
+         entry:\n\
+         {reservation}\
+         {submit}  \
+         call void @{join}(ptr {WRAPPER_RECORD}, ptr {WRAPPER_RAW_VALUE}, \
+         ptr {WRAPPER_RAW_ERROR})\n  \
+         ret void\n\
+         }}\n\n",
+        reservation = completion_wrapper_reservation(false),
+        join = target.file_join_symbol(),
+    )
+}
+
+/// An explicit close [SYS-10]: the same one native close attempt derived
+/// release performs, its diagnostic discarded the same way, and the credit the
+/// open held comes back as the fresh permit, which is the erased bit. The
+/// factory's count is untouched: the permit value is the credit.
+fn emit_close(implementation: ApprovedImplementation, resource: SystemResourceType) -> String {
+    let permit = representation(SystemResourceType::HandlePermit);
+    let owner = representation(resource);
+    format!(
+        "define private {permit} @{symbol}({owner} %owner) alwaysinline {{\n\
+         entry:\n  \
+         call void @{CLOSE_HELPER}({owner} %owner)\n  \
          ret {permit} true\n\
          }}\n\n",
-        implementation.symbol()
+        symbol = implementation.symbol(),
     )
 }
 
@@ -3114,10 +3908,18 @@ pub(super) fn emit_entry(
             3 => {
                 supplied.push("i32 2".to_owned());
             }
-            // FileFactory is a proof-only affine entry value. Supplying it
+            // HandleFactory is a proof-only affine entry value. Supplying it
             // performs no host allocation and carries no native handle.
             4 => {
                 supplied.push("i1 true".to_owned());
+            }
+            // The standard input binding supplies one affine owner over the
+            // invocation's own descriptor 0 [SYS-15]. Like the two output
+            // sinks it is a handle the invocation already holds, so the
+            // bootstrap opens nothing and the factory's capacity already
+            // excludes it.
+            5 => {
+                supplied.push("i32 0".to_owned());
             }
             _ => return Err(BackendFailure::InvalidIr),
         }
@@ -3251,6 +4053,14 @@ fn emit_windows_entry(
                 available.push("%stderr.available");
             }
             4 => supplied.push("i1 true".to_owned()),
+            5 => {
+                body.push_str(
+                    "  %stdin = call i32 @wf__windows_stdin_descriptor()\n  \
+                     %stdin.available = icmp sge i32 %stdin, 0\n",
+                );
+                supplied.push("i32 %stdin".to_owned());
+                available.push("%stdin.available");
+            }
             _ => return Err(BackendFailure::InvalidIr),
         }
     }
@@ -3324,8 +4134,9 @@ fn expected_input(ordinal: u8) -> Result<SystemResourceType, BackendFailure> {
     match ordinal {
         0 => Ok(SystemResourceType::Args),
         1 => Ok(SystemResourceType::DirectoryRead),
-        2 | 3 => Ok(SystemResourceType::Output),
-        4 => Ok(SystemResourceType::FileFactory),
+        2 | 3 => Ok(SystemResourceType::OutputStream),
+        4 => Ok(SystemResourceType::HandleFactory),
+        5 => Ok(SystemResourceType::InputStream),
         _ => Err(BackendFailure::InvalidIr),
     }
 }
@@ -3419,25 +4230,44 @@ pub(super) fn proof_only_resource(
 ///
 /// A logical consume and a logical source detach emit nothing: they perform no
 /// host call, no target call, no handle lookup, no byte copy, and no external
-/// effect. A native close attempt is exactly one direct close whose diagnostic
-/// is discarded and which never retries an ambiguous close.
+/// effect. A native close attempt is exactly one close, submitted and joined
+/// through the one close helper, whose diagnostic is discarded and which never
+/// retries an ambiguous close.
 pub(super) fn emit_resource_release(
     qualification: &Qualification,
     output: &mut String,
-    temporary: &mut u32,
     contract: crate::SystemResourceContract,
     operand: &str,
 ) -> Result<(), BackendFailure> {
     match qualification.resource(contract.resource)?.release() {
         ReleaseImplementation::NoCode => Ok(()),
-        ReleaseImplementation::NativeClose(symbol) => {
-            let discarded = *temporary;
-            *temporary = temporary
-                .checked_add(1)
-                .ok_or(BackendFailure::CounterOverflow)?;
+        ReleaseImplementation::NativeClose => {
+            // The helper reserves the record and joins the close inside the
+            // frame this release runs in, so a release inside a loop reserves
+            // nothing per iteration.
             writeln!(
                 output,
-                "  %release.{discarded} = call i32 @{symbol}({} {operand})",
+                "  call void @{CLOSE_HELPER}({} {operand})",
+                representation(contract.resource)
+            )
+            .map_err(|_| BackendFailure::TextEmission)
+        }
+        // One direction's half-close [SYS-18]: exactly one attempt through the
+        // one half-close helper, whose diagnostic is discarded and which never
+        // retries. The runtime keeps the pair's own two-count, so this
+        // release does not decide whether it is the one that releases the
+        // target's object — and the release order of the two directions is
+        // the program's own and changes no outcome it can observe.
+        ReleaseImplementation::NativeDirectionClose => {
+            let direction = match contract.resource {
+                SystemResourceType::TcpReceive => DIRECTION_RECEIVE,
+                SystemResourceType::TcpSend => DIRECTION_SEND,
+                // No other resource carries this release row.
+                _ => return Err(BackendFailure::InvalidIr),
+            };
+            writeln!(
+                output,
+                "  call void @{HALF_CLOSE_HELPER}({} {operand}, i32 {direction})",
                 representation(contract.resource)
             )
             .map_err(|_| BackendFailure::TextEmission)

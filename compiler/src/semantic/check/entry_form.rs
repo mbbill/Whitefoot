@@ -47,12 +47,13 @@ const fn input(tail: &'static str, written: &'static str, nominal: &'static str)
 /// [FN-7]'s closed standard-input table for kind `command`, in table-ordinal
 /// order. Ordinal identity, never type identity, selects the supplied value:
 /// `command.stdout` and `command.stderr` share one type and stay two inputs.
-const COMMAND_INPUTS: [StandardInput; 5] = [
+const COMMAND_INPUTS: [StandardInput; 6] = [
     input("args", "own Args", "Args"),
     input("cwd", "own DirectoryRead", "DirectoryRead"),
-    input("stdout", "own Output", "Output"),
-    input("stderr", "own Output", "Output"),
-    input("files", "own FileFactory", "FileFactory"),
+    input("stdout", "own OutputStream", "OutputStream"),
+    input("stderr", "own OutputStream", "OutputStream"),
+    input("handles", "own HandleFactory", "HandleFactory"),
+    input("stdin", "own InputStream", "InputStream"),
 ];
 
 const COMMAND_RESULT: &str = "own ExitStatus";

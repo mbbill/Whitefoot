@@ -1,0 +1,1200 @@
+{
+  "decisions": [
+    {
+      "id": 1,
+      "title": "Line two of the rule runs a job of any stack class nested on the current stack, and small-class stacks carry no guard page",
+      "issue_summary": "Line two of the rule had no stack-class condition while small stacks carried no guard page, so an unbounded recursion could run nested on a small stack and walk off it silently.",
+      "alternatives_considered": [
+        "Class condition on line two plus a class-mismatch switch and guard-page-free small stacks",
+        "Keep guard pages on every stack and drop the one-mapping carve",
+        "Lead synthesis: one stack class for the first implementation"
+      ],
+      "decision": "Every stack carries a guard page; the 'no guard page on small-class stacks' exclusion is struck from section 12. Lead ruling that follows from issue 20 and the owner's fixed-capacity constraint: the first implementation has ONE stack class, sized as today's lane stack (wf__floor_stack_bytes, 1 GiB reserved, pages committed on touch), in a fixed count set at pool start; line two therefore needs no class test and no class-mismatch switch exists. Proof-sized classes and the class table (issue 2) become a named later step, taken only when the completion-record cap is lifted and the parked population can exceed tens. Windows already stops the process when a worker reservation does not fit (par_runtime_windows.c:808-810); the pool refuses to start on POSIX (par_runtime.c:662-665).",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:74-79",
+        "research/investigations/io-model/PARK-ON-MISS.md:165-182",
+        "research/investigations/io-model/PARK-ON-MISS.md:212-219",
+        "research/investigations/io-model/PARK-ON-MISS.md:354",
+        "compiler/src/backend/par_runtime.c:306-318",
+        "compiler/src/backend/par_runtime.c:663-666"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 2,
+      "title": "The stack class cannot come from the stack ledger: the ledger is produced from clang's output after the emitter has finished, and its chain bound excludes every runtime and libc frame",
+      "issue_summary": "The plan said the emitter reads the stack ledger for a job's class, but the ledger is produced by clang after emission, excludes runtime and libc frames, and gives cyclic components zero bytes, so it is neither available nor a bound.",
+      "alternatives_considered": [
+        "Emitter reads the ledger (impossible: phase order)",
+        "Link-time per-thunk class table emitted by the ledger pass plus a fixed runtime-frame constant, cycles in the large class",
+        "Runtime headroom test from the floor's bounds",
+        "One class now, classes later"
+      ],
+      "decision": "Recorded for the later step: when classes are introduced, the class comes from a link-time table the ledger pass (whitefootc.rs:282-317, which already runs clang) emits as a constant array the runtime reads at start; a thunk's class is its callee's chain bound plus one fixed constant for the frames the ledger excludes (scheduler loop, wf__par_execute, thunk, submit path); any entry whose chain passes a cyclic component (stack_ledger.rs:446 gives it zero bytes) is the large class; no table means the large class. Under issue 1's lead ruling this machinery is deferred; the first implementation uses one class and needs no table.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:165-176",
+        "research/investigations/io-model/PARK-ON-MISS.md:259-260",
+        "compiler/src/bin/whitefootc.rs:219",
+        "compiler/src/bin/whitefootc.rs:282-310",
+        "compiler/src/backend/stack_ledger.rs:10-27",
+        "compiler/src/backend/stack_ledger.rs:34-43"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 3,
+      "title": "Reversing the compute join order changes two other emitter sites that encode the same order, and section 8 names only one",
+      "issue_summary": "Reversing the compute join order in emit_overlap_joins alone would desynchronise overlap_join_tail (uses handed_out().last() as the group's exit label) and block_exit_label (replays the same queue for phi predecessors), producing phis naming a non-predecessor.",
+      "alternatives_considered": [
+        "Reverse only the parallel.rs loop",
+        "One order function consumed by all three sites"
+      ],
+      "decision": "One function, compute_join_order, is the single definition of a group's compute join order (the reversal, with section 4's reason in its doc comment). emit_overlap_joins, overlap_join_tail and block_exit_label all consume it; the reversal applies to compute members only, and completion members keep the positions their dependency edges fix (issue 13). Two structures carry the order today: IrOverlap::handed_out (the IR member list, emitter.rs:2234-2239) and FunctionEmitter::handed_out (the emitter queue, parallel.rs:495-503, 631); both go through the same function.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:131-136",
+        "research/investigations/io-model/PARK-ON-MISS.md:258",
+        "compiler/src/backend/emitter/parallel.rs:623-670",
+        "compiler/src/backend/emitter.rs:2228-2238",
+        "compiler/src/backend/emitter.rs:2244-2290",
+        "compiler/src/backend/emitter/parallel.rs:495-503"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 4,
+      "title": "The I/O park registration section 7 keeps carries no identity, so nothing can make one specific stack READY",
+      "issue_summary": "The plan kept wf_completion_wait_to_consume as the park registration, but it only sets a boolean answered by a global epoch bump and broadcast; only wf_completion_depend names a resumable object, and the plan retired the unit that used it.",
+      "alternatives_considered": [
+        "Keep wait_to_consume",
+        "Register through wf_completion_depend with the stack handle as the frame pointer"
+      ],
+      "decision": "The stack park registers through wf_completion_depend, passing a pointer to the stack's state header (at the stack base) where a writer frame goes today, with the same milestone requirement the join needs. runtime.c is not edited: slot->dependent_frame is an uninterpreted void pointer stored under publication_lock (runtime.c:824) and handed only to wf__writer_scheduler_ready (runtime.c:653, 744, 829); that symbol's implementation becomes 'mark this stack READY'. The duplicate-registration refusal (dependent_registered, runtime.c:811-814) stays.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:86-90",
+        "research/investigations/io-model/PARK-ON-MISS.md:199-206",
+        "research/investigations/io-model/PARK-ON-MISS.md:246-248",
+        "compiler/src/backend/completion/runtime.c:366-392",
+        "compiler/src/backend/completion/runtime.c:638-641",
+        "compiler/src/backend/completion/runtime.c:731-736"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 5,
+      "title": "Section 4's newest-or-stolen property fails as soon as a stack parks with deque entries outstanding, which is the design's own central case",
+      "issue_summary": "A deque belongs to a lane (a thread), not a stack. After stack A parks with J1, J2 outstanding, stack B running on the same thread pushes K1, so A's later join of J2 finds K1 newest and the unconditional newest-or-stolen property is false. The refiner first proposed moving the deque to the stack; the critic held for the per-thread deque with a home test and one extra park.",
+      "alternatives_considered": [
+        "Move the deque from the lane to the stack so it migrates with the stack",
+        "Keep the per-thread deque; line two becomes 'X's home lane is this thread's lane and X is the newest entry'; a buried target falls to line three at the cost of one park"
+      ],
+      "decision": "Per-thread deque with the home test. Line two reads: X's home lane is this thread's lane and X is the newest entry of that deque. Section 4's property is restated with its precondition (join on the home thread, no other stack pushed onto the lane between this stack's publishes) and names the counterexample, which costs one park. Invariant I2: a deque is pushed and popped only by its owning thread; nothing pops a foreign deque. Lead ruling adopting the critic's two round-3 corrections: (a) the cost sentence is 'one thread-local load and a compare', not 'no added load', because wf__par_join today never reads wf__par_self; (b) the release becomes a CAS push onto slot->home's free list with a CAS pop in wf__par_acquire_lane, and the plan states as invariant I3 why that is ABA-safe over an untagged int head: exactly one thread pops a given lane's free list (acquire reads wf__par_self, never slot->home), any thread may push it.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:213-226",
+        "compiler/src/backend/par_runtime.c:276",
+        "compiler/src/backend/par_runtime.c:356-361",
+        "compiler/src/backend/par_runtime.c:758",
+        "compiler/src/backend/par_runtime.c:775-781",
+        "compiler/src/backend/par_runtime.c:816-847",
+        "compiler/src/backend/par_runtime.c:849-855",
+        "compiler/src/backend/par_runtime.c:206",
+        "compiler/src/backend/par_runtime.c:225",
+        "research/investigations/io-model/PARK-ON-MISS.md:258-263"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 6,
+      "title": "Making slots growable overflows the deque buffer, which is a fixed array sized by the same constant and pushed without a bounds check",
+      "issue_summary": "The plan proposed growable slots, but the deque buffer is buffer[WF_PAR_LANE_SLOTS] pushed with no fullness test, so more slots than deque cells would overflow it.",
+      "alternatives_considered": [
+        "Grow slots and add a fullness test to wf__par_push",
+        "Fixed capacities (owner constraint); the existing refusal path stated as a property"
+      ],
+      "decision": "Nothing grows. WF_PAR_LANE_SLOTS bounds both a lane's outstanding hand-outs and its deque; the free list is threaded with exactly that many slots, each on the deque at most once. A lane whose slots are held by parked stacks refuses further hand-outs and the emitter runs those calls inline on the refused edge, which is the lane reverting to the sequential schedule the program is already correct under. The coupling becomes an invariant in section 3 and a _Static_assert in the scheduler core on the model of bridge.c:55-57. Critic added the check that acquire-to-publish is one straight line with no join between (parallel.rs:478, :492), so every slot on a lane's ring is that lane's even when stacks migrate. Schedule S9 walks the whole refusal.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:103-113",
+        "compiler/src/backend/par_runtime.c:222",
+        "compiler/src/backend/par_runtime.c:238",
+        "compiler/src/backend/par_runtime.c:356-359",
+        "compiler/src/backend/par_runtime.c:592-599",
+        "compiler/src/backend/par_runtime.c:774-778",
+        "compiler/src/backend/emitter/parallel.rs:478",
+        "compiler/src/backend/emitter/parallel.rs:492",
+        "compiler/src/backend/emitter/parallel.rs:655-660",
+        "compiler/src/backend/completion/bridge.c:54-57"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 7,
+      "title": "Section 9's claim-trap paragraph and schedule S8 are obsolete under the active specification",
+      "issue_summary": "Section 9 and schedule S8 cited the claim trap and [TRAP-1], which specification v0.40 retired.",
+      "alternatives_considered": [
+        "Ground on [EFF-4]",
+        "Ground on the new [PAR-1] clauses"
+      ],
+      "decision": "Section 9 is grounded on [PAR-1]'s v0.40 clauses (spec/kernel-spec.md:1983 and 1986: the overlap identity holds in every source execution because accepted source contains no writer-reachable proof-failure branch, and no fast path pays for a runtime proof fallback) with [EFF-4] as support; a parked stack has no language-level edge that could unwind it. S8 is replaced by a resource-record walk. Applied in the plan.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:274-278",
+        "research/investigations/io-model/PARK-ON-MISS.md:305-306",
+        "spec/kernel-spec.md:1-6",
+        "spec/kernel-spec.md:1440",
+        "spec/kernel-spec.md:1459",
+        "spec/kernel-spec.md:6"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 8,
+      "title": "[PAR-3] permits thread migration but fixes segment order, and the plan does not say whether the staged driver stays one stack",
+      "issue_summary": "[PAR-3] fixes segment order across iterations; the plan did not say whether an iteration becomes its own parked stack (which would need cross-stack ordering) or stays a slot record driven by one stack.",
+      "alternatives_considered": [
+        "Per-iteration stacks with a predecessor-commit event",
+        "The staged driver keeps its one-function lowering and only its wait becomes a park"
+      ],
+      "decision": "The staged driver keeps its one-function lowering: IrCompletionPipeline holds entry, carrying, feeder, drain and slot_index as block identifiers (lowering.rs:1211-1227), plan_bounded_batch takes block identifiers (lowering.rs:1290-1309), and per-iteration storage is an entry-block reservation (lowering.rs:1324). An iteration never gets its own stack; the drain's join becomes a park of the driver's stack; index order stays that function's control flow; [PAR-3]'s not-observable clause (spec:2052) permits the thread migration. Recorded as a constraint on future work: outlining iterations onto their own stacks would reopen spec:2040-2042 and 2049.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:262-272",
+        "research/investigations/io-model/PARK-ON-MISS.md:314-315",
+        "spec/kernel-spec.md:1987",
+        "spec/kernel-spec.md:2040-2042",
+        "spec/kernel-spec.md:2049",
+        "compiler/src/backend/emitter.rs:1700-1719"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 9,
+      "title": "Routing every deque push through the completion epoch puts a global read-modify-write back on the hand-out path the deque exists to keep local, and the same primitive broadcasts where S6 asks for one wake",
+      "issue_summary": "Bumping the completion epoch on every deque push reintroduced a global read-modify-write on the hand-out path, and S6's one-wake bar contradicted the broadcast at runtime.c:384-390.",
+      "alternatives_considered": [
+        "Epoch bump per push",
+        "Bump only on transitions that can unblock a sleeper"
+      ],
+      "decision": "A push bumps nothing. The epoch is bumped only on a transition that can leave a thread asleep otherwise: a READY stack entering an empty ready queue, or a push onto the deque of a lane whose idle bitmap is non-empty, which is the test wf__par_publish already performs (par_runtime.c:788-791). S6's bar becomes: one completion wakes at least one thread and never none; a woken thread that finds nothing returns to sleep.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:207-219",
+        "research/investigations/io-model/PARK-ON-MISS.md:298-300",
+        "research/investigations/io-model/PARK-ON-MISS.md:335-347",
+        "compiler/src/backend/par_runtime.c:56-70",
+        "compiler/src/backend/par_runtime.c:356-361",
+        "compiler/src/backend/par_runtime.c:784-792"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 10,
+      "title": "The design's central mechanism has no named switch primitive anywhere in the tree",
+      "issue_summary": "No stack-switch primitive exists anywhere in compiler/src, and the Windows half was unaddressed.",
+      "alternatives_considered": [
+        "swapcontext",
+        "Hand-written register switch on POSIX; native fibers on Windows"
+      ],
+      "decision": "The POSIX switch is a small hand-written save/restore of callee-saved registers and the stack pointer, per architecture (swapcontext carries a sigprocmask syscall per switch); Windows uses the fiber API (CreateFiberEx, SwitchToFiber). Section 11 gains a switch-cost measurement against the 2.2 microsecond park-and-wake figure (par_runtime.c comment). Windows stages par_runtime_windows.c whenever a module hands work out (whitefootc.rs:501-510, parallel.rs:98-106), so it is a live twin; both are replaced by the one core plus platform layer the owner decided.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:86-90",
+        "research/investigations/io-model/PARK-ON-MISS.md:148-188",
+        "research/investigations/io-model/PARK-ON-MISS.md:335-347",
+        "compiler/src/backend/tests/stackless.rs:180",
+        "compiler/src/backend/wf_floor.c:72-74",
+        "compiler/src/backend/completion/writer_scheduler_windows.c:1-8"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 11,
+      "title": "The class-mismatch path leaves a stack in none of the four states, so a scheduler-loop stack that switches away is not accounted for",
+      "issue_summary": "The class-mismatch path left a scheduler-loop stack in none of the four states.",
+      "alternatives_considered": [
+        "Add an IDLE state and write the switch sequence once",
+        "Remove the class-mismatch switch"
+      ],
+      "decision": "Written once in section 6: on the old stack mark SUSPENDING and register the wake if any; switch; on the target stack commit the old stack's transition; NOTIFIED at commit publishes it READY immediately; the commit never precedes the switch because the parking thread is still executing on the stack a resumer would take. The three arms of the ported handshake (begin, commit, cancel at writer_scheduler.c:102, 154, 183) are all called from the target stack. Under issue 1's one-class ruling there is no class-mismatch switch; a scheduler-loop stack switched away from with nothing pending is EMPTY and returns to the free list, so no fifth state is needed.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:148-182",
+        "research/investigations/io-model/PARK-ON-MISS.md:212-219",
+        "research/investigations/io-model/PARK-ON-MISS.md:344-346",
+        "compiler/src/backend/completion/writer_scheduler.c:154-181",
+        "compiler/src/backend/completion/writer_scheduler.c:102-181",
+        "research/investigations/io-model/PARK-ON-MISS.md:158-182"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 12,
+      "title": "Section 7 says the sequential world is unchanged while section 5 makes the entry a fiber unconditionally, and the floor's two fallback paths have no scheduler loop at the bottom",
+      "issue_summary": "The rule is unconditional (a miss always parks) but the scheduler core was staged only when the module hands work out, so a completion-only program linked the bridge and the floor with no core, and wf__floor_run's two pthread_create fallbacks put the entry on the host thread where a park would later return from a function that thread never called.",
+      "alternatives_considered": [
+        "Keep a runtime pool-off conditional in the I/O join (refused by issue 24: nothing under completion/ can select it)",
+        "Move the core into the unconditionally linked floor unit (refused: both parallel runtimes call into the floor and the floor calls into neither; the floor's invariant is not the core's)",
+        "Make the core its own always-linked unit",
+        "Stage the core under module_requires_parallel_runtime || module_requires_completion_runtime, and select the entry shape at link time with a weak core symbol"
+      ],
+      "decision": "The core is staged under module_requires_parallel_runtime(llvm) || module_requires_completion_runtime(llvm) at whitefootc.rs:328 and :501. That union is the only staging that preserves what each half has today: writer_scheduler.c (ready queue and handshake) is completion-staged on POSIX (whitefootc.rs:363, :377, :396-397) and unconditional on Windows (whitefootc.rs:141), while par_runtime.c is hand-out-staged (whitefootc.rs:328-340). Section 7's sentence that the core replaces both parallel runtimes says it also replaces both writer schedulers and is no longer staged by the predicate those files were staged by. Lead ruling on the entry, adopting the critic's round: wf_floor.c is compiled into every link, so the fallbacks at wf_floor.c:314-321 are not deleted and are not 'the no-core shape' by name alone; wf__floor_run tests a weak core symbol the linker resolves, on the pattern of bridge.c:119-123, parallel.rs:175 and writer_scheduler.c:53-56. When the symbol is present the entry takes a stack from the pool reservation and pthread_create is not on the entry path, so its failure cannot arise and the fallbacks are unreachable; when absent the function is today's, fallbacks included, and such a link cannot park because it has no core. This is a link-time selection, which is the distinction from the runtime world query issue 24 refused.",
+      "evidence": [
+        "compiler/src/bin/whitefootc.rs:328-346",
+        "compiler/src/bin/whitefootc.rs:363",
+        "compiler/src/bin/whitefootc.rs:377",
+        "compiler/src/bin/whitefootc.rs:396-397",
+        "compiler/src/bin/whitefootc.rs:141",
+        "compiler/src/bin/whitefootc.rs:501-509",
+        "compiler/src/backend/emitter/parallel.rs:160-163",
+        "compiler/src/backend/emitter/parallel.rs:175",
+        "compiler/src/backend/completion/bridge.c:119-123",
+        "compiler/src/backend/completion/writer_scheduler.c:53-56",
+        "compiler/src/backend/wf_floor.c:40-42",
+        "compiler/src/backend/wf_floor.c:314-321",
+        "compiler/src/backend/par_runtime.c:313",
+        "compiler/src/backend/par_runtime.c:520-527",
+        "compiler/src/backend/par_runtime.c:665"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 13,
+      "title": "Section 4's 'I/O members hold no deque entry, so their join position is free' ignores the declared completion dependency order the emitter already honours",
+      "issue_summary": "'An I/O member's join position is free' ignored the completion dependency edges (step.wait_for) that fix where some I/O members are joined.",
+      "alternatives_considered": [
+        "Free position",
+        "Position fixed by dependency edges; free only within one window"
+      ],
+      "decision": "An I/O member holds no deque entry, so the deque places no constraint on its join; its position is fixed by the emitter's dependency edges. A member no later step names in wait_for is joined at the group's join site after every compute member has been run or found stolen (parallel.rs:631-638 today); a member a later step names is joined at that step (emit_completion_dependencies, completion.rs:227-255).",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:138-141",
+        "compiler/src/backend/emitter/completion.rs:225-272",
+        "compiler/src/backend/emitter.rs:2274-2290",
+        "compiler/src/backend/emitter.rs:2315-2325",
+        "compiler/src/backend/emitter/completion.rs:224-255",
+        "compiler/src/backend/emitter/completion.rs:260-274"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 14,
+      "title": "The first of the three cited I1 violations is unreachable: a join can never pop an ancestor's member",
+      "issue_summary": "The plan's first cited I1 violation (wf__par_join popping an ancestor's member) is unreachable under Chase-Lev: a thief takes only from the oldest end and an inline member restores the deque before returning.",
+      "alternatives_considered": [
+        "Delete the bullet",
+        "Correct it"
+      ],
+      "decision": "Corrected: wf__par_join (par_runtime.c:816-847) runs same-group siblings above the join when the target is not the newest entry; that is a bounded I1 violation over one group, not the unbounded burial wf__par_wait and help_once allow. Section 3's list is rebuilt per platform (issue 18).",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:108-121",
+        "research/investigations/io-model/PARK-ON-MISS.md:138-141",
+        "compiler/src/backend/par_runtime.c:367-399",
+        "compiler/src/backend/par_runtime.c:402-419",
+        "compiler/src/backend/par_runtime.c:816-847",
+        "compiler/src/backend/par_runtime.c:799-814"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 16,
+      "title": "The deferred io_uring doorbell is safe only because every wait reaches the kernel through progress, and section 6's scheduler loop parks without it",
+      "issue_summary": "The scheduler loop parked without flushing the deferred io_uring doorbell, whose safety rests on every waiting path kicking first (linux_io_uring.c:713-718); a park with staged SQEs is a hang.",
+      "alternatives_considered": [
+        "Park directly",
+        "Capture epoch, flush and progress, then park"
+      ],
+      "decision": "Step 4 of the scheduler loop becomes three ordered actions: capture the wake epoch; flush the deferred doorbell and run one bounded progress pass (wf_bridge_flush_target at bridge.c:810-817, then wf_bridge_progress), restarting the loop if either made progress; only then park on the captured epoch. Same order as today's join loops.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:207-219",
+        "research/investigations/io-model/PARK-ON-MISS.md:296-297",
+        "compiler/src/backend/completion/linux_io_uring.c:705-721",
+        "compiler/src/backend/completion/bridge.c:445-477",
+        "compiler/src/backend/completion/bridge.c:502-518",
+        "compiler/src/backend/completion/bridge.c:799-817"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 17,
+      "title": "The retirement ledger's retire-and-retry loop is a fourth I1 violation that cannot be deleted, and its sleep is a second wait site",
+      "issue_summary": "wf_bridge_retire_and_retry_direct drives the engines above a live frame while waiting for a descriptor and cannot simply sleep; its sleep is a second wait site.",
+      "alternatives_considered": [
+        "Delete it like help_once",
+        "State the exception and bound it"
+      ],
+      "decision": "Section 3 lists it as a fourth I1 site the design does not remove, on the descriptor-exhaustion path only, with the reason quoted (bridge.c:1259-1266). Lead note: the reason it drives the engines (it may be the only thread able to reap its own completion) is met in the park model because the parking thread stays in the scheduler loop and reaps before it sleeps (issue 16); the retirement wait is an event source (a returned descriptor makes the parked stack READY), and a stack holding a retirement waiter is not parked (issue 19). SUPERSEDED 2026-09-04 by constitution T4 (see decision 30): the retirement ledger and its retire-and-retry loop are deleted with the backed FilePermit, not kept as an I1 exception; this entry is historical.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:92-121",
+        "research/investigations/io-model/PARK-ON-MISS.md:207-210",
+        "research/investigations/io-model/PARK-ON-MISS.md:326-328",
+        "compiler/src/backend/completion/runtime.c:1144-1200",
+        "compiler/src/backend/completion/runtime.c:1766-1787",
+        "compiler/src/backend/completion/bridge.c:1255-1330"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 18,
+      "title": "There are now two parallel runtimes: every section 7 bullet has an unnamed twin on Windows, where there is no sequential world and no waiter field to publish a stack through",
+      "issue_summary": "Section 7 named only par_runtime.c; Windows has a second runtime with no pool-off world, no waiter field, and a writer-help inside its wait loop.",
+      "alternatives_considered": [
+        "Port every bullet twice",
+        "One core plus platform layer (owner decision)"
+      ],
+      "decision": "Both parallel runtimes and both writer schedulers are replaced by one scheduler core plus a platform layer (thread creation with reserved stack, one wait/wake primitive, the switch, stack allocation). Section 3 counts violations per platform (three on POSIX, four on Windows). S10 is split: POSIX keeps the sequential world; Windows has none (par_runtime_windows.c:974-977).",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:221-254",
+        "research/investigations/io-model/PARK-ON-MISS.md:307-309",
+        "compiler/src/backend/par_runtime_windows.c:1-13",
+        "compiler/src/backend/par_runtime_windows.c:68-99",
+        "compiler/src/backend/par_runtime_windows.c:601-610",
+        "compiler/src/backend/par_runtime_windows.c:614-658"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 19,
+      "title": "Section 5's 'the completion runtime has no thread-local state, so nothing else migrates' is literally true and substantively wrong",
+      "issue_summary": "'The completion runtime has no thread-local state' was found by grepping _Thread_local; the retirement waiter is a stack local linked into a global fairness order and reasoned about per thread.",
+      "alternatives_considered": [
+        "Keep the sentence",
+        "Replace the method"
+      ],
+      "decision": "The floor's three thread-locals (wf_floor.c:72-74) become per stack, set at every switch; the parallel runtime's two (par_runtime.c:275, 279) stay per thread and are re-read after every switch, never cached across one; a stack holding a retirement waiter (bridge.c:1275, contract.h:594-619) is not parked, because the waiter holds a position in the award order (runtime.c:1183-1194). AMENDED under issue 30 (critic-3, lead ruling): the rule stands, the reason changes. Standing aside preserves the waiter's position and its claim on a return (wf_retirement_earliest_deciding skips aside waiters without unlinking them, runtime.c:1474-1483), so position is not what a park would lose. What a park loses is the asking: the ledger's give-up is reached only when earliest_deciding() == waiter (runtime.c:1647-1652), aside waiters are still counted idle (runtime.c:1631-1640), and with every waiter parked and aside the state is UNREACHABLE (runtime.c:1613-1614) with no announcement naming a stack (runtime.c:1238-1250, :1707-1723). A stack holding a retirement waiter is therefore not parked because a parked stack cannot ask. AMENDED AGAIN 2026-09-04 under T4 (see decision 30): the retirement-waiter sentence is moot because the ledger is deleted with the backed FilePermit; the thread-local part of this decision stands.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:184-188",
+        "compiler/src/backend/completion/contract.h:587-621",
+        "compiler/src/backend/completion/bridge.c:1270-1280",
+        "compiler/src/backend/completion/runtime.c:1177-1194",
+        "compiler/src/backend/completion/file_adapter.c:675",
+        "compiler/src/backend/completion/contract.h:594-610"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 20,
+      "title": "The runtime's own window query caps a loop at 32 operations in flight, against section 5's ten thousand parked stacks",
+      "issue_summary": "The plan sized for ten thousand parked stacks, but WF_COMPLETION_SLOT_CAPACITY is 64 process-wide and the window takes half, so at most 64 stacks are parked on I/O anywhere.",
+      "alternatives_considered": [
+        "Ten thousand small stacks without guard pages",
+        "Fixed pool sized by a startup setting; guard pages affordable"
+      ],
+      "decision": "The ten-thousand figure is removed. Parked-on-I/O stacks are bounded by the 64 completion records; the stack count is a startup setting (like WF_WORKERS), never grown, per the owner's no-heap constraint. Section 11's third measurement becomes: the smallest stack count at which the pool stops refusing for the corpus programs, and what refusal costs below it. The capacity constant moves out of writer_scheduler.h when that unit is retired. AMENDED 2026-09-04 by decision 55: the completion-record count is no longer the fixed 64 but a bound sized from the stack count and the per-stack in-flight window, so parked-on-I/O stacks are bounded by the stack count; the stack count remains the startup setting of decision 40. SUPERSEDED on the record count, 2026-09-04, by decision 56: there is no record pool; the ceiling on parked stacks is the stack count.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:178-182",
+        "research/investigations/io-model/PARK-ON-MISS.md:344-346",
+        "research/investigations/io-model/PARK-ON-MISS.md:352-354",
+        "compiler/src/backend/completion/bridge.c:42-53",
+        "compiler/src/backend/completion/bridge.c:818-885",
+        "compiler/src/backend/completion/bridge.c:845-887"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 21,
+      "title": "The plan reverses a decision LOOP-PIPELINE section 3.4 made explicitly, and does not name it in the supersede list",
+      "issue_summary": "LOOP-PIPELINE section 3.4 decided the pipeline blocks on the oldest slot's join rather than suspending, and planned stage cutting with spill to the slot record to cross a suspension without a stack switch. Park on miss reverses the first and makes the second unnecessary, and the supersede list did not say so.",
+      "alternatives_considered": [
+        "Supersede only the blocking sentence (LOOP-PIPELINE.md:822-825) and keep the rest of 3.4",
+        "Supersede the blocking sentence and the stage-cut mechanism (:827-834) together; keep the three emitter changes"
+      ],
+      "decision": "Lead ruling adopting the critic's boundary. The supersede list names LOOP-PIPELINE.md:822-825 and :827-834 together, with one sentence for the second: a stack that holds its own live values needs no stage cut and no spill to the slot record. The reversal is a generalization because 3.4's premise assumed a lane with nothing else to run and priced suspension as the stackless transform. Emitter changes 1 and 3 (:797-803, :808-811) stand; change 2 (:804-807) keeps its first and last steps and loses 'run that slot's next stage'. Nothing in working code changes: the shipped lowering has no stage concept (lowering.rs:1210-1234).",
+      "evidence": [
+        "research/investigations/io-model/LOOP-PIPELINE.md:797-811",
+        "research/investigations/io-model/LOOP-PIPELINE.md:804-807",
+        "research/investigations/io-model/LOOP-PIPELINE.md:822-825",
+        "research/investigations/io-model/LOOP-PIPELINE.md:827-834",
+        "research/investigations/io-model/LOOP-PIPELINE.md:834-835",
+        "compiler/src/backend/lowering.rs:1210-1234",
+        "research/investigations/io-model/PARK-ON-MISS.md:613-614"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 22,
+      "title": "Section 0's motivating schedule is the staged pipeline's own subject, and section 11 never prices the design against the lowering already in the tree",
+      "issue_summary": "Section 0 motivated the design with a loop of open, read, close whose in-flight depth the shipped completion pipeline already raises to the window (32), so the plan motivated something the tree does, and section 11 never measured against that lowering.",
+      "alternatives_considered": [
+        "Keep section 0's loop and add the pipeline as a comparison baseline",
+        "Rewrite section 0 around the shapes the pipeline does not reach and add the shipped pipeline as the fourth measured shape"
+      ],
+      "decision": "Section 0 is rewritten around three shapes the shipped pipeline does not reach: a [PAR-1] window with a may-suspend member outside any loop; a may-suspend call reached through recursion or a compute hand-out; and a loop the staged permission denies (LOOP-PIPELINE section 2.2's denied row, worked at 2.3 and 2.5; 2.4's loop does no I/O and is not cited). The ground is that denied row, not section 3.8, which the critic's original entry cited and the refiner corrected. The claim is stated honestly: for the denied loop park on miss does not raise its own in-flight depth (that needs a slot ring); it frees the thread so other stacks proceed. For the first two shapes it raises depth directly. Section 0 says in one sentence what the pipeline already covers (window 32 at bridge.c:857), and section 11 adds the shipped pipeline as the fourth measured shape.",
+      "evidence": [
+        "research/investigations/io-model/LOOP-PIPELINE.md:229-277",
+        "research/investigations/io-model/LOOP-PIPELINE.md:350-355",
+        "research/investigations/io-model/LOOP-PIPELINE.md:934-937",
+        "compiler/src/backend/completion/bridge.c:857",
+        "compiler/src/backend/emitter.rs:1732-1740",
+        "compiler/src/backend/emitter/completion.rs:260-274"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 23,
+      "title": "The ready queue holds 64 cells and aborts when full, and its reservation argument does not survive stacks flowing through it",
+      "issue_summary": "Section 6 ported the writer-frame handshake, whose ready queue is a 64-cell array (writer_scheduler.c:46, sized by WF_COMPLETION_SLOT_CAPACITY) that calls abort when full (writer_scheduler.c:64-65). Its reservation argument (writer_scheduler.c:8-11) is one cell per completion slot, and compute DONEs publishing waiter stacks READY break that reservation.",
+      "alternatives_considered": [
+        "Resize the array to the stack count and keep the count-against-capacity abort",
+        "Intrusive singly-linked list threaded through the state header at each stack base, capacity equal to the stack count by construction (owner constraint)"
+      ],
+      "decision": "The array, its head, tail, count and abort disappear rather than being resized. The ready queue is an intrusive list through the next-ready field of the state header at the stack base, head in the scheduler core, guarded by one mutex. A stack is linked at most once because the SUSPENDED-to-READY compare-exchange happens once per park and a second publisher finds a phase it cannot transition. The mutex stays, and the plan states why: it is taken once per park and once per resume, not once per DONE or per completion, because only a stack that parked has a waiter to publish; a lock-free list is a later measurement, not a precondition. Section 6 records the header-reuse rule for a slot handed out again. Critic agreed at round 3 on the constraint; refiner confirmed at round 3.",
+      "evidence": [
+        "compiler/src/backend/completion/writer_scheduler.c:8-11",
+        "compiler/src/backend/completion/writer_scheduler.c:45-49",
+        "compiler/src/backend/completion/writer_scheduler.c:62-70",
+        "compiler/src/backend/completion/writer_scheduler.h:21-22",
+        "compiler/src/backend/completion/bridge.c:55-57",
+        "compiler/src/backend/par_runtime.c:199-201"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 24,
+      "title": "Section 7 keeps a pool-off behaviour for the I/O join that the bridge has no way to select, because it cannot tell the two worlds apart",
+      "issue_summary": "Section 7's last bullet kept a different I/O-join behaviour when the pool is off, but the I/O joins are runtime functions under completion/ and nothing there can reach wf__par_pool_active, so the conditional cannot exist.",
+      "alternatives_considered": [
+        "Thread a pool-active query into the bridge",
+        "One unconditional path: a miss always parks; pool-off means only no worker threads"
+      ],
+      "decision": "Section 7's last bullet is deleted; the plan carries no pool-off behaviour for any join, and section 2's rule is unconditional. Section 7 records why the conditional cannot exist: nothing under completion/ names wf__par_pool_active (critic verified by grep across compiler/src); the only parallel symbol completion/ names is wf__par_help_once, which section 7 deletes. Section 8 records that sequential_clone_set marks only IrOperation::Call members, so a function whose only hand-out is a may-suspend system operation has one lowering reached from both worlds. S10a asserts the equality: with no workers the thread parks, finds nothing at priorities 1 to 3, and sleeps on the same primitive it sleeps on today. Resolved together with issue 12's single change; issue 12 stays open only on where the scheduler core is linked.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:119-123",
+        "compiler/src/backend/completion/bridge.c:476",
+        "compiler/src/backend/completion/bridge.c:502-518",
+        "compiler/src/backend/completion/bridge.c:1692",
+        "compiler/src/backend/emitter/parallel.rs:239-259",
+        "compiler/src/backend/emitter/system.rs:3145",
+        "compiler/src/backend/emitter/system.rs:3280",
+        "compiler/src/backend/par_runtime.c:895",
+        "compiler/src/backend/par_runtime_windows.c:974"
+      ],
+      "resolved_at_round": 2
+    },
+    {
+      "id": 25,
+      "title": "Under a fixed stack pool the rule needs a fourth line, and that line is also where the doorbell flush and the zero-helper target queue have to be handled",
+      "issue_summary": "With a fixed pool a miss can find no stack to switch to. The first fourth line said the thread waits in place and runs no Whitefoot work above the join. The refiner found a compute target left with no engine on that path; the critic showed the state is reachable without burial (two stacks resumed on foreign threads, each joining a hand-out on the other's home lane), that the pool cannot be sized past it (compute-parked stacks are bounded only by lanes times WF_PAR_LANE_SLOTS at 1 GiB reserved each), and that 'run its own deque as wf__par_join does' cites a loop that pops the target's home deque, which is a foreign pop on the crossed case.",
+      "alternatives_considered": [
+        "Size the pool so the state is unreachable (no bound to rest on)",
+        "Run the target's home deque above the join as wf__par_join does today (foreign pop on the crossed case; forbidden by I2)",
+        "Wait in place and run nothing above the join (deadlocks when every thread waits on a deque entry with no thread in the loop)",
+        "Keep today's wf__par_wait on the exhausted path for a compute target: own deque newest first, then steal, until the target is done; wait in place for an I/O target"
+      ],
+      "decision": "Owner ruling, 2026-09-03. The purpose the design serves is that a completed I/O's continuation is never buried: nothing may run above a frame that is waiting for I/O. Measured against that purpose, work nested above a frame that is waiting for a compute target delays no I/O, because that frame is waiting for exactly the work the nesting produces. So the fourth line splits by what the join is waiting for. If the target is an I/O operation: the thread stays on this stack, nests nothing, flushes the deferred doorbell, runs the bounded target pass and progress, drains ready completions and sleeps on the one primitive; on every wake it re-checks the ready list and, if a READY stack exists, parks this stack with the I/O as its wake and switches to it. If the target is a compute hand-out: today's wf__par_wait behaviour survives on this path only (par_runtime.c:475-486 minus the writer help): pop the thread's own deque from the newest end, then steal from the oldest end of other lanes, run what it gets nested above the join, until the target is DONE; a nested entry that misses on I/O with no stack takes the I/O arm above. Section 7's 'wf__par_wait: deleted' becomes 'deleted on every path except pool exhaustion with a compute target'. The crossed case resolves by the steal. The narrowed precondition (no free stack and no READY stack) and the two kinds of switch target stand from the critic's round. The constraint 'nests nothing' is restated as 'nothing runs above an I/O join'; above a compute join the nesting is bounded by the deque and the steal exactly as today. Owner's implementation requirement, recorded with the ruling: the state machine is complex enough that every state and transition, every schedule in section 10, the fourth line's two arms, the ready-list re-check while sleeping, and the DONE-before-waiter-store interleavings must be covered by tests before the implementation is merged; the plan carries that as an obligation.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:469-510",
+        "compiler/src/backend/par_runtime.c:475-486",
+        "compiler/src/backend/par_runtime.c:816-847",
+        "compiler/src/backend/par_runtime.c:93",
+        "compiler/src/backend/par_runtime.c:113",
+        "compiler/src/backend/par_runtime.c:238",
+        "compiler/src/backend/completion/bridge.c:42-44",
+        "compiler/src/backend/completion/bridge.c:172-176",
+        "compiler/src/backend/completion/bridge.c:445-477",
+        "compiler/src/backend/completion/bridge.c:502-518",
+        "compiler/src/backend/completion/bridge.c:810-817",
+        "compiler/src/backend/completion/linux_io_uring.c:705-718",
+        "compiler/src/backend/wf_floor.c:55",
+        "compiler/src/backend/wf_floor.c:66",
+        "research/investigations/io-model/PARK-ON-MISS.md:130-149"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 26,
+      "title": "Section 6's switch sequence omits the state re-check that makes a compute wake safe, so a DONE that lands before the waiter store is lost",
+      "issue_summary": "The compute publisher stores DONE then loads the waiter with no lock (par_runtime.c:455-463); the waiter side must store itself then re-read the state (par_runtime.c:496-502) or a DONE landing before the waiter store publishes nothing and the parked stack never wakes. Section 6's sequence had the store and not the re-read.",
+      "alternatives_considered": [
+        "Add a lock or an already-ready arm on the compute side like wf_completion_depend's",
+        "Re-read after registration and cancel the suspend on the old stack when already DONE, with cancel as it is today (aborts on NOTIFIED in one reachable interleaving)",
+        "Re-read after registration; cancel accepts NOTIFIED and consumes it"
+      ],
+      "decision": "Section 6's switch sequence is five steps, written once: mark SUSPENDING; register the wake (the waiter store on the compute arm, wf_completion_depend on the I/O arm), which must follow the RUNNING-to-SUSPENDING transition because ready aborts on any other phase (writer_scheduler.c:121-151); re-read the target's state, or read depend's answer; if already satisfied, cancel on the old stack and continue without switching; otherwise switch and commit on the target stack, where NOTIFIED becomes READY. Of the four interleavings three are reachable and in the third the publisher has already loaded the waiter, so the phase is NOTIFIED when cancel runs; the core's cancel arm therefore accepts NOTIFIED and consumes it, on the model of commit's arm (writer_scheduler.c:161-179), keeping the abort for every other phase. Consuming is sound because the notification was never enqueued and the cancelling stack has already read the condition it announces. The I/O twin is real: wf_completion_depend calls ready itself before answering ALREADY_READY (runtime.c:817-830). Added obligation from the critic: the waiter registration is cleared on every exit from the park (cancel, commit-to-NOTIFIED, resume), as par_runtime.c:505 does today, because wf__par_release never clears it and a stale pointer on a re-acquired slot either aborts (writer_scheduler.c:150) or resumes a stack for an event that has not happened (writer_scheduler.c:137-147). Wording: the widening is a property of the core's cancel arm; writer_scheduler.c and its Windows twin are retired, not edited. Section 10 gains S21 (DONE before the waiter store, both sub-cases, plus a release and re-acquire of the slot after the cancel) and the I/O twin; S7 keeps its own arm.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:448-463",
+        "compiler/src/backend/par_runtime.c:496-505",
+        "compiler/src/backend/par_runtime.c:595",
+        "compiler/src/backend/par_runtime.c:849-855",
+        "compiler/src/backend/completion/writer_scheduler.c:102-118",
+        "compiler/src/backend/completion/writer_scheduler.c:121-151",
+        "compiler/src/backend/completion/writer_scheduler.c:161-179",
+        "compiler/src/backend/completion/writer_scheduler.c:183-194",
+        "compiler/src/backend/completion/writer_scheduler_windows.c:219-229",
+        "compiler/src/backend/completion/runtime.c:817-830",
+        "compiler/src/backend/emitter/stackless.rs:761",
+        "research/investigations/io-model/PARK-ON-MISS.md:367-374"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 27,
+      "title": "The NOTIFIED-at-commit arm leaves a stack READY on no list and names no thread to run it; the tree's own commit enqueues there",
+      "issue_summary": "Section 6's diagram said a park whose event arrived before commit 'resumes without enqueue'. Commit runs on the target stack after the switch, so the parked stack is on no thread when commit fires; the ported code enqueues on that arm (writer_scheduler.c:166-178, enqueue at :177).",
+      "alternatives_considered": [
+        "Add a switch-back edge (RUNNING to READY) the four-state diagram does not have",
+        "Both commit arms enqueue, as the ported code does"
+      ],
+      "decision": "Both transitions into READY enqueue, mutually exclusive per park: SUSPENDED to READY on the event, or NOTIFIED to READY at commit. The property is that exactly one of the two enqueues. CORRECTED 2026-09-04 (issue 45): on the NOTIFIED arm the commit's first compare-exchange (SUSPENDING to SUSPENDED, writer_scheduler.c:157-164) fails and its second (NOTIFIED to READY, :166-178) succeeds; the earlier wording that both succeed was wrong. The diagram, S7, section 11 item A5 and the capacity paragraph say the same thing; no place says 'without an enqueue'.",
+      "evidence": [
+        "compiler/src/backend/completion/writer_scheduler.c:125-146",
+        "compiler/src/backend/completion/writer_scheduler.c:157-181",
+        "compiler/src/backend/completion/writer_scheduler.c:177",
+        "compiler/src/backend/completion/writer_scheduler.c:214-236",
+        "compiler/src/backend/emitter/stackless.rs:761"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 28,
+      "title": "The free-list pop stays a plain read-modify-write while the release becomes a concurrent CAS push, so a push is lost and the word is raced",
+      "issue_summary": "Decision 5 made release a CAS push from any thread and left the pop in wf__par_acquire_lane as a plain load and store of free_head (par_runtime.c:775-780, comment at :223-225). Owner reads head A, a foreign CAS pushes B, owner stores A.next: B is lost. Invariant I3 answers ABA only; a lost update is a different hazard.",
+      "alternatives_considered": [
+        "Keep the plain pop and route every release through the owning thread",
+        "Atomic free_head; the pop becomes a CAS loop; I3 keeps the single popper"
+      ],
+      "decision": "free_head becomes atomic and the pop a CAS loop: read head with acquire, read next_free, compare-exchange head to next_free, retry on failure. The push's CAS is a release store, which publishes next_free; the head read is acquire; both are primitive 1 of section 7.1 with their orderings stated. Under I3 (exactly one popper per lane) ABA is unreachable while the sole consumer is mid-pop, and the retry catches the lost update. I3 is split into what it answers (ABA) and what it does not (lost update). The Windows twin (par_runtime_windows.c:906-912, :966-972) has the same shape and is deleted, not ported. Citation corrected to par_runtime.c:775-780.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:223-225",
+        "compiler/src/backend/par_runtime.c:758",
+        "compiler/src/backend/par_runtime.c:775-780",
+        "compiler/src/backend/par_runtime.c:849-855",
+        "compiler/src/backend/par_runtime_windows.c:906-912",
+        "compiler/src/backend/par_runtime_windows.c:966-972"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 29,
+      "title": "The entry thread's own scheduler-loop stack is parkable, so section 5's hard requirement fails one level below the fiber it introduces",
+      "issue_summary": "Section 5 put wf__main_body on a pool stack but left the entry pthread sitting in a scheduler loop on the host stack. The loop runs stolen work nested on its stack; that work can miss and park the host stack, and a worker resuming it would execute wf__floor_run's return (wf_floor.c:328) on a thread that never called it.",
+      "alternatives_considered": [
+        "The entry thread sleeps on the host stack until the status arrives (fails in the pool-off world: nobody runs the entry's pool stack)",
+        "A thread's host stack is not a Whitefoot stack; every scheduler loop runs on a pool stack"
+      ],
+      "decision": "A thread's host stack carries no Whitefoot work. Every scheduler loop runs on a pool stack; the pthread stack platform item 1 reserves is a host stack outside the Whitefoot population. A host stack is entered at most twice: once at thread start to take a pool stack and switch, and once, on the entry thread only, when the status is posted, to switch back and execute wf__floor_run's return; workers are detached and never return (par_runtime.c:669). No thread ever switches to another thread's host stack. Critic's corrections folded: on Windows a host stack must be a fiber to be switched to, so platform item 3 names ConvertThreadToFiber at thread start and ConvertFiberToThread at the end beside CreateFiberEx and SwitchToFiber; and the rule reads 'at most twice'. Verified by the critic in the pool-off world (one thread does both entries) and under migration (main's pool stack parks and a worker posts the status; the entry thread exits from its own loop and its own host stack).",
+      "evidence": [
+        "compiler/src/backend/wf_floor.c:303-329",
+        "compiler/src/backend/wf_floor.c:328",
+        "compiler/src/backend/par_runtime.c:665-669",
+        "compiler/src/backend/par_runtime_windows.c:807-818"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 30,
+      "title": "The refused-submit edge runs the operation as a blocking host call with no ready-list check, and S18's premise that admission waits is not the tree's behaviour",
+      "issue_summary": "S18 assumed completion-record admission waits before accept; in the tree wf_completion_claim returns WAIT_CAPACITY without waiting (runtime.c:234-239), submit returns 0 (bridge.c:612-614), and the emitter's inline arm runs the direct host call. The critic's residual schedule was a demoted open (path over 1024 bytes) that finds no descriptor and enters the retire-and-retry loop, a wait that holds the thread while the descriptor it needs is owed by a parked stack's close. Three rounds tried to make that wait park or switch; each form either lost the ledger's asking or left the stack in no state.",
+      "alternatives_considered": [
+        "A capacity-waiter list with a register-first protocol, unlink on cancel, and a precondition, plus a retirement waiter that parks aside (rejected: aside loses the asking and the ledger stalls)",
+        "A 'switch to a READY stack' step inside the retire-and-retry loop's aside window (rejected: the switch does not return)",
+        "A per-thread pinned-return stack (a fifth state under another name)",
+        "Owner ruling: the missing relation is on the API, not in the scheduler (constitution T4)"
+      ],
+      "decision": "Owner ruling, 2026-09-04, recorded as constitution T4. The sequential program works only because close and open share one finite resource, and that relation is not on the API: v0.40 [SYS-10] makes FilePermit proof-only, never returns it, and erases it before the native ABI, so close produces nothing the checker sees and the pipeline overlaps it with a later open; the invented EMFILE, the retirement ledger, its award order, and the thread-holding wait are backend workarounds for that gap. The gap closes on the API (roadmap BOUND-1: FileFactory carries a capacity never larger than what the target provides, reserve_file returns a Result, release returns the permit or credit), after which an open holding its permit cannot fail for want of a descriptor, the residual schedule cannot arise, and the retirement ledger with its loop is deleted rather than ported. The park-on-miss implementation is sequenced after that batch. What remains of this issue is one rule, the same as decision 6's slot refusal: a completion-record refusal reverts the operation to the sequential schedule (the emitter's inline arm runs the direct host call, which the sequential program performs at that point anyway, and invents no outcome); no capacity-waiter list, register-first protocol, unlink-on-cancel, precondition, or two-record enumeration bound is needed. S18 is rewritten to that. The design's test for every device API is T4's: if overlap can invent an outcome the sequential program never produces, a resource is missing from the API and the answer is never in the scheduler. SUPERSEDED on its refusal path, 2026-09-04, by decision 55: a completion-record refusal is unreachable by sizing and no inline arm exists in emitted code; the T4 finding and the deletion of the retirement machinery stand.",
+      "evidence": [
+        "docs/constitution.md (T4)",
+        "spec/kernel-spec.md:2548-2552 ([SYS-10])",
+        "research/investigations/io-model/FIRST-PRINCIPLES.md (§12)",
+        "compiler/src/backend/completion/contract.h:409-417",
+        "compiler/src/backend/completion/harness.c:4041-4047",
+        "compiler/src/backend/completion/runtime.c:234-239",
+        "compiler/src/backend/completion/runtime.c:1474-1483",
+        "compiler/src/backend/completion/runtime.c:1647-1652",
+        "compiler/src/backend/completion/bridge.c:612-614",
+        "compiler/src/backend/completion/bridge.c:1049-1059",
+        "compiler/src/backend/completion/bridge.c:1271-1329"
+      ],
+      "resolved_at_round": 3
+    },
+    {
+      "id": 31,
+      "title": "Section 7.1's closed set of four primitives omits the ready-list mutex section 6 puts inside the core, which is what section 11's gate compiles against",
+      "issue_summary": "Section 7.1 listed four primitives, but section 6 mandates a mutex on the ready list inside the core and the loop the compute arm keeps calls sched_yield (par_runtime.c:493). The enumerator must model both.",
+      "alternatives_considered": [
+        "Reduce the mutex to the atomics (it blocks; the enumerator needs it as its own wait state)",
+        "Six primitives: add lock/unlock and yield"
+      ],
+      "decision": "The closed set is six: atomic load, store and compare-exchange with orderings; the stack switch; the sleep and wake on the one primitive; the reservation at pool start; lock and unlock of the core's mutexes; yield. Section 7.1 says how the enumerator models each (the mutex as a schedulable wait state; yield as a scheduling point). Critic's addition: the per-switch floor-bounds update (wf_floor.c:72-74 are static thread-locals set at every switch per decision 19) sits inside primitive 2, the switch, or is a named seventh symbol; the plan states which. Nothing else in the core touches shared state or the platform outside the set.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:487-495",
+        "compiler/src/backend/par_runtime.c:493",
+        "compiler/src/backend/wf_floor.c:72-74",
+        "spec/kernel-spec.md:1450"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 32,
+      "title": "The plan carries two stack populations and never says which one a thread's scheduler loop runs on; under the reading section 5 fixes for the entry, section 11's two-thread two-stack configuration reaches no park at all",
+      "issue_summary": "Section 5 carves stacks from one reservation; section 7's platform item 1 creates threads with reserved stacks; nothing said which carries a thread's loop. Under the entry reading, two threads and two stacks leave zero free stacks and reach no park, making most of section 11 unreachable.",
+      "alternatives_considered": [
+        "Loops on the per-thread reserved stacks, pool for parked stacks only",
+        "One Whitefoot population (the pool); one host stack per thread outside it, carrying no Whitefoot work"
+      ],
+      "decision": "Settled with decision 29: every scheduler loop runs on a pool stack; the per-thread reserved stack is a host stack outside the Whitefoot population. Every running thread holds exactly one pool stack, so free = S - T - P with P parked; the first park needs S >= T + 1. Section 11's sweep is (threads, stacks) = (1,3), (2,3), (2,4); (2,2) reaches no park and is removed. Critic's restatement folded: (2,4) is required by S22 and S23 (two parked stacks and two threads), not by S19 or item A4.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:428-433",
+        "research/investigations/io-model/PARK-ON-MISS.md:736-741",
+        "compiler/src/backend/par_runtime.c:665"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 33,
+      "title": "The exit-status post is a third event with no wake, so the entry thread can sleep past the end of the program",
+      "issue_summary": "After main's stack parks, the entry thread sleeps at loop priority 4 on the one primitive, unbounded (wf_bridge_park passes UINT32_MAX, bridge.c:502-530). A worker later runs main to its return and posts the status; the status post was none of section 6's epoch-bump transitions, so both threads sleep with the status posted and wf__floor_run's return (wf_floor.c:328) is never reached. Today pthread_join is the wake and the plan had removed pthread_create without replacing it.",
+      "alternatives_considered": [
+        "Keep pthread_create and pthread_join for the entry (rejected by decision 29: the host stack carries no Whitefoot work and pthread_create leaves the entry path)",
+        "A third epoch-bump transition through wf_completion_notify_scheduler, with the status test re-tested on every wake (insufficient as worded: a post between the test and the epoch capture is invisible to the park)",
+        "The same, with the status test inside the capture-to-park window"
+      ],
+      "decision": "The status post is a third epoch-bump transition through wf_completion_notify_scheduler (runtime.c:366-392, bumps wake_epoch at :367 before reading parked_schedulers; public entry wf_completion_notify_compute, runtime.c:937-947). Lead ruling adopting the critic's round: the entry thread's status test sits inside step 4's capture-to-park window, tested after the epoch is captured and before the park, exactly as flush and progress are, because wf_completion_park_if_unchanged sleeps whenever the current epoch equals the captured one (runtime.c:1004-1008, :1022-1031, :1033-1046; Linux arm linux_io_uring.c:1286-1289, :1318-1336) and a bump before the capture is caught only by a check after it. The loop diagram carries the test. The entry-posts and pool-off paths need no wake (the poster is the thread that returns). S17 walks the worker-posts path to wf_floor.c:328; section 11 item 16 enumerates it.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:502-530",
+        "compiler/src/backend/completion/runtime.c:366-392",
+        "compiler/src/backend/completion/runtime.c:937-947",
+        "compiler/src/backend/completion/runtime.c:1004-1046",
+        "compiler/src/backend/completion/linux_io_uring.c:1286-1289",
+        "compiler/src/backend/completion/linux_io_uring.c:1318-1336",
+        "compiler/src/backend/wf_floor.c:327-328"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 34,
+      "title": "Section 7.1's closed set omits flush and progress, which the I/O arm and step 4 call and which reach an event source",
+      "issue_summary": "wf_bridge_flush_target and wf_bridge_progress (both static, bridge.c:810, :445) are called by section 2's I/O arm and section 6's step 4, and progress reaches the drain that calls wf__writer_scheduler_ready (runtime.c:653), one of section 6's event sources; section 11's gate compiles the core against the six primitives and nothing else.",
+      "alternatives_considered": [
+        "Treat flush and progress as core-internal (they write state the switch does not own; the floor-bounds answer does not transfer)",
+        "A seventh primitive, target progress"
+      ],
+      "decision": "Target progress is the seventh primitive: flush the deferred doorbell, one bounded target pass, drain; bridge.c exports one entry over its three statics. wf_bridge_progress today does the io_uring pass (bridge.c:448-464), the drain (:468), the target pass under the zero-helper policy (:473-475, pinned at :172-176; it executes a host open or close inline, file_adapter.c:487-503), and wf__par_help_once (:476), which section 7 deletes, so the three-action description is the honest remainder. Section 11 models the primitive as nondeterministic delivery of any registered completion that may publish its waiter READY, and as one that may block for the inline host call. Critic's addition recorded: dropping wf_bridge_target_work_needs_this_thread is safe under the plan's order because the arm runs progress before every park.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:172-176",
+        "compiler/src/backend/completion/bridge.c:445-477",
+        "compiler/src/backend/completion/bridge.c:810-817",
+        "compiler/src/backend/completion/runtime.c:651-654",
+        "compiler/src/backend/completion/file_adapter.c:487-503"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 35,
+      "title": "'At pool start' names a point the tree never reaches in the two shapes that need a pool stack",
+      "issue_summary": "wf__par_start runs only under pthread_once inside wf__par_attach, reached from wf__par_acquire_lane (par_runtime.c:729-730, :770), and returns before preparing a lane when fewer than two lanes are requested (:642-643, :655-657). Section 5 needs the entry on a pool stack in every core link, S10a needs a park with the pool off, and S17's completion-only twin asserted no lane is ever started.",
+      "alternatives_considered": [
+        "Move the whole pool start to the core's entry (prices thread start into every program; the 17-18 percent comment at par_runtime.c:865-875 attributes its cost to spinning threads, an inference the plan labels)",
+        "Two starts: the stack reservation at the core's entry, worker start lazy as today, with the stack count tied to the worker setting"
+      ],
+      "decision": "Two starts. The stack reservation is made once at the core's entry (wf__floor_run when the core symbol is present, decision 12), so every core link has pool stacks with WF_WORKERS at 0 or 1; worker-thread start stays lazy at the first lane acquisition. Lead ruling adopting the critic's round: the reservation is sized from the same worker setting wf__par_requested_lanes reads, and is at least lanes plus one, or the lane count is capped by the stacks reserved, because every thread's first act is to switch to a pool stack and a thread start is not a join that the fourth line covers; the plan states which and names the thread-start pop and the entry's own pop as free-list poppers. S10a and S17 are rewritten; the cost sentence stays labelled as inference.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:628-630",
+        "compiler/src/backend/par_runtime.c:642-643",
+        "compiler/src/backend/par_runtime.c:651-658",
+        "compiler/src/backend/par_runtime.c:678-688",
+        "compiler/src/backend/par_runtime.c:729-730",
+        "compiler/src/backend/par_runtime.c:770",
+        "compiler/src/backend/par_runtime.c:865-875"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 36,
+      "title": "The stack pool's free list has many poppers and no stated protocol, and I3 does not reach it",
+      "issue_summary": "Any thread taking line three pops the stack free list and any EMPTY scheduler stack is pushed back, so it is many-producer many-consumer; I3 is scoped to a lane's slot list and its single-popper premise does not transfer; section 7.1 named exactly one mutex, the ready list's.",
+      "alternatives_considered": [
+        "A tagged lock-free stack with its ABA answer written out (named alternative if section 12's measurement shows the lock on the park path)",
+        "The core's one mutex guards both the ready list and the stack free list"
+      ],
+      "decision": "The core's one mutex guards both lists; section 7.1's primitive 5 says so; the cost argument carries because both lists are touched on a park and on a resume. Lead ruling adopting the critic's round: the mutex says who may touch the word, not when a stack may be pushed, so the EMPTY-to-pool push happens after the switch, from the stack switched to, exactly as step 5's commit does (a push before the switch hands one stack to two threads even under the lock; section 11 item 18 asserts against that). The entry's final pool stack is pushed from the host stack at its second entry. The popper list is complete: line-three pops, the thread-start pop of every thread, and the entry's own pop at the core's entry; the lock's once-per-park-once-per-resume count is stated as covering the steady state, with those three start-time pops beside it. Section 11 models the stack list.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md:574-591",
+        "research/investigations/io-model/PARK-ON-MISS.md:679-682",
+        "research/investigations/io-model/PARK-ON-MISS.md:802",
+        "compiler/src/backend/par_runtime.c:758",
+        "compiler/src/backend/par_runtime.c:775-780"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 37,
+      "title": "Section 4 states two different rules for an unnamed completion member's join position and cites code that does neither",
+      "issue_summary": "Section 4 said an unnamed completion member is joined after every compute member, and also that completion members keep the positions their dependency edges fix; emit_overlap_joins (parallel.rs:624-670) walks the queue in publish order and dispatches by kind in place, so a completion member published before a compute member is joined before it today; only a member a later step names is repositioned, by removal in emit_completion_dependencies (completion.rs:244-252).",
+      "alternatives_considered": [
+        "Move completion members after every compute member, with an emitter change listed in section 8",
+        "Keep today's order; scope the reversal (compute_join_order) to compute members; no emitter change"
+      ],
+      "decision": "Today's order is kept and section 4 says what the emitter does. compute_join_order is scoped to compute members; an I/O join never takes line two of section 2's rule (an I/O operation is never on the deque) and takes line one, line three, or the fourth line's I/O arm, so the newest-or-stolen property is unaffected by where completion joins fall. No sentence in sections 4 or 8 says 'after every compute member'. Critic's anchor corrections folded: overlap_join_tail is emitter.rs:2234-2239; IrOverlap::handed_out lives in the lowering module (the refiner verifies the file path on this branch).",
+      "evidence": [
+        "compiler/src/backend/emitter/parallel.rs:624-670",
+        "compiler/src/backend/emitter/completion.rs:244-252",
+        "compiler/src/backend/emitter.rs:2234-2239"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 38,
+      "title": "Section 9's specification citations are stale after v0.41 activation",
+      "issue_summary": "main moved to 30602914 with spec v0.41 ACTIVE; section 13 of the spec moved about six lines, :1440 was blank, :1450 was [EFF-5], and the v0.40 META-5 delta moved to spec/kernel-spec-v0.40.md:6. No substantive change to section 13 or [SYS-10].",
+      "alternatives_considered": [
+        "Leave the plan anchored at ddcfdc47/v0.40",
+        "Re-anchor to 30602914/v0.41 and re-verify every spec citation"
+      ],
+      "decision": "The plan is anchored at main 30602914, specification v0.41, on branch io/t4-resource-relations. Every spec citation was re-read and remapped (section 13 head :1966; the not-observable sentence :1993; [EFF-4] :1446; [SCOPE-3] resource sentence :1995; [PAR-3] :2045-2047; META-5 v0.40 delta at spec/kernel-spec-v0.40.md:6) and verified by the critic on this branch. Critic's residual folded: [ERR-1]'s no-unwinding sentence is :1465. Two runtime anchors corrected in the same pass (bridge.c:502-530; bridge.c:55-58, line 54 being blank).",
+      "evidence": [
+        "spec/kernel-spec.md:1446",
+        "spec/kernel-spec.md:1465",
+        "spec/kernel-spec.md:1966-1995",
+        "spec/kernel-spec.md:2045-2047",
+        "spec/kernel-spec-v0.40.md:6"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 39,
+      "title": "The submit path's target-capacity arm waits and parks the thread inside a live frame, outside the core",
+      "issue_summary": "After the completion record is claimed (bridge.c:612) and a dependent may be registered (:631-639), wf_bridge_submit_file and its io_uring twin loop on WF_FILE_WAIT_CAPACITY from the adapter or ring (file_adapter.c:1109-1117; linux_io_uring.c:608-628), run progress and call wf_bridge_park (bridge.c:655, :717) with no ready-list test, inside a live frame; section 2's 'the submit does not wait' was true only of the record claim.",
+      "alternatives_considered": [
+        "The wait becomes a core park with the adapter's capacity announcement as its named wake (rejected: the operation is unsubmitted and only the holding thread can submit it, so the registered wake can never arrive, and a capacity wake needs the waiter list T4 and decision 30 removed)",
+        "Reversion: the refused operation runs through wf_bridge_execute_direct and publishes an inline terminal on the held record"
+      ],
+      "decision": "Reversion. On WF_FILE_WAIT_CAPACITY after the claim the operation runs through wf_bridge_execute_direct (bridge.c:1340-1364) and publishes an inline terminal on the held record, the shape wf_bridge_publish_inline_file (:556-600) already has; a dependent registered at :631-639 is answered by that publication (OWNERSHIP_COMPLETE matches every publication; the drain clears and calls ready once). Critic's strengthening recorded: begin_submit already accepts WAIT_CAPACITY (runtime.c:272-283, two-phase transition :242-270) and the inline terminal needs SUBMITTING (:558-569), so no state-machine edit is needed and the plan drops its hedge. Fold obligation: the io_uring twin (:694-719) holds a wf_linux_file_request and cannot return -1 after the claim; the plan says where the POSIX request form for the reversion comes from. SUPERSEDED 2026-09-04 by decision 55: adapter and ring capacity are sized above the record count, so this arm is unreachable and is deleted rather than reverted.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:612",
+        "compiler/src/backend/completion/bridge.c:631-657",
+        "compiler/src/backend/completion/bridge.c:694-719",
+        "compiler/src/backend/completion/bridge.c:556-600",
+        "compiler/src/backend/completion/bridge.c:1340-1364",
+        "compiler/src/backend/completion/runtime.c:242-283",
+        "compiler/src/backend/completion/runtime.c:558-569",
+        "compiler/src/backend/completion/file_adapter.c:1109-1117",
+        "compiler/src/backend/completion/linux_io_uring.c:608-628"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 40,
+      "title": "Section 5 states the stack count two ways, and under the reading it argues for the pool holds exactly one parked stack",
+      "issue_summary": "One reading sized the stack count from the WF_WORKERS setting with floor T+1; since wf__par_requested_lanes counts the calling thread (par_runtime.c:673-677), S = T+1 always, one stack can ever be parked, section 0's depth claim collapses and section 11's configurations are ones no link produces.",
+      "alternatives_considered": [
+        "Stack count derived from WF_WORKERS (rejected)",
+        "Stack count is its own startup setting with floor T+1"
+      ],
+      "decision": "Lead ruling: the stack count is its own startup setting, independent of WF_WORKERS above the floor; the floor is the thread count plus one and a setting below it is raised to it; the floor, not the count, carries the thread-start argument of decision 35. The derived-count paragraphs are deleted; section 0, section 7 item 4, section 11's sweep and section 12 are consistent with the bound (critic verified).",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:634-649",
+        "compiler/src/backend/par_runtime.c:673-677"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 41,
+      "title": "Section 7.1's closed set omits wf_completion_depend, step 2 of the I/O arm, which reenters the core",
+      "issue_summary": "wf_completion_depend takes the publication lock, refuses duplicates, and on ALREADY_READY calls wf__writer_scheduler_ready itself (runtime.c:817-830); section 11 compiled the core against the seven primitives and nothing else.",
+      "alternatives_considered": [
+        "Treat registration as core-internal",
+        "An eighth primitive, completion registration"
+      ],
+      "decision": "Completion registration is the eighth primitive: wf_completion_depend, modelled in section 11 item 19 as a registration that may answer REGISTERED or ALREADY_READY, with the reentry (ready called on the registering stack) ordered before the answer. SUPERSEDED 2026-09-04 by decision 56: wf_completion_depend and its ALREADY_READY arm are deleted; the I/O join uses the protocol of primitive 1 exactly as the compute join does, so primitive 8 is removed and the closed set is seven.",
+      "evidence": [
+        "compiler/src/backend/completion/runtime.c:784-833",
+        "compiler/src/backend/completion/runtime.c:828-830"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 42,
+      "title": "The Windows twin list covers only par_runtime_windows.c, so the Windows I/O joins the design converts had no name",
+      "issue_summary": "Section 7 promised a twin in par_runtime_windows.c for every bullet, but the Windows I/O joins are windows_bridge.c:1138-1153 and :1155-1180, with :760-779 and :1225-1242 the other sites; section 3 misplaced the third POSIX violation, which is in completion/bridge.c.",
+      "alternatives_considered": [
+        "Keep the single twin promise",
+        "Split the twin promise: par_runtime_windows.c for the compute bullets, windows_bridge.c for the completion bullets, each site named"
+      ],
+      "decision": "The twin promise is split and every Windows site is named with its POSIX counterpart; section 3's count is rewritten (the third POSIX violation is the bridge's, and Windows differs in kind). Fold obligations from the critic's check: wf__completion_file_status_join (windows_bridge.c:1182-1197) is an abort() stub, not a join loop, and is described as such; section 7's closing bullet that 'every bullet above has a live twin in par_runtime_windows.c' is removed.",
+      "evidence": [
+        "compiler/src/backend/completion/windows_bridge.c:760-779",
+        "compiler/src/backend/completion/windows_bridge.c:1138-1153",
+        "compiler/src/backend/completion/windows_bridge.c:1155-1180",
+        "compiler/src/backend/completion/windows_bridge.c:1182-1197",
+        "compiler/src/backend/completion/windows_bridge.c:1225-1242"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 43,
+      "title": "Step 4's capture-to-park window tests flush, progress and the exit status but not the ready list",
+      "issue_summary": "Section 6's own rule says every condition that must not be slept through is tested after the epoch capture; the ready list was tested only at priority 1, before the capture, so a READY stack enqueued between priority 1 and the capture is slept beside (a stranded READY stack, no hang found); section 2's I/O arm already tested it inside the window.",
+      "alternatives_considered": [
+        "Rely on the next wake",
+        "Test the ready list inside the window and add the invariant"
+      ],
+      "decision": "The ready-list test moves inside step 4's capture-to-park window in section 6, and section 11 gains the invariant that no READY stack is slept beside. Fold obligation: section 2's I/O arm still says 'on every wake' where section 6 says inside the window; one clause makes them one sequence.",
+      "evidence": [
+        "compiler/src/backend/completion/runtime.c:1004-1046",
+        "compiler/src/backend/completion/linux_io_uring.c:1297-1331"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 44,
+      "title": "Section 7's wf__floor_attach_thread bullet is at the wrong granularity, and the bounds' only writer asks pthread",
+      "issue_summary": "'Per stack, set at switch' would map a 64 KiB alternate signal stack per switch (wf_floor.c:234-247), a run-time allocation and a leak; and wf__floor_capture_bounds asks pthread for the bounds (wf_floor.c:202-226), which is wrong for a pool stack.",
+      "alternatives_considered": [
+        "Keep the bullet as written",
+        "Split the function: per-thread alternate stack at thread start; per-stack bounds written at the switch from the reservation record"
+      ],
+      "decision": "wf__floor_attach_thread splits into a per-thread half (the alternate stack, kept at thread start: par_runtime.c:527 and wf_floor.c:279) and a per-stack half (the three bounds, part of primitive 2, the switch), and the switch writes the bounds from the pool's reservation record. Critic verified the carve supplies exactly the three words wf__floor_capture_bounds writes; the guard band is process-wide (wf_floor.c:265-268); Windows needs none.",
+      "evidence": [
+        "compiler/src/backend/wf_floor.c:72-74",
+        "compiler/src/backend/wf_floor.c:202-226",
+        "compiler/src/backend/wf_floor.c:234-247",
+        "compiler/src/backend/wf_floor.c:265-268",
+        "compiler/src/backend/wf_floor.c:279",
+        "compiler/src/backend/par_runtime.c:527"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 45,
+      "title": "Citation and wording drift after round three",
+      "issue_summary": "A false statement that both of the commit's compare-exchanges succeed on the NOTIFIED arm; parallel.rs:1692-1740 is tests/parallel.rs; qualification.rs:266-269 is not the direct call; :482 is :483; the sweep omitted (1,2); 'source is unchanged' for wf_floor.c contradicted the new weak-symbol test.",
+      "alternatives_considered": [
+        "Leave for the implementation batch",
+        "Fix now"
+      ],
+      "decision": "All six fixed and verified by the critic; decision 27's wording corrected in this file: on the NOTIFIED arm the commit's first compare-exchange fails (writer_scheduler.c:157-164) and the second succeeds (:166-178).",
+      "evidence": [
+        "compiler/src/backend/completion/writer_scheduler.c:157-178"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 46,
+      "title": "The Windows capacity-await loop waits on completion-record capacity, twinning the POSIX record claim, and the emitter's Windows fork retries instead of reverting",
+      "issue_summary": "Issue 42's fold filed wf__completion_wait_core_capacity (windows_bridge.c:755-780) as the twin of the submit wait; it waits on wf_completion_has_capacity, which scans the runtime's slots for one in phase FREE (windows_completion.c:281-299), so it twins the POSIX record claim, which does not wait. On Windows a record refusal waits today in a loop that helps compute (:772) and sleeps (:778), reached from emitted code: emit_completion_submit_verdict forks on the target (completion.rs:448) and the Windows arm retries the same submission (completion.rs:438, :499-526). Section 2's 'a record refusal does not wait' was POSIX-only and section 8 listed no Windows emitter change.",
+      "alternatives_considered": [
+        "Keep the Windows retry but move the wait for core progress into the core (progress, then retry, no sleep in emitted code)",
+        "Windows reverts like POSIX: a record refusal takes the existing inline direct route; the emitter's Windows retry fork is deleted"
+      ],
+      "decision": "Windows reverts like POSIX. On a record refusal the operation takes the inline route the tree already has: qualification.operation() gives Native and Windows the same six _direct symbols (qualification.rs:233-291; completion.rs:699), all defined in compiler/src/backend/windows_runtime.c (open :1018, status :1126, close :1174, pread :1296, write :1348, directory_next :1617), reached through one fork with three callers (completion.rs:764, :924, :1183), so the collapse covers every request kind. The direct call is safe on an IOCP-associated handle by construction: only read-class descriptors are associated (windows_bridge.c:359-385; output is registered unassociated at :348-353), the suppress bit sits on the one worker that meets them (windows_runtime.c:1243-1248), and the write worker is a synchronous WriteFile on a never-associated handle (:1328-1346). The retry's premise fails under park on miss: a record may be held by a parked stack no emitted edge can name and the waiting thread cannot run it, a deadlock on a one-thread Windows link, which is reachable because a completion-only Windows program starts no pool while windows_bridge.c is unconditional (whitefootc.rs:135-143; a parallel Windows link cannot drop below two threads, par_runtime_windows.c:751-753, :866-868). Section 8 lists the emitter change: the Windows retry fork (completion.rs:448, :499-526, back-edges :516 and :524; :80; stackless.rs:473) is deleted. This changes the roadmap BOUND-1 policy that IOCP-eligible requests have zero direct or blocking fallback: a record refusal now takes one direct call, the same as POSIX, and the implementing batch updates BOUND-1. Fold obligations: name emit_windows_completion_materialization (completion.rs:531) and the six label helpers (:1353-1380) as deleted with the fork; and the plan's supersede list names the BOUND-1 sentence it changes. SUPERSEDED 2026-09-04 by decision 55: the Windows capacity-await loop and the emitter retry fork are deleted as dead code; no direct call is introduced; the BOUND-1 zero-fallback policy stands and the policy change recorded here is withdrawn. The emitter-test dispositions of decision 47 are re-read accordingly (a test asserting that core pressure never becomes direct execution is now consistent with the design and stays).",
+      "evidence": [
+        "compiler/src/backend/completion/windows_bridge.c:348-385",
+        "compiler/src/backend/completion/windows_bridge.c:755-780",
+        "compiler/src/backend/completion/windows_completion.c:281-299",
+        "compiler/src/backend/windows_runtime.c:1018",
+        "compiler/src/backend/windows_runtime.c:1243-1248",
+        "compiler/src/backend/windows_runtime.c:1296",
+        "compiler/src/backend/windows_runtime.c:1328-1346",
+        "compiler/src/backend/emitter/completion.rs:438-526",
+        "compiler/src/backend/emitter/completion.rs:699",
+        "compiler/src/backend/emitter/qualification.rs:233-291",
+        "compiler/src/backend/par_runtime_windows.c:8-13",
+        "compiler/src/backend/par_runtime_windows.c:751-753",
+        "compiler/src/bin/whitefootc.rs:135-143",
+        "docs/roadmap.md (BOUND-1)"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 47,
+      "title": "The Windows verdict collapse strands three live emitter tests and one header declaration",
+      "issue_summary": "Decision 46's deletion of the emitter's Windows retry fork strands tests in compiler/src/backend/tests/completion.rs (functions at :470, :496, :863), one of which asserts 'core pressure must never become direct execution' (:550), the negation of the new rule, and leaves completion/bridge.h:28 declaring wf__completion_wait_core_capacity with no definition or caller.",
+      "alternatives_considered": [
+        "Leave for the implementing batch to discover",
+        "List them in section 8 with their dispositions"
+      ],
+      "decision": "Section 8 lists the three test functions with their dispositions: :470 loses only the :478 list entry; :496 is retired whole because every assertion is fork-specific (:508-551), with the honest note the repository's rule requires (the rule it tests changed by recorded decision 46, not to make a check green); :863 keeps its subject (its ordering points :867 and :870 stand). bridge.h:28 is deleted; the verdict enum (:18-22) stays because the runtime still answers 2. Critic's detail for the batch: :879-882's message names the deleted invalid-verdict arm. AMENDED 2026-09-04 by decision 55: with the direct family removed from emitted code, the test asserting that core pressure never becomes direct execution (compiler/src/backend/tests/completion.rs:550) stays; only assertions of the deleted retry shape are retired.",
+      "evidence": [
+        "compiler/src/backend/tests/completion.rs:470-551",
+        "compiler/src/backend/tests/completion.rs:863-882",
+        "compiler/src/backend/completion/bridge.h:18-28"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 48,
+      "title": "I4's _Static_assert covers the capacity coupling but not the power-of-two property the deque's mask wrap needs",
+      "issue_summary": "The deque wraps by mask (par_runtime.c:358, :382, :409), so the slot count must be a power of two; the only assertion of that is par_runtime_windows.c:61-64, which the core deletes, and par_runtime.c has no _Static_assert.",
+      "alternatives_considered": [
+        "Rewrite the wrap as a modulo",
+        "Assert both properties in the core"
+      ],
+      "decision": "The core carries two _Static_asserts: the deque buffer length equals the slot count, and the slot count is a power of two (section 3 I4, section 7's slots bullet); section 11's reduced slot count is constrained to a power of two (2 or 4, never 3).",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:358",
+        "compiler/src/backend/par_runtime.c:382",
+        "compiler/src/backend/par_runtime.c:409",
+        "compiler/src/backend/par_runtime_windows.c:61-64"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 49,
+      "title": "The Windows floor is the unnamed twin of section 5's entry-shape change",
+      "issue_summary": "wf_floor_windows.c has its own wf__floor_entry (:136-141) and wf__floor_run (:143-175), _beginthreadex (:157-164), abort instead of a fallback (:166), and WaitForSingleObject as the exit wake (:170); the plan touched it only for stack size and bounds.",
+      "alternatives_considered": [
+        "Leave Windows to the batch",
+        "Name what changes and what stays"
+      ],
+      "decision": "Sections 5 and 7 name wf_floor_windows.c as the twin: what changes (the weak core symbol test; the host stack entered at most twice with ConvertThreadToFiber and ConvertFiberToThread; the exit wake replaced by the status-post epoch bump) and what stays (the abort on thread-creation failure, since Windows has no second shape). Windows wf__floor_attach_thread (:113) is per-thread and stays under the POSIX bullet's split.",
+      "evidence": [
+        "compiler/src/backend/wf_floor_windows.c:113",
+        "compiler/src/backend/wf_floor_windows.c:136-175"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 50,
+      "title": "Section 5's floor argument does not establish that no thread start finds the free list empty",
+      "issue_summary": "The argument bounded the thread count, not the free list. At S = T+1 the free count at the last worker's pop is S - T + 1 - P, so the property rests on two unstated facts.",
+      "alternatives_considered": [
+        "Raise the floor",
+        "State the two facts and enumerate the property"
+      ],
+      "decision": "Section 5 states the two facts with citations: before the pool starts no lane exists, so at most one stack (the entry's) can be parked, and in fact P = 0 through the create loop because the pool starts on the entry's running stack; and attach precedes the first publish, so deques are empty during the create loop. Section 11 item 21 asserts that no thread start finds the free list empty under S >= T+1 and requires the enumerator to reach the two ruled-out orderings.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:651-695",
+        "compiler/src/backend/par_runtime.c:729-730"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 51,
+      "title": "Group A item 10 and S15 describe a two-publisher race that section 6 proves cannot arise",
+      "issue_summary": "Section 6 proves the two READY transitions are mutually exclusive and the runtime has exactly one publisher per registration; S15's 'winning CAS' was the pre-decision-23 queue.",
+      "alternatives_considered": [
+        "Keep the race test",
+        "Restate as the single-publisher property"
+      ],
+      "decision": "Item 10 states the property with the single-publisher evidence (runtime.c:630-635, :811-814, :828-830, :883-885): exactly one of the two READY transitions enqueues. S15 is rewritten as the mutex-serialized consumer schedule.",
+      "evidence": [
+        "compiler/src/backend/completion/runtime.c:630-635",
+        "compiler/src/backend/completion/runtime.c:811-814",
+        "compiler/src/backend/completion/runtime.c:828-830",
+        "compiler/src/backend/completion/runtime.c:883-885"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 52,
+      "title": "Three citations point at prose or a neighbouring line, and the reversion's four-step shape repeats a registration that aborts",
+      "issue_summary": "linux_io_uring.c:705-718 named a function defined at :1113; runtime.c:384-390 stopped a line short of the broadcast at :391; the reversion's shape repeated wf_completion_depend, which aborts on a duplicate registration.",
+      "alternatives_considered": [
+        "Leave for the batch",
+        "Fix now"
+      ],
+      "decision": "Citations fixed (definition at linux_io_uring.c:1113; broadcast at runtime.c:391; four smaller anchors). The reversion is two steps and never re-registers: calling wf_bridge_publish_inline_file again would abort on DUPLICATE (bridge.c:576-583, runtime.c:811-814); the plan says it is a model, not a function to call.",
+      "evidence": [
+        "compiler/src/backend/completion/linux_io_uring.c:1113",
+        "compiler/src/backend/completion/runtime.c:384-391",
+        "compiler/src/backend/completion/bridge.c:576-583",
+        "compiler/src/backend/completion/runtime.c:811-814"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 53,
+      "title": "Group B table still files S15 under group A item 10 after item 10 disowned it",
+      "issue_summary": "Fold artefact of decision 51: the table row 'S15 Kind C (group A item 10)' and the dash legend were not updated.",
+      "alternatives_considered": [
+        "Leave",
+        "Fix"
+      ],
+      "decision": "Fixed with decision 55's fold: S15's row points at the consumer schedule under the mutex; the legend matches.",
+      "evidence": [
+        "research/investigations/io-model/PARK-ON-MISS.md (section 11 group B table)"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 54,
+      "title": "The kept verdict enum's comment ends by describing the deleted retry policy",
+      "issue_summary": "completion/bridge.h:11-17's comment says the source owner consumes an older token and retries the same request, which decision 46 deleted and decision 55 now makes unreachable.",
+      "alternatives_considered": [
+        "Leave",
+        "Note the comment rewrite in section 8"
+      ],
+      "decision": "Section 8's Windows item notes the comment rewrite along with the enum's new meaning under decision 55 (a refusal verdict is unreachable by sizing).",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.h:11-22"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 55,
+      "title": "No per-operation blocking fallback: the runtime's own resources are sized so it never refuses itself, the direct family leaves emitted code, and reproduction is replay",
+      "issue_summary": "Decisions 30, 39 and 46 answered three refusals (completion records exhausted, adapter or ring capacity, and on Windows the record wait) by reverting the operation to a blocking direct call in emitted code. The owner asked why a second mode exists at all. A thread blocked in a slow host call cannot service completions, which is the burial the design exists to prevent in another form; the direct family's remaining justifications (the sequential semantics as an executable reference; deterministic reproduction) do not hold: the semantics is the specification's definition, and completion order is a kernel event visible to user space, hence an input, so reproduction is replay of recorded inputs, which a controlled scheduler does better than a source-order lowering.",
+      "alternatives_considered": [
+        "Refusal reverts to a blocking direct call per operation (decisions 30, 39, 46)",
+        "Refusal parks on a capacity-waiter list (rejected under T4 and decision 30)",
+        "Runtime-own resources sized from the bound on their use so refusal is unreachable; one lowering; replay for reproduction"
+      ],
+      "decision": "Owner ruling, 2026-09-04. (1) The runtime's own resources are sized from the bound on their use, the same principle as stacks >= threads + 1: completion records >= (the largest in-flight count one stack can reach, which the emitter fixes: today the window, WF_BRIDGE_OPERATION_CAPACITY / 2 at bridge.c:857) x the stack count; ring depth >= records, so a ring cannot fill while every submission holds a record; the operation record holds the loaned path pointer rather than a copy, which the specification already permits (spec/kernel-spec.md:1456, 'Submission may retain only the loans recorded for that call'), so the 1024-byte demotion (file_adapter.h:65, bridge.c:1049-1059) disappears. The runtime therefore never refuses itself; its refusal paths are unreachable by construction and are deleted, on Windows included (the capacity-await loop and the emitter's retry fork are dead code; the BOUND-1 policy of zero blocking fallback stands and decision 46's policy change is withdrawn). (2) Emitted code has one lowering for every I/O operation: submit, then join; the direct family (qualification.rs:233-291 dispatch, the inline arm in completion.rs) is removed from emitted code. Operations without a kernel completion form are executed inside the runtime's engine (the target pass on a scheduler thread, or an adapter's execution thread on targets without a kernel completion source) and publish a completion like any other; that is the runtime's engine under the scheduler loop's rules, not a program path. (3) Reproduction: completion order is an input; the sequential world of constitution T3 is realized by replaying recorded inputs (data and completion order) under the controlled scheduler section 11 already requires, the same harness as the enumeration; the plan states the guarantee as 'with identical external inputs, including completion order, the internal execution is identical', never as unqualified determinism. (4) Honest target exhaustion (a limit changed outside the program) remains the operation's typed error under T4; compute slot refusal (decision 6) is unchanged because running the call inline is compute on the owner and blocks no thread. Decisions 30, 39 and 46 are superseded on their refusal paths; decision 20's record count becomes the sized bound. AMENDED 2026-09-04 by decision 56: the sizing rule for completion records is withdrawn (its window is a per-loop number, not a per-stack bound); the record now lives in the submitting frame and no record resource exists; the single lowering and the replay guarantee stand.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:857",
+        "compiler/src/backend/completion/writer_scheduler.h:21",
+        "compiler/src/backend/completion/file_adapter.h:65",
+        "compiler/src/backend/completion/bridge.c:1049-1059",
+        "compiler/src/backend/emitter/qualification.rs:233-291",
+        "compiler/src/backend/emitter/completion.rs:438-526",
+        "compiler/src/backend/emitter/completion.rs:764-783",
+        "spec/kernel-spec.md:1456",
+        "docs/constitution.md (T3, T4)"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 56,
+      "title": "Decision 55's record bound is not a bound: a straight-line group holds one record per member and nesting sums across frames",
+      "issue_summary": "wf__completion_window is the staged pipeline's per-loop query (bridge.h:30-35, bridge.c:845-887), not a bound on one stack's outstanding operations. A straight-line [PAR-1] group holds one completion record per member until the group's join (parallel.rs:631-637) with N a source statement count (the corpus generates it at arbitrary N, tests/completion.rs:438-457), and nesting sums across live frames bounded only by recursion depth. Decision 55 had deleted every refusal path on that bound's strength.",
+      "alternatives_considered": [
+        "Capacity park: a stack that finds no record parks with a freed record as its wake (sound; a waiter list and an event source; keeps the 64-record ceiling)",
+        "The emitter caps members per group by batching (bounds a frame, not nesting depth)",
+        "The record lives in the submitting frame; the global slot array and everything that exists because records were pool objects are deleted"
+      ],
+      "decision": "Owner ruling, 2026-09-04: the record lives in the frame that submits the operation, and it is the same object as a compute hand-out slot, completed by the kernel instead of a thread. Why it is valid: the emitter places the group's join before any value is read and before any exit edge (parallel.rs:619-623), so the frame outlives every operation it submits, and a parked stack's memory stays in place, so the address is stable for the operation's life. Shape (the runtime owns the layout; the emitter reserves an opaque block of the runtime's stated size and alignment in the frame, as it does for the compute slot): an atomic state (PENDING or DONE), the waiter (a stack), the typed result (value and error code), the operation kind, and a platform block (the SQE arguments on Linux; OVERLAPPED on Windows; the intrusive execution-queue link on targets with adapter threads). Protocol: decision 26's sequentially consistent pair, the one the compute slot already uses (par_runtime.c:448-463): the drain, on any thread at step 4 or in target progress, stores DONE then loads the waiter and publishes it READY; the join loads the state, reads the result if DONE, otherwise registers the waiter and re-reads before it parks. Consequences: no slot array, no WF_COMPLETION_SLOT_CAPACITY, no token, no generation (the kernel delivers each completion exactly once and the join has consumed it before the frame reuses the block), no publication lock, no milestones, no dependent registration, no wf_completion_depend and its ALREADY_READY arm (section 7.1 primitive 8 collapses into the protocol of primitive 1), no claim, no capacity notification, no 256-byte result copy (read writes the program buffer directly; the record holds the loans of the buffer and the path until the join, spec/kernel-spec.md:1456), no refusal. The completion is mapped to the record by address (io_uring user_data; the IOCP OVERLAPPED pointer), no lookup. A group of N operations costs N records in its frame, which the stack ledger counts from the clang frame size, so the concurrency ceiling is the stack, which decision 20 later shrinks by proof. Ring backpressure is the engine's: a full submission queue is re-entered until the kernel consumes it; the completion queue is sized with IORING_SETUP_CQSIZE and relies on NODROP; adapter-thread targets queue pending records on an intrusive list through the records. Decision 55 sizing rule is replaced by this; its single lowering and replay guarantee stand. Decision 20 record-count bound and decision 41 primitive 8 are superseded accordingly.",
+      "evidence": [
+        "compiler/src/backend/completion/contract.h:57-60",
+        "compiler/src/backend/completion/contract.h:145-170",
+        "compiler/src/backend/completion/writer_scheduler.h:21",
+        "compiler/src/backend/completion/bridge.h:30-35",
+        "compiler/src/backend/completion/bridge.c:845-887",
+        "compiler/src/backend/emitter/parallel.rs:619-637",
+        "compiler/src/backend/tests/completion.rs:438-457",
+        "compiler/src/backend/par_runtime.c:185-207",
+        "compiler/src/backend/par_runtime.c:448-463",
+        "spec/kernel-spec.md:1456"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 57,
+      "title": "Section 8 counts six _direct symbols in a range that names five",
+      "issue_summary": "qualification.rs:233-291 names five direct symbols; the sixth, wf__completion_directory_next_direct (windows_runtime.c:1617), is emitted from emitter/system.rs:542 and :2735 (qualification.rs:1036 names wf__completion_file_status_direct).",
+      "alternatives_considered": [
+        "Leave",
+        "Fix"
+      ],
+      "decision": "Fixed in the decision-56 fold: the direct family is listed by name with both anchors.",
+      "evidence": [
+        "compiler/src/backend/emitter/qualification.rs:233-291",
+        "compiler/src/backend/emitter/system.rs:542",
+        "compiler/src/backend/emitter/system.rs:2735",
+        "compiler/src/backend/windows_runtime.c:1617"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 58,
+      "title": "The engine's own fixed per-operation pools survive the record's deletion",
+      "issue_summary": "WF_COMPLETION_SLOT_CAPACITY still sized the bridge's slot, queue and Linux entry arrays (bridge.c:42-44, :61, :63, :103) and the submission queue (linux_io_uring.c:217-232), each submit reserved an adapter entry answering WAIT_CAPACITY on exhaustion (linux_io_uring.c:425-450, :624-628), and the same constant sizes the Windows bridge arrays through WF_WINDOWS_BRIDGE_CAPACITY (windows_bridge.c:23, :44, :46, static assertions :29-36) with the identical reserve loop (windows_iocp.c:218-241), WAIT_CAPACITY answer (:263), capacity loop (windows_bridge.c:872) and window twin (:884).",
+      "alternatives_considered": [
+        "Keep the entry pools and size them",
+        "Delete the entry pools: the record is the entry"
+      ],
+      "decision": "The adapter entry pools are deleted on both platforms because the record is the entry: on Linux the SQE is built from the record straight into the ring; on Windows the OVERLAPPED is the record's platform block and there is no submission ring, so the Windows bridge arrays, their static assertions, reserve loop, WAIT_CAPACITY answer, capacity loop and window twin go with the POSIX ones. Ring depth is a throughput parameter, not a bound on in-flight operations; the tree uses no SQPOLL and already refuses a ring without NODROP (linux_io_uring.c:227-228); a full submission queue is flushed by the submit syscall itself, which is that call's own syscall and not a wait for an event; completion-queue overflow is absorbed by IORING_SETUP_CQSIZE plus NODROP. Lead ruling adopting the critic's Windows census.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:42-44",
+        "compiler/src/backend/completion/bridge.c:61-63",
+        "compiler/src/backend/completion/bridge.c:103",
+        "compiler/src/backend/completion/linux_io_uring.c:217-232",
+        "compiler/src/backend/completion/linux_io_uring.c:425-450",
+        "compiler/src/backend/completion/linux_io_uring.c:624-628",
+        "compiler/src/backend/completion/windows_bridge.c:23-46",
+        "compiler/src/backend/completion/windows_bridge.c:872",
+        "compiler/src/backend/completion/windows_bridge.c:884",
+        "compiler/src/backend/completion/windows_iocp.c:218-241",
+        "compiler/src/backend/completion/windows_iocp.c:263"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 59,
+      "title": "The drain's identity checks go with the token, and the plan did not say what makes a completion for a dead record impossible",
+      "issue_summary": "Token validation at linux_io_uring.c:1013-1022, windows_iocp.c:474-486 and runtime.c:429-437 is deleted with the token; the impossibility argument was not written.",
+      "alternatives_considered": [
+        "Keep a generation word in the record",
+        "State the impossibility"
+      ],
+      "decision": "Stated once: each submission produces exactly one terminal completion (the resubmission arm publishes nothing, linux_io_uring.c:1029-1040; the Windows immediate-failure arm publishes the one terminal, windows_iocp.c:462-471; the open-exhaustion twin at linux_io_uring.c:1041-1050 leaves with the FilePermit batch), and the frame cannot reuse or release the block before the join consumed that terminal, because emit_terminator joins every outstanding completion before any terminator (emitter.rs:1732-1740) and the driven pipeline result stays in the same frame.",
+      "evidence": [
+        "compiler/src/backend/completion/linux_io_uring.c:1013-1050",
+        "compiler/src/backend/completion/windows_iocp.c:462-486",
+        "compiler/src/backend/completion/runtime.c:429-437",
+        "compiler/src/backend/emitter.rs:1732-1740"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 60,
+      "title": "A submission that publishes nothing has no consumer once the direct family leaves emitted code",
+      "issue_summary": "wf_bridge_submit_file returned 0 without publishing (bridge.c:608-614, :651-652); the consumer was the deleted direct arm, so the join would park forever.",
+      "alternatives_considered": [
+        "Keep a return-0 path and a consumer",
+        "Every submit path ends in a published record"
+      ],
+      "decision": "Every submit path publishes: accepted by the kernel, or executed by the engine and published with an inline terminal (windows_iocp.c:462-471); a bridge that cannot initialize is a trusted-computing-base failure and terminates deterministically as the floor does. Lead ruling adopting the critic's correction: the clause 'a ring refused outright (bridge.c:608-610)' is deleted, because WF_IO_NO_NATIVE_RING routes to the POSIX adapter (bridge.c:261, :280), wf_bridge_ensure_file still succeeds, and the gate runs that configuration (compiler/Makefile:293-297).",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:261",
+        "compiler/src/backend/completion/bridge.c:280",
+        "compiler/src/backend/completion/bridge.c:608-614",
+        "compiler/src/backend/completion/bridge.c:651-652",
+        "compiler/src/backend/completion/windows_iocp.c:462-471",
+        "compiler/Makefile:293-297"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 61,
+      "title": "Nothing stated how the record's size and alignment reach the emitter",
+      "issue_summary": "The cited precedent (parallel.rs:472-479) crosses the other way and the token was an unasserted [2 x i64]; a short block is a frame overwrite.",
+      "alternatives_considered": [
+        "The ledger pass supplies the number (impossible: it runs clang on already-emitted LLVM, whitefootc.rs:282-310)",
+        "One completion-contract header constant with a C _Static_assert"
+      ],
+      "decision": "The record's size and alignment are one constant in the completion contract header, asserted on the C side with _Static_assert against the record layout and checked by a test that the emitted block matches; the ledger pass prices the block but cannot supply the number (section 11 item 23).",
+      "evidence": [
+        "compiler/src/bin/whitefootc.rs:282-310",
+        "compiler/src/backend/emitter/parallel.rs:472-479"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 62,
+      "title": "The staged pipeline's window query is computed from the deleted constant",
+      "issue_summary": "wf__completion_window (bridge.c:857, Windows twin windows_bridge.c:884) derived the window from the slot capacity.",
+      "alternatives_considered": [
+        "Keep a runtime query",
+        "An emitter depth choice"
+      ],
+      "decision": "The pipeline window is an emitter depth choice, not a resource-derived bound; both query sites go with the pools.",
+      "evidence": [
+        "compiler/src/backend/completion/bridge.c:857",
+        "compiler/src/backend/completion/windows_bridge.c:884"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 63,
+      "title": "Section 9 said loan retention until loan-released is unchanged while section 7 deletes the milestones",
+      "issue_summary": "The loan-released point was defined by a milestone the fold deleted.",
+      "alternatives_considered": [
+        "Keep a milestone",
+        "DONE is the loan-released point"
+      ],
+      "decision": "The record's DONE publication is the loan-released point; an opaque block in the frame is not [EFF-5] exposure of target-private state.",
+      "evidence": [
+        "spec/kernel-spec.md:1456"
+      ],
+      "resolved_at_round": 1
+    },
+    {
+      "id": 64,
+      "title": "Section 1's table said a compute hand-out's record is a slot in the caller's frame",
+      "issue_summary": "The compute slot is a lane-pool object (par_runtime.c:184-207, :757-780), not frame storage.",
+      "alternatives_considered": [
+        "Move compute slots into frames too",
+        "One protocol over two storages"
+      ],
+      "decision": "The I/O record and the compute slot share the state-and-waiter protocol, not the storage; the compute slot stays in the lane pool with decision 6's refusal because an inline run costs nothing; section 13 records that moving compute slots into frames is a possible later simplification, not taken.",
+      "evidence": [
+        "compiler/src/backend/par_runtime.c:184-207",
+        "compiler/src/backend/par_runtime.c:757-780"
+      ],
+      "resolved_at_round": 1
+    }
+  ]
+}

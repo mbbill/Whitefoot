@@ -11,6 +11,7 @@ mod programs {
     mod parallel;
     mod raw_deflate;
     mod signal;
+    mod stream;
     mod support;
     mod text;
     // The directory-walking flagships. Every case in these two modules that

@@ -390,7 +390,6 @@ fn emit_cleanup_jobs(
                             system::emit_resource_release(
                                 qualification,
                                 output,
-                                temporary,
                                 *contract,
                                 &operand,
                             )?;

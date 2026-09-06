@@ -212,7 +212,7 @@ fn bs_push_decimal(s: &uniq ByteString, value: own u64) -> result: own unit read
   return unit;
 }
 
-fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires length <= source_length;
 } {
@@ -238,7 +238,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "Builds one byte string from literals, concatenates, searches it, and publishes the measured report.";
   let subject = bs_new();
   region {

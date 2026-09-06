@@ -106,7 +106,7 @@ fn block_at(index: own u64) -> result: own u64 pure {
   return mixed % 1024_u64;
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
   doc "Opens the eight generated files once and then reads eight independent positioned windows per round, publishing one folded checksum.";
   let name_0 = buffer_new(16_u64, 0_u8);
   let name_1 = buffer_new(16_u64, 0_u8);
@@ -159,250 +159,298 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     let rendered_7 = name_at(name: &uniq name_7, index: 7_u64);
   }
   region 'f {
-    let permit_0 = reserve_file(factory: &uniq files);
-    let permit_1 = reserve_file(factory: &uniq files);
-    let permit_2 = reserve_file(factory: &uniq files);
-    let permit_3 = reserve_file(factory: &uniq files);
-    let permit_4 = reserve_file(factory: &uniq files);
-    let permit_5 = reserve_file(factory: &uniq files);
-    let permit_6 = reserve_file(factory: &uniq files);
-    let permit_7 = reserve_file(factory: &uniq files);
-    region {
-      let opened_0 = open_file(permit: move permit_0, root: &'f cwd, name: &name_0, start: 0_u64, end: 10_u64);
-      let opened_1 = open_file(permit: move permit_1, root: &'f cwd, name: &name_1, start: 0_u64, end: 10_u64);
-      let opened_2 = open_file(permit: move permit_2, root: &'f cwd, name: &name_2, start: 0_u64, end: 10_u64);
-      let opened_3 = open_file(permit: move permit_3, root: &'f cwd, name: &name_3, start: 0_u64, end: 10_u64);
-      let opened_4 = open_file(permit: move permit_4, root: &'f cwd, name: &name_4, start: 0_u64, end: 10_u64);
-      let opened_5 = open_file(permit: move permit_5, root: &'f cwd, name: &name_5, start: 0_u64, end: 10_u64);
-      let opened_6 = open_file(permit: move permit_6, root: &'f cwd, name: &name_6, start: 0_u64, end: 10_u64);
-      let opened_7 = open_file(permit: move permit_7, root: &'f cwd, name: &name_7, start: 0_u64, end: 10_u64);
-      match opened_0 {
-        Ok(value: handle_0) => {
-          match opened_1 {
-            Ok(value: handle_1) => {
-              match opened_2 {
-                Ok(value: handle_2) => {
-                  match opened_3 {
-                    Ok(value: handle_3) => {
-                      match opened_4 {
-                        Ok(value: handle_4) => {
-                          match opened_5 {
-                            Ok(value: handle_5) => {
-                              match opened_6 {
-                                Ok(value: handle_6) => {
-                                  match opened_7 {
-                                    Ok(value: handle_7) => {
-                                      let base = 0_u64;
-                                      loop @scan {
-                                        let done = base >= 32768_u64;
-                                        if done {
-                                          break @scan;
-                                        }
-                                        let position_0 = base +wrap 0_u64;
-                                        let position_1 = base +wrap 1_u64;
-                                        let position_2 = base +wrap 2_u64;
-                                        let position_3 = base +wrap 3_u64;
-                                        let position_4 = base +wrap 4_u64;
-                                        let position_5 = base +wrap 5_u64;
-                                        let position_6 = base +wrap 6_u64;
-                                        let position_7 = base +wrap 7_u64;
-                                        let block_0 = block_at(index: position_0);
-                                        let offset_0 = block_0 *wrap 65536_u64;
-                                        let block_1 = block_at(index: position_1);
-                                        let offset_1 = block_1 *wrap 65536_u64;
-                                        let block_2 = block_at(index: position_2);
-                                        let offset_2 = block_2 *wrap 65536_u64;
-                                        let block_3 = block_at(index: position_3);
-                                        let offset_3 = block_3 *wrap 65536_u64;
-                                        let block_4 = block_at(index: position_4);
-                                        let offset_4 = block_4 *wrap 65536_u64;
-                                        let block_5 = block_at(index: position_5);
-                                        let offset_5 = block_5 *wrap 65536_u64;
-                                        let block_6 = block_at(index: position_6);
-                                        let offset_6 = block_6 *wrap 65536_u64;
-                                        let block_7 = block_at(index: position_7);
-                                        let offset_7 = block_7 *wrap 65536_u64;
-                                        region 'h {
-                                          region {
-                                            let read_0 = read_at(file: &'h handle_0, destination: &uniq data_0, file_offset: offset_0, start: 0_u64, end: 65536_u64);
-                                            let read_1 = read_at(file: &'h handle_1, destination: &uniq data_1, file_offset: offset_1, start: 0_u64, end: 65536_u64);
-                                            let read_2 = read_at(file: &'h handle_2, destination: &uniq data_2, file_offset: offset_2, start: 0_u64, end: 65536_u64);
-                                            let read_3 = read_at(file: &'h handle_3, destination: &uniq data_3, file_offset: offset_3, start: 0_u64, end: 65536_u64);
-                                            let read_4 = read_at(file: &'h handle_4, destination: &uniq data_4, file_offset: offset_4, start: 0_u64, end: 65536_u64);
-                                            let read_5 = read_at(file: &'h handle_5, destination: &uniq data_5, file_offset: offset_5, start: 0_u64, end: 65536_u64);
-                                            let read_6 = read_at(file: &'h handle_6, destination: &uniq data_6, file_offset: offset_6, start: 0_u64, end: 65536_u64);
-                                            let read_7 = read_at(file: &'h handle_7, destination: &uniq data_7, file_offset: offset_7, start: 0_u64, end: 65536_u64);
-                                            match read_0 {
-                                              ReadBytes(next: produced_0) => {
-                                                let digest_0 = 0_u64;
-                                                region {
-                                                  set digest_0 = fold_bytes(source: &data_0, produced: 1024_u64, seed: 0_u64);
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit_0) => {
+        match reserve_handle(factory: &uniq files) {
+          Ok(value: permit_1) => {
+            match reserve_handle(factory: &uniq files) {
+              Ok(value: permit_2) => {
+                match reserve_handle(factory: &uniq files) {
+                  Ok(value: permit_3) => {
+                    match reserve_handle(factory: &uniq files) {
+                      Ok(value: permit_4) => {
+                        match reserve_handle(factory: &uniq files) {
+                          Ok(value: permit_5) => {
+                            match reserve_handle(factory: &uniq files) {
+                              Ok(value: permit_6) => {
+                                match reserve_handle(factory: &uniq files) {
+                                  Ok(value: permit_7) => {
+                                    region {
+                                      let opened_0 = open_file(permit: move permit_0, root: &'f cwd, name: &name_0, start: 0_u64, end: 10_u64);
+                                      let opened_1 = open_file(permit: move permit_1, root: &'f cwd, name: &name_1, start: 0_u64, end: 10_u64);
+                                      let opened_2 = open_file(permit: move permit_2, root: &'f cwd, name: &name_2, start: 0_u64, end: 10_u64);
+                                      let opened_3 = open_file(permit: move permit_3, root: &'f cwd, name: &name_3, start: 0_u64, end: 10_u64);
+                                      let opened_4 = open_file(permit: move permit_4, root: &'f cwd, name: &name_4, start: 0_u64, end: 10_u64);
+                                      let opened_5 = open_file(permit: move permit_5, root: &'f cwd, name: &name_5, start: 0_u64, end: 10_u64);
+                                      let opened_6 = open_file(permit: move permit_6, root: &'f cwd, name: &name_6, start: 0_u64, end: 10_u64);
+                                      let opened_7 = open_file(permit: move permit_7, root: &'f cwd, name: &name_7, start: 0_u64, end: 10_u64);
+                                      match opened_0 {
+                                        FileOpened(value: handle_0) => {
+                                          match opened_1 {
+                                            FileOpened(value: handle_1) => {
+                                              match opened_2 {
+                                                FileOpened(value: handle_2) => {
+                                                  match opened_3 {
+                                                    FileOpened(value: handle_3) => {
+                                                      match opened_4 {
+                                                        FileOpened(value: handle_4) => {
+                                                          match opened_5 {
+                                                            FileOpened(value: handle_5) => {
+                                                              match opened_6 {
+                                                                FileOpened(value: handle_6) => {
+                                                                  match opened_7 {
+                                                                    FileOpened(value: handle_7) => {
+                                                                      let base = 0_u64;
+                                                                      loop @scan {
+                                                                        let done = base >= 32768_u64;
+                                                                        if done {
+                                                                          break @scan;
+                                                                        }
+                                                                        let position_0 = base +wrap 0_u64;
+                                                                        let position_1 = base +wrap 1_u64;
+                                                                        let position_2 = base +wrap 2_u64;
+                                                                        let position_3 = base +wrap 3_u64;
+                                                                        let position_4 = base +wrap 4_u64;
+                                                                        let position_5 = base +wrap 5_u64;
+                                                                        let position_6 = base +wrap 6_u64;
+                                                                        let position_7 = base +wrap 7_u64;
+                                                                        let block_0 = block_at(index: position_0);
+                                                                        let offset_0 = block_0 *wrap 65536_u64;
+                                                                        let block_1 = block_at(index: position_1);
+                                                                        let offset_1 = block_1 *wrap 65536_u64;
+                                                                        let block_2 = block_at(index: position_2);
+                                                                        let offset_2 = block_2 *wrap 65536_u64;
+                                                                        let block_3 = block_at(index: position_3);
+                                                                        let offset_3 = block_3 *wrap 65536_u64;
+                                                                        let block_4 = block_at(index: position_4);
+                                                                        let offset_4 = block_4 *wrap 65536_u64;
+                                                                        let block_5 = block_at(index: position_5);
+                                                                        let offset_5 = block_5 *wrap 65536_u64;
+                                                                        let block_6 = block_at(index: position_6);
+                                                                        let offset_6 = block_6 *wrap 65536_u64;
+                                                                        let block_7 = block_at(index: position_7);
+                                                                        let offset_7 = block_7 *wrap 65536_u64;
+                                                                        region 'h {
+                                                                          region {
+                                                                            let read_0 = read_at(file: &'h handle_0, destination: &uniq data_0, file_offset: offset_0, start: 0_u64, end: 65536_u64);
+                                                                            let read_1 = read_at(file: &'h handle_1, destination: &uniq data_1, file_offset: offset_1, start: 0_u64, end: 65536_u64);
+                                                                            let read_2 = read_at(file: &'h handle_2, destination: &uniq data_2, file_offset: offset_2, start: 0_u64, end: 65536_u64);
+                                                                            let read_3 = read_at(file: &'h handle_3, destination: &uniq data_3, file_offset: offset_3, start: 0_u64, end: 65536_u64);
+                                                                            let read_4 = read_at(file: &'h handle_4, destination: &uniq data_4, file_offset: offset_4, start: 0_u64, end: 65536_u64);
+                                                                            let read_5 = read_at(file: &'h handle_5, destination: &uniq data_5, file_offset: offset_5, start: 0_u64, end: 65536_u64);
+                                                                            let read_6 = read_at(file: &'h handle_6, destination: &uniq data_6, file_offset: offset_6, start: 0_u64, end: 65536_u64);
+                                                                            let read_7 = read_at(file: &'h handle_7, destination: &uniq data_7, file_offset: offset_7, start: 0_u64, end: 65536_u64);
+                                                                            match read_0 {
+                                                                              ReadBytes(next: produced_0) => {
+                                                                                let digest_0 = 0_u64;
+                                                                                region {
+                                                                                  set digest_0 = fold_bytes(source: &data_0, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_0 = position_0 +wrap 1_u64;
+                                                                                set digest_0 = digest_0 *wrap weight_0;
+                                                                                set sum_0 = sum_0 +wrap digest_0;
+                                                                                set bytes = bytes +wrap produced_0;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_0) => {
+                                                                              }
+                                                                            }
+                                                                            match read_1 {
+                                                                              ReadBytes(next: produced_1) => {
+                                                                                let digest_1 = 0_u64;
+                                                                                region {
+                                                                                  set digest_1 = fold_bytes(source: &data_1, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_1 = position_1 +wrap 1_u64;
+                                                                                set digest_1 = digest_1 *wrap weight_1;
+                                                                                set sum_1 = sum_1 +wrap digest_1;
+                                                                                set bytes = bytes +wrap produced_1;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_1) => {
+                                                                              }
+                                                                            }
+                                                                            match read_2 {
+                                                                              ReadBytes(next: produced_2) => {
+                                                                                let digest_2 = 0_u64;
+                                                                                region {
+                                                                                  set digest_2 = fold_bytes(source: &data_2, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_2 = position_2 +wrap 1_u64;
+                                                                                set digest_2 = digest_2 *wrap weight_2;
+                                                                                set sum_2 = sum_2 +wrap digest_2;
+                                                                                set bytes = bytes +wrap produced_2;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_2) => {
+                                                                              }
+                                                                            }
+                                                                            match read_3 {
+                                                                              ReadBytes(next: produced_3) => {
+                                                                                let digest_3 = 0_u64;
+                                                                                region {
+                                                                                  set digest_3 = fold_bytes(source: &data_3, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_3 = position_3 +wrap 1_u64;
+                                                                                set digest_3 = digest_3 *wrap weight_3;
+                                                                                set sum_3 = sum_3 +wrap digest_3;
+                                                                                set bytes = bytes +wrap produced_3;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_3) => {
+                                                                              }
+                                                                            }
+                                                                            match read_4 {
+                                                                              ReadBytes(next: produced_4) => {
+                                                                                let digest_4 = 0_u64;
+                                                                                region {
+                                                                                  set digest_4 = fold_bytes(source: &data_4, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_4 = position_4 +wrap 1_u64;
+                                                                                set digest_4 = digest_4 *wrap weight_4;
+                                                                                set sum_4 = sum_4 +wrap digest_4;
+                                                                                set bytes = bytes +wrap produced_4;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_4) => {
+                                                                              }
+                                                                            }
+                                                                            match read_5 {
+                                                                              ReadBytes(next: produced_5) => {
+                                                                                let digest_5 = 0_u64;
+                                                                                region {
+                                                                                  set digest_5 = fold_bytes(source: &data_5, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_5 = position_5 +wrap 1_u64;
+                                                                                set digest_5 = digest_5 *wrap weight_5;
+                                                                                set sum_5 = sum_5 +wrap digest_5;
+                                                                                set bytes = bytes +wrap produced_5;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_5) => {
+                                                                              }
+                                                                            }
+                                                                            match read_6 {
+                                                                              ReadBytes(next: produced_6) => {
+                                                                                let digest_6 = 0_u64;
+                                                                                region {
+                                                                                  set digest_6 = fold_bytes(source: &data_6, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_6 = position_6 +wrap 1_u64;
+                                                                                set digest_6 = digest_6 *wrap weight_6;
+                                                                                set sum_6 = sum_6 +wrap digest_6;
+                                                                                set bytes = bytes +wrap produced_6;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_6) => {
+                                                                              }
+                                                                            }
+                                                                            match read_7 {
+                                                                              ReadBytes(next: produced_7) => {
+                                                                                let digest_7 = 0_u64;
+                                                                                region {
+                                                                                  set digest_7 = fold_bytes(source: &data_7, produced: 1024_u64, seed: 0_u64);
+                                                                                }
+                                                                                let weight_7 = position_7 +wrap 1_u64;
+                                                                                set digest_7 = digest_7 *wrap weight_7;
+                                                                                set sum_7 = sum_7 +wrap digest_7;
+                                                                                set bytes = bytes +wrap produced_7;
+                                                                              }
+                                                                              ReadEnd() => {
+                                                                              }
+                                                                              ReadFailed(error: problem_7) => {
+                                                                              }
+                                                                            }
+                                                                          }
+                                                                        }
+                                                                        set base = base +wrap 8_u64;
+                                                                      }
+                                                                    }
+                                                                    FileOpenFailed(error: failed_7, permit: refused) => {
+                                                                      return exit_status(code: 11_u8);
+                                                                    }
+                                                                  }
+                                                                }
+                                                                FileOpenFailed(error: failed_6, permit: refused) => {
+                                                                  return exit_status(code: 10_u8);
+                                                                }
+                                                              }
+                                                            }
+                                                            FileOpenFailed(error: failed_5, permit: refused) => {
+                                                              return exit_status(code: 9_u8);
+                                                            }
+                                                          }
+                                                        }
+                                                        FileOpenFailed(error: failed_4, permit: refused) => {
+                                                          return exit_status(code: 8_u8);
+                                                        }
+                                                      }
+                                                    }
+                                                    FileOpenFailed(error: failed_3, permit: refused) => {
+                                                      return exit_status(code: 7_u8);
+                                                    }
+                                                  }
                                                 }
-                                                let weight_0 = position_0 +wrap 1_u64;
-                                                set digest_0 = digest_0 *wrap weight_0;
-                                                set sum_0 = sum_0 +wrap digest_0;
-                                                set bytes = bytes +wrap produced_0;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_0) => {
+                                                FileOpenFailed(error: failed_2, permit: refused) => {
+                                                  return exit_status(code: 6_u8);
+                                                }
                                               }
                                             }
-                                            match read_1 {
-                                              ReadBytes(next: produced_1) => {
-                                                let digest_1 = 0_u64;
-                                                region {
-                                                  set digest_1 = fold_bytes(source: &data_1, produced: 1024_u64, seed: 0_u64);
-                                                }
-                                                let weight_1 = position_1 +wrap 1_u64;
-                                                set digest_1 = digest_1 *wrap weight_1;
-                                                set sum_1 = sum_1 +wrap digest_1;
-                                                set bytes = bytes +wrap produced_1;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_1) => {
-                                              }
-                                            }
-                                            match read_2 {
-                                              ReadBytes(next: produced_2) => {
-                                                let digest_2 = 0_u64;
-                                                region {
-                                                  set digest_2 = fold_bytes(source: &data_2, produced: 1024_u64, seed: 0_u64);
-                                                }
-                                                let weight_2 = position_2 +wrap 1_u64;
-                                                set digest_2 = digest_2 *wrap weight_2;
-                                                set sum_2 = sum_2 +wrap digest_2;
-                                                set bytes = bytes +wrap produced_2;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_2) => {
-                                              }
-                                            }
-                                            match read_3 {
-                                              ReadBytes(next: produced_3) => {
-                                                let digest_3 = 0_u64;
-                                                region {
-                                                  set digest_3 = fold_bytes(source: &data_3, produced: 1024_u64, seed: 0_u64);
-                                                }
-                                                let weight_3 = position_3 +wrap 1_u64;
-                                                set digest_3 = digest_3 *wrap weight_3;
-                                                set sum_3 = sum_3 +wrap digest_3;
-                                                set bytes = bytes +wrap produced_3;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_3) => {
-                                              }
-                                            }
-                                            match read_4 {
-                                              ReadBytes(next: produced_4) => {
-                                                let digest_4 = 0_u64;
-                                                region {
-                                                  set digest_4 = fold_bytes(source: &data_4, produced: 1024_u64, seed: 0_u64);
-                                                }
-                                                let weight_4 = position_4 +wrap 1_u64;
-                                                set digest_4 = digest_4 *wrap weight_4;
-                                                set sum_4 = sum_4 +wrap digest_4;
-                                                set bytes = bytes +wrap produced_4;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_4) => {
-                                              }
-                                            }
-                                            match read_5 {
-                                              ReadBytes(next: produced_5) => {
-                                                let digest_5 = 0_u64;
-                                                region {
-                                                  set digest_5 = fold_bytes(source: &data_5, produced: 1024_u64, seed: 0_u64);
-                                                }
-                                                let weight_5 = position_5 +wrap 1_u64;
-                                                set digest_5 = digest_5 *wrap weight_5;
-                                                set sum_5 = sum_5 +wrap digest_5;
-                                                set bytes = bytes +wrap produced_5;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_5) => {
-                                              }
-                                            }
-                                            match read_6 {
-                                              ReadBytes(next: produced_6) => {
-                                                let digest_6 = 0_u64;
-                                                region {
-                                                  set digest_6 = fold_bytes(source: &data_6, produced: 1024_u64, seed: 0_u64);
-                                                }
-                                                let weight_6 = position_6 +wrap 1_u64;
-                                                set digest_6 = digest_6 *wrap weight_6;
-                                                set sum_6 = sum_6 +wrap digest_6;
-                                                set bytes = bytes +wrap produced_6;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_6) => {
-                                              }
-                                            }
-                                            match read_7 {
-                                              ReadBytes(next: produced_7) => {
-                                                let digest_7 = 0_u64;
-                                                region {
-                                                  set digest_7 = fold_bytes(source: &data_7, produced: 1024_u64, seed: 0_u64);
-                                                }
-                                                let weight_7 = position_7 +wrap 1_u64;
-                                                set digest_7 = digest_7 *wrap weight_7;
-                                                set sum_7 = sum_7 +wrap digest_7;
-                                                set bytes = bytes +wrap produced_7;
-                                              }
-                                              ReadEnd() => {
-                                              }
-                                              ReadFailed(error: problem_7) => {
-                                              }
+                                            FileOpenFailed(error: failed_1, permit: refused) => {
+                                              return exit_status(code: 5_u8);
                                             }
                                           }
                                         }
-                                        set base = base +wrap 8_u64;
+                                        FileOpenFailed(error: failed_0, permit: refused) => {
+                                          return exit_status(code: 4_u8);
+                                        }
                                       }
                                     }
-                                    Err(error: failed_7) => {
-                                      return exit_status(code: 11_u8);
-                                    }
+                                  }
+                                  Err(error: spent) => {
+                                    return exit_status(code: 19_u8);
                                   }
                                 }
-                                Err(error: failed_6) => {
-                                  return exit_status(code: 10_u8);
-                                }
+                              }
+                              Err(error: spent) => {
+                                return exit_status(code: 18_u8);
                               }
                             }
-                            Err(error: failed_5) => {
-                              return exit_status(code: 9_u8);
-                            }
+                          }
+                          Err(error: spent) => {
+                            return exit_status(code: 17_u8);
                           }
                         }
-                        Err(error: failed_4) => {
-                          return exit_status(code: 8_u8);
-                        }
+                      }
+                      Err(error: spent) => {
+                        return exit_status(code: 16_u8);
                       }
                     }
-                    Err(error: failed_3) => {
-                      return exit_status(code: 7_u8);
-                    }
+                  }
+                  Err(error: spent) => {
+                    return exit_status(code: 15_u8);
                   }
                 }
-                Err(error: failed_2) => {
-                  return exit_status(code: 6_u8);
-                }
+              }
+              Err(error: spent) => {
+                return exit_status(code: 14_u8);
               }
             }
-            Err(error: failed_1) => {
-              return exit_status(code: 5_u8);
-            }
+          }
+          Err(error: spent) => {
+            return exit_status(code: 13_u8);
           }
         }
-        Err(error: failed_0) => {
-          return exit_status(code: 4_u8);
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 12_u8);
       }
     }
   }

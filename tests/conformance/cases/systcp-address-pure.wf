@@ -1,0 +1,6 @@
+command fn main() -> status: own ExitStatus pure {
+  doc "SYS-16: `socket_address_v4` and `socket_address_v6` are total and pure. Every combination of their operands is a valid address, so neither has a failure outcome, neither allocates, neither performs a host call, and neither writes any state ,  which is why an entry that constructs two of them declares the empty effect row.";
+  let loopback = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9000_u16);
+  let loopback6 = socket_address_v6(a: 0_u16, b: 0_u16, c: 0_u16, d: 0_u16, e: 0_u16, f: 0_u16, g: 0_u16, h: 1_u16, port: 9000_u16);
+  return exit_status(code: 0_u8);
+}

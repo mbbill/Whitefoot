@@ -109,10 +109,16 @@ fn over_declaring_the_release_row_rejects_likewise() {
 #[test]
 fn file_reservation_and_open_project_only_their_explicit_inputs() {
     assert_complete(
-        br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+        br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   region {
-    let permit = reserve_file(factory: &uniq files);
-    let opened = open_directory_source(permit: move permit, directory: &cwd);
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        let opened = open_directory_source(permit: move permit, directory: &cwd);
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -123,9 +129,15 @@ fn file_reservation_and_open_project_only_their_explicit_inputs() {
 #[test]
 fn file_reservation_projects_the_factory_without_an_open() {
     assert_complete(
-        br#"command fn main(command.files as files: own FileFactory) -> status: own ExitStatus reads(files), writes(files) {
+        br#"command fn main(command.handles as files: own HandleFactory) -> status: own ExitStatus reads(files), writes(files) {
   region {
-    let permit = reserve_file(factory: &uniq files);
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -136,11 +148,11 @@ fn file_reservation_projects_the_factory_without_an_open() {
 #[test]
 fn unused_file_authority_releases_by_logical_consume() {
     assert_complete(
-        br#"fn discard_factory(factory: own FileFactory) -> result: own unit pure {
+        br#"fn discard_factory(factory: own HandleFactory) -> result: own unit pure {
   return unit;
 }
 
-fn discard_permit(permit: own FilePermit) -> result: own unit pure {
+fn discard_permit(permit: own HandlePermit) -> result: own unit pure {
   return unit;
 }
 
@@ -254,7 +266,7 @@ fn user_calls_substitute_state_formals_to_actual_origins() {
     );
 }
 
-const PASS_OUTPUT_PREFIX: &str = r#"fn pass_output(output: own Output) -> result: own Output pure {
+const PASS_OUTPUT_PREFIX: &str = r#"fn pass_output(output: own OutputStream) -> result: own OutputStream pure {
   return move output;
 }
 
@@ -262,7 +274,7 @@ const PASS_OUTPUT_PREFIX: &str = r#"fn pass_output(output: own Output) -> result
 
 fn pass_output_program(effects: &str) -> Vec<u8> {
     format!(
-        "{PASS_OUTPUT_PREFIX}command fn main(command.stdout as out: own Output) -> status: own ExitStatus {effects} {{\n  let same = pass_output(output: move out);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region {{\n    let written = write_once(output: &uniq same, source: &bytes, start: 0_u64, end: 1_u64);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "{PASS_OUTPUT_PREFIX}command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus {effects} {{\n  let same = pass_output(output: move out);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region {{\n    let written = write_once(output: &uniq same, source: &bytes, start: 0_u64, end: 1_u64);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
@@ -322,7 +334,7 @@ command fn main() -> status: own ExitStatus pure {
 
 fn choose_output_program(effects: &str, delivered: bool) -> Vec<u8> {
     let chooser = if delivered {
-        r#"fn choose_output(left: own Output, right: own Output, take_left: own Bool) -> result: own Output pure {
+        r#"fn choose_output(left: own OutputStream, right: own OutputStream, take_left: own Bool) -> result: own OutputStream pure {
   let selected = if take_left {
     give move left;
   } else {
@@ -331,13 +343,13 @@ fn choose_output_program(effects: &str, delivered: bool) -> Vec<u8> {
   return move selected;
 }
 
-fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> result: own Output pure {
+fn forward_choice(left: own OutputStream, right: own OutputStream, take_left: own Bool) -> result: own OutputStream pure {
   return choose_output(left: move left, right: move right, take_left: take_left);
 }
 
 "#
     } else {
-        r#"fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> result: own Output pure {
+        r#"fn forward_choice(left: own OutputStream, right: own OutputStream, take_left: own Bool) -> result: own OutputStream pure {
   if take_left {
     return move left;
   } else {
@@ -348,7 +360,7 @@ fn forward_choice(left: own Output, right: own Output, take_left: own Bool) -> r
 "#
     };
     format!(
-        "{chooser}command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus {effects} {{\n  let flag = True();\n  let selected = forward_choice(left: move out, right: move err, take_left: flag);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region {{\n    let written = write_once(output: &uniq selected, source: &bytes, start: 0_u64, end: 1_u64);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
+        "{chooser}command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus {effects} {{\n  let flag = True();\n  let selected = forward_choice(left: move out, right: move err, take_left: flag);\n  let bytes = buffer_new(1_u64, 65_u8);\n  region {{\n    let written = write_once(output: &uniq selected, source: &bytes, start: 0_u64, end: 1_u64);\n  }}\n  return exit_status(code: 0_u8);\n}}\n"
     )
     .into_bytes()
 }
@@ -377,7 +389,7 @@ fn a_control_flow_result_projects_to_every_possible_formal() {
 
 #[test]
 fn value_if_delivery_and_a_multihop_wrapper_preserve_the_same_formal() {
-    let source = br#"fn delivered(output: own Output, first: own Bool) -> result: own Output pure {
+    let source = br#"fn delivered(output: own OutputStream, first: own Bool) -> result: own OutputStream pure {
   let selected = if first {
     give move output;
   } else {
@@ -386,11 +398,11 @@ fn value_if_delivery_and_a_multihop_wrapper_preserve_the_same_formal() {
   return move selected;
 }
 
-fn delivered_wrapper(output: own Output, first: own Bool) -> result: own Output pure {
+fn delivered_wrapper(output: own OutputStream, first: own Bool) -> result: own OutputStream pure {
   return delivered(output: move output, first: first);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   let selected = delivered_wrapper(output: move out, first: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -407,7 +419,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_recursive_pass_through_reaches_the_formal_fixed_point() {
-    let source = br#"fn recursive_pass(output: own Output, stop: own Bool) -> result: own Output pure {
+    let source = br#"fn recursive_pass(output: own OutputStream, stop: own Bool) -> result: own OutputStream pure {
   if stop {
     return move output;
   } else {
@@ -415,7 +427,7 @@ fn a_recursive_pass_through_reaches_the_formal_fixed_point() {
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   let selected = recursive_pass(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -432,7 +444,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_mutually_recursive_pass_through_reaches_the_same_fixed_point() {
-    let source = br#"fn mutual_a(output: own Output, stop: own Bool) -> result: own Output pure {
+    let source = br#"fn mutual_a(output: own OutputStream, stop: own Bool) -> result: own OutputStream pure {
   if stop {
     return move output;
   } else {
@@ -440,11 +452,11 @@ fn a_mutually_recursive_pass_through_reaches_the_same_fixed_point() {
   }
 }
 
-fn mutual_b(output: own Output, stop: own Bool) -> result: own Output pure {
+fn mutual_b(output: own OutputStream, stop: own Bool) -> result: own OutputStream pure {
   return mutual_a(output: move output, stop: stop);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   let selected = mutual_b(output: move out, stop: flag);
   let bytes = buffer_new(1_u64, 65_u8);
@@ -461,7 +473,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_fresh_and_formal_result_join_remains_a_finite_origin_set() {
-    let source = br#"fn choose_file(existing: own Result<ReadFile, IoError>, permit: own FilePermit, root: &DirectoryRead, path: &RelativePath, fresh: own Bool) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(existing, permit) {
+    let source = br#"fn choose_file(existing: own FileOpenOutcome, permit: own HandlePermit, root: &DirectoryRead, path: &RelativePath, fresh: own Bool) -> result: own FileOpenOutcome reads(permit, root, path), writes(existing, permit) {
   if fresh {
     return open_read(permit: move permit, root: root, path: path);
   } else {
@@ -488,11 +500,11 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unclosed_recursive_origin_no_longer_creates_a_language_stop() {
-    let source = br#"fn unclosed(output: own Output) -> result: own Output pure {
+    let source = br#"fn unclosed(output: own OutputStream) -> result: own OutputStream pure {
   return unclosed(output: move output);
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {
   let result = unclosed(output: move out);
   return exit_status(code: 0_u8);
 }
@@ -570,7 +582,7 @@ fn pass_path(value: own RelativePath) -> result: own RelativePath pure {
   return move value;
 }
 
-fn pass_factory(value: own FileFactory) -> result: own FileFactory pure {
+fn pass_factory(value: own HandleFactory) -> result: own HandleFactory pure {
   return move value;
 }
 
@@ -760,14 +772,14 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_unrelated_loop_does_not_destroy_a_formal_origin() {
-    let source = br#"fn through_loop(output: own Output) -> result: own Output pure {
+    let source = br#"fn through_loop(output: own OutputStream) -> result: own OutputStream pure {
   loop @once {
     break @once;
   }
   return move output;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let selected = through_loop(output: move out);
   let bytes = buffer_new(1_u64, 65_u8);
   region 'o {
@@ -783,14 +795,26 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
 
 #[test]
 fn a_loop_break_join_retains_the_two_origins_an_update_can_select() {
-    let source = br#"fn loop_choice(selected: own Result<ReadFile, IoError>, factory: own FileFactory, root: own DirectoryRead, path: &RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads(selected, factory, root, path), writes(selected, factory, root) {
+    let source = br#"fn loop_choice(selected: own Result<ReadFile, IoError>, factory: own HandleFactory, root: own DirectoryRead, path: &RelativePath, refresh: own Bool) -> result: own Result<ReadFile, IoError> reads(selected, factory, root, path), writes(selected, factory, root) {
   loop @once {
     if refresh {
       region {
-        let permit = reserve_file(factory: &uniq factory);
-        region {
-          let replacement = open_read(permit: move permit, root: &root, path: path);
-          let discarded = replace selected = move replacement;
+        match reserve_handle(factory: &uniq factory) {
+          Ok(value: permit) => {
+            region {
+              match open_read(permit: move permit, root: &root, path: path) {
+                FileOpened(value: got) => {
+                  let discarded = replace selected = Ok<ReadFile, IoError>(value: move got);
+                }
+                FileOpenFailed(error: problem, permit: refused) => {
+                  let discarded = replace selected = Err<ReadFile, IoError>(error: move problem);
+                }
+              }
+            }
+          }
+          Err(error: spent) => {
+            return Err<ReadFile, IoError>(error: move spent);
+          }
         }
       }
     }
@@ -843,16 +867,16 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_optional_result_projects_its_present_formal_and_keeps_its_absent_route() {
-    let source = br#"fn maybe_output(output: own Output, present: own Bool) -> result: own Result<Output, IoError> pure {
+    let source = br#"fn maybe_output(output: own OutputStream, present: own Bool) -> result: own Result<OutputStream, IoError> pure {
   if present {
-    return Ok<Output, IoError>(value: move output);
+    return Ok<OutputStream, IoError>(value: move output);
   } else {
     let problem = Other(code: 0_u32, origin: 0_u8);
-    return Err<Output, IoError>(error: move problem);
+    return Err<OutputStream, IoError>(error: move problem);
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let flag = True();
   match maybe_output(output: move out, present: flag) {
     Ok(value: selected) => {

@@ -1,17 +1,18 @@
 /*
  * Standalone target-contract probe.
  *
- * Linux links this file with contract runtime.c and linux_io_uring.c and runs
- * real positioned reads/writes.  Windows links it with windows_iocp.c; its
- * tiny publication sink isolates the target adapter so a PE executable can
- * be compile- and link-checked before a Windows runner is available.
+ * Linux links this file with `runtime.c` and `linux_io_uring.c`; Windows with
+ * `runtime.c`, `wait_windows.c` and `windows_iocp.c`.  Both arms link the
+ * scheduler core and no bridge, so what they prove is the ring alone: a real
+ * positioned transfer, found by the record's own address, published through
+ * `wf_sched_complete`, and waited for on the ring's own park.
  */
-
 #if defined(__linux__)
 
 #define _GNU_SOURCE
 
 #include "linux_io_uring.h"
+#include "../sched/core.h"
 
 #include <errno.h>
 #include <fcntl.h>
@@ -38,49 +39,60 @@
         }                                                                     \
     } while (0)
 
-static int probe_drain(
-    wf_completion_runtime *runtime,
-    wf_completion_event *events,
-    size_t expected
-) {
-    size_t total = 0;
-    while (total < expected) {
-        size_t drained = wf_completion_drain(
-            runtime,
-            events + total,
-            expected - total,
-            runtime->slot_count
-        );
-        if (drained == 0) {
-            return 1;
-        }
-        total += drained;
-    }
-    return 0;
+/* The bridge's three parts of the runtime, supplied here because this probe
+ * links no bridge on purpose.
+ *
+ * `wf_completion_record_complete` is the one publication, and the three
+ * `wf__sched_host_*` hooks are design §7's platform item 2 -- one wait and
+ * wake primitive -- bound to this probe's own runtime and ring exactly as the
+ * bridge binds them to its own, so a waiter that registers itself in place on
+ * a record is woken through the same eventfd the ring's park waits on. */
+static wf_sched_core probe_core;
+static wf_completion_runtime *probe_runtime;
+static wf_linux_io_uring_adapter *probe_adapter;
+
+void wf_completion_record_complete(wf_completion_record *record) {
+    wf_sched_complete(&probe_core, &record->sched);
 }
 
-static int probe_consume(
-    wf_completion_runtime *runtime,
-    wf_completion_token token,
-    enum wf_linux_file_operation_kind expected_kind,
-    int64_t expected_value
+int wf__sched_host_epoch(uint64_t *epoch) {
+    if (probe_runtime == NULL) {
+        return 0;
+    }
+    *epoch = wf_completion_wake_epoch(probe_runtime);
+    return 1;
+}
+
+int wf__sched_host_park(uint64_t observed) {
+    if (probe_runtime == NULL || probe_adapter == NULL) {
+        return 0;
+    }
+    (void)wf_linux_io_uring_park(probe_adapter, observed, UINT32_MAX);
+    return 1;
+}
+
+int wf__sched_host_wake(void) {
+    if (probe_runtime == NULL) {
+        return 0;
+    }
+    wf_completion_notify_target(probe_runtime);
+    return 1;
+}
+
+static void probe_record_init(
+    wf_completion_record *record,
+    enum wf_file_operation_kind kind
 ) {
-    wf_linux_file_result result;
-    wf_completion_outcome outcome;
-    PROBE_CHECK(
-        wf_completion_consume(
-            runtime,
-            token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    PROBE_CHECK(result.kind == expected_kind);
-    PROBE_CHECK(result.value == expected_value);
-    PROBE_CHECK(result.error_code == 0);
-    PROBE_CHECK(outcome.milestones == WF_COMPLETION_OWNERSHIP_COMPLETE);
-    return 0;
+    memset(record, 0, sizeof(*record));
+    wf_sched_record_init(&record->sched);
+    record->request.kind = kind;
+    record->opened_descriptor = -1;
+    record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
+}
+
+static int probe_record_done(const wf_completion_record *record) {
+    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE)
+        == WF_SCHED_DONE;
 }
 
 typedef struct probe_park_context {
@@ -89,7 +101,7 @@ typedef struct probe_park_context {
     int result;
 } probe_park_context;
 
-static void *probe_park_scheduler(void *opaque) {
+static void *probe_park_thread(void *opaque) {
     probe_park_context *context = opaque;
     context->result = wf_linux_io_uring_park(
         context->adapter,
@@ -111,8 +123,8 @@ static int probe_wait_until_announced(wf_completion_runtime *runtime) {
 }
 
 /* A real delayed CQE lets the probe distinguish a ring-fd wake from the
- * completion core's eventfd.  It is not an adapter operation and is consumed
- * directly by this target-contract probe. */
+ * completion runtime's eventfd.  It is not an adapter operation and is
+ * consumed directly by this target-contract probe. */
 static int probe_submit_timeout(
     wf_linux_io_uring_adapter *adapter,
     struct __kernel_timespec *delay
@@ -174,71 +186,59 @@ static int probe_reap_timeout(wf_linux_io_uring_adapter *adapter) {
     return 0;
 }
 
-enum { PROBE_TOKEN_WAITERS = 4 };
+enum { PROBE_RECORD_WAITERS = 4 };
 
-typedef struct probe_token_wait_context {
+typedef struct probe_record_wait_context {
     wf_linux_io_uring_adapter *adapter;
     wf_completion_runtime *runtime;
-    wf_completion_token token;
+    wf_completion_record record;
     int64_t expected;
     int result;
-} probe_token_wait_context;
+} probe_record_wait_context;
 
-static void *probe_wait_for_own_token(void *opaque) {
-    probe_token_wait_context *context = opaque;
+/* One lane waiting in place on its own record: register the in-place marker,
+ * capture the epoch, re-check, and park -- the same sequence the bridge's join
+ * runs (design §2's fourth line, §6 step 4). */
+static void *probe_wait_for_own_record(void *opaque) {
+    probe_record_wait_context *context = opaque;
     for (;;) {
-        uint64_t epoch = wf_completion_wake_epoch(context->runtime);
-        uint32_t milestones = 0;
-        unsigned phase = 0;
-        enum wf_completion_transition_result observed = wf_completion_observe(
-            context->runtime,
-            context->token,
-            &milestones,
-            &phase
-        );
-        if (observed != WF_COMPLETION_TRANSITIONED) {
-            context->result = 1;
+        uint64_t epoch;
+        void *expected = NULL;
+        void *marker = WF_SCHED_WAITER_IN_PLACE;
+        if (probe_record_done(&context->record)) {
+            context->result = context->record.result.value == context->expected
+                    && context->record.result.error_code == 0
+                ? 0
+                : 2;
             return NULL;
         }
-        if (phase == WF_COMPLETION_TERMINAL_PHASE) {
-            wf_linux_file_result result;
-            wf_completion_outcome outcome;
-            enum wf_completion_consume_result consumed;
-            do {
-                wf_completion_event events[PROBE_TOKEN_WAITERS];
-                (void)wf_completion_drain(
-                    context->runtime,
-                    events,
-                    PROBE_TOKEN_WAITERS,
-                    context->runtime->slot_count
-                );
-                consumed = wf_completion_consume(
-                    context->runtime,
-                    context->token,
-                    &result,
-                    sizeof(result),
-                    &outcome
-                );
-            } while (consumed == WF_COMPLETION_CONSUME_NOT_DRAINED);
-            if (consumed != WF_COMPLETION_CONSUMED
-                || result.kind != WF_LINUX_FILE_READ_AT
-                || result.value != context->expected
-                || result.error_code != 0
-                || outcome.milestones != WF_COMPLETION_OWNERSHIP_COMPLETE) {
-                context->result = 2;
+        (void)__atomic_compare_exchange_n(
+            (uintptr_t *)&context->record.sched.waiter,
+            (uintptr_t *)&expected,
+            (uintptr_t)WF_SCHED_WAITER_IN_PLACE,
+            0,
+            __ATOMIC_SEQ_CST,
+            __ATOMIC_SEQ_CST
+        );
+        epoch = wf_completion_wake_epoch(context->runtime);
+        if (!probe_record_done(&context->record)) {
+            context->result = wf_linux_io_uring_park(
+                context->adapter,
+                epoch,
+                UINT32_MAX
+            );
+            if (context->result != 0) {
                 return NULL;
             }
-            context->result = 0;
-            return NULL;
         }
-        context->result = wf_linux_io_uring_park(
-            context->adapter,
-            epoch,
-            UINT32_MAX
+        (void)__atomic_compare_exchange_n(
+            (uintptr_t *)&context->record.sched.waiter,
+            (uintptr_t *)&marker,
+            (uintptr_t)NULL,
+            0,
+            __ATOMIC_SEQ_CST,
+            __ATOMIC_SEQ_CST
         );
-        if (context->result != 0) {
-            return NULL;
-        }
     }
 }
 
@@ -256,95 +256,64 @@ static int probe_wait_for_parked_count(
     return 1;
 }
 
-/* Drives one already-owned operation to its terminal and consumes it.  A
- * kind-checked open passes through more than one ring operation on the way,
- * which this loop deliberately does not need to know: it waits for the one
- * terminal the contract promises. */
+/* Drives one already-owned record to its terminal.  A kind-checked open
+ * passes through more than one ring operation on the way, which this loop
+ * deliberately does not need to know: it waits for the one terminal the
+ * contract promises. */
 static int probe_drive_to_terminal(
-    wf_completion_runtime *runtime,
     wf_linux_io_uring_adapter *adapter,
-    wf_completion_token token,
-    wf_linux_file_result *result
+    wf_completion_record *record
 ) {
-    wf_completion_event event;
-    wf_completion_outcome outcome;
     unsigned attempt;
     for (attempt = 0; attempt < 100000u; ++attempt) {
         size_t published = 0;
-        uint32_t milestones = 0;
-        unsigned phase = 0;
-        PROBE_CHECK(
-            wf_completion_observe(runtime, token, &milestones, &phase)
-            == WF_COMPLETION_TRANSITIONED
-        );
-        if (phase == WF_COMPLETION_TERMINAL_PHASE) {
-            break;
+        if (probe_record_done(record)) {
+            return 0;
         }
         PROBE_CHECK(
             wf_linux_io_uring_progress(adapter, 4, 1, &published) == 0
         );
     }
-    PROBE_CHECK(probe_drain(runtime, &event, 1) == 0);
-    PROBE_CHECK(
-        wf_completion_consume(
-            runtime,
-            token,
-            result,
-            sizeof(*result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    PROBE_CHECK(outcome.milestones == WF_COMPLETION_OWNERSHIP_COMPLETE);
+    PROBE_CHECK(probe_record_done(record));
     return 0;
 }
 
 static int probe_run_one(
-    wf_completion_runtime *runtime,
     wf_linux_io_uring_adapter *adapter,
-    const wf_linux_file_request *request,
-    wf_linux_file_result *result
+    wf_completion_record *record
 ) {
-    wf_completion_token token;
-    PROBE_CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
     PROBE_CHECK(
-        wf_linux_io_uring_submit(adapter, token, request)
+        wf_linux_io_uring_submit(adapter, record)
         == WF_LINUX_IO_URING_TARGET_OWNS
     );
-    return probe_drive_to_terminal(runtime, adapter, token, result);
+    return probe_drive_to_terminal(adapter, record);
 }
 
-static void probe_open_request(
-    wf_linux_file_request *request,
+static void probe_open_record(
+    wf_completion_record *record,
     const char *path,
     enum wf_file_expected_kind expected
 ) {
-    memset(request, 0, sizeof(*request));
-    request->kind = WF_LINUX_FILE_OPEN_AT;
-    request->descriptor = AT_FDCWD;
-    request->buffer.path = path;
-    request->open_flags = O_RDONLY;
-    request->expected_kind = expected;
+    probe_record_init(record, WF_FILE_OPEN_AT);
+    record->request.operation.open_at.directory = AT_FDCWD;
+    record->request.operation.open_at.path = path;
+    record->request.operation.open_at.flags = O_RDONLY;
+    record->request.operation.open_at.expected_kind = expected;
 }
 
-static void probe_close_request(
-    wf_linux_file_request *request,
-    int descriptor
-) {
-    memset(request, 0, sizeof(*request));
-    request->kind = WF_LINUX_FILE_CLOSE;
-    request->descriptor = descriptor;
+static void probe_close_record(wf_completion_record *record, int descriptor) {
+    probe_record_init(record, WF_FILE_CLOSE);
+    record->request.operation.close.descriptor = descriptor;
 }
 
 /* Opens and closes are ring operations with the same typed answers the
  * bounded POSIX adapter gives, including the kind refusal that disposes of a
  * descriptor the writer must never receive. */
 static int probe_open_and_close_cases(
-    wf_completion_runtime *runtime,
     wf_linux_io_uring_adapter *adapter,
     const char *data_path
 ) {
-    wf_linux_file_request request;
-    wf_linux_file_result result;
+    wf_completion_record record;
     char directory[512];
     char missing[512];
     char fifo[512];
@@ -375,296 +344,328 @@ static int probe_open_and_close_cases(
     PROBE_CHECK(mkfifo(fifo, 0600) == 0);
 
     /* A regular file the operation asked for opens and closes on the ring. */
-    probe_open_request(&request, data_path, WF_FILE_EXPECT_REGULAR);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.kind == WF_LINUX_FILE_OPEN_AT);
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    PROBE_CHECK(result.error_code == 0);
-    PROBE_CHECK(result.value >= 0);
-    descriptor = (int)result.value;
+    probe_open_record(&record, data_path, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.kind == WF_FILE_OPEN_AT);
+    PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(record.result.error_code == 0);
+    PROBE_CHECK(record.result.value >= 0);
+    descriptor = (int)record.result.value;
     PROBE_CHECK(fcntl(descriptor, F_GETFD) != -1);
 
-    probe_close_request(&request, descriptor);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.kind == WF_LINUX_FILE_CLOSE);
-    PROBE_CHECK(result.value == 0 && result.error_code == 0);
+    probe_close_record(&record, descriptor);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.kind == WF_FILE_CLOSE);
+    PROBE_CHECK(record.result.value == 0 && record.result.error_code == 0);
 
     /* Closing a descriptor whose authority is already gone is a typed
      * refusal, never a second disposal of whatever reused the number. */
-    probe_close_request(&request, descriptor);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.value < 0 && result.error_code == EBADF);
+    probe_close_record(&record, descriptor);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.value < 0 && record.result.error_code == EBADF);
 
     /* A name that does not resolve fails before a descriptor exists. */
-    probe_open_request(&request, missing, WF_FILE_EXPECT_REGULAR);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_FAILED);
-    PROBE_CHECK(result.error_code == ENOENT);
-    PROBE_CHECK(result.value < 0);
+    probe_open_record(&record, missing, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_FAILED);
+    PROBE_CHECK(record.result.error_code == ENOENT);
+    PROBE_CHECK(record.result.value < 0);
 
     /* A directory is refused for a regular open, and the descriptor the ring
-     * opened is disposed of on the same ring rather than leaked. */
-    probe_open_request(&request, directory, WF_FILE_EXPECT_REGULAR);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
-    PROBE_CHECK(result.error_code == 0);
-    PROBE_CHECK(result.value >= 0);
+     * opened is disposed of rather than leaked. */
+    probe_open_record(&record, directory, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_IS_DIRECTORY);
+    PROBE_CHECK(record.result.error_code == 0);
+    PROBE_CHECK(record.result.value >= 0);
     errno = 0;
-    PROBE_CHECK(fcntl((int)result.value, F_GETFD) == -1 && errno == EBADF);
+    PROBE_CHECK(
+        fcntl((int)record.result.value, F_GETFD) == -1 && errno == EBADF
+    );
 
     /* Any other kind is refused the same way. */
-    probe_open_request(&request, fifo, WF_FILE_EXPECT_REGULAR);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_OTHER_KIND);
-    PROBE_CHECK(result.error_code == 0);
-    PROBE_CHECK(result.value >= 0);
+    probe_open_record(&record, fifo, WF_FILE_EXPECT_REGULAR);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_OTHER_KIND);
+    PROBE_CHECK(record.result.error_code == 0);
+    PROBE_CHECK(record.result.value >= 0);
     errno = 0;
-    PROBE_CHECK(fcntl((int)result.value, F_GETFD) == -1 && errno == EBADF);
+    PROBE_CHECK(
+        fcntl((int)record.result.value, F_GETFD) == -1 && errno == EBADF
+    );
 
     /* The refusals above are about the kind, not the request shape: the same
      * directory opens when a directory is what the operation asked for. */
-    probe_open_request(&request, directory, WF_FILE_EXPECT_DIRECTORY);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    PROBE_CHECK(result.value >= 0);
-    probe_close_request(&request, (int)result.value);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.value == 0 && result.error_code == 0);
+    probe_open_record(&record, directory, WF_FILE_EXPECT_DIRECTORY);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(record.result.value >= 0);
+    descriptor = (int)record.result.value;
+    probe_close_record(&record, descriptor);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.value == 0 && record.result.error_code == 0);
 
     PROBE_CHECK(unlink(fifo) == 0);
     return 0;
 }
 
-/* A submitted open's path bytes belong to the entry, not to the caller.
+/* A submitted open resolves the submitting frame's own bytes.
  *
- * The SQE names the bytes until the kernel resolves them, and the caller
- * regains its name buffer the moment submission returns.  This is asserted of
- * the entry rather than of the outcome, and deliberately: on this kernel
- * `IORING_OP_OPENAT` copies the name during the `io_uring_enter` the submit
- * performs, so a behavioural probe would pass over a caller-owned pointer
- * today and only start failing once the doorbell is deferred.  The property
- * that has to hold is that the record owns the bytes, so that is what is
- * checked.
- *
- * The release milestone is checked in the same place and for the same reason:
- * `loan-released(path)` is exactly the claim that the caller's buffer is free
- * while the operation is still outstanding. */
-static int probe_open_stages_its_own_path_case(
-    wf_completion_runtime *runtime,
+ * The SQE names the caller's buffer and the caller keeps it live until the
+ * join, because the record is a block of that frame and [SYS-2]'s loan on the
+ * path component holds for exactly that interval (design §5).  What used to be
+ * checked here -- that the adapter had copied the name into a pool entry of
+ * its own, and had published `loan-released(path)` to say so -- is retired
+ * with the copy: there is no entry to copy into, no `WF_FILE_PATH_CAPACITY` to
+ * exceed, no "path does not fit" refusal and no demoted-open counter (design
+ * §7, "The record's pool machinery: deleted, not answered").  What remains is
+ * that the SQE names the record's request, which is what this checks. */
+static int probe_open_names_the_submitters_bytes(
     wf_linux_io_uring_adapter *adapter,
     const char *data_path
 ) {
-    wf_linux_file_request request;
-    wf_linux_file_result result;
-    wf_completion_token token;
+    wf_completion_record record;
     char requested[512];
-    size_t index;
-    size_t staged = 0;
-    uint32_t milestones = 0;
-    unsigned phase = 0;
 
     PROBE_CHECK(
         (size_t)snprintf(requested, sizeof(requested), "%s", data_path)
         < sizeof(requested)
     );
-    probe_open_request(&request, requested, WF_FILE_EXPECT_REGULAR);
-    PROBE_CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
+    probe_open_record(&record, requested, WF_FILE_EXPECT_REGULAR);
     PROBE_CHECK(
-        wf_linux_io_uring_submit(adapter, token, &request)
+        wf_linux_io_uring_submit(adapter, &record)
         == WF_LINUX_IO_URING_TARGET_OWNS
     );
+    PROBE_CHECK(record.request.operation.open_at.path == requested);
+    PROBE_CHECK(probe_drive_to_terminal(adapter, &record) == 0);
+    PROBE_CHECK(record.result.kind == WF_FILE_OPEN_AT);
+    PROBE_CHECK(record.result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
+    PROBE_CHECK(record.result.error_code == 0 && record.result.value >= 0);
 
-    for (index = 0; index < adapter->entry_capacity; ++index) {
-        wf_linux_io_uring_entry *entry = &adapter->entries[index];
-        if (entry->token.slot != token.slot
-            || entry->token.generation != token.generation
-            || entry->kind != WF_LINUX_FILE_OPEN_AT) {
-            continue;
-        }
-        PROBE_CHECK(entry->request.buffer.path == entry->path_storage);
-        PROBE_CHECK(strcmp(entry->path_storage, data_path) == 0);
-        staged += 1;
-    }
-    PROBE_CHECK(staged == 1);
-
-    PROBE_CHECK(
-        wf_completion_observe(runtime, token, &milestones, &phase)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    PROBE_CHECK((milestones & WF_COMPLETION_PAYLOAD_RELEASED) != 0);
-    PROBE_CHECK((milestones & WF_COMPLETION_TERMINAL) == 0);
-
-    /* The caller's buffer really is free from here. */
-    memset(requested, 'z', sizeof(requested) - 1u);
-    requested[sizeof(requested) - 1u] = 0;
-    PROBE_CHECK(probe_drive_to_terminal(runtime, adapter, token, &result) == 0);
-    PROBE_CHECK(result.kind == WF_LINUX_FILE_OPEN_AT);
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    PROBE_CHECK(result.error_code == 0 && result.value >= 0);
-
-    probe_close_request(&request, (int)result.value);
-    PROBE_CHECK(probe_run_one(runtime, adapter, &request, &result) == 0);
-    PROBE_CHECK(result.value == 0 && result.error_code == 0);
+    probe_close_record(&record, (int)record.result.value);
+    PROBE_CHECK(probe_run_one(adapter, &record) == 0);
+    PROBE_CHECK(record.result.value == 0 && record.result.error_code == 0);
     return 0;
 }
 
-/* An open exhausts the adapter's bounded entries like any other operation,
- * says so without taking ownership, and succeeds once an entry returns. */
-static int probe_open_capacity_case(
-    wf_completion_runtime *runtime,
+/* More operations in flight than the ring is deep.
+ *
+ * This is what replaces `probe_open_capacity_case`, whose WAIT_CAPACITY answer
+ * and readmission-after-release are both gone: the ring's depth is a
+ * throughput parameter and no queue can refuse an operation, because a full
+ * submission queue is emptied by the submitting call's own `io_uring_enter`
+ * (design §7).  So the property to test is the opposite one -- that submitting
+ * more operations than the ring is deep is accepted and every one of them
+ * completes. */
+static int probe_more_in_flight_than_the_ring_is_deep(
     wf_linux_io_uring_adapter *adapter,
-    const char *data_path
+    int descriptor
 ) {
-    wf_linux_file_request request;
-    wf_linux_file_result result;
-    wf_completion_token held[2];
-    wf_completion_token refused;
+    enum { OPERATIONS = 12 };
+    wf_completion_record records[OPERATIONS];
+    unsigned char bytes[OPERATIONS];
     unsigned index;
 
-    probe_open_request(&request, data_path, WF_FILE_EXPECT_REGULAR);
-    for (index = 0; index < 2u; ++index) {
+    PROBE_CHECK(wf_linux_io_uring_capacity(adapter) < OPERATIONS);
+    for (index = 0; index < OPERATIONS; ++index) {
+        bytes[index] = 0xa5u;
+        probe_record_init(&records[index], WF_FILE_PREAD);
+        records[index].request.operation.pread.descriptor = descriptor;
+        records[index].request.operation.pread.buffer = &bytes[index];
+        records[index].request.operation.pread.count = 1;
+        records[index].request.operation.pread.offset = (int64_t)(index % 8u);
         PROBE_CHECK(
-            wf_completion_claim(runtime, &held[index]) == WF_COMPLETION_CLAIMED
-        );
-        PROBE_CHECK(
-            wf_linux_io_uring_submit(adapter, held[index], &request)
+            wf_linux_io_uring_submit(adapter, &records[index])
             == WF_LINUX_IO_URING_TARGET_OWNS
         );
     }
-    PROBE_CHECK(wf_completion_claim(runtime, &refused) == WF_COMPLETION_CLAIMED);
-    PROBE_CHECK(
-        wf_linux_io_uring_submit(adapter, refused, &request)
-        == WF_LINUX_IO_URING_WAIT_CAPACITY
-    );
-    for (index = 0; index < 2u; ++index) {
-        PROBE_CHECK(
-            probe_drive_to_terminal(runtime, adapter, held[index], &result) == 0
-        );
-        PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-        PROBE_CHECK(close((int)result.value) == 0);
+    for (index = 0; index < OPERATIONS; ++index) {
+        PROBE_CHECK(probe_drive_to_terminal(adapter, &records[index]) == 0);
+        PROBE_CHECK(records[index].result.value == 1);
+        PROBE_CHECK(records[index].result.error_code == 0);
+        PROBE_CHECK(bytes[index] == (unsigned char)('a' + (index % 8u)));
     }
-    /* Released capacity readmits the exact operation that was refused, with
-     * its own token still owned by the caller. */
-    PROBE_CHECK(
-        wf_linux_io_uring_submit(adapter, refused, &request)
-        == WF_LINUX_IO_URING_TARGET_OWNS
-    );
-    PROBE_CHECK(probe_drive_to_terminal(runtime, adapter, refused, &result) == 0);
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    PROBE_CHECK(close((int)result.value) == 0);
     return 0;
 }
 
-/* An open result is one terminal publication into one generation. A second
- * publication is refused as a duplicate, and a token copied before the slot
- * was recycled is refused as stale rather than overwriting a live open. */
-static int probe_open_generation_cases(void) {
-    /* One slot, so the operation claimed after the first is recycled onto
-     * exactly the storage the stale token still names. */
-    wf_completion_runtime storage;
-    wf_completion_runtime *runtime = &storage;
-    wf_completion_slot only;
-    wf_completion_token token;
-    wf_completion_token stale;
-    wf_completion_event event;
-    wf_completion_outcome outcome;
-    wf_linux_file_result result;
-    wf_linux_file_result published;
-    wf_completion_publication publication;
+/* More completions than the completion queue holds, reaped without a wait.
+ *
+ * The queue is sixteen entries here.  Twenty-four one-byte reads are staged
+ * and kicked together, so the kernel posts sixteen completions into the queue
+ * and keeps eight on its overflow list under IORING_FEAT_NODROP.  Nothing but
+ * an `io_uring_enter` moves those eight into the queue, and a program whose
+ * every submitter is parked on one of them makes no further submission, so
+ * the reaper has to make that call itself when the kernel raises
+ * IORING_SQ_CQ_OVERFLOW.  This is the stall the network control test found
+ * at 129 connections against a 128-entry queue: every thread idle, the ring
+ * descriptor readable, and nothing reaped.  The reap here is the
+ * non-waiting pass, which is the one a scheduler thread's progress makes. */
+static int probe_completions_past_the_queue_are_flushed_from_the_kernel(
+    wf_linux_io_uring_adapter *adapter,
+    int descriptor
+) {
+    enum { OPERATIONS = 24 };
+    wf_completion_record records[OPERATIONS];
+    unsigned char bytes[OPERATIONS];
+    wf_linux_io_uring_statistics before;
+    wf_linux_io_uring_statistics after;
+    size_t published = 0;
+    unsigned attempt;
+    unsigned index;
 
-    PROBE_CHECK(wf_completion_runtime_init(runtime, &only, 1) == 0);
-    memset(&published, 0, sizeof(published));
-    published.kind = WF_LINUX_FILE_OPEN_AT;
-    published.value = 7;
-    published.open_outcome = WF_FILE_OPEN_SUCCEEDED;
-    publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
-    publication.terminal_kind = 1;
-    publication.result = &published;
-    publication.result_size = sizeof(published);
-
-    PROBE_CHECK(wf_completion_claim(runtime, &token) == WF_COMPLETION_CLAIMED);
-    stale = token;
-    PROBE_CHECK(
-        wf_completion_begin_submit(runtime, token) == WF_COMPLETION_TRANSITIONED
-    );
-    PROBE_CHECK(
-        wf_completion_target_accepted(runtime, token)
-        == WF_COMPLETION_TRANSITIONED
-    );
-    PROBE_CHECK(
-        wf_completion_publish_terminal(runtime, token, &publication)
-        == WF_COMPLETION_PUBLISHED
-    );
-    PROBE_CHECK(
-        wf_completion_publish_terminal(runtime, token, &publication)
-        == WF_COMPLETION_PUBLISH_DUPLICATE_TERMINAL
-    );
-    PROBE_CHECK(probe_drain(runtime, &event, 1) == 0);
-    PROBE_CHECK(
-        wf_completion_consume(
-            runtime,
-            token,
-            &result,
-            sizeof(result),
-            &outcome
-        ) == WF_COMPLETION_CONSUMED
-    );
-    PROBE_CHECK(result.open_outcome == WF_FILE_OPEN_SUCCEEDED);
-    PROBE_CHECK(result.value == 7);
-
-    /* The recycled slot now belongs to a different operation, and the copied
-     * token bits must fail generation validation before any result byte of
-     * that operation changes. */
-    {
-        wf_completion_token reused;
+    PROBE_CHECK(*adapter->completion_count < OPERATIONS);
+    before = wf_linux_io_uring_statistics_snapshot(adapter);
+    for (index = 0; index < OPERATIONS; ++index) {
+        bytes[index] = 0x5au;
+        probe_record_init(&records[index], WF_FILE_PREAD);
+        records[index].request.operation.pread.descriptor = descriptor;
+        records[index].request.operation.pread.buffer = &bytes[index];
+        records[index].request.operation.pread.count = 1;
+        records[index].request.operation.pread.offset = (int64_t)(index % 8u);
         PROBE_CHECK(
-            wf_completion_claim(runtime, &reused) == WF_COMPLETION_CLAIMED
+            wf_linux_io_uring_submit(adapter, &records[index])
+            == WF_LINUX_IO_URING_TARGET_OWNS
         );
-        PROBE_CHECK(reused.slot == stale.slot);
-        PROBE_CHECK(reused.generation != stale.generation);
-        PROBE_CHECK(
-            wf_completion_begin_submit(runtime, reused)
-            == WF_COMPLETION_TRANSITIONED
-        );
-        PROBE_CHECK(
-            wf_completion_target_accepted(runtime, reused)
-            == WF_COMPLETION_TRANSITIONED
-        );
-        PROBE_CHECK(
-            wf_completion_publish_terminal(runtime, stale, &publication)
-            == WF_COMPLETION_PUBLISH_STALE
-        );
-        published.value = 11;
-        PROBE_CHECK(
-            wf_completion_publish_terminal(runtime, reused, &publication)
-            == WF_COMPLETION_PUBLISHED
-        );
-        PROBE_CHECK(probe_drain(runtime, &event, 1) == 0);
-        PROBE_CHECK(
-            wf_completion_consume(
-                runtime,
-                reused,
-                &result,
-                sizeof(result),
-                &outcome
-            ) == WF_COMPLETION_CONSUMED
-        );
-        PROBE_CHECK(result.value == 11);
     }
-    PROBE_CHECK(wf_completion_runtime_destroy(runtime) == 0);
+    PROBE_CHECK(wf_linux_io_uring_flush(adapter) == 0);
+    for (attempt = 0; attempt < 100000u && published < OPERATIONS; ++attempt) {
+        size_t step = 0;
+        PROBE_CHECK(
+            wf_linux_io_uring_progress(adapter, OPERATIONS, 0, &step) == 0
+        );
+        published += step;
+    }
+    PROBE_CHECK(published == OPERATIONS);
+    for (index = 0; index < OPERATIONS; ++index) {
+        PROBE_CHECK(probe_record_done(&records[index]));
+        PROBE_CHECK(records[index].result.value == 1);
+        PROBE_CHECK(records[index].result.error_code == 0);
+        PROBE_CHECK(bytes[index] == (unsigned char)('a' + (index % 8u)));
+    }
+    after = wf_linux_io_uring_statistics_snapshot(adapter);
+    PROBE_CHECK(after.overflow_flushes > before.overflow_flushes);
+    return 0;
+}
+
+/* One loopback round trip on the ring: connect, accept, send, receive.
+ *
+ * This is the harness's own shape as a runtime probe -- the peer is the same
+ * process, so nothing here waits on anything outside it -- and it is the one
+ * place the four socket opcodes are exercised against the kernel without a
+ * compiled Whitefoot program in front of them.  The listener is bound and
+ * listened here rather than through the ring, exactly as the bridge does it:
+ * a bind and a listen are immediate host calls with nothing to wait for
+ * (`research/investigations/io-model/NETWORK.md` §5).
+ *
+ * The connect and the accept are submitted together, because a loopback
+ * connect completes only once something accepts, and the record is a block of
+ * this frame either way. */
+static int probe_loopback_round_trip(wf_linux_io_uring_adapter *adapter) {
+    wf_completion_record connecting;
+    wf_completion_record accepting;
+    wf_completion_record sending;
+    wf_completion_record receiving;
+    wf_socket_address address;
+    wf_socket_native_address bound;
+    struct sockaddr_in local;
+    socklen_t local_length = (socklen_t)sizeof(local);
+    const unsigned char message[5] = {'r', 'i', 'n', 'g', '!'};
+    unsigned char received[5] = {0};
+    unsigned length;
+    int listener;
+    int connected;
+    int taken;
+
+    memset(&address, 0, sizeof(address));
+    /* 127.0.0.1 with the port the kernel chooses, filled in below. */
+    address.words[0] = 0x0100007fu;
+    address.port_and_family = 0;
+    length = wf_socket_native_from_address(&address, &bound);
+    listener = wf_socket_open(&address);
+    PROBE_CHECK(listener >= 0);
+    PROBE_CHECK(
+        bind(listener, (const struct sockaddr *)bound.bytes, (socklen_t)length)
+        == 0
+    );
+    PROBE_CHECK(listen(listener, 8) == 0);
+    PROBE_CHECK(
+        getsockname(listener, (struct sockaddr *)&local, &local_length) == 0
+    );
+    address.port_and_family = (unsigned)ntohs(local.sin_port);
+
+    probe_record_init(&accepting, WF_FILE_SOCKET_ACCEPT);
+    accepting.request.operation.accept.descriptor = listener;
+    accepting.request.operation.accept.peer_length =
+        (unsigned)sizeof(accepting.request.operation.accept.peer.native);
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, &accepting)
+        == WF_LINUX_IO_URING_TARGET_OWNS
+    );
+
+    probe_record_init(&connecting, WF_FILE_SOCKET_CONNECT);
+    connecting.request.operation.endpoint.descriptor = -1;
+    connecting.request.operation.endpoint.address.portable = address;
+    PROBE_CHECK(
+        wf_linux_io_uring_submit(adapter, &connecting)
+        == WF_LINUX_IO_URING_TARGET_OWNS
+    );
+
+    PROBE_CHECK(probe_drive_to_terminal(adapter, &connecting) == 0);
+    PROBE_CHECK(probe_drive_to_terminal(adapter, &accepting) == 0);
+    PROBE_CHECK(connecting.result.error_code == 0);
+    PROBE_CHECK(accepting.result.error_code == 0);
+    connected = (int)connecting.result.value;
+    taken = (int)accepting.result.value;
+    PROBE_CHECK(connected >= 0 && taken >= 0);
+    /* The accept published the peer's own address in the portable form the
+     * accept join reads, and a loopback peer is 127.0.0.1 with an ephemeral
+     * port the target chose. */
+    PROBE_CHECK(
+        accepting.request.operation.accept.peer.portable.words[0]
+        == 0x0100007fu
+    );
+    PROBE_CHECK(
+        (accepting.request.operation.accept.peer.portable.port_and_family
+         & WF_SOCKET_FAMILY_V6)
+        == 0u
+    );
+    PROBE_CHECK(
+        (accepting.request.operation.accept.peer.portable.port_and_family
+         & WF_SOCKET_PORT_MASK)
+        != 0u
+    );
+
+    probe_record_init(&sending, WF_FILE_SOCKET_SEND);
+    sending.request.operation.send.descriptor = connected;
+    sending.request.operation.send.buffer = message;
+    sending.request.operation.send.count = sizeof(message);
+    PROBE_CHECK(probe_run_one(adapter, &sending) == 0);
+    PROBE_CHECK(sending.result.value == (int64_t)sizeof(message));
+
+    probe_record_init(&receiving, WF_FILE_SOCKET_RECEIVE);
+    receiving.request.operation.receive.descriptor = taken;
+    receiving.request.operation.receive.buffer = received;
+    receiving.request.operation.receive.count = sizeof(received);
+    PROBE_CHECK(probe_run_one(adapter, &receiving) == 0);
+    PROBE_CHECK(receiving.result.value == (int64_t)sizeof(message));
+    PROBE_CHECK(memcmp(received, message, sizeof(message)) == 0);
+
+    /* This probe links the ring and nothing else, so the pair's own two-count
+     * -- which lives in the shared adapter and is what a half-close consults
+     * [SYS-18] -- is exercised by `harness.c` instead. Here the three
+     * descriptors are simply given back. */
+    PROBE_CHECK(close(connected) == 0);
+    PROBE_CHECK(close(taken) == 0);
+    PROBE_CHECK(close(listener) == 0);
     return 0;
 }
 
 int main(int argc, char **argv) {
     wf_completion_runtime runtime;
-    wf_completion_slot slots[8];
     wf_linux_io_uring_adapter adapter;
-    wf_linux_io_uring_entry adapter_entries[2];
-    wf_completion_token first;
-    wf_completion_token second;
-    wf_completion_token capacity;
-    wf_completion_event events[2];
-    wf_linux_file_request request;
+    wf_completion_record first;
+    wf_completion_record second;
+    wf_completion_record third;
     unsigned char first_bytes[4] = {0};
     unsigned char second_bytes[4] = {0};
     const unsigned char seed[8] = {'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'};
@@ -675,13 +676,12 @@ int main(int argc, char **argv) {
     int error;
 
     PROBE_CHECK(argc == 2);
-    PROBE_CHECK(wf_completion_runtime_init(&runtime, slots, 8) == 0);
-    error = wf_linux_io_uring_init(
-        &adapter,
-        &runtime,
-        adapter_entries,
-        2
-    );
+    PROBE_CHECK(wf_sched_init(&probe_core, 1u, 2u, 256u * 1024u) == 0);
+    PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
+    /* The ring is deliberately shallower than the number of operations this
+     * probe puts in flight, so that the submitting call's own kick is what
+     * makes room rather than a capacity answer that no longer exists. */
+    error = wf_linux_io_uring_init(&adapter, &runtime, 8u, 16u);
     if (error != 0) {
         fprintf(
             stderr,
@@ -691,6 +691,8 @@ int main(int argc, char **argv) {
         PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
         return 77;
     }
+    probe_runtime = &runtime;
+    probe_adapter = &adapter;
     PROBE_CHECK(
         wf_completion_set_wake_callback(
             &runtime,
@@ -702,34 +704,23 @@ int main(int argc, char **argv) {
     PROBE_CHECK(descriptor >= 0);
     PROBE_CHECK(pwrite(descriptor, seed, sizeof(seed), 0) == (ssize_t)sizeof(seed));
 
-    PROBE_CHECK(wf_completion_claim(&runtime, &first) == WF_COMPLETION_CLAIMED);
-    PROBE_CHECK(wf_completion_claim(&runtime, &second) == WF_COMPLETION_CLAIMED);
-    PROBE_CHECK(wf_completion_claim(&runtime, &capacity) == WF_COMPLETION_CLAIMED);
-
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_LINUX_FILE_READ_AT;
-    request.descriptor = descriptor;
-    request.buffer.read_buffer = first_bytes;
-    request.count = sizeof(first_bytes);
-    request.offset = 0;
+    probe_record_init(&first, WF_FILE_PREAD);
+    first.request.operation.pread.descriptor = descriptor;
+    first.request.operation.pread.buffer = first_bytes;
+    first.request.operation.pread.count = sizeof(first_bytes);
+    first.request.operation.pread.offset = 0;
     PROBE_CHECK(
-        wf_linux_io_uring_submit(&adapter, first, &request)
+        wf_linux_io_uring_submit(&adapter, &first)
         == WF_LINUX_IO_URING_TARGET_OWNS
     );
-    request.buffer.read_buffer = second_bytes;
-    request.offset = 4;
+    probe_record_init(&second, WF_FILE_PREAD);
+    second.request.operation.pread.descriptor = descriptor;
+    second.request.operation.pread.buffer = second_bytes;
+    second.request.operation.pread.count = sizeof(second_bytes);
+    second.request.operation.pread.offset = 4;
     PROBE_CHECK(
-        wf_linux_io_uring_submit(&adapter, second, &request)
+        wf_linux_io_uring_submit(&adapter, &second)
         == WF_LINUX_IO_URING_TARGET_OWNS
-    );
-
-    request.kind = WF_LINUX_FILE_WRITE_AT;
-    request.buffer.write_buffer = suffix;
-    request.count = sizeof(suffix);
-    request.offset = sizeof(seed);
-    PROBE_CHECK(
-        wf_linux_io_uring_submit(&adapter, capacity, &request)
-        == WF_LINUX_IO_URING_WAIT_CAPACITY
     );
 
     while (published < 2) {
@@ -739,14 +730,20 @@ int main(int argc, char **argv) {
         );
         published += step;
     }
-    PROBE_CHECK(probe_drain(&runtime, events, 2) == 0);
-    PROBE_CHECK(probe_consume(&runtime, first, WF_LINUX_FILE_READ_AT, 4) == 0);
-    PROBE_CHECK(probe_consume(&runtime, second, WF_LINUX_FILE_READ_AT, 4) == 0);
+    PROBE_CHECK(probe_record_done(&first) && probe_record_done(&second));
+    PROBE_CHECK(first.result.kind == WF_FILE_PREAD);
+    PROBE_CHECK(first.result.value == 4 && first.result.error_code == 0);
+    PROBE_CHECK(second.result.value == 4 && second.result.error_code == 0);
     PROBE_CHECK(memcmp(first_bytes, seed, 4) == 0);
     PROBE_CHECK(memcmp(second_bytes, seed + 4, 4) == 0);
 
+    probe_record_init(&third, WF_FILE_PWRITE);
+    third.request.operation.pwrite.descriptor = descriptor;
+    third.request.operation.pwrite.buffer = suffix;
+    third.request.operation.pwrite.count = sizeof(suffix);
+    third.request.operation.pwrite.offset = (int64_t)sizeof(seed);
     PROBE_CHECK(
-        wf_linux_io_uring_submit(&adapter, capacity, &request)
+        wf_linux_io_uring_submit(&adapter, &third)
         == WF_LINUX_IO_URING_TARGET_OWNS
     );
     published = 0;
@@ -755,47 +752,33 @@ int main(int argc, char **argv) {
             wf_linux_io_uring_progress(&adapter, 1, 1, &published) == 0
         );
     }
-    PROBE_CHECK(probe_drain(&runtime, events, 1) == 0);
-    PROBE_CHECK(probe_consume(&runtime, capacity, WF_LINUX_FILE_WRITE_AT, 2) == 0);
+    PROBE_CHECK(probe_record_done(&third));
+    PROBE_CHECK(third.result.kind == WF_FILE_PWRITE);
+    PROBE_CHECK(third.result.value == 2 && third.result.error_code == 0);
     PROBE_CHECK(pread(descriptor, final_bytes, sizeof(final_bytes), 0) == 10);
     PROBE_CHECK(memcmp(final_bytes, seed, sizeof(seed)) == 0);
     PROBE_CHECK(memcmp(final_bytes + sizeof(seed), suffix, sizeof(suffix)) == 0);
 
-    /* Completion before sleep changes the epoch but performs no explicit host
-     * wake. The subsequent park observes that fact and returns without
-     * entering epoll. */
+    PROBE_CHECK(
+        probe_more_in_flight_than_the_ring_is_deep(&adapter, descriptor) == 0
+    );
+    PROBE_CHECK(
+        probe_completions_past_the_queue_are_flushed_from_the_kernel(
+            &adapter,
+            descriptor
+        ) == 0
+    );
+
+    PROBE_CHECK(probe_loopback_round_trip(&adapter) == 0);
+
+    /* An epoch change before sleep performs no explicit host wake while
+     * nobody has announced one. The subsequent park observes the epoch and
+     * returns without entering epoll. */
     {
-        wf_completion_token early;
-        wf_completion_publication publication;
-        wf_linux_file_result result = {
-            .kind = WF_LINUX_FILE_READ_AT,
-            .value = 0,
-            .error_code = 0,
-        };
-        uint64_t epoch;
-        uint64_t writes;
-        PROBE_CHECK(
-            wf_completion_claim(&runtime, &early) == WF_COMPLETION_CLAIMED
-        );
-        PROBE_CHECK(
-            wf_completion_begin_submit(&runtime, early)
-                == WF_COMPLETION_TRANSITIONED
-        );
-        PROBE_CHECK(
-            wf_completion_target_accepted(&runtime, early)
-                == WF_COMPLETION_TRANSITIONED
-        );
-        epoch = wf_completion_wake_epoch(&runtime);
-        writes = wf_linux_io_uring_statistics_snapshot(&adapter)
+        uint64_t epoch = wf_completion_wake_epoch(&runtime);
+        uint64_t writes = wf_linux_io_uring_statistics_snapshot(&adapter)
             .host_wake_writes;
-        publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
-        publication.terminal_kind = 1;
-        publication.result = &result;
-        publication.result_size = sizeof(result);
-        PROBE_CHECK(
-            wf_completion_publish_terminal(&runtime, early, &publication)
-                == WF_COMPLETION_PUBLISHED
-        );
+        wf_completion_notify_target(&runtime);
         PROBE_CHECK(
             wf_linux_io_uring_statistics_snapshot(&adapter)
                 .host_wake_writes == writes
@@ -803,36 +786,27 @@ int main(int argc, char **argv) {
         PROBE_CHECK(
             wf_linux_io_uring_park(&adapter, epoch, UINT32_MAX) == 0
         );
-        PROBE_CHECK(probe_drain(&runtime, events, 1) == 0);
-        PROBE_CHECK(
-            probe_consume(&runtime, early, WF_LINUX_FILE_READ_AT, 0) == 0
-        );
     }
 
-    /* Compute/capacity and native CQ facts share one kernel wait set. A core
-     * notification wakes an announced scheduler through eventfd, and the
-     * eventfd is empty again before that scheduler becomes active. */
+    /* Compute and native CQ facts share one kernel wait set. A runtime
+     * notification wakes an announced sleeper through eventfd, and the
+     * eventfd is empty again before that sleeper becomes active. */
     {
         probe_park_context parked = {
             .adapter = &adapter,
             .epoch = wf_completion_wake_epoch(&runtime),
             .result = -1,
         };
-        pthread_t scheduler;
+        pthread_t sleeper;
         uint64_t writes = wf_linux_io_uring_statistics_snapshot(&adapter)
             .host_wake_writes;
         uint64_t counter;
         PROBE_CHECK(
-            pthread_create(
-                &scheduler,
-                NULL,
-                probe_park_scheduler,
-                &parked
-            ) == 0
+            pthread_create(&sleeper, NULL, probe_park_thread, &parked) == 0
         );
         PROBE_CHECK(probe_wait_until_announced(&runtime) == 0);
         wf_completion_notify_compute(&runtime);
-        PROBE_CHECK(pthread_join(scheduler, NULL) == 0);
+        PROBE_CHECK(pthread_join(sleeper, NULL) == 0);
         PROBE_CHECK(parked.result == 0);
         PROBE_CHECK(
             wf_linux_io_uring_statistics_snapshot(&adapter)
@@ -846,7 +820,7 @@ int main(int argc, char **argv) {
     }
 
     /* The ring descriptor itself, not a millisecond condvar poll and not the
-     * eventfd, wakes the scheduler when a delayed CQE appears. */
+     * eventfd, wakes the sleeper when a delayed CQE appears. */
     {
         struct __kernel_timespec delay = {
             .tv_sec = 0,
@@ -869,70 +843,44 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* Four lanes wait for four distinct terminal products. Publications may
-     * race and coalesce into one eventfd level, but no lane may consume that
+    /* Four lanes wait in place on four distinct records. Completions may race
+     * and coalesce into one eventfd level, but no lane may consume that
      * broadcast fact before every already-announced waiter has left epoll. */
     {
-        probe_token_wait_context contexts[PROBE_TOKEN_WAITERS];
-        wf_linux_file_result results[PROBE_TOKEN_WAITERS];
-        pthread_t waiters[PROBE_TOKEN_WAITERS];
+        probe_record_wait_context contexts[PROBE_RECORD_WAITERS];
+        pthread_t waiters[PROBE_RECORD_WAITERS];
         unsigned index;
         uint64_t writes = wf_linux_io_uring_statistics_snapshot(&adapter)
             .host_wake_writes;
-        for (index = 0; index < PROBE_TOKEN_WAITERS; ++index) {
-            PROBE_CHECK(
-                wf_completion_claim(&runtime, &contexts[index].token)
-                    == WF_COMPLETION_CLAIMED
-            );
-            PROBE_CHECK(
-                wf_completion_begin_submit(&runtime, contexts[index].token)
-                    == WF_COMPLETION_TRANSITIONED
-            );
-            PROBE_CHECK(
-                wf_completion_target_accepted(
-                    &runtime,
-                    contexts[index].token
-                ) == WF_COMPLETION_TRANSITIONED
-            );
+        for (index = 0; index < PROBE_RECORD_WAITERS; ++index) {
+            probe_record_init(&contexts[index].record, WF_FILE_PREAD);
             contexts[index].adapter = &adapter;
             contexts[index].runtime = &runtime;
             contexts[index].expected = (int64_t)index + 100;
             contexts[index].result = -1;
-            memset(&results[index], 0, sizeof(results[index]));
-            results[index].kind = WF_LINUX_FILE_READ_AT;
-            results[index].value = contexts[index].expected;
             PROBE_CHECK(
                 pthread_create(
                     &waiters[index],
                     NULL,
-                    probe_wait_for_own_token,
+                    probe_wait_for_own_record,
                     &contexts[index]
                 ) == 0
             );
         }
         PROBE_CHECK(
-            probe_wait_for_parked_count(&runtime, PROBE_TOKEN_WAITERS) == 0
+            probe_wait_for_parked_count(&runtime, PROBE_RECORD_WAITERS) == 0
         );
-        for (index = 0; index < PROBE_TOKEN_WAITERS; ++index) {
-            wf_completion_publication publication = {
-                .milestones = WF_COMPLETION_OWNERSHIP_COMPLETE,
-                .terminal_kind = 1,
-                .result = &results[index],
-                .result_size = sizeof(results[index]),
-            };
-            PROBE_CHECK(
-                wf_completion_publish_terminal(
-                    &runtime,
-                    contexts[index].token,
-                    &publication
-                ) == WF_COMPLETION_PUBLISHED
-            );
+        for (index = 0; index < PROBE_RECORD_WAITERS; ++index) {
+            contexts[index].record.result.kind = WF_FILE_PREAD;
+            contexts[index].record.result.value = contexts[index].expected;
+            contexts[index].record.result.error_code = 0;
+            wf_completion_record_complete(&contexts[index].record);
             PROBE_CHECK(pthread_join(waiters[index], NULL) == 0);
             PROBE_CHECK(contexts[index].result == 0);
             PROBE_CHECK(
                 probe_wait_for_parked_count(
                     &runtime,
-                    PROBE_TOKEN_WAITERS - index - 1u
+                    PROBE_RECORD_WAITERS - index - 1u
                 ) == 0
             );
         }
@@ -951,12 +899,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    PROBE_CHECK(probe_open_and_close_cases(&runtime, &adapter, argv[1]) == 0);
-    PROBE_CHECK(
-        probe_open_stages_its_own_path_case(&runtime, &adapter, argv[1]) == 0
-    );
-    PROBE_CHECK(probe_open_capacity_case(&runtime, &adapter, argv[1]) == 0);
-    PROBE_CHECK(probe_open_generation_cases() == 0);
+    PROBE_CHECK(probe_open_and_close_cases(&adapter, argv[1]) == 0);
+    PROBE_CHECK(probe_open_names_the_submitters_bytes(&adapter, argv[1]) == 0);
 
     /* Once target ownership exists, a fatal progress condition is sticky and
      * observable by both progress and park. The production bridge fail-stops
@@ -989,164 +933,195 @@ int main(int argc, char **argv) {
 
 #elif defined(_WIN32)
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef _WIN32_WINNT
+#define _WIN32_WINNT 0x0602
+#endif
+
 #include "native_contract.h"
 #include "windows_iocp.h"
+#include "../sched/core.h"
 
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
+#include <windows.h>
 
-struct wf_completion_runtime {
-    unsigned publications;
-};
+#define PROBE_CHECK(condition)                                                \
+    do {                                                                      \
+        if (!(condition)) {                                                   \
+            (void)fprintf(                                                    \
+                stderr,                                                       \
+                "native adapter probe failed: %s:%d: %s\n",                   \
+                __FILE__,                                                     \
+                __LINE__,                                                     \
+                #condition                                                    \
+            );                                                                \
+            return 1;                                                         \
+        }                                                                     \
+    } while (0)
 
-static unsigned probe_operations_accepted;
-static unsigned probe_operations_retired;
-static unsigned probe_descriptor_lease_releases;
+/* The bridge's three parts of the runtime, supplied here because this probe
+ * links no bridge on purpose, exactly as the Linux arm above supplies them:
+ * `wf_completion_record_complete` is the one publication, and the three
+ * `wf__sched_host_*` hooks are design section 7's platform item 2 -- one wait
+ * and wake primitive -- bound to this probe's own runtime and port. */
+static wf_sched_core probe_core;
+static wf_completion_runtime *probe_runtime;
+static wf_windows_iocp_adapter *probe_adapter;
 
-void wf__windows_completion_descriptor_lease_release(
-    wf_windows_descriptor_lease *lease
-) {
-    if (lease == NULL || lease->descriptor != 17 || lease->generation != 1
-        || lease->handle == NULL || lease->handle == INVALID_HANDLE_VALUE
-        || lease->completion_owner == NULL
-        || lease->descriptor_class != WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE
-        || lease->mode != WF_WINDOWS_DESCRIPTOR_LEASE_SHARED) {
-        abort();
+void wf_completion_record_complete(wf_completion_record *record) {
+    wf_sched_complete(&probe_core, &record->sched);
+}
+
+int wf__sched_host_epoch(uint64_t *epoch) {
+    if (probe_runtime == NULL) {
+        return 0;
     }
-    probe_descriptor_lease_releases += 1;
-    memset(lease, 0, sizeof(*lease));
+    *epoch = wf_completion_wake_epoch(probe_runtime);
+    return 1;
 }
 
-void wf_completion_operation_accepted(void) {
-    probe_operations_accepted += 1;
-}
-
-void wf_completion_operation_retired(int returned_a_descriptor) {
-    if (returned_a_descriptor != 0) {
-        abort();
+int wf__sched_host_park(uint64_t observed) {
+    if (probe_runtime == NULL || probe_adapter == NULL) {
+        return 0;
     }
-    probe_operations_retired += 1;
+    (void)wf_windows_iocp_park(probe_adapter, observed, UINT32_MAX);
+    return 1;
 }
 
-enum wf_completion_transition_result wf_completion_begin_submit(
-    wf_completion_runtime *runtime,
-    wf_completion_token token
-) {
-    (void)runtime;
-    (void)token;
-    return WF_COMPLETION_TRANSITIONED;
-}
-
-enum wf_completion_transition_result wf_completion_mark_wait_capacity(
-    wf_completion_runtime *runtime,
-    wf_completion_token token
-) {
-    (void)runtime;
-    (void)token;
-    return WF_COMPLETION_TRANSITIONED;
-}
-
-enum wf_completion_transition_result wf_completion_target_accepted(
-    wf_completion_runtime *runtime,
-    wf_completion_token token
-) {
-    (void)runtime;
-    (void)token;
-    return WF_COMPLETION_TRANSITIONED;
-}
-
-enum wf_completion_publish_result wf_completion_publish_terminal(
-    wf_completion_runtime *runtime,
-    wf_completion_token token,
-    const wf_completion_publication *publication
-) {
-    (void)token;
-    if (publication == NULL
-        || publication->milestones != WF_COMPLETION_OWNERSHIP_COMPLETE) {
-        return WF_COMPLETION_PUBLISH_INVALID_ARGUMENT;
+int wf__sched_host_wake(void) {
+    if (probe_runtime == NULL) {
+        return 0;
     }
-    runtime->publications += 1;
-    return WF_COMPLETION_PUBLISHED;
+    wf_completion_notify_target(probe_runtime);
+    return 1;
 }
 
-void wf_completion_notify_capacity(wf_completion_runtime *runtime) {
-    (void)runtime;
+static unsigned probe_state(const wf_completion_record *record) {
+    return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE);
 }
 
 int main(int argc, char **argv) {
-    wf_completion_runtime runtime = {0};
+    wf_completion_runtime runtime;
+    wf_windows_iocp_adapter adapter;
+    wf_completion_record record;
     wf_completion_target_contract contract = wf_completion_target_contract_for(
         WF_TARGET_WINDOWS_IOCP
     );
-    wf_windows_iocp_adapter adapter;
-    wf_windows_iocp_entry entries[2];
-    wf_windows_iocp_file file;
-    wf_windows_file_request request;
-    wf_completion_token token = {.slot = 0, .generation = 1};
-    const unsigned char bytes[4] = {'i', 'o', 'c', 'p'};
-    size_t published = 0;
+    const unsigned char written[4] = {'i', 'o', 'c', 'p'};
+    unsigned char read_back[4];
     HANDLE handle;
+    DWORD transferred = 0;
+    WCHAR path[MAX_PATH];
+    int index;
 
     if (argc != 2) {
         return 2;
     }
-    if (contract.implemented != 1
-        || contract.native_completion != 1
-        || contract.may_use_blocking_helpers != 0
-        || contract.supports_scheduler_progress != 1) {
-        return 8;
+    PROBE_CHECK(contract.implemented == 1);
+    PROBE_CHECK(contract.native_completion == 1);
+    PROBE_CHECK(contract.may_use_blocking_helpers == 0);
+    PROBE_CHECK(contract.supports_scheduler_progress == 1);
+
+    for (index = 0; index < MAX_PATH && argv[1][index] != 0; ++index) {
+        path[index] = (WCHAR)(unsigned char)argv[1][index];
     }
-    memset(entries, 0xa5, sizeof(entries));
-    if (wf_windows_iocp_init(&adapter, &runtime, entries, 2, 0, 0) != 0) {
-        return 3;
+    PROBE_CHECK(index < MAX_PATH);
+    path[index] = 0;
+
+    PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
+    probe_runtime = &runtime;
+    PROBE_CHECK(wf_windows_iocp_init(&adapter, &runtime, 0) == 0);
+    probe_adapter = &adapter;
+    PROBE_CHECK(
+        wf_completion_set_wake_callback(
+            &runtime,
+            wf_windows_iocp_notify,
+            &adapter
+        ) == 0
+    );
+
+    /* The fixture is written first, through a synchronous handle of its own,
+     * and only then opened for overlapped reading: the handle the port takes
+     * is the one this probe submits on. */
+    {
+        HANDLE writer = CreateFileW(
+            path,
+            GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            NULL,
+            CREATE_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        PROBE_CHECK(writer != INVALID_HANDLE_VALUE);
+        PROBE_CHECK(
+            WriteFile(writer, written, sizeof(written), &transferred, NULL)
+                != FALSE
+            && transferred == (DWORD)sizeof(written)
+        );
+        PROBE_CHECK(FlushFileBuffers(writer) != FALSE);
+        PROBE_CHECK(CloseHandle(writer) != FALSE);
     }
-    handle = CreateFileA(
-        argv[1],
-        GENERIC_READ | GENERIC_WRITE,
-        0,
+    handle = CreateFileW(
+        path,
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         NULL,
-        CREATE_ALWAYS,
+        OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
         NULL
     );
-    if (handle == INVALID_HANDLE_VALUE
-        || wf_windows_iocp_associate_file(&adapter, handle, &file) != 0) {
-        return 4;
-    }
-    memset(&request, 0, sizeof(request));
-    request.kind = WF_WINDOWS_FILE_WRITE_AT;
-    request.file = file;
-    request.lease.descriptor = 17;
-    request.lease.generation = 1;
-    request.lease.handle = handle;
-    request.lease.completion_owner = &adapter;
-    request.lease.descriptor_class = WF_WINDOWS_DESCRIPTOR_CLASS_READ_FILE;
-    request.lease.mode = WF_WINDOWS_DESCRIPTOR_LEASE_SHARED;
-    request.buffer.write_buffer = bytes;
-    request.count = sizeof(bytes);
-    request.offset = 0;
-    if (wf_windows_iocp_submit(&adapter, token, &request)
-        != WF_WINDOWS_IOCP_TARGET_OWNS) {
-        return 5;
-    }
-    while (published == 0) {
-        if (wf_windows_iocp_progress(&adapter, 1, INFINITE, &published) != 0) {
-            return 6;
+    PROBE_CHECK(handle != INVALID_HANDLE_VALUE);
+    PROBE_CHECK(wf_windows_iocp_associate(&adapter, handle) == 0);
+
+    memset(&record, 0, sizeof(record));
+    memset(read_back, 0, sizeof(read_back));
+    wf_sched_record_init(&record.sched);
+    record.request.kind = WF_FILE_PREAD;
+    record.request.operation.pread.descriptor = 0;
+    record.request.operation.pread.buffer = read_back;
+    record.request.operation.pread.count = sizeof(read_back);
+    record.request.operation.pread.offset = 0;
+    record.opened_descriptor = -1;
+    PROBE_CHECK(wf_windows_iocp_carries(&record) != 0);
+    PROBE_CHECK(
+        wf_windows_iocp_submit(&adapter, &record, handle)
+            == WF_WINDOWS_IOCP_TARGET_OWNS
+    );
+
+    /* The in-place wait: read the record, make one non-blocking pass, and only
+     * then sleep on the port.  A read the kernel answered synchronously is
+     * already published by the submit above and never reaches the park. */
+    for (;;) {
+        uint64_t epoch;
+        size_t published = 0;
+        if (probe_state(&record) == WF_SCHED_DONE) {
+            break;
         }
+        epoch = wf_completion_wake_epoch(&runtime);
+        PROBE_CHECK(wf_windows_iocp_progress(&adapter, 4u, &published) == 0);
+        if (published != 0 || probe_state(&record) == WF_SCHED_DONE) {
+            continue;
+        }
+        PROBE_CHECK(wf_windows_iocp_park(&adapter, epoch, UINT32_MAX) == 0);
     }
-    if (runtime.publications != 1
-        || probe_operations_accepted != 1
-        || probe_operations_retired != 1
-        || probe_descriptor_lease_releases != 1
-        || entries[0].lease.generation != 0
-        || entries[1].lease.generation != 0
-        || wf_windows_iocp_destroy(&adapter) != 0
-        || CloseHandle(handle) == FALSE) {
-        return 7;
-    }
-    printf("native-adapter-probe target=windows-iocp status=pass\n");
+
+    PROBE_CHECK(record.result.kind == WF_FILE_PREAD);
+    PROBE_CHECK(record.result.error_code == 0);
+    PROBE_CHECK(record.result.value == (int64_t)sizeof(written));
+    PROBE_CHECK(memcmp(read_back, written, sizeof(written)) == 0);
+    PROBE_CHECK(wf_windows_iocp_in_flight(&adapter) == 0);
+    PROBE_CHECK(wf_windows_iocp_progress_error(&adapter) == 0);
+    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0);
+    probe_adapter = NULL;
+    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    probe_runtime = NULL;
+    PROBE_CHECK(CloseHandle(handle) != FALSE);
+    (void)printf("native-adapter-probe target=windows-iocp status=pass\n");
     return 0;
 }
 

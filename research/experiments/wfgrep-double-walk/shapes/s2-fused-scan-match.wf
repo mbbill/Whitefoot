@@ -183,7 +183,7 @@ fn copy_range(destination: &uniq buffer<u8>, at: own u64, source: &buffer<u8>, f
   }
 }
 
-fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq OutputStream, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len(deref(source));
   requires length <= source_length;
 } {
@@ -209,7 +209,7 @@ fn publish_all(output: &uniq Output, source: &buffer<u8>, length: own u64) -> re
   return Ok<unit, IoError>(value: unit);
 }
 
-fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, status: own u8, position: own u64) -> result: own unit reads(args, err, report), writes(err, report) contract {
+fn report_failure(args: &Args, err: &uniq OutputStream, report: &uniq buffer<u8>, status: own u8, position: own u64) -> result: own unit reads(args, err, report), writes(err, report) contract {
   define report_room = len(deref(report));
   requires 256_u64 <= report_room;
 } {
@@ -310,7 +310,7 @@ fn report_failure(args: &Args, err: &uniq Output, report: &uniq buffer<u8>, stat
   return unit;
 }
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
   doc "Publishes every line of every named file that contains the literal pattern bytes; 0 matched, 1 none, 2 error.";
   let input = buffer_new(4096_u64, 0_u8);
   let batch = buffer_new(4096_u64, 0_u8);
@@ -391,189 +391,195 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           match relative_path(value: move text) {
             Ok(value: path) => {
               region {
-                let permit = reserve_file(factory: &uniq files);
-                match open_read(permit: move permit, root: &cwd, path: &path) {
-                  Ok(value: file) => {
-                    let carry = 0_u64;
-                    let file_offset = 0_u64;
-                    loop @chunks {
-                      let carry_fits = carry < 4096_u64;
-                      if carry_fits {
-                      } else {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let room = 4096_u64 -wrap carry;
-                      let overlong = room == 0_u64;
-                      if overlong {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let available = 0_u64;
-                      let ended = 0_u8;
-                      region {
-                        match read_at(file: &file, destination: &uniq input, file_offset: file_offset, start: carry, end: 4096_u64) {
-                          ReadBytes(next: taken) => {
-                            set available = taken;
-                            let delivered = taken -wrap carry;
-                            set file_offset = file_offset +wrap delivered;
-                          }
-                          ReadEnd() => {
-                            set ended = 1_u8;
-                          }
-                          ReadFailed(error: problem) => {
-                            set status = io_class(error: move problem);
-                            set ended = 2_u8;
-                          }
-                        }
-                      }
-                      if ended == 2_u8 {
-                        break @chunks;
-                      }
-                      if ended == 1_u8 {
-                        let trailing = carry > 0_u64;
-                        if trailing {
-                          set input[carry] = 10_u8;
-                          set available = carry +wrap 1_u64;
-                        }
-                      }
-                      let available_fits = available <= 4096_u64;
-                      if available_fits {
-                      } else {
-                        set status = 6_u8;
-                        break @chunks;
-                      }
-                      let scan = 0_u64;
-                      loop @lines {
-                        let terminator = available;
-                        let hit = empty_pattern;
-                        let probe = scan;
-                        loop @walk {
-                          let done = probe >= available;
-                          if done {
-                            break @walk;
-                          }
-                          let byte = input[probe];
-                          let newline = byte == 10_u8;
-                          if newline {
-                            set terminator = probe;
-                            break @walk;
-                          }
-                          if hit {
+                match reserve_handle(factory: &uniq files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let carry = 0_u64;
+                        let file_offset = 0_u64;
+                        loop @chunks {
+                          let carry_fits = carry < 4096_u64;
+                          if carry_fits {
                           } else {
-                            let lead = byte == first_pattern_byte;
-                            if lead {
-                              let same = True();
-                              let ahead = 1_u64;
-                              loop @verify {
-                                let proven = ahead >= pattern_length;
-                                if proven {
-                                  break @verify;
-                                }
-                                let spot = probe +wrap ahead;
-                                let inside = spot < available;
-                                if inside {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let ahead_fits = ahead < 4096_u64;
-                                if ahead_fits {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let candidate = input[spot];
-                                let stopper = candidate == 10_u8;
-                                if stopper {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                let expected = pattern[ahead];
-                                let equal = candidate == expected;
-                                if equal {
-                                } else {
-                                  set same = False();
-                                  break @verify;
-                                }
-                                set ahead = ahead +wrap 1_u64;
+                            set status = 6_u8;
+                            break @chunks;
+                          }
+                          let room = 4096_u64 -wrap carry;
+                          let overlong = room == 0_u64;
+                          if overlong {
+                            set status = 6_u8;
+                            break @chunks;
+                          }
+                          let available = 0_u64;
+                          let ended = 0_u8;
+                          region {
+                            match read_at(file: &file, destination: &uniq input, file_offset: file_offset, start: carry, end: 4096_u64) {
+                              ReadBytes(next: taken) => {
+                                set available = taken;
+                                let delivered = taken -wrap carry;
+                                set file_offset = file_offset +wrap delivered;
                               }
-                              if same {
-                                set hit = True();
+                              ReadEnd() => {
+                                set ended = 1_u8;
+                              }
+                              ReadFailed(error: problem) => {
+                                set status = io_class(error: move problem);
+                                set ended = 2_u8;
                               }
                             }
                           }
-                          set probe = probe +wrap 1_u64;
-                        }
-                        let complete = terminator < available;
-                        if complete {
-                        } else {
-                          break @lines;
-                        }
-                        if hit {
-                          set matched = 1_u8;
-                          let stop = terminator +wrap 1_u64;
-                          let span = stop -wrap scan;
-                          let need = filled +wrap span;
-                          let overfull = need > 4096_u64;
-                          if overfull {
-                            let filled_fits = filled <= 4096_u64;
-                            if filled_fits {
-                              region {
-                                match publish_all(output: &uniq out, source: &batch, length: filled) {
-                                  Ok(value: published) => {
+                          if ended == 2_u8 {
+                            break @chunks;
+                          }
+                          if ended == 1_u8 {
+                            let trailing = carry > 0_u64;
+                            if trailing {
+                              set input[carry] = 10_u8;
+                              set available = carry +wrap 1_u64;
+                            }
+                          }
+                          let available_fits = available <= 4096_u64;
+                          if available_fits {
+                          } else {
+                            set status = 6_u8;
+                            break @chunks;
+                          }
+                          let scan = 0_u64;
+                          loop @lines {
+                            let terminator = available;
+                            let hit = empty_pattern;
+                            let probe = scan;
+                            loop @walk {
+                              let done = probe >= available;
+                              if done {
+                                break @walk;
+                              }
+                              let byte = input[probe];
+                              let newline = byte == 10_u8;
+                              if newline {
+                                set terminator = probe;
+                                break @walk;
+                              }
+                              if hit {
+                              } else {
+                                let lead = byte == first_pattern_byte;
+                                if lead {
+                                  let same = True();
+                                  let ahead = 1_u64;
+                                  loop @verify {
+                                    let proven = ahead >= pattern_length;
+                                    if proven {
+                                      break @verify;
+                                    }
+                                    let spot = probe +wrap ahead;
+                                    let inside = spot < available;
+                                    if inside {
+                                    } else {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    let ahead_fits = ahead < 4096_u64;
+                                    if ahead_fits {
+                                    } else {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    let candidate = input[spot];
+                                    let stopper = candidate == 10_u8;
+                                    if stopper {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    let expected = pattern[ahead];
+                                    let equal = candidate == expected;
+                                    if equal {
+                                    } else {
+                                      set same = False();
+                                      break @verify;
+                                    }
+                                    set ahead = ahead +wrap 1_u64;
                                   }
-                                  Err(error: problem) => {
-                                    set write_failed = 1_u8;
-                                    set write_class = io_class(error: move problem);
+                                  if same {
+                                    set hit = True();
                                   }
                                 }
                               }
+                              set probe = probe +wrap 1_u64;
+                            }
+                            let complete = terminator < available;
+                            if complete {
                             } else {
-                              set write_failed = 1_u8;
+                              break @lines;
                             }
-                            set filled = 0_u64;
-                          }
-                          if write_failed == 0_u8 {
-                            region {
-                              set filled = copy_range(destination: &uniq batch, at: filled, source: &input, from: scan, to: stop);
+                            if hit {
+                              set matched = 1_u8;
+                              let stop = terminator +wrap 1_u64;
+                              let span = stop -wrap scan;
+                              let need = filled +wrap span;
+                              let overfull = need > 4096_u64;
+                              if overfull {
+                                let filled_fits = filled <= 4096_u64;
+                                if filled_fits {
+                                  region {
+                                    match publish_all(output: &uniq out, source: &batch, length: filled) {
+                                      Ok(value: published) => {
+                                      }
+                                      Err(error: problem) => {
+                                        set write_failed = 1_u8;
+                                        set write_class = io_class(error: move problem);
+                                      }
+                                    }
+                                  }
+                                } else {
+                                  set write_failed = 1_u8;
+                                }
+                                set filled = 0_u64;
+                              }
+                              if write_failed == 0_u8 {
+                                region {
+                                  set filled = copy_range(destination: &uniq batch, at: filled, source: &input, from: scan, to: stop);
+                                }
+                              } else {
+                                break @files;
+                              }
                             }
-                          } else {
-                            break @files;
+                            set scan = terminator +wrap 1_u64;
                           }
+                          if ended == 1_u8 {
+                            break @chunks;
+                          }
+                          let tail = available -wrap scan;
+                          let moved = 0_u64;
+                          loop @shift {
+                            let done = moved >= tail;
+                            if done {
+                              break @shift;
+                            }
+                            let source_index = scan +wrap moved;
+                            let source_fits = source_index < 4096_u64;
+                            let target_fits = moved < 4096_u64;
+                            if source_fits {
+                            } else {
+                              break @shift;
+                            }
+                            if target_fits {
+                            } else {
+                              break @shift;
+                            }
+                            let byte = input[source_index];
+                            set input[moved] = byte;
+                            set moved = moved +wrap 1_u64;
+                          }
+                          set carry = tail;
                         }
-                        set scan = terminator +wrap 1_u64;
                       }
-                      if ended == 1_u8 {
-                        break @chunks;
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        set status = io_class(error: move problem);
                       }
-                      let tail = available -wrap scan;
-                      let moved = 0_u64;
-                      loop @shift {
-                        let done = moved >= tail;
-                        if done {
-                          break @shift;
-                        }
-                        let source_index = scan +wrap moved;
-                        let source_fits = source_index < 4096_u64;
-                        let target_fits = moved < 4096_u64;
-                        if source_fits {
-                        } else {
-                          break @shift;
-                        }
-                        if target_fits {
-                        } else {
-                          break @shift;
-                        }
-                        let byte = input[source_index];
-                        set input[moved] = byte;
-                        set moved = moved +wrap 1_u64;
-                      }
-                      set carry = tail;
                     }
                   }
-                  Err(error: problem) => {
-                    set status = io_class(error: move problem);
+                  Err(error: spent) => {
+                    set status = io_class(error: move spent);
                   }
                 }
               }

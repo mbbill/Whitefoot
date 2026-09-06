@@ -26,9 +26,8 @@ use crate::backend::target::{
 
 use super::system::{with_ir, with_parallel_ir};
 use super::{
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
-    append_completion_runtime, build_executable, compile_and_run, emit, emit_with_overlap,
-    module_requires_parallel_runtime, module_requires_writer_scheduler, test_directory,
+    HOST_OPTIMIZATION_ARGUMENTS, append_runtime_units, build_executable, compile_and_run, emit,
+    emit_with_overlap, emitted_function, module_requires_parallel_runtime, test_directory,
 };
 
 /// A pure recursive fold over a heap tree, the smallest shape that has
@@ -124,7 +123,7 @@ fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: 
   return at +wrap 8_u64;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let t0 = oct(a: 1_u64, b: 2_u64, c: 3_u64, d: 4_u64, e: 5_u64, f: 6_u64, g: 7_u64, h: 8_u64);
   let t1 = oct(a: 9_u64, b: 10_u64, c: 11_u64, d: 12_u64, e: 13_u64, f: 14_u64, g: 15_u64, h: 16_u64);
   let t2 = oct(a: 17_u64, b: 18_u64, c: 19_u64, d: 20_u64, e: 21_u64, f: 22_u64, g: 23_u64, h: 24_u64);
@@ -221,7 +220,7 @@ fn last_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   doc "A pure call handed out while a pure call written as an if condition runs.";
   let report = buffer_new(2_u64, 0_u8);
   let value = mixdown(a: 11_u64, b: 22_u64);
@@ -374,24 +373,32 @@ fn selected_target_proves_the_complete_ordinary_lane_frame() {
     });
 }
 
-/// The two constants checked by selected-target lane layout are the runtime
-/// slot's actual byte capacity and base alignment.
+/// The two constants checked by selected-target lane layout are the scheduler
+/// core slot's actual byte capacity and base alignment.
+///
+/// The slot moved from `par_runtime.c` to `sched/core.h` when the core became
+/// the runtime (design §7), and so did the two numbers; nothing else about
+/// this case changes, because the lowering's question is the same one.
 #[test]
 fn ordinary_lane_frame_limits_match_the_runtime_slot() {
-    let runtime = super::PARALLEL_RUNTIME_SOURCE;
-    let declared = runtime
+    let core = crate::SCHED_CORE_HEADER;
+    let declared = core
         .lines()
-        .find_map(|line| line.strip_prefix("#define WF_PAR_FRAME_BYTES "))
-        .expect("the runtime must state its frame capacity");
+        .find_map(|line| line.strip_prefix("#define WF_SCHED_FRAME_BYTES "))
+        .expect("the core must state its frame capacity");
     assert_eq!(
-        declared.trim().parse::<u64>().expect("a decimal capacity"),
+        declared
+            .trim()
+            .trim_end_matches('u')
+            .parse::<u64>()
+            .expect("a decimal capacity"),
         crate::LANE_FRAME_BYTES
     );
     assert!(
-        runtime.contains(&format!(
-            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_PAR_FRAME_BYTES];"
+        core.contains(&format!(
+            "_Alignas({PARALLEL_LANE_FRAME_ALIGNMENT}) unsigned char frame[WF_SCHED_FRAME_BYTES];"
         )),
-        "the runtime slot must provide the alignment target layout relies on"
+        "the core slot must provide the alignment target layout relies on"
     );
 }
 
@@ -602,6 +609,482 @@ fn a_call_written_as_an_if_condition_joins_a_compute_overlap_group() {
     identical(&runs).expect("an if-condition join must not move one byte of the result");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A group of three sibling calls whose values a loop carries: two members are
+/// handed out, the third runs on this thread, and the loop header's phis name
+/// the label the group's joins actually end at.
+///
+/// The loop is what makes the exit label observable. `main`'s entry block
+/// reaches the header, so every carried value's phi has to name the label the
+/// entry block ends at, and that label is decided before the joins are
+/// written.
+const THREE_MEMBER_GROUP_BEFORE_A_LOOP: &[u8] =
+    br#"fn choose(value: own u64) -> result: own u64 pure {
+  return imax(value, value);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let a = choose(value: 1_u64);
+  let b = choose(value: 2_u64);
+  let c = choose(value: 3_u64);
+  let ab = imax(a, b);
+  let acc = imax(ab, c);
+  let i = 0_u64;
+  loop @spin {
+    let done = i >= 4_u64;
+    if done {
+      break @spin;
+    }
+    set acc = acc +wrap 1_u64;
+    set i = i +wrap 1_u64;
+  }
+  match cvt::<u64, u8>(acc) {
+    Ok(value: code) => {
+      return exit_status(code: code);
+    }
+    Err(error: problem) => {
+      return exit_status(code: 255_u8);
+    }
+  }
+}
+"#;
+
+/// A group's compute members are joined newest first, and the block continues
+/// at the *first* published member's `par.done`.
+///
+/// This is design §4's order: the compute deque is Chase-Lev, so the owner can
+/// only pop the newest end, and joining the newest hand-out first is what keeps
+/// every join's target either at that end or already stolen. The order lives in
+/// `compute_join_order`, and this pins what the emitter does with it — both the
+/// sequence of joins and the label the two sites that predict it agree on. The
+/// prediction is not cosmetic: a phi naming a block its predecessor does not
+/// end at is a module `clang` rejects, so linking is part of the assertion.
+///
+/// A group with a completion member interleaved between two compute members is
+/// the mixed case, which
+/// `a_mixed_group_hands_out_both_kinds_and_joins_them_newest_compute_first`
+/// carries over emitted code and
+/// `a_mixed_group_whose_completion_member_is_first_joins_it_where_it_was_published`
+/// carries in its other order. This case stays the pure-compute one.
+#[test]
+fn a_group_joins_its_compute_members_newest_first_and_continues_at_the_oldest() {
+    // The group's hand-outs in publish order, read from the IR the emitter is
+    // about to be handed, so the labels below are named rather than guessed.
+    let handed_out = with_parallel_ir(THREE_MEMBER_GROUP_BEFORE_A_LOOP, |program| {
+        program
+            .functions()
+            .iter()
+            .flat_map(crate::IrFunction::overlaps)
+            .map(|overlap| {
+                overlap
+                    .handed_out()
+                    .iter()
+                    .map(|member| member.ordinal())
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>()
+    });
+    let [group] = handed_out.as_slice() else {
+        panic!("the source must lower to exactly one overlap group: {handed_out:?}");
+    };
+    let [first, second] = group.as_slice() else {
+        panic!("the group must hand two of its three members out: {group:?}");
+    };
+
+    let module = emit_with_overlap(THREE_MEMBER_GROUP_BEFORE_A_LOOP);
+    let body = emitted_function(&module, "main");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
+    };
+
+    // Publish order is source order: the first member is offered a lane first.
+    assert!(
+        at(&format!("par.offer.v{first}:")) < at(&format!("par.offer.v{second}:")),
+        "the members must be published in source order:\n{body}"
+    );
+    // Join order is the reverse: design §4's order, newest hand-out first.
+    assert!(
+        at(&format!("par.wait.v{second}:")) < at(&format!("par.wait.v{first}:")),
+        "the newest hand-out must be joined first:\n{body}"
+    );
+    assert!(
+        at(&format!("par.done.v{second}:")) < at(&format!("par.done.v{first}:")),
+        "the newest hand-out's value must exist before the oldest is joined:\n{body}"
+    );
+
+    // The block therefore continues at the oldest hand-out's `par.done`, and
+    // the loop header's phis are where that prediction is spent.
+    let carried = body
+        .lines()
+        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
+        .collect::<Vec<_>>();
+    assert!(
+        !carried.is_empty(),
+        "the loop must carry values out of the group's block:\n{body}"
+    );
+    for phi in carried {
+        assert!(
+            phi.contains(&format!(", %par.done.v{first} ]")),
+            "the group's block ends at the first published member's join: {phi}"
+        );
+    }
+
+    // Join order is not observable [PAR-1]: the program's value is the
+    // source-order one whether a lane was granted or refused.
+    let directory = test_directory();
+    let executable = build_executable(&module, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the three-member group");
+        assert_eq!(
+            output.status.code(),
+            Some(7),
+            "WF_WORKERS={workers}: the loop must report the source-order result"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// Two compute members around one `write_once`, with a fourth call closing the
+/// group and a loop after it that makes the group's exit label observable.
+///
+/// The permission judgment reads the four consecutive calls as one chain, so
+/// the group is `[C1, IO, C2, C3]`: `C3` runs on this thread and is the join
+/// site, and `C1`, `IO` and `C2` are all handed away. Every member's value
+/// reaches the exit status, so a member that were dropped, joined twice, or
+/// joined out of its dependency order moves the observed code.
+const MIXED_COMPUTE_AROUND_A_WRITE: &[u8] =
+    br#"fn choose(value: own u64) -> result: own u64 pure {
+  return imax(value, value);
+}
+
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let report = buffer_new(8_u64, 0_u8);
+  region 'o {
+    region {
+      let a = choose(value: 1_u64);
+      let w = write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64);
+      let b = choose(value: 2_u64);
+      let c = choose(value: 4_u64);
+      let partial = a +wrap b;
+      let acc = partial +wrap c;
+      let i = 0_u64;
+      loop @spin {
+        let done = i >= 4_u64;
+        if done {
+          break @spin;
+        }
+        set acc = acc +wrap 1_u64;
+        set i = i +wrap 1_u64;
+      }
+      match w {
+        Ok(value: next) => {
+          match cvt::<u64, u8>(acc) {
+            Ok(value: code) => {
+              return exit_status(code: code);
+            }
+            Err(error: problem) => {
+              return exit_status(code: 255_u8);
+            }
+          }
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
+/// The same group with its completion member published first: `[IO, C1, C2,
+/// C3]`. The compute members still reverse among their own positions, so the
+/// join order is `IO`, `C2`, `C1` and the completion member keeps the position
+/// it was published at rather than moving to either end.
+const MIXED_WRITE_BEFORE_COMPUTE: &[u8] =
+    br#"fn choose(value: own u64) -> result: own u64 pure {
+  return imax(value, value);
+}
+
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+  let report = buffer_new(8_u64, 0_u8);
+  region 'o {
+    region {
+      let w = write_once(output: &uniq 'o out, source: &report, start: 0_u64, end: 8_u64);
+      let a = choose(value: 1_u64);
+      let b = choose(value: 2_u64);
+      let c = choose(value: 4_u64);
+      let partial = a +wrap b;
+      let acc = partial +wrap c;
+      let i = 0_u64;
+      loop @spin {
+        let done = i >= 4_u64;
+        if done {
+          break @spin;
+        }
+        set acc = acc +wrap 1_u64;
+        set i = i +wrap 1_u64;
+      }
+      match w {
+        Ok(value: next) => {
+          match cvt::<u64, u8>(acc) {
+            Ok(value: code) => {
+              return exit_status(code: code);
+            }
+            Err(error: problem) => {
+              return exit_status(code: 255_u8);
+            }
+          }
+        }
+        Err(error: problem) => {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
+  }
+}
+"#;
+
+/// The one mixed overlap group of a fixture, as its handed-out compute members
+/// in publish order and its one handed-out completion member.
+///
+/// Read from the IR the emitter is about to be handed, so the labels the cases
+/// below name are the group's own rather than a guess at value numbering. A
+/// member is a completion member exactly when its completion step submits,
+/// which is the test the emitter itself takes.
+fn mixed_group_members(source: &[u8]) -> (Vec<u32>, u32) {
+    with_parallel_ir(source, |program| {
+        let function = program
+            .functions()
+            .iter()
+            .find(|function| !function.overlaps().is_empty())
+            .expect("the source must lower to an overlap group");
+        let submitted = function
+            .completion_steps()
+            .iter()
+            .filter(|step| step.submit())
+            .map(crate::IrCompletionStep::call)
+            .collect::<Vec<_>>();
+        let [overlap] = function.overlaps() else {
+            panic!("the source must lower to exactly one overlap group");
+        };
+        let mut compute = Vec::new();
+        let mut completion = None;
+        for member in overlap.handed_out() {
+            if submitted.contains(member) {
+                assert!(
+                    completion.replace(member.ordinal()).is_none(),
+                    "the fixture must hand exactly one completion member out"
+                );
+            } else {
+                compute.push(member.ordinal());
+            }
+        }
+        (
+            compute,
+            completion.expect("the group must hand a completion member out"),
+        )
+    })
+}
+
+/// Runs one linked mixed fixture at three worker counts and demands the
+/// source-order exit status from each.
+///
+/// [PAR-1] fixes every value to the source-order result and states that the
+/// schedule is not an observation, so no worker count may move the status.
+/// `WF_WORKERS=0` is the refused-lane edge, where every hand-out runs at its
+/// own fallback call, and 4 is where a thief can reach one first.
+fn a_mixed_fixture_reports(module: &str, expected: i32) {
+    let directory = test_directory();
+    let executable = build_executable(module, &directory);
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the mixed group");
+        assert_eq!(
+            output.status.code(),
+            Some(expected),
+            "WF_WORKERS={workers}: the mixed group must report the source-order result"
+        );
+    }
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A group that mixes compute and completion members hands out both kinds and
+/// joins them in design §4's one order.
+///
+/// The permission judgment admits a run that interleaves a target operation
+/// with compute calls — the ledger reads it as
+/// `run(choose, write_once, choose, choose)`, one four-member chain — and
+/// every handed-out member of it is handed away by the mechanism its own kind
+/// uses: the compute members to worker lanes through
+/// `wf__par_acquire_lane`/`wf__par_publish`, the `write_once` to the
+/// completion source through its submit. Neither kind is lowered as the plain
+/// call it would be outside the group.
+///
+/// §4 then fixes the one order the group is joined in: its compute members
+/// newest first, because the compute deque is Chase-Lev and only its newest
+/// end is reachable by the owner, and its completion members exactly where
+/// they were published, because a completion member holds no deque entry and
+/// the deque constrains it not at all. So the queue `[C1, IO, C2]` is joined
+/// `[C2, IO, C1]`, and the block continues at `C1`'s `par.done`.
+///
+/// That last prediction is made twice — by `emit_overlap_joins`, which writes
+/// the joins, and by `block_exit_label`, which names the label a phi in a
+/// later block must use — and a phi naming a block its predecessor does not
+/// end at is a module `clang` rejects. The loop after the group is what spends
+/// the prediction, so linking and running the fixture is part of the case.
+#[test]
+fn a_mixed_group_hands_out_both_kinds_and_joins_them_newest_compute_first() {
+    let (compute, completion) = mixed_group_members(MIXED_COMPUTE_AROUND_A_WRITE);
+    let [first, second] = compute.as_slice() else {
+        panic!("the group must hand two compute members out: {compute:?}");
+    };
+
+    let module = emit_with_overlap(MIXED_COMPUTE_AROUND_A_WRITE);
+    let body = emitted_function(&module, "main");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
+    };
+
+    // Both compute members take the lane protocol, and only they do: two
+    // acquisitions and two publishes for a group of three hand-outs.
+    assert_eq!(
+        body.matches("call ptr @wf__par_acquire_lane(").count(),
+        2,
+        "both compute members must acquire a lane, and the completion member none:\n{body}"
+    );
+    assert_eq!(
+        body.matches("call void @wf__par_publish(").count(),
+        2,
+        "both compute members must be published:\n{body}"
+    );
+    for member in [first, second] {
+        assert!(
+            body.contains(&format!("par.offer.v{member}:")),
+            "compute member v{member} must be handed out:\n{body}"
+        );
+    }
+    // The completion member is submitted rather than called inline.
+    assert!(
+        body.contains("call void @wf__completion_file_write_submit("),
+        "the completion member v{completion} must be submitted:\n{body}"
+    );
+
+    // Publish order is source order.
+    assert!(
+        at(&format!("par.offer.v{first}:")) < at(&format!("par.offer.v{second}:")),
+        "the compute members must be published in source order:\n{body}"
+    );
+    // Join order is §4's: the newest compute member, then the completion
+    // member where it was published, then the oldest compute member.
+    assert!(
+        at(&format!("par.wait.v{second}:")) < at("call void @wf__completion_file_join("),
+        "the newest compute member must be joined before the completion member:\n{body}"
+    );
+    assert!(
+        at("call void @wf__completion_file_join(") < at(&format!("par.wait.v{first}:")),
+        "the completion member must be joined where it was published:\n{body}"
+    );
+    // One join each: the completion member must not also be drained by the
+    // schedule's finish after the group already joined it.
+    assert_eq!(
+        body.matches("call void @wf__completion_file_join(").count(),
+        1,
+        "the completion member must be joined exactly once:\n{body}"
+    );
+
+    // The block therefore continues at the oldest compute member's `par.done`,
+    // and the loop header's phis are where that prediction is spent.
+    let carried = body
+        .lines()
+        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
+        .collect::<Vec<_>>();
+    assert!(
+        !carried.is_empty(),
+        "the loop must carry values out of the group's block:\n{body}"
+    );
+    for phi in carried {
+        assert!(
+            phi.contains(&format!(", %par.done.v{first} ]")),
+            "the group's block ends at the oldest compute member's join: {phi}"
+        );
+    }
+
+    a_mixed_fixture_reports(&module, 11);
+}
+
+/// The same mixture with the completion member published first: it is joined
+/// first, and only the compute members reverse.
+///
+/// This is the half of §4 that the interleaved case cannot show. A completion
+/// member keeps its publish position whatever that position is, so a group
+/// published `[IO, C1, C2]` is joined `[IO, C2, C1]` — the completion join
+/// stays at the front rather than being carried to either end by the compute
+/// reversal happening around it.
+#[test]
+fn a_mixed_group_whose_completion_member_is_first_joins_it_where_it_was_published() {
+    let (compute, completion) = mixed_group_members(MIXED_WRITE_BEFORE_COMPUTE);
+    let [first, second] = compute.as_slice() else {
+        panic!("the group must hand two compute members out: {compute:?}");
+    };
+
+    let module = emit_with_overlap(MIXED_WRITE_BEFORE_COMPUTE);
+    let body = emitted_function(&module, "main");
+    let at = |needle: &str| {
+        body.find(needle)
+            .unwrap_or_else(|| panic!("missing `{needle}`:\n{body}"))
+    };
+
+    assert_eq!(
+        body.matches("call ptr @wf__par_acquire_lane(").count(),
+        2,
+        "both compute members must acquire a lane:\n{body}"
+    );
+    assert!(
+        body.contains("call void @wf__completion_file_write_submit("),
+        "the completion member v{completion} must be submitted:\n{body}"
+    );
+    // The completion member was published first, so it is joined first.
+    assert!(
+        at("call void @wf__completion_file_join(") < at(&format!("par.wait.v{second}:")),
+        "the completion member must be joined where it was published:\n{body}"
+    );
+    // The compute members still reverse among their own positions.
+    assert!(
+        at(&format!("par.wait.v{second}:")) < at(&format!("par.wait.v{first}:")),
+        "the newest compute member must be joined before the oldest:\n{body}"
+    );
+    assert_eq!(
+        body.matches("call void @wf__completion_file_join(").count(),
+        1,
+        "the completion member must be joined exactly once:\n{body}"
+    );
+
+    // The block continues at the oldest compute member's `par.done`, which is
+    // the last join of the group either way.
+    let carried = body
+        .lines()
+        .filter(|line| line.contains(" = phi i64 [ ") && line.contains(", %par.done."))
+        .collect::<Vec<_>>();
+    assert!(
+        !carried.is_empty(),
+        "the loop must carry values out of the group's block:\n{body}"
+    );
+    for phi in carried {
+        assert!(
+            phi.contains(&format!(", %par.done.v{first} ]")),
+            "the group's block ends at the oldest compute member's join: {phi}"
+        );
+    }
+
+    a_mixed_fixture_reports(&module, 11);
 }
 
 /// A recursion that hands one of its two calls out at every level, spelled at
@@ -942,10 +1425,14 @@ fn the_bootstrap_selects_one_world_once() {
     );
 }
 
-/// A Windows `--par` module carries unresolved native-pool obligations instead
-/// of the sequential weak definitions used by the POSIX optional-runtime
-/// path.  Consequently, omitting `par_runtime_windows.c` is a link error and
-/// can never turn a requested Windows backend into the sequential world.
+/// A Windows `--par` module carries unresolved lane-protocol obligations
+/// instead of the sequential weak definitions used by the POSIX
+/// optional-runtime path.  Consequently, omitting the scheduler core is a link
+/// error and can never turn a requested Windows backend into the sequential
+/// world.  The runtime that resolves them is now `sched/entry.c` over
+/// `sched/core.c`, the same one every other target links; what this fail-closed
+/// choice selects is a staging predicate rather than a second implementation
+/// (design section 7).
 #[test]
 fn windows_parallel_modules_fail_closed_at_the_link_boundary() {
     let windows = SystemTarget::for_triple("x86_64-pc-windows-msvc")
@@ -1039,7 +1526,7 @@ fn spell(destination: &uniq buffer<u8>, value: own u64) -> result: own u64 reads
   return cursor;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let total = spine(depth: DEPTH_u64, v: 1.0009765625_f64);
   let bits = reinterpret::<f64, u64>(total);
   let report = buffer_new(8_u64, 0_u8);
@@ -1215,28 +1702,38 @@ fn a_module_that_hands_nothing_out_needs_no_runtime() {
 /// Without this the whole path could be silently sequential forever: every
 /// other test here passes just as well when the weak refusal wins, because
 /// refusing every lane is a correct execution.
+///
+/// The reference run moved, and design §7's "Where the core is linked" is why.
+/// It used to be the same module linked with no parallel runtime at all; the
+/// scheduler core is now staged under the union of the two predicates, because
+/// one core serves compute hand-outs and I/O completions alike and a
+/// completion-only program parks its stack at every join, so this fixture —
+/// which writes its result — has no core-free link any more and the shipped
+/// compiler produces none. The sequential world of the same binary is the
+/// reference instead: `WF_WORKERS=1` answers "no pool" at the bootstrap, the
+/// program enters its sequential clone world, and nothing is ever handed out,
+/// which the grant count below states rather than assumes.
 #[test]
 fn the_runtime_replaces_the_modules_weak_refusal() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
+    let counted = CountedProgram::link(&module, &directory);
 
-    // Linked with nothing: the module's own weak definitions answer, every
-    // lane is refused, and the program still produces its whole result.
-    let alone = build_executable_without_parallel_runtime(&module, &directory);
-    let sequential = Command::new(&alone)
-        .output()
-        .expect("run the linked module");
+    let (refused, sequential) = counted.run(Some("1"));
     assert_eq!(sequential.status.code(), Some(0));
     assert_eq!(
         sequential.stdout.len(),
         8,
         "the fold must report eight bytes"
     );
+    assert_eq!(
+        refused, 0,
+        "the sequential world hands nothing out, so nothing can be granted"
+    );
 
-    // Linked with the runtime: the strong definitions win. The count is the
+    // Asked for a pool: the strong definitions win. The count is the
     // runtime's own, reported at process exit by the observer unit, so a
     // link that kept the weak refusal reports zero here and fails.
-    let counted = CountedProgram::link(&module, &directory);
     let (granted, parallel) = counted.run(Some("4"));
     assert_eq!(parallel.status.code(), Some(0));
     assert_eq!(
@@ -1255,11 +1752,9 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
         );
     }
 
-    // And the explicit opt-out: one lane of execution is the calling thread
-    // alone, so the pool never starts and every offer is refused.
-    let (opted_out, quiet) = counted.run(Some("1"));
-    assert_eq!(quiet.stdout, sequential.stdout);
-    assert_eq!(opted_out, 0, "WF_WORKERS=1 must never start the pool");
+    // The explicit opt-out is the reference run above: one lane of execution
+    // is the calling thread alone, so no hand-out is made and nothing is
+    // granted.
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -1271,52 +1766,94 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 /// because every other case here names a worker count. Before it, an unset
 /// variable meant the sequential world, so a `--par` binary handed to anybody
 /// who did not know about the variable was byte-for-byte a sequential program
-/// and the entire path was off for every real run. The grant count is the
-/// runtime's own counter, so "the pool started" is read rather than assumed.
+/// and the entire path was off for every real run. The started-worker count
+/// is the runtime's own counter, so "the pool started" is read rather than
+/// assumed.
 ///
 /// The opt-outs are pinned in the same case against the same executable, so a
 /// change that turned the default on by making *every* setting start a pool
 /// fails here rather than passing as a stronger version of the same news.
-/// `abc` stands for the unparsable settings: a value that is not a number is
-/// not a request for lanes, and reading it as one would be the runtime
-/// inventing a count the caller did not ask for.
+///
+/// `abc` used to stand here for the unparsable settings and to be a *third
+/// opt-out*: a value that is not a number was read as the sequential world.
+/// Step (iv) made every startup setting of this runtime follow one rule on
+/// every platform, and under it a value the setting cannot mean is a
+/// configuration error rather than a value to repair -- it ends the run before
+/// the program body, with one line on the diagnostic channel and nothing on
+/// the output channel. So it is checked here as that, beside the two opt-outs
+/// it is no longer one of.
 #[test]
 fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
 
-    // `wf__par_grants` counts steals, and a steal is a scheduling event: a
-    // pool thread has to be given a CPU before the offering lane finishes the
-    // work itself. On a saturated host that can fail to happen in one run of
-    // a program this short, so the existential observation (the default build CAN
-    // be granted lanes) is re-observed over [`GRANT_OBSERVATION_RUNS`] runs,
-    // exactly as the WF_WORKERS=4 case above does. A pool that never grants
-    // fails every one of them; the opt-out runs below stay exact.
+    // "The pool started" is read from the core's own count of the pool
+    // threads it started, which the observer prints on the `sched:` line
+    // after the grant line. It is not read from the grant count: a grant is a
+    // steal, and a steal is a scheduling event that needs a pool thread to be
+    // given a CPU while the offering lane still holds the work. The
+    // three-core macOS gate runner, saturated by the sibling cases of this
+    // suite, ran this program to its end before either of its two started
+    // workers was scheduled at all (`workers_started=2 parks=0 steals=0
+    // inline_runs=63`), and that is the default doing exactly what it should
+    // with the CPU it was given, not the path being off. That the default
+    // build CAN be granted lanes is the WF_WORKERS=4 case above, which makes
+    // that existential observation over [`GRANT_OBSERVATION_RUNS`] runs; this
+    // case is about which world an absent setting selects, and the started
+    // count states that directly. The opt-out runs below stay exact.
     let counted = CountedProgram::link(&module, &directory);
-    let (defaulted, published) = counted.run(None);
+    let (_, published) = counted.run(None);
     assert_eq!(published.status.code(), Some(0));
-    let observed_grants = if defaulted == 0 {
-        counted.grants_over_runs(None, GRANT_OBSERVATION_RUNS)
-    } else {
-        defaulted
-    };
+    let started = workers_started(&published);
     assert!(
-        observed_grants > 0,
-        "a --par binary with no worker setting must run in the overlapped \
-         world and be granted lanes, or the path is off for every real run"
+        started >= 1,
+        "a --par binary with no worker setting must start the pool, or the \
+         path is off for every real run; the run reported: {}",
+        String::from_utf8_lossy(&published.stderr).trim()
     );
 
     let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
-    for setting in ["0", "1", "abc"] {
+    for setting in ["0", "1"] {
         let (granted, output) = counted.run(Some(setting));
         assert_eq!(output.status.code(), Some(0), "WF_WORKERS={setting}");
         assert_eq!(
             granted, 0,
+            "WF_WORKERS={setting} is an opt-out and must never grant a lane"
+        );
+        assert_eq!(
+            workers_started(&output),
+            0,
             "WF_WORKERS={setting} is an opt-out and must never start the pool"
         );
         runs.push((format!("WF_WORKERS={setting}"), output.stdout));
     }
     identical(&runs).expect("the default must not move one byte of the result");
+
+    // A setting this runtime cannot mean, on both ends of the rule: text that
+    // is not a number, and a number above the ceiling. Each ends the run
+    // before the program body, so no byte of the program's own output can
+    // appear, and the one line it writes names the setting and the ceiling.
+    for setting in ["abc", "-1", "65"] {
+        let (_, refused) = counted.run(Some(setting));
+        assert_ne!(
+            refused.status.code(),
+            Some(0),
+            "WF_WORKERS={setting} is a configuration error and must not run"
+        );
+        assert!(
+            refused.stdout.is_empty(),
+            "a refused configuration must reach no program output"
+        );
+        // The observer this fixture links reports the grant count from an
+        // exit handler, so it writes a line of its own after the refusal's.
+        // The refusal is the first line and the whole of what the runtime
+        // wrote before it stopped.
+        assert_eq!(
+            String::from_utf8_lossy(&refused.stderr).lines().next(),
+            Some("whitefoot scheduler: WF_WORKERS must be an integer from 0 through 64"),
+            "the refusal must name the setting and its ceiling"
+        );
+    }
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }
@@ -1340,14 +1877,19 @@ fn an_overlapped_program_reports_one_byte_sequence_at_every_worker_count() {
             runs.push((format!("WF_WORKERS={workers}"), output.stdout));
         }
     }
-    // The sequential reference is the same program with no runtime linked at
-    // all, so the repeat is compared against today's execution and not only
-    // against itself.
-    let alone = build_executable_without_parallel_runtime(&module, &directory);
+    // The sequential reference is the default compilation of the same source
+    // — no overlap group actualized at all, so no hand-out and no thunk — and
+    // the repeat is therefore compared against today's execution rather than
+    // only against itself. It used to be the same overlapped module linked
+    // with no parallel runtime, which design §7's union predicate retires: a
+    // module that submits an operation carries the scheduler core in every
+    // link the compiler produces, and the core is what supplies the lanes.
+    let alone = build_executable(&emit(OVERLAPPING_FOLD), &directory);
     let reference = Command::new(&alone)
         .output()
-        .expect("run the linked module");
-    runs.push(("no runtime".to_owned(), reference.stdout));
+        .expect("run the sequential compilation");
+    assert_eq!(reference.status.code(), Some(0));
+    runs.push(("no overlap lowering".to_owned(), reference.stdout));
 
     identical(&runs).expect("overlapping must not move one byte of the result");
 
@@ -1540,34 +2082,6 @@ pub(super) fn identical(runs: &[(String, Vec<u8>)]) -> Result<(), String> {
     Ok(())
 }
 
-/// Links one module without the parallel runtime, while retaining any target
-/// runtime the normal completion-only build requires. This is the exact
-/// sequential schedule of an overlap-capable module, not an invalid bare link.
-pub(super) fn build_executable_without_parallel_runtime(
-    module: &str,
-    directory: &Path,
-) -> std::path::PathBuf {
-    let assembly = directory.join("alone.ll");
-    let executable = directory.join("alone");
-    std::fs::write(&assembly, module).expect("write the module");
-    let mut command = Command::new("/usr/bin/clang");
-    command.arg("-x").arg("ir").arg(&assembly);
-    let _completion_units = append_completion_runtime(&mut command, module, directory);
-    let linked = command
-        .args(HOST_OPTIMIZATION_ARGUMENTS)
-        .arg("-o")
-        .arg(&executable)
-        .output()
-        .expect("invoke host clang");
-    assert!(
-        linked.status.success(),
-        "a module that hands work out must link without the parallel runtime:\n{}",
-        String::from_utf8_lossy(&linked.stderr)
-    );
-    std::fs::remove_file(&assembly).expect("remove the module");
-    executable
-}
-
 /// Whether this host can tell "the runtime granted no lane" apart from "no
 /// worker was scheduled inside the window".
 ///
@@ -1612,7 +2126,17 @@ pub(super) fn a_steal_is_observable(lanes: usize) -> bool {
 /// every one of the thirty-two runs and still totals zero.
 pub(super) const GRANT_OBSERVATION_RUNS: usize = 32;
 
-/// One linked build of a module against the parallel runtime and the grant
+/// The observer linked beside a counted program: one destructor that reports
+/// the runtime's own grant count on standard error at process exit.
+///
+/// `wf__par_grants` is the scheduler core's steal count, summed across the
+/// core's threads on demand (`sched/entry.c`). It used to be a plain
+/// `unsigned long` the parallel runtime incremented; the core keeps its
+/// counters per thread so that no two threads ever write one word, so the
+/// observer calls rather than reads.
+pub(super) const GRANT_OBSERVER: &str = include_str!("../sched/grant_observer.c");
+
+/// One linked build of a module against the scheduler core and the grant
 /// observer, so a case that wants several runs of one module pays for the link
 /// once.
 ///
@@ -1691,37 +2215,27 @@ impl CountedProgram {
 /// of one module pays for it once.
 fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
     let assembly = directory.join("counted.ll");
-    let runtime = directory.join("counted_runtime.c");
     let floor = directory.join("counted_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&assembly, module).expect("write the module");
-    let parallel_source = if module_requires_writer_scheduler(module) {
-        PARALLEL_COMPLETION_RUNTIME_SOURCE
-    } else {
-        PARALLEL_RUNTIME_SOURCE
-    };
-    std::fs::write(&runtime, parallel_source).expect("write the runtime");
-    // The floor joins every link the driver makes, and a lane's per-thread arm
-    // lives in it, so this harness links what a shipped program links.
+    // The floor joins every link the driver makes, it runs the entry on a pool
+    // stack when the core is linked, and a worker's per-thread arm lives in
+    // it, so this harness links what a shipped program links.
     std::fs::write(&floor, super::FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
-    std::fs::write(
-        &observer,
-        "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
-    )
-    .expect("write the observer");
+    std::fs::write(&observer, GRANT_OBSERVER).expect("write the observer");
     let mut command = Command::new("/usr/bin/clang");
     command
+        .arg("-std=c11")
         .arg("-pthread")
         .arg("-x")
         .arg("ir")
         .arg(&assembly)
         .arg("-x")
         .arg("c")
-        .arg(&runtime)
         .arg(&floor)
         .arg(&observer);
-    let _completion_units = append_completion_runtime(&mut command, module, directory);
+    let _runtime_units = append_runtime_units(&mut command, module, directory);
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .arg("-o")
@@ -1733,7 +2247,7 @@ fn link_counting_grants(module: &str, directory: &Path) -> std::path::PathBuf {
         "the runtime and its observer must link:\n{}",
         String::from_utf8_lossy(&linked.stderr)
     );
-    for path in [assembly, runtime, observer] {
+    for path in [assembly, observer] {
         std::fs::remove_file(path).expect("remove a counted-run artifact");
     }
     executable
@@ -1746,6 +2260,9 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
         Some(count) => command.env("WF_WORKERS", count),
         None => command.env_remove("WF_WORKERS"),
     };
+    // The observer prints the core's counters after the grant line when asked,
+    // so a case that fails on the count has the threads' own record beside it.
+    command.env("WF_SCHED_REPORT", "1");
     let output = command.output().expect("run the counted program");
     let report = String::from_utf8_lossy(&output.stderr).into_owned();
     let granted = report
@@ -1754,6 +2271,22 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
         .and_then(|count| count.trim().parse::<u64>().ok())
         .unwrap_or_else(|| panic!("the observer must report a grant count, got {report:?}"));
     (granted, output)
+}
+
+/// The number of pool threads the core started in one counted run, read from
+/// the `sched:` line the observer prints after the grant line when the run
+/// asks for the core's counters, which every counted run does.
+fn workers_started(output: &std::process::Output) -> u64 {
+    let report = String::from_utf8_lossy(&output.stderr).into_owned();
+    report
+        .lines()
+        .find(|line| line.starts_with("sched: "))
+        .and_then(|line| {
+            line.split_whitespace()
+                .find_map(|field| field.strip_prefix("workers_started="))
+        })
+        .and_then(|count| count.parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("the observer must report the core's counters, got {report:?}"))
 }
 
 /// Every sequential clone the module defines, by symbol.
@@ -1884,6 +2417,257 @@ fn a_fold_whose_calls_are_separated_by_a_builtin_hands_out_and_agrees() {
         }
     }
     identical(&runs).expect("a statement between the two calls must not move one byte");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// A fixed-trip loop whose staged call is a may-suspend *user* call, with an
+/// iteration-own buffer the callee writes and the iteration releases.
+///
+/// This is the shape [PAR-3] stages for a server loop, reduced to what the
+/// schedule needs: a prologue that takes this iteration's permit and allocates
+/// this iteration's storage, one may-suspend call, and a remainder that folds
+/// the answer into a place the loop outlives. `probe` opens a name that is not
+/// there, so every iteration reports the same refusal and the published status
+/// is a function of the trip count alone — which is what makes a run that lost
+/// an iteration, ran one twice, or read another iteration's buffer a different
+/// number rather than a different timing.
+const STAGED_MAY_SUSPEND_CALL: &[u8] = br#"fn probe(root: &DirectoryRead, permit: own HandlePermit, name: &buffer<u8>, scratch: &uniq buffer<u8>, mark: own u8) -> result: own u8 reads(root, permit, name, scratch), writes(permit, scratch) contract {
+  define room = len(deref(scratch));
+  define named = len(deref(name));
+  requires 1_u64 <= room;
+  requires 4_u64 <= named;
+} {
+  doc "Opens one name and answers what the open reported, marked with this iteration's own byte.";
+  let answer = mark;
+  set deref(scratch)[0_u64] = mark;
+  region {
+    match open_file(permit: move permit, root: root, name: name, start: 0_u64, end: 4_u64) {
+      FileOpened(value: handle) => {
+        set answer = answer +wrap 1_u8;
+      }
+      FileOpenFailed(error: problem, permit: refused) => {
+        set answer = answer +wrap 2_u8;
+      }
+    }
+  }
+  let stored = deref(scratch)[0_u64];
+  return answer +wrap stored;
+}
+
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "Probes four names in a fixed-trip loop whose staged call is a may-suspend user call [PAR-3].";
+  let name = buffer_new(4_u64, 97_u8);
+  let total = 0_u8;
+  for @scan (index in 0_u64..4_u64) {
+    let scratch = buffer_new(8_u64, 0_u8);
+    region {
+      match reserve_handle(factory: &uniq files) {
+        Ok(value: permit) => {
+          let reported = probe(root: &cwd, permit: move permit, name: &name, scratch: &uniq scratch, mark: 3_u8);
+          set total = total +wrap reported;
+        }
+        Err(error: spent) => {
+          return exit_status(code: 9_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: total);
+}
+"#;
+
+/// The staged call of a permitted loop is offered to a lane, and the refused
+/// edge is the same call publishing the same bytes.
+///
+/// Both halves matter and they fail differently. The shape half says the
+/// hand-out is where the schedule needs it: the frame is acquired and
+/// published where the iteration is issued, and joined, read, and released in
+/// the exact drain — so the loop's back edge is crossed with the call still
+/// running, which is the whole of what [PAR-3] grants here. The observable
+/// half says taking that grant changes nothing: `WF_WORKERS=0` and `1` are the
+/// opt-out, so every iteration takes the refused edge and runs its own call
+/// where it is written, and `4` starts a pool that grants — and all of them
+/// publish the same status. The default compilation names no lane entry at
+/// all, because a hand-out exists only in the world that asked for one.
+#[test]
+fn a_staged_may_suspend_call_is_offered_to_a_lane_and_refused_to_the_same_bytes() {
+    let overlapped = emit_with_overlap(STAGED_MAY_SUSPEND_CALL);
+    let body = function_body(&overlapped, "@wf_main");
+    let acquisition = body
+        .find("= call ptr @wf__par_acquire_lane(i64 ")
+        .expect("the staged call must acquire a lane frame");
+    let publish = body
+        .find("call void @wf__par_publish(ptr")
+        .expect("the acquired frame must be given the outlined call");
+    let refused = body
+        .find("\npar.staged.inline.")
+        .expect("a refused acquisition must run the call where it is written");
+    let join = body
+        .find("call void @wf__par_join(ptr")
+        .expect("the drain must join the frame");
+    let release = body
+        .find("call void @wf__par_release(ptr")
+        .expect("the drain must give the frame back");
+    assert!(
+        acquisition < publish && publish < refused && refused < join && join < release,
+        "the offer is in the carrying block and the retirement in the drain:\n{body}"
+    );
+    // The retirement is in a different block from the offer, which is what
+    // says an iteration is carried across the loop's back edge.
+    assert!(
+        body[publish..join].contains("par.staged.offered."),
+        "the join must be reached only after the issue stage has left:\n{body}"
+    );
+
+    let sequential = emit(STAGED_MAY_SUSPEND_CALL);
+    for entry in [
+        "@wf__par_acquire_lane",
+        "@wf__par_publish",
+        "@wf__par_join",
+        "@wf__par_release",
+    ] {
+        assert!(
+            !sequential.contains(entry),
+            "the default compilation must name no lane entry, found {entry}"
+        );
+    }
+
+    let directory = test_directory();
+    let executable = build_executable(&overlapped, &directory);
+    let mut runs = Vec::new();
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            // The probed name is absent from this directory, so every
+            // iteration reports the same refusal on every run.
+            .current_dir(&directory)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the staged may-suspend probe");
+        assert_eq!(
+            output.status.code(),
+            Some(32),
+            "WF_WORKERS={workers} published the wrong status"
+        );
+        runs.push((
+            format!("WF_WORKERS={workers}"),
+            output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
+        ));
+    }
+    identical(&runs).expect("a refused lane must publish the granted lane's bytes");
+
+    std::fs::remove_dir_all(&directory).expect("remove the test directory");
+}
+
+/// The compile-time window ceiling of a staged lane hand-out is the runtime's
+/// own lane slot count.
+///
+/// Two numbers that have to agree and live in two languages: the lowering
+/// sizes the ring and states the ceiling from one, and the runtime refuses an
+/// acquisition past the other. A ceiling above the runtime's would buy a
+/// window whose extra iterations are refused a frame and run inline, which is
+/// depth the ring paid for and never got; a ceiling below it would leave depth
+/// the lane could have granted.
+#[test]
+fn the_staged_lane_window_ceiling_is_the_runtimes() {
+    let declared = crate::SCHED_CORE_HEADER
+        .lines()
+        .find_map(|line| line.strip_prefix("#define WF_SCHED_LANE_SLOTS "))
+        .expect("the core must state its lane slot count");
+    assert_eq!(
+        declared
+            .trim()
+            .trim_end_matches('u')
+            .parse::<u64>()
+            .expect("a decimal count"),
+        crate::LANE_SLOTS,
+        "the lowering's staged window ceiling has drifted from the runtime's"
+    );
+}
+
+/// The same staged loop shape with a submitted *system* operation at the cut,
+/// written as a `let` and a remainder rather than as a result dispatch.
+///
+/// [PAR-3] stages this loop exactly as it stages the one above; only the cut's
+/// kind differs.
+const STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+  doc "Opens four names in a fixed-trip loop whose staged call is a system operation bound by a let.";
+  let name = buffer_new(4_u64, 97_u8);
+  let total = 0_u8;
+  for @scan (index in 0_u64..4_u64) {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        let outcome = open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64);
+        match outcome {
+          FileOpened(value: handle) => {
+            set total = total +wrap 1_u8;
+          }
+          FileOpenFailed(error: problem, permit: refused) => {
+            set total = total +wrap 2_u8;
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 9_u8);
+      }
+    }
+  }
+  return exit_status(code: total);
+}
+"#;
+
+/// The lane form is selected by the cut's kind, never by how the tail is
+/// written.
+///
+/// A submitted system operation has no lane frame, and its drain publishes its
+/// outcome at the block boundary — after every instruction of that block — so
+/// a remainder written after it in the same block would read a value that does
+/// not exist yet. The bound tail is therefore declined for it and the loop
+/// keeps the lowering it had, which is what this case pins: no lane entry, no
+/// staged block, and the same status at every worker count. Without the
+/// decline the sizing alone would move, since a lane hand-out's ring is
+/// `WF_SCHED_LANE_SLOTS` elements and a submitted operation's is two.
+#[test]
+fn a_system_operation_bound_by_a_let_is_not_the_lane_form() {
+    let overlapped = emit_with_overlap(STAGED_SYSTEM_OPERATION_BOUND_BY_A_LET);
+    assert!(
+        !overlapped.contains("@wf__par_acquire_lane"),
+        "a submitted operation at the cut must take no lane:\n{overlapped}"
+    );
+    assert!(
+        !overlapped.contains("par.staged."),
+        "a submitted operation at the cut must open no staged block:\n{overlapped}"
+    );
+    // The lane hand-out's ring is an array of frame addresses, one per slot;
+    // the shape is named whole because a host may emit an array of the same
+    // length for something else (Darwin's path buffers are `[1024 x i8]`).
+    assert!(
+        !overlapped.contains(&format!("[{} x ptr]", crate::LANE_SLOTS)),
+        "a submitted operation's ring is not the lane hand-out's:\n{overlapped}"
+    );
+
+    let directory = test_directory();
+    let executable = build_executable(&overlapped, &directory);
+    let mut runs = Vec::new();
+    for workers in ["0", "1", "4"] {
+        let output = Command::new(&executable)
+            // The opened name is absent from this directory, so every
+            // iteration reports the same refusal on every run.
+            .current_dir(&directory)
+            .env("WF_WORKERS", workers)
+            .output()
+            .expect("run the let-bound system operation probe");
+        assert_eq!(
+            output.status.code(),
+            Some(8),
+            "WF_WORKERS={workers} published the wrong status"
+        );
+        runs.push((
+            format!("WF_WORKERS={workers}"),
+            output.status.code().unwrap_or(-1).to_le_bytes().to_vec(),
+        ));
+    }
+    identical(&runs).expect("the declined form must publish the bytes it always did");
 
     std::fs::remove_dir_all(&directory).expect("remove the test directory");
 }

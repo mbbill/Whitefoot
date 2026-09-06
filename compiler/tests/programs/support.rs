@@ -1,28 +1,154 @@
-use std::ffi::OsStr;
-use std::io::Read;
+use std::ffi::{OsStr, OsString};
+use std::io::{Read, Write};
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus, Output, Stdio};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    CompilationFailure, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, OverlapLowering, PARALLEL_COMPLETION_RUNTIME_SOURCE,
-    PARALLEL_RUNTIME_SOURCE, SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
-    compile, compile_with_overlap, compile_with_permission_ledger,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
+    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailure,
+    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    OverlapLowering, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
+    WINDOWS_RUNTIME_HEADER, compile, compile_with_overlap, compile_with_permission_ledger,
     module_requires_completion_runtime, module_requires_parallel_runtime,
-    module_requires_writer_scheduler,
 };
 // Read by the superseded-inventory rejection in the directory-walking cases.
 use whitefoot::{Inventory, compile_with_inventory};
 
 static NEXT_EXECUTION: AtomicU64 = AtomicU64::new(0);
 
-/// Links one emitted module into `executable`, adding the parallel runtime on
-/// exactly the condition the driver uses.
+/// One invocation argument, from the bytes a case names to the host's own
+/// argument value.
+///
+/// A case that means a byte sequence no other encoding can carry — the
+/// wider-code-unit and byte-named cases — is a POSIX fact and says so through
+/// the fixture helpers below. Every other case, the loopback ones included,
+/// names ASCII text, and this is what keeps those cases from assuming the
+/// host's arguments are bytes: on a family whose arguments are not, the bytes
+/// are read as UTF-8 and handed over as text, which is the same argument.
+#[cfg(unix)]
+fn invocation_argument(bytes: &[u8]) -> OsString {
+    OsStr::from_bytes(bytes).to_os_string()
+}
+
+#[cfg(not(unix))]
+fn invocation_argument(bytes: &[u8]) -> OsString {
+    OsString::from(
+        std::str::from_utf8(bytes)
+            .expect("an invocation argument this host can carry must be text"),
+    )
+}
+
+/// Stages the compiler-owned runtime units into one link on exactly the
+/// conditions the driver uses.
+///
+/// The scheduler core joins under the union of the two predicates
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Where the core is
+/// linked"): one scheduler serves compute hand-outs and I/O completions, so a
+/// module that hands work out needs it and so does a module that submits an
+/// operation. The completion units join only under the second. Returns the
+/// staged names, for the caller to remove.
+fn stage_runtime_units(
+    command: &mut Command,
+    llvm: &str,
+    directory: &Path,
+) -> Option<Vec<&'static str>> {
+    let completion = module_requires_completion_runtime(llvm);
+    if !completion && !module_requires_parallel_runtime(llvm) {
+        return None;
+    }
+    let mut units = vec![
+        ("sched/core.h", SCHED_CORE_HEADER),
+        ("sched/prim.h", SCHED_PRIM_HEADER),
+        ("sched/switch.h", SCHED_SWITCH_HEADER),
+        ("sched/entry.h", SCHED_ENTRY_HEADER),
+        ("sched/core.c", SCHED_CORE_SOURCE),
+        ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
+        ("sched/entry.c", SCHED_ENTRY_SOURCE),
+    ];
+    if completion {
+        units.extend([
+            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+            (
+                "completion/socket_address.h",
+                COMPLETION_SOCKET_ADDRESS_HEADER,
+            ),
+            (
+                "completion/linux_io_uring.h",
+                COMPLETION_LINUX_IO_URING_HEADER,
+            ),
+            // Every header of the runtime is staged on every platform, exactly
+            // as the driver stages them (`src/bin/whitefootc.rs`): a header is
+            // never a clang input, and `bridge.c` is one shared unit whose
+            // Windows arm names these two in text this host does not compile.
+            ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
+            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
+            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+            (
+                "completion/linux_io_uring.c",
+                COMPLETION_LINUX_IO_URING_SOURCE,
+            ),
+        ]);
+    }
+    // The staged tree keeps the repository's own two directories, because the
+    // completion header reaches the scheduler core by the relative path it
+    // uses in the tree.
+    std::fs::create_dir_all(directory.join("completion")).expect("stage completion directory");
+    std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
+    for (name, source) in &units {
+        std::fs::write(directory.join(name), source).expect("write runtime unit");
+    }
+    command
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("sched/core.c"))
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("sched/prim_host.c"))
+        .arg("-x")
+        .arg("c")
+        .arg(directory.join("sched/entry.c"));
+    if completion {
+        command
+            .arg("-I")
+            .arg(directory.join("completion"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/completion_runtime.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/wait_host.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/file_adapter.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/file_posix.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/completion_bridge.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/linux_io_uring.c"));
+    }
+    Some(units.into_iter().map(|(name, _)| name).collect())
+}
+
+/// Links one emitted module into `executable`, adding the runtime units on
+/// exactly the conditions the driver uses.
 ///
 /// One definition serves both program-corpus link paths, so a program that
 /// overlaps nothing links nothing extra and no path can omit the runtime a
@@ -36,64 +162,7 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
     let floor_unit = directory.join("wf_floor.c");
     std::fs::write(&floor_unit, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor_unit);
-    let completion_required = module_requires_completion_runtime(llvm);
-    let parallel_unit = module_requires_parallel_runtime(llvm).then(|| {
-        let path = directory.join("par_runtime.c");
-        let source = if module_requires_writer_scheduler(llvm) {
-            PARALLEL_COMPLETION_RUNTIME_SOURCE
-        } else {
-            PARALLEL_RUNTIME_SOURCE
-        };
-        std::fs::write(&path, source).expect("write the parallel runtime");
-        command.arg("-x").arg("c").arg(&path);
-        path
-    });
-    let completion_units = completion_required.then(|| {
-        for (name, source) in [
-            ("contract.h", COMPLETION_CONTRACT_HEADER),
-            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
-            ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
-        ] {
-            std::fs::write(directory.join(name), source).expect("write completion runtime unit");
-        }
-        command
-            .arg("-I")
-            .arg(directory)
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion_runtime.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("file_adapter.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion_bridge.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("writer_scheduler.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("linux_io_uring.c"));
-        [
-            "contract.h",
-            "file_adapter.h",
-            "bridge.h",
-            "writer_scheduler.h",
-            "linux_io_uring.h",
-            "completion_runtime.c",
-            "file_adapter.c",
-            "completion_bridge.c",
-            "writer_scheduler.c",
-            "linux_io_uring.c",
-        ]
-    });
+    let completion_units = stage_runtime_units(&mut command, llvm, directory);
     let compilation = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -108,12 +177,15 @@ fn link_module(module: &Path, executable: &Path, llvm: &str, directory: &Path) {
         llvm
     );
     std::fs::remove_file(&floor_unit).expect("remove the floor runtime unit");
-    if let Some(path) = parallel_unit {
-        std::fs::remove_file(path).expect("remove the parallel runtime unit");
-    }
     if let Some(names) = completion_units {
         for name in names {
             std::fs::remove_file(directory.join(name)).expect("remove completion runtime unit");
+        }
+        // The staged tree keeps the repository's own two directories, because
+        // the completion header reaches the scheduler core by the relative
+        // path it uses in the tree.
+        for staged in ["completion", "sched"] {
+            std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
         }
     }
 }
@@ -176,6 +248,19 @@ pub fn compile_program_with_overlap(name: &str) -> String {
 /// lowering.
 pub fn compile_programs_with_overlap(names: &[&str]) -> String {
     try_compile_programs_with_overlap(names).expect("program corpus source must compile")
+}
+
+/// Compiles one corpus program with no permission group actualized at all,
+/// which is what `whitefootc --no-overlap` compiles.
+///
+/// It is the exact sequential reference: a case that asks whether a schedule
+/// exists only in the world that asked for it reads this module beside the
+/// `--par` one, and neither is inferred from the other.
+pub fn compile_program_without_overlap(name: &str) -> String {
+    let source = read_program(name);
+    let inputs = [SourceInput::new(name, &source)];
+    compile_with_overlap(&inputs, CompilerLimits::default(), OverlapLowering::Off)
+        .expect("program corpus source must compile")
 }
 
 /// Every `.wf` file the program corpus holds, in one stable order.
@@ -299,72 +384,32 @@ pub fn run_counting_grants(llvm: &str, workers: Option<&str>) -> (u64, Output) {
     ));
     std::fs::create_dir(&directory).expect("create unique grant-count directory");
     let module = directory.join("counted.ll");
-    let runtime = directory.join("par_runtime.c");
     let floor = directory.join("wf_floor.c");
     let observer = directory.join("observer.c");
     let executable = directory.join("counted");
     std::fs::write(&module, llvm).expect("write the module");
-    let parallel_source = if module_requires_writer_scheduler(llvm) {
-        PARALLEL_COMPLETION_RUNTIME_SOURCE
-    } else {
-        PARALLEL_RUNTIME_SOURCE
-    };
-    std::fs::write(&runtime, parallel_source).expect("write the parallel runtime");
     std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     std::fs::write(
         &observer,
-        "#include <stdio.h>\nextern unsigned long wf__par_grants;\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants);\n}\n",
+        "#include <stdio.h>\nextern unsigned long wf__par_grants(void);\n__attribute__((destructor)) static void wf__par_report(void) {\n    fprintf(stderr, \"grants=%lu\\n\", wf__par_grants());\n}\n",
     )
     .expect("write the observer");
     let mut command = Command::new("/usr/bin/clang");
     command
+        .arg("-std=c11")
         .arg("-pthread")
         .arg("-x")
         .arg("ir")
         .arg(&module)
         .arg("-x")
         .arg("c")
-        .arg(&runtime)
         .arg(&floor)
         .arg(&observer);
     // This is the normal compiler link plus one read-only observer.  Keep its
-    // completion-unit selection identical to every other executable path: a
+    // runtime-unit selection identical to every other executable path: a
     // program that actualizes target I/O must never become linkable merely
     // because the caller did not ask to observe the compute scheduler.
-    if module_requires_completion_runtime(llvm) {
-        for (name, source) in [
-            ("contract.h", COMPLETION_CONTRACT_HEADER),
-            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
-            ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
-        ] {
-            std::fs::write(directory.join(name), source).expect("write completion runtime unit");
-        }
-        command
-            .arg("-I")
-            .arg(&directory)
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion_runtime.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("file_adapter.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("completion_bridge.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("writer_scheduler.c"))
-            .arg("-x")
-            .arg("c")
-            .arg(directory.join("linux_io_uring.c"));
-    }
+    let _runtime_units = stage_runtime_units(&mut command, llvm, &directory);
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)
         .args(HOST_LINK_LIBRARIES)
@@ -431,7 +476,7 @@ impl CompiledProgram {
     pub fn run(&self, working_directory: &Path, arguments: &[&[u8]]) -> Output {
         Command::new(&self.executable)
             .current_dir(working_directory)
-            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
             .output()
             .expect("run compiled program")
     }
@@ -465,12 +510,59 @@ impl CompiledProgram {
         let mut command = Command::new(&self.executable);
         command
             .current_dir(&self.directory)
-            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)));
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)));
         match workers {
             Some(count) => command.env("WF_WORKERS", count),
             None => command.env_remove("WF_WORKERS"),
         };
         command.output().expect("run compiled program")
+    }
+
+    /// Starts the program on one runtime route with raw invocation arguments,
+    /// and hands back the running child.
+    ///
+    /// A loopback case has to play the peer while the program runs, so it
+    /// needs the child rather than the finished output: the program is a
+    /// server the case connects to, or a client the case accepts from, and
+    /// either way both sides are alive at once. `native_ring` selects the
+    /// route exactly as the standard-input cases do — `true` is the shipped
+    /// default, `false` sets `WF_IO_NO_NATIVE_RING` so the same program runs
+    /// through the shared file adapter instead of the kernel completion ring.
+    pub fn spawn_on_route(&self, native_ring: bool, arguments: &[&[u8]]) -> Child {
+        self.spawn_on_route_with_workers(native_ring, None, arguments)
+    }
+
+    /// Starts the program on one runtime route with the worker count named.
+    ///
+    /// A case whose property is about several peers being served at once has
+    /// to state the pool it is served by, because the shipped default sizes it
+    /// to the machine: a host with many cores serves four peers on four
+    /// workers whatever the runtime does with a wait, so the property would be
+    /// proved by the runner rather than by the program. `workers` is `None`
+    /// for that default and `Some(count)` for a case that pins it.
+    pub fn spawn_on_route_with_workers(
+        &self,
+        native_ring: bool,
+        workers: Option<&str>,
+        arguments: &[&[u8]],
+    ) -> Child {
+        let mut command = Command::new(&self.executable);
+        command
+            .current_dir(&self.directory)
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if native_ring {
+            command.env_remove("WF_IO_NO_NATIVE_RING");
+        } else {
+            command.env("WF_IO_NO_NATIVE_RING", "1");
+        }
+        match workers {
+            Some(count) => command.env("WF_WORKERS", count),
+            None => command.env_remove("WF_WORKERS"),
+        };
+        command.spawn().expect("spawn compiled program")
     }
 
     /// Runs the program with standard output on a pipe whose read end this
@@ -493,7 +585,7 @@ impl CompiledProgram {
         drop(reader);
         let mut child = Command::new(&self.executable)
             .current_dir(working_directory)
-            .args(arguments.iter().map(|bytes| OsStr::from_bytes(bytes)))
+            .args(arguments.iter().map(|bytes| invocation_argument(bytes)))
             .stdout(Stdio::from(writer))
             .stderr(Stdio::piped())
             .spawn()
@@ -507,6 +599,60 @@ impl CompiledProgram {
             .expect("read the program's diagnostics");
         let status = child.wait().expect("wait for compiled program");
         (status, diagnostics)
+    }
+
+    /// Runs the program with its standard input redirected from a pipe this
+    /// process fills with `bytes` and then closes.
+    ///
+    /// This is one of the two shapes a real standard input takes [SYS-15]: a
+    /// stream whose end the writer decides, where a read may return less than
+    /// the requested range and the end arrives only when the writer closes.
+    /// `native_ring` selects the runtime route — `true` is the shipped
+    /// default, `false` sets `WF_IO_NO_NATIVE_RING` so the same program runs
+    /// through the shared file adapter instead of the kernel completion ring.
+    pub fn run_with_piped_input(&self, bytes: &[u8], native_ring: bool) -> Output {
+        let (reader, mut writer) = std::io::pipe().expect("create the input pipe");
+        let mut command = Command::new(&self.executable);
+        command
+            .current_dir(&self.directory)
+            .stdin(Stdio::from(reader))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if native_ring {
+            command.env_remove("WF_IO_NO_NATIVE_RING");
+        } else {
+            command.env("WF_IO_NO_NATIVE_RING", "1");
+        }
+        let child = command.spawn().expect("spawn compiled program");
+        // The writer is closed before the child is waited on, or a program
+        // that reads to end would never observe one.
+        writer.write_all(bytes).expect("fill the input pipe");
+        drop(writer);
+        child.wait_with_output().expect("wait for compiled program")
+    }
+
+    /// Runs the program with its standard input redirected from a regular
+    /// file holding `bytes`.
+    ///
+    /// This is the other shape [SYS-15] admits, and it is a different runtime
+    /// path on Linux: a regular file's descriptor is one the kernel ring
+    /// completes without any readiness wait, while a pipe's is not.
+    pub fn run_with_file_input(&self, bytes: &[u8], native_ring: bool) -> Output {
+        let path = self.directory.join("standard-input");
+        std::fs::write(&path, bytes).expect("write the input fixture");
+        let file = std::fs::File::open(&path).expect("open the input fixture");
+        let mut command = Command::new(&self.executable);
+        command
+            .current_dir(&self.directory)
+            .stdin(Stdio::from(file))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if native_ring {
+            command.env_remove("WF_IO_NO_NATIVE_RING");
+        } else {
+            command.env("WF_IO_NO_NATIVE_RING", "1");
+        }
+        command.output().expect("run compiled program")
     }
 }
 
@@ -537,6 +683,11 @@ impl FixtureDirectory {
     }
 
     /// Writes one fixture file, whose name may be any byte sequence.
+    ///
+    /// This one names POSIX on purpose and is not an assumption the harness
+    /// makes elsewhere: a name that is any byte sequence is a fact about a
+    /// POSIX file system, and it is the subject of the cases that call it.
+    /// No loopback case reaches it.
     pub fn write(&self, name: &[u8], bytes: &[u8]) -> PathBuf {
         let path = self.path.join(OsStr::from_bytes(name));
         std::fs::write(&path, bytes).expect("write fixture file");

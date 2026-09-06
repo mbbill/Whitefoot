@@ -127,15 +127,19 @@ implementation cycle; its final source-language failure model remains open.
 That scope choice changes neither the project direction nor the required
 layout, address, target, parallel-independence, and bounded-completion proofs.
 
-v0.40 retains v0.39's ordinary opaque values, `own`, `move`, `&`, and
-`&uniq` for every I/O resource. `reads` and `writes` name formal parameters or
+The I/O surface uses ordinary opaque values, `own`, `move`, `&`, and
+`&uniq` for every resource. `reads` and `writes` name formal parameters or
 their static struct fields rather than lifetimes. Resource types do not form a
 separate language capability category. There is no separate `world`,
 `capability-root`, `family-fragment`, or `Ordered` permission system. Completion is
-an internal lowering and target contract beneath ordinary calls. File opening
-uses ordinary one-shot `FilePermit` owners from an explicit `FileFactory`;
-directory selectors remain shared and permit proof data is erased before the
-native open ABI.
+an internal lowering and target contract beneath ordinary calls. Every handle
+the target counts is one credit of one `HandleFactory` whose capacity is fixed
+at program start: `reserve_handle` hands out a one-shot `HandlePermit`, an
+open, listen, accept or connect consumes it and hands it back in its outcome
+when the host refuses, an explicit close returns it, and derived release spends
+it, so every dependency between a close and a later open is a relation the
+checker sees. Directory selectors remain shared and permit proof data is erased
+before the native ABI.
 
 The safe-Rust compiler currently implements one ordinary path:
 
