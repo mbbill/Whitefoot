@@ -237,6 +237,30 @@ would move an accepted conformance program that `move`s a shared view; the
 widening of the viewed domain to the two runs, with the non-wrap premise and the
 retirement of the two formation rows into [BLK-0]; and [VIEW-4], [VIEW-6] and
 [PROV-3], which this version states as rules nowhere.
+**B7c4a takes the system boundary to the views and closes one soundness hole.**
+The seven range-bearing operations [SYS-8] take one *operand class* at their own
+range-bearing parameter — `&uniq MutSlice<u8>` where the operation writes the
+storage and `&Slice<u8>` where it reads it, with `buffer<u8>` still admitted
+there for as long as `buffer<T>` lives — which changes seven declared parameter
+types and adds no rule id, the content being row data of [SYS-8] and [SYS-2].
+[BLK-4]'s `&uniq` refusal is corrected in the same pass: it never reached a
+*view* referent, because a view has no measure a callee could move, so the
+fill-and-publish helper a caller hands one destination to is admitted at a
+source declaration on the same ground an [SYS-8] row's `&uniq` destination is.
+The soundness hole is the acquiring rows' own `fits::<T>(count)`: [BLK-0] and
+[OP-9] both say it is the obligation `buffer_fits::<T>(n)` is, nothing submitted
+it, and `heap_vector::<i32>(store, count: n)` at an unconstrained count
+therefore compiled where the `buffer_new` spelling of the same program was
+refused. It is now judged at every call of a row that carries it. Beside them
+B7c4a removes three capability stops the rules do not license — a *shared*
+borrow of a run, which [BLK-4] never refused; a const parameter beside a region
+parameter on one declaration, two independent axes; and a generic call cycle
+that repeats the caller's own parameters, which [FN-6] permits and which mints
+no second instance — and makes [MSR-3]'s placements per placement rather than
+per depth, so a run two struct levels down keeps its measures across the
+construct that renames it. One generic cycle still stops explicitly: one that
+varies a *const* argument, which [FN-6] is written over type parameters and does
+not refuse.
 
 v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
 or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`

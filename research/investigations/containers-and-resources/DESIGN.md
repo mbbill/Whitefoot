@@ -2162,17 +2162,32 @@ no field, no enum payload, no run element, no generic type argument, and no resu
 [VIEW-6]'s ceiling. A **provider** type may occupy none of the same positions, for
 [PROV-2]'s reason. A store-branded run may occupy any of them.
 
-**And no container nominal, no loan-bearing type and no unbounded generic type parameter
+**And no container nominal and no unbounded generic type parameter
 may be the referent of a `&uniq` parameter of a source-declared `fn`.** This is R1 as a
 rule:
 
 > In the parameter list of a source-declared `fn`, a parameter of mode `&uniq` is a hard
 > error citing BLK-4 at the complete `param`, `UniqueParameterReachesContainer`, when its
-> referent type **is, or reaches at any depth, a container nominal, a loan-bearing type,
-> or a generic type parameter carrying no bound that excludes both**. Depth is the
+> referent type **is, or reaches at any depth, a container nominal, or a generic type
+> parameter carrying no bound that excludes one**. Depth is the
 > reachability closure [PROV-4] computes over fields, enum payloads, run elements and
 > written type arguments. The restructuring is `take the run by value and return it, or
 > take a view of it`.
+
+**Correction of 2026-09-06 (owner's delegate): a `&uniq` whose referent is a VIEW is
+admitted, and this clause never reached one.** The refusal exists for a measure a callee
+moves while its caller retains it, and a view has no measure to move: `[VIEW-4]` already
+forbids replacing a view through such a borrow, and what a callee writes *through* one is
+an element write of the viewed storage, which `[ENT-5]` kills at `[MSR-2]`'s own
+granularity. A `&uniq MutSlice<'r, T>` parameter therefore leaves every measure its caller
+retained standing, which is exactly §7 B8's fill-and-publish helper: a caller hands one
+destination to a helper that fills it. It is the same admission the `&uniq` destination of
+a range-bearing `[SYS-8]` row takes, and 3.K.4's `[VIEW-7]` note below said so of the rows
+while this clause still said the opposite of the source declaration. The clause's
+loan-bearing arm is withdrawn; its *position* clause above — no field, no enum payload, no
+run element, no written type argument, no result outside `[VIEW-6]`'s ceiling — is
+untouched, because those are the positions from which a loan could outlive its origin and
+a borrow parameter is not one of them.
 
 Three things about it are deliberate. **The closure closes the round-4 defeat**, where a
 one-field wrapper struct nullified [CNT-7]. **The type-parameter clause is round 7's**:
@@ -2208,7 +2223,7 @@ position, or a confined type in a position whose owner does not name its region,
 error citing BLK-4 at the complete contained `type`; and a confined value bound to a
 destination some member of its region set does not outlive is a hard error at the binding,
 rendering every member. *Publishes:* the confinement set, and the fact that no
-source-declared `&uniq` parameter reaches a container nominal, a loan-bearing type or an
+source-declared `&uniq` parameter reaches a container nominal or an
 unbounded type parameter. *Amends:* [STOR-4] 721; [STOR-5] 723-736, whose position list is
 replaced by the intensional split and whose per-leaf-provenance deferral is **withdrawn as
 unnecessary**; [FN-2] 1093-1100, whose blanket rejection of a region-bearing generic
@@ -2410,7 +2425,8 @@ the result's origin set, and the child loan's strength and range. *Amends:* [FN-
 reads; [PROV-3], which fixes the child loan's extent. *Law:* L10, L11. *History:* r7
 F4-5; r1 F4-7; the owner's [S31].
 
-**[VIEW-7] System operations over views.** **[S30], ADOPTED.** The seven range-bearing
+**[VIEW-7] System operations over views.** **[S30], ADOPTED; landed at B7c4a as row data
+rather than as a numbered rule.** The seven range-bearing
 operations [SYS-8] 2488-2527 take views instead of `buffer<u8>`, with fixed modes:
 
 ```text
@@ -2429,12 +2445,27 @@ its siblings, `len_of(deref(source))` for `write_once`, `host_copy_bytes` and
 `host_copy_utf8` — which is round 7's correction of a sentence that named the destination
 for all seven.
 
-**[BLK-4]'s fourth clause does not reach these**, by the clause's own scope: a [SYS-2]
-declaration record's behaviour is fixed by its record and it has no body in which an
-unnamed point could exist. This is the change that lets a heap-free program do I/O. Its
+**[BLK-4]'s fourth clause does not reach these**, and after this file's 2026-09-06
+correction of that clause it reaches no view referent at all — not at a record, and not at
+a source declaration either. This is the change that lets a heap-free program do I/O. Its
 cost is that a destination must be **addressable** first, so it is built by 3.L.3's
 `filled` and the count the host produced is an ordinary `u64` beside the run; Q7 records
 the fix.
+
+**Correction of 2026-09-06: what landed at B7c4a is an operand *class*, and it is not a
+numbered rule.** The parameter is one class and not one type — `&uniq MutSlice<u8>` where
+the operation writes the storage and `&Slice<u8>` where it reads it — which is the device
+`[VIEW-2]`'s viewable operand already is and for the same reason: no row reads what the
+storage is made of, so the operand's own type decides only which measure-table row
+`[MSR-1]` the two range obligations are stated over. Each class **additionally admits
+`buffer<u8>` at the same position** for exactly as long as `buffer<T>` and its
+`buffer_new` row live, which is what let the migration move the corpus a case at a time
+instead of in one flip. Because the content is row data of `[SYS-8]` and of `[SYS-2]`'s
+declaration records, the specification carries it inside those rules and adds **no
+`[VIEW-7]` rule id**; the count stays 153 and `[META-5]` declares the change under system
+operations and declaration records. A view's own region at those positions is elided and
+related to nothing `[FORM-8]`, so no operation region parameter is added and no call
+writes one.
 
 *Judgment:* [SYS-8]'s two range obligations, restated over `len_of` of the borrowed
 range-bearing view. *Publishes:* the endpoint facts [ENT-3.S10] enumerates, now over a
@@ -7893,6 +7924,155 @@ assertion moved, and it moved to the parse stage through a helper added for it.
   unit with no heap — `prov1-pos-a-store-branded-run-in-a-field` and
   `blk1-pos-both-runs-are-nameable-types` — take the row in their entries. Both keep their
   recorded `accept` verdicts; the repair is the one the rule's own restructuring names.
+
+### 6.0t B7c4a landed (v0.45)
+
+**The range-bearing operations take views, a shared borrow of a run is an ordinary
+borrow, and the acquiring rows' allocation-fit obligation is enforced.** Round 8's limit
+probes were the input: ten `L*` programs and six `repro-*` programs, each one a shape the
+specification admits and this compiler refused or, worse, accepted. Eight of them compile
+now, one is a specification refusal it was always meant to be, and the two that remain are
+named with their cost.
+
+- **[VIEW-7] landed as row data and not as a rule, and that is the correction this batch
+  owes 3.K.4.** The seven range-bearing operations [SYS-8] take one **operand class** at
+  their own range-bearing parameter: `&uniq MutSlice<u8>` where the operation writes the
+  storage, `&Slice<u8>` where it reads it, and — transitionally, for exactly as long as
+  `buffer<T>` and its `buffer_new` row live — `buffer<u8>` at the same position. That
+  transitional arm is what let a corpus of thirty-one blocked cases move a case at a time
+  rather than in one flip. Nothing in the specification gains a `[VIEW-7]` id: the content
+  is `[SYS-8]`'s and `[SYS-2]`'s own row data, the rule count stays 153, and `[META-5]`
+  declares the change under system operations and declaration records. Two dangling
+  references the pass left — `[CALL-3]` and `[VIEW-7]`, neither a rule of this version —
+  were caught by `make check`'s own `spec` stage and repaired to cite the rules that state
+  the content.
+- **[BLK-4] does not refuse a `&uniq` view referent, and the correction is in place
+  above.** A view carries no measure a callee can move; `[VIEW-4]` forbids replacing one
+  through such a borrow and `[ENT-5]` kills what a callee writes through one at `[MSR-2]`'s
+  storage granularity. §7 B8's fill-and-publish helper is therefore admitted at a source
+  declaration on exactly the ground an `[SYS-8]` row's `&uniq` destination is admitted.
+- **A shared borrow of a run is one gap, not three.** `&FixedVector<T, n>` as a parameter,
+  `let holder = &items;` over a run, and `deref(c).buf[i]` through `c: &Cursor` all stopped
+  as `SemanticUnsupported { RegionsAndBorrows }`, and `[BLK-4]` refuses only the `&uniq` of
+  a run. A run's storage lives in its owner — inline slots for the frame-resident run, the
+  descriptor for the store-resident one — so a borrow of either is the address of that
+  storage exactly as a borrow of a struct is, and both runs now reach it through that one
+  path. The holder's `deref` resolves to the same measured place the deref-free path forms,
+  so every measure and subscript over a borrowed run is the ordinary one. **A run holder
+  written where the run is required is `[TYPE-7]`'s missing dereference**, as a `buffer`
+  holder already was; `L5` therefore compiles as `deref(holder)[0_u64]` and not as written,
+  which is the one probe whose answer is a refusal rather than an acceptance.
+- **The acquiring rows' `fits::<T>(count)` was not enforced at all**, which is a soundness
+  hole and the batch's first commit. `[BLK-0]` says the spelling is the record notation of
+  `[OP-9]`'s allocation-fit obligation and `[OP-9]` says the predicate is the same object
+  `buffer_fits::<T>(n)` is; nothing submitted it, so `heap_vector::<i32>(store, count: n)`
+  at an unconstrained `n` compiled while `buffer_new(n, 0_i32)` was refused. It now goes to
+  the same judgment through the same path at every call of a row that carries it. Three
+  rows carry it — `heap_vector`, `arena_vector`, `arena_vector_proved` — `fixed_vector`
+  carries none because its count is a type constant, and the two cell rows carry none
+  because they take no count. `v033-neg-allocation-fit-unproved` keeps its recorded
+  `reject OP-9` over `buffer_new`; the `heap_vector` spelling of the same program cites
+  `OP-9` too, which is `op9-neg-kernel-acquisition-without-a-fit-proof`.
+- **An elided view region at a parameter position is a region of its own, and reading it as
+  anything else made recursion impossible.** `input: own Slice<u8>` beside `store: &uniq
+  Heap<'s>` made every recursive call an `[OWN-12] BorrowConflict`, because a view argument
+  whose origin was the enclosing declaration's own view parameter claimed an origin that
+  overlapped *every* other argument whatever place that argument resolved to. That reads an
+  unknown as everything. `[FORM-8]` gives the position one region of its own and `[OWN-3]`
+  makes distinct formal regions incomparable inside the callee, so what such an argument
+  claims is the place that one parameter binding reaches — which is what the effect
+  projection already attributed to it. `L2` compiles; `L2b`, which writes the region, stays
+  the `[FORM-8]` refusal it should be.
+- **Const parameters and region parameters are two axes, and generic recursion is finite
+  where `[FN-6]` permits it.** A source `fn` carrying any generic parameter beside written
+  `region_params` stopped outright, and so did every call cycle among generic functions.
+  An instance is keyed on its type and const arguments while a region parameter is
+  substituted positionally from the call's own actuals `[FORM-8, FN-2]`; and `[FN-6]` has
+  already refused every cycle whose call writes anything but the caller's own type
+  parameters, so a surviving cycle that repeats the caller's whole parameter list is the
+  caller's own instance and mints nothing. `L9`'s shape, `repro-recursive-generic` and
+  `repro-recursive-const-generic` all compile and run.
+- **`[MSR-3]`'s placements are per placement, not per depth.** A construct over a struct
+  whose own field is a run carried nothing, so the run arrived at `outer.inner.samples`
+  with no measures at all while the one-level form worked. `[MSR-1]` admits a measure place
+  formed with any number of field selections, so a struct operand names one measured place
+  per run beneath it; each placement now carries them all to the destination's matching
+  path. The walk descends through source `struct` fields only — a cell, a run element and
+  an enum payload are each reached by a step a field path does not take — so
+  `msr3-neg-a-rebind-carries-the-run-and-not-its-elements` keeps its recorded rejection.
+
+**Four further compiler defects the corpus found, each fixed against the rule that states
+the answer.**
+
+```text
+| what was wrong                       | how it showed                        | repair                          |
+|--------------------------------------|--------------------------------------|---------------------------------|
+| [MSR-4]'s interval step named an     | `requires index < cap_of(run);       | the step names a measure atom   |
+| atom's term through the binding      | requires room_of(run) <= 0;` left    | through its own measure term,   |
+| whose image it is, and a measure     | the subscript's `index < len_of(run)`| which is the candidate set the  |
+| has no binding                       | unproved                             | affine/L0 index already builds  |
+| [FN-9]'s return-position judgment    | `return len_of(taken);` under any    | a run's measure is the same     |
+| knew the array, buffer and slice     | `ensures` was                        | [CALL-4] return datum and is    |
+| measures and not the run's           | InvalidPostconditionReturn for a     | admitted on the same terms      |
+|                                      | `FixedVector<T, n>`                  |                                 |
+| a container nominal at a `const`     | `const bad: Box<i32> = ...;` stopped | the question is decided on the  |
+| item type reached no interning pass  | as an internal InvalidResolution     | resolved declaration class,     |
+|                                      |                                      | before the type's arguments are |
+|                                      |                                      | parsed: it is [CONST-2]         |
+| a substituted const parameter kept   | an instance's header invariants      | both value positions read the   |
+| the *callee's* declaration identity  | compared a run's capacity against a  | parameter the substitution      |
+| at every position reading it as a    | constant nothing outside the callee  | supplies                        |
+| value                                | can name                             |                                 |
+```
+
+**One performance defect was measured rather than argued, and only its local half is
+fixed.** A body of chained `set v = place_back(vector: move v, value: x);` commits takes
+0.22 s at 10 commits, 0.82 s at 20, 7.0 s at 40 and 32.8 s at 60, at 97 MB, 97 MB, 348 MB
+and 1150 MB peak; the counted `filled` loop over the same 100 elements takes 20 ms. The
+cause is exact and instrumented. Each commit adds four terms and two kill events; every
+kill materializes the `[ENT-4]` closure; and the closure over these terms is **complete** —
+after k commits every measure of the run has a known constant value, so all `V^2` ordered
+pairs carry an exact difference bound. At 60 commits that is `V = 242` and 120
+materializations of 58564 bounds each: `O(n^4)` time and, because each materialization
+interned one derivation node per bound, `O(n^3)` retained memory. The memory half is a
+defect and is fixed: a bound whose materialization the previous snapshot already interned
+at the same value is that same fact, so the existing node is reused and 60 commits peak at
+652 MB rather than 1150. **The time half is not local and is not attempted**: reducing
+`2n` full `O(V^3)` fixed points needs an incremental closure, or a sound elimination of the
+killed middles alone, and both restructure `[ENT-4]`'s closure together with its derivation
+identities. `close`'s own doc names the obstacle — a killed middle can participate through
+an implicit type edge or through disequality strengthening, neither of which an
+explicit-edge projection reproduces soundly. It is a batch of its own.
+
+**What this batch did not reach, and what it costs.**
+
+- **Four `accept-par3-staged-*` destinations keep `buffer<u8>`.** The intended destination
+  is a `filled` inline run viewed by `mut_slice_of`, which this compiler still stops as
+  `ExclusiveViewOverInlineRun`, and the only alternative — a store-resident run —
+  introduces a general-store loan that changes exactly the `[PAR-3]` property those cases
+  are evidence for. The two `view2-pos-an-exclusive-view-*` cases keep their `pending`
+  status for the same reason; the `reason` of the one still named `-over-an-array` is
+  brought current and now names the stop its migrated source actually reaches. Its id is
+  not: renaming a conformance case is conformance evidence and this batch had no test that
+  needed it.
+- **A generic cycle that varies a *const* argument stays an explicit unsupported
+  capability, and that is a defect of this document.** `[FN-6]`'s syntactic criterion is
+  written over *type* parameters, and `[MSR-6]`'s const generics arrived after it. A call
+  writing `grow::<n + 1>` on a cycle is not polymorphic recursion by that wording, yet its
+  instance set is unbounded. The smallest reading this batch implemented keeps the
+  criterion exactly as written and reports the capability; the rule should say
+  *generic parameters* where it says *type parameters*, which is a one-word amendment with
+  a stated delta of numbered rules +0.
+- **`L7` and `L8` are refusals and stay refusals.** `L7` hands an `own Slice<u8>` where a
+  shared borrow is required — `[TYPE-5]` — and `L8` is `[BLK-4]`'s own container clause,
+  which this batch narrowed for views and not for runs.
+
+**Verdicts.** The adapter moves from Pass=676 over 680 cases to Pass=689 over 693, the one
+xfail and the three skips unchanged in id, expectation and status, and coverage complete at
+153/153. Thirteen cases are added, none deleted, none renamed, and thirty-three case
+sources are modified with every recorded expectation unchanged. The recorded-verdict
+snapshot corpus reports Pass=491, Flip=0 before and after, over three modified sources.
+Three executable-corpus programs take the view forms and keep their exit codes.
 
 ### 6.1 What the compiler did in this session
 

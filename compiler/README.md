@@ -337,11 +337,48 @@ half is named rather than hidden: a view formed through a *view holder* —
 `slice_of(&'r deref(destination))` from a `&uniq MutSlice<'r, u8>` parameter —
 so a helper handed a destination fills it and cannot publish it, which is the
 one shape [VIEW-6]'s ceiling half needs.
+**The system boundary takes views.** The range-bearing parameter of each of the
+seven operations [SYS-8] names is one operand class rather than one type:
+`&uniq MutSlice<u8>` where the operation writes the storage, `&Slice<u8>` where
+it reads it, and `buffer<u8>` at the same position for as long as `buffer<T>`
+lives. A view handed to a call is borrowed and not consumed, so the caller's
+facts about it survive the call, and the write a callee performs through one is
+an element write over the view's own place [ENT-5, MSR-2], so the view's
+measures survive it and its element facts do not. A `&uniq` parameter whose
+referent is a view is admitted at a source declaration for the same reason
+[BLK-4]. What still stops is the exclusive view over an inline run
+(`ExclusiveViewOverInlineRun`), which is why four staged [PAR-3] cases keep a
+`buffer<u8>` destination.
+**A shared borrow of a run is the ordinary borrow.** `&FixedVector<T, n>` as a
+parameter, a `let`-bound holder over either run, and a run reached through a
+shared borrow of the nominal that owns it all reach the borrow through one path:
+a run's storage lives in its owner, so a borrow of it is the address of that
+storage exactly as a borrow of a struct is, and the holder's `deref` resolves to
+the same measured place the deref-free path forms. A run holder written where
+the run itself is required is [TYPE-7]'s missing dereference, as a `buffer`
+holder already was.
+**Every acquiring kernel row's allocation-fit obligation is submitted.**
+`heap_vector`, `arena_vector` and `arena_vector_proved` each carry [OP-9]'s
+allocation-fit obligation over their element type and count — the obligation
+[BLK-0]'s record notation spells `fits::<T>(count)` — and it is judged at the
+call through the same path `buffer_new`'s is, so an unconstrained count is the
+ordinary static [OP-9] rejection. `fixed_vector` carries none, its count being a
+type constant, and the two cell rows carry none, taking no count.
+**One declaration may carry both a const generic parameter and a region
+parameter**, the instance being keyed on the const argument while the region is
+substituted positionally from the call's own operands, and **a generic call
+cycle that instantiates the callee at exactly the caller's own parameters
+monomorphizes** — [FN-6] permits it and the call mints no second instance. A
+cycle that derives a *const* argument from the caller's own const parameter has
+an unbounded instance set and still stops as an explicit unsupported capability;
+[FN-6]'s syntactic rule is written over type parameters and does not refuse it.
 
-Beside them stands one source-surface gap the container library needs and this
-compiler does not have: [MSR-3]'s construct, `set`-target, enum-payload and
-destructuring placements, so a measured value renamed by anything but a `let`
-binder loses its measures. A `requires` or `ensures` side is an affine
+[MSR-3]'s placements are per placement and not per depth: a measured value keeps
+its measures across a `let` binder, a `set` target, a construct's field, a
+destructuring binder, an element position and a single-payload enum's arm
+binder, and a struct operand carries the measures of every run beneath it and
+not only its own, so a run two field levels down arrives at its new path with
+what it had. A `requires` or `ensures` side is an affine
 expression [GRAM-4, GRAM-5, MSR-5], a parameter's measure named in an
 `ensures` is its entry datum [MSR-3], and an in-scope const generic is an
 affine atom [MSR-6, INV-1], which together are what let the container
