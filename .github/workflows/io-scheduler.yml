@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments', 'codex/io-storage-experiments', 'codex/io-windows-wake-fix', 'codex/io-pages-experiments', 'codex/io-coroutine-experiments', 'codex/io-allocation-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [coroutine, coroutine-paced]
+        experiment: [allocation]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -56,7 +56,7 @@ jobs:
           ROUNDS: '7'
           WARMUP: '2'
           EXPERIMENT: ${{ matrix.experiment }}
-          CLANG: /usr/bin/clang-20
+          CLANG: /usr/bin/clang-18
           CORO_CXX: /usr/bin/clang++-20
         run: bash research/experiments/io-completion-bench/scheduler-bench.sh bench
       - name: Publish measurement summary
@@ -64,9 +64,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and split1/split2 CPU cohort. Build the same native event engine as C and C++20, then compare manual continuation fields, native stackful calls, heap coroutine children and parent-contained coroutine children. Echo crosses shared scratch and private calloc; paced compute keeps fixed light arrivals and the same owner FIFO/chunks. Retain WF base/small echo and base/chunked/balanced mixed controls, every existing stream case, 48 C++ protocol cases, sanitizer-checked nested destruction and unchanged C baseline code verification. Timings use clang 20 for every form, separate from observers. THP settings are recorded without modification. See the investigation for scope.'
+            echo 'Paired within this job and split1/split2 CPU cohort. Compare caller-owned and accepted-handler-owned initialized WF receive buffers, each with base/small runtime storage. Compile retained caller source with the current compiler and runtime. Cross both per-process THP policies; keep native io_uring, shared epoll, private calloc epoll and private calloc stackful references. Retain byte-checked backpressure/EOF qualification, live smaps/status snapshots and optimized LLVM separately from timed samples. All timings use clang 18, matching the preceding page-policy experiment; no global page settings or container/runtime interfaces change. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt small-check.log balanced-check.log stackful-check.log coroutine-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt small-check.log stackful-check.log allocation-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'

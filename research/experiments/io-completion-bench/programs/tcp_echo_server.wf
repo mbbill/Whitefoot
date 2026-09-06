@@ -97,20 +97,18 @@ fn send_all(send: &uniq TcpSend, source: &buffer<u8>, length: own u64) -> result
   return Ok<unit, IoError>(value: unit);
 }
 
-fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq buffer<u8>) -> result: own u8 reads(listener, permit, scratch), writes(permit, scratch) contract {
-  define room = len(deref(scratch));
-  requires 65536_u64 <= room;
-} {
+fn serve_one(listener: &TcpListener, permit: own HandlePermit) -> result: own u8 reads(listener, permit), writes(permit), allocates(heap) {
   doc "Takes one connection from the listener and returns every chunk the peer sends until the peer stops sending, then releases the pair [SYS-17, SYS-18]. The chunk loop is this connection's own sequential loop; the caller's fixed-trip loop keeps one of these in flight per connection.";
   let outcome = 0_u8;
   region {
     match tcp_accept(permit: move permit, listener: listener) {
       Accepted(connection: link, peer: from) => {
+        let scratch = buffer_new(65536_u64, 0_u8);
         loop @chunks {
           let available = 0_u64;
           let ended = 0_u8;
           region {
-            match receive_next(receive: &uniq link.receive, destination: &uniq deref(scratch), start: 0_u64, end: 65536_u64) {
+            match receive_next(receive: &uniq link.receive, destination: &uniq scratch, start: 0_u64, end: 65536_u64) {
               ReadBytes(next: endpoint) => {
                 set available = endpoint;
               }
@@ -125,7 +123,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
           }
           if ended == 0_u8 {
             region {
-              match send_all(send: &uniq link.send, source: &deref(scratch), length: available) {
+              match send_all(send: &uniq link.send, source: &scratch, length: available) {
                 Ok(value: delivered) => {
                 }
                 Err(error: problem) => {
@@ -151,7 +149,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
 }
 
 command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles), allocates(heap) {
-  doc "The Whitefoot line of the TCP echo workload: listens on the loopback port named by the first argument, serves exactly the number of connections named by the second in a fixed-trip loop the staged permission admits, echoing every byte each peer sends until that peer stops, and exits zero once every connection has closed [PAR-3, SYS-17, SYS-18]. Each iteration owns its scratch and takes its own permit before its accept, so every connection's accept and its whole exchange are in flight at once, one parked callee per connection.";
+  doc "The Whitefoot line of the TCP echo workload: listens on the loopback port named by the first argument, serves exactly the number of connections named by the second in a fixed-trip loop the staged permission admits, echoing every byte each peer sends until that peer stops, and exits zero once every connection has closed [PAR-3, SYS-17, SYS-18]. Each iteration takes its own permit; the callee owns an initialized scratch buffer after accepting its connection, so each exchange can remain in flight until its peer stops sending.";
   let arguments = 0_u64;
   region {
     set arguments = args_count(args: &args);
@@ -197,19 +195,16 @@ command fn main(command.args as args: own Args, command.handles as handles: own 
                 served in 0_u64..count,
                 invariant progress: served <= count
               ) {
-                let scratch = buffer_new(65536_u64, 0_u8);
-                region {
-                  match reserve_handle(factory: &uniq handles) {
-                    Ok(value: accept_permit) => {
-                      let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
-                      if reported == 0_u8 {
-                      } else {
-                        set outcome = reported;
-                      }
+                match reserve_handle(factory: &uniq handles) {
+                  Ok(value: accept_permit) => {
+                    let reported = serve_one(listener: &bound, permit: move accept_permit);
+                    if reported == 0_u8 {
+                    } else {
+                      set outcome = reported;
                     }
-                    Err(error: problem) => {
-                      return exit_status(code: 6_u8);
-                    }
+                  }
+                  Err(error: problem) => {
+                    return exit_status(code: 6_u8);
                   }
                 }
               }

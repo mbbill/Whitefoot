@@ -2935,8 +2935,78 @@ echo, stackful/calloc 1024-peer small echo with four workers, and
 stackful/arena 64-peer large echo with one worker, including clean EOF and
 server exit. Portable qualification uses the explicit dash snapshot prefix;
 it makes no claim about Linux prctl or proc files. The no-policy exec launcher,
-workflow YAML, embedded Bash and runner Bash syntax checks pass. Actual Linux
-policy readback, retained mappings and performance results remain pending CI.
+workflow YAML, embedded Bash and runner Bash syntax checks pass. The Linux
+policy readback, retained mappings and performance results follow below.
+
+### Process page-policy results
+
+Revision `80ffb2c214361f6e54110d6586ea5e1d8c34850d` completes all 588 timing
+rows and 396 live snapshots in Linux job `101571861785`,
+[artifact 9998953575](https://github.com/mbbill/Whitefoot/actions/runs/34064910559/artifacts/9998953575).
+The host is an EPYC 9V74, four logical CPUs on two SMT cores, Linux 6.17,
+clang 18.1.3, glibc 2.39 and 4096-byte base pages. Global THP is `always`,
+2-MiB pages inherit it, and every smaller recorded THP size is `never`.
+Independent analysis verifies every snapshot's process-policy readback and
+recomputes all reported smaps sums. Every disabled snapshot has zero
+AnonHugePages. Native Windows, the canonical gate, native-host checks and the
+ordinary io-bench workflow all pass at this revision.
+
+Live RSS medians below are KiB, over three snapshots with every connection
+open after its checked exchange. Arrows compare process THP permitted to
+disabled on the same host:
+
+| Placement / peers / bytes | WF base | WF small | Manual arena | Stackful calloc | Native io_uring |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| split1 / 64 / 64 | 35540 -> 29460 | 9984 -> 5928 | 5748 -> 1896 | 2520 -> 2520 | 2412 -> 2416 |
+| split1 / 1024 / 64 | 79968 -> 73052 | 61536 -> 53392 | 67208 -> 5756 | 14156 -> 14152 | 12964 -> 7924 |
+| split2 / 64 / 64 | 35680 -> 29596 | 11684 -> 6384 | 5780 -> 1912 | 2648 -> 2652 | 2836 -> 2836 |
+| split2 / 1024 / 64 | 79268 -> 73212 | 61992 -> 53808 | 67240 -> 5772 | 14224 -> 14228 | 13424 -> 8380 |
+| split2 / 64 / 65536 | 36372 -> 30296 | 12604 -> 6992 | 6004 -> 3964 | 4356 -> 4328 | 6556 -> 6240 |
+
+The arena result now has direct mapping evidence. At split2/1024, the first
+permitted snapshot has a 70660-KiB anonymous mapping with 65572 KiB resident,
+including 65536 KiB of AnonHugePages. The corresponding disabled mapping is
+4100 KiB resident, with no huge pages. The same roughly 60-MiB amplification
+appears in every repetition and both placements. Per-connection malloc and
+calloc receive storage have no anonymous huge pages in these snapshots;
+their small-payload live RSS is essentially unchanged. This establishes the
+page-policy cause of the arena's inflated sparse residency on this host; it
+is not evidence that private buffers intrinsically require their full virtual
+size in resident memory.
+
+WF small still has a much larger non-THP allocation. Every base/small
+split2/1024 snapshot contains a 65620-KiB ordinary heap mapping with 46572 KiB
+resident and zero AnonHugePages, under both policies. The first small snapshot's
+other large resident mappings include a sparsely initialized static region
+and three sparse 1-GiB mappings; disabling THP reduces their page amplification
+but leaves the heap unchanged. Native stackful calloc instead has worker
+allocator mappings holding about 8.2 MiB resident in total, plus roughly one
+stack page per connection. Allocation placement remains the next independent
+question: WF allocates buffers in the staged caller; native calloc runs in the
+accepting worker. These maps locate the remaining difference, but do not yet
+prove which allocator path or initialization behavior caused it.
+
+Peak lifetime RSS in the timed rows follows the same large effects. At
+split2/1024, manual arena falls from 67304 to 5804 KiB; WF small from 63084 to
+53752 KiB; stackful calloc stays near 14 MiB. The paired small/calloc RSS
+ratio remains 3.8308 (3.7886..3.8445) with THP disabled. Small's paired
+throughput ratio to that reference is 0.8795 (0.8436..0.9184), and CPU per
+exchange is 1.0894 (1.0519..1.1211): every pass still loses both. At
+split2/64-KiB transfers with THP disabled, every small/calloc throughput pair
+also loses, 0.8625 (0.8470..0.8792), and every p99 pair worsens, 1.3204
+(1.2773..1.6922). Lower page amplification does not close the runtime gap.
+
+Disabling THP is not selected as a universal performance policy. Most
+within-form paired throughput ranges cross parity, including every WF cell.
+For manual arena at split2/64-KiB transfers, disabling it loses every rate
+pair, median 0.9699 (0.8465..0.9835), and increases CPU per exchange, 1.0357
+(1.0088..1.0654). Conversely, manual calloc wins every split2/64-peer rate
+and tail pair under disable, even though its live snapshots show no THP and
+similar memory; timed mappings were not captured and placement/noise remain
+possible factors, so that win is not attributed to huge-page elimination.
+The one-worker small/calloc reference also wins all permitted 1024-peer rate
+and tail pairs (1.0305 and 0.9157 medians). Host/workload dependence remains
+visible; none of these findings supports a universal representation winner.
 
 ## Twenty-sixth experiment: nested coroutine frames in the same native engine
 
@@ -3042,3 +3112,62 @@ There is no coroutine timing result from those failed jobs.
 The corrected commands pass all 48 local protocol cases and both sanitizer
 lifetime probes again. A direct compile-only invocation, without the local
 wrapper's appended objects, also passes with Werror retained.
+
+At corrected revision `2de6c00039243aee98554eabba5143f011991461`, the
+[canonical gate](https://github.com/mbbill/Whitefoot/actions/runs/34066113699)
+passes all fourteen Linux/macOS jobs. Linux scheduler job `101575057169`
+passes the original C stream cases, all 48 C++ cases and both nested-frame
+sanitizer probes (2048/2048 heap allocations/frees; 1024/1024 elided ones).
+Native-host and Windows placement checks also pass. Echo and paced timing
+jobs are still running; qualification success is not a performance result.
+
+## Twenty-seventh experiment: allocation inside the sequential handler
+
+The page experiment locates 46572 KiB of resident memory in the WF process's
+ordinary heap at 1024 small-packet connections, unchanged by disabling THP.
+The native per-worker calloc form instead touches much less private storage.
+One concrete source difference is allocation placement: the WF caller creates
+each 65536-byte initialized buffer and lends it to `serve_one`; the native
+handler allocates on the accepting worker. This suggests an allocator-path
+experiment, but the prior snapshots alone do not establish that mechanism.
+
+The existing `tcp_echo_server.wf` is superseded in place: `serve_one` owns its
+scratch buffer inside the Accepted arm and declares `allocates(heap)`. The
+caller obtains the permit and invokes the same sequential connection loop.
+The scratch parameter and its length precondition disappear because the
+callee now constructs that exact initialized buffer itself. No proof check
+or initialization is weakened. The redundant caller region is removed after
+the compiler rejects it under FORM-8. The outer loop still emits
+`wf__par_publish_staged`; the read-to-EOF and partial-send loops stay sequential.
+
+`make scheduler-allocation` compiles the retained caller source from
+`2de6c00039243aee98554eabba5143f011991461` with the current compiler and links
+the current runtime. Forms base/small use caller ownership; callee/callee-small
+use accepted-handler ownership. Both source files, emitted LLVM and optimized
+LLVM are retained in codegen. This changes allocation timing, descriptor
+placement and the private helper signature together, so a win would support
+the writer form without by itself isolating a particular libc operation.
+It creates no fixed-worker guarantee or container-facing runtime interface.
+
+The Linux panel keeps split1/split2, both per-process THP policies, 64 and 1024
+small-packet peers, and 64 large-packet peers. Four native references remain:
+io_uring, shared-scratch epoll, private-calloc epoll and private-calloc stackful.
+The eight forms produce 672 timed rows over seven passes after two warmups,
+alternating form and cohort order. Three live snapshots per cell produce 288
+smaps/status records under the preceding byte-checked resident protocol.
+All native storage qualification and unchanged C LLVM checks remain enabled.
+Sixteen additional WF backpressure/EOF stream cases qualify both ownership
+forms, both runtime sizes, one/two workers and both page policies before any
+timing. Pure-compute/file timing is not repeated: those sources and the runtime
+are unchanged, and this panel isolates connection-buffer ownership. Clang 18
+is used for every timed form, matching the page experiment; ratios are still
+formed only within this new job, never across hosts.
+
+On M1, a temporary before-accept allocation variant and the selected
+after-accept form both compile and pass eight observed stream cases in total.
+The maintained runner's actual WF build block then produces all four normal
+binaries and four observer companions. All sixteen normal/observed stream
+cases pass with one/four workers, including 2-MiB streams, backpressure,
+half-close and process exit. Both optimized sources retain an initialized
+65536-byte calloc. Runner Bash and workflow YAML/embedded shell checks pass.
+Native Linux allocation placement, residency and timing remain pending.

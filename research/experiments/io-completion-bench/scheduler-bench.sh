@@ -13,8 +13,10 @@ MODE=${1:-bench}
 ROUNDS=${ROUNDS:-7}
 WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
+page_experiment=0
+if [[ $EXPERIMENT == pages || $EXPERIMENT == allocation ]]; then page_experiment=1; fi
 storage_experiment=0
-if [[ $EXPERIMENT == storage || $EXPERIMENT == pages || $EXPERIMENT == coroutine ]]; then storage_experiment=1; fi
+if [[ $EXPERIMENT == storage || $page_experiment == 1 || $EXPERIMENT == coroutine ]]; then storage_experiment=1; fi
 coroutine_experiment=0
 if [[ $EXPERIMENT == coroutine || $EXPERIMENT == coroutine-paced ]]; then coroutine_experiment=1; fi
 CORO_CXX=${CORO_CXX:-$(command -v clang++-20 || command -v clang++)}
@@ -184,8 +186,8 @@ fi
         echo "page_bytes=$(getconf PAGESIZE)"
         getconf GNU_LIBC_VERSION
     fi
-    if [[ $EXPERIMENT == pages || $coroutine_experiment == 1 ]]; then
-        if [[ $EXPERIMENT == pages ]]; then echo 'page_policy=per-process PR_SET_THP_DISABLE=0/1; no global policy changes'; fi
+    if [[ $page_experiment == 1 || $coroutine_experiment == 1 ]]; then
+        if [[ $page_experiment == 1 ]]; then echo 'page_policy=per-process PR_SET_THP_DISABLE=0/1; no global policy changes'; fi
         for setting in /sys/kernel/mm/transparent_hugepage/enabled \
             /sys/kernel/mm/transparent_hugepage/defrag \
             /sys/kernel/mm/transparent_hugepage/hpage_pmd_size \
@@ -224,7 +226,7 @@ if [[ $storage_experiment == 1 || $coroutine_experiment == 1 ]]; then
     awk '$1=="split1" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
 fi
-if [[ $EXPERIMENT == pages ]]; then
+if [[ $page_experiment == 1 ]]; then
     # Both policies inherit the same host setting; disable=0 permits THP,
     # rather than forcing a huge-page allocation. Keep policy in each row.
     awk 'BEGIN {OFS="\t"} {print; $1=$1 "-no-thp"; print}' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
@@ -253,6 +255,7 @@ if [[ $EXPERIMENT == owner ]]; then forms=(base pinned rings owner); fi
 if [[ $EXPERIMENT == owner-paced ]]; then forms=(base ch16384 owner chowner16384); fi
 if [[ $EXPERIMENT == memory ]]; then forms=(base lanes compact small); fi
 if [[ $storage_experiment == 1 ]]; then forms=(base small); fi
+if [[ $EXPERIMENT == allocation ]]; then forms=(base small callee callee-small); fi
 if [[ $EXPERIMENT == dispatch ]]; then forms=(base rings owner balanced); fi
 if [[ $EXPERIMENT == dispatch-paced ]]; then forms=(base ch16384 chowner16384 chbalanced16384); fi
 if [[ $EXPERIMENT == wake ]]; then forms=(base rings balanced quiet); fi
@@ -274,7 +277,7 @@ form_flags() {
     io_reset_turn=1
     if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == memory || $storage_experiment == 1 ]]; then tcp_nodelay=1; fi
     case $1 in
-        base) spin=256; yields=16; progress=0 ;;
+        base|callee) spin=256; yields=16; progress=0 ;;
         pinned) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1 ;;
         rings) spin=256; yields=16; progress=0; owner_rings=1 ;;
         owner|chowner16384) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1; owner_rings=1 ;;
@@ -285,7 +288,7 @@ form_flags() {
         nodelay) spin=256; yields=16; progress=0; tcp_nodelay=1 ;;
         lanes) spin=256; yields=16; progress=0; init_used=1 ;;
         compact) spin=256; yields=16; progress=0; compact_stacks=1 ;;
-        small) spin=256; yields=16; progress=0; compact_stacks=1; init_used=1 ;;
+        small|callee-small) spin=256; yields=16; progress=0; compact_stacks=1; init_used=1 ;;
         cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384) spin=256; yields=16; progress=0 ;;
         local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
@@ -322,7 +325,7 @@ echo_source="$HERE/programs/tcp_echo_server.wf"
 if [[ $network_compute == 1 ]]; then
     echo_source="$HERE/programs/tcp_compute_server.wf"
     programs=(echo)
-elif [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay ]]; then
+elif [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay || $EXPERIMENT == allocation ]]; then
     programs=(echo)
 else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
@@ -334,9 +337,28 @@ if [[ $EXPERIMENT == checkpoint || $EXPERIMENT == chunks || $EXPERIMENT == canon
     "$WFC" --par --emit-llvm -o "$OUT/mixed.ll" "$HERE/programs/windows_runtime_mixed.wf"
 fi
 "$WFC" --par --emit-llvm -o "$OUT/echo.ll" "$echo_source"
+if [[ $EXPERIMENT == allocation ]]; then
+    # Isolate where the sequential source owns its receive buffer. Compile
+    # the retained caller-owned source with this compiler and this runtime.
+    allocation_baseline=2de6c00039243aee98554eabba5143f011991461
+    mkdir -p "$OUT/codegen"
+    git -C "$ROOT" show "$allocation_baseline:research/experiments/io-completion-bench/programs/tcp_echo_server.wf" > "$OUT/codegen/echo-caller.wf"
+    cp "$echo_source" "$OUT/codegen/echo-callee.wf"
+    "$WFC" --par --emit-llvm -o "$OUT/echo-caller.ll" "$OUT/codegen/echo-caller.wf"
+    for placement in caller callee; do
+        module="$OUT/echo.ll"
+        if [[ $placement == caller ]]; then module="$OUT/echo-caller.ll"; fi
+        grep -q 'call void @wf__par_publish_staged' "$module"
+        cp "$module" "$OUT/codegen/echo-$placement.ll"
+        "$CLANG" -O2 -S -emit-llvm -x ir "$module" -Wno-override-module \
+            -o "$OUT/codegen/echo-$placement-opt.ll"
+    done
+    echo "allocation_baseline=$allocation_baseline base/small=caller callee/callee-small=accepted-handler" >> "$OUT/host.txt"
+fi
 for policy in "${forms[@]}"; do
     for program in "${programs[@]}"; do
         module="$OUT/$program.ll"
+        if [[ $EXPERIMENT == allocation && $program == echo && ( $policy == base || $policy == small ) ]]; then module="$OUT/echo-caller.ll"; fi
         if [[ $policy == cq* || $policy == ch* || $policy == old* ]]; then
             case $program in
                 echo) source="$echo_source" ;;
@@ -372,6 +394,7 @@ for policy in "${forms[@]}"; do
         fi
     done
     module="$OUT/echo.ll"
+    if [[ $EXPERIMENT == allocation && ( $policy == base || $policy == small ) ]]; then module="$OUT/echo-caller.ll"; fi
     if [[ $policy == cq* || $policy == ch* || $policy == old* ]]; then module="$OUT/echo-$policy.ll"; fi
     link_form "$module" "$OUT/bin/echo-$policy-observed" "$policy" 1
     if [[ ( $EXPERIMENT == chunks && ( $policy == cq16384 || $policy == ch16384 ) ) || ( $EXPERIMENT == canonical && ( $policy == old16384 || $policy == ch16384 ) ) ]]; then
@@ -574,7 +597,7 @@ network_case() {
         f16384)
             binary="$OUT/bin/epoll_stackful_quantum"
             arguments=(--threads "$server_workers" --quantum 16384) ;;
-        servicepoll16|service16|service1|chservicepoll16|chservice16|chservice1|base|nodelay|pinned|rings|owner|chowner16384|balanced|chbalanced16384|quiet|chquiet16384|local|lanes|compact|small|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
+        servicepoll16|service16|service1|chservicepoll16|chservice16|chservice1|base|callee|callee-small|nodelay|pinned|rings|owner|chowner16384|balanced|chbalanced16384|quiet|chquiet16384|local|lanes|compact|small|sleep|short|spin|poll1|poll16|cq1024|cq16384|cq65536|ch1024|ch16384|ch65536|old1024|old16384)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -584,7 +607,7 @@ network_case() {
         binary="$OUT/bin/storage-$form"
         if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
     fi
-    if [[ $EXPERIMENT == pages ]]; then
+    if [[ $page_experiment == 1 ]]; then
         local disabled=0
         if [[ $cohort == *-no-thp ]]; then disabled=1; fi
         environment+=("WF_BENCH_THP_DISABLE=$disabled")
@@ -653,6 +676,7 @@ if [[ $EXPERIMENT == canonical ]]; then references=(q1024 q16384); fi
 if [[ $EXPERIMENT == stackful ]]; then references=(uring epoll fiber); fi
 if [[ $storage_experiment == 1 ]]; then references=(uring epoll epoll-arena epoll-malloc epoll-calloc fiber fiber-arena fiber-malloc fiber-calloc); fi
 if [[ $EXPERIMENT == pages ]]; then references=(epoll epoll-arena epoll-malloc epoll-calloc fiber-calloc); fi
+if [[ $EXPERIMENT == allocation ]]; then references=(uring epoll epoll-calloc fiber-calloc); fi
 if [[ $EXPERIMENT == stackful-paced ]]; then references=(epoll fiber q16384 f16384); fi
 if [[ $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then references=(epoll q16384); fi
 if [[ $EXPERIMENT == nodelay ]]; then references=(uring uring-nagle epoll epoll-nagle); fi
@@ -661,6 +685,22 @@ if [[ $EXPERIMENT == coroutine ]]; then
 fi
 if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-stackful cpp-heap cpp-elide); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
+    if [[ $EXPERIMENT == allocation ]]; then
+        disabled=0
+        if [[ $cohort == *-no-thp ]]; then disabled=1; fi
+        for form in "${forms[@]}"; do
+            # Exercise short sends, fragmented streams and EOF before timing
+            # either ownership placement. Observers do not enter timed runs.
+            log="$OUT/observed/$cohort-$form-stream.log"
+            if ! taskset -c "$client_cpus" env "WF_WORKERS=$server_workers" WF_STACKS=1100 WF_SCHED_REPORT=1 \
+                "WF_BENCH_THP_DISABLE=$disabled" "WF_BENCH_SERVER_CPUS=$server_cpus" \
+                "$OUT/bin/stream_check" "$OUT/bin/echo-$form-observed" echo "$server_workers" > "$log" 2>&1; then
+                cat "$log" >&2
+                exit 1
+            fi
+            cat "$log" >> "$OUT/allocation-check.log"
+        done
+    fi
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do
             preflight_observed=0
@@ -707,8 +747,8 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
         if [[ $EXPERIMENT == memory || $storage_experiment == 1 ]]; then
             compact=0
             used=0
-            if [[ $form == compact || $form == small ]]; then compact=1; fi
-            if [[ $form == lanes || $form == small ]]; then used=1; fi
+            if [[ $form == compact || $form == small || $form == callee-small ]]; then compact=1; fi
+            if [[ $form == lanes || $form == small || $form == callee-small ]]; then used=1; fi
             awk -v compact="$compact" -v used="$used" '
                  /^sched:|^ring:/ { for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
                  END { exit !(value["tcp_nodelay"]==1 && ("compact_stacks" in value) &&
@@ -779,19 +819,21 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
     done
 done < "$OUT/cohorts.tsv"
 
-if [[ $EXPERIMENT == pages ]]; then
+if [[ $page_experiment == 1 ]]; then
     mkdir -p "$OUT/resident"
     printf 'repetition\tcohort\tform\tconnections\tbytes\tthp_disabled\trss_kib\tanonymous_kib\tanon_huge_kib\tprivate_dirty_kib\tswap_kib\n' > "$OUT/resident.tsv"
     # Same normal binaries as timing, with all peers held open after a checked
     # exchange. Include every storage/representation control for attribution;
     # the timed panel below keeps only the controls needed for the page test.
+    resident_forms=(base small uring epoll epoll-arena epoll-malloc epoll-calloc fiber fiber-arena fiber-malloc fiber-calloc)
+    if [[ $EXPERIMENT == allocation ]]; then resident_forms=("${forms[@]}" "${references[@]}"); fi
     for repetition in 0 1 2; do
       while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
         disabled=0
         if [[ $cohort == *-no-thp ]]; then disabled=1; fi
-        for form in base small uring epoll epoll-arena epoll-malloc epoll-calloc fiber fiber-arena fiber-malloc fiber-calloc; do
+        for form in "${resident_forms[@]}"; do
           binary="$OUT/bin/storage-$form"
-          if [[ $form == base || $form == small ]]; then binary="$OUT/bin/echo-$form"; fi
+          if [[ $form == base || $form == small || $form == callee || $form == callee-small ]]; then binary="$OUT/bin/echo-$form"; fi
           if [[ $form == uring ]]; then binary="$OUT/bin/uring_echo"; fi
           for resident_case in '64 64' '1024 64' '64 65536'; do
             read -r connections bytes <<< "$resident_case"
@@ -844,7 +886,7 @@ fi
 if [[ $EXPERIMENT == inline || $EXPERIMENT == footprint || $EXPERIMENT == stackful || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == memory || $storage_experiment == 1 ]]; then
     printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == pages ]]; then
+if [[ $page_experiment == 1 ]]; then
     awk '$1>=64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
@@ -892,7 +934,7 @@ for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     order=("${forward[@]}")
     if (( (pass + WARMUP) % 2 )); then order=("${reverse[@]}"); fi
     cp "$OUT/cohorts.tsv" "$OUT/cohorts-order.tsv"
-    if [[ $EXPERIMENT == pages ]] && (( (pass + WARMUP) % 2 )); then
+    if [[ $page_experiment == 1 ]] && (( (pass + WARMUP) % 2 )); then
         # Alternate which policy runs first as well as representation order.
         tac "$OUT/cohorts.tsv" > "$OUT/cohorts-order.tsv"
     fi
