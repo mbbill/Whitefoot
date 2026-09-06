@@ -17,6 +17,24 @@
 //!   writes one fixed record naming only the resource class. The record
 //!   carries no `rule_id`, no function, and no node path.
 //!
+//! **What stays on the retiring surface here, and why.** Two groups.
+//!
+//! The *allocation-refusal* fixtures are the buffer's own abort edge:
+//! `buffer_new` and `box_new` have no refusal value, so an allocation the host
+//! cannot satisfy reaches `wf_resource_abort()` and that abort is the subject
+//! under test. A store take hands back an `Option` and a cell a `Result`
+//! [BLK-2, S39], so the refusal is an arm of the source program and there is
+//! no abort edge for these assertions to name; migrating them would mean
+//! deleting them. They retire with the rows whose edge they pin.
+//!
+//! The *cycle* fixtures do have a twin, and `stack_ledger`'s
+//! `Box<'s, Tree<'s>>` rewrite proved it: a recursive release walk over cells
+//! at a store is the same walk over `box<T>`. They are not migrated here
+//! because each is a whole-program fixture whose depth, frame sizes and
+//! emitted-symbol counts are calibrated to the retiring layout, and a store
+//! surface changes every one of those figures; re-deriving them is the
+//! retirement batch's own work, on the retirement's own evidence.
+//!
 //! The record's bytes are fixed by two independent constraints that happen to
 //! agree. A signal handler may only reach async-signal-safe facilities, which
 //! admits a constant string written with `write` and essentially nothing else;

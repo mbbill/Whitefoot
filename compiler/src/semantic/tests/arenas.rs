@@ -1,3 +1,20 @@
+//! The retiring `arena<'r, T>` value form, and the run judgments that
+//! outlive it.
+//!
+//! Every case here whose fixture still names `arena<'r, T>` or `arena_new` is
+//! a case whose **subject is that type**: [STOR-4]'s result refusal,
+//! [OWN-10]'s region rejections over arena content, the ordinary-borrow
+//! classification of an arena `deref`, the delivery refusal at a region
+//! block's edge, the written-content-type check on `arena_new`'s operand, and
+//! the explicit runtime gate every arena program still stops at. None has a
+//! run twin, because the run surface has no value of that shape at all: a
+//! bump extent is a *store* [BLK-2, PROV-1], its takes are `Vector<'s, T>`
+//! and `Box<'s, T>`, and the judgments those carry are tested next door. They
+//! retire with the type rather than migrating onto it.
+//!
+//! What does not retire with it is the last case, which reads a run's release
+//! class off its store region's declaration; it is on the run surface already.
+
 use crate::{SemanticIssueKind, SemanticOutcome, SemanticRule, UnsupportedSemanticFeature};
 
 use super::{assert_rule, assert_rule_kind, assert_unsupported, with_semantics};

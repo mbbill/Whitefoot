@@ -1,4 +1,4 @@
-fn scaled(out: &uniq buffer<u8>, src: own buffer<u8>) -> written: own u64 pure contract {
+fn scaled(out: &uniq MutSlice<u8>, src: own Slice<u8>) -> written: own u64 pure contract {
   define room = len_of(deref(out));
   define count = len_of(src);
   define needed = count * 2_u64;
@@ -9,10 +9,45 @@ fn scaled(out: &uniq buffer<u8>, src: own buffer<u8>) -> written: own u64 pure c
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let src = buffer_new(4_u64, 0_u8);
-  let out = buffer_new(8_u64, 0_u8);
-  region {
-    let n = scaled(out: &uniq out, src: move src);
+  doc "The destination and the source cross as views, which is what [BLK-4] admits of a run, and a view's own measure row is what the clause reads [VIEW-1, MSR-1]. A run carries its length as a descriptor word rather than as a fact of its type, so the caller reads both lengths back and branches on them before the call; the view formations publish those same lengths onto the two views, and the affine clause is discharged from them.";
+  region 'a {
+    let workspace = arena_frame::<16, 1, 'a>();
+    region {
+      let src_run = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_src (
+        at in 0_u64..4_u64,
+        invariant grown_src: len_of(src_run) >= at,
+        invariant spare_src: room_of(src_run) + at >= 4_u64,
+        invariant flat_src: head_of(src_run) <= 0_u64
+      ) {
+        set src_run = place_back(vector: move src_run, value: 0_u8);
+      }
+      let out_run = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+      for @fill_out (
+        at in 0_u64..8_u64,
+        invariant grown_out: len_of(out_run) >= at,
+        invariant spare_out: room_of(out_run) + at >= 8_u64,
+        invariant flat_out: head_of(out_run) <= 0_u64
+      ) {
+        set out_run = place_back(vector: move out_run, value: 0_u8);
+      }
+      let out_length = len_of(out_run);
+      let src_length = len_of(src_run);
+      let wide_enough = out_length >= 8_u64;
+      let short_enough = src_length <= 4_u64;
+      let sized = band(wide_enough, short_enough);
+      if sized {
+        region {
+          let window = mut_slice_of(&uniq out_run);
+          let view = slice_of(&src_run);
+          region {
+            let n = scaled(out: &uniq window, src: view);
+          }
+        }
+      } else {
+        return exit_status(code: 201_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }

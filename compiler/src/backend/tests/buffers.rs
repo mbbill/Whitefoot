@@ -122,8 +122,8 @@ fn a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_
         let host = TargetLayout::host().expect("the backend test runs on a qualified host");
         let system_target = SystemTarget::for_triple(host.triple())
             .expect("the host triple has one qualified system target");
-        let qualification = qualify_program(system_target, program)
-            .expect("the unbounded store take must qualify");
+        let qualification =
+            qualify_program(system_target, program).expect("the unbounded store take must qualify");
         assert_eq!(validate_program(host, &qualification, program), Ok(()));
     });
     let output = compile_and_run(&compile(UNBOUNDED_STORE_TAKE));

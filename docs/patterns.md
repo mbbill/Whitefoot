@@ -83,9 +83,11 @@ in-place writes. Those are unrepresentable here BY DESIGN.
 ## P2. Struct-of-arrays pool (append-only, index-linked)
 
 Problem: many homogeneous-ish nodes with cross-references (AST, graph, ECS).
-Pattern: one struct of parallel `buffer<T>` columns plus a count; a node is a
-`u64` index; construction appends through `&uniq`; indices never recycle; the
-whole pool drops at once. Current v0.17 executable reference for the
+Pattern: one struct of parallel `Vector<'s, T>` columns plus a count; a node is
+a `u64` index; indices never recycle; the whole pool drops at once. Appends go
+**by value**: [BLK-4] refuses a `&uniq` parameter whose referent reaches a run,
+so a helper that grows a column takes the column and returns it, or is handed a
+view of it and writes elements through that. Current v0.17 executable reference for the
 fixed-capacity append-only shape:
 `tests/conformance/cases/x-borrowed-pool-tree-run.wf`.
 Current value: contiguous per-field columns improve locality and avoid
@@ -100,12 +102,13 @@ well-typed UAF).
 
 Problem: interleaved lifetimes vs bulk free — arenas leak if everything lives
 in one region.
-Pattern: nest regions by phase (request -> pass -> sub-pass); allocate into
-the innermost suitable region with `arena_new::<'r, T>(value)`. The returned
-`arena<'r, T>` stays inside that region, and `deref` reads its content. The
-compiler rejects an arena value that leaves the region rather than promoting
-it implicitly. A value that truly needs a different lifetime therefore belongs
-in that region from the start or uses another owned storage form such as `box`.
+Pattern: nest regions by phase (request -> pass -> sub-pass); reserve one bump
+extent per phase with `arena_frame::<bytes, align, 'r>()` [BLK-2] and take from
+the innermost suitable one. A value taken from an extent is branded with that
+extent's region and stays inside it: [BLK-4] refuses a destination the value
+could outlive, rather than promoting it implicitly. A value that truly needs a
+different lifetime therefore belongs in an outer extent from the start, or at
+the general store, whose provider is the entry's own `command.heap` input.
 A single value at a store is `Box<'s, T>` [S39], formed by `heap_box(store: h,
 value: e)` or `arena_box(store: a, value: e)`: the call writes no type or region
 argument, its outcome is `Result<Box<'s, T>, T>` whose `Err` arm hands the value
@@ -479,9 +482,13 @@ Pattern: construct the per-iteration scratch **inside** the loop body.
 
 ```whitefoot
 for @scan (index in 0_u64..8192_u64) {
-  let name = buffer_new(16_u64, 0_u8);
-  let data = buffer_new(65536_u64, 0_u8);
-  let rendered = name_at(name: &uniq name, index: index);
+  region 'iteration {
+  let workspace = arena_frame::<65552, 8, 'iteration>();  // reserved and reset per iteration
+  let name = arena_vector_proved::<u8>(store: &uniq workspace, count: 16_u64);
+  let data = arena_vector_proved::<u8>(store: &uniq workspace, count: 65536_u64);
+  /* fill both to capacity with counted `place_back` appends */
+  let window = mut_slice_of(&uniq name);
+  let rendered = name_at(destination: &uniq window, index: index);
   region 'f {
     match reserve_handle(factory: &uniq files) {
       Ok(value: permit) => {
@@ -496,8 +503,15 @@ for @scan (index in 0_u64..8192_u64) {
       Err(error: spent) => { break; }   // the factory is out of credits: leave before any submission
     }
   }
+  }
 }
 ```
+
+The extent is the store whose release is empty [BLK-2], so nothing gives storage
+back in the remainder and the take stays in the prologue. A per-iteration run
+taken from the **general** store is denied instead: its release spends that
+store's own capability on the iteration's own exit [PROV-6, STOR-1], which puts
+the store on both sides of the cut.
 
 Three companion rules make the rest of that body work, and each is a form to
 copy rather than a fact to rediscover:
@@ -664,7 +678,7 @@ storage** [MSR-2] — the measure words the value carries — together with ever
 holder a prefix of `P` reads through and the support of every offset in `P`. An
 element write overlaps the descriptor storage of the written element and none of
 `P`'s own, so it kills no measure of `P`. Only a write to `P`'s own descriptor
-storage or to a prefix of it — a fresh `buffer_new`, a `set` of the whole
+storage or to a prefix of it — a fresh take from a store, a `set` of the whole
 binding, a `replace` of `P` — kills it.
 
 At a call the transports decide which of those two a projected callee write is:
@@ -677,9 +691,11 @@ At a call the transports decide which of those two a projected callee write is:
   copy one: a `Slice` handed at an `own` parameter leaves the caller's place and
   its facts standing, which is what lets a view-taking helper be called in a
   loop [CALL-2];
-- **every other `&uniq` parameter** — a `&uniq buffer<T>` among them — selects
-  no transport and kills the actual's descriptor storage, whatever the callee's
-  body does [CALL-5].
+- **every other `&uniq` parameter** — a `&uniq Heap<'s>` or a
+  `&uniq Arena<'s, ...>` provider among them — selects no transport and kills
+  the actual's descriptor storage, whatever the callee's body does [CALL-5]. A
+  run is never in this bullet: [BLK-4] refuses a `&uniq` parameter that reaches
+  one at all.
 
 So the helper that fills a caller's storage without costing it the length takes
 `destination: &uniq MutSlice<u8>`, and the caller forms the view:
@@ -958,7 +974,8 @@ loop's own buffer with an element `set` under one length fact above the loop
 outside the loop being taken in index order.
 
 ```whitefoot
-let page = buffer_new(8_u64, 0_u8);
+let page = arena_vector_proved::<u8>(store: &uniq workspace, count: 8_u64);
+/* fill it to capacity with eight counted `place_back` appends */
 let spare = len_of(page);
 for @scan (index in 0_u64..8_u64) {
   /* reserve, open, and read into the iteration's own data buffer */
@@ -1165,7 +1182,8 @@ Status: active in v0.44. Two of its rules decide one writer choice together.
 
 Problem: a helper receives a run, does something with it, and the caller
 afterwards needs to know a measure of what it got back. The reflex is to lend
-the run — `fn fill(destination: &uniq buffer<u8>, ...)` — and publish the
+the run — `fn fill(destination: &uniq Vector<'s, u8>, ...)`, which [BLK-4]
+refuses outright — and publish the
 measure from the callee: `ensures written <= len_of(deref(destination));`. That
 clause is a claim about a caller's object at a point the callee cannot name,
 because the callee may have replaced the very thing the measure describes, and
@@ -1175,11 +1193,11 @@ Pattern: take the value by value and relate the *result*; state the fact the
 caller must supply as a `requires` instead of an `ensures`.
 
 ```whitefoot
-fn size_of(taken: own buffer<u8>) -> measured: own u64 reads(taken) contract {
+fn size_of['s](taken: own Vector<'s, u8>) -> measured: own u64 reads(taken) contract {
   ensures measured == len_of(taken);
 } { ... }
 
-let run = buffer_new(8_u64, 0_u8);
+let run = /* one take from a store, matched on its refusal */;
 let measured = size_of(taken: move run);
 ```
 
@@ -1301,7 +1319,7 @@ holds every run it ever built.
 Pattern: run the release where the value stops being needed.
 
 ```whitefoot
-let run = buffer_new(4_u64, 0_u8);
+let run = /* one take from the general store, matched on its refusal */;
 let first = run[0_u64];
 dispose run;
 ```
