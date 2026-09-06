@@ -979,6 +979,33 @@ impl DerivationLedger {
         id
     }
 
+    /// Whether one proof is already the materialization of exactly this bound.
+    ///
+    /// A snapshot re-materializes every bound the state carries, and most of
+    /// them are the bounds the previous snapshot materialized, unchanged. A
+    /// second wrapper over such a proof records nothing the first does not:
+    /// it is the same fact, with the same value, made independently live at
+    /// an earlier point, and the earlier point is the honest one. Reusing it
+    /// is what keeps a body of many measured commits from interning one node
+    /// per bound per kill.
+    pub(crate) fn materializes_bound(
+        &self,
+        proof: DerivationId,
+        left: TermId,
+        right: TermId,
+        bound: i128,
+    ) -> bool {
+        matches!(
+            self.nodes.get(proof.0 as usize),
+            Some(DerivationNode::MaterializedBound {
+                left: recorded_left,
+                right: recorded_right,
+                bound: recorded_bound,
+                ..
+            }) if *recorded_left == left && *recorded_right == right && *recorded_bound == bound
+        )
+    }
+
     pub(crate) fn intern(&mut self, node: DerivationNode) -> DerivationId {
         let key = match self.probe_intern(&node) {
             Ok(id) => return id,
@@ -3803,6 +3830,35 @@ pub(crate) fn materialize_closure_before_kill(
     *state = materialize_closure_at(state, terms, goals, ledger, event);
 }
 
+/// The proof one snapshot files for one closed bound.
+///
+/// A bound whose closure proof is already the materialization of that same
+/// bound was made independently live at an earlier snapshot and has not moved
+/// since; wrapping it again would mint one node per bound per snapshot, which
+/// over a body of many measured commits is quadratic in the term count and
+/// linear in the number of kills. The earlier node is the same fact with the
+/// same value and an earlier — that is, more honest — point of independence,
+/// so it is reused.
+fn materialized_bound_proof(
+    ledger: &mut DerivationLedger,
+    left: TermId,
+    right: TermId,
+    bound: i128,
+    event: FlowEventId,
+    parent: DerivationId,
+) -> DerivationId {
+    if ledger.materializes_bound(parent, left, right, bound) {
+        return parent;
+    }
+    ledger.intern(DerivationNode::MaterializedBound {
+        left,
+        right,
+        bound,
+        event,
+        parent,
+    })
+}
+
 /// Materializes the [ENT-4] least closure as a live flow state.
 ///
 /// Ordinary queries can keep closure as an ephemeral view. S11 instead fixes
@@ -3833,13 +3889,8 @@ pub(crate) fn materialize_closure_at(
     bound_keys.sort_unstable();
     for (left, right) in bound_keys {
         let bound = closed.bounds[&(left, right)];
-        let proof = ledger.intern(DerivationNode::MaterializedBound {
-            left,
-            right,
-            bound,
-            event,
-            parent: closed.bound_proofs[&(left, right)],
-        });
+        let parent = closed.bound_proofs[&(left, right)];
+        let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
         bound_proofs.insert((left, right), proof);
     }
     let mut distinct_proofs = HashMap::new();
@@ -3911,13 +3962,8 @@ pub(crate) fn materialize_closure_at(
         keys.sort_unstable();
         for (left, right) in keys {
             let bound = ordinary_closed.bounds[&(left, right)];
-            let proof = ledger.intern(DerivationNode::MaterializedBound {
-                left,
-                right,
-                bound,
-                event,
-                parent: ordinary_closed.bound_proofs[&(left, right)],
-            });
+            let parent = ordinary_closed.bound_proofs[&(left, right)];
+            let proof = materialized_bound_proof(ledger, left, right, bound, event, parent);
             materialized.add_bound(left, right, bound, proof, ledger);
         }
         let mut keys = ordinary_closed.distinct.iter().copied().collect::<Vec<_>>();
@@ -4337,6 +4383,61 @@ mod tests {
                 .keys()
                 .all(|(left, right)| *left != middle && *right != middle),
             "the killed endpoint itself must not survive pre-kill closure"
+        );
+    }
+
+    /// A snapshot re-materializes every bound the state carries, and a body
+    /// of many measured commits takes one snapshot per kill over a fact state
+    /// whose bounds are quadratic in its terms. Wrapping an unchanged bound's
+    /// existing materialization in a second one at every snapshot is one
+    /// derivation node per bound per kill and nothing else, so the existing
+    /// node is reused and the ledger stops growing with the number of kills.
+    #[test]
+    fn a_later_snapshot_reuses_the_materialization_of_an_unchanged_bound() {
+        let mut terms = TermTable::new();
+        let mut place = |binding| {
+            terms.intern(TermKind::Place(
+                super::super::term::PlaceTerm {
+                    root: super::super::term::PlaceRoot::Binding(BindingId(binding)),
+                    deref: false,
+                    fields: Vec::new(),
+                },
+                IntegerType::U8,
+            ))
+        };
+        let left = place(0);
+        let right = place(1);
+        let mut ledger = DerivationLedger::default();
+        let event = ledger.event(FlowEventKind::S1, None);
+        let mut state = FactState::new();
+        state.establish(
+            &Relation::Bound {
+                left,
+                right,
+                bound: 0,
+            },
+            &mut ledger,
+            event,
+        );
+
+        let goals = GoalTable::default();
+        let first = ledger.event(FlowEventKind::Snapshot, None);
+        let once = materialize_closure_at(&state, &terms, &goals, &mut ledger, first);
+        let after_one = ledger.nodes.len();
+        let second = ledger.event(FlowEventKind::Snapshot, None);
+        let twice = materialize_closure_at(&once, &terms, &goals, &mut ledger, second);
+
+        assert_eq!(once.bounds[&(left, right)], 0);
+        assert_eq!(twice.bounds[&(left, right)], 0);
+        assert_eq!(
+            once.bound_proofs[&(left, right)],
+            twice.bound_proofs[&(left, right)],
+            "an unchanged bound keeps the materialization it already had"
+        );
+        assert_eq!(
+            ledger.nodes.len(),
+            after_one,
+            "a second snapshot over an unchanged state interns no further bound node"
         );
     }
 
