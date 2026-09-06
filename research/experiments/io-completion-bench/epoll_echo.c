@@ -33,14 +33,36 @@
  * connection table is indexed by descriptor, each connection owns one pending
  * buffer for the remainder of a short write, and each thread owns one receive
  * buffer. The storage experiment can instead receive into private arena slices
- * or allocate a buffer on accept and free it on close. No policy allocates per
- * receive or send. */
+ * or allocate a buffer on accept and free it on close. No storage policy
+ * allocates buffers per receive or send. The coroutine comparison separately
+ * measures heap-allocated versus parent-contained nested call frames. */
 #include <errno.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdint.h>
+#if defined(__cplusplus)
+#include <atomic>
+using std::atomic_load_explicit;
+using std::atomic_store_explicit;
+using std::atomic_fetch_add_explicit;
+using std::atomic_exchange_explicit;
+using std::memory_order_relaxed;
+typedef std::atomic<uint64_t> wf_atomic_u64;
+typedef std::atomic<int> wf_atomic_int;
+#else
+#include <stdatomic.h>
+typedef _Atomic uint64_t wf_atomic_u64;
+typedef _Atomic int wf_atomic_int;
+#endif
+#if defined(WF_BENCH_COROUTINE)
+#if !defined(__cplusplus) || !defined(WF_BENCH_STACKFUL)
+#error "The coroutine comparison requires C++20 and the sequential handler engine"
+#endif
+#include <coroutine>
+#include <utility>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,7 +74,9 @@
 
 #if defined(WF_BENCH_STACKFUL)
 #include <sys/mman.h>
+#if !defined(WF_BENCH_COROUTINE)
 #include "../../../compiler/src/backend/sched/switch.h"
+#endif
 #endif
 
 #if defined(WF_BENCH_COMPUTE)
@@ -98,6 +122,9 @@ struct connection {
 #if defined(WF_BENCH_STACKFUL)
     struct worker *owner;
     void *saved_sp;
+#if defined(WF_BENCH_COROUTINE)
+    void *resume;
+#endif
     int descriptor;
     int done;
 #else
@@ -152,14 +179,14 @@ static unsigned descriptor_capacity;
 static struct connection *table;
 static struct worker *workers;
 static unsigned char *pending_memory;
-#if defined(WF_BENCH_STACKFUL)
+#if defined(WF_BENCH_STACKFUL) && !defined(WF_BENCH_COROUTINE)
 static unsigned char *stack_memory;
 static size_t stack_stride;
 #endif
-static _Atomic uint64_t accepted_total;
-static _Atomic uint64_t closed_total;
-static _Atomic int finished;
-static _Atomic int failed;
+static wf_atomic_u64 accepted_total;
+static wf_atomic_u64 closed_total;
+static wf_atomic_int finished;
+static wf_atomic_int failed;
 #if defined(WF_BENCH_QUANTUM)
 static uint64_t option_quantum = 16384;
 #endif
@@ -257,7 +284,9 @@ static void enqueue(struct worker *worker, int descriptor) {
 }
 #endif
 
-#if defined(WF_BENCH_STACKFUL)
+#if defined(WF_BENCH_COROUTINE)
+#include "epoll_coroutine.h"
+#elif defined(WF_BENCH_STACKFUL)
 #include "epoll_stackful.h"
 #else
 /* Drives one connection as far as it will go without blocking: flush what a
@@ -447,9 +476,9 @@ static void accept_ready(struct worker *worker) {
 #endif
 #if WF_BENCH_RECEIVE_STORAGE >= 2
 #if WF_BENCH_RECEIVE_STORAGE == 3
-        link->pending = calloc(1u, TRANSFER_BYTES);
+        link->pending = (unsigned char *)calloc(1u, TRANSFER_BYTES);
 #else
-        link->pending = malloc(TRANSFER_BYTES);
+        link->pending = (unsigned char *)malloc(TRANSFER_BYTES);
 #endif
         if (link->pending == NULL) {
             fprintf(stderr, "epoll_echo: out of memory for connection receive storage\n");
@@ -463,8 +492,24 @@ static void accept_ready(struct worker *worker) {
         link->owner = worker;
         link->descriptor = descriptor;
         link->done = 0;
+#if defined(WF_BENCH_COROUTINE)
+        auto task = connection_main(link);
+        link->saved_sp = task.release();
+        link->resume = link->saved_sp;
+        if (link->saved_sp == NULL) {
+            link->active = 0;
+#if WF_BENCH_RECEIVE_STORAGE >= 2
+            free(link->pending);
+            link->pending = NULL;
+#endif
+            close(descriptor);
+            mark_failed();
+            return;
+        }
+#else
         link->saved_sp = wf_switch_prepare(stack_memory + ((size_t)descriptor + 1u) * stack_stride,
                                           connection_main, link);
+#endif
 #else
         link->offset = 0;
         link->length = 0;
@@ -484,6 +529,12 @@ static void accept_ready(struct worker *worker) {
         registration.data.fd = descriptor;
         if (epoll_ctl(worker->epoll, EPOLL_CTL_ADD, descriptor, &registration) != 0) {
             report("epoll_ctl of a connection", errno);
+#if defined(WF_BENCH_COROUTINE)
+            std::coroutine_handle<>::from_address(link->saved_sp).destroy();
+            link->saved_sp = NULL;
+            link->resume = NULL;
+            link->active = 0;
+#endif
 #if WF_BENCH_RECEIVE_STORAGE >= 2
             free(link->pending);
             link->pending = NULL;
@@ -505,7 +556,7 @@ static void accept_ready(struct worker *worker) {
 }
 
 static void *worker_main(void *raw) {
-    struct worker *worker = raw;
+    struct worker *worker = (struct worker *)raw;
     struct epoll_event events[256];
     while (!atomic_load_explicit(&finished, memory_order_relaxed) &&
            !atomic_load_explicit(&failed, memory_order_relaxed)) {
@@ -628,10 +679,10 @@ int main(int argc, char **argv) {
     raise_descriptor_limit(option_connections + 8 * option_threads);
 
     descriptor_capacity = (unsigned)(option_connections + 8 * option_threads + 64);
-    table = calloc(descriptor_capacity, sizeof *table);
-    workers = calloc(option_threads, sizeof *workers);
+    table = (struct connection *)calloc(descriptor_capacity, sizeof *table);
+    workers = (struct worker *)calloc(option_threads, sizeof *workers);
 #if WF_BENCH_RECEIVE_STORAGE < 2
-    pending_memory = malloc((size_t)descriptor_capacity * TRANSFER_BYTES);
+    pending_memory = (unsigned char *)malloc((size_t)descriptor_capacity * TRANSFER_BYTES);
 #endif
     if (table == NULL || workers == NULL
 #if WF_BENCH_RECEIVE_STORAGE < 2
@@ -646,7 +697,7 @@ int main(int argc, char **argv) {
         table[at].pending = pending_memory + (size_t)at * TRANSFER_BYTES;
     }
 #endif
-#if defined(WF_BENCH_STACKFUL)
+#if defined(WF_BENCH_STACKFUL) && !defined(WF_BENCH_COROUTINE)
     /* Reserve before accepting. Only accepted connections touch a context
      * page; each slot has a low guard and 64 KiB of usable stack. Descriptor
      * reuse is safe because close happens after the final switch returns. */
@@ -655,7 +706,7 @@ int main(int argc, char **argv) {
     size_t usable = (65536u + (size_t)page - 1u) / (size_t)page * (size_t)page;
     stack_stride = usable + (size_t)page;
     if (descriptor_capacity > SIZE_MAX / stack_stride) return 1;
-    stack_memory = mmap(NULL, (size_t)descriptor_capacity * stack_stride, PROT_NONE,
+    stack_memory = (unsigned char *)mmap(NULL, (size_t)descriptor_capacity * stack_stride, PROT_NONE,
                         MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (stack_memory == MAP_FAILED) return 1;
     for (unsigned at = 0; at < descriptor_capacity; at++) {
@@ -669,9 +720,9 @@ int main(int argc, char **argv) {
     for (unsigned at = 0; at < option_threads; at++) {
         struct worker *worker = &workers[at];
         worker->index = (int)at;
-        worker->scratch = malloc(TRANSFER_BYTES);
+        worker->scratch = (unsigned char *)malloc(TRANSFER_BYTES);
 #if defined(WF_BENCH_QUANTUM)
-        worker->queue = malloc((size_t)descriptor_capacity * sizeof *worker->queue);
+        worker->queue = (int *)malloc((size_t)descriptor_capacity * sizeof *worker->queue);
         if (worker->queue == NULL) {
             fprintf(stderr, "epoll_compute: out of memory for ready queue\n");
             return 1;
@@ -709,6 +760,20 @@ int main(int argc, char **argv) {
     for (unsigned at = 0; at < option_threads; at++) {
         pthread_join(workers[at].thread, NULL);
     }
+#if defined(WF_BENCH_COROUTINE)
+    for (unsigned at = 0; at < descriptor_capacity; at++) {
+        if (table[at].saved_sp != NULL) {
+            std::coroutine_handle<>::from_address(table[at].saved_sp).destroy();
+            table[at].saved_sp = NULL;
+        }
+    }
+#if defined(WF_BENCH_OBSERVE)
+    fprintf(stderr, "coroutine: allocations=%llu frees=%llu bytes=%llu\n",
+            (unsigned long long)frame_allocations.load(),
+            (unsigned long long)frame_frees.load(),
+            (unsigned long long)frame_bytes.load());
+#endif
+#endif
     for (unsigned at = 0; at < option_threads; at++) {
 #if defined(WF_BENCH_STACKFUL) && defined(WF_BENCH_OBSERVE)
         fprintf(stderr, "stackful: worker=%u resumes=%llu waits=%llu send_waits=%llu yields=%llu\n", at,
@@ -743,7 +808,7 @@ int main(int argc, char **argv) {
     free(pending_memory);
     free(workers);
     free(table);
-#if defined(WF_BENCH_STACKFUL)
+#if defined(WF_BENCH_STACKFUL) && !defined(WF_BENCH_COROUTINE)
     munmap(stack_memory, (size_t)descriptor_capacity * stack_stride);
 #endif
     if (broken || accepted < option_connections || closed < option_connections) {

@@ -2937,3 +2937,95 @@ server exit. Portable qualification uses the explicit dash snapshot prefix;
 it makes no claim about Linux prctl or proc files. The no-policy exec launcher,
 workflow YAML, embedded Bash and runner Bash syntax checks pass. Actual Linux
 policy readback, retained mappings and performance results remain pending CI.
+
+## Twenty-sixth experiment: nested coroutine frames in the same native engine
+
+The exploratory C++ coroutine control retained a heap allocation in each
+nested send-response call. Before using it as a performance reference, test
+whether the compiler can put the child state inside its parent. Clang's
+[`coro_await_elidable` attribute](https://clang.llvm.org/docs/AttributeReference.html#coro-await-elidable)
+allows this for directly awaited coroutine calls when the child cannot outlive
+its caller. This is a lifetime promise, not a request to ignore a failed
+allocation or abandon an unfinished child. The prototype already gives each
+parent exclusive ownership of its nested task; destroying a suspended parent
+first destroys the owned child and then frees the parent's storage.
+
+On Apple clang 21 at O2, that hint removes the nested allocation sites from
+the normal, unobserved LLVM. Echo changes from a 72-byte root plus a 104-byte
+allocation per send-response call to a single 176-byte root. The quantum
+compute form changes from an 88-byte root plus 64-byte receive and 104-byte
+send children to one 256-byte root. These are this compiler's frame sizes,
+not ABI constants or guaranteed sizes on Linux. The observed four-connection
+backpressure check changes from 136..139 allocations to four; fragmented
+compute and quantum cases change from 32 to four. Both direct heap and
+parent-contained forms free every allocation.
+
+The same native engine now compiles as C or C++20 instead of maintaining a
+source copy for each language. C keeps its original atomic types and control
+flow; C++ uses the standard atomic equivalents and explicit pointer casts.
+`epoll_coroutine.h` supplies nested sequential handlers, selected at build time
+alongside the existing manual and stackful handlers. A connection owns one
+root handle and the currently suspended leaf handle. Only its owner worker
+resumes that leaf. Normal completion destroys the root before closing the
+connection; registration failure and worker failure also destroy owned frames
+before freeing their receive storage. The existing accept, edge-triggered
+polling, per-worker FIFO, eight-turn service budget, quantum and byte protocol
+remain shared. The unelided form is retained as an allocation control.
+
+`make coroutine-check` is wired into the Linux portion of the canonical
+scheduler check. It runs 48 C++ protocol cases across manual, stackful, heap
+coroutine and parent-contained coroutine forms: shared/private-calloc echo,
+fragmented compute, quantum compute, truncated requests, and one/four workers.
+It checks allocation/free balance, exactly one elided root per connection,
+actual waits, short-send waits and quantum yields where the workload requires
+them. The original 32 C cases remain wired. `coroutine_lifetime.cpp` also
+creates and destroys 1024 parents while their receive child is suspended;
+both allocation forms run under ASan/UBSan and require exact allocation and
+free counts. The M1 shared-engine run passes all 48 cases and both sanitizer
+runs, with 2048/2048 heap allocations/frees and 1024/1024 elided ones.
+
+The lifetime check does not qualify destruction of a WF kernel I/O loan.
+This native readiness handler suspends after recv returns EAGAIN and leaves
+no buffer address borrowed by an outstanding kernel operation. A completion
+backend still has to retain buffers and records until terminal completion,
+respect join return before reuse, and handle cancellation without shortening
+those lifetimes. Likewise, this reference does not yet implement nested WF
+parallel hand-outs or prove bounded-capacity admission progress.
+
+`make scheduler-coroutine` measures 910 paired echo rows on split1/split2:
+WF base/small, native C io_uring/shared-epoll/calloc-epoll, and C++ manual,
+stackful, heap-coroutine and parent-contained-coroutine forms crossed with
+shared scratch/private calloc. It retains all five prior small/large echo
+cases, seven recorded passes after two warmups, and WF compute/file controls.
+`make scheduler-coroutine-paced` measures 336 paired fixed-arrival rows:
+WF base/chunked/balanced-chunked, C manual quantum, and all four C++ quantum
+representations, on the same two placements and three zero/long-compute
+arrival cases. Heavy completions by deadline and light backlog-inclusive tails
+remain separate metrics. Each CI job is its own host; the two jobs' timings
+must not be combined into cross-host ratios.
+
+Every timed form uses clang 20 in these jobs, including C and WF runtime
+links. Ubuntu 24.04 [packages clang 20](https://documentation.ubuntu.com/ubuntu-for-developers/reference/availability/llvm/);
+the workflow installs it and its sanitizer runtime. Canonical C checks keep
+the usual C compiler, while the new C++ checks require a compiler supporting
+the elision attribute (clang++-20 is selected when installed). Timed and
+observed binaries are separate, their optimized LLVM is retained, the original
+three C manual LLVM comparisons remain mandatory, and THP controls are
+recorded without changing them. Native Linux timing remains pending.
+
+This is evidence for a compact sequential implementation candidate, not a
+selected WF lowering. The C++ control explicitly uses coroutine types and
+co_await. Whether WF can infer an internal suspension representation while
+retaining its current source signatures remains a compiler/ABI design task;
+these measurements alone cannot decide that question or establish a universal
+throughput, memory or tail-latency win.
+
+The updated shared source also passes all 32 original C stream cases on M1,
+and its default C echo/compute/quantum LLVM remains identical to the retained
+manual reference after removing only module filename metadata. The actual
+runner build blocks produce all twelve C++ normal forms, their twelve observed
+companions and optimized modules. Sixteen four-worker protocol runs of those
+unpressured observed companions pass, including exact elided allocation counts
+and truncated-stream exits. Workflow YAML, embedded shell and runner syntax
+checks pass. A registration failure explicitly retires both coroutine handles
+and marks the connection inactive before returning to the event loop.

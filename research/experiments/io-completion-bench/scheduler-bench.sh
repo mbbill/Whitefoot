@@ -14,7 +14,10 @@ ROUNDS=${ROUNDS:-7}
 WARMUP=${WARMUP:-2}
 EXPERIMENT=${EXPERIMENT:-idle}
 storage_experiment=0
-if [[ $EXPERIMENT == storage || $EXPERIMENT == pages ]]; then storage_experiment=1; fi
+if [[ $EXPERIMENT == storage || $EXPERIMENT == pages || $EXPERIMENT == coroutine ]]; then storage_experiment=1; fi
+coroutine_experiment=0
+if [[ $EXPERIMENT == coroutine || $EXPERIMENT == coroutine-paced ]]; then coroutine_experiment=1; fi
+CORO_CXX=${CORO_CXX:-$(command -v clang++-20 || command -v clang++)}
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 
@@ -59,6 +62,7 @@ if [[ $MODE == check ]]; then
     check
     if [[ $(uname -s) == Linux ]]; then
         make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check"
+        make -C "$HERE" coroutine-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/coroutine-check"
     fi
     exit 0
 fi
@@ -66,10 +70,10 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == memory || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $storage_experiment == 1 ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == footprint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $EXPERIMENT == nodelay || $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $EXPERIMENT == memory || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $storage_experiment == 1 || $coroutine_experiment == 1 ]] || exit 2
 network_compute=0
 if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical ]]; then network_compute=1; fi
-if [[ $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then network_compute=1; fi
+if [[ $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
@@ -124,11 +128,12 @@ if [[ $EXPERIMENT == memory || $storage_experiment == 1 ]]; then
     done
 fi
 
-if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then
+if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
     candidates=(pinned rings owner)
     if [[ $EXPERIMENT == dispatch || $EXPERIMENT == dispatch-paced ]]; then candidates=(rings owner balanced); fi
     if [[ $EXPERIMENT == wake || $EXPERIMENT == wake-paced ]]; then candidates=(rings balanced quiet); fi
     if [[ $EXPERIMENT == service || $EXPERIMENT == service-paced ]]; then candidates=(balanced service1 service16 servicepoll16); fi
+    if [[ $EXPERIMENT == coroutine-paced ]]; then candidates=(balanced); fi
     for policy in "${candidates[@]}"; do
         case $policy in
             pinned) candidate_flags='-DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1' ;;
@@ -153,10 +158,17 @@ if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispa
     done
 fi
 
-if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $storage_experiment == 1 ]]; then
+if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $storage_experiment == 1 || $coroutine_experiment == 1 ]]; then
     if ! make -C "$HERE" stackful-check CLANG="$CLANG" WHITEFOOT_SCRATCH_ROOT="$OUT/stream-check" \
         > "$OUT/stackful-check.log" 2>&1; then
         cat "$OUT/stackful-check.log"
+        exit 1
+    fi
+fi
+if [[ $coroutine_experiment == 1 ]]; then
+    if ! make -C "$HERE" coroutine-check CLANG="$CLANG" CORO_CXX="$CORO_CXX" \
+        WHITEFOOT_SCRATCH_ROOT="$OUT/coroutine-check" > "$OUT/coroutine-check.log" 2>&1; then
+        cat "$OUT/coroutine-check.log"
         exit 1
     fi
 fi
@@ -165,14 +177,15 @@ fi
     git -C "$ROOT" rev-parse HEAD
     uname -a
     "$CLANG" --version
+    if [[ $coroutine_experiment == 1 ]]; then "$CORO_CXX" --version; fi
     lscpu
     echo "experiment=$EXPERIMENT rounds=$ROUNDS warmup=$WARMUP"
     if [[ $storage_experiment == 1 ]]; then
         echo "page_bytes=$(getconf PAGESIZE)"
         getconf GNU_LIBC_VERSION
     fi
-    if [[ $EXPERIMENT == pages ]]; then
-        echo 'page_policy=per-process PR_SET_THP_DISABLE=0/1; no global policy changes'
+    if [[ $EXPERIMENT == pages || $coroutine_experiment == 1 ]]; then
+        if [[ $EXPERIMENT == pages ]]; then echo 'page_policy=per-process PR_SET_THP_DISABLE=0/1; no global policy changes'; fi
         for setting in /sys/kernel/mm/transparent_hugepage/enabled \
             /sys/kernel/mm/transparent_hugepage/defrag \
             /sys/kernel/mm/transparent_hugepage/hpage_pmd_size \
@@ -206,7 +219,7 @@ client_two=$(printf '%s\n' "${physical_groups[@]}" | tr ',' '\n' | awk -v a="$se
 printf 'shared4\t4\t4\t%s\t%s\nshared2\t2\t2\t%s\t%s\nsplit2\t2\t2\t%s\t%s\nsplit1\t1\t1\t%s\t%s\n' \
     "$allowed" "$allowed" "$allowed" "$allowed" "$server_two" "$client_two" "$server_one" "$client_one" > "$OUT/cohorts.tsv"
 
-if [[ $storage_experiment == 1 ]]; then
+if [[ $storage_experiment == 1 || $coroutine_experiment == 1 ]]; then
     # Attribute storage on one/two server workers before broader topology work.
     awk '$1=="split1" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
@@ -222,7 +235,7 @@ fi
 forms=(base sleep short spin poll1 poll16)
 if [[ $network_compute == 1 ]]; then
     forms=(base sleep poll1)
-    if [[ $EXPERIMENT != stackful-paced && $EXPERIMENT != owner-paced && $EXPERIMENT != dispatch-paced && $EXPERIMENT != wake-paced && $EXPERIMENT != service-paced ]]; then
+    if [[ $EXPERIMENT != stackful-paced && $EXPERIMENT != owner-paced && $EXPERIMENT != dispatch-paced && $EXPERIMENT != wake-paced && $EXPERIMENT != service-paced && $EXPERIMENT != coroutine-paced ]]; then
         awk '$1=="shared4" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
         mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
     fi
@@ -246,6 +259,7 @@ if [[ $EXPERIMENT == wake ]]; then forms=(base rings balanced quiet); fi
 if [[ $EXPERIMENT == wake-paced ]]; then forms=(base ch16384 chbalanced16384 chquiet16384); fi
 if [[ $EXPERIMENT == service ]]; then forms=(base balanced service1 service16 servicepoll16); fi
 if [[ $EXPERIMENT == service-paced ]]; then forms=(base chbalanced16384 chservice1 chservice16 chservicepoll16); fi
+if [[ $EXPERIMENT == coroutine-paced ]]; then forms=(base ch16384 chbalanced16384); fi
 form_flags() {
     local_inline=0
     init_used=0
@@ -258,7 +272,7 @@ form_flags() {
     local_wake=0
     io_quantum=0
     io_reset_turn=1
-    if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == memory || $storage_experiment == 1 ]]; then tcp_nodelay=1; fi
+    if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == memory || $storage_experiment == 1 ]]; then tcp_nodelay=1; fi
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
         pinned) spin=256; yields=16; progress=0; ready_shards=2; ready_pinned=1 ;;
@@ -372,10 +386,10 @@ for policy in "${forms[@]}"; do
             "$OUT/compute-$policy-observed.err"
     fi
 done
-if [[ $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then
+if [[ $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
     for policy in "${forms[@]}"; do
         reference_module="$OUT/echo-ch16384.ll"
-        if [[ $EXPERIMENT == service-paced ]]; then reference_module="$OUT/echo-chbalanced16384.ll"; fi
+        if [[ $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then reference_module="$OUT/echo-chbalanced16384.ll"; fi
         if [[ $policy == ch* ]]; then cmp "$reference_module" "$OUT/echo-$policy.ll"; fi
     done
 fi
@@ -393,7 +407,7 @@ if [[ $network_compute == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
 fi
-if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then
+if [[ $EXPERIMENT == fairness || $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_quantum"
 fi
@@ -416,7 +430,7 @@ if [[ $EXPERIMENT == nodelay ]]; then
         done
     done
 fi
-if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $storage_experiment == 1 ]]; then
+if [[ $EXPERIMENT == stackful || $EXPERIMENT == stackful-paced || $storage_experiment == 1 || $coroutine_experiment == 1 ]]; then
     # The reference engine must remain the measured prior implementation.
     # Check all three manual forms on this toolchain, not only the M1 probe.
     mkdir -p "$OUT/codegen"
@@ -470,6 +484,34 @@ if [[ $storage_experiment == 1 ]]; then
     "$CLANG" -O2 -S -emit-llvm -x ir "$OUT/echo.ll" -Wno-override-module \
         -o "$OUT/codegen/storage-wf.ll"
 fi
+if [[ $coroutine_experiment == 1 ]]; then
+    # Compile the same engine as C++ for manual and stackful controls too.
+    # Every normal form has a separate untimed allocation/continuation observer.
+    cpp_storage=(0 3)
+    cpp_protocol=()
+    if [[ $network_compute == 1 ]]; then cpp_storage=(0); cpp_protocol=(-DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM); fi
+    for representation in manual stackful heap elide; do
+        cpp_flags=()
+        if [[ $representation != manual ]]; then cpp_flags+=(-DWF_BENCH_STACKFUL); fi
+        if [[ $representation == heap || $representation == elide ]]; then cpp_flags+=(-DWF_BENCH_COROUTINE); fi
+        if [[ $representation == elide ]]; then cpp_flags+=(-DWF_BENCH_CORO_ELIDE); fi
+        for storage in "${cpp_storage[@]}"; do
+            form="cpp-$representation"
+            if [[ $storage == 3 ]]; then form="$form-calloc"; fi
+            for observed in 0 1; do
+                output="$OUT/bin/$form"
+                observe_flags=()
+                if [[ $observed == 1 ]]; then output="$output-observed"; observe_flags=(-DWF_BENCH_OBSERVE -DWF_BENCH_STORAGE_OBSERVE); fi
+                "$CORO_CXX" -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread \
+                    "${cpp_flags[@]}" "${cpp_protocol[@]}" "${observe_flags[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$storage" \
+                    -x c++ "$HERE/epoll_echo.c" -x none -o "$output"
+            done
+            "$CORO_CXX" -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread \
+                "${cpp_flags[@]}" "${cpp_protocol[@]}" "-DWF_BENCH_RECEIVE_STORAGE=$storage" \
+                -x c++ -S -emit-llvm "$HERE/epoll_echo.c" -o "$OUT/codegen/$form.ll"
+        done
+    done
+fi
 "$OUT/bin/gen" "$OUT/tree" 2 65536 fixed
 
 server_pid=''
@@ -510,6 +552,10 @@ network_case() {
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
+        cpp-*)
+            binary="$OUT/bin/$form"
+            if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
+            arguments=(--threads "$server_workers") ;;
         uring|epoll|uring-nagle|epoll-nagle)
             binary="$OUT/bin/${form%-nagle}_echo"
             if [[ $form == *-nagle ]]; then binary="$binary-nagle"; fi
@@ -608,14 +654,31 @@ if [[ $EXPERIMENT == stackful ]]; then references=(uring epoll fiber); fi
 if [[ $storage_experiment == 1 ]]; then references=(uring epoll epoll-arena epoll-malloc epoll-calloc fiber fiber-arena fiber-malloc fiber-calloc); fi
 if [[ $EXPERIMENT == pages ]]; then references=(epoll epoll-arena epoll-malloc epoll-calloc fiber-calloc); fi
 if [[ $EXPERIMENT == stackful-paced ]]; then references=(epoll fiber q16384 f16384); fi
-if [[ $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then references=(epoll q16384); fi
+if [[ $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then references=(epoll q16384); fi
 if [[ $EXPERIMENT == nodelay ]]; then references=(uring uring-nagle epoll epoll-nagle); fi
+if [[ $EXPERIMENT == coroutine ]]; then
+    references=(uring epoll epoll-calloc cpp-manual cpp-manual-calloc cpp-stackful cpp-stackful-calloc cpp-heap cpp-heap-calloc cpp-elide cpp-elide-calloc)
+fi
+if [[ $EXPERIMENT == coroutine-paced ]]; then references=(q16384 cpp-manual cpp-stackful cpp-heap cpp-elide); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
         for form in "${references[@]}" "${forms[@]}"; do
             preflight_observed=0
+            if [[ $form == cpp-* ]]; then preflight_observed=1; fi
             if [[ $EXPERIMENT == nodelay || ( $storage_experiment == 1 && ( $form == epoll* || $form == fiber* ) ) ]]; then preflight_observed=1; fi
             network_case "$form" 4 20 64 -1 "$preflight_observed"
+            if [[ $form == cpp-* ]]; then
+                expected_storage=0
+                if [[ $form == *-calloc ]]; then expected_storage=3; fi
+                awk -v expected="$expected_storage" '/^storage:/ {for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}; seen=1}
+                    END {exit !(seen && v["policy"]==expected && v["accepted"]==4 && v["closed"]==4)}' \
+                    "$OUT/observed/$cohort-$form-k4-a0/server.err"
+                if [[ $form == cpp-heap* || $form == cpp-elide* ]]; then
+                    awk -v form="$form" '/^coroutine:/ {for(i=2;i<=NF;i++) {split($i,a,"=");v[a[1]]=a[2]+0}; seen=1}
+                        END {exit !(seen && v["allocations"]>0 && v["allocations"]==v["frees"] && (form!~/elide/ || v["allocations"]==4))}' \
+                        "$OUT/observed/$cohort-$form-k4-a0/server.err"
+                fi
+            fi
             if [[ $storage_experiment == 1 && ( $form == epoll* || $form == fiber* ) ]]; then
                 expected_storage=0
                 case $form in
@@ -659,7 +722,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                  END { exit !(("tcp_nodelay" in value) && value["tcp_nodelay"]==expected) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
-        if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then
+        if [[ $EXPERIMENT == owner || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch || $EXPERIMENT == wake || $EXPERIMENT == service || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
             local_wake=0
             if [[ $form == quiet || $form == chquiet16384 ]]; then local_wake=1; fi
             pinned=0
@@ -695,7 +758,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
                      value["owner_rings"]>=workers) }' \
                 "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
         fi
-        if [[ $EXPERIMENT == service || $EXPERIMENT == service-paced ]]; then
+        if [[ $EXPERIMENT == service || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
             expected_quantum=0
             if [[ $form == service* || $form == chservice* ]]; then expected_quantum=${form##*service}; fi
             expected_reset=1
@@ -790,7 +853,7 @@ if [[ $EXPERIMENT == fairness ]]; then
     awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then
+if [[ $EXPERIMENT == sustain || $EXPERIMENT == checkpoint || $EXPERIMENT == paced || $EXPERIMENT == chunks || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
     # Both request classes stay active for a common interval. The count is a
     # storage ceiling, not a target; an early ceiling hit fails the sample.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -808,7 +871,7 @@ if [[ $EXPERIMENT == chunks ]]; then
     awk '$1==64' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
-if [[ $EXPERIMENT == paced || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then
+if [[ $EXPERIMENT == paced || $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
     # Fix light arrivals independently of service speed. Keep every scheduled
     # request, including client backlog, while heavy peers remain saturated.
     cat > "$OUT/cases.tsv" <<'CASES'
@@ -821,7 +884,7 @@ if [[ $EXPERIMENT == paced || $EXPERIMENT == canonical || $EXPERIMENT == stackfu
 64 100000 64 2097152 500
 CASES
 fi
-if [[ $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced ]]; then
+if [[ $EXPERIMENT == canonical || $EXPERIMENT == stackful-paced || $EXPERIMENT == owner-paced || $EXPERIMENT == dispatch-paced || $EXPERIMENT == wake-paced || $EXPERIMENT == service-paced || $EXPERIMENT == coroutine-paced ]]; then
     awk '$4==0 || ($4==2097152 && $5>=100)' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
     mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
 fi
@@ -849,7 +912,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != canonical && $EXPERIMENT != owner && $EXPERIMENT != dispatch && $EXPERIMENT != wake && $EXPERIMENT != service && $EXPERIMENT != memory && $EXPERIMENT != storage ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle && $EXPERIMENT != checkpoint && $EXPERIMENT != chunks && $EXPERIMENT != canonical && $EXPERIMENT != owner && $EXPERIMENT != dispatch && $EXPERIMENT != wake && $EXPERIMENT != service && $EXPERIMENT != memory && $EXPERIMENT != storage && $EXPERIMENT != coroutine ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do

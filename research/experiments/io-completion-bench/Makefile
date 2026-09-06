@@ -99,6 +99,13 @@ scheduler-storage:
 scheduler-pages:
 	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" EXPERIMENT=pages bash scheduler-bench.sh bench
 
+.PHONY: scheduler-coroutine scheduler-coroutine-paced
+scheduler-coroutine:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine bash scheduler-bench.sh bench
+
+scheduler-coroutine-paced:
+	ROOT="$(ROOT)" WHITEFOOT_SCRATCH_ROOT="$(WHITEFOOT_SCRATCH_ROOT)" ROUNDS="$(ROUNDS)" WARMUP="$(WARMUP)" CORO_CXX="$(CORO_CXX)" EXPERIMENT=coroutine-paced bash scheduler-bench.sh bench
+
 WHITEFOOT_SCRATCH_ROOT ?= $(HOME)/do_not_scan
 WORK := $(WHITEFOOT_SCRATCH_ROOT)/whitefoot-io-completion-bench
 BUILD := $(WORK)/build
@@ -108,6 +115,8 @@ CARGO_TARGET := $(WORK)/cargo-target
 LINUX_TARGET := $(WORK)/linux-target
 CLANG := /usr/bin/clang
 CFLAGS := -std=c11 -O2 -Wall -Wextra -Werror
+CORO_CXX ?= $(shell command -v clang++-20 || command -v clang++)
+CORO_FLAGS := -std=c++20 -O2 -Wall -Wextra -Werror -Wpedantic -fno-exceptions -pthread
 WFC := $(ROOT)/compiler/target/gate/whitefootc
 
 # The workload's shape. FILES x up to MAX_KIB, read through one positioned
@@ -603,6 +612,52 @@ $(BUILD)/netload: netload.c compute_protocol.h | prepare
 
 # Linux-only reference correctness, also reached by scheduler-check on Linux.
 # The send-buffer override and observers never enter timed binaries.
+.PHONY: coroutine-check
+coroutine-check: prepare
+	@set -e; \
+	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \
+	for mode in echo compute quantum; do \
+	  flags=''; storage_policies=0; cases='compute truncated'; \
+	  if [ "$$mode" = echo ]; then storage_policies='0 3'; cases=echo; else flags=-DWF_BENCH_COMPUTE; fi; \
+	  if [ "$$mode" = quantum ]; then flags="$$flags -DWF_BENCH_QUANTUM"; fi; \
+	  for form in manual stackful heap elide; do \
+	    extra=''; \
+	    if [ "$$form" != manual ]; then extra='-DWF_BENCH_STACKFUL -DWF_BENCH_OBSERVE'; fi; \
+	    if [ "$$form" = heap ] || [ "$$form" = elide ]; then extra="$$extra -DWF_BENCH_COROUTINE"; fi; \
+	    if [ "$$form" = elide ]; then extra="$$extra -DWF_BENCH_CORO_ELIDE"; fi; \
+	    for storage in $$storage_policies; do \
+	      binary="$(BUILD)/coro-$$mode-$$form-s$$storage"; \
+	      $(CORO_CXX) $(CORO_FLAGS) -DWF_BENCH_SNDBUF=4096 -DWF_BENCH_STORAGE_OBSERVE \
+	        "-DWF_BENCH_RECEIVE_STORAGE=$$storage" $$flags $$extra -x c++ epoll_echo.c -x none -o "$$binary"; \
+	      for workers in 1 4; do \
+	       for case_name in $$cases; do \
+	        log="$$binary-w$$workers-$$case_name.log"; \
+	        if ! "$(BUILD)/stream_check" "$$binary" "$$case_name" "$$workers" > "$$log" 2>&1; then cat "$$log"; exit 1; fi; \
+	        cat "$$log"; \
+	        awk -v storage="$$storage" '/^storage:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen=1} \
+	          END {exit !(seen && v["policy"]==storage && v["accepted"]>0 && v["closed"]==v["accepted"])}' "$$log"; \
+	        if [ "$$form" = heap ] || [ "$$form" = elide ]; then \
+	          expected=4; if [ "$$case_name" = truncated ]; then expected=1; fi; \
+	          awk -v form="$$form" -v expected="$$expected" '/^coroutine:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]=a[2]+0}; seen=1} \
+	            END {exit !(seen && v["allocations"]>0 && v["allocations"]==v["frees"] && (form!="elide" || v["allocations"]==expected))}' "$$log"; \
+	        fi; \
+	        if [ "$$form" != manual ] && [ "$$case_name" != truncated ]; then \
+	          awk -v mode="$$mode" '/^stackful:/ {for(i=2;i<=NF;i++) {split($$i,a,"=");v[a[1]]+=a[2]+0}} \
+	            END {exit !(v["resumes"]>0 && v["waits"]>0 && (mode!="echo" || v["send_waits"]>0) && (mode!="quantum" || v["yields"]>0))}' "$$log"; \
+	        fi; \
+	       done; \
+	      done; \
+	    done; \
+	  done; \
+	done; \
+	for form in heap elide; do \
+	  extra=''; if [ "$$form" = elide ]; then extra=-DWF_BENCH_CORO_ELIDE; fi; \
+	  binary="$(BUILD)/coro-lifetime-$$form"; \
+	  $(CORO_CXX) $(CORO_FLAGS) -g -fsanitize=address,undefined -DWF_BENCH_STACKFUL \
+	    -DWF_BENCH_COROUTINE -DWF_BENCH_COMPUTE -DWF_BENCH_OBSERVE $$extra coroutine_lifetime.cpp -o "$$binary"; \
+	  "$$binary"; \
+	done
+
 stackful-check: prepare
 	@set -e; \
 	$(CLANG) $(CFLAGS) -Wpedantic -pthread stream_check.c -o "$(BUILD)/stream_check"; \

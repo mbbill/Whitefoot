@@ -74,7 +74,7 @@ static int send_response(struct connection *link, unsigned char *source, size_t 
 }
 
 static void connection_main(void *raw) {
-    struct connection *link = raw;
+    struct connection *link = (struct connection *)raw;
     for (;;) {
 #if defined(WF_BENCH_COMPUTE)
         if (!receive_request(link)) break;
