@@ -1503,6 +1503,15 @@ pub(crate) struct CheckedKernelInstance {
     /// `align_ceiling(T)` are the two compile-time constants the bump rows
     /// name.
     pub(crate) element_ceiling: CheckedLayoutCeiling,
+    /// The numeric upper bound [OP-9]'s accepted allocation-fit judgment
+    /// retained for this call's `count`, which [STOR-6] multiplies by the
+    /// actual target stride before the take is lowered.
+    ///
+    /// `None` on a row carrying no `fits::<T>(count)` obligation — the two
+    /// cell rows, the reservation and the boundary rows — and on an
+    /// acceptance-dark test hook whose obligation was deliberately left
+    /// undischarged; neither reaches lowering with a count to scale.
+    pub(crate) count_upper_bound: Option<u64>,
 }
 
 /// One member of the finite static origin set carried by a direct slice value.

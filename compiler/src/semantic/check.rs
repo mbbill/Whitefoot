@@ -2766,9 +2766,25 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
                 Self::install_expression_allocation_bounds(length, bounds)?;
             }
+            // [BLK-0, OP-9] every acquiring row carries the same allocation-fit
+            // obligation, submitted at the call's own node, so the bound the
+            // judgment retained is installed on this call's instance exactly
+            // as it is on a `buffer_new` site's target domains.
+            CheckedExpression::KernelCall {
+                call,
+                instance,
+                arguments,
+                ..
+            } => {
+                if let Some(upper) = bounds.get(call).copied() {
+                    instance.count_upper_bound = Some(upper);
+                }
+                for argument in arguments {
+                    Self::install_expression_allocation_bounds(argument, bounds)?;
+                }
+            }
             CheckedExpression::UserCall { arguments, .. }
             | CheckedExpression::SystemCall { arguments, .. }
-            | CheckedExpression::KernelCall { arguments, .. }
             | CheckedExpression::IntegerOperation { arguments, .. }
             | CheckedExpression::FloatOperation { arguments, .. }
             | CheckedExpression::BooleanOperation { arguments, .. }

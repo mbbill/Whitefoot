@@ -41,7 +41,7 @@ fn parse_port(digits: &Slice<u8>, length: own u64) -> result: own u16 reads(digi
   return port;
 }
 
-fn send_all(send: &uniq TcpSend, source: &buffer<u8>, length: own u64) -> result: own Result<unit, IoError> reads(send, source), writes(send) contract {
+fn send_all(send: &uniq TcpSend, source: &Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(send, source), writes(send) contract {
   define source_length = len_of(deref(source));
   requires length <= source_length;
 } {
@@ -67,11 +67,11 @@ fn send_all(send: &uniq TcpSend, source: &buffer<u8>, length: own u64) -> result
   return Ok<unit, IoError>(value: unit);
 }
 
-fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq buffer<u8>) -> result: own u8 reads(listener, permit, scratch), writes(permit, scratch) contract {
-  define room = len_of(deref(scratch));
+fn serve_one(listener: &TcpListener, permit: own HandlePermit, destination: &uniq MutSlice<u8>) -> result: own u8 reads(listener, permit, destination), writes(permit, destination) contract {
+  define room = len_of(deref(destination));
   requires 256_u64 <= room;
 } {
-  doc "Takes one connection from the listener, returns the first chunk the peer sent, and releases the pair, so the caller's fixed-trip loop serves one peer per iteration [SYS-17, SYS-18]. The destination stays the run itself rather than a view of it: this is the one call the fixed-trip loop stages, and the staged permission judgment resolves a run as a place where it resolves no view descriptor as a place at all, so a view destination here would cost the loop the staging it exists to obtain.";
+  doc "Takes one connection from the listener, returns the first chunk the peer sent, and releases the pair, so the caller's fixed-trip loop serves one peer per iteration [SYS-17, SYS-18]. The destination is a view of the caller's per-iteration run, which [BLK-4] is what a callee may be handed: the run itself cannot cross as `&uniq`, and a view is a claim on the storage it was formed over [VIEW-1], so the staged permission judgment reaches that run through it and the loop keeps the staging it exists to obtain.";
   let outcome = 0_u8;
   region {
     match tcp_accept(permit: move permit, listener: listener) {
@@ -79,7 +79,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
         let available = 0_u64;
         let refused = 0_u8;
         region {
-          match receive_next(receive: &uniq link.receive, destination: &uniq deref(scratch), start: 0_u64, end: 256_u64) {
+          match receive_next(receive: &uniq link.receive, destination: &uniq deref(destination), start: 0_u64, end: 256_u64) {
             ReadBytes(next: endpoint) => {
               set available = endpoint;
             }
@@ -94,11 +94,14 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
         }
         if refused == 0_u8 {
           region {
-            match send_all(send: &uniq link.send, source: &deref(scratch), length: available) {
-              Ok(value: delivered) => {
-              }
-              Err(error: problem) => {
-                set outcome = 4_u8;
+            let sent = slice_of(&deref(destination));
+            region {
+              match send_all(send: &uniq link.send, source: &sent, length: available) {
+                Ok(value: delivered) => {
+                }
+                Err(error: problem) => {
+                  set outcome = 4_u8;
+                }
               }
             }
           }
@@ -114,7 +117,7 @@ fn serve_one(listener: &TcpListener, permit: own HandlePermit, scratch: &uniq bu
 }
 
 command fn main(command.args as args: own Args, command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(args, handles), writes(handles) {
-  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop the staged permission admits: each iteration owns its scratch, takes its own permit before its accept, and leaves the loop only from its prologue, so the four accepts may be in flight at once and several peers reach one listener together [PAR-3, SYS-17]. The argument scratch is an arena extent viewed exclusively where the argument is copied into it and shared where the port is read out. The per-connection scratch stays a `buffer_new` run handed to the callee as the run itself: the staged permission judgment resolves that construction as iteration-own storage and resolves no view descriptor as a place at all, so both a store-resident replacement and a view destination would cost this loop the staging it exists to obtain.";
+  doc "Listens on the loopback port named by the invocation and serves four connections in a fixed-trip loop the staged permission admits: each iteration owns its scratch, takes its own permit before its accept, and leaves the loop only from its prologue, so the four accepts may be in flight at once and several peers reach one listener together [PAR-3, SYS-17]. The argument scratch is an arena extent viewed exclusively where the argument is copied into it and shared where the port is read out. The per-connection scratch is a second extent reserved inside the loop body, so [BLK-2] reserves and resets it per iteration and the run taken from it is storage the iteration introduces; the callee is handed a view of that run, which is what [BLK-4] admits and what the staged judgment reads through to the run.";
   region 'arguments {
     let names = arena_frame::<16, 8, 'arguments>();
     region {
@@ -184,18 +187,34 @@ command fn main(command.args as args: own Args, command.handles as handles: own 
                     served in 0_u64..4_u64,
                     invariant progress: served <= 4_u64
                   ) {
-                    let scratch = buffer_new(256_u64, 0_u8);
-                    region {
-                      match reserve_handle(factory: &uniq handles) {
-                        Ok(value: accept_permit) => {
-                          let reported = serve_one(listener: &bound, permit: move accept_permit, scratch: &uniq scratch);
-                          if reported == 0_u8 {
-                          } else {
-                            set outcome = reported;
-                          }
+                    region 'connection {
+                      let workspace = arena_frame::<256, 1, 'connection>();
+                      region {
+                        let scratch = arena_vector_proved::<u8>(store: &uniq workspace, count: 256_u64);
+                        for @fill_scratch (
+                          at in 0_u64..256_u64,
+                          invariant grown_scratch: len_of(scratch) >= at,
+                          invariant spare_scratch: room_of(scratch) + at >= 256_u64,
+                          invariant flat_scratch: head_of(scratch) <= 0_u64
+                        ) {
+                          set scratch = place_back(vector: move scratch, value: 0_u8);
                         }
-                        Err(error: problem) => {
-                          return exit_status(code: 6_u8);
+                        region {
+                          let window = mut_slice_of(&uniq scratch);
+                          region {
+                            match reserve_handle(factory: &uniq handles) {
+                              Ok(value: accept_permit) => {
+                                let reported = serve_one(listener: &bound, permit: move accept_permit, destination: &uniq window);
+                                if reported == 0_u8 {
+                                } else {
+                                  set outcome = reported;
+                                }
+                              }
+                              Err(error: problem) => {
+                                return exit_status(code: 6_u8);
+                              }
+                            }
+                          }
                         }
                       }
                     }

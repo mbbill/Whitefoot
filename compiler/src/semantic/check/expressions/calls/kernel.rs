@@ -657,6 +657,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             align: instance.align,
             region: instance.region,
             element_ceiling,
+            // Installed after the entailment walk, from the accepted [OP-9]
+            // judgment's own retained bound.
+            count_upper_bound: None,
         })
     }
 
