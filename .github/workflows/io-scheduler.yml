@@ -8,6 +8,7 @@ on:
     branches: ['codex/io-scheduler-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
+      - 'compiler/src/backend/completion/**'
       - 'compiler/src/backend/emitter/**'
       - 'compiler/src/backend/emitter.rs'
       - 'research/experiments/io-completion-bench/*.c'
@@ -26,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [inline]
+        experiment: [sustain]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -51,7 +52,7 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. WF baseline versus privately completed immediate socket transfers; unchanged pending protocol and diagnostic counts. Native uring/epoll controls, four CPU placements, small and large network cases. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Admitted connections keep both request classes active for one common duration. WF baseline versus inline and three cooperative C forms. Every captured result is verified after timing; both class rates and tails are retained. See the investigation for scope.'
             echo '```text'
             for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"

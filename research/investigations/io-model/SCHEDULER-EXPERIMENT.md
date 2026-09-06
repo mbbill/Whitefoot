@@ -509,6 +509,52 @@ be started before another callee completes. A required-concurrency scope with
 backed admission, or a different progress contract, needs explicit design.
 Silently increasing a fixed stack count cannot settle that semantic question.
 
+### Fourth measurement: 4f951acc
+
+[Run 34032286100](https://github.com/mbbill/Whitefoot/actions/runs/34032286100)
+and [artifact 9989254493](https://github.com/mbbill/Whitefoot/actions/runs/34032286100/artifacts/9989254493)
+contain 840 verified timed samples, all seven pairs per cell. The four-logical-
+CPU Xeon 8573C VM again reports two physical cores with SMT, Linux 6.17 and
+clang 18. This is a separate host cohort. Gate and native-host checks passed.
+The separate Windows benchmark run 34032286063 failed its existing compute
+timing-stability qualification after two cohorts; it did not report a wrong
+result. That failure is retained, and the stability thresholds are unchanged.
+
+At 64 connections and 2097152 recurrence steps per heavy request:
+
+| placement / admission | WF rate/s | WF light p99 us | inline C light p99 us | q1024 light p99 us | q16384 light p99 us | q65536 light p99 us |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| shared4 / fresh | 3700 | 197970 | 261923 | 3100 | 3073 | 3588 |
+| shared4 / admitted | 3697 | 162770 | 191536 | 3296 | 3053 | 3467 |
+| split2 / fresh | 1997 | 32081 | 40263 | 442 | 796 | 1909 |
+| split2 / admitted | 1998 | 32138 | 36067 | 358 | 780 | 2070 |
+
+The admitted split2 WF/quantum throughput ratios, paired by pass, are 1.126
+[1.003, 1.496], 1.118 [0.995, 1.361], and 1.119 [0.995, 1.245]. For admitted
+shared4 they are 1.434 [1.201, 1.610], 1.430 [0.938, 2.076], and 1.400
+[1.147, 2.361]. Brackets are sample minima/maxima, not confidence intervals.
+WF is faster in the median here, but the explicit C continuations serve light
+requests far sooner. Admission alone does not eliminate WF's tail, especially
+in split2. With 262144 steps in admitted split2, light p99 is 4454 us for WF
+versus 371, 789, and 2060 us for the three quanta: the effect is not confined
+to the largest compute cost.
+
+This is not yet a sustained-load tradeoff curve. In admitted split2 at the
+largest compute cost, light/heavy active-span ratios are 0.942 for WF, but
+0.008, 0.019, and 0.042 for the quantum references. Their finite light bursts
+finish early, after which heavy requests run mostly alone. At four peers WF
+also finishes the light class early (about 0.015 of the heavy span). Total
+burst throughput rewards the distribution of remaining heavy work as well
+as per-request efficiency: WF has shared work stealing, while each C worker
+retains the connections assigned through its listener. Neither the low tails
+nor the aggregate rate establishes a best sustained mixed-load design.
+
+Selection: retain the admission control and add a common-duration closed-loop
+comparison before selecting CPU checkpoints. Keep both class throughputs and
+tails; a scheduler must not appear faster merely by serving more cheap work.
+Compiler-inserted safe points and explicit native continuations remain
+candidate implementations, not a source-level coloring requirement.
+
 ## Completed idle-policy comparison
 
 Revision 06d93a46 on `codex/io-idle-retry` contains the e3fa2a6a experiment,
@@ -590,3 +636,41 @@ The maintained macOS `completion-test` target also passed with the candidate
 enabled: all core enumeration configurations, the default-route probe, helper
 counts 0/1/4, the uncached case, and the pure-compute link boundary. Linux
 qualification and paired timing remain pending.
+
+## Sixth experiment: keeping both request classes active
+
+`scheduler-sustain` uses the same five forms as the fairness experiment, but
+`netload --admit --duration-ms 1000` keeps every connection issuing requests
+until one common deadline, then drains the last request on each connection.
+The client remains closed-loop with one outstanding request per connection;
+this is not an open-loop overload or service-level test. Four and 64 peers,
+zero/262144/2097152 compute steps, shared4/split2, two warm-up passes and seven
+alternating recorded passes remain the controls.
+
+The round-trip argument is a per-connection storage ceiling in duration mode,
+100000 in these cohorts. Hitting it before the deadline fails the sample
+instead of silently ending the light class. Before timing, the client reserves
+and touches every page of latency and captured-result arrays. Each response
+must contain 64 canonical
+bits; after exchange timing and socket cleanup, client threads recompute every
+request from its connection and request indices and compare every captured
+value. No success table is printed until all comparisons pass. This permits
+an unknown request count without making an oracle compete during exchange.
+Client lifetime CPU includes verification; exchange CPU is separately sampled.
+
+The table adds actual total and per-class counts, common duration, exchange
+time and drain time. CPU/trip uses actual completed requests, not the storage
+ceiling. Both class rates use the same exchange interval, including drain.
+Class spans show whether the requested competition actually lasted. Aggregate
+rates alone cannot select a winner when the cheap/heavy request mix differs.
+The zero-compute controls measure the cost of this client protocol as well.
+
+The same client C passed a native macOS protocol check through a temporary
+kqueue/pthread-barrier compatibility shim (no timing comparison is taken from
+that shim): the WF server completed 100 ms admitted exchanges at 0/4096/262144
+compute steps with four peers and two workers, with both class spans exceeding
+90 ms and their counts summing to the total. An independent socket fixture
+confirmed that a wrong canonical value fails the deferred verification, a
+non-bit response fails immediately, and reaching the sample capacity early
+fails without printing a result. Its fixed-count control verified 100000
+requests. Native Linux validation remains part of the upcoming CI experiment.
