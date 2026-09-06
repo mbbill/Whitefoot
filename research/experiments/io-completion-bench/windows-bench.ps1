@@ -355,10 +355,13 @@ foreach ($unit in $ObservedUnits) {
     $ObservedObjects += $object
 }
 $MixedObserved = Join-Path $Bin "mixed-observed.exe"
+# Winsock is on the line because the completion port's unit and the Windows
+# host runtime name it since the TCP routes landed, exactly as `whitefootc`'s
+# own Windows link and `io-hosts.yml`'s hand-written ones do.
 $LinkArguments = @(
     "-std=c11", "-O2", "-g", "-municode", "-x", "ir", $MixedIr,
     "-x", "none"
-) + $ObservedObjects + @("-Wno-override-module", "-o", $MixedObserved)
+) + $ObservedObjects + @("-Wno-override-module", "-o", $MixedObserved, "-lws2_32")
 Invoke-Tool -File $Clang -Arguments $LinkArguments `
     -Description "link the observed mixed executable"
 
