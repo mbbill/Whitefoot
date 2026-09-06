@@ -185,7 +185,7 @@ fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> resu
   return limit;
 }
 
-command fn main(command.args as args: own Args, command.stdout as out: own Output) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
+command fn main(command.args as args: own Args, command.stdout as out: own OutputStream) -> status: own ExitStatus reads(args, out), writes(out), allocates(heap) {
   doc "Lays out one box tree many times, then publishes the exact bits of both folds as hexadecimal so any difference between two executions is a difference in the published bytes. The complete invocation count selects identical benchmark batches; an ordinary argument-free invocation has one batch.";
   let batches = 1_u64;
   region {

@@ -41,13 +41,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use whitefoot::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    CompilationFailureKind, CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES,
-    HOST_OPTIMIZATION_ARGUMENTS, PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
-    SourceInput, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE, compile,
-    module_requires_completion_runtime, module_requires_parallel_runtime,
-    module_requires_writer_scheduler,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
+    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER, CompilationFailureKind,
+    CompilerLimits, FLOOR_RUNTIME_SOURCE, HOST_LINK_LIBRARIES, HOST_OPTIMIZATION_ARGUMENTS,
+    SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER, SCHED_ENTRY_SOURCE,
+    SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_SWITCH_HEADER, SourceInput,
+    WINDOWS_RUNTIME_HEADER, compile, module_requires_completion_runtime,
+    module_requires_parallel_runtime,
 };
 
 use super::corpus::{self, Arrangement, Case, Expectation, Status, Verdict};
@@ -219,50 +221,90 @@ fn link(module: &str, directory: &Path) -> PathBuf {
     let floor = directory.join("wf_floor.c");
     std::fs::write(&floor, FLOOR_RUNTIME_SOURCE).expect("write the floor runtime");
     command.arg("-pthread").arg("-x").arg("c").arg(&floor);
+    // The scheduler core joins under the union of the two predicates
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §7, "Where the core
+    // is linked"): one scheduler for compute hand-outs and I/O completions.
+    // The completion units join only under the second.
     let completion = module_requires_completion_runtime(module);
-    if module_requires_parallel_runtime(module) {
-        let runtime = directory.join("par_runtime.c");
-        let source = if module_requires_writer_scheduler(module) {
-            PARALLEL_COMPLETION_RUNTIME_SOURCE
-        } else {
-            PARALLEL_RUNTIME_SOURCE
-        };
-        std::fs::write(&runtime, source).expect("write the parallel runtime");
-        command.arg("-x").arg("c").arg(runtime);
+    if completion || module_requires_parallel_runtime(module) {
+        for (name, source) in [
+            ("sched/core.h", SCHED_CORE_HEADER),
+            ("sched/prim.h", SCHED_PRIM_HEADER),
+            ("sched/switch.h", SCHED_SWITCH_HEADER),
+            ("sched/entry.h", SCHED_ENTRY_HEADER),
+            ("sched/core.c", SCHED_CORE_SOURCE),
+            ("sched/prim_host.c", SCHED_PRIM_HOST_SOURCE),
+            ("sched/entry.c", SCHED_ENTRY_SOURCE),
+        ] {
+            std::fs::create_dir_all(directory.join("sched")).expect("stage scheduler directory");
+            std::fs::write(directory.join(name), source).expect("write scheduler core unit");
+        }
+        command
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/core.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/prim_host.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("sched/entry.c"));
     }
     if completion {
         for (name, source) in [
-            ("contract.h", COMPLETION_CONTRACT_HEADER),
-            ("file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
-            ("bridge.h", COMPLETION_BRIDGE_HEADER),
-            ("writer_scheduler.h", WRITER_SCHEDULER_HEADER),
-            ("linux_io_uring.h", COMPLETION_LINUX_IO_URING_HEADER),
-            ("completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
-            ("file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
-            ("completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
-            ("writer_scheduler.c", WRITER_SCHEDULER_SOURCE),
-            ("linux_io_uring.c", COMPLETION_LINUX_IO_URING_SOURCE),
+            ("completion/contract.h", COMPLETION_CONTRACT_HEADER),
+            ("completion/file_adapter.h", COMPLETION_FILE_ADAPTER_HEADER),
+            ("completion/bridge.h", COMPLETION_BRIDGE_HEADER),
+            ("completion/file_posix.h", COMPLETION_FILE_POSIX_HEADER),
+            (
+                "completion/socket_address.h",
+                COMPLETION_SOCKET_ADDRESS_HEADER,
+            ),
+            (
+                "completion/linux_io_uring.h",
+                COMPLETION_LINUX_IO_URING_HEADER,
+            ),
+            // Every header of the runtime is staged on every platform, exactly
+            // as the driver stages them (`src/bin/whitefootc.rs`): a header is
+            // never a clang input, and `bridge.c` is one shared unit whose
+            // Windows arm names these two in text this host does not compile.
+            ("completion/windows_iocp.h", COMPLETION_WINDOWS_IOCP_HEADER),
+            ("windows_runtime.h", WINDOWS_RUNTIME_HEADER),
+            ("completion/completion_runtime.c", COMPLETION_RUNTIME_SOURCE),
+            ("completion/wait_host.c", COMPLETION_WAIT_HOST_SOURCE),
+            ("completion/file_adapter.c", COMPLETION_FILE_ADAPTER_SOURCE),
+            ("completion/file_posix.c", COMPLETION_FILE_POSIX_SOURCE),
+            ("completion/completion_bridge.c", COMPLETION_BRIDGE_SOURCE),
+            (
+                "completion/linux_io_uring.c",
+                COMPLETION_LINUX_IO_URING_SOURCE,
+            ),
         ] {
+            std::fs::create_dir_all(directory.join("completion"))
+                .expect("stage completion directory");
             std::fs::write(directory.join(name), source).expect("write completion runtime unit");
         }
         command
             .arg("-I")
-            .arg(directory)
+            .arg(directory.join("completion"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_runtime.c"))
+            .arg(directory.join("completion/completion_runtime.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("file_adapter.c"))
+            .arg(directory.join("completion/wait_host.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("completion_bridge.c"))
+            .arg(directory.join("completion/file_adapter.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("writer_scheduler.c"))
+            .arg(directory.join("completion/file_posix.c"))
             .arg("-x")
             .arg("c")
-            .arg(directory.join("linux_io_uring.c"));
+            .arg(directory.join("completion/completion_bridge.c"))
+            .arg("-x")
+            .arg("c")
+            .arg(directory.join("completion/linux_io_uring.c"));
     }
     let linked = command
         .args(HOST_OPTIMIZATION_ARGUMENTS)

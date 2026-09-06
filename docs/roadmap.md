@@ -977,8 +977,14 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   dynamic per-iteration paths, an odd final batch, the ordinary result/error
   arm, LLVM emission, linking, and execution. Two staged loops in one function
   deliberately stay ordinary. Completion drain still precedes
-  dependent-frame readiness, the first tail-wrapper stackless slice can resume
-  on any scheduler lane, and pure compute links no completion runtime.
+  dependent-frame readiness and pure compute links no completion runtime. The
+  tail-wrapper stackless continuation lowering that stood here is superseded:
+  `emitter/stackless.rs` and `tests/stackless.rs` were deleted on
+  `io/t4-resource-relations` and the stack park of the park-on-miss scheduler
+  replaced them — a join that misses parks its own stack on a pool stack of a
+  fixed start-time reservation and switches, so any thread may resume the
+  continuation and no emitter transform lowers one
+  ([batch 0107](done/0107-park-on-miss.md)).
   The exact `x86_64-pc-windows-msvc` row now adds a compiler-owned UTF-16
   bootstrap, direct and bounded blocking file operations, an IOCP bridge with
   bounded wake and full-capacity recovery, and a mandatory `--par` compute
@@ -994,9 +1000,8 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   is better, were compute `0.2750`, warm IOCP `0.9765`, mixed IOCP control
   `1.0092`, mixed versus IOCP-only `0.6008`, and mixed versus fully serial
   `0.6064`.
-- **Missing / next:** generalize selective stackless continuation lowering to
-  branches, loops, multiple suspension points, and non-tail children; widen
-  the two-slot completion driver to additional control-flow shapes, operation
+- **Missing / next:** widen the two-slot completion driver to additional
+  control-flow shapes, operation
   families, and deliberate multi-loop selection; and measure cold/high-latency
   or materially changed target workloads. Any widening keeps the same bounded
   ownership and soundness gates. The final source-language model for host
@@ -1014,14 +1019,14 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
 
 ### outline:BOUND-1 — Unified state and host integration
 
-`[current: active v0.40 unified-state model, retained from v0.39]`
-`[next: wider APIs and target measurements]`
+`[current: the unified-state model, widened by v0.46 to one readable stream and TCP]`
+`[next: the TCP runtime routes, then file write and create]`
 
 - **Goal:** give command, service, and embedded program instances a coherent
   host boundary covering process context, filesystems, data streams, clocks,
   randomness, networking, waiting, and cancellation without ambient mutable
   authority, writer-defined trust, or a second I/O type system.
-- **Current:** v0.40 retains this released v0.39 model. It uses
+- **Current:** the model released in v0.39 and widened since. It uses
   ordinary opaque affine values and the existing `own`, `move`, `&`, and
   `&uniq` rules for all resources. `reads` and `writes` name formal parameters
   or static struct fields rather than lifetimes. Lifetimes state loan duration
@@ -1029,13 +1034,33 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   no `world`, `external`, `blocks`, `capability-root`, `family-fragment`, or
   `Ordered` permission layer. Changing clocks, Outputs, Sources, cursors, and
   factories use `own` or `&uniq`; genuinely independent work uses distinct
-  ordinary owned places or borrows. File opens consume proof-only one-shot
-  `FilePermit` values produced by total `reserve_file(&uniq FileFactory)`;
-  `DirectoryRead` is a shared selector, host exhaustion remains a typed open
-  result, and the permit is erased before the native ABI. Completion remains the sole language-level
+  ordinary owned places or borrows. The complete writer surface is: `Args` and
+  the two host-string routes; `RelativePath`; `DirectoryRead`, `ReadFile` and
+  `DirectorySource` with the four opens, `read_at`, `directory_next` and the
+  three explicit closes; the `InputStream` and `OutputStream` pair with
+  `read_next` and `write_once`; `SocketAddress` with `socket_address_v4` and
+  `socket_address_v6`; `TcpListener` with `tcp_listen`, `tcp_accept`,
+  `tcp_connect` and `close_listener`; the system-declared struct
+  `TcpConnection` with its `TcpReceive` and `TcpSend` directions,
+  `receive_next`, `send_once` and `close_connection`; `HandleFactory`,
+  `HandlePermit` and `reserve_handle`; and `ExitStatus`. Every handle the
+  target counts, a file, a directory, an enumeration source, a listener and a
+  connection alike, is one credit of the one factory, whose capacity is fixed
+  at program start and never raised: a refused open, listen, accept or connect
+  hands the permit back in its outcome enum, an explicit close returns it, and
+  derived release spends it. That backed permit is the v0.45 amendment, which
+  closed the T4 gap the proof-only permit left (a `close` that produced
+  nothing the checker saw, an `EMFILE` a pipeline invented, and the descriptor
+  retirement ledger that hid it, all deleted with it). Completion remains the sole language-level
   I/O model. The generation-safe runtime core, target-only helpers, Linux
-  io_uring work, Windows IOCP runtime, selective stackless slice, and component
-  measurements were retained while the rejected group machinery was removed.
+  io_uring work and component measurements were retained while the rejected
+  group machinery was removed. The Windows runtime is no longer a second copy:
+  batch 2's step (iv) made it the shared runtime with platform leaves — one
+  scheduler core, one bridge over one record, with `sched/prim_windows.c`,
+  `completion/windows_iocp.c`, `completion/file_windows.c`,
+  `completion/wait_windows.c` and `wf_floor_windows.c` as the only Windows
+  code, and the park and the wake on the completion port
+  ([batch 0107](done/0107-park-on-miss.md)).
   The current branch also has one source-derived fixed two-slot bounded batch
   for the narrow direct staged counted-loop shape. Its native POSIX completion
   window is `1..2`; qualified non-completion targets preserve the generated
@@ -1074,9 +1099,26 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [run 33651024745](https://github.com/mbbill/Whitefoot/actions/runs/33651024745)
   passed on exact revision
   `a7c49c4d9876461739dd2c63b5600158facc403f`.
-- **Missing / next:** widen stackless lowering beyond single-instruction tail
-  chains; add a clock reading, keyed directory places, namespace mutation, and
-  network, timer, cancellation, deadline, and finish-required output APIs only
+- **Missing / next:** the TCP runtime routes. v0.46 declares the network
+  surface above and the checker, the lowering and the emitter carry a program
+  that uses it, but no target row maps a TCP submission: the request kinds and
+  their io_uring, shared-adapter and completion-port routes are slice 2 of the
+  streams-and-TCP batch, so a module that submits one stops at target
+  qualification with an unmapped semantic identity rather than at a source
+  rejection. Slice 3 is the Windows route, slice 4 the control benchmark
+  against a hand-written io_uring server and an epoll server of the same
+  design, and the shape a real server loop needs is the language work the
+  batch exists to expose: the checker admits a fixed-trip staged loop over
+  accepts or an overlap group, and not yet an unbounded accept loop. After that
+  comes file write and create, the second examination of the resource
+  accounting: write handles, the namespace effect of a create, and their
+  dependencies on directory reads, all expressed on the API the way the permit
+  is. The stackless lowering this line asked to widen beyond
+  single-instruction tail chains is gone instead: batch 2 deleted it and the
+  park-on-miss stack park carries every suspension
+  ([batch 0107](done/0107-park-on-miss.md)). Then add a clock reading, keyed
+  directory places, namespace mutation, name resolution, and
+  timer, cancellation, deadline, and finish-required output APIs only
   with complete ordinary ownership and target contracts. The remaining
   completion-width question is how to extend the implemented direct
   counted-loop batch to wider control flow, more operation families, and
@@ -1088,6 +1130,7 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
   [concrete API and lowering design](../research/investigations/io-model/DESIGN.md) ·
   [staged loop pipeline design](../research/investigations/io-model/LOOP-PIPELINE.md) ·
+  [streams and TCP design](../research/investigations/io-model/NETWORK.md) ·
   [experimental implementation audit](../research/investigations/io-model/IMPLEMENTATION-AUDIT.md) ·
   [program-level and clean-core measurements](../research/investigations/io-model/RESULTS.md) ·
   [historical architecture dossier](../research/investigations/system-capability-architecture/DOSSIER.md) ·

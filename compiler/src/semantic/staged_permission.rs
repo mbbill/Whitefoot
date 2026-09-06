@@ -142,8 +142,8 @@
 //! place* — would be an assumption the schedule did not owe.
 //!
 //! **Prologues never overlap one another.** That is a restriction on the
-//! schedule and not a derived fact, and it is what admits `reserve_file`'s
-//! short unique loan of an enclosing `FileFactory` with no replication and no
+//! schedule and not a derived fact, and it is what admits `reserve_handle`'s
+//! short unique loan of an enclosing `HandleFactory` with no replication and no
 //! loan exemption: at every program point exactly one unique loan of the
 //! factory is live, so [OWN-5] is not relaxed.
 //!

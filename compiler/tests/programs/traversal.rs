@@ -37,7 +37,12 @@ fn the_traversal_program_walks_a_real_tree_and_publishes_it_sorted() {
     assert!(llvm.contains("@wf.sys.open_directory_source.v1"));
     assert!(llvm.contains("@wf.sys.directory_next.v1"));
     assert!(llvm.contains("@wf.sys.open_directory.v1"));
-    assert!(llvm.contains("wf__completion_directory_next_direct"));
+    // One lowering: the enumeration is submitted into the record the wrapper
+    // reserved in its own frame and joined there
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8), and the submit
+    // is the runtime's own on every target because the enumeration facility
+    // has no target column of its own.
+    assert!(llvm.contains("wf__completion_directory_next_submit"));
     assert!(!llvm.contains("call i64 @__getdirentries64"));
 
     let program = build_program(&llvm);
@@ -100,14 +105,14 @@ fn an_unreadable_subdirectory_is_recorded_without_descending_into_it() {
 
 /// The current traversal source requires the complete file-permit inventory,
 /// not just the older traversal rows. This is an honest source dependency:
-/// its entry receives FileFactory and every open calls reserve_file.
+/// its entry receives HandleFactory and every open calls reserve_handle.
 #[test]
 fn the_traversal_source_requires_the_complete_file_permit_inventory() {
     let _ = compile_program("dir_walk.wf");
     let failure = compile_program_rejection_with("dir_walk.wf", Inventory::OpenByName);
     assert!(
         failure.contains("UnresolvedUse")
-            && (failure.contains("FileFactory") || failure.contains("reserve_file")),
+            && (failure.contains("HandleFactory") || failure.contains("reserve_handle")),
         "the pre-permit inventory must reject the explicit authority surface: {failure}"
     );
 }
@@ -124,11 +129,11 @@ fn the_traversal_source_requires_the_complete_file_permit_inventory() {
 /// from ownership rather than from any traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Moves one enumeration handle and then uses the moved binding.";
   let scratch = buffer_new(64_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
+    let permit = reserve_handle(factory: &uniq files);
     match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         let taken = move list;
@@ -162,7 +167,7 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
 /// even with the traversal surface admitted.
 #[test]
 fn program_bytes_still_cannot_become_a_path_value() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream) -> status: own ExitStatus writes(cwd), allocates(heap) {
   doc "Attempts to construct a relative path from program bytes.";
   let name = buffer_new(8_u64, 97_u8);
   region {
@@ -188,11 +193,11 @@ fn program_bytes_still_cannot_become_a_path_value() {
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
   doc "Omits one enumeration outcome from an otherwise complete match.";
   let scratch = buffer_new(64_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
+    let permit = reserve_handle(factory: &uniq files);
     match open_directory_source(permit: move permit, directory: &cwd) {
       Ok(value: list) => {
         region {
@@ -248,16 +253,19 @@ fn the_component_validation_precedes_every_host_call() {
     assert!(shim.contains("%terminating = icmp eq i32 %byte.value, 0"));
 
     let open_block = shim.find("\nopen:\n").expect("the admitted-name block");
+    // One lowering: the admitted name is submitted and the record joined
+    // there (`research/investigations/io-model/PARK-ON-MISS.md` §8), so the
+    // operation the rejection path must not reach is the submission.
     let host_call = shim
-        .find("@wf__completion_file_open_at_direct")
+        .find("@wf__completion_file_open_at_submit")
         .expect("the typed directory-relative open");
     assert!(
         host_call > open_block,
-        "the host call must be reachable only from the admitted-name block"
+        "the operation must be reachable only from the admitted-name block"
     );
     let invalid_block = shim.find("\ninvalid:\n").expect("the rejection block");
     assert!(
-        !shim[invalid_block..].contains("@wf__completion_file_open_at_direct"),
-        "the rejection path must make no host call"
+        !shim[invalid_block..].contains("@wf__completion_file_open_at_submit"),
+        "the rejection path must submit nothing"
     );
 }

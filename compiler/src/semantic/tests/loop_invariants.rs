@@ -1576,7 +1576,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn exhaustion_facts_prove_both_system_range_components() {
-    let source = br#"fn publish_prefix(output: &uniq Output, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+    let source = br#"fn publish_prefix(output: &uniq OutputStream, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len(deref(source));
   requires limit <= capacity;
 } {

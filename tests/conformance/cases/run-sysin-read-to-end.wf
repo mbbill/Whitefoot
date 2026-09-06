@@ -1,0 +1,34 @@
+command fn main(command.stdin as input: own InputStream) -> status: own ExitStatus reads(input), writes(input), allocates(heap) {
+  doc "SYS-15: `read_next` reads the entry's standard input at the stream's own position, advancing it by exactly `next - start` on each `ReadBytes`, and reports `ReadEnd` exactly once the stream has no further byte [SYS-8]. The loop counts what it observed and returns 0 only when the count equals the arranged body.";
+  let chunk = buffer_new(8_u64, 0_u8);
+  let total = 0_u64;
+  let outcome = 0_u8;
+  loop @chunks {
+    let ended = 0_u8;
+    region {
+      match read_next(input: &uniq input, destination: &uniq chunk, start: 0_u64, end: 8_u64) {
+        ReadBytes(next: endpoint) => {
+          set total = total +wrap endpoint;
+        }
+        ReadEnd() => {
+          set ended = 1_u8;
+        }
+        ReadFailed(error: problem) => {
+          set outcome = 3_u8;
+          set ended = 1_u8;
+        }
+      }
+    }
+    if ended == 1_u8 {
+      break @chunks;
+    }
+  }
+  if outcome == 0_u8 {
+    let complete = total == 21_u64;
+    if complete {
+    } else {
+      set outcome = 4_u8;
+    }
+  }
+  return exit_status(code: outcome);
+}

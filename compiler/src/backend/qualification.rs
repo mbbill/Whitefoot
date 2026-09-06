@@ -102,8 +102,8 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // fallback therefore implement rows selected here without becoming alternate
 // system declarations or a second qualification path.
 // v0.37 review (2026-08-27): source effects now name concrete state
-// parameters while target suspension remains compiler-owned. FileFactory and
-// FilePermit use a proof-only bit representation; reserve_file returns that
+// parameters while target suspension remains compiler-owned. HandleFactory and
+// HandlePermit use a proof-only bit representation; reserve_handle returns that
 // harmless value inline, and the open wrappers erase it before the native ABI.
 // The three renamed operations retain ordinals 8, 12,
 // and 13. Ordinal 8 adds one u64 file offset and binds to pread instead of
@@ -259,11 +259,77 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // changes. ENT-1 erases every certificate before lowering. No system
 // operation, resource representation, release row, result shape, entry form,
 // or host ABI mapping changes, so the v0.48 mapping carries forward complete.
-const REVIEWED_FOR: &str = "v0.49";
+// v0.50 review (2026-09-06), the backed file permit and streams-and-TCP
+// landing together over v0.49 from the I/O branch; the two reviews below were
+// written as that branch's own v0.45 and v0.46 and read unchanged over v0.49,
+// whose amendments (v0.45 through v0.49 above) are all front-end and touch no
+// system operation, resource, release row, result shape, entry form or host
+// ABI mapping.
+//
+// Backed-permit review: `reserve_handle` answers
+// `Result<HandlePermit, IoError>` from the floor's credit count and three
+// explicit closes (`close_read`, `close_directory`, `close_directory_source`,
+// ordinals 16 to 18) return the credit after the same native close attempt
+// derived release performs. No target row, representation, or release
+// implementation changes, so the v0.44 mapping carries forward complete.
+// v0.46 streams-and-TCP review (2026-09-05): the amendment adds one readable
+// stream, one address value, one listener, one connection struct with its two
+// direction resources, and ten operations, and it respells `Output`,
+// `FileFactory`, `FilePermit`, `command.files` and `reserve_file`. The
+// respellings move no row: a spelling is not a semantic identity, and every
+// ordinal, representation, release action, host facility and ABI symbol of the
+// v0.45 rows is unchanged under the new names. Three added rows are qualified
+// here. `read_next` (ordinal 19) binds to the runtime's existing unpositioned
+// stream-read request kind, which reads at the descriptor's own position and
+// therefore needs no offset argument and no new host facility; on Linux it
+// reaches the ring as a read at offset -1 and on every other route the shared
+// file adapter's own `read`. `socket_address_v4` and `socket_address_v6`
+// (ordinals 20 and 21) touch no host object at all and resolve to the same
+// approved row on every target, like `exit_status`. The seven TCP rows
+// (ordinals 22 through 28) are deliberately unmapped: their request kinds and
+// routes are slice 2, and an unmapped row is a target-qualification stop
+// rather than a weaker operation. `InputStream`, `TcpListener`, `TcpReceive`
+// and `TcpSend` are one native descriptor each; `SocketAddress` is the
+// 24-byte internet-address representation added here and reaches no host
+// facility. `TcpConnection` takes no resource row at all, because a system
+// struct takes no [SYS-5] release row and releasing one is releasing its two
+// fields. Every v0.45 mapping therefore carries forward complete under the
+// v0.46 semantic-ID key.
+//
+// v0.46 slice 2 (POSIX TCP routes): the seven TCP rows above are now mapped on
+// the native target column and remain unmapped on the Windows one, whose
+// completion-port route is slice 3
+// (`research/investigations/io-model/NETWORK.md` §7). Nothing else in this
+// table moves: no signature, ordinal, representation, release action or entry
+// form changes, and the two direction resources keep the
+// `NativeDirectionClose` release row this version already carried. The rows
+// bind to the runtime's six added request kinds and their two engines — the
+// Linux ring for accept, connect, receive and send, the shared file adapter
+// for listen, bind and the half-close — which is a target column of the same
+// rows and not a second qualification path.
+//
+// v0.46 slice 3 (Windows TCP routes): the seven TCP rows are now mapped on the
+// Windows column as well, to the same ABI symbols, because the runtime carries
+// every one of the six request kinds against Winsock (`file_windows.c`) and
+// the completion port carries the connect, the receive and the send
+// (`windows_iocp.c`). The accept stays on the shared file adapter on this
+// platform, for the record-size reason `windows_iocp.c` states at
+// `wf_windows_iocp_carries`; that is the same class of fact as the Linux
+// ring's refusal of a listen, and it selects an engine rather than a
+// qualification. Nothing else in this table moves: the symbols, ordinals,
+// representations, release actions and entry forms are the ones slice 2
+// approved, and the [SYS-7] Windows class table below gains no class — the
+// leaf normalizes a Winsock code onto the Win32 code that table already
+// carries for the same condition (`../windows_runtime.h`,
+// `wf__windows_error_from_socket`).
+const REVIEWED_FOR: &str = "v0.50";
 
-/// The number of [SYS-2] opaque resource types, including the
-/// traversal-surface candidate's `DirectorySource`.
-const RESOURCE_COUNT: usize = 10;
+/// The number of [SYS-2] opaque resource types with a release row.
+///
+/// `TcpConnection` is not one of them: a system struct takes no row in the
+/// [SYS-5] release table, and releasing one is releasing its two direction
+/// fields [SYS-18].
+const RESOURCE_COUNT: usize = 15;
 
 /// The [HOST-1] code-unit family a qualified target's host strings belong to.
 ///
@@ -326,66 +392,81 @@ impl HostFacilities {
         }
     }
 
-    /// The facility one [SYS-5] consuming release attempts its single close
-    /// through, and the facility a qualified wrapper disposes of a
-    /// provisional descriptor through.
-    const fn close(self) -> &'static str {
+    /// The submit entry one [SYS-5] consuming release, and each explicit
+    /// close, hands its descriptor to.
+    ///
+    /// Every file facility below is now a submit and its matching join: an
+    /// operation is filled into the record the frame reserved, handed to the
+    /// runtime, and joined where its outcome is needed. There is one lowering
+    /// and no direct family left to select
+    /// (`research/investigations/io-model/PARK-ON-MISS.md` §8), so a target
+    /// column supplies the pair rather than a blocking call.
+    const fn file_close_submit(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_close_direct",
-            Self::Windows => "wf__completion_file_close_direct",
+            Self::Native | Self::Windows => "wf__completion_file_close_submit",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_close",
+            Self::DeterministicTest => "wf_test_close_submit",
         }
     }
 
-    /// The directory-relative open facility `open_read` resolves through
-    /// [PATH-2].
-    const fn file_open(self) -> &'static str {
+    /// The directory-relative open `open_read` resolves through [PATH-2].
+    const fn file_open_at_submit(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_open_at_direct",
-            Self::Windows => "wf__completion_file_open_at_direct",
+            Self::Native | Self::Windows => "wf__completion_file_open_at_submit",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_openat",
+            Self::DeterministicTest => "wf_test_open_at_submit",
         }
     }
 
-    /// The descriptor-status facility used to validate that `open_file`
-    /// produced the regular-file value its semantic row promises.
-    const fn file_status(self, _native: &'static str) -> &'static str {
+    /// The submit entry one positioned `read_at` transfer attempt reaches.
+    const fn file_pread_submit(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_status_direct",
-            Self::Windows => "wf__completion_file_status_direct",
+            Self::Native | Self::Windows => "wf__completion_file_pread_submit",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_fstat",
+            Self::DeterministicTest => "wf_test_pread_submit",
         }
     }
 
-    const fn uses_typed_completion_file_adapter(self) -> bool {
+    /// The submit entry one unpositioned `read_next` transfer attempt reaches
+    /// [SYS-15].
+    ///
+    /// This is the runtime's existing stream-read request kind, which reads at
+    /// the descriptor's own position and takes no offset; `read_at`'s
+    /// positioned kind is a different request and a different symbol.
+    const fn file_read_submit(self) -> &'static str {
         match self {
-            Self::Native => true,
-            Self::Windows => true,
+            Self::Native | Self::Windows => "wf__completion_file_read_submit",
             #[cfg(test)]
-            Self::DeterministicTest => false,
+            Self::DeterministicTest => "wf_test_read_submit",
         }
     }
 
-    /// The facility one positioned `read_at` transfer attempt reaches.
-    const fn pread(self) -> &'static str {
+    /// The submit entry one `write_once` transfer attempt reaches.
+    const fn file_write_submit(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_pread_direct",
-            Self::Windows => "wf__completion_file_pread_direct",
+            Self::Native | Self::Windows => "wf__completion_file_write_submit",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_pread",
+            Self::DeterministicTest => "wf_test_write_submit",
         }
     }
 
-    /// The facility one `write_once` transfer attempt reaches.
-    const fn write(self) -> &'static str {
+    /// The join a transferring or closing record is consumed through.
+    const fn file_join(self) -> &'static str {
         match self {
-            Self::Native => "wf__completion_file_write_direct",
-            Self::Windows => "wf__completion_file_write_direct",
+            Self::Native | Self::Windows => "wf__completion_file_join",
             #[cfg(test)]
-            Self::DeterministicTest => "wf_test_write",
+            Self::DeterministicTest => "wf_test_file_join",
+        }
+    }
+
+    /// The join an open's record is consumed through. It publishes the
+    /// outcome the target decided the descriptor's kind with, so the kind
+    /// check and its close on mismatch belong to whoever answers the submit.
+    const fn file_open_join(self) -> &'static str {
+        match self {
+            Self::Native | Self::Windows => "wf__completion_file_open_join",
+            #[cfg(test)]
+            Self::DeterministicTest => "wf_test_file_open_join",
         }
     }
 }
@@ -491,8 +572,14 @@ const LINUX_ERROR_CLASSES: [PortableErrorClass; 28] = [
 ];
 
 /// The Win32 error-code mapping used by the compiler-owned Windows runtime.
-/// Winsock values are included because the closed source vocabulary already
-/// contains those classes even though v0.39 exposes no network operation.
+///
+/// Two Winsock values appear directly — the two address refusals a bind
+/// reports, which never reach the completion port and so have no Win32
+/// spelling of their own. Every other socket condition arrives here as the
+/// Win32 code the port reports for it, because the runtime's leaf normalizes
+/// the adapter route's `WSAGetLastError` onto that same code
+/// (`backend/windows_runtime.h`, `wf__windows_error_from_socket`): one
+/// condition answers one class whichever engine ran the operation.
 const WINDOWS_ERROR_CLASSES: [PortableErrorClass; 28] = [
     class("NotFound", &[2, 3]),
     class("PermissionDenied", &[5, 65, 1314]),
@@ -538,6 +625,16 @@ pub(crate) const ORIGIN_READ: u8 = 2;
 pub(crate) const ORIGIN_WRITE: u8 = 3;
 /// The target-owned `origin` discriminator of descriptor-status inspection.
 pub(crate) const ORIGIN_DESCRIPTOR_STATUS: u8 = 4;
+/// The target-owned `origin` discriminators of the three socket facilities
+/// that create or take a connection [SYS-17].
+///
+/// A receive and a send have none of their own: they are the read and the
+/// write facility applied to a connection, they publish their outcome through
+/// the same two completion mappers `read_at` and `write_once` publish theirs
+/// through, and one mapper carries one origin.
+pub(crate) const ORIGIN_SOCKET_LISTEN: u8 = 5;
+pub(crate) const ORIGIN_SOCKET_ACCEPT: u8 = 6;
+pub(crate) const ORIGIN_SOCKET_CONNECT: u8 = 7;
 /// The `origin` value used when no native facility produced the code.
 pub(crate) const ORIGIN_NONE: u8 = 0;
 
@@ -830,6 +927,11 @@ pub(crate) enum ResourceRepresentation {
     CommandCode,
     /// A proof-only affine value with no target resource representation.
     ProofToken,
+    /// One internet address and port [SYS-16]: sixteen address bytes in two
+    /// 64-bit words, then the port in the low sixteen bits of a 32-bit word
+    /// whose bit 16 selects the family. An IPv4 address occupies the first
+    /// four bytes of the first word and leaves the rest zero.
+    InternetAddress,
 }
 
 impl ResourceRepresentation {
@@ -837,6 +939,7 @@ impl ResourceRepresentation {
     pub(crate) const fn size(self) -> u64 {
         match self {
             Self::InlineLease | Self::ArgumentVector => 16,
+            Self::InternetAddress => 24,
             Self::Descriptor => 4,
             Self::CommandCode | Self::ProofToken => 1,
         }
@@ -845,7 +948,7 @@ impl ResourceRepresentation {
     /// The representation's alignment in bytes on a qualified target.
     pub(crate) const fn align(self) -> u64 {
         match self {
-            Self::InlineLease | Self::ArgumentVector => 8,
+            Self::InlineLease | Self::ArgumentVector | Self::InternetAddress => 8,
             Self::Descriptor => 4,
             Self::CommandCode | Self::ProofToken => 1,
         }
@@ -855,6 +958,7 @@ impl ResourceRepresentation {
     pub(crate) const fn llvm(self) -> &'static str {
         match self {
             Self::InlineLease | Self::ArgumentVector => "{ ptr, i64 }",
+            Self::InternetAddress => "{ i64, i64, i32 }",
             Self::Descriptor => "i32",
             Self::CommandCode => "i8",
             Self::ProofToken => "i1",
@@ -868,9 +972,18 @@ pub(crate) enum ReleaseImplementation {
     /// A logical consume or a logical source detach: no host call, no target
     /// call, no handle lookup, no byte copy, and no external effect.
     NoCode,
-    /// At most one direct native close attempt through this symbol; the close
-    /// diagnostic is discarded and an ambiguous close is never retried.
-    NativeClose(&'static str),
+    /// At most one native close attempt, submitted and joined through the
+    /// selected target's own close facility; the close diagnostic is
+    /// discarded and an ambiguous close is never retried.
+    NativeClose,
+    /// At most one native direction-close attempt: the half-close of one
+    /// direction of one connection [SYS-18], submitted and joined through the
+    /// runtime's own half-close entry, whose diagnostic is discarded and which
+    /// is never retried. The runtime keeps the pair's own two-count and
+    /// releases the target's object on the second of the two releases, which
+    /// is where the credit is spent; the checker sees only the two direction
+    /// places.
+    NativeDirectionClose,
 }
 
 /// One approved implementation of one opaque resource type's qualification
@@ -940,12 +1053,6 @@ pub(crate) struct SystemTarget {
     /// Single-component `open_file`, which must not follow its terminal
     /// symbolic link or block while a non-regular object is rejected.
     component_file_open_flags: i32,
-    /// The target `struct stat` size and `st_mode` byte offset.
-    file_status_size: u64,
-    file_status_mode_offset: u64,
-    native_file_status_symbol: &'static str,
-    errno_location: &'static str,
-    errno_declaration: &'static str,
     error_classes: &'static [PortableErrorClass; 28],
     broken_pipe_signal: i32,
     ignored_disposition: i64,
@@ -999,41 +1106,10 @@ impl SystemTarget {
         self.component_file_open_flags
     }
 
-    /// The target descriptor-status facility and record coordinates used to
-    /// validate `open_file` before the resource reaches source.
-    pub(crate) const fn file_status_symbol(self) -> &'static str {
-        self.host.file_status(self.native_file_status_symbol)
-    }
-
-    pub(crate) const fn file_status_size(self) -> u64 {
-        self.file_status_size
-    }
-
-    pub(crate) const fn file_status_mode_offset(self) -> u64 {
-        self.file_status_mode_offset
-    }
-
-    /// Whether the selected target reaches file open/status/close through the
-    /// typed completion adapter ABI rather than the deterministic test shim.
-    pub(crate) const fn uses_typed_completion_file_adapter(self) -> bool {
-        self.host.uses_typed_completion_file_adapter()
-    }
-
-    /// The same target close facility resource release uses. An `open_file`
-    /// classification failure consumes the provisional descriptor here.
-    pub(crate) const fn close_symbol(self) -> &'static str {
-        self.host.close()
-    }
-
-    /// The symbol yielding the address of the calling thread's native error
-    /// slot, read immediately after a failing facility call.
-    pub(crate) const fn errno_location(self) -> &'static str {
-        self.errno_location
-    }
-
-    /// That symbol's declaration.
-    pub(crate) const fn errno_declaration(self) -> &'static str {
-        self.errno_declaration
+    /// The submit entry a consuming release and an explicit close hand their
+    /// descriptor to.
+    pub(crate) const fn file_close_submit_symbol(self) -> &'static str {
+        self.host.file_close_submit()
     }
 
     /// The target's complete [SYS-7] class mapping, in [SYS-2] declared order.
@@ -1047,24 +1123,40 @@ impl SystemTarget {
         self.host.directory_open()
     }
 
-    /// The host facility `open_read` resolves a relative path through
-    /// [PATH-2].
-    pub(crate) const fn file_open_symbol(self) -> &'static str {
-        self.host.file_open()
+    /// The submit entry `open_read`, `open_directory`, `open_file` and
+    /// `open_directory_source` resolve their name through [PATH-2].
+    pub(crate) const fn file_open_at_submit_symbol(self) -> &'static str {
+        self.host.file_open_at_submit()
     }
 
-    /// The host facility one positioned `read_at` attempt reaches [SYS-8].
-    pub(crate) const fn pread_symbol(self) -> &'static str {
-        self.host.pread()
+    /// The submit entry one positioned `read_at` attempt reaches [SYS-8].
+    pub(crate) const fn file_pread_submit_symbol(self) -> &'static str {
+        self.host.file_pread_submit()
     }
 
-    /// The host facility one `write_once` transfer attempt reaches [SYS-8].
+    /// The submit entry one unpositioned `read_next` attempt reaches
+    /// [SYS-8, SYS-15].
+    pub(crate) const fn file_read_submit_symbol(self) -> &'static str {
+        self.host.file_read_submit()
+    }
+
+    /// The submit entry one `write_once` transfer attempt reaches [SYS-8].
     ///
     /// This is the `write_once` row's facility only. External-resource records
     /// write through the native `write` on every target: a scripted host must
     /// never be able to truncate a resource record.
-    pub(crate) const fn write_symbol(self) -> &'static str {
-        self.host.write()
+    pub(crate) const fn file_write_submit_symbol(self) -> &'static str {
+        self.host.file_write_submit()
+    }
+
+    /// The join a transferring or closing record is consumed through.
+    pub(crate) const fn file_join_symbol(self) -> &'static str {
+        self.host.file_join()
+    }
+
+    /// The join an open's record is consumed through.
+    pub(crate) const fn file_open_join_symbol(self) -> &'static str {
+        self.host.file_open_join()
     }
 
     /// The write-to-closed-pipe signal number [QUAL-3] normalizes once.
@@ -1122,19 +1214,11 @@ impl SystemTarget {
                 // 255 UTF-16 code units, exposed losslessly as bytes.
                 component_limit: 510,
                 // These private bits are interpreted only by
-                // wf__completion_file_open_at_direct on Windows.
+                // wf__completion_file_open_at_submit on Windows.
                 directory_open_flags: 0,
                 file_open_flags: 0,
                 component_directory_open_flags: 1,
                 component_file_open_flags: 1,
-                // The typed Windows open route performs classification before
-                // publication.  The status ABI is retained for the shared
-                // completion contract and uses this private eight-byte cell.
-                file_status_size: 8,
-                file_status_mode_offset: 0,
-                native_file_status_symbol: "wf__completion_file_status_direct",
-                errno_location: "wf__windows_error_location",
-                errno_declaration: "declare ptr @wf__windows_error_location()",
                 error_classes: &WINDOWS_ERROR_CLASSES,
                 // Windows has no SIGPIPE disposition.  Its bootstrap and
                 // WriteFile wrapper supply the equivalent broken-pipe result.
@@ -1148,11 +1232,6 @@ impl SystemTarget {
             directory_open_flags,
             component_directory_open_flags,
             component_file_open_flags,
-            file_status_size,
-            file_status_mode_offset,
-            native_file_status_symbol,
-            errno_location,
-            errno_declaration,
             error_classes,
             directory_enumeration_facility,
             directory_enumeration,
@@ -1163,11 +1242,6 @@ impl SystemTarget {
                 0x0010_0000,
                 0x0010_0100,
                 0x0000_0104,
-                144,
-                4,
-                "fstat",
-                "__error",
-                "declare ptr @__error()",
                 &DARWIN_ERROR_CLASSES,
                 true,
                 Some(DARWIN_ENUMERATION),
@@ -1179,11 +1253,6 @@ impl SystemTarget {
                 0x0010_0000,
                 0x0010_0100,
                 0x0000_0104,
-                144,
-                4,
-                "fstat$INODE64",
-                "__error",
-                "declare ptr @__error()",
                 &DARWIN_ERROR_CLASSES,
                 true,
                 Some(DARWIN_ENUMERATION),
@@ -1197,11 +1266,6 @@ impl SystemTarget {
                 0x0000_4000,
                 0x0000_c000,
                 0x0000_8800,
-                128,
-                16,
-                "fstat",
-                "__errno_location",
-                "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
                 true,
                 Some(LINUX_ENUMERATION),
@@ -1212,11 +1276,6 @@ impl SystemTarget {
                 0x0001_0000,
                 0x0003_0000,
                 0x0002_0800,
-                144,
-                24,
-                "fstat",
-                "__errno_location",
-                "declare ptr @__errno_location()",
                 &LINUX_ERROR_CLASSES,
                 true,
                 Some(LINUX_ENUMERATION),
@@ -1239,11 +1298,6 @@ impl SystemTarget {
             file_open_flags: 0,
             component_directory_open_flags,
             component_file_open_flags,
-            file_status_size,
-            file_status_mode_offset,
-            native_file_status_symbol,
-            errno_location,
-            errno_declaration,
             error_classes,
             // `SIGPIPE` is 13 on every supported target.
             broken_pipe_signal: 13,
@@ -1414,10 +1468,20 @@ pub(crate) const fn qualified_representation(
         // component of its own [SYS-14].
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
-        | SystemResourceType::Output
-        | SystemResourceType::DirectorySource => ResourceRepresentation::Descriptor,
+        | SystemResourceType::OutputStream
+        | SystemResourceType::DirectorySource
+        // A stream, a listener and each direction of a connection are one
+        // native descriptor each; the stream's whole state is that
+        // descriptor's own position [SYS-15], and the two directions of one
+        // connection name one target object the runtime keeps a two-count for
+        // [SYS-18].
+        | SystemResourceType::InputStream
+        | SystemResourceType::TcpListener
+        | SystemResourceType::TcpReceive
+        | SystemResourceType::TcpSend => ResourceRepresentation::Descriptor,
+        SystemResourceType::SocketAddress => ResourceRepresentation::InternetAddress,
         SystemResourceType::ExitStatus => ResourceRepresentation::CommandCode,
-        SystemResourceType::FileFactory | SystemResourceType::FilePermit => {
+        SystemResourceType::HandleFactory | SystemResourceType::HandlePermit => {
             ResourceRepresentation::ProofToken
         }
     }
@@ -1430,11 +1494,16 @@ const fn resource_index(resource: SystemResourceType) -> usize {
         SystemResourceType::RelativePath => 2,
         SystemResourceType::DirectoryRead => 3,
         SystemResourceType::ReadFile => 4,
-        SystemResourceType::Output => 5,
+        SystemResourceType::OutputStream => 5,
         SystemResourceType::ExitStatus => 6,
         SystemResourceType::DirectorySource => 7,
-        SystemResourceType::FileFactory => 8,
-        SystemResourceType::FilePermit => 9,
+        SystemResourceType::HandleFactory => 8,
+        SystemResourceType::HandlePermit => 9,
+        SystemResourceType::InputStream => 10,
+        SystemResourceType::SocketAddress => 11,
+        SystemResourceType::TcpListener => 12,
+        SystemResourceType::TcpReceive => 13,
+        SystemResourceType::TcpSend => 14,
     }
 }
 
@@ -1468,7 +1537,10 @@ fn operation_guarantees(operation: u8) -> &'static [TargetGuarantee] {
         // `open_directory_source` and `directory_next` additionally require the target's own
         // enumeration facility [SYS-14].
         12 | 13 => ENUMERATION,
-        // `read_at`, `write_once`, and `exit_status` require neither.
+        // `read_at`, `write_once`, `exit_status`, `read_next`, the two address
+        // constructors, and every TCP row require neither: none of them
+        // resolves a name, leases argument code units, or enumerates a
+        // directory.
         _ => &[],
     }
 }
@@ -1492,10 +1564,18 @@ fn resource_guarantees(resource: SystemResourceType) -> &'static [TargetGuarante
         // [PATH-2, SYS-14].
         SystemResourceType::DirectorySource => DIRECTORY,
         SystemResourceType::ReadFile
-        | SystemResourceType::Output
+        | SystemResourceType::OutputStream
         | SystemResourceType::ExitStatus
-        | SystemResourceType::FileFactory
-        | SystemResourceType::FilePermit => &[],
+        | SystemResourceType::HandleFactory
+        | SystemResourceType::HandlePermit
+        // A stream, an address, a listener and a connection direction each
+        // require none of the four [QUAL-2] guarantees: none of them resolves
+        // a name, leases argument code units, or enumerates a directory.
+        | SystemResourceType::InputStream
+        | SystemResourceType::SocketAddress
+        | SystemResourceType::TcpListener
+        | SystemResourceType::TcpReceive
+        | SystemResourceType::TcpSend => &[],
     }
 }
 
@@ -1526,6 +1606,15 @@ fn operation_row(
     if matches!(operation, 12 | 13) && target.directory_enumeration().is_none() {
         return Err(QualificationFailure::MissingMapping(facility));
     }
+    // Ordinals 22 through 28 are `tcp_listen`, `tcp_accept`, `tcp_connect`,
+    // `receive_next`, `send_once`, `close_connection` and `close_listener`.
+    // Every column maps them to the rows below: the ABI symbol of a system
+    // operation is target-independent, and one wrapper per operation is
+    // emitted on every target (`emitter/system.rs`). What differs is which
+    // engine behind that symbol runs it — the Linux ring, the Windows
+    // completion port, or the shared file adapter — and that is a runtime
+    // routing fact rather than a qualification one
+    // (`research/investigations/io-model/NETWORK.md` §5).
     let symbol = match operation {
         0 => "wf.sys.args_count.v1",
         1 => "wf.sys.arg_get.v1",
@@ -1542,7 +1631,20 @@ fn operation_row(
         12 => "wf.sys.open_directory_source.v1",
         13 => "wf.sys.directory_next.v1",
         14 => "wf.sys.open_file.v1",
-        15 => "wf.sys.reserve_file.v1",
+        15 => "wf.sys.reserve_handle.v1",
+        16 => "wf.sys.close_read.v1",
+        17 => "wf.sys.close_directory.v1",
+        18 => "wf.sys.close_directory_source.v1",
+        19 => "wf.sys.read_next.v1",
+        20 => "wf.sys.socket_address_v4.v1",
+        21 => "wf.sys.socket_address_v6.v1",
+        22 => "wf.sys.tcp_listen.v1",
+        23 => "wf.sys.tcp_accept.v1",
+        24 => "wf.sys.tcp_connect.v1",
+        25 => "wf.sys.receive_next.v1",
+        26 => "wf.sys.send_once.v1",
+        27 => "wf.sys.close_connection.v1",
+        28 => "wf.sys.close_listener.v1",
         // The ordinal bound above admits no other value.
         _ => return Err(QualificationFailure::MissingMapping(facility)),
     };
@@ -1582,21 +1684,25 @@ fn resource_row(
     }
     let representation = qualified_representation(contract.resource);
     let release = match contract.resource {
-        // At most one direct native close attempt; `Output` detaches the
+        // At most one direct native close attempt; `OutputStream` detaches the
         // source value without closing or flushing the descriptor
         // [SYS-12], and every other type releases with a logical consume.
         SystemResourceType::DirectoryRead
         | SystemResourceType::ReadFile
-        | SystemResourceType::DirectorySource => {
-            ReleaseImplementation::NativeClose(target.host.close())
+        | SystemResourceType::DirectorySource
+        | SystemResourceType::TcpListener => ReleaseImplementation::NativeClose,
+        SystemResourceType::TcpReceive | SystemResourceType::TcpSend => {
+            ReleaseImplementation::NativeDirectionClose
         }
         SystemResourceType::Args
         | SystemResourceType::HostString
         | SystemResourceType::RelativePath
-        | SystemResourceType::Output
+        | SystemResourceType::OutputStream
+        | SystemResourceType::InputStream
+        | SystemResourceType::SocketAddress
         | SystemResourceType::ExitStatus
-        | SystemResourceType::FileFactory
-        | SystemResourceType::FilePermit => ReleaseImplementation::NoCode,
+        | SystemResourceType::HandleFactory
+        | SystemResourceType::HandlePermit => ReleaseImplementation::NoCode,
     };
     // The approved release code and the [SYS-5] action the checked program
     // carries must be the same action. Emission reads the checked program's
@@ -1609,7 +1715,10 @@ fn resource_row(
             ReleaseImplementation::NoCode,
         ) | (
             SystemReleaseAction::NativeCloseAttempt,
-            ReleaseImplementation::NativeClose(_)
+            ReleaseImplementation::NativeClose
+        ) | (
+            SystemReleaseAction::NativeDirectionCloseAttempt,
+            ReleaseImplementation::NativeDirectionClose
         )
     );
     if !consistent {

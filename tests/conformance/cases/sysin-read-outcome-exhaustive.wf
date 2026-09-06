@@ -1,0 +1,13 @@
+command fn main(command.stdin as input: own InputStream) -> status: own ExitStatus reads(input), writes(input), allocates(heap) {
+  doc "ERR-2: `read_next` answers the same three-variant `ReadOutcome` `read_at` answers [SYS-6], so a match over it must write all three arms. This one omits `ReadFailed`, which is exactly the failure a stream can report, and is rejected.";
+  let chunk = buffer_new(4_u64, 0_u8);
+  region {
+    match read_next(input: &uniq input, destination: &uniq chunk, start: 0_u64, end: 4_u64) {
+      ReadBytes(next: endpoint) => {
+      }
+      ReadEnd() => {
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}

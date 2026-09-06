@@ -264,8 +264,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let nominal = crate::SYSTEM_NOMINALS
             .get(usize::from(index))
             .ok_or(SemanticCompilerFailure::InvalidResolution)?;
-        let kind = if nominal.opaque {
+        let kind = if nominal.is_opaque() {
             CheckedNominalKind::SystemResource { nominal: index }
+        } else if nominal.is_struct() {
+            // A system-declared struct becomes an ordinary checked struct
+            // whose typed fields come from the catalog [SYS-18], so field
+            // places, disjoint-field loans, partial moves and derived release
+            // all take the one normal path. It contributes no constructor
+            // entry, so no source expression constructs one.
+            let mut fields = Vec::with_capacity(nominal.fields.len());
+            for field in nominal.fields {
+                fields.push(CheckedField {
+                    name: field.name.to_owned(),
+                    ty: self.ensure_system_type(field.ty)?,
+                });
+            }
+            CheckedNominalKind::Struct { fields }
         } else {
             let mut variants = Vec::new();
             for (constructor_index, constructor) in crate::SYSTEM_CONSTRUCTORS.iter().enumerate() {
@@ -323,6 +337,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     ) -> Result<CheckedType, CheckStop> {
         Ok(match ty {
             crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
+            crate::SystemTypeRef::U16 => CheckedType::Integer(IntegerType::U16),
             crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
             crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
             crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {
@@ -350,6 +365,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
     pub(super) fn system_type(&self, ty: crate::SystemTypeRef) -> Result<CheckedType, CheckStop> {
         Ok(match ty {
             crate::SystemTypeRef::U8 => CheckedType::Integer(IntegerType::U8),
+            crate::SystemTypeRef::U16 => CheckedType::Integer(IntegerType::U16),
             crate::SystemTypeRef::U32 => CheckedType::Integer(IntegerType::U32),
             crate::SystemTypeRef::U64 => CheckedType::Integer(IntegerType::U64),
             crate::SystemTypeRef::BufferU8 => CheckedType::Buffer {

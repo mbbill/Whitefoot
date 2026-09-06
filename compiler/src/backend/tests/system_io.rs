@@ -121,7 +121,7 @@ pub(super) fn class_arms(indent: usize, named: &[(&str, &str)], default: &str) -
 
 /// Opens one argument-named path under `command.cwd` and reads its first
 /// bytes, reporting the exact count.
-const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -129,36 +129,42 @@ const OPEN_AND_READ: &[u8] = br#"command fn main(command.args as args: own Args,
           Ok(value: path) => {
             region 'c {
               region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(64_u64, 0_u8);
-                    region 'f {
-                      region {
-                        match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
-                          ReadBytes(next: n) => {
-                            let narrowed = cvt::<u64, u8>(n);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let bytes = buffer_new(64_u64, 0_u8);
+                        region 'f {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 64_u64) {
+                              ReadBytes(next: n) => {
+                                let narrowed = cvt::<u64, u8>(n);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
                               }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
+                              ReadEnd() => {
+                                return exit_status(code: 201_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 202_u8);
                               }
                             }
                           }
-                          ReadEnd() => {
-                            return exit_status(code: 201_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 202_u8);
-                          }
                         }
+                      }
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -194,15 +200,23 @@ fn windows_emits_the_utf16_bootstrap_and_typed_positioned_read_route() {
     assert!(llvm.contains("@wf__windows_open_cwd(ptr null, i32 0)"));
     assert!(llvm.contains("call i64 @wf__windows_wcslen(ptr %text)"));
     assert!(llvm.contains("call i32 @wf__windows_relative_path_valid"));
-    assert!(llvm.contains("call ptr @wf__windows_error_location()"));
+    // No emitted code reads the native error slot any more: a failing
+    // operation publishes its error into the record the frame reserved, and
+    // the join hands it to the operation's own mapper
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8). The Windows
+    // error location was read only by the direct family that left with it.
+    assert!(!llvm.contains("@wf__windows_error_location"));
     assert!(llvm.contains(
-        "declare i32 @wf__completion_file_open_at_direct(i32, ptr, i32, i32, i32, i32, i32, ptr, ptr)"
+        "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)"
     ));
+    // The Windows descriptor class is the extra argument this family carries,
+    // and it still reaches the submit ahead of the record.
     assert!(llvm.contains(
-        "@wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
+        "@wf__completion_file_open_at_submit(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, i32 1, ptr %record)"
     ));
     assert!(llvm.contains("@wf__completion_file_pread_submit"));
-    assert!(llvm.contains("@wf__completion_file_pread_direct"));
+    assert!(!llvm.contains("_direct("));
+    assert!(!llvm.contains("_direct)"));
     assert!(!llvm.contains("declare ptr @signal"));
     assert!(!llvm.contains("@pread("));
     assert!(!llvm.contains("@openat("));
@@ -216,10 +230,10 @@ fn open_read_resolves_a_relative_path_through_the_targets_own_facility() {
     // path and resolved against an ambient working directory.
     assert!(llvm.contains("; QUAL-1 semantic id 7 -> @wf.sys.open_read.v1"));
     assert!(llvm.contains(
-        "declare i32 @wf__completion_file_open_at_direct(i32, ptr, i32, i32, i32, i32, ptr, ptr)"
+        "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, ptr)"
     ));
     assert!(llvm.contains(
-        "@wf__completion_file_open_at_direct(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, ptr %open.error.slot, ptr %open.outcome.slot)"
+        "@wf__completion_file_open_at_submit(i32 %root, ptr %text, i32 0, i32 0, i32 0, i32 1, ptr %record)"
     ));
     for absent in ["@getcwd", "@chdir", "@realpath", "@strcat", "@snprintf"] {
         assert!(
@@ -228,7 +242,7 @@ fn open_read_resolves_a_relative_path_through_the_targets_own_facility() {
         );
     }
     // The supplied directory's own descriptor is the resolution root.
-    assert!(llvm.contains("%descriptor = call i32 @wf__completion_file_open_at_direct"));
+    assert!(llvm.contains("call void @wf__completion_file_open_at_submit(i32 %root,"));
 
     // A path naming a file in the initial directory opens and reads it; the
     // exact byte count reaches source.
@@ -253,7 +267,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
     // the same two-field inline target detail [SYS-7]. `NotFound` reports its
     // native code and the target's own facility discriminator.
     let arms = class_arms(
-        22,
+        26,
         &[
             (
                 "NotFound",
@@ -266,7 +280,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
         "return exit_status(code: 199_u8);",
     );
     let source = format!(
-        r#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {{
+        r#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {{
   region {{
     match arg_get(args: &args, position: 1_u64) {{
       Ok(value: text) => {{
@@ -274,14 +288,20 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
           Ok(value: path) => {{
             region 'c {{
               region {{
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {{
-                  Ok(value: file) => {{
-                    return exit_status(code: 0_u8);
+                match reserve_handle(factory: &uniq 'c files) {{
+                  Ok(value: permit) => {{
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {{
+                      FileOpened(value: file) => {{
+                        return exit_status(code: 0_u8);
+                      }}
+                      FileOpenFailed(error: problem, permit: refused_2) => {{
+                        match move problem {{
+{arms}                        }}
+                      }}
+                    }}
                   }}
-                  Err(error: problem) => {{
-                    match move problem {{
-{arms}                    }}
+                  Err(error: spent) => {{
+                    return exit_status(code: 8_u8);
                   }}
                 }}
               }}
@@ -362,7 +382,7 @@ fn open_read_maps_one_native_failure_onto_one_portable_class() {
 }
 
 /// Drains one file in three-byte requests, reporting `total * 10 + requests`.
-pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -370,45 +390,51 @@ pub(super) const CHUNKED_READ: &[u8] = br#"command fn main(command.args as args:
           Ok(value: path) => {
             region 'c {
               region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(3_u64, 0_u8);
-                    let total = 0_u64;
-                    let chunks = 0_u64;
-                    let failed = False();
-                    loop @drain {
-                      match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 3_u64) {
-                        ReadBytes(next: n) => {
-                          set total = total +wrap n;
-                          set chunks = chunks +wrap 1_u64;
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let bytes = buffer_new(3_u64, 0_u8);
+                        let total = 0_u64;
+                        let chunks = 0_u64;
+                        let failed = False();
+                        loop @drain {
+                          match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 3_u64) {
+                            ReadBytes(next: n) => {
+                              set total = total +wrap n;
+                              set chunks = chunks +wrap 1_u64;
+                            }
+                            ReadEnd() => {
+                              break @drain;
+                            }
+                            ReadFailed(error: problem) => {
+                              set failed = True();
+                              break @drain;
+                            }
+                          }
                         }
-                        ReadEnd() => {
-                          break @drain;
+                        if failed {
+                          return exit_status(code: 202_u8);
                         }
-                        ReadFailed(error: problem) => {
-                          set failed = True();
-                          break @drain;
+                        let scaled = total *wrap 10_u64;
+                        let mixed = scaled +wrap chunks;
+                        let narrowed = cvt::<u64, u8>(mixed);
+                        match narrowed {
+                          Ok(value: code) => {
+                            return exit_status(code: code);
+                          }
+                          Err(error: overflowed) => {
+                            return exit_status(code: 200_u8);
+                          }
                         }
                       }
-                    }
-                    if failed {
-                      return exit_status(code: 202_u8);
-                    }
-                    let scaled = total *wrap 10_u64;
-                    let mixed = scaled +wrap chunks;
-                    let narrowed = cvt::<u64, u8>(mixed);
-                    match narrowed {
-                      Ok(value: code) => {
-                        return exit_status(code: code);
-                      }
-                      Err(error: overflowed) => {
-                        return exit_status(code: 200_u8);
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -458,7 +484,7 @@ fn a_short_read_is_progress_and_only_the_observed_end_is_read_end() {
 }
 
 /// Reports a zero-length read's endpoint, then the following request's endpoint.
-const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -466,56 +492,62 @@ const VACANT_READ: &[u8] = br#"command fn main(command.args as args: own Args, c
           Ok(value: path) => {
             region 'c {
               region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(8_u64, 0_u8);
-                    let vacant = 0_u64;
-                    region 'f {
-                      region {
-                        match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
-                          ReadBytes(next: n) => {
-                            set vacant = n;
-                          }
-                          ReadEnd() => {
-                            return exit_status(code: 210_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 211_u8);
-                          }
-                        }
-                      }
-                    }
-                    if vacant == 0_u64 {
-                    } else {
-                      return exit_status(code: 212_u8);
-                    }
-                    region 'g {
-                      region {
-                        match read_at(file: &'g file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
-                          ReadBytes(next: n) => {
-                            let narrowed = cvt::<u64, u8>(n);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let bytes = buffer_new(8_u64, 0_u8);
+                        let vacant = 0_u64;
+                        region 'f {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 0_u64) {
+                              ReadBytes(next: n) => {
+                                set vacant = n;
                               }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
+                              ReadEnd() => {
+                                return exit_status(code: 210_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 211_u8);
                               }
                             }
                           }
-                          ReadEnd() => {
-                            return exit_status(code: 213_u8);
-                          }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 214_u8);
+                        }
+                        if vacant == 0_u64 {
+                        } else {
+                          return exit_status(code: 212_u8);
+                        }
+                        region 'g {
+                          region {
+                            match read_at(file: &'g file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 8_u64) {
+                              ReadBytes(next: n) => {
+                                let narrowed = cvt::<u64, u8>(n);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
+                              }
+                              ReadEnd() => {
+                                return exit_status(code: 213_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 214_u8);
+                              }
+                            }
                           }
                         }
                       }
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        return exit_status(code: 203_u8);
+                      }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -560,7 +592,7 @@ fn a_zero_length_read_reports_no_bytes_without_issuing_a_host_transfer() {
 
 /// Reads three bytes into the middle of a sentinel buffer and digests the
 /// complete buffer afterwards.
-const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -568,58 +600,64 @@ const EXACT_PREFIX: &[u8] = br#"command fn main(command.args as args: own Args, 
           Ok(value: path) => {
             region 'c {
               region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(8_u64, 7_u8);
-                    region 'f {
-                      region {
-                        match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 2_u64, end: 5_u64) {
-                          ReadBytes(next: n) => {
-                            if n == 5_u64 {
-                            } else {
-                              return exit_status(code: 250_u8);
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let bytes = buffer_new(8_u64, 7_u8);
+                        region 'f {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 2_u64, end: 5_u64) {
+                              ReadBytes(next: n) => {
+                                if n == 5_u64 {
+                                } else {
+                                  return exit_status(code: 250_u8);
+                                }
+                              }
+                              ReadEnd() => {
+                                return exit_status(code: 251_u8);
+                              }
+                              ReadFailed(error: problem) => {
+                                return exit_status(code: 252_u8);
+                              }
                             }
                           }
-                          ReadEnd() => {
-                            return exit_status(code: 251_u8);
+                        }
+                        let digest = 0_u64;
+                        let cursor = 0_u64;
+                        loop @fold {
+                          if cursor == 8_u64 {
+                            break @fold;
                           }
-                          ReadFailed(error: problem) => {
-                            return exit_status(code: 252_u8);
+                          let fold_ok = cursor < 8_u64;
+                          if fold_ok {
+                            let byte = bytes[cursor];
+                            let widened = cvt::<u8, u64>(byte);
+                            let scaled = digest *wrap 31_u64;
+                            set digest = scaled +wrap widened;
+                            set cursor = cursor +wrap 1_u64;
+                          } else {
+                            return exit_status(code: 253_u8);
+                          }
+                        }
+                        let masked = iand(digest, 255_u64);
+                        let narrowed = cvt::<u64, u8>(masked);
+                        match narrowed {
+                          Ok(value: code) => {
+                            return exit_status(code: code);
+                          }
+                          Err(error: overflowed) => {
+                            return exit_status(code: 200_u8);
                           }
                         }
                       }
-                    }
-                    let digest = 0_u64;
-                    let cursor = 0_u64;
-                    loop @fold {
-                      if cursor == 8_u64 {
-                        break @fold;
-                      }
-                      let fold_ok = cursor < 8_u64;
-                      if fold_ok {
-                        let byte = bytes[cursor];
-                        let widened = cvt::<u8, u64>(byte);
-                        let scaled = digest *wrap 31_u64;
-                        set digest = scaled +wrap widened;
-                        set cursor = cursor +wrap 1_u64;
-                      } else {
-                        return exit_status(code: 253_u8);
-                      }
-                    }
-                    let masked = iand(digest, 255_u64);
-                    let narrowed = cvt::<u64, u8>(masked);
-                    match narrowed {
-                      Ok(value: code) => {
-                        return exit_status(code: code);
-                      }
-                      Err(error: overflowed) => {
-                        return exit_status(code: 200_u8);
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -659,7 +697,7 @@ fn a_successful_read_changes_exactly_the_requested_prefix() {
 }
 
 /// Writes nothing, then the two-byte prefix at offset one.
-pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+pub(super) const WRITE_PREFIX: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(4_u64, 119_u8);
   set bytes[1_u64] = 120_u8;
   set bytes[2_u64] = 121_u8;
@@ -719,7 +757,7 @@ fn write_once_publishes_the_requested_range_and_reports_its_absolute_endpoint() 
 }
 
 /// Requests a range that runs past the end of its source buffer.
-const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+const OUT_OF_RANGE_WRITE: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(4_u64, 65_u8);
   region 'o {
     region {
@@ -745,8 +783,8 @@ fn an_out_of_range_transfer_is_a_static_sys8_rejection() {
     assert!(failure.detail().contains("9_u64 <= len(bytes)"));
 }
 
-/// Publishes three reservations through one Output root.
-const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+/// Publishes three reservations through one OutputStream root.
+const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let bytes = buffer_new(3_u64, 65_u8);
   set bytes[1_u64] = 66_u8;
   set bytes[2_u64] = 67_u8;
@@ -791,7 +829,7 @@ const ORDERED_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Out
 fn ordered_reservations_on_one_output_preserve_source_order() {
     let llvm = compile(ORDERED_WRITES);
     let output = run_in_directory(&llvm, &[], &[]);
-    // One logical Output root assigns all three reservations before target
+    // One logical OutputStream root assigns all three reservations before target
     // completion can race. Environment aliasing is deliberately irrelevant
     // to this ordering oracle [EFF-5, SYS-12].
     assert_eq!(output.status.code(), Some(0));
@@ -806,7 +844,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
         "set status = 43_u8;",
     );
     let source = format!(
-        r#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
+        r#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {{
   let bytes = buffer_new(1_u64, 65_u8);
   let attempts = 0_u64;
   let status = 44_u8;
@@ -849,7 +887,7 @@ fn a_closed_destination_arrives_as_a_recoverable_broken_pipe() {
 }
 
 /// Drains one file through a reusable buffer and publishes one byte.
-const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
+const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files), allocates(heap) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -857,48 +895,54 @@ const TRANSFER_SHAPE: &[u8] = br#"command fn main(command.args as args: own Args
           Ok(value: path) => {
             region 'c {
               region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(4096_u64, 0_u8);
-                    let total = 0_u64;
-                    loop @drain {
-                      match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
-                        ReadBytes(next: n) => {
-                          set total = total +wrap n;
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let bytes = buffer_new(4096_u64, 0_u8);
+                        let total = 0_u64;
+                        loop @drain {
+                          match read_at(file: &file, destination: &uniq bytes, file_offset: total, start: 0_u64, end: 4096_u64) {
+                            ReadBytes(next: n) => {
+                              set total = total +wrap n;
+                            }
+                            ReadEnd() => {
+                              break @drain;
+                            }
+                            ReadFailed(error: problem) => {
+                              return exit_status(code: 202_u8);
+                            }
+                          }
                         }
-                        ReadEnd() => {
-                          break @drain;
-                        }
-                        ReadFailed(error: problem) => {
-                          return exit_status(code: 202_u8);
-                        }
-                      }
-                    }
-                    region 'o {
-                      region {
-                        match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
-                          Ok(value: written) => {
-                            let masked = iand(total, 255_u64);
-                            let narrowed = cvt::<u64, u8>(masked);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
+                        region 'o {
+                          region {
+                            match write_once(output: &uniq 'o out, source: &bytes, start: 0_u64, end: 1_u64) {
+                              Ok(value: written) => {
+                                let masked = iand(total, 255_u64);
+                                let narrowed = cvt::<u64, u8>(masked);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
                               }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
+                              Err(error: problem) => {
+                                return exit_status(code: 212_u8);
                               }
                             }
                           }
-                          Err(error: problem) => {
-                            return exit_status(code: 212_u8);
-                          }
                         }
+                      }
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        return exit_status(code: 203_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 203_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -954,23 +998,39 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
             "an approved implementation survives on the transfer path:\n{entry}"
         );
     }
-    // One source transfer is one call into the compiler-owned progress
-    // adapter. EINTR/readiness retries remain inside that call and only its
-    // first progress-producing or terminal answer reaches this path.
+    // One source transfer is one submission into the compiler-owned completion
+    // runtime and one join of the record the entry's own frame reserved for
+    // it. EINTR/readiness retries remain behind that pair and only its first
+    // progress-producing or terminal answer reaches this path
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8: one lowering per
+    // operation, submit then join).
     assert_eq!(
-        entry.matches("@wf__completion_file_pread_direct(").count(),
+        entry.matches("@wf__completion_file_pread_submit(").count(),
         1,
         "{entry}"
     );
     assert_eq!(
-        entry.matches("@wf__completion_file_write_direct(").count(),
+        entry.matches("@wf__completion_file_write_submit(").count(),
         1,
         "{entry}"
     );
     assert_eq!(
         entry
-            .matches("@wf__completion_file_open_at_direct(")
+            .matches("@wf__completion_file_open_at_submit(")
             .count(),
+        1,
+        "{entry}"
+    );
+    // Each of the three is joined exactly once, and the open through the join
+    // that also publishes the kind outcome.
+    assert_eq!(
+        entry.matches("@wf__completion_file_join(").count(),
+        entry.matches("@wf__completion_file_close_submit(").count() + 2,
+        "every submitted operation is joined exactly once: the two transfers \
+         and one close per release site:\n{entry}"
+    );
+    assert_eq!(
+        entry.matches("@wf__completion_file_open_join(").count(),
         1,
         "{entry}"
     );
@@ -1015,41 +1075,55 @@ fn the_transfer_path_carries_no_allocation_copy_dispatch_or_lock() {
 }
 
 #[test]
-fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
+fn an_opened_file_releases_with_one_close_that_is_never_retried() {
     let llvm = compile(OPEN_AND_READ);
     // `DirectoryRead` and `ReadFile` release with at most one native close
-    // attempt [SYS-5]; every release site is one direct call to the one
-    // declared close symbol.
-    assert!(llvm.contains("declare i32 @wf__completion_file_close_direct(i32)"));
-    let releases = llvm
-        .matches("call i32 @wf__completion_file_close_direct(i32")
-        .count();
+    // attempt [SYS-5]. A close is submitted into the record its own frame
+    // reserved and joined there, like every other operation
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8), so every
+    // release site is one call of the one close helper and the helper holds
+    // the one submit and the one join.
+    assert!(llvm.contains("declare void @wf__completion_file_close_submit(i32, ptr)"));
+    assert!(llvm.contains("declare void @wf__completion_file_join(ptr, ptr, ptr)"));
+    let releases = llvm.matches("call void @wf.sys.close(i32").count();
     assert!(releases >= 2, "both closing owners must release:\n{llvm}");
+    assert_eq!(
+        llvm.matches("call void @wf__completion_file_close_submit(i32")
+            .count(),
+        1,
+        "one helper holds the one submit:\n{llvm}"
+    );
     // The close diagnostic is discarded and an ambiguous close is never
-    // retried: every release value is produced by a close, named once, and
-    // never read again, so nothing branches on it.
-    let mut inspected = 0;
+    // retried: the helper joins the record into slots nothing reads, and the
+    // helper itself answers nothing a caller could branch on.
+    assert!(llvm.contains("define private void @wf.sys.close(i32 %descriptor) alwaysinline"));
     for line in llvm.lines() {
-        let Some(rest) = line.trim_start().strip_prefix("%release.") else {
-            continue;
-        };
         assert!(
-            line.contains("call i32 @wf__completion_file_close_direct(i32"),
-            "a release value comes from one direct close:\n{line}"
+            !line.trim_start().starts_with("%release."),
+            "a release produces no value to inspect:\n{line}"
         );
-        let ordinal = rest
-            .split_whitespace()
-            .next()
-            .expect("a release value has an ordinal");
-        let name = format!("%release.{ordinal} ");
-        assert_eq!(
-            llvm.matches(&name).count(),
-            1,
-            "the close diagnostic must be discarded, not inspected"
-        );
-        inspected += 1;
     }
-    assert_eq!(inspected, releases);
+    let helper = llvm
+        .split_once("define private void @wf.sys.close(")
+        .expect("the module defines the one close")
+        .1
+        .split_once("\n}\n")
+        .expect("the close helper closes")
+        .0;
+    assert_eq!(
+        helper
+            .matches("call void @wf__completion_file_close_submit(i32 %descriptor, ptr %record)")
+            .count(),
+        1
+    );
+    assert_eq!(
+        helper
+            .matches(
+                "call void @wf__completion_file_join(ptr %record, ptr %raw.value, ptr %raw.error)"
+            )
+            .count(),
+        1
+    );
 }
 
 /// Uses every one of the eleven [SYS-2] operations once: it counts the
@@ -1057,7 +1131,7 @@ fn an_opened_file_releases_with_one_direct_close_that_is_never_retried() {
 /// routes, retypes it as a relative path, opens that path under the initial
 /// directory, copies the file to standard output through a reused buffer,
 /// echoes the argument to standard error, and returns a command code.
-const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
+const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, err, files), writes(cwd, out, err, files), allocates(heap) {
   let echo = buffer_new(64_u64, 0_u8);
   let name_length = 0_u64;
   region {
@@ -1100,86 +1174,92 @@ const COMPLETE_FIRST_SLICE: &[u8] = br#"command fn main(command.args as args: ow
           Ok(value: path) => {
             region 'c {
               region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    let page = buffer_new(16_u64, 0_u8);
-                    let total = 0_u64;
-                    let file_offset = 0_u64;
-                    let failed = 0_u8;
-                    loop @copy {
-                      let chunk = 0_u64;
-                      region 'f {
-                        region {
-                          match read_at(file: &'f file, destination: &uniq page, file_offset: file_offset, start: 0_u64, end: 16_u64) {
-                            ReadBytes(next: n) => {
-                              set chunk = n;
-                              set file_offset = file_offset +wrap n;
-                            }
-                            ReadEnd() => {
-                              break @copy;
-                            }
-                            ReadFailed(error: problem) => {
-                              set failed = 8_u8;
-                              break @copy;
-                            }
-                          }
-                        }
-                      }
-                      let page_length = len(page);
-                      let chunk_fits = chunk <= page_length;
-                      if chunk_fits {
-                      } else {
-                        return exit_status(code: 12_u8);
-                      }
-                      region 'o {
-                        region {
-                          match write_once(output: &uniq 'o out, source: &page, start: 0_u64, end: chunk) {
-                            Ok(value: written) => {
-                              set total = total +wrap written;
-                            }
-                            Err(error: problem) => {
-                              set failed = 9_u8;
-                              break @copy;
-                            }
-                          }
-                        }
-                      }
-                    }
-                    if failed == 0_u8 {
-                    } else {
-                      return exit_status(code: failed);
-                    }
-                    let echo_length = len(echo);
-                    let name_fits = name_length <= echo_length;
-                    if name_fits {
-                    } else {
-                      return exit_status(code: 13_u8);
-                    }
-                    region 'x {
-                      region {
-                        match write_once(output: &uniq 'x err, source: &echo, start: 0_u64, end: name_length) {
-                          Ok(value: written) => {
-                            let masked = iand(total, 255_u64);
-                            let narrowed = cvt::<u64, u8>(masked);
-                            match narrowed {
-                              Ok(value: code) => {
-                                return exit_status(code: code);
-                              }
-                              Err(error: overflowed) => {
-                                return exit_status(code: 200_u8);
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let page = buffer_new(16_u64, 0_u8);
+                        let total = 0_u64;
+                        let file_offset = 0_u64;
+                        let failed = 0_u8;
+                        loop @copy {
+                          let chunk = 0_u64;
+                          region 'f {
+                            region {
+                              match read_at(file: &'f file, destination: &uniq page, file_offset: file_offset, start: 0_u64, end: 16_u64) {
+                                ReadBytes(next: n) => {
+                                  set chunk = n;
+                                  set file_offset = file_offset +wrap n;
+                                }
+                                ReadEnd() => {
+                                  break @copy;
+                                }
+                                ReadFailed(error: problem) => {
+                                  set failed = 8_u8;
+                                  break @copy;
+                                }
                               }
                             }
                           }
-                          Err(error: problem) => {
-                            return exit_status(code: 10_u8);
+                          let page_length = len(page);
+                          let chunk_fits = chunk <= page_length;
+                          if chunk_fits {
+                          } else {
+                            return exit_status(code: 12_u8);
+                          }
+                          region 'o {
+                            region {
+                              match write_once(output: &uniq 'o out, source: &page, start: 0_u64, end: chunk) {
+                                Ok(value: written) => {
+                                  set total = total +wrap written;
+                                }
+                                Err(error: problem) => {
+                                  set failed = 9_u8;
+                                  break @copy;
+                                }
+                              }
+                            }
                           }
                         }
+                        if failed == 0_u8 {
+                        } else {
+                          return exit_status(code: failed);
+                        }
+                        let echo_length = len(echo);
+                        let name_fits = name_length <= echo_length;
+                        if name_fits {
+                        } else {
+                          return exit_status(code: 13_u8);
+                        }
+                        region 'x {
+                          region {
+                            match write_once(output: &uniq 'x err, source: &echo, start: 0_u64, end: name_length) {
+                              Ok(value: written) => {
+                                let masked = iand(total, 255_u64);
+                                let narrowed = cvt::<u64, u8>(masked);
+                                match narrowed {
+                                  Ok(value: code) => {
+                                    return exit_status(code: code);
+                                  }
+                                  Err(error: overflowed) => {
+                                    return exit_status(code: 200_u8);
+                                  }
+                                }
+                              }
+                              Err(error: problem) => {
+                                return exit_status(code: 10_u8);
+                              }
+                            }
+                          }
+                        }
+                      }
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        return exit_status(code: 6_u8);
                       }
                     }
                   }
-                  Err(error: problem) => {
-                    return exit_status(code: 6_u8);
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -1272,4 +1352,229 @@ fn windows_descriptor_exhaustion_is_resource_exhaustion() {
         .find(|row| row.class == "ResourceExhausted")
         .expect("the closed portable class table contains ResourceExhausted");
     assert_eq!(exhausted.codes, &[4, 8, 14, 1450]);
+}
+
+/// Drains the factory, then closes the one open file explicitly and asks the
+/// factory again.
+///
+/// [SYS-10]: the permit an explicit close returns *is* the credit the open
+/// held; the factory's count is never raised. So after the drain the second
+/// `reserve_handle` must refuse even though a close just ran, and the returned
+/// permit must still open. A close that also raised the count would let one
+/// credit open two descriptors, which is exactly the overlap-invented
+/// exhaustion T4 forbids in the other direction.
+pub(super) const CLOSE_KEEPS_THE_COUNT: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
+      Ok(value: text) => {
+        match relative_path(value: move text) {
+          Ok(value: path) => {
+            region 'c {
+              region {
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        for @drain (index in 0_u64..4096_u64) {
+                          match reserve_handle(factory: &uniq files) {
+                            Ok(value: extra) => {
+                            }
+                            Err(error: spent) => {
+                              break;
+                            }
+                          }
+                        }
+                        let returned = close_read(file: move file);
+                        region {
+                          match reserve_handle(factory: &uniq files) {
+                            Ok(value: raised) => {
+                              return exit_status(code: 20_u8);
+                            }
+                            Err(error: spent) => {
+                            }
+                          }
+                        }
+                        match open_read(permit: move returned, root: &'c cwd, path: &path) {
+                          FileOpened(value: again) => {
+                            return exit_status(code: 0_u8);
+                          }
+                          FileOpenFailed(error: problem, permit: refused_2) => {
+                            return exit_status(code: 21_u8);
+                          }
+                        }
+                      }
+                      FileOpenFailed(error: problem, permit: refused_2) => {
+                        return exit_status(code: 12_u8);
+                      }
+                    }
+                  }
+                  Err(error: spent) => {
+                    return exit_status(code: 15_u8);
+                  }
+                }
+              }
+            }
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 13_u8);
+          }
+        }
+      }
+      Err(error: absent) => {
+        return exit_status(code: 14_u8);
+      }
+    }
+  }
+}
+"#;
+
+/// Runs one emitted module under a lowered soft descriptor limit, so the
+/// factory's capacity (the limit less the runtime's reserve) is small enough
+/// to drain inside a test.
+#[cfg(unix)]
+fn run_in_directory_with_descriptor_limit(
+    llvm: &str,
+    fixtures: &[(&str, &[u8])],
+    argument: &[u8],
+    limit: u32,
+) -> std::process::Output {
+    let directory = test_directory();
+    let executable = build_executable(llvm, &directory);
+    write_fixtures(&directory, fixtures);
+    let output = Command::new("/bin/sh")
+        .current_dir(&directory)
+        .arg("-c")
+        .arg("ulimit -n \"$0\" && exec \"$1\" \"$2\"")
+        .arg(limit.to_string())
+        .arg(&executable)
+        .arg(std::ffi::OsStr::from_bytes(argument))
+        .output()
+        .expect("run backend test executable under a descriptor limit");
+    std::fs::remove_dir_all(&directory).expect("remove backend test directory");
+    output
+}
+
+#[cfg(unix)]
+#[test]
+fn an_explicit_close_returns_the_credit_as_the_permit_and_never_raises_the_count() {
+    let llvm = compile(CLOSE_KEEPS_THE_COUNT);
+    let output =
+        run_in_directory_with_descriptor_limit(&llvm, &[("one.txt", b"x")], b"one.txt", 100);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+/// Drains the factory, fails an open on an absent name with the last permit,
+/// and opens an existing name with the permit that came back.
+///
+/// [SYS-10]: a refused open took no descriptor, so its permit returns in
+/// `FileOpenFailed(error, permit)` and the factory's count does not move:
+/// `reserve_handle` still refuses after the failure, and the returned permit
+/// still opens.
+pub(super) const FAILED_OPEN_RETURNS_THE_PERMIT: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+  region {
+    match arg_get(args: &args, position: 1_u64) {
+      Ok(value: absent_text) => {
+        match relative_path(value: move absent_text) {
+          Ok(value: absent) => {
+            match arg_get(args: &args, position: 2_u64) {
+              Ok(value: present_text) => {
+                match relative_path(value: move present_text) {
+                  Ok(value: present) => {
+                    region 'c {
+                      region {
+                        match reserve_handle(factory: &uniq 'c files) {
+                          Ok(value: permit) => {
+                            for @drain (index in 0_u64..4096_u64) {
+                              match reserve_handle(factory: &uniq files) {
+                                Ok(value: extra) => {
+                                }
+                                Err(error: spent) => {
+                                  break;
+                                }
+                              }
+                            }
+                            match open_read(permit: move permit, root: &'c cwd, path: &absent) {
+                              FileOpened(value: unexpected) => {
+                                return exit_status(code: 20_u8);
+                              }
+                              FileOpenFailed(error: problem, permit: returned) => {
+                                region {
+                                  match reserve_handle(factory: &uniq files) {
+                                    Ok(value: raised) => {
+                                      return exit_status(code: 22_u8);
+                                    }
+                                    Err(error: spent) => {
+                                    }
+                                  }
+                                }
+                                match open_read(permit: move returned, root: &'c cwd, path: &present) {
+                                  FileOpened(value: again) => {
+                                    return exit_status(code: 0_u8);
+                                  }
+                                  FileOpenFailed(error: problem_again, permit: refused) => {
+                                    return exit_status(code: 21_u8);
+                                  }
+                                }
+                              }
+                            }
+                          }
+                          Err(error: spent) => {
+                            return exit_status(code: 15_u8);
+                          }
+                        }
+                      }
+                    }
+                  }
+                  Err(error: rejected) => {
+                    return exit_status(code: 13_u8);
+                  }
+                }
+              }
+              Err(error: absent_argument) => {
+                return exit_status(code: 14_u8);
+              }
+            }
+          }
+          Err(error: rejected) => {
+            return exit_status(code: 13_u8);
+          }
+        }
+      }
+      Err(error: absent_argument) => {
+        return exit_status(code: 14_u8);
+      }
+    }
+  }
+}
+"#;
+
+#[cfg(unix)]
+#[test]
+fn a_refused_open_hands_its_permit_back_and_leaves_the_count_alone() {
+    let llvm = compile(FAILED_OPEN_RETURNS_THE_PERMIT);
+    let directory = test_directory();
+    let executable = build_executable(&llvm, &directory);
+    write_fixtures(&directory, &[("present.txt", b"A")]);
+    let output = Command::new("/bin/sh")
+        .current_dir(&directory)
+        .arg("-c")
+        .arg("ulimit -n \"$0\" && exec \"$1\" \"$2\" \"$3\"")
+        .arg("100")
+        .arg(&executable)
+        .arg("missing.txt")
+        .arg("present.txt")
+        .output()
+        .expect("run backend test executable under a descriptor limit");
+    std::fs::remove_dir_all(&directory).expect("remove backend test directory");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

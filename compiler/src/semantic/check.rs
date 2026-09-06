@@ -1146,7 +1146,22 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         };
 
         Ok(CheckedProgramData {
+            inventory: self.inventory(),
             nominals: self.nominals.clone(),
+            system_structs: {
+                let mut rows = self
+                    .system_nominals
+                    .iter()
+                    .filter(|(index, _)| {
+                        crate::SYSTEM_NOMINALS
+                            .get(usize::from(**index))
+                            .is_some_and(crate::SystemNominal::is_struct)
+                    })
+                    .map(|(index, id)| (*index, *id))
+                    .collect::<Vec<_>>();
+                rows.sort_unstable_by_key(|(index, _)| *index);
+                rows
+            },
             executable_nominal_count,
             constants: self.checked_constants.clone(),
             derived_consts,

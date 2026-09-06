@@ -451,8 +451,9 @@ struct Survey<'check, 'run> {
     /// read still fails closed.
     element_reads: Vec<ProvenElementRead>,
     form: Option<&'static str>,
-    /// Permission remains recorded, but this loop actualizer has no stackless
-    /// continuation path yet and therefore must stay sequential.
+    /// Permission remains recorded, but a may-suspend function keeps the
+    /// synchronous ABI of the sequential world (design section 8), so this
+    /// loop actualizer must stay sequential.
     may_suspend: bool,
     exit: Option<&'static str>,
 }
