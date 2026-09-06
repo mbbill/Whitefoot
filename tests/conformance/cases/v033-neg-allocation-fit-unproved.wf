@@ -1,5 +1,7 @@
-fn make(length: own u64) -> values: own buffer<i64> pure {
-  return buffer_new(length, 0_i64);
+fn make['s](store: &uniq Heap<'s>, length: own u64) -> values: own Option<Vector<'s, i64>> reads(store), writes(store), allocates(store) {
+  region {
+    return heap_vector::<i64>(store: &uniq deref(store), count: length);
+  }
 }
 
 command fn main() -> status: own ExitStatus pure {

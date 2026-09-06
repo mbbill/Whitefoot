@@ -1,9 +1,9 @@
-struct Columns {
-  left: buffer<u64>;
-  right: buffer<u64>;
+struct Columns['s] {
+  left: Vector<'s, u64>;
+  right: Vector<'s, u64>;
 }
 
-fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own u64) -> function_result: own unit writes(left, right) contract {
+fn fill(left: &uniq MutSlice<u64>, right: &uniq MutSlice<u64>, length: own u64) -> function_result: own unit writes(left, right) contract {
   define left_length = len_of(deref(left));
   define right_length = len_of(deref(right));
   requires length <= left_length;
@@ -17,60 +17,107 @@ fn fill['r](left: &uniq 'r buffer<u64>, right: &uniq 'r buffer<u64>, length: own
   return unit;
 }
 
-fn fold['r](left: &'r buffer<u64>, right: &'r buffer<u64>, length: own u64) -> function_result: own u64 reads(left, right) contract {
-  define left_length = len_of(deref(left));
-  define right_length = len_of(deref(right));
+fn fold['r](left: own Slice<'r, u64>, right: own Slice<'r, u64>, length: own u64) -> function_result: own u64 reads(left, right) contract {
+  define left_length = len_of(left);
+  define right_length = len_of(right);
   requires length <= left_length;
   requires length <= right_length;
 } {
   let total = 0_u64;
   for (index_value in 0_u64..length) {
-    let left_value = deref(left)[index_value];
-    let right_value = deref(right)[index_value];
+    let left_value = left[index_value];
+    let right_value = right[index_value];
     set total = total +wrap left_value;
     set total = total +wrap right_value;
   }
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "Two store runs held in one struct are written and read through views of their own fields: [BLK-4] refuses a `&uniq` of a run, so the two columns are lent as exclusive views and read back as shared ones, and the caller keeps both lengths across each call [CALL-3].";
   let length = 4_u64;
-  let left = buffer_new(length, 0_u64);
-  let right = buffer_new(length, 0_u64);
-  let columns = Columns(left: move left, right: move right);
-  let fill_left_length = len_of(columns.left);
-  if length <= fill_left_length {
-  } else {
-    return exit_status(code: 202_u8);
-  }
-  let fill_right_length = len_of(columns.right);
-  if length <= fill_right_length {
-  } else {
-    return exit_status(code: 203_u8);
-  }
   region {
-    let left_out = &uniq columns.left;
-    let right_out = &uniq columns.right;
-    fill(left: move left_out, right: move right_out, length: length);
-  }
-  let fold_left_length = len_of(columns.left);
-  if length <= fold_left_length {
-  } else {
-    return exit_status(code: 204_u8);
-  }
-  let fold_right_length = len_of(columns.right);
-  if length <= fold_right_length {
-  } else {
-    return exit_status(code: 205_u8);
-  }
-  region {
-    let left_in = &columns.left;
-    let right_in = &columns.right;
-    let total = fold(left: left_in, right: right_in, length: length);
-    if total == 52_u64 {
-    } else {
-      return exit_status(code: 201_u8);
+    match heap_vector::<u64>(store: &uniq heap, count: length) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh_left) => {
+        let left = move fresh_left;
+        for @fill_left (
+          at in 0_u64..4_u64,
+          invariant grown_left: len_of(left) >= at,
+          invariant spare_left: room_of(left) + at >= 4_u64,
+          invariant flat_left: head_of(left) <= 0_u64
+        ) {
+          set left = place_back(vector: move left, value: 0_u64);
+        }
+        match heap_vector::<u64>(store: &uniq heap, count: length) {
+          None() => {
+            return exit_status(code: 70_u8);
+          }
+          Some(value: fresh_right) => {
+            let right = move fresh_right;
+            for @fill_right (
+              at in 0_u64..4_u64,
+              invariant grown_right: len_of(right) >= at,
+              invariant spare_right: room_of(right) + at >= 4_u64,
+              invariant flat_right: head_of(right) <= 0_u64
+            ) {
+              set right = place_back(vector: move right, value: 0_u64);
+            }
+            let columns = Columns(left: move left, right: move right);
+            let fill_left_length = len_of(columns.left);
+            if length <= fill_left_length {
+            } else {
+              return exit_status(code: 202_u8);
+            }
+            let fill_right_length = len_of(columns.right);
+            if length <= fill_right_length {
+            } else {
+              return exit_status(code: 203_u8);
+            }
+            let left_head = head_of(columns.left);
+            let left_room = room_of(columns.left);
+            if left_head <= left_room {
+            } else {
+              return exit_status(code: 206_u8);
+            }
+            let right_head = head_of(columns.right);
+            let right_room = room_of(columns.right);
+            if right_head <= right_room {
+            } else {
+              return exit_status(code: 207_u8);
+            }
+            region {
+              let left_out = mut_slice_of(&uniq columns.left);
+              let right_out = mut_slice_of(&uniq columns.right);
+              region {
+                fill(left: &uniq left_out, right: &uniq right_out, length: length);
+              }
+            }
+            let fold_left_length = len_of(columns.left);
+            if length <= fold_left_length {
+            } else {
+              return exit_status(code: 204_u8);
+            }
+            let fold_right_length = len_of(columns.right);
+            if length <= fold_right_length {
+            } else {
+              return exit_status(code: 205_u8);
+            }
+            region {
+              let left_in = slice_of(&columns.left);
+              let right_in = slice_of(&columns.right);
+              let total = fold(left: left_in, right: right_in, length: length);
+              if total == 52_u64 {
+              } else {
+                return exit_status(code: 201_u8);
+              }
+            }
+            return exit_status(code: 0_u8);
+          }
+        }
+      }
     }
   }
-  return exit_status(code: 0_u8);
 }

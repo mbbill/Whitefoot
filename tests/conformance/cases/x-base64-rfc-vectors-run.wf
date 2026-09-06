@@ -19,11 +19,11 @@ fn require_index(index: own u64, limit: own u64) -> result: own Result<u64, Inde
   return Err<u64, IndexError>(error: error);
 }
 
-fn read_index(values: &buffer<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values) {
-  let spare = len_of(deref(values));
+fn read_index(values: own Slice<u8>, index: own u64) -> result: own Result<u8, IndexError> reads(values) {
+  let spare = len_of(values);
   match require_index(index: index, limit: spare) {
     Ok(value: admitted) => {
-      let value = deref(values)[admitted];
+      let value = values[admitted];
       return Ok<u8, IndexError>(value: value);
     }
     Err(error: problem) => {
@@ -45,7 +45,7 @@ fn write_index(values: &uniq MutSlice<u8>, index: own u64, value: own u8) -> res
   }
 }
 
-fn encode(out: own MutSlice<u8>, input: own buffer<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out) contract {
+fn encode(out: own MutSlice<u8>, input: own Slice<u8>) -> function_result: own Result<u64, IndexError> reads(out, input), writes(out) contract {
   define required_out_length = len_of(out);
   define required_input_length = len_of(input);
   define required_out_groups = ishr.wrap(required_out_length, 2_u32);
@@ -71,9 +71,9 @@ fn encode(out: own MutSlice<u8>, input: own buffer<u8>) -> function_result: own 
       let byte_one = 0_u8;
       let byte_two = 0_u8;
       region {
-        let loaded_zero = propagate read_index(values: &input, index: input_offset);
-        let loaded_one = propagate read_index(values: &input, index: input_one);
-        let loaded_two = propagate read_index(values: &input, index: input_two);
+        let loaded_zero = propagate read_index(values: input, index: input_offset);
+        let loaded_one = propagate read_index(values: input, index: input_one);
+        let loaded_two = propagate read_index(values: input, index: input_two);
         set byte_zero = loaded_zero;
         set byte_one = loaded_one;
         set byte_two = loaded_two;
@@ -124,7 +124,7 @@ fn encode(out: own MutSlice<u8>, input: own buffer<u8>) -> function_result: own 
     let tail_one_output_three = output_offset +wrap 3_u64;
     let tail_one_byte = 0_u8;
     region {
-      let loaded = propagate read_index(values: &input, index: input_offset);
+      let loaded = propagate read_index(values: input, index: input_offset);
       set tail_one_byte = loaded;
     }
     let tail_one_word = cvt::<u8, u32>(tail_one_byte);
@@ -159,8 +159,8 @@ fn encode(out: own MutSlice<u8>, input: own buffer<u8>) -> function_result: own 
     let tail_two_byte_zero = 0_u8;
     let tail_two_byte_one = 0_u8;
     region {
-      let loaded_zero = propagate read_index(values: &input, index: input_offset);
-      let loaded_one = propagate read_index(values: &input, index: tail_two_input_one);
+      let loaded_zero = propagate read_index(values: input, index: input_offset);
+      let loaded_one = propagate read_index(values: input, index: tail_two_input_one);
       set tail_two_byte_zero = loaded_zero;
       set tail_two_byte_one = loaded_one;
     }
@@ -198,163 +198,197 @@ fn encode(out: own MutSlice<u8>, input: own buffer<u8>) -> function_result: own 
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let man_input = buffer_new(3_u64, 0_u8);
-  set man_input[0_u64] = 77_u8;
-  set man_input[1_u64] = 97_u8;
-  set man_input[2_u64] = 110_u8;
-  let man_output = buffer_new(4_u64, 0_u8);
-  let man_length_ok = False();
-  region {
-    let man_window = mut_slice_of(&uniq man_output);
-    let man_required_out_length = len_of(man_window);
-    let man_required_input_length = len_of(man_input);
-    let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
-    let man_required_covered_input = man_required_out_groups *wrap 3_u64;
-    let man_capacity = man_required_input_length <= man_required_covered_input;
-    if man_capacity {
-    } else {
-      return exit_status(code: 216_u8);
-    }
-    match encode(out: move man_window, input: move man_input) {
-      Ok(value: man_length) => {
-        set man_length_ok = man_length == 4_u64;
+  doc "The three RFC 4648 vectors, with each input built as an inline run and each output taken from one bump extent so an exclusive view of it is admissible.";
+  region 'w {
+    let workspace = arena_frame::<12, 1, 'w>();
+    region {
+      let man_input = fixed_vector::<u8, 3>();
+      set man_input = place_back(vector: move man_input, value: 77_u8);
+      set man_input = place_back(vector: move man_input, value: 97_u8);
+      set man_input = place_back(vector: move man_input, value: 110_u8);
+      let man_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_man (
+        at in 0_u64..4_u64,
+        invariant grown_man: len_of(man_output) >= at,
+        invariant spare_man: room_of(man_output) + at >= 4_u64,
+        invariant flat_man: head_of(man_output) <= 0_u64
+      ) {
+        set man_output = place_back(vector: move man_output, value: 0_u8);
       }
-      Err(error: man_index_error) => {
-        return exit_status(code: 219_u8);
+      let man_length_ok = False();
+      region {
+        let man_source = slice_of(&man_input);
+        let man_window = mut_slice_of(&uniq man_output);
+        let man_required_out_length = len_of(man_window);
+        let man_required_input_length = len_of(man_source);
+        let man_required_out_groups = ishr.wrap(man_required_out_length, 2_u32);
+        let man_required_covered_input = man_required_out_groups *wrap 3_u64;
+        let man_capacity = man_required_input_length <= man_required_covered_input;
+        if man_capacity {
+        } else {
+          return exit_status(code: 216_u8);
+        }
+        match encode(out: move man_window, input: man_source) {
+          Ok(value: man_length) => {
+            set man_length_ok = man_length == 4_u64;
+          }
+          Err(error: man_index_error) => {
+            return exit_status(code: 219_u8);
+          }
+        }
+      }
+      let man_zero = man_output[0_u64];
+      let man_one = man_output[1_u64];
+      let man_two = man_output[2_u64];
+      let man_three = man_output[3_u64];
+      let man_zero_ok = man_zero == 84_u8;
+      let man_one_ok = man_one == 87_u8;
+      let man_two_ok = man_two == 70_u8;
+      let man_three_ok = man_three == 117_u8;
+      let m_input = fixed_vector::<u8, 1>();
+      set m_input = place_back(vector: move m_input, value: 77_u8);
+      let m_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_m (
+        at in 0_u64..4_u64,
+        invariant grown_m: len_of(m_output) >= at,
+        invariant spare_m: room_of(m_output) + at >= 4_u64,
+        invariant flat_m: head_of(m_output) <= 0_u64
+      ) {
+        set m_output = place_back(vector: move m_output, value: 0_u8);
+      }
+      let m_length_ok = False();
+      region {
+        let m_source = slice_of(&m_input);
+        let m_window = mut_slice_of(&uniq m_output);
+        let m_required_out_length = len_of(m_window);
+        let m_required_input_length = len_of(m_source);
+        let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
+        let m_required_covered_input = m_required_out_groups *wrap 3_u64;
+        let m_capacity = m_required_input_length <= m_required_covered_input;
+        if m_capacity {
+        } else {
+          return exit_status(code: 217_u8);
+        }
+        match encode(out: move m_window, input: m_source) {
+          Ok(value: m_length) => {
+            set m_length_ok = m_length == 4_u64;
+          }
+          Err(error: m_index_error) => {
+            return exit_status(code: 220_u8);
+          }
+        }
+      }
+      let m_zero = m_output[0_u64];
+      let m_one = m_output[1_u64];
+      let m_two = m_output[2_u64];
+      let m_three = m_output[3_u64];
+      let m_zero_ok = m_zero == 84_u8;
+      let m_one_ok = m_one == 81_u8;
+      let m_two_ok = m_two == 61_u8;
+      let m_three_ok = m_three == 61_u8;
+      let ma_input = fixed_vector::<u8, 2>();
+      set ma_input = place_back(vector: move ma_input, value: 77_u8);
+      set ma_input = place_back(vector: move ma_input, value: 97_u8);
+      let ma_output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_ma (
+        at in 0_u64..4_u64,
+        invariant grown_ma: len_of(ma_output) >= at,
+        invariant spare_ma: room_of(ma_output) + at >= 4_u64,
+        invariant flat_ma: head_of(ma_output) <= 0_u64
+      ) {
+        set ma_output = place_back(vector: move ma_output, value: 0_u8);
+      }
+      let ma_length_ok = False();
+      region {
+        let ma_source = slice_of(&ma_input);
+        let ma_window = mut_slice_of(&uniq ma_output);
+        let ma_required_out_length = len_of(ma_window);
+        let ma_required_input_length = len_of(ma_source);
+        let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
+        let ma_required_covered_input = ma_required_out_groups *wrap 3_u64;
+        let ma_capacity = ma_required_input_length <= ma_required_covered_input;
+        if ma_capacity {
+        } else {
+          return exit_status(code: 218_u8);
+        }
+        match encode(out: move ma_window, input: ma_source) {
+          Ok(value: ma_length) => {
+            set ma_length_ok = ma_length == 4_u64;
+          }
+          Err(error: ma_index_error) => {
+            return exit_status(code: 221_u8);
+          }
+        }
+      }
+      let ma_zero = ma_output[0_u64];
+      let ma_one = ma_output[1_u64];
+      let ma_two = ma_output[2_u64];
+      let ma_three = ma_output[3_u64];
+      let ma_zero_ok = ma_zero == 84_u8;
+      let ma_one_ok = ma_one == 87_u8;
+      let ma_two_ok = ma_two == 69_u8;
+      let ma_three_ok = ma_three == 61_u8;
+      if man_length_ok {
+      } else {
+        return exit_status(code: 201_u8);
+      }
+      if m_length_ok {
+      } else {
+        return exit_status(code: 202_u8);
+      }
+      if ma_length_ok {
+      } else {
+        return exit_status(code: 203_u8);
+      }
+      if man_zero_ok {
+      } else {
+        return exit_status(code: 204_u8);
+      }
+      if man_one_ok {
+      } else {
+        return exit_status(code: 205_u8);
+      }
+      if man_two_ok {
+      } else {
+        return exit_status(code: 206_u8);
+      }
+      if man_three_ok {
+      } else {
+        return exit_status(code: 207_u8);
+      }
+      if m_zero_ok {
+      } else {
+        return exit_status(code: 208_u8);
+      }
+      if m_one_ok {
+      } else {
+        return exit_status(code: 209_u8);
+      }
+      if m_two_ok {
+      } else {
+        return exit_status(code: 210_u8);
+      }
+      if m_three_ok {
+      } else {
+        return exit_status(code: 211_u8);
+      }
+      if ma_zero_ok {
+      } else {
+        return exit_status(code: 212_u8);
+      }
+      if ma_one_ok {
+      } else {
+        return exit_status(code: 213_u8);
+      }
+      if ma_two_ok {
+      } else {
+        return exit_status(code: 214_u8);
+      }
+      if ma_three_ok {
+      } else {
+        return exit_status(code: 215_u8);
       }
     }
-  }
-  let man_zero = man_output[0_u64];
-  let man_one = man_output[1_u64];
-  let man_two = man_output[2_u64];
-  let man_three = man_output[3_u64];
-  let man_zero_ok = man_zero == 84_u8;
-  let man_one_ok = man_one == 87_u8;
-  let man_two_ok = man_two == 70_u8;
-  let man_three_ok = man_three == 117_u8;
-  let m_input = buffer_new(1_u64, 77_u8);
-  let m_output = buffer_new(4_u64, 0_u8);
-  let m_length_ok = False();
-  region {
-    let m_window = mut_slice_of(&uniq m_output);
-    let m_required_out_length = len_of(m_window);
-    let m_required_input_length = len_of(m_input);
-    let m_required_out_groups = ishr.wrap(m_required_out_length, 2_u32);
-    let m_required_covered_input = m_required_out_groups *wrap 3_u64;
-    let m_capacity = m_required_input_length <= m_required_covered_input;
-    if m_capacity {
-    } else {
-      return exit_status(code: 217_u8);
-    }
-    match encode(out: move m_window, input: move m_input) {
-      Ok(value: m_length) => {
-        set m_length_ok = m_length == 4_u64;
-      }
-      Err(error: m_index_error) => {
-        return exit_status(code: 220_u8);
-      }
-    }
-  }
-  let m_zero = m_output[0_u64];
-  let m_one = m_output[1_u64];
-  let m_two = m_output[2_u64];
-  let m_three = m_output[3_u64];
-  let m_zero_ok = m_zero == 84_u8;
-  let m_one_ok = m_one == 81_u8;
-  let m_two_ok = m_two == 61_u8;
-  let m_three_ok = m_three == 61_u8;
-  let ma_input = buffer_new(2_u64, 0_u8);
-  set ma_input[0_u64] = 77_u8;
-  set ma_input[1_u64] = 97_u8;
-  let ma_output = buffer_new(4_u64, 0_u8);
-  let ma_length_ok = False();
-  region {
-    let ma_window = mut_slice_of(&uniq ma_output);
-    let ma_required_out_length = len_of(ma_window);
-    let ma_required_input_length = len_of(ma_input);
-    let ma_required_out_groups = ishr.wrap(ma_required_out_length, 2_u32);
-    let ma_required_covered_input = ma_required_out_groups *wrap 3_u64;
-    let ma_capacity = ma_required_input_length <= ma_required_covered_input;
-    if ma_capacity {
-    } else {
-      return exit_status(code: 218_u8);
-    }
-    match encode(out: move ma_window, input: move ma_input) {
-      Ok(value: ma_length) => {
-        set ma_length_ok = ma_length == 4_u64;
-      }
-      Err(error: ma_index_error) => {
-        return exit_status(code: 221_u8);
-      }
-    }
-  }
-  let ma_zero = ma_output[0_u64];
-  let ma_one = ma_output[1_u64];
-  let ma_two = ma_output[2_u64];
-  let ma_three = ma_output[3_u64];
-  let ma_zero_ok = ma_zero == 84_u8;
-  let ma_one_ok = ma_one == 87_u8;
-  let ma_two_ok = ma_two == 69_u8;
-  let ma_three_ok = ma_three == 61_u8;
-  if man_length_ok {
-  } else {
-    return exit_status(code: 201_u8);
-  }
-  if m_length_ok {
-  } else {
-    return exit_status(code: 202_u8);
-  }
-  if ma_length_ok {
-  } else {
-    return exit_status(code: 203_u8);
-  }
-  if man_zero_ok {
-  } else {
-    return exit_status(code: 204_u8);
-  }
-  if man_one_ok {
-  } else {
-    return exit_status(code: 205_u8);
-  }
-  if man_two_ok {
-  } else {
-    return exit_status(code: 206_u8);
-  }
-  if man_three_ok {
-  } else {
-    return exit_status(code: 207_u8);
-  }
-  if m_zero_ok {
-  } else {
-    return exit_status(code: 208_u8);
-  }
-  if m_one_ok {
-  } else {
-    return exit_status(code: 209_u8);
-  }
-  if m_two_ok {
-  } else {
-    return exit_status(code: 210_u8);
-  }
-  if m_three_ok {
-  } else {
-    return exit_status(code: 211_u8);
-  }
-  if ma_zero_ok {
-  } else {
-    return exit_status(code: 212_u8);
-  }
-  if ma_one_ok {
-  } else {
-    return exit_status(code: 213_u8);
-  }
-  if ma_two_ok {
-  } else {
-    return exit_status(code: 214_u8);
-  }
-  if ma_three_ok {
-  } else {
-    return exit_status(code: 215_u8);
   }
   return exit_status(code: 0_u8);
 }

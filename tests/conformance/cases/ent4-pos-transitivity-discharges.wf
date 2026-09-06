@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64, j: own u64) -> result: own u8 reads(b) {
+fn get(b: own Slice<u8>, i: own u64, j: own u64) -> result: own u8 reads(b) {
   doc "Closure rule (1): ordinary executed control establishes i at most j and j below spare, from which ENT-4 derives i below spare and discharges the subscript [OP-4]. No unchecked conclusion stands in for either caller-dependent branch.";
   let spare = len_of(b);
   let ordered = i <= j;

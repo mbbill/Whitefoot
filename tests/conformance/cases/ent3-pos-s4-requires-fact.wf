@@ -1,4 +1,4 @@
-fn get(b: own buffer<u8>, i: own u64) -> result: own u8 reads(b) contract {
+fn get(b: own Slice<u8>, i: own u64) -> result: own u8 reads(b) contract {
   define spare = len_of(b);
   define inside = i < spare;
   requires inside;

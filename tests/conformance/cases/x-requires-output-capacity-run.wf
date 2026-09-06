@@ -13,23 +13,50 @@ fn copy_bytes(out: &uniq MutSlice<u8>, source: own Slice<u8>) -> function_result
 
 command fn main() -> status: own ExitStatus pure {
   let length = 4_u64;
-  let source = buffer_new(length, 7_u8);
-  let output = buffer_new(length, 0_u8);
-  region {
-    let window = slice_of(&source);
-    let destination = mut_slice_of(&uniq output);
+  region 'w {
+    let workspace = arena_frame::<8, 1, 'w>();
     region {
-      let written = copy_bytes(out: &uniq destination, source: window);
-      if written == length {
+      let source = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_source (
+        at in 0_u64..4_u64,
+        invariant grown_source: len_of(source) >= at,
+        invariant spare_source: room_of(source) + at >= 4_u64,
+        invariant flat_source: head_of(source) <= 0_u64
+      ) {
+        set source = place_back(vector: move source, value: 7_u8);
+      }
+      let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 4_u64);
+      for @fill_output (
+        at in 0_u64..4_u64,
+        invariant grown_output: len_of(output) >= at,
+        invariant spare_output: room_of(output) + at >= 4_u64,
+        invariant flat_output: head_of(output) <= 0_u64
+      ) {
+        set output = place_back(vector: move output, value: 0_u8);
+      }
+      region {
+        let window = slice_of(&source);
+        let destination = mut_slice_of(&uniq output);
+        let window_length = len_of(window);
+        let destination_length = len_of(destination);
+        if window_length <= destination_length {
+        } else {
+          return exit_status(code: 203_u8);
+        }
+        region {
+          let written = copy_bytes(out: &uniq destination, source: window);
+          if written == length {
+          } else {
+            return exit_status(code: 201_u8);
+          }
+        }
+      }
+      let last = output[3_u64];
+      if last == 7_u8 {
       } else {
-        return exit_status(code: 201_u8);
+        return exit_status(code: 202_u8);
       }
     }
-  }
-  let last = output[3_u64];
-  if last == 7_u8 {
-  } else {
-    return exit_status(code: 202_u8);
   }
   return exit_status(code: 0_u8);
 }

@@ -1,4 +1,0 @@
-fn held['b, 'r](anchor: own i32) -> function_result: &'b arena<'r, i32> pure {
-  doc "Arena confinement reads mode and type together: a result whose type is `arena<'r, T>` may not leave `'r`'s block in any result mode, so a borrow-mode arena result is the same escape as an owned one [STOR-4]. The declaration is the error and no call is required to reach it; STOR-4 is the rule this specification defines first among those established at the complete `rtype`, so it is cited there rather than FN-1's borrow-result provenance judgment, which applies to a region-free result type.";
-  return anchor;
-}

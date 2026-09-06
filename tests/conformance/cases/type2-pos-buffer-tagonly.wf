@@ -1,4 +1,4 @@
-fn preserve(value: own buffer<Bool>) -> function_result: own buffer<Bool> pure {
+fn preserve(value: own FixedVector<Bool, 4>) -> function_result: own FixedVector<Bool, 4> pure {
   return move value;
 }
 

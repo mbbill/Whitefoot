@@ -36,28 +36,35 @@ fn proxy_counter(counter: &uniq Counter) -> function_result: own unit reads(coun
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let output = buffer_new(2_u64, 0_u8);
   let counter = Counter(value: 40_u64);
-  region {
-    let window = mut_slice_of(&uniq output);
-    proxy_byte(out: move window);
-  }
-  region {
-    proxy_counter(counter: &uniq counter);
-  }
-  let first = output[0_u64];
-  let second = output[1_u64];
-  if first == 7_u8 {
-  } else {
-    return exit_status(code: 201_u8);
-  }
-  if second == 9_u8 {
-  } else {
-    return exit_status(code: 202_u8);
-  }
-  if counter.value == 42_u64 {
-  } else {
-    return exit_status(code: 203_u8);
+  region 'w {
+    let workspace = arena_frame::<2, 1, 'w>();
+    region {
+      let output = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
+      set output = place_back(vector: move output, value: 0_u8);
+      set output = place_back(vector: move output, value: 0_u8);
+      region {
+        let window = mut_slice_of(&uniq output);
+        proxy_byte(out: move window);
+      }
+      region {
+        proxy_counter(counter: &uniq counter);
+      }
+      let first = output[0_u64];
+      let second = output[1_u64];
+      if first == 7_u8 {
+      } else {
+        return exit_status(code: 201_u8);
+      }
+      if second == 9_u8 {
+      } else {
+        return exit_status(code: 202_u8);
+      }
+      if counter.value == 42_u64 {
+      } else {
+        return exit_status(code: 203_u8);
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }

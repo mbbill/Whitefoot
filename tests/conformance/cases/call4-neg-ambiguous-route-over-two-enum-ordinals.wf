@@ -1,4 +1,4 @@
-fn probe(taken: own buffer<u8>) -> (outcome: own Result<u64, Overflow>, other: own Result<u64, Overflow>) reads(taken) contract {
+fn probe(taken: own Slice<u8>) -> (outcome: own Result<u64, Overflow>, other: own Result<u64, Overflow>) reads(taken) contract {
   ensures when Ok(value: reported): reported == len_of(taken);
 } {
   doc "Two ordinals have the route's enum type, so an omitted ordinal binder leaves the route ambiguous.";

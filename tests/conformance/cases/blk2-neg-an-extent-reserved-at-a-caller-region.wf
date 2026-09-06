@@ -1,0 +1,12 @@
+fn make['r]() -> function_result: own Vector<'r, i32> pure {
+  doc "A bump extent is laid out in the reserving activation's own frame, so its region must be one this activation introduces; naming a caller-supplied region would let the run it hands out outlive the frame the extent lives in.";
+  let workspace = arena_frame::<16, 4, 'r>();
+  region {
+    let run = arena_vector_proved::<i32>(store: &uniq workspace, count: 4_u64);
+    return move run;
+  }
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
