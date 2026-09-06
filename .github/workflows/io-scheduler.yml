@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [footprint]
+        experiment: [paced]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -56,7 +56,7 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Same fixed runtime layout and stack count: baseline clears all 64 lanes; candidate initializes only configured workers. Native uring/epoll controls, four CPU placements, five echo cases. Candidate completion checks include poisoned initial storage. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Fixed light arrival schedules with every planned request verified, including client backlog; saturated heavy peers. WF baseline and automatic checkpoints versus inline and cooperative C. Deadline completions and dispatch delay accompany latency. See the investigation for scope.'
             echo '```text'
             for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"

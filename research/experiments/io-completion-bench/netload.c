@@ -10,6 +10,7 @@
  *
  *   netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T]
  *           [--compute ROUNDS] [--heavy-every N] [--admit] [--duration-ms MS]
+ *           [--light-per-second RATE]
  *
  * Compute mode uses compute_protocol.h: every Nth connection requests ROUNDS
  * recurrence steps, the others request zero. Expected results are computed
@@ -20,6 +21,11 @@
  * per-connection storage ceiling; reaching it early fails the sample. Results
  * are captured without allocation and checked after exchange timing, so the
  * oracle does not compete with the measured server or require a fixed count.
+ * With --light-per-second, each light connection instead has a fixed arrival
+ * schedule, staggered across peers. A connection still has one wire request
+ * outstanding; later arrivals queue logically in the client and are all
+ * drained. Their latency starts at the intended arrival, including that queue.
+ * Heavy peers remain closed-loop. Dispatch delay is reported separately.
  *
  * It opens CONNECTIONS connections to 127.0.0.1:PORT, spread over T client
  * threads each holding its own epoll instance, and reports two phases:
@@ -80,6 +86,11 @@ struct connection {
     struct timespec first_started;
     struct timespec last_finished;
     uint64_t index;
+    uint64_t light_phase_ns;
+    uint64_t planned;
+    uint64_t completed_by_deadline;
+    int waiting_arrival;
+    struct timespec due;
 };
 
 struct client {
@@ -102,11 +113,14 @@ static pthread_barrier_t gate;
 static int option_compute;
 static int option_admit;
 static uint64_t option_duration_ms;
+static uint64_t option_light_per_second;
+static struct timespec exchange_origin;
 static struct timespec exchange_deadline;
 static uint64_t option_compute_rounds;
 static uint64_t option_heavy_every = 4;
 /* Expected values in fixed-count mode; captured responses in duration mode. */
 static uint64_t *compute_values;
+static uint32_t *dispatch_us;
 
 /* One line on stderr and out, from whichever thread reached the failure
  * first. A run that cannot publish the right bytes must not publish a time,
@@ -135,6 +149,24 @@ static uint64_t microseconds_between(struct timespec start, struct timespec end)
         return 0;
     }
     return (uint64_t)value;
+}
+
+static int paced_link(const struct client *owner, const struct connection *link) {
+    return option_light_per_second && !owner->admitting &&
+        link->index % option_heavy_every != 0;
+}
+
+static void schedule_arrival(struct connection *link) {
+    uint64_t offset = link->light_phase_ns +
+        link->round * UINT64_C(1000000000) / option_light_per_second;
+    link->due = exchange_origin;
+    link->due.tv_sec += (time_t)(offset / UINT64_C(1000000000));
+    link->due.tv_nsec += (long)(offset % UINT64_C(1000000000));
+    if (link->due.tv_nsec >= 1000000000L) {
+        link->due.tv_sec++;
+        link->due.tv_nsec -= 1000000000L;
+    }
+    link->waiting_arrival = 1;
 }
 
 static void raise_descriptor_limit(uint64_t wanted) {
@@ -196,6 +228,13 @@ static void begin_round(struct connection *link, int admitting) {
         link->outgoing[0] = admitting ? 250u : (unsigned char)(link->round * 17u + 3u);
     }
     clock_gettime(CLOCK_MONOTONIC, &link->started);
+    if (option_light_per_second && !admitting && link->index % option_heavy_every != 0) {
+        uint64_t delay = microseconds_between(link->due, link->started);
+        dispatch_us[link->index * option_roundtrips + link->round] =
+            delay > UINT32_MAX ? UINT32_MAX : (uint32_t)delay;
+        link->started = link->due;
+        link->waiting_arrival = 0;
+    }
     if (link->round == 0) link->first_started = link->started;
 }
 
@@ -270,10 +309,14 @@ static void pump(struct client *owner, struct connection *link) {
         if (!owner->admitting) {
             latency_us[link->index * option_roundtrips + link->round] =
                 elapsed > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed;
+            if (option_duration_ms && seconds_between(now, exchange_deadline) >= 0.0)
+                link->completed_by_deadline++;
         }
         link->round++;
         int done = link->round == (owner->admitting ? 1u : option_roundtrips);
-        if (option_duration_ms && !owner->admitting) {
+        if (paced_link(owner, link)) {
+            done = link->round == link->planned;
+        } else if (option_duration_ms && !owner->admitting) {
             done = seconds_between(exchange_deadline, now) >= 0.0;
             if (!done && link->round == option_roundtrips)
                 fail("connection %llu exhausted its duration sample capacity",
@@ -283,6 +326,10 @@ static void pump(struct client *owner, struct connection *link) {
             link->last_finished = now;
             link->finished = 1;
             owner->outstanding--;
+            return;
+        }
+        if (paced_link(owner, link)) {
+            schedule_arrival(link);
             return;
         }
         begin_round(link, owner->admitting);
@@ -297,11 +344,55 @@ static void exchange(struct client *owner) {
         struct connection *link = &owner->first[at];
         link->round = 0;
         link->finished = 0;
+        link->completed_by_deadline = 0;
+        link->waiting_arrival = 0;
+        if (paced_link(owner, link)) {
+            if (!link->planned) {
+                link->finished = 1;
+                owner->outstanding--;
+            } else {
+                schedule_arrival(link);
+            }
+            continue;
+        }
         begin_round(link, owner->admitting);
         pump(owner, link);
     }
     while (owner->outstanding > 0) {
-        int ready = epoll_wait(owner->epoll, events, 256, -1);
+        struct timespec delay;
+        struct timespec *timeout = NULL;
+        if (option_light_per_second && !owner->admitting) {
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            for (uint64_t at = 0; at < owner->count; at++) {
+                struct connection *link = &owner->first[at];
+                if (!link->waiting_arrival || link->finished) continue;
+                if (seconds_between(link->due, now) >= 0.0) {
+                    begin_round(link, 0);
+                    pump(owner, link);
+                    clock_gettime(CLOCK_MONOTONIC, &now);
+                }
+            }
+            if (!owner->outstanding) break;
+            for (uint64_t at = 0; at < owner->count; at++) {
+                struct connection *link = &owner->first[at];
+                if (!link->waiting_arrival || link->finished) continue;
+                struct timespec remaining = {link->due.tv_sec - now.tv_sec,
+                                             link->due.tv_nsec - now.tv_nsec};
+                if (remaining.tv_nsec < 0) {
+                    remaining.tv_sec--;
+                    remaining.tv_nsec += 1000000000L;
+                }
+                if (remaining.tv_sec < 0) remaining = (struct timespec){0, 0};
+                if (!timeout || seconds_between(remaining, delay) > 0.0) {
+                    delay = remaining;
+                    timeout = &delay;
+                }
+            }
+        }
+        int ready = option_light_per_second && !owner->admitting
+            ? epoll_pwait2(owner->epoll, events, 256, timeout, NULL)
+            : epoll_wait(owner->epoll, events, 256, -1);
         if (ready < 0) {
             if (errno == EINTR) {
                 continue;
@@ -310,7 +401,7 @@ static void exchange(struct client *owner) {
         }
         for (int at = 0; at < ready; at++) {
             struct connection *link = events[at].data.ptr;
-            if (link->finished) {
+            if (link->finished || link->waiting_arrival) {
                 continue;
             }
             pump(owner, link);
@@ -332,6 +423,7 @@ static void *client_main(void *raw) {
             for (uint64_t round = 0; round < option_roundtrips; round += 512u) {
                 latencies[start + round] = 0;
                 values[start + round] = 0;
+                if (dispatch_us) ((volatile uint32_t *)dispatch_us)[start + round] = 0;
             }
         }
     }
@@ -466,7 +558,7 @@ static void *client_main(void *raw) {
 
 int main(int argc, char **argv) {
     if (argc < 5) {
-        fprintf(stderr, "usage: netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T] [--compute ROUNDS] [--heavy-every N] [--admit] [--duration-ms MS]\n");
+        fprintf(stderr, "usage: netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T] [--compute ROUNDS] [--heavy-every N] [--admit] [--duration-ms MS] [--light-per-second RATE]\n");
         return 2;
     }
     unsigned long port = strtoul(argv[1], NULL, 10);
@@ -501,6 +593,14 @@ int main(int argc, char **argv) {
             }
             continue;
         }
+        if (strcmp(argv[at], "--light-per-second") == 0 && at + 1 < argc) {
+            option_light_per_second = strtoull(argv[++at], NULL, 10);
+            if (!option_light_per_second || option_light_per_second > 1000000) {
+                fprintf(stderr, "netload: light rate must be 1..1000000 requests/s per peer\n");
+                return 2;
+            }
+            continue;
+        }
         fprintf(stderr, "netload: unknown argument %s\n", argv[at]);
         return 2;
     }
@@ -519,6 +619,12 @@ int main(int argc, char **argv) {
         fprintf(stderr, "netload: duration mode requires compute and admission\n");
         return 2;
     }
+    if (option_light_per_second && (!option_duration_ms || option_heavy_every < 2 ||
+        option_connections < 2 || option_roundtrips <
+            (option_light_per_second * option_duration_ms + 999u) / 1000u)) {
+        fprintf(stderr, "netload: paced light requests require duration, both classes and capacity for every planned arrival\n");
+        return 2;
+    }
     if (threads > option_connections) {
         threads = option_connections;
     }
@@ -529,8 +635,9 @@ int main(int argc, char **argv) {
     latency_us = calloc((size_t)(option_connections * option_roundtrips), sizeof *latency_us);
     unsigned char *payloads = malloc((size_t)option_connections * (size_t)option_bytes * 2);
     if (option_compute) compute_values = calloc((size_t)(option_connections * option_roundtrips), sizeof *compute_values);
+    if (option_light_per_second) dispatch_us = calloc((size_t)(option_connections * option_roundtrips), sizeof *dispatch_us);
     if (connections == NULL || clients == NULL || latency_us == NULL || payloads == NULL ||
-        (option_compute && compute_values == NULL)) {
+        (option_compute && compute_values == NULL) || (option_light_per_second && dispatch_us == NULL)) {
         fprintf(stderr, "netload: out of memory\n");
         return 1;
     }
@@ -541,6 +648,17 @@ int main(int argc, char **argv) {
         link->outgoing = payloads + (size_t)(at * 2) * (size_t)option_bytes;
         link->incoming = link->outgoing + option_bytes;
         fill_message(link);
+        if (option_light_per_second && at % option_heavy_every != 0) {
+            uint64_t light_count = option_connections -
+                (option_connections + option_heavy_every - 1u) / option_heavy_every;
+            uint64_t ordinal = at - at / option_heavy_every - 1u;
+            link->light_phase_ns = ordinal * UINT64_C(1000000000) /
+                (option_light_per_second * light_count);
+            uint64_t duration_ns = option_duration_ms * UINT64_C(1000000);
+            link->planned = duration_ns > link->light_phase_ns
+                ? ((duration_ns - link->light_phase_ns) * option_light_per_second +
+                   UINT64_C(999999999)) / UINT64_C(1000000000) : 0;
+        }
     }
 
     /* The connections are spread over the client threads in equal blocks; the
@@ -583,6 +701,7 @@ int main(int argc, char **argv) {
     if (option_admit) pthread_barrier_wait(&gate);
     getrusage(RUSAGE_SELF, &exchange_cpu_start);
     clock_gettime(CLOCK_MONOTONIC, &exchange_start);
+    exchange_origin = exchange_start;
     exchange_deadline = exchange_start;
     exchange_deadline.tv_sec += (time_t)(option_duration_ms / 1000u);
     exchange_deadline.tv_nsec += (long)(option_duration_ms % 1000u) * 1000000L;
@@ -602,6 +721,34 @@ int main(int argc, char **argv) {
 
     uint64_t total = 0;
     for (uint64_t at = 0; at < option_connections; at++) total += connections[at].round;
+    if (option_light_per_second) {
+        uint32_t *light_dispatch = malloc((size_t)total * sizeof *light_dispatch);
+        uint32_t *light_service = malloc((size_t)total * sizeof *light_service);
+        if (!light_dispatch || !light_service) fail("out of memory for paced latency summaries");
+        uint64_t count = 0;
+        uint64_t planned = 0;
+        for (uint64_t at = 0; at < option_connections; at++) {
+            struct connection *link = &connections[at];
+            if (at % option_heavy_every == 0) continue;
+            if (link->round != link->planned) fail("paced peer did not drain every planned request");
+            planned += link->planned;
+            for (uint64_t round = 0; round < link->round; round++) {
+                uint64_t index = at * option_roundtrips + round;
+                uint32_t dispatch = dispatch_us[index];
+                uint32_t elapsed = latency_us[index];
+                light_dispatch[count] = dispatch;
+                light_service[count] = elapsed >= dispatch ? elapsed - dispatch : 0;
+                count++;
+            }
+        }
+        qsort(light_dispatch, (size_t)count, sizeof *light_dispatch, compare_u32);
+        qsort(light_service, (size_t)count, sizeof *light_service, compare_u32);
+        printf("light_per_second=%llu\tlight_planned=%llu\tlight_dispatch_p99_us=%u\tlight_service_p99_us=%u\t",
+               (unsigned long long)option_light_per_second, (unsigned long long)planned,
+               percentile(light_dispatch, count, 99), percentile(light_service, count, 99));
+        free(light_dispatch);
+        free(light_service);
+    }
     if (option_compute) {
         /* Preserve the per-class tails before sorting the aggregate. A class
          * owns disjoint connection blocks in latency_us; the temporary array
@@ -611,16 +758,18 @@ int main(int argc, char **argv) {
         for (unsigned heavy = 0; heavy < 2; heavy++) {
             uint64_t count = 0;
             uint64_t minimum_count = UINT64_MAX;
+            uint64_t completed_by_deadline = 0;
             uint32_t worst_peer_p99 = 0;
             struct timespec first = exchange_end;
             struct timespec last = connect_end;
             for (uint64_t connection = 0; connection < option_connections; connection++) {
                 if ((connection % option_heavy_every == 0) != (heavy != 0)) continue;
-                if (seconds_between(connections[connection].first_started, first) > 0)
+                if (connections[connection].round && seconds_between(connections[connection].first_started, first) > 0)
                     first = connections[connection].first_started;
-                if (seconds_between(last, connections[connection].last_finished) > 0)
+                if (connections[connection].round && seconds_between(last, connections[connection].last_finished) > 0)
                     last = connections[connection].last_finished;
                 uint64_t peer_count = connections[connection].round;
+                completed_by_deadline += connections[connection].completed_by_deadline;
                 uint32_t *peer_latency = latency_us + connection * option_roundtrips;
                 qsort(peer_latency, (size_t)peer_count, sizeof *peer_latency, compare_u32);
                 uint32_t peer_p99 = percentile(peer_latency, peer_count, 99);
@@ -640,6 +789,8 @@ int main(int argc, char **argv) {
             printf("%s_min_count=%llu\t%s_worst_peer_p99_us=%u\t",
                    heavy ? "heavy" : "light", (unsigned long long)(count ? minimum_count : 0),
                    heavy ? "heavy" : "light", worst_peer_p99);
+            printf("%s_completed_by_deadline=%llu\t", heavy ? "heavy" : "light",
+                   (unsigned long long)completed_by_deadline);
         }
         free(class_latency);
     }
@@ -673,6 +824,7 @@ int main(int argc, char **argv) {
     fflush(stdout);
     free(payloads);
     free(compute_values);
+    free(dispatch_us);
     free(latency_us);
     free(clients);
     free(connections);

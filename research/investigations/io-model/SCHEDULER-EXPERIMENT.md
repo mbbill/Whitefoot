@@ -817,6 +817,64 @@ It tests whether compiler-chosen checkpoints can recover the measured service
 opportunity while preserving sequential source, and what they cost pure
 computation and oversubscription. No checkpoint interval is selected yet.
 
+### Seventh measurement: 62b626c1
+
+[Run 34035341314](https://github.com/mbbill/Whitefoot/actions/runs/34035341314)
+and [artifact 9990387383](https://github.com/mbbill/Whitefoot/actions/runs/34035341314/artifacts/9990387383)
+contain all 672 verified timed network samples, the pure-compute/mixed
+controls, and positive observed checkpoint switches for every candidate.
+This host reports AMD EPYC 9V74, four logical CPUs on two physical cores with
+SMT, Linux 6.17 and clang 18. The full gate and native-host workflows passed.
+The separate Windows benchmark workflow failed its unchanged stability test:
+`mixed-iocp` remained unstable after both 15-pair cohorts. Its artifact
+9990046681 retains both attempts; no wrong-result failure was reported.
+This is not an all-workflows-green revision.
+
+At 64 peers and 2097152 compute steps, medians are:
+
+| placement / form | light requests/s | heavy requests/s | light p99 us | worst light-peer p99 us | minimum light-peer count |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| shared4 / WF | 3905 | 1116 | 258431 | 261869 | 11 |
+| shared4 / WF cq1024 | 161097 | 47 | 576 | 618 | 3297 |
+| shared4 / WF cq16384 | 118640 | 346 | 939 | 1020 | 2376 |
+| shared4 / WF cq65536 | 84121 | 616 | 2691 | 2925 | 1358 |
+| shared4 / C q1024 | 168416 | 282 | 4005 | 5771 | 1879 |
+| shared4 / C q16384 | 113117 | 520 | 2999 | 3700 | 1292 |
+| shared4 / C q65536 | 82576 | 679 | 3291 | 4386 | 676 |
+| split2 / WF | 1832 | 573 | 27812 | 28712 | 39 |
+| split2 / WF cq1024 | 182735 | 47 | 321 | 325 | 3884 |
+| split2 / WF cq16384 | 98562 | 267 | 528 | 542 | 2093 |
+| split2 / WF cq65536 | 43902 | 443 | 1153 | 1172 | 922 |
+| split2 / C q1024 | 215928 | 54 | 275 | 285 | 3978 |
+| split2 / C q16384 | 98758 | 295 | 637 | 661 | 1796 |
+| split2 / C q65536 | 40148 | 459 | 1574 | 1623 | 767 |
+
+In split2, paired WF/C heavy-rate ratios at matching intervals are 0.865
+[0.594, 0.991], 0.903 [0.851, 0.911], and 0.968 [0.956, 0.978]. In shared4
+they are 0.168 [0.158, 0.195], 0.664 [0.614, 0.720], and 0.920
+[0.865, 1.262]. The shortest interval is particularly expensive for WF when
+the client shares CPUs. The different light rates still prevent attributing
+all heavy-rate differences to checkpoint overhead alone. Worst-peer tails
+and minimum counts confirm that the WF light-class gains cover every peer,
+not just the aggregate's busiest connections.
+
+Pure-compute median milliseconds for base/cq1024/cq16384/cq65536 are
+2108.31/2144.56/2124.96/2125.50 at two workers,
+1162.02/1533.98/1450.12/1453.03 at four, and
+1191.41/1573.42/1489.69/1490.41 at eight. Even the larger intervals lose
+about 25% at four/eight workers, versus under 1% at two. Warm-file mixed
+medians at four workers are 157.11/172.70/163.34/162.15 ms and at eight
+172.01/205.12/179.73/174.98 ms. The current instrumentation cannot be
+selected as a universal compute policy.
+
+Selection: sequential source plus compiler-inserted checkpoints can recover
+the missing service opportunities without a writer-visible suspension
+annotation. This is an existence result for the tested loop shape, not the
+desired performance frontier or a complete progress contract. Retain default
+compilation without checkpoints while separating code-generation cost,
+scheduler switching cost, and the fixed-arrival tradeoff below. Nothing in
+this measurement establishes that source coloring would eliminate those costs.
+
 ## Eighth experiment: initialize only configured worker lanes
 
 The scheduler reserves one fixed core containing 64 worker lanes, but the
@@ -856,3 +914,50 @@ and no compiler checkpoints. It runs the full candidate completion checks
 before timing, then two warm-ups and seven alternating measured passes. The
 define can be removed once this implementation choice is selected or rejected;
 the existing investigation and runner own its evidence.
+
+## Ninth experiment: fix the light request arrival schedule
+
+`scheduler-paced` keeps 64 admitted peers and a one-second arrival interval,
+with every fourth peer doing heavy computation. Each light peer receives
+20/100/500 scheduled requests per second, giving 960/4800/24000 total light
+arrivals independent of server speed. Peers are evenly staggered within one
+period. Heavy peers continue the saturated closed-loop protocol. Both
+262144 and 2097152 compute costs are measured, plus a zero-compute control at
+100 light arrivals per second per peer, in shared4 and split2. The forms are
+the baseline, three WF checkpoint intervals and four native C references.
+
+`netload --light-per-second RATE` uses absolute scheduled times derived from
+the common exchange origin. Each connection still permits one outstanding
+wire request: later arrivals queue logically in the client. Every arrival
+scheduled before the common deadline must eventually be sent and verified,
+including backlog after that deadline. Capacity must cover all planned light
+arrivals before the run starts. This is a fixed offered workload with client
+queueing, not a claim to have tested arbitrary pipelined wire overload.
+
+Light latency begins at its scheduled arrival, including client dispatch
+delay and queueing behind previous requests. The result also reports dispatch
+delay and wire-service p99 separately, all planned light requests, and each
+class's completions before the deadline. The latter rates use the requested
+interval, whereas the retained exchange rates include drain. Pending light
+requests at the deadline and drain time expose unsatisfied demand. A slow
+server cannot improve its percentile merely by suppressing planned requests.
+
+The event wait uses the nanosecond-resolution timeout of
+[epoll_pwait2](https://www.man7.org/linux/man-pages/man2/epoll_wait.2.html),
+available on the Linux CI kernel and its glibc. This avoids an intentional
+millisecond rounding floor; it does not promise nanosecond wake-up accuracy.
+The client scans its assigned waiting connections for the next arrival and
+records its own exchange CPU. No per-request allocation or checksum oracle
+competes during the timed exchange.
+
+Native macOS correctness checks through the temporary API shim covered
+1/2 workers, 0/262144/2097152 compute steps, and rates 1/100/1000/100000.
+They included peers with no arrival in a short interval and a deliberately
+overloaded run that drained all 30000 planned light requests. An independent
+socket fixture retained all 300 requests both with immediate responses and
+with 5 ms response delays. In the delayed run only 39 light requests completed
+before the 100 ms deadline; dispatch p99 exceeded 638 ms and total p99 exceeded
+647 ms, so backlog was not omitted. A wrong canonical result failed deferred
+verification without printing a result table. A known-arithmetic fixture
+checked the 44-column raw table and 26-column summary, including separate
+rate cohorts, actual-count CPU divisors, paired ratios and deadline backlog.
