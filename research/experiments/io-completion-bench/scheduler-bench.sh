@@ -174,6 +174,7 @@ network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
     local binary environment=() arguments=() directory port
     sample=$((sample + 1))
+    echo "begin sample=$sample cohort=$cohort form=$form connections=$connections observed=$observed"
     directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes"
     if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections"; fi
     mkdir -p "$directory"
@@ -189,7 +190,7 @@ network_case() {
         *) return 2 ;;
     esac
     setsid /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/resources.tsv" \
-        taskset -c "$server_cpus" env "${environment[@]}" "$binary" "$port" "$connections" "${arguments[@]}" \
+        timeout --verbose --signal=TERM --kill-after=5s 120s taskset -c "$server_cpus" env "${environment[@]}" "$binary" "$port" "$connections" "${arguments[@]}" \
         > "$directory/server.out" 2> "$directory/server.err" &
     server_pid=$!
     while ! port_present "$port" 1; do
@@ -201,7 +202,7 @@ network_case() {
         sleep 0.01
     done
     /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" \
-        taskset -c "$client_cpus" "$OUT/bin/netload" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" \
+        timeout --verbose --signal=TERM --kill-after=5s 120s taskset -c "$client_cpus" "$OUT/bin/netload" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" \
         > "$directory/client.tsv" 2> "$directory/client.err"
     if ! wait "$server_pid"; then cat "$directory/server.err" >&2; return 1; fi
     server_pid=''

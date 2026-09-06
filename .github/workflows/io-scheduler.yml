@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments']
+    branches: ['codex/io-idle-diagnostic']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'research/experiments/io-completion-bench/scheduler-bench.sh'
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   measure:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain
@@ -32,8 +32,8 @@ jobs:
           ROOT: ${{ github.workspace }}
           OUT: ${{ runner.temp }}/io-scheduler
           CARGO_TARGET_DIR: ${{ github.workspace }}/compiler/target
-          ROUNDS: '7'
-          WARMUP: '2'
+          ROUNDS: '1'
+          WARMUP: '0'
         run: bash research/experiments/io-completion-bench/scheduler-bench.sh bench
       - name: Publish measurement summary
         if: always()
