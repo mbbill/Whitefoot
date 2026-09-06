@@ -61,13 +61,27 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness || $EXPERIMENT == inline ]] || exit 2
+network_compute=0
+if [[ $EXPERIMENT == mixed || $EXPERIMENT == fairness ]]; then network_compute=1; fi
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
 export CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$ROOT/compiler/target}
 (cd "$ROOT/compiler" && cargo build --profile gate --bin whitefootc --locked --offline)
 WFC=$CARGO_TARGET_DIR/gate/whitefootc
+
+if [[ $EXPERIMENT == inline ]]; then
+    # The experimental path keeps every existing harness assertion, including
+    # completion counts, and also runs the core's maintained enumeration.
+    if ! make -C "$ROOT/compiler" completion-test CC="$CLANG" \
+        COMPLETION_TMP="$OUT/inline-check" \
+        COMPLETION_BASE_CFLAGS='-std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -pthread -DWF_COMPLETION_LOCAL_INLINE=1' \
+        > "$OUT/inline-check.log" 2>&1; then
+        cat "$OUT/inline-check.log"
+        exit 1
+    fi
+fi
 
 {
     git -C "$ROOT" rev-parse HEAD
@@ -101,15 +115,18 @@ printf 'shared4\t4\t4\t%s\t%s\nshared2\t2\t2\t%s\t%s\nsplit2\t2\t2\t%s\t%s\nspli
     "$allowed" "$allowed" "$allowed" "$allowed" "$server_two" "$client_two" "$server_one" "$client_one" > "$OUT/cohorts.tsv"
 
 forms=(base sleep short spin poll1 poll16)
-if [[ $EXPERIMENT != idle ]]; then
+if [[ $network_compute == 1 ]]; then
     forms=(base sleep poll1)
     awk '$1=="shared4" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then forms=(base); fi
+if [[ $EXPERIMENT == inline ]]; then forms=(base local); fi
 form_flags() {
+    local_inline=0
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
+        local) spin=256; yields=16; progress=0; local_inline=1 ;;
         sleep) spin=0; yields=0; progress=0 ;;
         short) spin=16; yields=0; progress=0 ;;
         spin) spin=256; yields=0; progress=0 ;;
@@ -120,13 +137,13 @@ form_flags() {
 }
 link_form() {
     local module=$1 output=$2 policy=$3 observed=$4
-    local observer=() spin yields progress
+    local observer=() spin yields progress local_inline
     form_flags "$policy"
     if [[ $observed == 1 ]]; then observer=("$BACKEND/sched/grant_observer.c"); fi
     "$CLANG" -std=c11 -O2 -pthread -I "$BACKEND" -I "$BACKEND/completion" \
         -I "$BACKEND/sched" "-DWF_SCHED_IDLE_SPIN_ROUNDS=$spin" \
         "-DWF_SCHED_IDLE_YIELD_ROUNDS=$yields" "-DWF_SCHED_IDLE_PROGRESS_INTERVAL=$progress" \
-        "-DWF_SCHED_OBSERVE=$observed" \
+        "-DWF_SCHED_OBSERVE=$observed" "-DWF_COMPLETION_LOCAL_INLINE=$local_inline" \
         -x c "$BACKEND/wf_floor.c" "$BACKEND/sched/core.c" \
         "$BACKEND/sched/prim_host.c" "$BACKEND/sched/entry.c" \
         "$BACKEND/completion/runtime.c" "$BACKEND/completion/wait_host.c" \
@@ -137,8 +154,10 @@ link_form() {
 
 programs=(echo compute mixed)
 echo_source="$HERE/programs/tcp_echo_server.wf"
-if [[ $EXPERIMENT != idle ]]; then
+if [[ $network_compute == 1 ]]; then
     echo_source="$HERE/programs/tcp_compute_server.wf"
+    programs=(echo)
+elif [[ $EXPERIMENT == inline ]]; then
     programs=(echo)
 else
     "$WFC" --par --emit-llvm -o "$OUT/compute.ll" "$ROOT/tests/programs/par_layout.wf"
@@ -151,7 +170,7 @@ for policy in "${forms[@]}"; do
     done
     link_form "$OUT/echo.ll" "$OUT/bin/echo-$policy-observed" "$policy" 1
 done
-if [[ $EXPERIMENT != idle ]]; then
+if [[ $network_compute == 1 ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
 fi
@@ -204,12 +223,12 @@ network_case() {
     case $form in
         uring|epoll)
             binary="$OUT/bin/${form}_echo"
-            if [[ $EXPERIMENT != idle ]]; then binary="$OUT/bin/epoll_compute"; fi
+            if [[ $network_compute == 1 ]]; then binary="$OUT/bin/epoll_compute"; fi
             arguments=(--threads "$server_workers") ;;
         q1024|q16384|q65536)
             binary="$OUT/bin/epoll_quantum"
             arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
-        base|sleep|short|spin|poll1|poll16)
+        base|local|sleep|short|spin|poll1|poll16)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
@@ -230,7 +249,7 @@ network_case() {
         sleep 0.01
     done
     local client_arguments=()
-    if [[ $EXPERIMENT != idle ]]; then client_arguments=(--compute "$compute_rounds" --heavy-every 4); fi
+    if [[ $network_compute == 1 ]]; then client_arguments=(--compute "$compute_rounds" --heavy-every 4); fi
     if [[ $admitted == 1 ]]; then client_arguments+=(--admit); fi
     timeout --signal=TERM --kill-after=5s 120s \
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" taskset -c "$client_cpus" \
@@ -260,7 +279,7 @@ compute_rounds=0
 admitted=0
 admissions=(0)
 if [[ $EXPERIMENT == fairness ]]; then admissions=(0 1); fi
-if [[ $EXPERIMENT != idle ]]; then references=(epoll); compute_rounds=262144; fi
+if [[ $network_compute == 1 ]]; then references=(epoll); compute_rounds=262144; fi
 if [[ $EXPERIMENT == fairness ]]; then references=(epoll q1024 q16384 q65536); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     for admitted in "${admissions[@]}"; do
@@ -270,7 +289,7 @@ while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_
     for form in "${forms[@]}"; do
       for connections in 4 64; do
         observed_trips=2000
-        if [[ $EXPERIMENT != idle ]]; then observed_trips=64; fi
+        if [[ $network_compute == 1 ]]; then observed_trips=64; fi
         network_case "$form" "$connections" "$observed_trips" 64 -1 1
         # A Linux reading must actually use the native ring. Keep these
         # observations separate from the timed binaries and their diagnostics.
@@ -286,7 +305,7 @@ printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\
 forward=("${forms[@]}" "${references[@]}")
 reverse=()
 for ((at=${#forward[@]}-1;at>=0;at--)); do reverse+=("${forward[at]}"); done
-if [[ $EXPERIMENT != idle ]]; then
+if [[ $network_compute == 1 ]]; then
     cat > "$OUT/cases.tsv" <<'CASES'
 4 2000 64 0
 64 2000 64 0
@@ -303,6 +322,9 @@ else
 4 10000 64 0
 64 2000 64 0
 CASES
+fi
+if [[ $EXPERIMENT == inline ]]; then
+    printf '1024 200 64 0\n64 500 65536 0\n' >> "$OUT/cases.tsv"
 fi
 if [[ $EXPERIMENT == fairness ]]; then
     # Zero-compute control plus two sustained compute costs; retain both peer counts.

@@ -121,6 +121,9 @@ static _Atomic unsigned wf_bridge_file_ready;
  * submitting call itself. */
 static _Atomic uint64_t wf_bridge_publications;
 static _Atomic uint64_t wf_bridge_inline_executions;
+#if !defined(WF_COMPLETION_LOCAL_INLINE)
+#define WF_COMPLETION_LOCAL_INLINE 0
+#endif
 static int wf_bridge_progress(void);
 static void wf_bridge_park(uint64_t observed_epoch);
 
@@ -1490,7 +1493,19 @@ static int wf_bridge_transfer_now(wf_completion_record *record) {
         1,
         memory_order_relaxed
     );
+#if WF_COMPLETION_LOCAL_INLINE
+    /* The fresh record has never been offered to an engine or a waiter.
+     * This call is still inside submit; its caller cannot reach join until
+     * it returns. A socket transfer writes no extra status buffer, so its
+     * complete result is the head. Publish DONE without the shared record's
+     * COMPLETING/waiter-claim protocol. The pending path below still uses
+     * that full protocol. Keep diagnostic counts identical in both forms. */
+    record->result = result.head;
+    atomic_fetch_add_explicit(&wf_bridge_publications, 1, memory_order_relaxed);
+    wf_prim_store_u(&record->sched.state, WF_SCHED_DONE, WF_PRIM_RELEASE);
+#else
     wf_file_complete_record(record, &result);
+#endif
     return 1;
 }
 

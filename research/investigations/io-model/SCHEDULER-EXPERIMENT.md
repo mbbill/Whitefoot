@@ -508,3 +508,85 @@ nothing, while interactive peer protocols can require independent callees to
 be started before another callee completes. A required-concurrency scope with
 backed admission, or a different progress contract, needs explicit design.
 Silently increasing a fixed stack count cannot settle that semantic question.
+
+## Completed idle-policy comparison
+
+Revision 06d93a46 on `codex/io-idle-retry` contains the e3fa2a6a experiment,
+fe5f0656's report-only correction, and an idle-only workflow selection.
+[Run 34031510418](https://github.com/mbbill/Whitefoot/actions/runs/34031510418)
+succeeded; [artifact 9988994655](https://github.com/mbbill/Whitefoot/actions/runs/34031510418/artifacts/9988994655)
+contains all 672 timed network samples, observed counters, and the compute
+and warm-file mixed comparisons. Its host was a four-logical-CPU Xeon
+Platinum 8573C VM with two physical cores and SMT, Linux 6.17.0-1022-azure,
+clang 18.1.3. This is a new same-host baseline, not an absolute comparison
+with either earlier VM.
+
+| policy / workload | shared4 | shared2 | split2 | split1 |
+| --- | ---: | ---: | ---: | ---: |
+| poll16, one peer, paired rate/base | 1.154 | 1.553 | 1.549 | 0.794 |
+| sleep, one peer, paired rate/base | 1.004 | 1.139 | 1.249 | 0.755 |
+| poll16, four peers, paired rate/base | 1.019 | 1.143 | 1.109 | 1.008 |
+| poll16, 64 peers, paired rate/base | 1.003 | 0.987 | 0.996 | 0.993 |
+
+At 64 peers, none of the five idle variants materially closed the multi-worker
+native-reference throughput gap: the base/uring paired ratios were about
+0.77 in shared4/shared2 and 0.74 in split2. Split1 put all implementations near
+212000 trips/s, with client exchange CPU near 4.7 microseconds/trip; one fully
+used client CPU is a plausible ceiling there, so equal rates do not prove
+equal server capacity. WF base server lifetime CPU was 4.766 microseconds/trip
+there versus 4.453 for uring. At one peer in shared4, WF's low latency and
+throughput advantage also spent much more CPU: base used 69 microseconds/trip,
+uring 10. A blocking native control is not a sufficient best-latency reference
+for a spinning runtime.
+
+All compute and warm-file expected bytes agreed. The compute medians at four
+workers were 1555.75 ms base, 1710.03 sleep, 1669.87 short, 1556.92 spin,
+1669.54 poll1, and 1555.53 poll16. At eight workers on four logical CPUs they
+were 1608.14, 2483.25, 2404.11, 2047.37, 2407.28, and 2007.09 ms respectively.
+These are ratios of whole-program medians, not the network's within-pass
+paired statistic. The yielding part of the original policy matters under
+oversubscription; removing it is not a free network optimization.
+
+Selection: retain the default 256-spin/16-yield policy for now. No tested
+fixed replacement is selected. The 64-peer gap calls for measurements of
+shared state, per-owner I/O and continuation costs; mixed-load tails call for
+admission and CPU service fairness. A future adaptive policy must pay for its
+own measurements and pass the pure-compute and oversubscribed controls, not
+only the cell that motivated it. The idle variants and their extra gate
+enumerations can be retired once the next scheduler change supersedes this
+screen; the recorded counterexamples remain evidence.
+
+## Fifth experiment: completing a record that is still private
+
+The ready socket-transfer path currently pays the same `COMPLETING`, waiter
+claim, and `DONE` publication as an engine completing on another thread.
+However, this particular record is fresh, has not been offered to an engine,
+and its caller cannot join until submit returns. The experiment enabled by
+`WF_COMPLETION_LOCAL_INLINE=1` writes the same result head and releases `DONE`
+directly. Socket transfers have no additional status-buffer publication.
+The truly pending path retains the full scheduler protocol. Inline and
+publication diagnostic counters are unchanged, so removing measurements
+cannot explain any gain. The production default remains the original path
+until this comparison selects a result.
+
+`scheduler-inline` compares base and local with uring and epoll controls, all
+four CPU placements, 1/4/64 peers at 64 bytes, 1024 peers at 64 bytes, and 64
+peers at 64 KiB. It uses two warm-up and seven alternating timed passes,
+plus mandatory observed native-ring activity. The maintained completion
+harness and scheduler enumeration run with the experimental path enabled
+before Linux timing. No source function signature or admission judgment
+changes; this asks whether an unshared runtime record can avoid an
+unnecessary synchronization protocol.
+
+Native macOS links of both forms passed 128 independently checked fragmented
+exchanges at four peers, with one and two workers, before any peer EOF. An
+initial 16-peer baseline probe stalled despite 40 available stacks: this
+host's bounded-helper route caps the staged window at eight. That probe
+exceeded a separate capacity bound, so it is retained as a limitation rather
+than attributed to the inline change. The correctness comparison uses four
+peers within that window; the Linux measurements cover larger native-ring
+windows explicitly.
+The maintained macOS `completion-test` target also passed with the candidate
+enabled: all core enumeration configurations, the default-route probe, helper
+counts 0/1/4, the uncached case, and the pure-compute link boundary. Linux
+qualification and paired timing remain pending.
