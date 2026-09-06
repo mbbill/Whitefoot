@@ -517,21 +517,21 @@ pub enum TerminalPredicate {
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 106] = {
-    let mut predicates = [TerminalPredicate::Identifier; 106];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 107] = {
+    let mut predicates = [TerminalPredicate::Identifier; 107];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[98] = TerminalPredicate::Identifier;
-    predicates[99] = TerminalPredicate::TypeIdentifier;
-    predicates[100] = TerminalPredicate::RegionIdentifier;
-    predicates[101] = TerminalPredicate::Label;
-    predicates[102] = TerminalPredicate::OperationName;
-    predicates[103] = TerminalPredicate::Literal;
-    predicates[104] = TerminalPredicate::String;
-    predicates[105] = TerminalPredicate::Digits;
+    predicates[99] = TerminalPredicate::Identifier;
+    predicates[100] = TerminalPredicate::TypeIdentifier;
+    predicates[101] = TerminalPredicate::RegionIdentifier;
+    predicates[102] = TerminalPredicate::Label;
+    predicates[103] = TerminalPredicate::OperationName;
+    predicates[104] = TerminalPredicate::Literal;
+    predicates[105] = TerminalPredicate::String;
+    predicates[106] = TerminalPredicate::Digits;
     predicates
 };
 
