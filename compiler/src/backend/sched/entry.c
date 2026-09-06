@@ -710,7 +710,8 @@ int wf__sched_report(char *buffer, size_t capacity) {
         "idle_steps=%llu idle_looks=%llu idle_progress=%llu idle_waits=%llu "
         "checkpoints=%llu checkpoint_switches=%llu ready_shards=%u ready_pinned=%u "
         "compact_stacks=%u init_used_lanes=%u io_dispatch=%u dispatch_workers=%u "
-        "io_started=%llu io_workers=%u io_min=%llu io_max=%llu local_wake=%u",
+        "io_started=%llu io_workers=%u io_min=%llu io_max=%llu local_wake=%u "
+        "io_quantum=%u io_reset_turn=%u io_checkpoints=%llu",
         wf__sched_threads,
         wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE),
         counts.parks,
@@ -743,7 +744,10 @@ int wf__sched_report(char *buffer, size_t capacity) {
         io_workers,
         io_min,
         io_max,
-        (unsigned)WF_SCHED_LOCAL_WAKE
+        (unsigned)WF_SCHED_LOCAL_WAKE,
+        (unsigned)WF_SCHED_IO_QUANTUM,
+        (unsigned)WF_SCHED_IO_RESET_TURN,
+        counts.io_checkpoints
     );
     return written > 0 && (size_t)written < capacity;
 }

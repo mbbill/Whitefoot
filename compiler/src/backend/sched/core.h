@@ -74,6 +74,21 @@
 #error "Local wake elision requires pinned ready queues"
 #endif
 
+/* Completed I/O joins before a progress/checkpoint opportunity. Zero keeps
+ * the original policy. This is an execution budget, never proof-checker fuel. */
+#ifndef WF_SCHED_IO_QUANTUM
+#define WF_SCHED_IO_QUANTUM 0u
+#endif
+#if WF_SCHED_IO_QUANTUM < 0 || WF_SCHED_IO_QUANTUM > 65536u
+#error "The experimental I/O service quantum must be in 0..65536"
+#endif
+#ifndef WF_SCHED_IO_RESET_TURN
+#define WF_SCHED_IO_RESET_TURN 1
+#endif
+#if WF_SCHED_IO_RESET_TURN != 0 && WF_SCHED_IO_RESET_TURN != 1
+#error "The I/O service budget reset policy must be zero or one"
+#endif
+
 /* Experimental compact metadata and first-use context preparation. */
 #ifndef WF_SCHED_COMPACT_STACKS
 #define WF_SCHED_COMPACT_STACKS 0
@@ -315,6 +330,7 @@ typedef struct wf_sched_statistics {
     unsigned long long idle_waits;
     unsigned long long checkpoints;
     unsigned long long checkpoint_switches;
+    unsigned long long io_checkpoints;
 } wf_sched_statistics;
 
 /* What one thread knows: its lane, the stack it is on, the host stack it
@@ -331,6 +347,11 @@ typedef struct wf_sched_thread {
     void *entry_argument;
     wf_sched_stack *pending_empty;
     wf_sched_stack *pending_commit;
+#if WF_SCHED_IO_QUANTUM
+    /* Owner-thread state. RESET_TURN=0 preserves this across stack switches
+     * so a continuously busy ready queue still checks for new completions. */
+    unsigned io_completed;
+#endif
 #if WF_SCHED_IO_ROUND_ROBIN
     unsigned next_io_thread;
     /* One writer, atomically read by the optional exit report. */

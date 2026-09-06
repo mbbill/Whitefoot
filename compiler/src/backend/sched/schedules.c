@@ -905,6 +905,40 @@ static const char *s26_check(void) {
 }
 #endif
 
+#if WF_SCHED_IO_QUANTUM
+/* Repeated joins of a completed record exercise a hot caller without another
+ * device wait. A child's asynchronous operation must still get service. The
+ * record remains registered until its final join and local response storage
+ * stays live across the automatic checkpoint. */
+static void s27_main(void *argument) {
+    unsigned long long *child;
+    wf_sched_record ready;
+    volatile unsigned response[2] = {41u, 73u};
+    (void)argument;
+    child = hand_out_only(read_then_add);
+    wf_sched_record_init(&ready);
+    wf_enum_submit(&ready);
+    wf_sched_join(&wf_enum_core, &ready, 1);
+    for (unsigned index = 0u; index < WF_SCHED_IO_QUANTUM; ++index) {
+        wf_sched_join(&wf_enum_core, &ready, 1);
+        if (response[index % 2u] != (index % 2u == 0u ? 41u : 73u)) {
+            wf_enum_fail("a service checkpoint corrupted a live response");
+        }
+    }
+    wf_enum_join_io(&ready);
+    st.io_done += 1u;
+    join_release(child);
+    wf_sched_post_status(&wf_enum_core, STATUS);
+}
+
+static const char *s27_covered(const wf_enum_coverage *cov) {
+    if (cov->cooperative == 0ull) {
+        return "no I/O service budget yielded to a READY continuation";
+    }
+    return NULL;
+}
+#endif
+
 /* ------------------------------------------------------------- the table */
 
 /* Three of §10's schedules are not enumerable here and are absent for that
@@ -939,6 +973,9 @@ const wf_enum_schedule wf_enum_schedules[] = {
     {"S25", 1u, 0u, 1u, 0u, reset_counts, s25_main, s25_check, s25_covered},
 #if WF_SCHED_IO_ROUND_ROBIN
     {"S26", 1u, 0u, 1u, 0u, reset_counts, s26_main, s26_check, s25_covered},
+#endif
+#if WF_SCHED_IO_QUANTUM
+    {"S27", 1u, 0u, 2u, 0u, reset_counts, s27_main, s24_check, s27_covered},
 #endif
 };
 

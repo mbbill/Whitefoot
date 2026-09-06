@@ -193,6 +193,12 @@ static void wf_sched_after_switch(wf_sched_core *core) {
     wf_sched_thread *thread = wf_sched_current_thread(core);
     wf_sched_stack *empty = thread->pending_empty;
     wf_sched_stack *parked = thread->pending_commit;
+#if WF_SCHED_IO_QUANTUM && WF_SCHED_IO_RESET_TURN
+    /* A resumed continuation gets a fresh worker turn, including a resume on
+     * a different thread. This field is live scheduling state, not a counter
+     * the enumerator may omit from its digest. */
+    thread->io_completed = 0u;
+#endif
     thread->pending_empty = NULL;
     thread->pending_commit = NULL;
     if (empty != NULL) {
@@ -451,6 +457,22 @@ void wf_sched_checkpoint(wf_sched_core *core) {
     thread->pending_commit = stack;
     wf_sched_switch_to(core, target);
 }
+
+#if WF_SCHED_IO_QUANTUM
+static void wf_sched_io_completed(wf_sched_core *core) {
+    wf_sched_thread *thread = wf_sched_current_thread(core);
+    if (++thread->io_completed == WF_SCHED_IO_QUANTUM) {
+        thread->io_completed = 0u;
+#if WF_SCHED_OBSERVE
+        wf_sched_count(&thread->counts.io_checkpoints, 1u);
+#endif
+        /* The joined record is DONE and remains owned by this live stack.
+         * Progress can publish other completions before the existing safe
+         * checkpoint hands this worker to a ready continuation. */
+        wf_sched_checkpoint(core);
+    }
+}
+#endif
 
 /* Parks the calling stack on `record` and switches to `target`, which the
  * caller has already taken from the ready list or the pool (§6's five steps).
@@ -726,6 +748,9 @@ void wf_sched_join(wf_sched_core *core, wf_sched_record *record, int is_io) {
             unsigned state = wf_prim_load_u(&record->state, WF_PRIM_ACQUIRE);
             if (state == WF_SCHED_DONE) {
                 wf_sched_count(&thread->counts.line_one, 1u);
+#if WF_SCHED_IO_QUANTUM
+                if (is_io) wf_sched_io_completed(core);
+#endif
                 return;
             }
             if (state != WF_SCHED_COMPLETING) {
@@ -1126,5 +1151,6 @@ void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out
         out->idle_waits += __atomic_load_n(&counts->idle_waits, __ATOMIC_RELAXED);
         out->checkpoints += __atomic_load_n(&counts->checkpoints, __ATOMIC_RELAXED);
         out->checkpoint_switches += __atomic_load_n(&counts->checkpoint_switches, __ATOMIC_RELAXED);
+        out->io_checkpoints += __atomic_load_n(&counts->io_checkpoints, __ATOMIC_RELAXED);
     }
 }

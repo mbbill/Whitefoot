@@ -5,7 +5,7 @@ name: io-scheduler
 on:
   workflow_dispatch:
   push:
-    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments']
+    branches: ['codex/io-scheduler-experiments', 'codex/io-owner-experiments', 'codex/io-memory-experiments', 'codex/io-dispatch-experiments', 'codex/io-wake-experiments', 'codex/io-service-experiments']
     paths:
       - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/completion/**'
@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        experiment: [wake, wake-paced]
+        experiment: [service, service-paced]
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -58,9 +58,9 @@ jobs:
         run: |
           {
             echo '## Scheduler experiment: ${{ matrix.experiment }}'
-            echo 'Paired within this job and CPU cohort. Compare the balanced owner policy with the same runtime suppressing a wake only when its target owner is this executing core thread. Keep 1100 reserved stacks and TCP_NODELAY in every form. Echo includes small/large payloads and compute/file controls; paced load compares identical chunk modules at fixed light arrivals. Each candidate runs the full completion suite before timing. See the investigation for scope.'
+            echo 'Paired within this job and CPU cohort. Compare the balanced owner policy with 1/16 completed I/O joins per service turn and a 16-join budget retained across worker stack switches, retaining the existing progress and safe checkpoint protocol. Keep 1100 reserved stacks and TCP_NODELAY in every form. Echo includes small/large payloads and compute/file controls; paced load compares identical chunk modules at fixed light arrivals. Each candidate runs the full completion suite before timing. See the investigation for scope.'
             echo '```text'
-            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt rings-check.log balanced-check.log quiet-check.log; do
+            for file in host.txt cohorts.tsv network-summary.txt compute.txt mixed.txt balanced-check.log service1-check.log service16-check.log servicepoll16-check.log; do
               cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
             done
             echo '```'
@@ -148,33 +148,33 @@ jobs:
               cat "$record.err"
             done
           done
-          for policy in '0 0' '1 0' '1 1'; do
-            read -r dispatch local_wake <<< "$policy"
+          for policy in '0 0 0 1' '1 0 0 1' '1 1 0 1' '1 0 1 1' '1 0 16 1' '1 0 16 0'; do
+            read -r dispatch local_wake io_quantum io_reset_turn <<< "$policy"
             clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -municode \
               -I "$backend" -I "$backend/completion" -DWF_SCHED_OBSERVE=1 \
               -DWF_SCHED_READY_SHARDS=2 -DWF_SCHED_READY_PINNED=1 \
-              "-DWF_SCHED_IO_ROUND_ROBIN=$dispatch" "-DWF_SCHED_LOCAL_WAKE=$local_wake" -x c "${sources[@]}" \
+              "-DWF_SCHED_IO_ROUND_ROBIN=$dispatch" "-DWF_SCHED_LOCAL_WAKE=$local_wake" "-DWF_SCHED_IO_QUANTUM=$io_quantum" "-DWF_SCHED_IO_RESET_TURN=$io_reset_turn" -x c "${sources[@]}" \
               -x ir "$RUNNER_TEMP/owner/fanout.ll" -Wno-override-module \
-              -o "$RUNNER_TEMP/owner/fanout-$dispatch-$local_wake.exe" -lws2_32
+              -o "$RUNNER_TEMP/owner/fanout-$dispatch-$local_wake-$io_quantum-$io_reset_turn.exe" -lws2_32
           done
       - name: Check sequential staged calls on native Windows sockets
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $directory = Join-Path $env:RUNNER_TEMP 'owner'
-          foreach ($policy in '0 0', '1 0', '1 1') {
-            $dispatch, $localWake = $policy.Split(' ') | ForEach-Object { [int]$_ }
+          foreach ($policy in '0 0 0 1', '1 0 0 1', '1 1 0 1', '1 0 1 1', '1 0 16 1', '1 0 16 0') {
+            $dispatch, $localWake, $ioQuantum, $ioResetTurn = $policy.Split(' ') | ForEach-Object { [int]$_ }
             foreach ($workers in 1, 2, 4) {
               $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
               $listener.Start()
               $port = $listener.LocalEndpoint.Port
               $listener.Stop()
-              $record = Join-Path $directory "fanout-d$dispatch-l$localWake-w$workers"
+              $record = Join-Path $directory "fanout-d$dispatch-l$localWake-q$ioQuantum-r$ioResetTurn-w$workers"
               $env:WF_WORKERS = "$workers"
               $env:WF_STACKS = '64'
               $env:WF_SCHED_REPORT = '1'
               $env:WF_REQUIRE_WINDOWS_IOCP = '1'
-              $server = Start-Process -FilePath (Join-Path $directory "fanout-$dispatch-$localWake.exe") `
+              $server = Start-Process -FilePath (Join-Path $directory "fanout-$dispatch-$localWake-$ioQuantum-$ioResetTurn.exe") `
                 -ArgumentList "$port" -PassThru -RedirectStandardOutput "$record.out" `
                 -RedirectStandardError "$record.err"
               $clients = [Collections.Generic.List[Net.Sockets.TcpClient]]::new()
@@ -219,7 +219,9 @@ jobs:
                   $values[$match.Groups[1].Value] = [long]$match.Groups[2].Value
                 }
                 if ($values['ready_pinned'] -ne 1 -or $values['io_dispatch'] -ne $dispatch -or
-                    $values['local_wake'] -ne $localWake -or
+                    $values['local_wake'] -ne $localWake -or $values['io_quantum'] -ne $ioQuantum -or
+                    $values['io_reset_turn'] -ne $ioResetTurn -or
+                    ($ioQuantum -eq 1 -and $values['io_checkpoints'] -le 0) -or
                     $values['parks'] -le 0 -or $values['resumes'] -le 0 -or $values['resume_migrations'] -ne 0) {
                   throw "incorrect scheduler path: $scheduler"
                 }
@@ -229,7 +231,7 @@ jobs:
                   throw "incorrect initial placement: $scheduler"
                 }
                 $report
-                Write-Host "native IOCP staged fanout PASS dispatch=$dispatch local_wake=$localWake workers=$workers"
+                Write-Host "native IOCP staged fanout PASS dispatch=$dispatch local_wake=$localWake io_quantum=$ioQuantum io_reset_turn=$ioResetTurn workers=$workers"
               } finally {
                 foreach ($client in $clients) { $client.Dispose() }
                 if (-not $server.HasExited) { $server.Kill($true); $server.WaitForExit() }

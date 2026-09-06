@@ -2444,3 +2444,141 @@ All memory flags stay off and all TCP options, stacks and workloads match the
 previous cohort. Reduced wake traffic is a hypothesis until native measurements
 show its throughput, tails and CPU consequences; the experimental default is
 zero.
+
+Revision `1776d1af928a502bfb75a16a111177ac3f5d25f6` passed the gate, io-hosts,
+ordinary benchmark and all three jobs in
+[run 34058705179](https://github.com/mbbill/Whitefoot/actions/runs/34058705179).
+Both Linux jobs expose four logical CPUs on two SMT cores, AMD EPYC 7763.
+Echo has 840 validated rows and paced load 504; every cell has seven paired
+passes. The native Windows job passed the retained memory checks and nine
+staged socket runs, including all three initial-placement/wake combinations
+at one/two/four workers.
+
+Omitting the local wake substantially helps the shared4 one-peer echo cell:
+quiet/balanced throughput ratio 1.3841 (1.1475..1.5739), p99 ratio 0.6796
+(0.6634..0.7553), and median server CPU/exchange 48 versus 195 us. Shared2
+and split2 one-peer CPU also falls, 96 to 46 and 85 to 48 us, but their
+throughput and tail paired ranges cross parity. With one server worker,
+quiet/balanced throughput ratios across the five cases stay within 0.7% of
+one in the paired medians. The shared4 one-peer win does not establish native
+CPU efficiency: native references spend about 24..25 us per exchange there.
+
+At higher concurrency the wake omission does not close the performance gap:
+
+| Placement / echo case | Quiet/balanced paired rate median (range) | Paired p99 median (range) |
+| --- | ---: | ---: |
+| split2 / 4 peers, 64 bytes | 1.0091 (0.9949..1.0254) | 1.0000 (0.9783..1.0217) |
+| split2 / 64 peers, 64 bytes | 0.9931 (0.9767..1.0087) | 1.0101 (0.9800..1.0975) |
+| split2 / 1024 peers, 64 bytes | 1.0067 (0.9424..1.0266) | 1.0036 (0.7654..2.5436) |
+| split2 / 64 peers, 64 KiB | 1.0203 (0.9731..1.1000) | 0.9856 (0.9331..1.0004) |
+| shared4 / 64 peers, 64 bytes | 1.0320 (0.9893..1.0827) | 1.0936 (0.6271..1.2547) |
+| shared4 / 1024 peers, 64 bytes | 1.0035 (0.9809..1.0604) | 1.0546 (0.8298..1.2714) |
+
+Every split2 four-peer quiet/base throughput pair still loses, median 0.7961.
+Shared4 quiet/base 64/1024-peer tails still lose every pair, median ratios
+3.0204/1.4821. Native epoll's large-transfer capacity advantage also remains:
+split1 quiet reaches 21880 exchanges/s versus epoll 30529, and split2 28900
+versus 35850. Different host speeds and workload behavior preclude comparing
+these absolute rates with experiment 20's Intel echo job.
+
+Separate untimed split2/64 runs report 67 wake writes for balanced versus two
+for quiet, yet similar ring-enter counts (10173/10416) and essentially equal
+timed throughput. Shared4/four-peer observations reduce wake writes from 1462
+to 12 and idle looks from 1374840 to 710393. These establish the targeted
+mechanism was exercised; they do not make every reduced counter a timed win.
+Finite compute quiet/balanced medians are 2417/2416, 1324/1327 and 1345/1344 ms
+at two/four/eight workers. File+compute is 165/170, 175/175 and 168/169 ms.
+
+Paced long-compute capacity is nearly unchanged relative to balanced on
+split2: paired ratios 1.0021 (0.9915..1.0172) and 1.0000 (0.9657..1.0459)
+at 4800/24000 light arrivals/s. Light-tail ratios 1.0091/0.8439 have broad
+ranges crossing parity. Quiet/native quantum light tails lose every pair at
+both rates, medians 1.9390/1.6495; heavy capacity ratios are 0.9894/0.9615.
+Shared2/24000 also loses every native capacity pair and tail pair, ratios
+0.9662/2.0507. Shared4/4800 loses every native capacity and tail pair,
+0.9849/1.2417. The zero-compute split2 control still has 1827 us light p99
+versus native 187, every paired tail ratio worse, median 8.4251
+(1.8837..23.2841). The corresponding balanced median is 2429 us on this run;
+its difference from experiment 20's 6971 us is not a paired treatment effect.
+
+Local wake omission is a qualified optimization for underoccupied owner
+pools, not the solution to high-concurrency capacity or service fairness. Keep
+its default zero and preserve it for a later combined-policy comparison. The
+next service-budget experiment keeps balanced's original wakes in all budget
+candidates so that the two changes remain independently measurable.
+
+## Twenty-second experiment: completed-I/O service and progress budgets
+
+The zero-compute fixed-arrival tail gap survives initial distribution and
+local wake omission. The native reference has separate compute quanta,
+eight-reply service turns and periodic event polling. The WF chunk option
+instead leaves ordinary request-loop backedges on its 16384 counter, and a
+join that finds DONE can return without progressing other I/O. A ready chain
+can also keep switching stacks without visiting the idle progress path.
+
+`WF_SCHED_IO_QUANTUM` adds an opportunity after that many completed I/O joins
+on one worker. Zero keeps the original implementation. The opportunity calls
+the existing progress/checkpoint path: it drains completions and switches to
+an already-ready stack if available, with the original far-side park commit.
+The joined record remains DONE and owned by its live caller; its storage may
+not be reused before the join returns and its normal retirement finishes.
+Compute joins do not charge the budget. File, socket, empty and failed I/O
+results all use the same rule; no program, function or protocol is recognized.
+The current compiler module, source proof, public signatures and record/frame
+ABI remain unchanged.
+
+`WF_SCHED_IO_RESET_TURN=1` resets the worker's budget on every stack transfer.
+Zero retains the count across transfers so an uninterrupted chain of different
+ready continuations cannot continually reset its progress budget. The counter
+is private worker state, included in the enumerator's core digest; it is not
+a property of a migrating stack. Observations separately report the constants
+and `io_checkpoints`; the latter is absent from the timed hot path and never
+selects a scheduling action. This execution policy does not bound proof work.
+
+The initial M1 probe used reset-on-transfer quanta 1/4/16. All 24 byte-checked
+echo/mixed runs pass, with one/two/four workers and eight peers, including the
+unchanged balanced policy. The two-worker echo observation has 16034/56/zero
+I/O checkpoints for quanta 1/4/16; mixed quantum 4 also reports zero. This
+rejects assuming that every tested connection runs many uninterrupted requests.
+It motivates measuring persistent worker cadence separately, not selecting a
+quantum from the local fallback's speed. The final native Linux sweep uses
+per-turn 1, per-turn 16, and persistent-worker 16 beside balanced and base.
+
+S27 exercises repeated joins of a registered DONE record while a child awaits
+asynchronous completion, requires an actual cooperative switch, retains
+addressed local response storage, and finally checks the ordinary delivered
+head and retirement. Its first draft constructed an unregistered DONE record;
+the enumerator correctly refused the unmodeled atomic load. The corrected
+case registers a real operation and retains it until final join, without
+loosening the enumerator or any existing assertion. Complete M1 suites for
+quanta 1 and 4 pass 19/19/22/21 schedules at the four configurations, all with
+zero bounded executions, and pass all remaining completion checks.
+
+The persistent-worker 16 policy also passes the full M1 suite with the same
+19/19/22/21 schedule counts and zero bounded executions. Eighteen final
+byte-checked runs cover all three shipped candidates, echo/mixed and
+one/two/four workers, using the actual benchmark linker policies. They verify
+budget/reset constants, initial placement, no pinned migration, and positive
+I/O opportunities in every per-turn-1/persistent-16 run. Two-worker persistent
+16 reports 1002 I/O opportunities in echo and 83 in the mixed run. All 36
+compiler completion integration tests pass. Native Linux performance and IOCP
+qualification still require the CI jobs below; local fallback timings select
+no policy.
+
+The benchmark callers compare five WF forms and two native references over
+980 echo rows plus compute/file controls, and 588 fixed-arrival mixed rows.
+All chunked candidate modules must be byte-identical; all memory policies and
+local wake omission stay off, with TCP_NODELAY and 1100 reserved stacks held
+constant. Every candidate runs the complete completion suite plus independent
+two-ring wake and four-thread native submission probes before timing. Untimed
+network observations require exact initial placement, native rings, no pinned
+resume migration, the expected budget constants and positive I/O checkpoint
+counts for per-turn 1 and persistent-worker 16. Per-turn 16 is allowed to
+report zero: failure to reach that budget is evidence, not a qualification
+failure. Windows retains prior checks and adds all three budget policies to
+the real IOCP staged socket program at one/two/four workers.
+
+This is neither a deadline guarantee nor an admission fix. The checkpoint
+does not create a stack or start an unstarted call, and the fixed-capacity
+fallback's progress question remains. No timing result has selected either
+budget policy yet.
