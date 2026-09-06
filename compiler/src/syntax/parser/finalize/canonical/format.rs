@@ -229,33 +229,14 @@ pub(super) fn build_gap_styles(
                 mark_before(&mut gaps, topology, next, GapStyle::Break)?;
             }
         }
-        // [FORM-2] a multiplied relation-form `proof_use` keeps one space
-        // between its `*` and the `(` that delimits the relation, overriding
-        // the generic right attachment of `(`. The parenthesized relation is
-        // the shape whose first affine expression begins four terminals after
-        // `use` (`use`, the multiplier, `*`, `(`); a bare relation begins one
-        // terminal after `use`, and a named source has no affine expression.
-        if record.production == Production::ProofUse {
-            let children = topology
-                .node_children(node)
-                .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
-            let first_relation = children
-                .iter()
-                .filter_map(|child| topology.node(*child))
-                .find(|child| child.production == Production::AffineExpr)
-                .map(|child| child.first_terminal);
-            if let Some(first_relation) = first_relation {
-                let open = first_relation
-                    .checked_sub(1)
-                    .ok_or(CanonicalCompilerFailure::InvalidFinalizedTree)?;
-                let after_multiplier = record
-                    .first_terminal
-                    .checked_add(3)
-                    .ok_or(CanonicalCompilerFailure::CounterOverflow)?;
-                if open == after_multiplier {
-                    mark_before(&mut gaps, topology, open, GapStyle::Spaced)?;
-                }
-            }
+        // [FORM-2] a `use_premise` that delimits a relation keeps one space
+        // before its `(`, overriding the generic right attachment of `(`, the
+        // same way a loop header's `(` takes one space after `for`. The
+        // premise's own first terminal is that `(`, and the relation form is
+        // the one with children; a named premise is a bare identifier and
+        // takes the ordinary inline space.
+        if record.production == Production::UsePremise && record.child_count != 0 {
+            mark_before(&mut gaps, topology, record.first_terminal, GapStyle::Spaced)?;
         }
 
         // [FORM-2] a result list, a destructuring binder list, and a target

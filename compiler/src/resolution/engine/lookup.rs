@@ -295,7 +295,15 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         // tracked place, so it reaches the affine domain as an immutable atom
         // nothing kills.
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
-            vec![DeclarationClass::Value, DeclarationClass::ConstGeneric]
+            // A named integer const is already an [ENT-2] constant term, so it
+            // denotes the same value in a proof relation that it denotes
+            // everywhere else; excluding it here forced the digits to be
+            // rewritten inline in every invariant that names the same limit.
+            vec![
+                DeclarationClass::Value,
+                DeclarationClass::ConstGeneric,
+                DeclarationClass::NamedConst,
+            ]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
@@ -340,7 +348,15 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         ],
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
-            vec![DeclarationClass::Value, DeclarationClass::ConstGeneric]
+            // A named integer const is already an [ENT-2] constant term, so it
+            // denotes the same value in a proof relation that it denotes
+            // everywhere else; excluding it here forced the digits to be
+            // rewritten inline in every invariant that names the same limit.
+            vec![
+                DeclarationClass::Value,
+                DeclarationClass::ConstGeneric,
+                DeclarationClass::NamedConst,
+            ]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }

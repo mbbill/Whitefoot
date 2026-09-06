@@ -1,0 +1,50 @@
+fn escape_all(out: &uniq buffer<u8>, src: own buffer<u8>, width: own u64) -> written: own u64 reads(out, src), writes(out) contract {
+  define room = len(deref(out));
+  define count = len(src);
+  requires width >= 1_u64;
+  requires width <= 4_u64;
+  requires count <= 4096_u64;
+  requires room >= count;
+} {
+  doc "W1: guard every single output write against the backing length; the product still cannot bound anything.";
+  let count = len(src);
+  let room = len(deref(out));
+  let needed = count * width;
+  let fits = needed <= room;
+  if fits {
+  } else {
+    return 0_u64;
+  }
+  for (i in 0_u64..count) {
+    let byte = src[i];
+    let base = i * width;
+    for (k in 0_u64..width) {
+      let at = base +wrap k;
+      let in_room = at < room;
+      if in_room {
+        set deref(out)[at] = byte;
+      }
+    }
+  }
+  return needed;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "encode a small payload with the 3-bytes-per-byte style";
+  let src = buffer_new(4_u64, 65_u8);
+  let out = buffer_new(32_u64, 0_u8);
+  region {
+    let handle = &uniq out;
+    let produced = escape_all(out: move handle, src: move src, width: 3_u64);
+    if produced == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  let last = out[11_u64];
+  if last == 65_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

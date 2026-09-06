@@ -14,8 +14,8 @@ fn bsearch(table: own FixedVector<u32, 8>, spare: own u64, target: own u32, lo: 
   let half = span / 2_u64;
   let mid = lo + half;
   invariant inside: mid + 1_u64 <= hi {
-    use lo < hi;
-    use 2_u64 * half <= span;
+    use (lo < hi);
+    use (2_u64 * half <= span);
   }
   let candidate = table[mid];
   if candidate == target {

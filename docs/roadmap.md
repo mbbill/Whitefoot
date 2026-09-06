@@ -1,356 +1,53 @@
 # Whitefoot Direction Outline
 
-Status: CANONICAL DIRECTION OUTLINE
-Revision: 69 (the specification identity lives only in the approval chain and
-the generated compiler identity; the candidate status is retired, so an
-amendment lands and activates in one change)
+Status: REFERENCE. Long-range directions and candidate projects, kept for
+orientation. Not an authority and not part of the working loop: nothing waits
+on this file, no step in `CLAUDE.md` updates it, and it grants or withholds
+nothing.
+Revision: 71 (taken out of the working loop; a direction's `Current` line is
+orientation, and what the compiler does today is the specification's and
+`compiler/README.md`'s to say)
 
-The active language authority is the specification carried by the stable path
-[`spec/kernel-spec.md`](../spec/kernel-spec.md); its version and exact digest
-are the tail of the `ACTIVE-SPEC:` chain in
-[`governance/APPROVALS.md`](../governance/APPROVALS.md), where each
-activation's merge-time record lives and becomes effective with the owner's
-merge approval of the exact revision containing it. Superseded versions are
-archived byte-for-byte as `spec/kernel-spec-vN.md`. The batch record for v0.39
-remains [batch 0091](done/0091-par3-judgment.md). The execution plan is
-[`docs/current-plan.md`](current-plan.md). Project law is the
+The language is defined by the specification at
+[`spec/kernel-spec.md`](../spec/kernel-spec.md), whose own bytes are its
+identity. Superseded versions are archived byte-for-byte as
+`spec/kernel-spec-vN.md`. Project law is the
 [`Constitution`](constitution.md), and the operational process is
-[`WORKFLOW.md`](WORKFLOW.md).
+[`CLAUDE.md`](../CLAUDE.md).
 
-v0.42 adds [FORM-8], one canonical region spelling. A REGIONID is written
-exactly where the document does not otherwise fix the region: a declaration
-writes a name only to relate two of its own positions or to name an
-output-position region no parameter determines; a `borrow_expr` writes its
-region only when it is not the innermost enclosing `region_stmt`'s; a
-`region_stmt` writes its name only when its body still references it; and a
-call writes exactly the callee region parameters no parameter position
-determines, so a call whose regions are all determined writes no `::`
-application at all. No liveness, outlives, exclusivity, storage-duration,
-provenance, effect, or confinement judgment changes. Over the four `.wf` test
-corpora the rule takes 2623 written region tokens in 261 files to 260 in 75,
-and every remaining one carries a relation, a caller's choice, or an outer
-block a deeper one encloses.
-
-v0.43 carries two independent amendments and adds or retires no rule id.
-The first makes every `loop_stmt` and `for_stmt` body a region block
-[OWN-3, OWN-11]. The body introduces one unnamed local region whose block is
-that body, so a `borrow_expr` written directly in the body takes it, is written
-bare, and dies with the iteration — exactly the guarantee OWN-11 already gave,
-now with no writer ceremony. Because that region exists, a `region_stmt` that is
-the body's only statement is a second spelling of it and a hard error citing
-[FORM-8]; a block the body writes another statement beside is strictly narrower,
-is what [OWN-6]'s statement-scope judgment needs for a child reborrow, and stays
-legal. Across the four `.wf` test corpora exactly four blocks are the body's
-only statement.
-The second repairs [ENT-6]'s control-flow join, which was not associative: a
-delta atom minted by an earlier join counted as an ordinary nonconstant term at
-the next one, so two nested joins lost a binding image one flat join over the
-same branches kept, and a three-way demux was accepted written as a `match` and
-refused written as nested `if`/`else`. Each input image is now normalized before
-the comparison by folding every earlier delta atom back into the constant
-interval it stands for, so nested joins reach the flat join's image and
-acceptance stops depending on the shape of the control join. The repair only
-adds images: no program v0.42 accepted is refused.
-
-v0.45 adds twelve rules and retires none (148 remain), and adds four grammar
-atoms: `is`, `dispose`, `linear` and `affine`. A `fn_decl` may write an
-ordered result list, `-> (kept: own u64, spare: own u64)`, and a caller names its ordinals again with a destructuring `let`
-binder list or a `set` target list; a `return` writes one expression per
-declared result. [FN-1] numbers the ordinals and reads every result judgment per
-ordinal, [TYPE-5] derives binder i and target i from ordinal i, and [SET-1]
-commits a target list in written order, under the disjointness judgment [LIV-2]
-states. [CALL-4]
-widens the contract vocabulary to the ordinals: every ordinal is a datum of
-every clause, a route may name the ordinal it applies to with `when b is
-V(f: r):`, the binder may be omitted exactly when one ordinal has that enum
-type, and a route two ordinals could carry is refused at the declaration. The
-same rule adds the two [ENT-3.S12] destinations only a multi-result contract
-exercises, each binder of a destructuring `let` and each target of a `set`
-target list. The batch that carried it is B1b of the container and resource
-design under `research/investigations/containers-and-resources/`.
-
-The same version adds that design's proof surface, which is where its four
-added rules are. [MSR-1] makes `len_of(P)`, `cap_of(P)`, `room_of(P)` and `head_of(P)`
-[ENT-2] terms over an admitted measure place -- field selections, `deref`
-wrappings and subscripts alike -- and [OP-1] readers over the same places,
-states that a measure table exists and gives every measured type a row with one
-of exact, bounded or absent per cell, and fixes the logical coordinate system
-in which every measure and every [OP-4] obligation is stated. [MSR-2] states
-the support of a measure term as descriptor storage rather than a root binding,
-so a write to a sibling field kills no measure and a write at an element
-position kills the measures of the written element and none of the run's own;
-[ENT-5]'s element-position carve-out is removed. [MSR-4] states once the
-complete ordered derivation of a numeric goal in six steps and retires
-[ENT-6]'s per-family route grants. [MSR-6] admits an in-scope const generic as
-a value, a counted endpoint and a clause operand. The four readers are dotless
-operation spellings, so `ReservedLowerNames` gains `len_of`, `cap_of`, `room_of`
-and `head_of`, and the four bare words stay a writer's to declare. The batch that
-carried it is B2 of the same design.
-
-The same version adds that design's liveness and commit rules. [LIV-1] makes a
-binding's live-or-dead status a property of a program point: every predecessor
-of every join and every loop head agrees on it, a disagreement is a hard error
-naming the binding and both predecessors, and because the status agrees, every
-binding live on an edge leaving a scope takes its compiler-derived release
-there unconditionally. [OWN-11]'s prohibition on moving an outer binding into a
-loop body becomes that rule's per-iteration reading at its own loop head.
-[LIV-2] states one `set` commit for one or more targets over one call or a
-written value list: every target is resolved before the right-hand side, a
-`move` of a target place or of a place reached through one is that target's
-read-out and kills no root, and all targets are reinitialised at one commit
-under three conditions -- the dead target, whose live affine case keeps
-[STOR-1]'s error; pairwise non-overlapping targets, which replaces [SET-1]'s
-pairwise-distinct-roots placeholder; and exact arity and type. `set p =
-f(x: move p);` is the transformation in place at a binding, a field, a `deref`
-and a subscript alike, and `set (p, q) = move q, move p;` is the swap. The
-batch that carried it is B4 of the same design.
-
-The same version adds that design's linearity half. [PROV-6] makes a value
-linear in a scope exactly when it owns, at any depth, a value whose release
-action requires a capability that scope does not hold or a value of a nominal
-declared `linear`, and affine there otherwise. One release graph is what the
-compiler-derived release and the added `dispose p;` both walk; `let N(f: a,
-...) = move v;` consumes a value of nominal struct type whole; a consume of a
-proper sub-place of a linear value is refused unless the same statement's
-commit reinitialises it; and a written bound on a generic or region parameter
-states the class a declaration was written for, checked at every
-instantiation. The bound is one closed class and never a user trait: the three
-classes form the chain `copy < affine < linear`, ordered by what the body may
-do with the value, and satisfaction is that chain read left to right, so a
-bound is a ceiling on what the body assumes rather than a partition of the
-argument types. A type parameter carries exactly one, always written and never
-inferred, with no default -- `copy`, `affine`, `linear`, or a marker TYPEID
-whose numeric row implies `copy` -- while a region parameter's stays optional
-and says which kind of store its region names. The body is checked once under
-that bound and its concrete instances do not re-judge the spellings [FORM-1]
-keys on a value's class, which is what lets one generic body serve a copy type
-and an affine one. Four grammar atoms arrive with it -- `dispose`, `linear`,
-`affine` and `copy` -- and [FORM-3] excludes all four from IDENT. In this version the
-ambient heap is the only store whose reclamation is a release and it is not a
-value, so every scope holds it and nothing is linear here by the capability
-criterion. The batch that carried it is B5 of the same design.
-
-The same version adds that design's container half. [PROV-1] makes a store's
-identity a region, puts that region in the type of every value the store backs,
-admits at most one reserving occurrence per region, and resolves every elided
-store brand by one rule: the enclosing nominal's sole region parameter at a
-stored position, the entry heap's store region at a parameter or result
-position. [BLK-0] states that the container and store operations are one
-compiler-owned generic declaration domain, admitted to every unit as the system
-domain is, each operation one complete signature record whose written arguments
-are decided per argument, whose value arguments are named, and every one of
-whose rows is complete over every measure it writes on every exit. [BLK-1]
-states the two runs and the one window -- exactly the `len_of` slots beginning at
-`head_of` modulo `cap_of`, the rest raw -- the subscript in logical coordinates
-whose obligation is against `len_of`, and the affine element domain the window makes
-sound. [BLK-2] and [BLK-3] are the inventory: four formation rows, one frame
-reservation, and the four boundary operations, each taking its run by value and
-handing it back. `Vector`, `FixedVector`, `Heap` and `Arena` are four
-compiler-owned nominals, and a `struct` or `enum` may declare region
-parameters. The batch that carried it is B7a of the same design, and B7a2 makes its
-frame-resident half execute: a call to a row over a `FixedVector<T, n>` is
-checked from the row's own signature record, its requirement is discharged at
-the call under [MSR-4], its declared relations are published at the caller
-under [CALL-6], and the window, its subscript and the four boundary operations
-lower and run. [CALL-4]'s measured result and the measure over its bare result
-place land with those rows. B7a3 renames the four readers `len_of`, `cap_of`,
-`room_of` and `head_of` [S36], deletes [PROV-6]'s release-graph cycle refusal so a
-cyclic release recurses, and makes a measure former an affine factor of
-[INV-1], which is what a filling loop needs to state its own header relation.
-B7a3b makes a contract clause side the affine expression an invariant already
-is, gives a parameter's measure in an `ensures` its entry datum and a `let`
-rebind its own, lands the element-position window store over both runs, and
-opens a run's element domain to [BLK-1]'s, which together are what let the
-design's own fixed-run library prove its contracts and run. B7a4 makes the bump
-extent execute: `arena_frame` reserves one in the reserving activation's own
-frame, `arena_vector_proved` and `arena_vector` take a run of slots from it, the
-placement judgment and [PROV-1]'s one-store-per-region refusal are enforced,
-and the extent's release action is deleted because the reservation establishes
-its state at every activation of its block. The same batch makes an in-scope
-const generic an [INV-1] affine atom [MSR-6], so a capacity-parametric loop
-states its own bound. B7a5 lands the owner's S37 ruling on generic bounds, makes
-the template the spelling authority so the fixed-run library is generic in its
-element type again, mints [LIV-2]'s declaring `set` target in the resolver,
-puts a run's release class on its type, and substitutes a region argument into
-a call's container types. B7a6 carries the owner's S38 naming ruling through the
-whole vocabulary -- a derivation is `X_of(v)`, a transformation is
-`verb_object`, and the `seq_` prefix is gone -- and lands the one-level element
-lift: a slot may hold a run, so `FixedVector<Vector<'s, u8>, 8>` is a free list
-of store-backed blocks, [PROV-6]'s release walk over a window is emitted rather
-than refused, and a formal region a parameter names one level down is
-determined by its actual. 3.L.4's block pool runs on that. B8a lands the first
-of the two items B7a6 separated: a nominal's `region_params` are components of
-its type name, so an instance is keyed on its region arguments, two instances at
-two regions are two types, a `type` and a `construct` write those arguments where
-the runs and providers already write theirs, and a parameter position determines
-one from its actual. A store region is invariant at a call with it, and the
-region is erased at lowering, where two instances differing only in it are one
-IR nominal. **3.L.4's block pool now runs with `BlockPool['s]` and
-`linear struct Lease['s]`**, which is what makes its lease must-return.
-**The general store landed in B7b:** [S23] gives `allocates` a formal-rooted
-path and releases the `heap` atom, [FN-7]'s `command.heap` row supplies the
-provider as a value, `heap_vector` allocates and its release frees, and D3's
-capability half makes a store-backed run linear in every scope holding no
-provider. [BLK-4] landed with it. What remains of the store half is the
-retirement of the old container types, which B7b did not reach. B8a lands the affine element read-out — `set (v[i],
-v[j]) = move v[j], move v[i];` is the direct element swap — because the offsets
-[LIV-2] can decide are literals and a target already carries its own, and **B8b
-lands the second of B7a6's two items**: a tracked place is a root plus field
-selections and subscripts, so `len_of(table[i])` is a term, [MSR-2]'s
-element-position kill is the overlap relation rather than a flag, [OWN-7] and
-[LIV-2] condition 2 read the complete path over `grid[i][j]`, and the lowering
-reads a descriptor through the slot address. B8b also closes two soundness
-holes: a call's region arguments now reach every result position, and a run's
-element read owes the bounds obligation only its target owed. **B8c closes the
-third and largest of them**: a kernel row's post-state measure and its
-`at the call` datum were one term and the row's `writes` killed nothing, so
-`arena_vector_proved` published a contradiction and every caller of it
-discharged every [OP-4] obligation it contained. [BLK-0] now carries [CALL-6]'s
-consistency judgment over a compiler-owned row, checked at every call and over
-every row's own set. Beside it B8c lands the owner's [FORM-8] ruling at a
-`construct` — a region argument is written only for a region parameter no
-field's declared type determines — and the [INV-1] affine factor's subscripted
-measure place, which was B8b's one unreached position. **B8d lands the routed
-half of every row's publication and five more of [MSR-3]'s placements**: a
-`match` arm now receives the relations its route selects, so a caller of
-`arena_vector` holds the four measures of the run on the `Some` arm and
-`room_of(store) < advance<T>(count)` on the `None` arm where it held neither;
-and a measured value keeps its measures across a [LIV-2] `set` target, a
-`construct`'s field, a destructuring binder, an element position with the
-`replace` that displaces it, and a single-payload enum's arm binder. The
-boundary rows [BLK-3] still carry nothing through the slot they write, because
-`place_back`'s position is `len_of(vector)` and a measure term is not an offset
-the place rules can name; that is now the stated limit rather than a deferred
-clause. B8d also closes a fourth soundness hole its own element placement found:
-[ENT-5]'s element-position carve-out survived on the **goal** path, so a measure
-goal over `len_of(P[i])` outlived the write that replaced `P[i]`.
-**B8e lands the view half in part**: [S35] spells the view type `Slice<'r, T>`
-and releases the lowercase word, [VIEW-1] adds `MutSlice<'r, T>` as the second
-view at exclusive loan strength, [VIEW-2] states the two formation rows as one
-judgment, and [SET-1] admits a target path through a view exactly at that
-strength, so `set view[i] = e;` through a `MutSlice` over a `buffer<T>` compiles,
-links and runs where probe `p7` was a refusal; over an `array<T, N>` it stops as
-an explicit unsupported capability, because an array is a value here and a view
-of one carries a snapshot. Three parts of that rule set did not land and
-are DEFERRED with stated deltas: [S27]'s copy classification of `Slice`, which
-would move an accepted conformance program that `move`s a shared view; the
-widening of the viewed domain to the two runs, with the non-wrap premise and the
-retirement of the two formation rows into [BLK-0]; and [VIEW-4], [VIEW-6] and
-[PROV-3], which this version states as rules nowhere.
-**B7c4a takes the system boundary to the views and closes one soundness hole.**
-The seven range-bearing operations [SYS-8] take one *operand class* at their own
-range-bearing parameter — `&uniq MutSlice<u8>` where the operation writes the
-storage and `&Slice<u8>` where it reads it, with `buffer<u8>` still admitted
-there for as long as `buffer<T>` lives — which changes seven declared parameter
-types and adds no rule id, the content being row data of [SYS-8] and [SYS-2].
-[BLK-4]'s `&uniq` refusal is corrected in the same pass: it never reached a
-*view* referent, because a view has no measure a callee could move, so the
-fill-and-publish helper a caller hands one destination to is admitted at a
-source declaration on the same ground an [SYS-8] row's `&uniq` destination is.
-The soundness hole is the acquiring rows' own `fits::<T>(count)`: [BLK-0] and
-[OP-9] both say it is the obligation `buffer_fits::<T>(n)` is, nothing submitted
-it, and `heap_vector::<i32>(store, count: n)` at an unconstrained count
-therefore compiled where the `buffer_new` spelling of the same program was
-refused. It is now judged at every call of a row that carries it. Beside them
-B7c4a removes three capability stops the rules do not license — a *shared*
-borrow of a run, which [BLK-4] never refused; a const parameter beside a region
-parameter on one declaration, two independent axes; and a generic call cycle
-that repeats the caller's own parameters, which [FN-6] permits and which mints
-no second instance — and makes [MSR-3]'s placements per placement rather than
-per depth, so a run two struct levels down keeps its measures across the
-construct that renames it. One generic cycle still stops explicitly: one that
-varies a *const* argument, which [FN-6] is written over type parameters and does
-not refuse.
-**B7c4b-1 closes the three gaps B3 named, lands the const run, and takes the
-conformance corpus off the retiring surface.** No rule is added or retired (157
-remain) and no grammar production moves: each capability is a sentence inside a
-rule this version already carries. A helper handed `&uniq MutSlice<'r, T>` can
-now pass that destination on, because a view value is already a descriptor and
-the child reborrow is that descriptor read once more rather than an addressed
-one; a helper handed a view can now form the shared child a `write_once` source
-needs and return it, with the parent frozen against element writes while the
-child lives at the callee *and* at the caller; and a published relation reaches
-a `set` target through the same destination route a `let` binder takes. [S34]'s
-const form lands with them: a `FixedVector<T, n>` of const-eligible flat `T`
-with exactly `n` literal entries is const-eligible static rodata whose four
-measures are standing facts of its type, so it lowers to element storage and
-carries no descriptor word. Every conformance case and the whole snapshot corpus
-leave `buffer<T>`, `box<T>` and `arena<'r, T>`; eight `tests/programs` sources
-do not, each because it lends a struct holding a run through a `&uniq`
-parameter, which [BLK-4] refuses. Three defects are recorded rather than papered
-over: [FN-1]'s ceiling containment refusal has no reachable program on this
-surface, the [PAR] footprint judgment does not resolve a bound view argument,
-and a variant-routed measure clause is still [CALL-4]'s deferred route, so the
-growth policy's contract cannot be written.
-
-**B3 makes a call's kill classification the callee's declaration and closes the
-design's D1.** Four rules land and none is retired (157 remain). [CALL-1] states
-that a shared-borrow argument is a kill event for no fact supported by its
-actual's place; [CALL-2] that an `own` argument of affine or linear class is a
-consuming use while a copy one is a duplicate, and that a result carries exactly
-the callee's declared relations; [CALL-3] that a write through a view reaches the
-viewed range's element storage and no measure of the origin place nor of the
-view; and [CALL-5] that no transport reads the actual's spelling, the callee's
-body, or a summary of one, a parameter for which none is selected killing
-conservatively. [ENT-5]'s clause (b), [FN-9]'s entry-image sentence and [SYS-8]
-are amended in place. The unsound accept the sweep of 2026-09-03 recorded — a
-callee replacing the referent of its `&uniq buffer<u8>` parameter while its
-caller kept the length it had before, and reading out of bounds with it — is an
-[OP-4] rejection, and the conformance case that tracked it moves from `xfail` to
-`runnable`. Seventeen corpus sources paid for it: a helper that fills a caller's
-storage now takes `&uniq MutSlice<u8>`, ten executable programs were migrated and
-kept their exit codes, and eight snapshot rows moved to `reject` because the
-shape they were written in is the one [CALL-5] makes conservative. Two forms the
-migration needed are not implemented and are named with their cost: a helper
-handed `&uniq MutSlice<'r, T>` cannot pass its destination on to a second helper,
-and one handed a view cannot form the shared child a `write_once` source needs,
-so the raw DEFLATE decoder's `out` chain keeps its old spelling and two
-diagnostics helpers hand their assembled length back instead of publishing it.
-
-v0.44 adds four rules and retires none (136 remain). [MSR-5] lets a `requires`
-or `ensures` operand be a measure of a place, so `ensures len_of(rest) >= len_of(out);`
-is a written clause where it was a parse rejection, and the define-per-measure
-spelling is gone. [MSR-3] gives every contract operand one denotation keyed on
-its parameter's mode: an `own` operand read at a caller denotes the call datum,
-the value at transfer, which no consume and no later write kills; a `&uniq`
-parameter's measure is inadmissible in a source-declared `ensures`, because the
-callee cannot name the caller's object at a point after its own writes.
-[CALL-4] states the contract vocabulary over the one result a declaration has
-and records the deferred widenings. [CALL-6] states once how a declared
-relation is instantiated at the call, established on the normal continuation,
-and restricted to its routed arm, and refuses at the declaration a contract
-whose published relations contradict each other. The batch that carried it is
-B1 of the container and resource design under
-`research/investigations/containers-and-resources/`.
-
-v0.40 carries source proof through the
-ordinary semantic compiler. It checks contracts, explicit loop-header
-invariants, and local invariants with optional `use` steps; submits every
-supported partial operation to the same deterministic proof context; proves
-selected-target layout and address domains before emission; and erases proof
-syntax before lowering. It contains no writer-accessible runtime assertion;
-internal inconsistencies are ordinary compiler defects owned by implementation
-repair and tests, not another proof-object or runtime self-validation layer.
+Source proof runs in the ordinary semantic compiler. It checks contracts,
+explicit loop-header invariants, and local invariants with optional `use`
+steps; submits every supported partial operation to the same deterministic
+proof context; proves selected-target layout and address domains before
+emission; and erases proof syntax before lowering. It contains no
+writer-accessible runtime assertion; internal inconsistencies are ordinary
+compiler defects owned by implementation repair and tests, not another
+proof-object or runtime self-validation layer.
 
 ## How to read this outline
 
-This file is the owner-facing map of Whitefoot's live directions. It answers:
+This file is a map of where the project might go: which ideas, requirements
+and open questions belong together, what evidence exists for each, and what
+would have to be true before a direction could advance. It is read for
+orientation and nothing more.
 
-- what the project can already do;
-- which ideas, requirements, and open questions belong together;
-- what evidence exists and whether it is current or historical; and
-- what is missing before a direction can advance.
-
-This outline records the landscape; `current-plan.md` records technical
-sequencing. Neither file grants or withholds permission to work on a branch or
-adds a merge condition beyond the four rules in `WORKFLOW.md`. A project can
+It is deliberately outside the working loop. A selected direction is worked in
+`research/investigations/<name>/`, where its design, measurements and rejected
+alternatives live, and what is settled by it is written to `mcts_mem/`. Neither
+this file nor those records grants or withholds permission to work on a branch
+or adds a merge condition beyond the four rules in `CLAUDE.md`. A project can
 expose a missing capability, but cannot by itself change the language or
 justify a project-shaped compiler special case.
 
+A `Current` line here is orientation, not a status report. What the compiler
+does today is stated by the specification, by `compiler/README.md`, and by the
+tests; a line here that disagrees with them is this file being stale, which it
+is allowed to be.
+
 Each item has one canonical home. Other directions link to its ID instead of
-copying its status. Tags are scanning aids. The `Current` sentence is this
-outline's canonical status summary, but the linked specification, code/tests,
-RESULTS, project law, or design memory remains authority for the underlying
+copying its status. Tags are scanning aids. The linked specification,
+code/tests, RESULTS, project law, or design memory is the authority for the
+underlying
 fact:
 
 - `[current: ...]` — some stated part exists now; the suffix names its factual
@@ -368,7 +65,13 @@ fact:
 The file is updated in place. Increment `Revision` when an item's goal,
 evidence-backed current state, next gate, or candidate-project disposition
 changes. Git is the version history; do not create versioned copies of this
-file. Detailed semantics, measurements, design rationale, and implementation
+file, and do not record here what a specification version changed. A landing
+amendment is written into the affected item's `Current` and `Missing / next`
+in the present tense, as what the project can now do and what is still open;
+what each version changed belongs to the change that made it and to its
+`spec/kernel-spec-vN.md` archive. A per-version
+paragraph here is a log entry, and the cost of keeping one is that the `Current`
+sentence beside it stops being maintained. Detailed semantics, measurements, design rationale, and implementation
 inventories remain in their canonical owners and are linked rather than copied.
 
 ## Current baseline
@@ -385,10 +88,10 @@ unsupported rather than invalid source.
 The compiler implements enough scalar, nominal, generic, storage, borrow,
 contract, cleanup, and program-level behavior to begin external validation, but
 not the entire active language. The exact implementation inventory and gaps
-belong in the [compiler README](../compiler/README.md). v0.40 retains
-v0.39's system interface around formal state paths, ordinary ownership, and
-completion-only lowering, with no separate world region, capability class,
-blocking-call family, or `Ordered` relation.
+belong in the [compiler README](../compiler/README.md). The system interface is
+built around formal state paths, ordinary ownership, and completion-only
+lowering, with no separate world region, capability class, blocking-call
+family, or `Ordered` relation.
 Which gap matters next is selected by a project, never by checklist length.
 
 ## Dependency rules
@@ -396,7 +99,7 @@ Which gap matters next is selected by a project, never by checklist length.
 - outline:CAND-1 records the completed flagship selection. outline:CAND-8 remains the selected
   flagship and pressure source. outline:PROOF-8's selected obligation-discharge
   sequence is now complete, so outline:CAND-8 is unparked; when its next
-  bounded slice is selected, `current-plan.md` records that sequence. Mapped
+  bounded slice is selected, its investigation directory carries it. Mapped
   direction items inform the choice but do not grant or withhold branch
   permission.
 - outline:PROOF-9 records the historical v0.33 successor to terminal
@@ -456,13 +159,23 @@ creating writer trust or weakening the checked safety envelope.
   proved `requires` goal as the callee-body S4 axiom. Ordinary callers prove
   that complete goal before transfer; no callee prologue or `llvm.assume` is
   emitted. Opaque Boolean goal identity adds no Boolean decomposition or new
-  optimizer authority.
+  optimizer authority. Above L0 an affine layer carries integer relations whose
+  atoms include measure terms and integer-typed named consts, so a contract
+  clause states an exact affine relation over what a caller can measure. An
+  admitted non-constant multiplication publishes the interval its own domain
+  decision already proved, so the value it binds carries a bound. A writer
+  directs a certificate with `use` steps whose multiplicity may name an
+  unsigned value as well as a decimal; the accumulator is then a degree-two
+  polynomial, every nonlinear monomial folds to the value image of an admitted
+  product matched by the declaration each side names, and a sum that keeps one
+  rejects.
 - **Missing / next:** a selected workload must first show a concrete proof gap
   or hot repeated-check pressure; then build one finite proof family with exact
   producers, invalidators, negative canaries, facts-off identity, and
-  attribution. O11
+  attribution. Products of two premises — where Handelman completeness would
+  come from — are not admitted and no evidence has asked for them. O11
   Boolean-goal composition stays an open question with four recorded findings
-  and a de-pairing ruling (`governance/APPROVALS.md`); its trigger is a real
+  and a de-pairing ruling; its trigger is a real
   program whose discharge needs a composed Boolean goal, and it re-enters only
   through the specification workflow.
 - **Facts:** [compiler `requires` boundary](../compiler/README.md) ·
@@ -627,8 +340,7 @@ creating writer trust or weakening the checked safety envelope.
   the separately invoked adapter remains `Pass=393 Fail=1 Skip=13`, with only
   the pre-existing OWN-3 unsupported boundary. Commit `d495d8c` records the
   paired requirement-enforcement re-decision and passes MCTS lint. Task 0048 is
-  terminal. Exact-approved v0.27 became active (its identity is the v0.27
-  line of the chain in `governance/APPROVALS.md`), with byte-identical outgoing v0.26 archived at
+  terminal. Exact-approved v0.27 became active, with byte-identical outgoing v0.26 archived at
   `spec/kernel-spec-v0.26.md`. It activates the bounded PRV-1/PRV-2/PRV-3
   explicit-dataflow gate over the retained requirement bridge. The approved
   real-program migration replaces eleven DEFLATE claims with value branches,
@@ -709,14 +421,11 @@ creating writer trust or weakening the checked safety envelope.
   specification is sole language authority; the v0.29 activation chain records
   its installed identity, and this outline records terminal `outline:PROOF-8` status.
 - **Missing / next:** none inside outline:PROOF-8. The direction is terminal and
-  `outline:CAND-8` is unparked. Record its next bounded technical sequence in
-  `current-plan.md` when selected.
+  `outline:CAND-8` is unparked. Its next bounded slice is worked in an
+  investigation directory of its own.
 - **Facts:** [design dossier](../research/investigations/obligation-discharge/DOSSIER.md) ·
   [simulation](../research/investigations/obligation-discharge/SIMULATION.md) ·
   [native acceptance](../research/investigations/obligation-discharge/ACCEPTANCE.md) ·
-  [Stage 8b semantic freeze](done/0058-stage8b-normal-return-postconditions.md) ·
-  [Stage 9a deterministic claim ledger](done/0066-stage9a-deterministic-claim-ledger.md) ·
-  [Stage 9b strict partition](done/0067-stage9b-strict-partition-candidate.md) ·
   [W1 probes](../research/investigations/obligation-discharge/PROBE-W1.md) ·
   [taint](../research/investigations/obligation-discharge/PROBE-TAINT.md) ·
   [codegen](../research/investigations/obligation-discharge/PROBE-CODEGEN.md) ·
@@ -755,9 +464,7 @@ creating writer trust or weakening the checked safety envelope.
   retain their distinct semantics.
 - **Facts:** [contract surface design space](../research/investigations/contract-surface/DESIGN-SPACE.md) ·
   [terminal obligation-discharge direction](#outlineproof-8) ·
-  [unified host-boundary architecture](#outlinebound-1) ·
-  [batch 0072 closure](done/0072-searching-wfgrep.md) ·
-  [batch 0073 closure](done/0073-claim-only-contracts.md).
+  [unified host-boundary architecture](#outlinebound-1).
 
 ### outline:PROOF-10 — Historical runtime-assertion residual canonicality
 
@@ -805,7 +512,7 @@ creating writer trust or weakening the checked safety envelope.
   participates in ordinary source acceptance.
 - **Historical result:** v0.34 introduced this direction, and v0.39 preserved it.
   The exact activation identities and conformance boundaries remain in
-  `governance/APPROVALS.md`. The residual lifecycle, contribution basis,
+  the change that made it. The residual lifecycle, contribution basis,
   reconstruction, fixed eligible set, component/occurrence necessity, stable
   terminal evidence, generic
   schema and concrete-instance checks, and unchanged retained lowering path
@@ -831,8 +538,7 @@ creating writer trust or weakening the checked safety envelope.
 - **Missing / next:** none inside this historical direction. outline:PROOF-11
   is the explicit successor and may remove this source and runtime surface once
   machine-checked replacements cover its legitimate clients.
-- **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md) ·
-  [batch 0073 claim-only closure](done/0073-claim-only-contracts.md).
+- **Facts:** [claim residual canonicality investigation](../research/investigations/obligation-discharge/CLAIM-RESIDUAL-CANONICALITY.md).
 
 ### outline:PROOF-11 — Source-carried safety proof, summaries, and erasure
 
@@ -910,7 +616,7 @@ creating writer trust or weakening the checked safety envelope.
   target-domain, parallel, and bounded queue/completion proof remain in scope.
   This is a temporary work boundary, not a change to the Constitution or the
   proof-carrying direction.
-- **Facts:** [current implementation plan](current-plan.md).
+- **Facts:** [proof-surface investigations](../research/investigations/).
 
 ## Verification and compiler trust
 
@@ -951,7 +657,7 @@ writer.
   the exact v0.40 revision. Any
   expectation, source, status, collection, or invocation change is conformance
   evidence whose exact before/after content is recorded under merge rule 4.
-- **Facts:** [conformance corpus](../tests/conformance) · [workflow](WORKFLOW.md).
+- **Facts:** [conformance corpus](../tests/conformance) · [practice](practice.md).
 
 ### outline:VERIFY-3 — Facts-on/facts-off differential trust
 
@@ -1068,28 +774,26 @@ and every slower-but-accepted divergence becomes a measured finding.
 
 ### outline:FLOOR-5 — Spelling rule and surface relief
 
-`[v0.23: class deletions and infix arithmetic]` `[v0.41: comparison symbols and the call-site delimiter]` `[v0.42: forced region spelling]` `[v0.43: loop-body regions]`
+`[current: class deletions, infix arithmetic, comparison symbols, the call-site delimiter, forced region spelling, loop-body regions, one use-premise shape]`
 
 - **Goal:** every surface byte carries a decision the checker cannot
   reconstruct (tests T1 decision / T2 boundary / T3 uniqueness / T4
   globality, plus no-optionality); relieve ceremony strictly per grammar
   class while boundaries stay fully explicit.
-- **Current:** v0.23 landed the sweep's whole-class deletions and infix
-  arithmetic; its comparison row was cancelled on the `<` collision with
-  call-site type arguments. v0.41 lands that row under the owner rulings of
-  2026-09-03: the six integer comparisons are `== != < <= > >=`, call-site
-  type application takes the `::` delimiter (`cvt::<u8, u32>(w)`) so
-  `IDENT <` is always a comparison and the parser stays two-token, `!` enters
-  the alphabet only inside `!=`, and a multiplied `use` relation is
-  parenthesized. Bool logic, the bit family, float and enum comparison, and
-  every unary operation stay named by ruling; ANF relaxation stays deferred.
-  v0.42 lands the third batch as [FORM-8]: a REGIONID is written exactly where
-  the surrounding text does not already fix the region denoted, and is absent
-  everywhere else, so each region position has one legal spelling. v0.43
-  carries the same rule to loop bodies: the body of a `loop_stmt` or `for_stmt`
-  is itself a region block, so the borrow inside it is written bare and a
-  `region_stmt` that is the body's only statement is a second spelling and a
-  [FORM-8] rejection.
+- **Current:** the sweep's whole-class deletions are landed and arithmetic is
+  infix. The six integer comparisons are `== != < <= > >=`; call-site type
+  application takes the `::` delimiter (`cvt::<u8, u32>(w)`) so `IDENT <` is
+  always a comparison and the parser stays two-token, and `!` is in the
+  alphabet only inside `!=`. Bool logic, the bit family, float and enum
+  comparison, and every unary operation stay named by ruling; ANF relaxation
+  stays deferred. [FORM-8] gives each region position one legal spelling: a
+  REGIONID is written exactly where the surrounding text does not already fix
+  the region denoted and is absent everywhere else, and a loop body is itself a
+  region block, so a `region_stmt` that is the body's only statement is a
+  second spelling and a rejection. A `use` premise has one shape — a name or a
+  parenthesized relation, with any multiplicity written as `N times` before it
+  — which removed the multiplied-versus-bare split and the stated space that
+  had carried a distinction the parser could not see.
 - **Missing / next:** nothing is open in this row; the retired comparison
   names are free identifiers, the corpus, snapshot index, conformance
   manifest, and live documentation are respelled, and the writer trial that
@@ -1097,36 +801,6 @@ and every slower-but-accepted divergence becomes a measured finding.
   registered in `spec/derivation/derivation-ledger.md`.
 - **Facts:** [sweep and rulings](../research/investigations/spelling-relief/SWEEP.md) ·
   [activation record](../governance/spec-evolution/comparison-symbols-v041-candidate.md).
-
-### outline:FLOOR-6 — Namespaces for the compiler-owned name domains
-
-`[speculative]`
-
-- **Motivation:** the language has one flat lowercase name domain, so every
-  dotless operation spelling is a reserved word for the whole unit
-  [OP-1, FORM-3]. v0.45's measure readers made that concrete: adding `len`,
-  `cap`, `room` and `head` took four ordinary words away from every writer at
-  once, and the owner's S36 ruling of 2026-09-04 bought them back by renaming
-  the readers `len_of`, `cap_of`, `room_of` and `head_of`. That rename is a
-  workaround, not a rule: the next four operations will collide with four more
-  words a writer wants, and each escape has to be spelled into the operation
-  name itself. A namespace mechanism — a qualified spelling for the prelude,
-  the system domain and the kernel declaration domain, with resolution that
-  does not consume the unqualified word — retires the workaround and lets an
-  operation be named for what it is.
-- **Current:** nothing exists. The three compiler-owned declaration domains
-  [PRE-1, SYS-1, BLK-0] are already distinct inventories in the compiler and
-  are already separated from source declarations at resolution, so the axis a
-  namespace would name is present; only the surface is flat.
-- **Missing / next:** the decision this needs is not a syntax choice but a
-  ruling on what a qualified name costs a reader — whether `Bool` and `Some`
-  become qualified too, whether an unqualified use stays legal when nothing
-  shadows it (which reintroduces context dependence [META-2]), and what a
-  writer's own declaration may shadow. No project needs it yet; the item
-  exists so the next reserved-word collision is read against a direction
-  rather than solved by another suffix.
-- **Facts:** [S36 and its ground](../research/investigations/containers-and-resources/DESIGN.md) ·
-  [OP-1's `ReservedLowerNames`](../spec/kernel-spec.md).
 
 ## Storage, ownership, and representation
 
@@ -1149,18 +823,7 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   suspension of a uniq root (OWN-13), closing the recorded OWN-6 gap and
   the OWN-13/OWN-5 contradiction. Uniq non-copy payload binders and written
   uniq nested chains remain explicit capability gaps; branch-produced loans
-  and holder-derived slices remain absent. v0.45 adds the second view:
-  [VIEW-1] and [VIEW-2] give the language `Slice<'r, T>` and `MutSlice<'r, T>`
-  at shared and exclusive loan strength, and [SET-1] admits an element write
-  through the exclusive one, so a helper can fill a caller's `buffer<T>` without
-  taking it. The shared view is copy and its loan ends at its last use, the two
-  runs are viewable under the formation rows' own non-wrap requirement, and a
-  shared child reborrow of an exclusive view is admitted with the parent frozen
-  while the child lives. An exclusive view over inline storage — an `array<T, N>`
-  or a `FixedVector<T, n>` — is an explicit unsupported capability, and a view
-  formed through a *view holder* rather than over the viewed place is absent, so
-  a helper handed `&uniq MutSlice<'r, u8>` fills its destination and cannot
-  publish it.
+  and holder-derived slices remain absent.
 - **Missing / next:** choose the smallest missing rule only after a real
   project cannot express its required access pattern. The 31-rule loan/freeze
   review candidate and older M1 model are parked evidence, not language
@@ -1188,7 +851,7 @@ optimizer facts without a writer-accessible escape or hidden pathological cost.
   concrete reopening witness (2026-08-06): sequential `wfgrep` cannot grow its
   line buffer — `buffer<T>` has no in-place growth and STOR-1 rejects
   rebinding an affine place — so it carries a fixed maximum line length where
-  real grep grows; see `docs/done/0015-sequential-wfgrep.md`.
+  real grep grows.
 - **Facts:** [promotion checklist](../research/archive-promotion-audit.md#4-storage-checklist-retained-as-direction-outline-reopening-input) ·
   [rejected owning-sequence experiment](../research/experiments/data-layout-owning-sequence/RESULTS.md).
 
@@ -1237,7 +900,6 @@ and failure semantics survive the runtime implementation.
   [measured results](../research/investigations/proof-derived-parallelism/RESULTS.md) ·
   [deciding probes](../research/investigations/proof-derived-parallelism/probes/README.md) ·
   [permission and layer model](../research/investigations/proof-derived-parallelism/PAL.md) ·
-  [batch record 0074](done/0074-proof-derived-parallelism.md) ·
   [auto-parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md).
 
 ### outline:PAR-2 — Intra-object disjointness
@@ -1264,8 +926,7 @@ and failure semantics survive the runtime implementation.
   not guess an injectivity lemma or search over index formulas.
 - **Facts:** [parallelism feasibility result](../research/experiments/auto-parallelism-feasibility/RESULTS.md) ·
   [pattern gaps](patterns.md#known-gaps-findings-not-yet-patterns) ·
-  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
-  [batch record 0078](done/0078-loop-permission.md).
+  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md).
 
 Note the name collision, which the `outline:` prefix keeps formally distinct:
 this direction is `outline:PAR-2`, and the spec rule `[PAR-2]` the branch
@@ -1292,8 +953,7 @@ carries is counted-loop reduction permission, not intra-object disjointness.
   (element-write) half, and any non-commutative associative operation are open,
   each with a named re-entry condition in the design ruling.
 - **Facts:** [historical chunk-summary result](../research/experiments/port-study/wc-chunk-summary/RESULTS.md) ·
-  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md) ·
-  [batch record 0078](done/0078-loop-permission.md).
+  [loop-permission design ruling](../research/investigations/proof-derived-parallelism/loop/DESIGN.md).
 
 ### outline:PAR-4 — Runtime, allocation, and dynamic fan-out
 
@@ -1385,14 +1045,15 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   evidence from the released v0.39 line, not a gate report for the v0.40 bytes.
   Whole programs
   were measured on both macOS and Linux with io_uring
-  ([batch 0084](done/0084-io-performance.md)): the shipped build is about
+  ([program-level measurement bundle](../research/experiments/io-completion-bench/README.md)):
+  the shipped build is about
   twice its own sequential build on a many-independent-files workload, and
   within 3.4 percent of a hand-written io_uring pipeline at the same queue
   depth the source can ask for. Measuring also found and fixed a join
   busy-wait, a default helper count pinned at the worst value, and an
   identifier collision that had made every Linux link of a completion program
   fail to compile. [SYS-14] directory enumeration is now qualified on both
-  families ([batch 0094](done/0094-linux-directory-row.md)): the Darwin row
+  families: the Darwin row
   reads the name length its `struct dirent` states, the Linux row derives it
   by one scan bounded by the extent `d_reclen` reports, because
   `struct linux_dirent64` states none — one normalizer text, one target-selected
@@ -1420,14 +1081,8 @@ become alternate unchecked semantics or prematurely bind the whole toolchain.
   completion-width question is how to extend the implemented direct
   counted-loop batch to wider control flow, more operation families, and
   functions containing multiple staged loops without partial or ambiguous
-  transformation. The open API and target items are enumerated in [batch
-  0082](done/0082-unified-state-completion-io.md) and [batch
-  0084](done/0084-io-performance.md).
-- **Facts:** [batch record 0082](done/0082-unified-state-completion-io.md) ·
-  [batch record 0084](done/0084-io-performance.md) ·
-  [batch record 0089](done/0089-loop-pipeline-batch0.md) ·
-  [batch record 0094](done/0094-linux-directory-row.md) ·
-  [Windows native runtime gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024878) ·
+  transformation.
+- **Facts:**   [Windows native runtime gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024878) ·
   [Windows paired performance gate](https://github.com/mbbill/Whitefoot/actions/runs/33651024745) ·
   [program-level measurement bundle](../research/experiments/io-completion-bench/README.md) ·
   [first-principles derivation](../research/investigations/io-model/FIRST-PRINCIPLES.md) ·
@@ -1526,8 +1181,8 @@ justify a favorable subset, a monolithic rewrite, or any particular
 language, compiler, proof, runtime, or optimizer change. Completed plans
 through batch 0070 closed the bounded outline:PROOF-8 undertaking and the
 specified-gap/take-replace undertaking (v0.31 activated). When the next
-outline:CAND-8 slice is selected, `current-plan.md` records how it returns to
-the unchanged product comparison; that sequencing record is not branch-work
+outline:CAND-8 slice is selected, its investigation directory records how it
+returns to the unchanged product comparison; that record is not branch-work
 permission.
 
 Owner framing (2026-08-05): the project's deliverable is what `wfgrep` proves
@@ -1553,8 +1208,8 @@ the goal or an additional approval step.
   performance and immediate tool adoption the primary public test and selected
   pinned ripgrep 15.2.0.
 - **Missing / next:** none; `outline:CAND-8` owns the preserved flagship sequence and
-  is unparked now that outline:PROOF-8 is terminal. Record its next selected
-  slice in `current-plan.md`.
+  is unparked now that outline:PROOF-8 is terminal. Its next selected slice is
+  worked in an investigation directory of its own.
 - **Facts:** [historical N1 shortlist](../research/notes/headline-artifact-shortlist.md) ·
   [ripgrep flagship frame](../research/notes/ripgrep-flagship-frame.md) ·
   [current executable programs](../compiler/README.md).
@@ -1595,8 +1250,8 @@ the goal or an additional approval step.
   complete outline:PROOF-8 obligation-discharge sequence selected in the Current Plan
   was implemented and verified. That sequence is now terminal, so the exact
   credited checkpoint and full 2x objective are unparked rather than replaced.
-  The next bounded wfgrep slice should be recorded in `current-plan.md` when
-  selected; neither this outline nor that plan grants or withholds branch
+  The next bounded wfgrep slice is worked in an investigation directory of its
+  own; neither this outline nor that record grants or withholds branch
   permission.
 - **Directions tested:** outline:PERF-1 owns the baseline and attribution; outline:BOUND-1 and
   outline:VERIFY-1 enter with the real CLI/filesystem path; outline:PAR-1 through outline:PAR-4 enter

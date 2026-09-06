@@ -180,6 +180,8 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("affine", "Affine"),
         ("copy", "Copy"),
         ("dispose", "Dispose"),
+        // v0.48 [PRF-1]: the cited-premise multiplicity atom.
+        ("times", "Times"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;

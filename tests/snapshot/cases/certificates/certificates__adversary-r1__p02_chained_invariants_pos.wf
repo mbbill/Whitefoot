@@ -5,10 +5,10 @@ fn chain(first: own u64, first_limit: own u64, second: own u64, second_limit: ow
   doc "expect ACCEPT: step_b names step_a with an explicit factor, step_c names step_b with another explicit factor; each combination step is exact and true.";
   invariant step_a: first + second <= first_limit + second_limit;
   invariant step_b: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
-    use 3 * step_a;
+    use 3 times step_a;
   }
   invariant step_c: 15_u64 * first + 15_u64 * second <= 15_u64 * first_limit + 15_u64 * second_limit {
-    use 5 * step_b;
+    use 5 times step_b;
   }
   return unit;
 }

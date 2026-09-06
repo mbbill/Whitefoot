@@ -1,0 +1,12 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "FACE B probe: exact product of two runtime u32 values with full-width intervals.";
+  let config = buffer_new(2_u64, 4_u32);
+  let count = config[0_u64];
+  let width = config[1_u64];
+  let bytes = count * width;
+  if bytes == 16_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

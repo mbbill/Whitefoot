@@ -1,0 +1,58 @@
+fn rows_sum(pixels: &buffer<u8>, width: own u64, y0: own u64, y1: own u64) -> total: own u64 reads(pixels) contract {
+  requires y0 <= y1;
+  requires width <= 65536_u64;
+  requires y1 <= 65536_u64;
+} {
+  doc "WORKAROUND: the starting offset is still a product, so it needs a checked multiply and one bootstrap guard before the induction can begin.";
+  let capacity = len(deref(pixels));
+  let acc = 0_u64;
+  match y0 *checked width {
+    Ok(value: start) => {
+      let start_ok = start <= capacity;
+      if start_ok {
+      } else {
+        return acc;
+      }
+      let base = start;
+      let remaining = capacity - start;
+      for (
+        r in y0..y1,
+        invariant span_lo: base + remaining <= capacity,
+        invariant span_hi: capacity <= base + remaining
+      ) {
+        let row_ok = width <= remaining;
+        if row_ok {
+        } else {
+          return acc;
+        }
+        invariant row_fits: base + width <= capacity;
+        for (c in 0_u64..width) {
+          invariant slot: base + c < capacity;
+          let at = base + c;
+          let byte = deref(pixels)[at];
+          let wide = cvt::<u8, u64>(byte);
+          set acc = acc +wrap wide;
+        }
+        set base = base + width;
+        set remaining = remaining - width;
+      }
+      return acc;
+    }
+    Err(error: overflow) => {
+      return acc;
+    }
+  }
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let pixels = buffer_new(12_u64, 1_u8);
+  region {
+    let p = &pixels;
+    let t = rows_sum(pixels: p, width: 4_u64, y0: 1_u64, y1: 3_u64);
+    if t == 8_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

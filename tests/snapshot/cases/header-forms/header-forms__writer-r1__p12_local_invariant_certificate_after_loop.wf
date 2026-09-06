@@ -8,7 +8,7 @@ fn scaled_after_loop(limit: own u64) -> total: own u64 pure {
   }
   invariant exact_bound: sum <= limit;
   invariant scaled_bound: 3_u64 * sum <= 3_u64 * limit {
-    use 3 * exact_bound;
+    use 3 times exact_bound;
   }
   return sum;
 }

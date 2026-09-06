@@ -1,0 +1,64 @@
+fn blit(src: &buffer<u8>, dst: &uniq buffer<u8>, src_stride: own u64, dst_stride: own u64, w: own u64, h: own u64) -> moved: own u64 reads(src, dst), writes(dst) contract {
+  requires w <= src_stride;
+  requires w <= dst_stride;
+} {
+  doc "WORKAROUND: two row bases carried as induction variables, each shadowed by a remaining-bytes counter.";
+  let scap = len(deref(src));
+  let dcap = len(deref(dst));
+  let moved = 0_u64;
+  let s_base = 0_u64;
+  let s_left = scap;
+  let d_base = 0_u64;
+  let d_left = dcap;
+  for (
+    r in 0_u64..h,
+    invariant s_lo: s_base + s_left <= scap,
+    invariant s_hi: scap <= s_base + s_left,
+    invariant d_lo: d_base + d_left <= dcap,
+    invariant d_hi: dcap <= d_base + d_left
+  ) {
+    let s_ok = src_stride <= s_left;
+    if s_ok {
+    } else {
+      return moved;
+    }
+    let d_ok = dst_stride <= d_left;
+    if d_ok {
+    } else {
+      return moved;
+    }
+    invariant s_stride_span: s_base + src_stride <= scap;
+    invariant d_stride_span: d_base + dst_stride <= dcap;
+    invariant s_span: s_base + w <= scap;
+    invariant d_span: d_base + w <= dcap;
+    for (c in 0_u64..w) {
+      invariant s_slot: s_base + c < scap;
+      invariant d_slot: d_base + c < dcap;
+      let s_at = s_base + c;
+      let d_at = d_base + c;
+      let byte = deref(src)[s_at];
+      set deref(dst)[d_at] = byte;
+      set moved = moved +wrap 1_u64;
+    }
+    set s_base = s_base + src_stride;
+    set s_left = s_left - src_stride;
+    set d_base = d_base + dst_stride;
+    set d_left = d_left - dst_stride;
+  }
+  return moved;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let src = buffer_new(12_u64, 5_u8);
+  let dst = buffer_new(9_u64, 0_u8);
+  region {
+    let s = &src;
+    let d = &uniq dst;
+    let moved = blit(src: s, dst: move d, src_stride: 4_u64, dst_stride: 3_u64, w: 2_u64, h: 3_u64);
+    if moved == 6_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

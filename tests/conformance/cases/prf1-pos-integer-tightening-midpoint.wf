@@ -8,8 +8,8 @@ fn probe(table: own FixedVector<u8, 4>, lo: own u64, hi: own u64) -> found: own 
   let half = span / 2_u64;
   let mid = lo + half;
   invariant inside: mid < hi {
-    use lo < hi;
-    use 2_u64 * half <= span;
+    use (lo < hi);
+    use (2_u64 * half <= span);
   }
   let byte = table[mid];
   return byte;

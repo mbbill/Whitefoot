@@ -294,9 +294,23 @@ fn raw_restriction_owner(
             {
                 return Some(SyntaxRule::Form5);
             }
+            // Unlike the two arms above, this one names a production's own
+            // rule rather than a lexical class, so it must recognize that
+            // production. Two positions share the grammar's sole pattern
+            // predicate — a `const` size and a `proof_use` multiplicity — and
+            // only the first is CONST-1's; blaming the second on CONST-1 cites
+            // a rule whose text is about `array<T, N>` sizes and `const`
+            // targs. A `const` is `"[0-9]+" | IDENT` and nothing else, so its
+            // expected set is exactly those two, while a multiplicity position
+            // also admits the `(` of an unmultiplied relation premise. Where
+            // the shape does not match, the ordinary parse rule for the
+            // position is the honest citation. A third production sharing the
+            // predicate would need the production threaded here rather than a
+            // second shape test.
             LookaheadPredicate::Terminal(TerminalPredicate::Digits)
                 if token.token().kind() == TokenKind::NumberForm
-                    && !has(token, TerminalPredicate::Digits) =>
+                    && !has(token, TerminalPredicate::Digits)
+                    && is_const_position(expected) =>
             {
                 return Some(SyntaxRule::Const1);
             }
@@ -304,6 +318,14 @@ fn raw_restriction_owner(
         }
     }
     None
+}
+
+/// Whether the expected set is exactly a `const`'s own two alternatives.
+fn is_const_position(expected: super::ExpectedTerminals) -> bool {
+    expected.iter().eq([
+        LookaheadPredicate::Terminal(TerminalPredicate::Identifier),
+        LookaheadPredicate::Terminal(TerminalPredicate::Digits),
+    ])
 }
 
 fn actual_name(token: &ClassifiedToken<'_>) -> Option<NamePredicate> {

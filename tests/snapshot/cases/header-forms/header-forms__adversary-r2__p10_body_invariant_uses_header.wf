@@ -6,7 +6,7 @@ command fn main() -> status: own ExitStatus pure {
     invariant bounded: cursor <= i
   ) {
     invariant scaled: 3_u64 * cursor <= 3_u64 * i {
-      use 3 * bounded;
+      use 3 times bounded;
     }
     set cursor = cursor + 1_u64;
   }

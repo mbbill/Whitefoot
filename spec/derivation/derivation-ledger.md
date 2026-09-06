@@ -3,8 +3,8 @@
 The original full audit covered `kernel-spec-v0.3.md` and `docs/constitution.md`
 on 2026-07-07. Versioned amendments below carry that audit through
 the active specification at `spec/kernel-spec.md`, whose version and digest
-are the chain tail in `governance/APPROVALS.md`; each superseded version is
-archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.45 amendments
+are its own bytes; each superseded version is
+archived at `spec/kernel-spec-vN.md`, and the v0.40 through v0.50 amendments
 at the end of this file bind their changed derivations.
 Requirement (META-6): every rule is provably
 derived, directly or indirectly, from the constitution — or flagged. Statuses:
@@ -14,7 +14,7 @@ exist; this form is minimality-selected and awaits its experiment),
 
 Rows and amendments through v0.39 remain in this ledger as historical
 derivation evidence. The unversioned table preserves those derivation chains;
-the v0.40 through v0.45 amendments below and the active
+the v0.40 through v0.50 amendments below and the active
 specification define the changed rows. The table is not independent live
 source guidance. In
 particular, its historical `claim`, `traps`, CLM, PRV,
@@ -23,12 +23,35 @@ not describe the active compiler. v0.40 removes SCOPE-4,
 DIAG-3, TRAP-1, CLM-1 through CLM-3, and PRV-1 through PRV-3; the retained rows
 below explain only why those released rules once existed.
 
-**v0.45 statistics: 98 derived · 59 existence-only · 0 underived**
-(157 rules, plus one non-rule row for [S39]'s cell, which is a [TYPE-2] type rather than a numbered rule: v0.45 adds derived MSR-2, MSR-4, MSR-6, LIV-1, LIV-2, PROV-6,
+**v0.50 statistics: 98 derived · 59 existence-only · 0 underived**
+(157 rules, plus one non-rule row for [S39]'s cell, which is a [TYPE-2] type rather than a numbered rule: v0.50 adds derived MSR-2, MSR-4, MSR-6, LIV-1, LIV-2, PROV-6,
 PROV-1, BLK-1, VIEW-1, VIEW-2, VIEW-4, VIEW-6, CALL-1, CALL-2, CALL-3 and CALL-5, and existence-only MSR-1,
 BLK-0, BLK-2 and BLK-3, adds derived BLK-4, retires no rule, and moves no existing row's status, so every other
-derivation status carries over from v0.44, which stood at 81 derived · 55
+derivation status carries over from v0.49, which stood at 81 derived · 55
 existence-only across 136 rules.)
+**v0.49 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.49 adds and retires no rule and moves no row's status. It
+amends [PRF-1] in place, so every derivation status carries over from v0.48.)
+**v0.48 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.48 adds and retires no rule and moves no row's status. It
+amends [GRAM-4] and [PRF-1] in place, so every derivation status carries over
+from v0.47.)
+**v0.47 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.47 adds and retires no rule and moves no row's status. It
+amends [INV-1] in place, so every derivation status carries over from v0.46.)
+**v0.46 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.46 adds and retires no rule and moves no row's status. It
+amends [FN-8], [ENT-3] and [ENT-6] in place, so every derivation status
+carries over from v0.45 and the v0.46 amendment below binds the changed
+sentences.)
+**v0.45 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.45 adds and retires no rule and moves no row's status. It
+amends [ENT-3] and [ENT-6] in place, so every derivation status carries over
+from v0.44 and the v0.45 amendment below binds the changed sentences.)
+**v0.44 statistics: 81 derived · 55 existence-only · 0 underived**
+(136 rules: v0.44 adds derived MSR-3 and CALL-6 and existence-only MSR-5 and
+CALL-4, retires no rule, and moves no existing row's status, so every other
+derivation status carries over from v0.43).
 **v0.43 statistics: 79 derived · 53 existence-only · 0 underived**
 (132 rules: v0.43 adds and retires no rule and moves no row's status — it
 amends OWN-3, OWN-11, FORM-8, and ENT-6 in place — so every derivation status
@@ -155,7 +178,7 @@ INV-1 and PRF-1, and retain every other rule's derivation status).
 | META-2 | No context-dependent rules; defaulting rules do not exist | ✅ derived | Round-4 decided regularity law ('zero context-dependent rules') retained under W1 grounding per D2a; no-defaulting half independently re-derived from R4 — constitution-audit adopted item 5 records that any defaulting rule (e.g. instantiating round-3 'wrap fallback') would violate R4 + META-2 simultaneously — and from the D2-corrected owner ruling foreclosing elision/inference (uniform verbose-everywhere annotation stands). | No experiment isolates context-dependence harm to weak writers; the chain terminates in constitutional text (D2a retention) plus the recorded R4 analytics, so none is needed — but a W1 measurement would harden the asserted grounding. |
 | META-3 | No exception clauses; total rules or table data | ✅ derived | Round-4 decided regularity law ('empty exception lists') retained under W1 grounding per D2a; enacted in the v0.1 revision (exception clauses reduced to 0: STOR-2 default clause deleted, OP carve-outs became table data — META-5 declaration 2026-07-02); 'exceptions ±' is a priced META-5 delta dimension, making the invariant CI-enforceable. | Same asserted-under-W1 caveat as META-2: the weak-writer case for total-rules-over-exceptions is constitutional assertion plus round-4 law, not measurement. W2 spec-budget origin is weak post-D2a; the rule survives on the D2a retention clause. |
 | META-4 | Each normative fact stated once; cross-references elsewhere | ✅ derived | Round-4 decided regularity law ('each fact stated once') retained under W1 grounding per D2a (constitutional text); analytically required by the round-4 single machine-checked CI artifact and by META-5 delta accounting — unique definition sites make rule deltas countable and internal contradictions structurally impossible (a duplicated fact that drifts would create context-dependent meaning, violating META-2). | Thinnest of the four regularity invariants: its recorded selection ground is D2 spec-compactness, i.e. W2 — weak post-D2a; the D2a retention and CI-machine-checkability arguments carry it. A weak-model spec-comprehension experiment (stated-once vs checked-redundant spec) would put evidence under the asserted W1 grounding. CI observation: FORM-1 and META-1 both state the one-spelling fact with no cross-reference — an apparent META-4 self-violation worth fixing. Re-grounded post-D2a under W1/W3: duplicate normative statements create reconciliation burden for weak writers and a spec-drift channel (two statements can diverge silently); CI-machine-checkable. No longer W2-only. |
-| META-5 | Every spec change declares its delta and selection ground | ✅ derived | Round-4 decided law verbatim ('every design proposal must declare its spec delta') + constitution-audit adopted item 1: every delta also declares its selection ground (evidence-selected vs minimality-selected; spec-delta prices, evidence selects; minimality-selected forms enter the provisional register). This makes META-5 the enforcement mechanism for R3 + D2a reframing. | Work-branch candidates put both declarations in the status header without approval. If exact specification content merges, rule 4 of `WORKFLOW.md` records that content in `governance/APPROVALS.md`. |
+| META-5 | Every spec change declares its delta and selection ground | ✅ derived | Round-4 decided law verbatim ('every design proposal must declare its spec delta') + constitution-audit adopted item 1: every delta also declares its selection ground (evidence-selected vs minimality-selected; spec-delta prices, evidence selects; minimality-selected forms enter the provisional register). This makes META-5 the enforcement mechanism for R3 + D2a reframing. | Work-branch candidates put both declarations in the change's `governance/APPROVALS.md` record without approval; rule 4 of `CLAUDE.md` is what makes that record the approved content when the exact revision merges. The specification bytes carry no version commentary of their own: the v0.30 representation rework evicted the accumulated header changelog, and v0.49 completes it by moving the activating version's own declaration to the same record. |
 | FORM-7 | numeric-literal range/leading-zero/non-finite reject; inline sign | ✅ derived | T2 (no undefined value) + R4 (check-reject over silent corruption) + W3 (an out-of-range literal is the silent-corruption channel a cheat-proof language forbids) + FORM-1 (integer leading-zero reject). Inline sign discharges iK::MIN (op-table reconciliation). | Range/non-finite reject R4-forced (evidence-selected); float canonical decimal form DEFERRED to the FORM-1 reject-vs-canonicalize gate. |
 | TYPE-7 | deref typing; no implicit read-through-borrow | ✅ derived | TYPE-4 (no implicit conversions) + META-2 (no context-dependent meaning) + OWN-1 (copy-on-use for primitives) + OWN-5 (reads through shared borrow permitted). Fills a real typing gap: deref had no typing rule; the auto read-through-borrow alternative violates TYPE-4 + META-2. | evidence-selected. |
 | SET-1 | Target-first assignment to a writable copy-typed place, with post-RHS revalidation and one store | ✅ derived | Real loops, buffers and stateful programs require mutation (project P0 experiment path), while T1/T2 forbid an uninitialized ownership hole. OWN-1 + STOR-1/3 make copy-only replacement the complete safe first form: the old copy needs no disposition and the owner remains initialized. R4 + OP-4 require target checks to run before unrelated RHS effects, and OWN-5 requires the commit to be judged against the post-RHS loan state. DIAG-2 carries the checked target and single store so lowering cannot re-evaluate or weaken them. | Affine take/replace is SET-2 (v0.31): failure is EFF-4 no-commit abort, overlap is OWN-5's unchanged loan judgment, and old-value disposition is the mandatory fresh binding. Target-first rather than RHS-first is correctness-selected because an invalid target must not execute unrelated effects. |
@@ -841,7 +864,7 @@ delta (`governance/spec-evolution/obligation-discharge-batch1-candidate.md`:
 owner rulings O1–O16, edge-case-review fixes F1–F11, and the sitting
 adoption of the second OP-1 modification are recorded there). Candidate
 stage: these rows exist ahead of activation so the native `whitefoot-spec`
-gate covers all 128 rule IDs; the `docs/WORKFLOW.md` step-4 exact-byte
+gate covers all 128 rule IDs; the `CLAUDE.md` step-4 exact-byte
 approval and installation as `spec/kernel-spec-v0.21.md` are pending, and
 this binding is restated at activation.
 
@@ -1652,8 +1675,8 @@ this function, or does its truth import an unstated property of something a
 callable boundary returned? v0.38 answered that question partly by position: a
 selector's witness joined every binder, delivered value, and storage write
 whose reaching definition was selected by its edge, and "post-join state" was
-named among them. The differential-fuzz campaign of
-`docs/done/0097-differential-fuzz.md` showed what that answer costs. All 63 of
+named among them. The differential-fuzz campaign in
+`research/experiments/differential-fuzz/` showed what that answer costs. All 63 of
 its rejections over 2004 generated programs were one shape: a `match` on a
 system-call result whose `Err` arm returned, followed by definitions built
 entirely from literals, whose claim was refused although nothing the system
@@ -1898,10 +1921,100 @@ authority.
 | CALL-6 | Publication stated once: a declared relation is instantiated at the call under MSR-3's substitution, established on the call's normal continuation in ENT-5's order, restricted to its arm when it is routed rather than deferred to it, and supported by the substituted terms; and a contract whose published relations are contradictory at their establishment point is refused at the declaration | 🟢 derived | Derived from ENT-4's own least-closure semantics: at a contradictory point every L0 relation and both signs of every goal are derivable, so an inconsistent published set is not one wrong fact at one caller but every fact at every caller, including the subscript bounds SCOPE-2 exists to keep. Refusing it at the declaration is forced by the same sentence — the set is fixed at the declaration and no caller state repairs it. The instantiate-at-the-call/restrict-to-the-arm shape is derived from ENT-5's own call-boundary order together with the seventh falsifier round's refutation of the alternative: deferring a routed relation's establishment to the arm and killing it from that later point makes every write between the call and the arm precede the establishment and kill nothing, which that round used to hand back a run running past its extent in a program the resource judgment accepts. | Registered: the declaration-domain population of this source is empty in this version, because no compiler-owned row carries a declared relation set until the container declaration domain lands; the rule is written over both callee classes and exercised over one. |
 | CALL-4 | Contract vocabulary over the result: a `fn_decl` declares exactly one `result_binding`, so a route names no ordinal and no ordinal binder is written, and the destinations stay ENT-3.S12's closed list | 🟡 existence-only | Existence derived: L16's one-denotation-per-position sentence requires that the position a route applies to be named exactly once, and with one result there is exactly one naming and no ambiguity to resolve. Form NOT derived: the ordinal binder this rule declines to write is the form a multi-result declaration would need, and no multi-result declaration exists to measure it against; the rule records the criterion rather than selecting a spelling. | Registered: a result of measured type, a measure over a result place, and a route over any variant of any returned enum are DEFERRED in the rule text with their deltas; each is an admission widening of FN-9 and each is what a container-returning helper needs before it can hand a run back with its measures. |
 
-## v0.45 amendment — multi-return and the proof surface (2026-09-04)
+## v0.45 amendment — the admitted product's own interval (activated 2026-09-05)
 
-Specification binding: the active `spec/kernel-spec.md`, headed v0.45,
+Specification binding: active `spec/kernel-spec.md`, headed v0.45, at
+SHA-256 `07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd`,
 superseding v0.44
+(`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`), whose
+bytes are archived at `spec/kernel-spec-v0.44.md`. This version amends and
+activates in one change, so no candidate digest precedes it. The merge-time
+record is in `governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [ENT-6] and [ENT-3] in
+place and adds [ENT-3]'s enumerated source S14. No row's status moves, so the
+statistics line above is v0.44's unchanged.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| ENT-6 / ENT-3.S14 | The fixed interval-product rule publishes the constant interval its four endpoint products bound, established by S14 on the value the admitted multiplication binds | 🟢 derived | Derived from ENT-1's own fact-source sentence read against what the rule already computes. ENT-6 proves an inclusive interval for each operand and forms the four endpoint products, and the multiplication is admitted exactly when all four lie in the result type; the least and greatest of those same four products therefore bound the value the operation produced, on the same premises, at the same point, with no further derivation. Withholding them was not a soundness boundary but a publication choice, and it is the choice R4 forbids: the shift-left ladder ranks a static rejection above a runtime check, and a writer whose admitted product carries no bound must hand the checker back the identical interval as an executed guard, which is a runtime branch standing in for a fact the compiler had already proved. P0 reads the same way — that guard is an emitted comparison and an unreachable arm on the hottest index path there is. Soundness is the ordinary ENT-5 rule rather than a new one: the published relations name only the bound value and the distinguished zero term, so their support is the bound value alone, which is what they mean — they describe a value already produced, so a write to an operand leaves them true and a write to the bound place kills them. The bound value never aliases an operand because a `let` binder is fresh and a commit value is compiler-owned [ENT-2]. Monotonicity is preserved in the permitted direction: the amendment only establishes facts, and no admission condition anywhere reads whether this source fired. | Registered: S14 states a constant interval, so it reaches an operand bounded by constants and not a bound relative to another runtime value — `p * n <= (k - 1) * n` with runtime `k` stays outside it, because the interval of `p < k` is the type range. That family is what a written non-literal `use` multiplier would reach, and no rule in this version admits one. |
+
+## v0.46 amendment — a stated relation and the atom that discharges it (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.46, at
+SHA-256 `b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65`,
+superseding v0.45
+(`07238ec06058cd42933c4677b42234f0406ba4d8fd31c4bdd980035c159c90dd`), whose
+bytes are archived at `spec/kernel-spec-v0.45.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [FN-8], [ENT-3] and
+[ENT-6] in place. No row's status moves, so the statistics line above is
+v0.45's unchanged.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| FN-8 clause rows | Exact addition, subtraction and multiplication are admitted in a clause and read over the mathematical integers; every other exact row stays inadmissible | 🟢 derived | Derived from what a clause is. FN-9 erases every clause before lowering, so a clause evaluates nothing and requests no operation; the ban existed because a clause is runtime-typed while an `affine_expr` is not, and [INV-1] already carries the carve-out that difference calls for. The three admitted rows are exactly those total over the mathematical integers, so reading them mathematically is a statement about values rather than a partial operation with no obligation to discharge. Division, remainder, negation, absolute value and the shifts are excluded by the same criterion, each having an input its own relation cannot state its way out of. R1 supplies the necessity: without this a size precondition is unwritable, so an expansion function's caller cannot be held to anything the function actually needs. | Registered: the arity of `clause_expr` is unchanged, so a relation still carries one operator and a second is written through a `contract_define`. |
+| ENT-3 measure atom | A measure term is an affine atom: one atom per measured place, identified by that place's root binding, minted at its full u64 range, with the L0-to-affine index ranging over measure terms | 🟢 derived | This is the admission v0.44 recorded as DEFERRED, taken on the evidence that named it. Soundness is [ENT-5]'s own support rule rather than a new one: a measure is fixed at its object's creation and an element write never moves it, so the atom is stable exactly while the object is, and the write that removes it is the write to the root binding. The join keeps the atom only where every input agrees; a measure is not arithmetic-updated, so there is no spread for a join delta to stand for, and disagreement means a branch replaced the object. Identity by root binding rather than by an interned measure term is what lets a proof read the atom without interning, which keeps the read path free of the mutation the mint needs. | Registered: a measure of a projected place is not this atom and stays an ordinary clause operand; the projected case awaits a program that needs it. |
+| ENT-6 affine route | The affine route discharges a comparison goal whose normalization is affine, whether or not that goal also projects to L0 | 🟢 derived | Derived from what the route proves. The affine target is the goal's own comparison normalized by [ENT-6], so proving the target proves the goal; the L0 projection was a property of the evidence record, not a premise of the proof. Requiring it was sound but incomplete, and the incompleteness was invisible while every affine-provable call goal also had a unit-coefficient projection — which is every such goal a version before this one could state. Without a projection the retained derivation is the affine consequence alone, the shape [ENT-6]'s interval-product rule already uses for its endpoint proofs, so no new evidence kind is introduced. Monotonicity moves in the permitted direction: the change only admits. | Registered: the route now reaches goals no corpus program wrote before this version, so the diagnostic for an unproved affine goal without a projection has no field evidence yet. |
+
+## v0.47 amendment — the named const is the number it names (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.47, at
+SHA-256 `8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`,
+superseding v0.46
+(`b853ae310215731d7c4353ec8fdf8ab906081a3f2baba076fb6433537ba3ce65`), whose
+bytes are archived at `spec/kernel-spec-v0.46.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [INV-1] in place and
+moves no row's status.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| INV-1 named const atom | An integer-typed named const is an affine atom, folded at formation to the one closed value it declares; a const-generic parameter is symbolic and is not this admission | 🟢 derived | Derived from R3 and from [ENT-2] clause (c), which already names the mathematical value of an integer literal and of an integer-typed named const in the same breath. The const was therefore a constant term everywhere except in the relations written about it, which made one value have two spellings — the declared name in the body, the repeated digits in every invariant and every `use` — and R3 admits one way to say anything. W1 supplies the cost: the surviving spelling was the worse one, since a limit declared once had to be maintained in every site that reasoned about it, and a stale digit is a silent divergence between what the code enforces and what the proof states. Folding at formation is what keeps the admission free of consequence: no atom kind, image, kill, or join changes, and the same relation over a const and over its literal is byte-identical, including in a failure's rendered residual. The const-generic exclusion is the same sentence read from the other side: an affine factor is a number, and a symbolic constant has no number to fold to. | Registered: a const-generic parameter would need an atom of its own with the [ENT-2] symbolic-constant identity carried into the affine domain; no corpus program has asked for it. |
+
+## v0.48 amendment — a use cites one premise (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.48, at
+SHA-256 `1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`,
+superseding v0.47
+(`8c37b2c4401449487a9c1d35b39a7649087ce593f1c0096f1c93ce9e280f0aa5`), whose
+bytes are archived at `spec/kernel-spec-v0.47.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [GRAM-4] and [PRF-1]
+in place and moves no row's status.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| GRAM-4 use premise | A `proof_use` cites one `use_premise` — an invariant name or a delimited relation — optionally prefixed by `N times`; the multiplicity is written as a bare decimal or a name | 🟢 derived | Derived from R3 and from what the form denotes. The multiplicity is how many times a premise is added into the certificate sum, and spelling it `*` claimed it was a multiplication whose right operand is a relation, which is not a thing the language has. Three defects followed from the one pose and each is removed by naming it: the form read as `n * bool`; a term multiplicity was undecidable in strong-LL(2) because after `use IDENT *` the token separating a certificate step from an affine relation source is arbitrarily far away; and the [FORM-2] stated space before `(` existed to carry a distinction the parser could not see, so the rendering rule was load-bearing for meaning. `times` is a fixed atom, so it can never be the second token of a premise name or of a relation, which decides every form within two tokens of `use`. Mandatory parentheses on the relation premise are the same sentence: the bare-when-unmultiplied split was a second consequence of the ambiguity, and R3 admits one way to say a premise. META-5 counts the new production and the new atom, and R3 selects the spelling by evidence under W1 — `times` has zero identifier uses in the corpus and the corpus's own doc strings already reach for the word to describe this construct. | Registered: `times` still reads as an operator binding looser than `*`, which is a pose the parentheses reduce but do not remove; `use 3 times x;` where `x` is a value and `use a + 3 times (b <= c);` are caught after parsing rather than by the grammar. |
+| PRF-1 named multiplicity | A multiplicity may name an unsigned integer value; the certificate sum is then a degree-two polynomial whose nonlinear monomials must fold to admitted exact products before the residual forms | 🟢 derived | Derived from the verify-never-search principle and from R1. Scaling a written premise by a value is still verification: the writer names the premise and the multiplier, and the checker multiplies and adds, so acceptance stays a function of the written text and the [ENT-1] monotonicity obligation is discharged structurally. Two restrictions keep the addition free of anything new. The unsigned type is what makes the step sound without an obligation, because `m*p <= 0` follows from `p <= 0` exactly when `m` is nonnegative, and taking that from the written type keeps it structural rather than proved. The fold is what keeps the polynomial transient: a monomial is replaced by the value image an admitted exact multiplication already bound, which is an equality substitution. Folding the sum rather than expanding the target is the direction that stays inside the domain, and that is a termination argument rather than a preference. A sum holds finitely many monomials and each fold removes one, so folding is bounded by construction; expanding is not, because an operand may itself be a product — `let a = n * p; let b = a * q;` expands `b` to `a*q` and then `a` to `n*p`, reaching a degree nothing in [PRF-1] can hold. Expansion also rewrites a proposition that was already affine, so it can turn a provable residual into an unprovable one, while folding only ever removes monomials. What comes out is an ordinary affine inequality, so the residual, its integer tightenings, and the L0 route are the same ones a bare-decimal certificate uses, and no fact, published conclusion, invariant target, or `affine_expr` ever carries a nonlinear term. R1 supplies the necessity: a matrix multiply's inner index at a runtime stride is unwritable without it, and the identical certificate at a literal stride already compiled. | Registered, and measured wider than first recorded: the fold needs each operand image to be a single value image, so `let stride = width + padding; let base = stride * row;` records no product at all — binding the sum, which this row first offered as the remedy, does not help, because the binding's image is still the sum. The only workaround found is passing the operand across a function boundary so the checker holds it opaquely, which costs a whole extra function. A stride sweep measured this as landing on essentially every natural formula in that domain — padding, DIB rounding, tile area, channel count, alignment — so the restriction refuses the static route exactly where the feature was meant to serve. The repair is to fold by the operand's binding identity rather than by its expanded image, which is the rule [PRF-1] already uses one sentence away for a named premise. The route restriction that reads like a second gap is not one, and was measured rather than assumed: a product the finite L0 route admits has at least one compile-time-known operand, and its value image is then already a constant or an affine scaling, so no monomial is formed and there is nothing to fold. With both operands constant the target needs no certificate at all and a written one is the redundant-block rejection. |
+
+## v0.49 amendment — fold by the declaration, not by the expansion (activated 2026-09-05)
+
+Specification binding: active `spec/kernel-spec.md`, headed v0.49, at
+SHA-256 `ba0d9e277c3c0d2d46123a6cc12869d8ffbbab7e9c922a03bb165259cc5ce696`,
+superseding v0.48
+(`1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`), whose
+bytes are archived at `spec/kernel-spec-v0.48.md`. This version amends and
+activates in one change. The merge-time record is in
+`governance/APPROVALS.md`.
+
+This amendment adds no rule and retires none; it amends [PRF-1] in place and
+moves no row's status.
+
+| Amendment | Statement | Status | Derivation | Open |
+| --- | --- | --- | --- | --- |
+| PRF-1 fold identity | A multiplication's operand and a written multiplicity name the same value when they name the same declaration; each such binding contributes one opaque handle, which exists between the fold and the residual and is replaced by its image before anything is proved | 🟢 derived | Derived from the rule [PRF-1] already states one sentence away. A named premise resolves to its declaration identity and is explicitly never reparsed from the current value of its spelling, for the same reason that arises here: a declaration is what the writer wrote, and what it currently expands to is a different thing. v0.48 folded by expansion and so refused every case where the two differ, which measurement showed is every case the feature was written for — a stride copied from a parameter accepted while `width + padding`, `width + 4`, and `2 * width` all rejected, and a stride is definitionally derived. R1 supplies the necessity: without this the feature reaches matrix multiply, where the stride happens to be a parameter, and nothing else in its own domain. The handle's transience is what keeps the admission free of consequence, and both alternatives were built and measured before it was chosen: publishing the handle's defining equality as a fact is invisible to the residual, which is the direct L0 route by rule, and replacing the binding's image with the handle makes every ordinary premise about that binding need the equality to prove. Naming it only between the fold and the residual leaves every other premise, the target, and the residual reading exactly what they read before, which is why no snapshot verdict and no conformance verdict moves. | Registered: an operand that is not a plain read of a binding names no declaration and so contributes no handle. This was drafted as a normative sentence and withdrawn before it landed, because it describes a path measurement could not reach: a field-read operand's multiplication does not discharge its own [OP-2] domain in the first place — `shape.stride *defined k` is undischarged with both operands bounded by `requires` — so it stops before any fold is attempted, and no other non-binding operand shape was found that reaches one. What the code does is settled; whether a writer can ever observe it is not, so it is registered here rather than stated as a rule. |
+
+## v0.50 amendment — multi-return and the proof surface (2026-09-04)
+
+Specification binding: the active `spec/kernel-spec.md`, headed v0.50,
+superseding v0.49
 (`5ef144bfa9f85e9d2a412e053e43b83d250b804acb2f3d409f4d4367301fa049`), whose
 bytes are archived at `spec/kernel-spec-v0.44.md`. The exact bytes are the
 chain tail in `governance/APPROVALS.md`, which is where the identity lives.

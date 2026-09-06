@@ -1,0 +1,56 @@
+fn scaled_sum(buf: own buffer<u8>, factor: own u32) -> value: own Option<u32> reads(buf) contract {
+  define room = len(buf);
+  requires room <= 4_u64;
+  requires factor <= 255_u32;
+} {
+  doc "WORKAROUND (fully working): drop the nonlinear per-iteration invariant entirely and route BOTH the multiply and the running add through *checked/+checked, one match each per iteration (T2: two dead-in-practice branches per hot-loop iteration). Because neither operation's result carries a provable bound forward (the interval-product rule publishes no reusable premise), the function's own return type must also widen from u32 to Option<u32> (T3), so main must match it too.";
+  let length = len(buf);
+  let sum = 0_u32;
+  let i = 0_u64;
+  loop @walk {
+    let more = i < length;
+    if more {
+    } else {
+      break @walk;
+    }
+    let byte = buf[i];
+    let wide = cvt::<u8, u32>(byte);
+    match wide *checked factor {
+      Ok(value: product) => {
+        match sum +checked product {
+          Ok(value: next_sum) => {
+            set sum = next_sum;
+          }
+          Err(error: overflow) => {
+            return None<u32>();
+          }
+        }
+      }
+      Err(error: overflow) => {
+        return None<u32>();
+      }
+    }
+    set i = i +wrap 1_u64;
+  }
+  return Some<u32>(value: sum);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(4_u64, 0_u8);
+  set data[0_u64] = 2_u8;
+  set data[1_u64] = 2_u8;
+  set data[2_u64] = 2_u8;
+  set data[3_u64] = 2_u8;
+  match scaled_sum(buf: move data, factor: 3_u32) {
+    Some(value: total) => {
+      if total == 24_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 250_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

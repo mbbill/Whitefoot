@@ -24,6 +24,7 @@
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) mod affine;
 mod flow;
+mod polynomial;
 mod state;
 mod term;
 
@@ -700,6 +701,10 @@ pub(crate) enum SourceProofCertificateFailure {
     /// source checking rejects this earlier; retaining it here keeps the
     /// acceptance-bearing core total over its internal input type.
     InvalidFactor { use_index: u32 },
+    /// A term-scaled premise left a degree-two monomial that is not the value
+    /// image of any admitted exact product, so the certificate sum never
+    /// became an affine inequality the target could be measured against.
+    NonlinearResidual,
 }
 
 /// One direct result for an erased local invariant. Premises are retained in

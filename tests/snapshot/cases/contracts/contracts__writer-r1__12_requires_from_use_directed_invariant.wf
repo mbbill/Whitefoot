@@ -9,9 +9,9 @@ fn combined_probe<const n: u64>(table: own FixedVector<u8, n>, first: own u64, f
   requires spare >= 10_u64;
 } {
   invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }
   invariant limit_sum: first_limit + second_limit + third_limit <= 9_u64;
   invariant total_bound: first + second + third <= 9_u64;

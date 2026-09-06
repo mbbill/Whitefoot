@@ -1,0 +1,25 @@
+fn encode(out: &uniq buffer<u8>, src: own buffer<u8>) -> written: own u64 reads(src), writes(out) contract {
+  define room = len(deref(out));
+  define count = len(src);
+  define needed = count *sat 2_u64;
+  requires room >= needed;
+} {
+  doc "probe";
+  let count = len(src);
+  return count;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "drive";
+  let src = buffer_new(4_u64, 65_u8);
+  let out = buffer_new(8_u64, 0_u8);
+  region {
+    let handle = &uniq out;
+    let produced = encode(out: move handle, src: move src);
+    if produced == 4_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

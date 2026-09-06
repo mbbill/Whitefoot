@@ -1,0 +1,118 @@
+### a1_gain_natural.wf  (exit=1)
+whitefootc: Parsing/Source [GRAM-4]: SyntaxIssue { rule: Gram4, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(376), end: ByteOffset(377) }, expected: ["{", ";", ")", ",", "<", ">", "+", "-", "==", "!=", "<=", ">="] } at a1_gain_natural.wf:9:53 in line "    invariant scaled_total: total <= 255_u64 * gain * i"
+
+### a1_w1_budget.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 10, 0, 4, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(541), end: ByteOffset(555) }), kind: UndischargedIntegerDomainObligation { residual: "total +defined scaled", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at a1_w1_budget.wf:15:17 in line "    set total = total + scaled;"
+
+### a1_w2_literal_worstcase.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 8, 0, 4, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(499), end: ByteOffset(513) }), kind: UndischargedIntegerDomainObligation { residual: "total +defined scaled", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at a1_w2_literal_worstcase.wf:13:17 in line "    set total = total + scaled;"
+
+### a1_w3_narrow_product.wf  (exit=0)
+
+### a1b_gain_natural_bare.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 8, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(361), end: ByteOffset(369) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at a1b_gain_natural_bare.wf:9:38 in line "    invariant scaled_total: total <= gain * i"
+
+### a2_two_multiplications_grammar.wf  (exit=1)
+whitefootc: Parsing/Source [GRAM-4]: SyntaxIssue { rule: Gram4, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(282), end: ByteOffset(283) }, expected: ["{", ";", ")", ",", "<", ">", "+", "-", "==", "!=", "<=", ">="] } at a2_two_multiplications_grammar.wf:7:47 in line "    invariant per_byte: sum <= 5_u64 * 51_u64 * i"
+
+### b1_u8_product_domain.wf  (exit=0)
+
+### b2_u32_product_domain.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 7, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(265), end: ByteOffset(278) }), kind: UndischargedIntegerDomainObligation { residual: "count *defined width", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at b2_u32_product_domain.wf:6:15 in line "  let bytes = count * width;"
+
+### b3_u32_product_guarded.wf  (exit=0)
+
+### b4_product_result_bound.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 12, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(481), end: ByteOffset(525) }), kind: UndischargedLocalInvariant { name: "product_bound", mechanical_fix: "weaken or correct this invariant, or establish the missing facts before this statement so AUTO proves its target in the entering context" } } at b4_product_result_bound.wf:17:3 in line "  invariant product_bound: bytes <= 64000_u32;"
+
+### c1_expand_natural.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 10, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(448), end: ByteOffset(457) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at c1_expand_natural.wf:11:32 in line "    invariant fits: written <= r * width"
+
+### c2_layout_natural.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 13, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(597), end: ByteOffset(606) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at c2_layout_natural.wf:17:39 in line "    invariant record_base: written <= r * width"
+
+### c2_w1_guard.wf  (exit=0)
+
+### c2_w2_flat.wf  (exit=0)
+
+### c2_w3_flat_with_indices.wf  (exit=0)
+
+### c2_w4_streaming.wf  (exit=0)
+
+### c2_w5_per_record_guard.wf  (exit=0)
+
+### d1_fixedpoint_natural.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 9, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(393), end: ByteOffset(401) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at d1_fixedpoint_natural.wf:10:38 in line "    invariant scaled_total: total <= gain * i"
+
+### d1_w1_operand_guards_only.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 11, 0, 8, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(785), end: ByteOffset(799) }), kind: UndischargedIntegerDomainObligation { residual: "total +defined scaled", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at d1_w1_operand_guards_only.wf:26:17 in line "    set total = total + scaled;"
+
+### d1_w2_result_guard.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 9, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(389), end: ByteOffset(435) }), kind: UndischargedLoopInvariant { name: "scaled_total", obligation: Backedge, required_relation: "total <= (16384_u64 * (i + 1_u64))", mechanical_fix: "strengthen the invariant prefix, weaken or correct this invariant, or establish the missing body facts so every reachable normal fallthrough preserves it at the next loop header" } } at d1_w2_result_guard.wf:10:5 in line "    invariant scaled_total: total <= 16384_u64 * i"
+
+### d1_w2b_result_guard_restated.wf  (exit=0)
+
+### d1_w3_narrow_landing.wf  (exit=0)
+
+### d1b_fixedpoint_noinv.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 9, 0, 4, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(503), end: ByteOffset(517) }), kind: UndischargedIntegerDomainObligation { residual: "total +defined scaled", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at d1b_fixedpoint_noinv.wf:12:17 in line "    set total = total + scaled;"
+
+### e1_prf1_use_probe.wf  (exit=1)
+whitefootc: Semantics/Source [PRF-1]: SemanticIssue { rule: Prf1, location: SourceNode(NodePath { components: [0, 0, 8, 0, 3, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(369), end: ByteOffset(384) }), kind: InvalidSourceProof { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at e1_prf1_use_probe.wf:8:20 in line "    use written <= records * width;"
+
+### e2_ensures_product.wf  (exit=1)
+whitefootc: Parsing/Source [GRAM-5]: SyntaxIssue { rule: Gram5, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(115), end: ByteOffset(116) }, expected: [";", "(", "[", ".", "::"] } at e2_ensures_product.wf:2:30 in line "  ensures written <= records * width;"
+
+### e3_ensures_sum.wf  (exit=1)
+whitefootc: Parsing/Source [GRAM-5]: SyntaxIssue { rule: Gram5, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(115), end: ByteOffset(116) }, expected: [";", "(", "[", ".", "::"] } at e3_ensures_sum.wf:2:30 in line "  ensures written <= records + width;"
+
+### e4_contract_define_product.wf  (exit=1)
+whitefootc: Semantics/Source [FN-8]: SemanticIssue { rule: Fn8, location: SourceNode(NodePath { components: [0, 0, 3, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(152), end: ByteOffset(184) }), kind: InvalidRequires } at e4_contract_define_product.wf:3:3 in line "  define needed = records * width;"
+
+### f1_hash_runtime_multiplier.wf  (exit=0)
+
+### g1_sum_items_natural.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 5, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(199), end: ByteOffset(211) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at g1_sum_items_natural.wf:6:33 in line "    invariant bounded: total <= i * max_item"
+
+### g1_w1_literal_factor_noguard.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 5, 0, 3, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(282), end: ByteOffset(294) }), kind: UndischargedIntegerDomainObligation { residual: "total +defined item", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at g1_w1_literal_factor_noguard.wf:9:17 in line "    set total = total + item;"
+
+### g1_w2_requires_count.wf  (exit=0)
+
+### h1_stride_natural.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 12, 0, 1, 2, 2] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(511), end: ByteOffset(523) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at h1_stride_natural.wf:13:44 in line "    invariant strided: cursor <= channel + k * channels"
+
+### h1_w1_streaming.wf  (exit=0)
+
+### h1_w1b_streaming_exact.wf  (exit=0)
+
+### h1_w2_counted_guard.wf  (exit=0)
+
+### h1_w2b_counted_guard_exact.wf  (exit=0)
+
+### i1_budget_uncapped.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 9, 0, 3, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(474), end: ByteOffset(481) }), kind: UndischargedIntegerDomainObligation { residual: "acc +defined w", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at i1_budget_uncapped.wf:13:15 in line "    set acc = acc + w;"
+
+### i2_budget_capped.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 9, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(375), end: ByteOffset(406) }), kind: UndischargedLoopInvariant { name: "within", obligation: Backedge, required_relation: "acc <= budget", mechanical_fix: "strengthen the invariant prefix, weaken or correct this invariant, or establish the missing body facts so every reachable normal fallthrough preserves it at the next loop header" } } at i2_budget_capped.wf:10:5 in line "    invariant within: acc <= budget,"
+
+### i3_no_budget_literal.wf  (exit=0)
+
+### i4_budget_guarded.wf  (exit=0)
+
+### j0_counters_natural.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 9, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(387), end: ByteOffset(394) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at j0_counters_natural.wf:10:32 in line "    invariant capped: total <= i * cap"
+
+### j1_named_const_factor.wf  (exit=1)
+whitefootc: Resolution/Source [INV-1]: ResolutionIssue { rule: Inv1, origin: SourceOrigin { node: NodePath { components: [1, 0, 6, 0, 1, 2, 0, 0] }, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(305), end: ByteOffset(315) }, role_ordinal: 0, subtoken_ordinal: 0 }, kind: UnresolvedUse { spelling: "item_limit", role: InvariantValue, admissible: [Value], available: [] } } at j1_named_const_factor.wf:9:32 in line "    invariant capped: total <= item_limit * i"
+
+### j2_inline_digit_factor.wf  (exit=0)
+
+### j3_local_limit_factor.wf  (exit=1)
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [1, 0, 7, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(331), end: ByteOffset(340) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at j3_local_limit_factor.wf:10:32 in line "    invariant capped: total <= limit * i"
+
+### k1_grid_index_exact.wf  (exit=1)
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [1, 0, 6, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(474), end: ByteOffset(488) }), kind: UndischargedIntegerDomainObligation { residual: "row_base +defined col", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at k1_grid_index_exact.wf:11:12 in line "  let at = row_base + col;"
+
+### k2_grid_index_exact_guarded.wf  (exit=0)
+

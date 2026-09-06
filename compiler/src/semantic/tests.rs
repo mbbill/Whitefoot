@@ -434,9 +434,9 @@ fn repeated_normalized_uses_are_a_prf1_rejection() {
   requires value <= limit;
 } {
   invariant scaled: 3_u64 * value <= 3_u64 * limit {
-    use value <= limit;
-    use value <= limit;
-    use value <= limit;
+    use (value <= limit);
+    use (value <= limit);
+    use (value <= limit);
   }
   return unit;
 }
@@ -482,7 +482,7 @@ fn an_unproved_blockless_local_invariant_target_is_an_inv1_rejection() {
 fn a_non_ordered_use_relation_is_a_prf1_rejection() {
     let source = br#"fn check(value: own u64, limit: own u64) -> result: own unit pure {
   invariant scaled: 2_u64 * value <= 2_u64 * limit {
-    use value == limit;
+    use (value == limit);
   }
   return unit;
 }

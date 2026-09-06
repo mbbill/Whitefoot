@@ -268,9 +268,9 @@ fn originating_proof_context_retains_acceptance_results_and_derivations() {
   ensures result <= 255_u8;
 } {
   invariant combined: left + center + right <= left_limit + center_limit + right_limit {
-    use left <= left_limit;
-    use center <= center_limit;
-    use right <= right_limit;
+    use (left <= left_limit);
+    use (center <= center_limit);
+    use (right <= right_limit);
   }
   invariant upper_bound: x <= 254_u8;
   let result = x + 1_u8;

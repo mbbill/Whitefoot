@@ -2,10 +2,10 @@ fn combined_span(first: own u64, first_cap: own u64, second: own u64, second_cap
   requires first <= first_cap;
   requires second <= second_cap;
 } {
-  doc "expect REJECT: [PRF-1] the explicit factor `1 *` on the use source is not a canonical positive factor other than omitted";
+  doc "expect REJECT: [PRF-1] the explicitly written multiplicity `1 times` on the use is not a canonical positive multiplicity other than omitted";
   invariant span_bound: first + second <= first_cap + second_cap;
   invariant tripled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_cap + 3_u64 * second_cap {
-    use 1 * span_bound;
+    use 1 times span_bound;
   }
   return unit;
 }

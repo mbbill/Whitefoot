@@ -20,8 +20,9 @@ cumulative proof-work budget. AUTO is exactly the zero-premise route, every
 coefficient-one single premise, every unordered coefficient-one pair including
 self-pairs, and the final fixed L0-image route; combinations that need three or
 more published affine premises outside that final route, plus special routes,
-use written certificates. Full rules and current completion
-conditions live in [`current-plan.md`](current-plan.md).
+use written certificates. The full rules are the active specification at
+[`spec/kernel-spec.md`](../spec/kernel-spec.md); what the proof surface
+currently reaches is `outline:PROOF-1` in [`roadmap.md`](roadmap.md).
 
 ---
 
@@ -747,6 +748,6 @@ Every number above, with its committed record. Protocols, machines, and caveats 
 | Kernel-shape dry runs (C mockups vs `Vec`/hashbrown; bands) | `archive/research/systems-performance-coverage/m3a-kernel-dryrun/RESULTS.md` |
 | Queue: exhaustive model check, all 4 weakened-ordering mutants caught; zero-RMW hot path; latency vs throughput vs `rtrb` | `archive/research/systems-performance-coverage/m6a-spsc-dryrun/RESULTS.md` |
 | Reproducibility direction and the absence of a complete object claim | `docs/roadmap.md`, item `VERIFY-4` |
-| Current direction cited (one spelling; reject-not-reformat; checked effects; static contracts; exact integer domains; prove-or-reject partial operations; source invariants and finite use steps) | `spec/kernel-spec.md`, `docs/current-plan.md` |
+| Current direction cited (one spelling; reject-not-reformat; checked effects; static contracts; exact integer domains; prove-or-reject partial operations; source invariants and finite use steps) | `spec/kernel-spec.md`, `archive/current-plan.md` |
 | Pattern doctrine (command buffer, SoA pool, boolean classifier, proof at the maintained boundary) | `docs/patterns.md` |
 | Founding evidence for the premise (escape analysis conditionality, JIT recovery machinery, non-interference as the central enabler, IR semantics preservation) | `archive/research/phase2-notes/verified-findings.md`, `archive/research/phase2-notes/phase2-jit-findings.jsonl`, `archive/research/debates/round1-static-vs-profile.md` |

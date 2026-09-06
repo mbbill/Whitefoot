@@ -1,12 +1,3 @@
-//! SHA-256, so the active specification's identity can be derived from its own
-//! bytes instead of being taken on trust.
-//!
-//! The crate has no dependencies and keeps none, so this is written by hand.
-//! It is a `const fn` and usable in constant position for small inputs, but the
-//! active specification is hashed at runtime: see `computed_active_spec_hash`
-//! for why. Names inside the compression function follow FIPS 180-4 section 6.2
-//! so the code can be read against the standard.
-
 /// First thirty-two bits of the fractional parts of the cube roots of the
 /// first sixty-four primes.
 const ROUND: [u32; 64] = [

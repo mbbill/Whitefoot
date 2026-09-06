@@ -216,6 +216,9 @@ pub(crate) enum FlowEventKind {
     /// [MSR-3] one entry datum minted at body entry, per parameter measure a
     /// declared relation names.
     Entry,
+    /// [ENT-3.S14] the interval the fixed interval-product rule proved for one
+    /// admitted non-constant multiplication, published on the value it bound.
+    S14,
     Join,
     Snapshot,
     PostconditionEntryImageInvalidation,

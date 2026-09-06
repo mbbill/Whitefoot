@@ -410,6 +410,7 @@ fn assert_source_event(summary: &FunctionEntailment, id: FlowEventId, used: &mut
             | FlowEventKind::S10
             | FlowEventKind::S11
             | FlowEventKind::S13
+            | FlowEventKind::S14
     ));
 }
 

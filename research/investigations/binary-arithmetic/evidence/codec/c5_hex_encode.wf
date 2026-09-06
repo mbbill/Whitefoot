@@ -1,0 +1,61 @@
+const hex_digits: array<u8, 16> =[48_u8, 49_u8, 50_u8, 51_u8, 52_u8, 53_u8, 54_u8, 55_u8, 56_u8, 57_u8, 97_u8, 98_u8, 99_u8, 100_u8, 101_u8, 102_u8];
+
+fn hex_encode(src: own buffer<u8>) -> out: own buffer<u8> reads(src), allocates(heap) contract {
+  define count = len(src);
+  requires count <= 1000000_u64;
+} {
+  doc "C5: hex encoder, output capacity is exactly twice the input length; the expansion factor is a source literal.";
+  let count = len(src);
+  let out_length = count * 2_u64;
+  let out = buffer_new(out_length, 0_u8);
+  for (i in 0_u64..count) {
+    let byte = src[i];
+    let shifted = ishr(byte, 4_u32);
+    let high_nibble = iand(shifted, 15_u8);
+    let low_nibble = iand(byte, 15_u8);
+    let high_index = cvt::<u8, u64>(high_nibble);
+    let low_index = cvt::<u8, u64>(low_nibble);
+    let high_digit = hex_digits[high_index];
+    let low_digit = hex_digits[low_index];
+    let high_at = i * 2_u64;
+    let low_at = high_at + 1_u64;
+    set out[high_at] = high_digit;
+    set out[low_at] = low_digit;
+  }
+  return move out;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "encode two bytes";
+  let src = buffer_new(2_u64, 0_u8);
+  set src[0_u64] = 171_u8;
+  set src[1_u64] = 5_u8;
+  let encoded = hex_encode(src: move src);
+  let produced = len(encoded);
+  let long_enough = produced >= 4_u64;
+  if long_enough {
+  } else {
+    return exit_status(code: 9_u8);
+  }
+  let d0 = encoded[0_u64];
+  let d1 = encoded[1_u64];
+  let d2 = encoded[2_u64];
+  let d3 = encoded[3_u64];
+  if d0 == 97_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  if d1 == 98_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  if d2 == 48_u8 {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  if d3 == 53_u8 {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,49 @@
+fn chunk_checksums(data: own buffer<u8>, chunk_size: own u64, out: &uniq buffer<u8>) -> chunks: own u64 reads(data, out), writes(out) contract {
+  define room = len(data);
+  define slots = len(deref(out));
+  requires chunk_size >= 1_u64;
+  requires chunk_size <= 4096_u64;
+  requires room >= chunk_size;
+} {
+  doc "WORKAROUND: walk the payload with a running chunk cursor; no division and no product appear at all.";
+  let room = len(data);
+  let slots = len(deref(out));
+  let limit = room - chunk_size;
+  let cursor = 0_u64;
+  let seen = 0_u64;
+  loop @chunks (
+    invariant cursor_in_room: cursor <= room
+  ) {
+    let more = cursor <= limit;
+    if more {
+    } else {
+      break @chunks;
+    }
+    let space = seen < slots;
+    if space {
+    } else {
+      break @chunks;
+    }
+    let byte = data[cursor];
+    set deref(out)[seen] = byte;
+    set seen = seen +wrap 1_u64;
+    invariant next_cursor: cursor + chunk_size <= room;
+    set cursor = cursor + chunk_size;
+  }
+  return seen;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "split 12 bytes into 3 chunks of 4";
+  let data = buffer_new(12_u64, 7_u8);
+  let out = buffer_new(4096_u64, 0_u8);
+  region {
+    let handle = &uniq out;
+    let seen = chunk_checksums(data: move data, chunk_size: 4_u64, out: move handle);
+    if seen == 3_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

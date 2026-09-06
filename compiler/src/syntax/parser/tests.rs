@@ -608,8 +608,8 @@ invariant limit: index + 1_u64 * (1_u64) <= 2_u64
 break @range;
 }
 invariant parser_proof: ordinary + 1_i32 <= moved + 1_i32 {
-use ordinary <= moved;
-use 0_i32 <= 0_i32;
+use (ordinary <= moved);
+use (0_i32 <= 0_i32);
 }
 region { give ordinary; }
 let named = ordinary;
@@ -645,7 +645,7 @@ fn main() -> result: own unit pure {}
         });
         assert!(present, "fixture omitted {production:?}");
     }
-    assert_eq!(productions().len(), 88);
+    assert_eq!(productions().len(), 89);
     assert_eq!(
         parsed
             .tree
@@ -701,7 +701,7 @@ const UNIFIED_CONTRACT: &[u8] = b"fn probe(value: own i32) -> result: own i32 pu
 
 const COUNTED_RANGE_STATEMENT: &[u8] = b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant limit: index + 1_u64 * (1_u64) <= upper\n  ) {\n    break @range;\n  }\n  return unit;\n}\n";
 
-const LOCAL_INVARIANT_STATEMENT: &[u8] = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 * (left <= right);\n    use prior_order;\n  }\n  return unit;\n}\n";
+const LOCAL_INVARIANT_STATEMENT: &[u8] = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 times (left <= right);\n    use prior_order;\n  }\n  return unit;\n}\n";
 
 fn parse_active(
     name: &'static str,
@@ -949,17 +949,24 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
             b"}".as_slice(),
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_semicolon: left <= right {\n    use left <= right\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_semicolon: left <= right {\n    use (left <= right)\n  }\n  return unit;\n}\n",
             b"}",
+        ),
+        (
+            // A relation premise must be delimited: after `use IDENT` the only
+            // continuations are `times` and `;`, so a bare relation stops at
+            // its own operator rather than at the end of the block.
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant bare_relation: left <= right {\n    use left <= right;\n  }\n  return unit;\n}\n",
+            b"<=",
         ),
         (
             // A relation with no operator: `left` completes an affine
             // expression and `right` can neither extend it nor open a block.
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_operator: left right {\n    use left <= right;\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_operator: left right {\n    use (left <= right);\n  }\n  return unit;\n}\n",
             b"right",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_open: left <= right\n    use left <= right;\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant missing_open: left <= right\n    use (left <= right);\n  }\n  return unit;\n}\n",
             b"use",
         ),
         (
@@ -968,11 +975,11 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
             // The grammar boundary here is the operator: `+wrap` is an
             // `infix_op` and is not one of the three affine operators, so it
             // can neither extend the expression nor stand as the relation.
-            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use value +wrap limit <= limit;\n  }\n  return unit;\n}\n",
+            b"fn probe(value: own i32, limit: own i32) -> result: own unit pure {\n  invariant affine_only: value <= limit {\n    use (value +wrap limit <= limit);\n  }\n  return unit;\n}\n",
             b"+wrap",
         ),
         (
-            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  assert disguised: left <= right {\n    use left <= right;\n  }\n  return unit;\n}\n",
+            b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  assert disguised: left <= right {\n    use (left <= right);\n  }\n  return unit;\n}\n",
             // `assert` remains a legal IDENT and therefore starts an
             // expression statement. `disguised` is the first token that
             // cannot continue that statement; the parser must stop there.
@@ -990,7 +997,7 @@ fn malformed_local_invariant_certificates_stop_at_their_first_grammar_boundary()
         assert_eq!(issue_bytes(source, issue), boundary);
     }
 
-    let source = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  use left <= right;\n  return unit;\n}\n";
+    let source = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  use (left <= right);\n  return unit;\n}\n";
     let outcome = parse_active("stray-use.wf", source);
     let ParseOutcome::SourceIssue(issue) = outcome else {
         panic!("a use step outside an invariant block must reject: {outcome:?}");
@@ -1075,7 +1082,7 @@ fn malformed_counted_ranges_stop_at_their_first_grammar_boundary() {
             b")",
         ),
         (
-            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant blocked: lower <= upper {\n      use lower <= upper;\n    },\n  ) {\n  }\n  return unit;\n}\n",
+            b"fn probe(lower: own u64, upper: own u64) -> result: own unit pure {\n  for @range (\n    index in lower..upper,\n    invariant blocked: lower <= upper {\n      use (lower <= upper);\n    },\n  ) {\n  }\n  return unit;\n}\n",
             b"{",
         ),
     ] {

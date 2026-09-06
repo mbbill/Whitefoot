@@ -1,0 +1,12 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "PRF-1 probe: can a `use` source state the nonlinear relation the invariant cannot?";
+  let header = buffer_new(2_u64, 3_u8);
+  let records = cvt::<u8, u64>(header[0_u64]);
+  let width = cvt::<u8, u64>(header[1_u64]);
+  let written = 0_u64;
+  invariant reached: written <= 64_u64 {
+    use (written <= records * width);
+    use (records * width <= 64_u64);
+  }
+  return exit_status(code: 0_u8);
+}

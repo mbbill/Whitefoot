@@ -1,0 +1,33 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "WORKAROUND ATTEMPT W1: validate the ADC range and the gain up front, then accumulate.";
+  let cfg = buffer_new(1_u64, 0_u32);
+  set cfg[0_u64] = 131072_u32;
+  let gain = cvt::<u32, u64>(cfg[0_u64]);
+  let gain_ok = gain <= 262144_u64;
+  if gain_ok {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let samples = buffer_new(8_u64, 1000_u32);
+  let total = 0_u64;
+  for (
+    i in 0_u64..8_u64,
+    invariant scaled_total: total <= 16384_u64 * i
+  ) {
+    let raw = samples[i];
+    let raw_ok = raw <= 4095_u32;
+    if raw_ok {
+    } else {
+      return exit_status(code: 3_u8);
+    }
+    let sample = cvt::<u32, u64>(raw);
+    let product = sample * gain;
+    let scaled = ishr(product, 16_u32);
+    set total = total + scaled;
+  }
+  if total == 16000_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

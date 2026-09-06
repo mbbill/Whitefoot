@@ -1,0 +1,125 @@
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/indexing/indexing__writer-r1__grid_index.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/indexing/indexing__writer-r1__bucket_index.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/indexing/indexing__writer-r2__06_row_col_from_flat_index.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/indexing/indexing__writer-r2__07_bucket_index_from_hash.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/kills/kills__writer-r2__06_chain_middle_replace.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [2, 0, 16, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(1002), end: ByteOffset(1021) }), kind: UndischargedIntegerDomainObligation { residual: "after *defined filter.gain", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/kills/kills__writer-r2__06_chain_middle_replace.wf:30:16 in line "  let scaled = after * filter.gain;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/cursor-loops/cursor-loops__writer-r1__04_two_cursor_dot_product.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/cursor-loops/cursor-loops__writer-r2__p09_labelled_break_grid_search.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/real-programs/real-programs__writer-r1__fir_window_sum.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/signed/signed__writer-r1__p05_signed_div_rem_negative.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/signed/signed__writer-r2__10_i16_checked_multiply.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/arithmetic-domain/arithmetic-domain__writer-r1__13_cvt_widen_signed_then_mul.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/arithmetic-domain/arithmetic-domain__writer-r1__11_mul_checked_result.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/indexing/indexing__adversary-r1__07-chunk-count-accept.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/research/investigations/proof-derived-parallelism/loop/probes/r2_grid_loop_d21_w256.wf
+exit=1
+whitefootc: Parsing/Source [FORM-3]: SyntaxIssue { rule: Form3, coordinate: SyntaxCoordinate { source: SourceId(0), start: ByteOffset(129), end: ByteOffset(132) }, expected: ["TYPEID", "IDENT", "literal", "&", "move", "OPNAME", "deref"] } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/research/investigations/proof-derived-parallelism/loop/probes/r2_grid_loop_d21_w256.wf:4:13 in line "  match cvt<u64, u8>(nibble) {"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/programs/geometry_vectors.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/dotproduct_bare_star.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 19, 0, 6, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(965), end: ByteOffset(972) }), kind: UndischargedIntegerDomainObligation { residual: "lv *defined rv", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/dotproduct_bare_star.wf:31:19 in line "    let product = lv * rv;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/dotproduct_checked.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/dotproduct_fn_checked_t3.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/dotproduct_natural_wrap.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_header_invariant_natural.wf
+exit=1
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 7, 0, 1, 2, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(468), end: ByteOffset(478) }), kind: InvalidInvariant { reason: "an affine multiplication has no direct integer-literal operand", mechanical_fix: "multiply one affine factor by a directly written integer literal" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_header_invariant_natural.wf:11:32 in line "    invariant per_byte: sum <= i * factor"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_bare_bounded.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 7, 0, 5, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(696), end: ByteOffset(709) }), kind: UndischargedIntegerDomainObligation { residual: "sum +defined product", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_bare_bounded.wf:16:15 in line "    set sum = sum + product;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_full_checked_t2.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_full_wrap.wf
+exit=1
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 7, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(578), end: ByteOffset(616) }), kind: UndischargedLoopInvariant { name: "per_byte", obligation: Backedge, required_relation: "sum <= (255_u32 * (i + 1_u64))", mechanical_fix: "strengthen the invariant prefix, weaken or correct this invariant, or establish the missing body facts so every reachable normal fallthrough preserves it at the next loop header" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_full_wrap.wf:11:5 in line "    invariant per_byte: sum <= 255_u32 * i"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_literal_ceiling.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 7, 0, 5, 0, 1, 1, 0, 1] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(652), end: ByteOffset(665) }), kind: UndischargedIntegerDomainObligation { residual: "sum +defined product", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_literal_ceiling.wf:18:19 in line "        set sum = sum + product;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_product_invariant.wf
+exit=1
+whitefootc: Semantics/Source [INV-1]: SemanticIssue { rule: Inv1, location: SourceNode(NodePath { components: [0, 0, 7, 0, 5, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(686), end: ByteOffset(734) }), kind: UndischargedLocalInvariant { name: "product_ceiling", mechanical_fix: "weaken or correct this invariant, or establish the missing facts before this statement so AUTO proves its target in the entering context" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/faceA_workaround_product_invariant.wf:16:5 in line "    invariant product_ceiling: product <= 65025_u32;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_00_natural_reject.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [2, 0, 16, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(1002), end: ByteOffset(1021) }), kind: UndischargedIntegerDomainObligation { residual: "after *defined filter.gain", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_00_natural_reject.wf:30:16 in line "  let scaled = after * filter.gain;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_A_copy_gain_local.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [2, 0, 17, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(1034), end: ByteOffset(1052) }), kind: UndischargedIntegerDomainObligation { residual: "after *defined gain_local", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_A_copy_gain_local.wf:31:16 in line "  let scaled = after * gain_local;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_B_dominating_gain_guard.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [2, 0, 18, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(1106), end: ByteOffset(1125) }), kind: UndischargedIntegerDomainObligation { residual: "after *defined filter.gain", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_B_dominating_gain_guard.wf:35:16 in line "  let scaled = after * filter.gain;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_C_copy_both_local.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [2, 0, 18, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(1061), end: ByteOffset(1085) }), kind: UndischargedIntegerDomainObligation { residual: "after_local *defined gain_local", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_C_copy_both_local.wf:32:16 in line "  let scaled = after_local * gain_local;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_D_checked.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_E_wrap.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_F_defined_guard.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/filter_G_copy_then_guard_copy.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/fir_bare_star.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [1, 0, 15, 0, 4, 0, 6, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(1090), end: ByteOffset(1105) }), kind: UndischargedIntegerDomainObligation { residual: "weight *defined sample", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/fir_bare_star.wf:32:21 in line "      let product = weight * sample;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/fir_natural_wrap.wf
+exit=0
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/gridsearch_bare_star.wf
+exit=1
+whitefootc: Semantics/Source [OP-2]: SemanticIssue { rule: Op2, location: SourceNode(NodePath { components: [0, 0, 5, 0, 1, 0, 0, 0] }, SyntaxCoordinate { source: SourceId(0), start: ByteOffset(296), end: ByteOffset(305) }), kind: UndischargedIntegerDomainObligation { residual: "r *defined width", disposition: Unproved, mechanical_fix: "when the relation must hold, establish the fixed `.defined` normalization with a verified requirement, a source invariant, or explicit finite proof steps; use a dominating branch only when its false edge is intended program behavior; otherwise use an available total non-exact row or restructure the arithmetic" } } at /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/gridsearch_bare_star.wf:5:16 in line "    let base = r * width;"
+
+### /tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/probes/miner/wf/gridsearch_natural_wrap.wf
+exit=0
+

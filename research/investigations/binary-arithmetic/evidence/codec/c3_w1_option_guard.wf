@@ -1,0 +1,45 @@
+fn record_byte(data: own buffer<u8>, record_width: own u64, index: own u64, field: own u64) -> value: own Option<u8> reads(data) contract {
+  define room = len(data);
+  requires record_width >= 1_u64;
+  requires record_width <= 64_u64;
+  requires index <= 65535_u64;
+  requires field < record_width;
+  requires room >= record_width;
+} {
+  doc "WORKAROUND: two dominating guards on the flattened offset, and the result type widens from u8 to Option<u8> so both dead edges have a value.";
+  let room = len(data);
+  let base = index * record_width;
+  let start_ok = base <= room;
+  if start_ok {
+  } else {
+    return None<u8>();
+  }
+  let left = room - base;
+  let record_ok = record_width <= left;
+  if record_ok {
+  } else {
+    return None<u8>();
+  }
+  invariant slot_in_room: base + field < room;
+  let at = base + field;
+  let byte = data[at];
+  return Some<u8>(value: byte);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "every caller is now forced to match on the Option";
+  let table = buffer_new(12_u64, 0_u8);
+  set table[7_u64] = 42_u8;
+  match record_byte(data: move table, record_width: 3_u64, index: 2_u64, field: 1_u64) {
+    Some(value: byte) => {
+      if byte == 42_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

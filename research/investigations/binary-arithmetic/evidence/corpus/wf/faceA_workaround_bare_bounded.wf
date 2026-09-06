@@ -1,0 +1,33 @@
+fn scaled_sum(buf: own buffer<u8>, factor: own u32) -> total: own u32 reads(buf) contract {
+  define room = len(buf);
+  requires room <= 4_u64;
+  requires factor <= 255_u32;
+} {
+  doc "WORKAROUND ATTEMPT: weaken the header invariant to the literal ceiling 255_u32 * i (factor's own requires <=255 bound), then try bare (exact, non-wrapping) * and + in the body, relying on wide's u8-cvt range and factor's requires range for the automatic interval-product rule.";
+  let length = len(buf);
+  let sum = 0_u32;
+  for (
+    i in 0_u64..length,
+    invariant per_byte: sum <= 255_u32 * i
+  ) {
+    let byte = buf[i];
+    let wide = cvt::<u8, u32>(byte);
+    let product = wide * factor;
+    set sum = sum + product;
+  }
+  return sum;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let data = buffer_new(4_u64, 0_u8);
+  set data[0_u64] = 2_u8;
+  set data[1_u64] = 2_u8;
+  set data[2_u64] = 2_u8;
+  set data[3_u64] = 2_u8;
+  let total = scaled_sum(buf: move data, factor: 3_u32);
+  if total == 24_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

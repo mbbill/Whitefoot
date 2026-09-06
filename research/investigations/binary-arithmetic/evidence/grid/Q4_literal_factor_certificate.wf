@@ -1,0 +1,39 @@
+fn rgba_alpha_sum(pixels: &buffer<u8>, pixel_count: own u64) -> total: own u64 reads(pixels) contract {
+  requires pixel_count <= 1073741823_u64;
+} {
+  doc "CONTROL: the literal factor of [INV-1] carries the bound with no runtime test at all.";
+  let capacity = len(deref(pixels));
+  let room = 4_u64 * pixel_count;
+  let sized = room <= capacity;
+  if sized {
+  } else {
+    return 0_u64;
+  }
+  invariant scaled: 4_u64 * pixel_count <= capacity;
+  let acc = 0_u64;
+  for (i in 0_u64..pixel_count) {
+    invariant slot: 4_u64 * i + 3_u64 < capacity {
+      use 4 times (i < pixel_count);
+      use scaled;
+    }
+    let base = i * 4_u64;
+    let at = base + 3_u64;
+    let byte = deref(pixels)[at];
+    let wide = cvt::<u8, u64>(byte);
+    set acc = acc +wrap wide;
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let pixels = buffer_new(12_u64, 1_u8);
+  region {
+    let p = &pixels;
+    let t = rgba_alpha_sum(pixels: p, pixel_count: 3_u64);
+    if t == 3_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

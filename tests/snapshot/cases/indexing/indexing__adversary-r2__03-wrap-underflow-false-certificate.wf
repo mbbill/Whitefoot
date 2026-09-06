@@ -6,7 +6,7 @@ fn probe<const n: u64>(table: own FixedVector<u8, n>, a: own u64) -> found: own 
   let idx = a -wrap 1_u64;
   let bound_room = len_of(table);
   invariant bound: idx < bound_room {
-    use a <= bound_room;
+    use (a <= bound_room);
   }
   let byte = table[idx];
   return byte;

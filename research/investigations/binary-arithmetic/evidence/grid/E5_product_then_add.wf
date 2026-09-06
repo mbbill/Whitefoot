@@ -1,0 +1,18 @@
+fn flat(row: own u32, width: own u32, col: own u32) -> at: own u64 pure {
+  doc "PROBE: does the product's proved smallness survive into the result image so the following add can form?";
+  let r = cvt::<u32, u64>(row);
+  let w = cvt::<u32, u64>(width);
+  let c = cvt::<u32, u64>(col);
+  let base = r * w;
+  let at = base + c;
+  return at;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = flat(row: 2_u32, width: 4_u32, col: 1_u32);
+  if v == 9_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

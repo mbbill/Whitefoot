@@ -1,0 +1,38 @@
+const grid_limit: u64 = 4096_u64;
+
+fn grid_get(cells: own buffer<u8>, width: own u64, height: own u64, row: own u64, col: own u64) -> value: own Option<u8> reads(cells) contract {
+  requires row < height;
+  requires col < width;
+  requires height <= grid_limit;
+  requires width <= grid_limit;
+} {
+  doc "PROBE: does bounding the grid dimensions in the contract admit the exact row*width product, removing both dead overflow arms?";
+  let row_base = row * width;
+  let at = row_base + col;
+  let capacity = len(cells);
+  let fits = at < capacity;
+  if fits {
+  } else {
+    return None<u8>();
+  }
+  let byte = cells[at];
+  return Some<u8>(value: byte);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let cells = buffer_new(12_u64, 0_u8);
+  set cells[9_u64] = 99_u8;
+  let found = grid_get(cells: move cells, width: 4_u64, height: 3_u64, row: 2_u64, col: 1_u64);
+  match found {
+    Some(value: byte) => {
+      if byte == 99_u8 {
+        return exit_status(code: 0_u8);
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+}

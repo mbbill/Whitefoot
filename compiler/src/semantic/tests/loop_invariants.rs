@@ -1739,6 +1739,59 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
+fn admitted_product_publishes_its_interval_to_the_following_operation() {
+    // [ENT-3.S14]. The multiplication is admitted by [ENT-6]'s interval rule
+    // because both widened operands are u32-ranged, and the add that follows
+    // is in range only because the product's own interval bounds `base`.
+    // Before S14 the rule proved that interval and discarded it, so the add
+    // had no premise and was refused [OP-2].
+    let source = br#"fn flat(row: own u32, width: own u32, col: own u32) -> at: own u64 pure {
+  let r = cvt::<u32, u64>(row);
+  let w = cvt::<u32, u64>(width);
+  let c = cvt::<u32, u64>(col);
+  let base = r * w;
+  let at = base + c;
+  return at;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("the published product interval must discharge the add: {outcome:?}");
+        };
+        let function = checked
+            .data
+            .functions
+            .iter()
+            .find(|function| function.name == "flat")
+            .expect("flat exists");
+        super::entailment::validate_derivations(&function.entailment);
+        let domains = function
+            .entailment
+            .obligations
+            .iter()
+            .filter(|outcome| outcome.family == ObligationFamily::IntegerDomain)
+            .collect::<Vec<_>>();
+        let [product, sum] = domains.as_slice() else {
+            panic!(
+                "the multiplication and the addition each raise one OP-2 obligation: {domains:?}"
+            );
+        };
+        assert!(
+            product.discharged,
+            "the interval rule admits the product itself"
+        );
+        assert!(
+            sum.discharged,
+            "the addition discharges only from the interval S14 published on the product"
+        );
+    });
+}
+
+#[test]
 fn interval_product_checks_the_two_cross_endpoint_pairs() {
     let source = br#"fn mixed(left: own i8, right: own i8) -> result: own unit pure contract {
   requires left <= 1_i8;
@@ -1966,9 +2019,9 @@ fn a_local_proof_fact_can_discharge_an_ordinary_loop_backedge() {
       set right = third;
       set right_limit = third_limit;
       invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {
-        use left <= left_limit;
-        use middle <= middle_limit;
-        use right <= right_limit;
+        use (left <= left_limit);
+        use (middle <= middle_limit);
+        use (right <= right_limit);
       }
     }
   }
@@ -2001,7 +2054,7 @@ command fn main() -> status: own ExitStatus pure {
 
     let source = std::str::from_utf8(source).expect("the source fixture is UTF-8");
     let without_proof = source.replacen(
-        "      invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {\n        use left <= left_limit;\n        use middle <= middle_limit;\n        use right <= right_limit;\n      }\n",
+        "      invariant restored: left + middle + right <= left_limit + middle_limit + right_limit {\n        use (left <= left_limit);\n        use (middle <= middle_limit);\n        use (right <= right_limit);\n      }\n",
         "",
         1,
     );

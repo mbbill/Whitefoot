@@ -1,9 +1,8 @@
 #!/bin/sh
-# A merge commit does not run pre-commit, so the same two specification
-# protections run here. The index holds the merge result at this point, which
-# is what spec-append-only-staged reads; spec-archive-integrity reads the
-# worktree, which git has already brought to the merge result.
+# A merge commit does not run pre-commit, so the same specification protection
+# runs here. The index holds the merge result at this point, which is what
+# spec-append-only-staged reads.
 #
-# Neither hook is the real guard — `--no-verify` and a clone whose
-# core.hooksPath points elsewhere both skip them. `make check` is.
-exec make --no-print-directory spec-append-only-staged spec-archive-integrity
+# This hook is not the real guard — `--no-verify` and a clone whose
+# core.hooksPath points elsewhere both skip it. `make check` is.
+exec make --no-print-directory spec-append-only-staged

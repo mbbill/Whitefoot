@@ -5,10 +5,10 @@ fn scale_twice(first: own u64, first_limit: own u64, second: own u64, second_lim
   doc "expect ACCEPT: bound_b combines bound_a with an explicit factor of 7, and bound_c re-scales bound_b again by 11, a use of a use.";
   invariant bound_a: first + second <= first_limit + second_limit;
   invariant bound_b: 7_u64 * first + 7_u64 * second <= 7_u64 * first_limit + 7_u64 * second_limit {
-    use 7 * bound_a;
+    use 7 times bound_a;
   }
   invariant bound_c: 77_u64 * first + 77_u64 * second <= 77_u64 * first_limit + 77_u64 * second_limit {
-    use 11 * bound_b;
+    use 11 times bound_b;
   }
   return unit;
 }

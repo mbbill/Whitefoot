@@ -7,10 +7,10 @@ private implementation choices; the active language is defined by
 this README.
 
 The frontend targets the exact bytes at `../spec/kernel-spec.md`. Their
-version and SHA-256 are generated into `src/spec_identity.rs` from the
-activation chain in `../governance/APPROVALS.md`
-(`cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`),
-and every other identity constant in the crate is derived from that module.
+version and SHA-256 are derived from those bytes by `build.rs` on every build
+that touches them, and every other identity constant in the crate reads that
+generated module. Nothing is committed, so nothing can go stale: amending the
+specification changes the identity in the same build.
 `whitefoot-spec` checks the selected identity, activation chain,
 rule inventory, and generated syntax identity as one compiler gate.
 
@@ -609,6 +609,60 @@ calling itself [PROV-6]; the depth is the value's, which is the ordinary
 stack-availability question [SCOPE-3] defers for a program that is not
 `resource_closed`, and the stack ledger reports it as a `STACK cycle` row.
 
+### Known defect: unguarded affine expression nesting depth
+
+A proof-domain affine expression nesting parentheses about 1400 deep aborts
+the driver with a stack overflow and no diagnostic at all (exit 134,
+`fatal runtime error: stack overflow`); 1200 rejects normally in a third of a
+second, and about 20000 does not even abort within twenty seconds, so a
+superlinear cost sits on top of the recursion. It reaches this from both a
+`use` premise and an `invariant` target, so it is in the shared `affine_expr`
+handling rather than in either position. Measured against a build from before
+the v0.48 `use` amendment, it reproduces identically, so it is not that
+amendment's.
+
+An internal error is not a source rejection, and a crash with no diagnostic
+gives a writer nothing to act on. The repair is the pattern this compiler
+already uses for structural limits — the 4096-entry `proof_use` capacity and
+`AffineCheckError::LimitExceeded` — applied to nesting depth, in whichever of
+the parser and the semantic former actually overflows. Removed when that limit
+exists and a test pins it.
+
+### Known defect: a runtime-sized allocation fails with no rule and no location
+
+```
+fn make(capacity: own u64) -> result: own buffer<u8> allocates(heap) {
+  let backing = buffer_new(capacity, 0_u8);
+  return move backing;
+}
+```
+
+stops with `TargetLayout/TargetLayout:
+TargetLayout(Unrepresentable(RuntimeSizedAllocation))` — no rule id, no source
+coordinate, no line, no mechanical fix. The program's actual defect is an
+undischarged size obligation, and `requires capacity <= 1000_u64;` fixes it,
+but nothing in the output says so. It passes semantic checking silently and
+stops four stages later. A sweep of 22 struct-owning-buffer programs hit it in
+all 22, which is why the corpus carries `1000_u64` ceilings that read as style
+and are compensation for this.
+
+The stage taxonomy is right — this is not a `Compiler` channel failure — but
+for a writer it is indistinguishable from one. The obligation belongs in the
+semantic walk with the shape `[OP-4]` and `[OP-2]` already use: a rule, a
+residual, a mechanical fix. Pre-existing; reproduces on a pre-v0.48 build.
+Removed when the rejection carries a rule and a location.
+
+### Known cost: a large `proof_use` block is impractical well below its ceiling
+
+[PRF-1] admits 4096 `proof_use` entries in one block and calls that "a source
+structural ceiling, not a work or time budget". Measured, the checker costs
+389 ms at 64 entries, 3.0 s at 128, and 26.8 s at 256 — about eight times per
+doubling, which puts the admitted ceiling many hours away. Pre-existing and
+not specific to any one entry shape; a pre-v0.48 build measures the same at
+128. Nothing in the corpus writes a block anywhere near this size, so this is
+recorded rather than fixed. Removed when the ceiling is reachable, or when the
+specification says what the real limit is.
+
 ## Running and checking
 
 From `compiler/`:
@@ -628,5 +682,6 @@ selects the exact sequential reference lowering and cannot be combined with
 LLVM output with `-o`.
 
 From the repository root, `make check` is the canonical complete gate;
-`make spec-archive-integrity` alone checks that a specification change carries
-its ACTIVE identity, the archive of the outgoing bytes, and its chain line.
+`make static` alone runs the stages that read the tree without running a
+compiled program, `make spec-append-only` among them, which checks that no
+released `spec/kernel-spec-vN.md` archive differs from main's.

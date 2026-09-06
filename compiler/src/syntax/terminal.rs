@@ -227,10 +227,12 @@ pub enum FixedTerminal {
     Dispose,
     /// `MutSlice`, the second view S6 and S35 name.
     MutSlice,
+    /// `times`, the multiplicity of one cited proof premise [PRF-1].
+    Times,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 104] = [
     FixedTerminal::Linear,
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
@@ -297,6 +299,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 103] = [
     FixedTerminal::DotDot,
     FixedTerminal::Invariant,
     FixedTerminal::Use,
+    FixedTerminal::Times,
     FixedTerminal::Star,
     FixedTerminal::Plus,
     FixedTerminal::Minus,
@@ -440,6 +443,7 @@ impl FixedTerminal {
             Self::PercentDefined => "%defined",
             Self::Invariant => "invariant",
             Self::Use => "use",
+            Self::Times => "times",
             Self::EqualEqual => "==",
             Self::BangEqual => "!=",
             Self::LessEqual => "<=",
@@ -531,39 +535,63 @@ pub enum TerminalPredicate {
     Digits,
 }
 
+/// The predicates that are not one fixed spelling, in inventory order.
+///
+/// [FORM-3] and [FORM-5] give the classes; `SOURCE_END` is intentionally
+/// absent from the inventory this list completes.
+const EXTERNAL_TERMINAL_PREDICATES: [TerminalPredicate; 8] = [
+    TerminalPredicate::Identifier,
+    TerminalPredicate::TypeIdentifier,
+    TerminalPredicate::RegionIdentifier,
+    TerminalPredicate::Label,
+    TerminalPredicate::OperationName,
+    TerminalPredicate::Literal,
+    TerminalPredicate::String,
+    TerminalPredicate::Digits,
+];
+
+/// Where [`EXTERNAL_TERMINAL_PREDICATES`] starts in the inventory: immediately
+/// after the last fixed terminal.
+///
+/// Deriving this rather than writing it is what keeps a new keyword from
+/// silently overwriting an external predicate. The inventory below copies the
+/// fixed terminals in first, so a hardcoded external position that no longer
+/// clears them is a collision the array initializer cannot report.
+const EXTERNAL_TERMINAL_BASE: usize = ALL_FIXED_TERMINALS.len();
+
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 111] = {
-    let mut predicates = [TerminalPredicate::Identifier; 111];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate;
+    ALL_FIXED_TERMINALS.len() + EXTERNAL_TERMINAL_PREDICATES.len()] = {
+    let mut predicates = [TerminalPredicate::Identifier;
+        ALL_FIXED_TERMINALS.len() + EXTERNAL_TERMINAL_PREDICATES.len()];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[103] = TerminalPredicate::Identifier;
-    predicates[104] = TerminalPredicate::TypeIdentifier;
-    predicates[105] = TerminalPredicate::RegionIdentifier;
-    predicates[106] = TerminalPredicate::Label;
-    predicates[107] = TerminalPredicate::OperationName;
-    predicates[108] = TerminalPredicate::Literal;
-    predicates[109] = TerminalPredicate::String;
-    predicates[110] = TerminalPredicate::Digits;
+    let mut offset = 0;
+    while offset < EXTERNAL_TERMINAL_PREDICATES.len() {
+        predicates[EXTERNAL_TERMINAL_BASE + offset] = EXTERNAL_TERMINAL_PREDICATES[offset];
+        offset += 1;
+    }
     predicates
 };
 
 impl TerminalPredicate {
     const fn index(self) -> u8 {
+        let base = EXTERNAL_TERMINAL_BASE as u8;
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 103,
-            Self::TypeIdentifier => 104,
-            Self::RegionIdentifier => 105,
-            Self::Label => 106,
-            Self::OperationName => 107,
-            Self::Literal => 108,
-            Self::String => 109,
-            Self::Digits => 110,
+            Self::Identifier => base,
+            Self::TypeIdentifier => base + 1,
+            Self::RegionIdentifier => base + 2,
+            Self::Label => base + 3,
+            Self::OperationName => base + 4,
+            Self::Literal => base + 5,
+            Self::String => base + 6,
+            Self::Digits => base + 7,
         }
     }
 
@@ -801,8 +829,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        ALL_FIXED_TERMINALS, FixedTerminal, TerminalPredicate, TerminalSet, is_identifier,
-        is_literal, is_operation_name, is_string,
+        ALL_FIXED_TERMINALS, ALL_TERMINAL_PREDICATES, EXTERNAL_TERMINAL_PREDICATES, FixedTerminal,
+        TerminalPredicate, TerminalSet, is_identifier, is_literal, is_operation_name, is_string,
     };
 
     #[test]
@@ -827,20 +855,67 @@ mod tests {
         assert_eq!(FixedTerminal::Invariant as u8, 90);
         assert_eq!(FixedTerminal::Use as u8, 91);
         assert_eq!(FixedTerminal::Is as u8, 97);
-        // [PROV-6, S37] the four added atoms take the enum's last four
-        // discriminants, so the external predicates start four places later.
-        // [S23] the retired `heap` allocation atom stood before all of them,
-        // so every discriminant after it moved one place down.
+        // [PROV-6, S37] the four linearity atoms take four consecutive
+        // discriminants after `is`. [S23] the retired `heap` allocation atom
+        // stood before all of them, so every discriminant after it moved one
+        // place down.
         assert_eq!(FixedTerminal::Linear as u8, 98);
         assert_eq!(FixedTerminal::Affine as u8, 99);
         assert_eq!(FixedTerminal::Copy as u8, 100);
         assert_eq!(FixedTerminal::Dispose as u8, 101);
-        // [S6, S35] `MutSlice` is the atom v0.45 appends, so it takes the
-        // enum's next discriminant and the external predicates start one
-        // place later than they did.
+        // [S6, S35] `MutSlice` is the atom v0.45 appends and [PRF-1] `times`
+        // the atom v0.48 appends, so they take the enum's last two
+        // discriminants and the external predicates start after them.
         assert_eq!(FixedTerminal::MutSlice as u8, 102);
-        assert_eq!(TerminalPredicate::Identifier.index(), 103);
-        assert_eq!(TerminalPredicate::Digits.index(), 110);
+        assert_eq!(FixedTerminal::Times as u8, 103);
+        assert_eq!(TerminalPredicate::Identifier.index(), 104);
+        assert_eq!(TerminalPredicate::Digits.index(), 111);
+    }
+
+    /// The inventory holds every predicate, once.
+    ///
+    /// This is the invariant a hardcoded external position broke: the array
+    /// copies the fixed terminals in first and then writes the external
+    /// predicates at fixed slots, so adding a ninety-ninth fixed terminal
+    /// while those slots still started at 98 overwrote `Fixed(Times)` with
+    /// `Identifier`. The inventory then held 106 predicates instead of 107,
+    /// and the missing one was a keyword the parser had just gained. Counting
+    /// what is actually there catches both the loss and any duplicate.
+    #[test]
+    fn the_inventory_holds_every_predicate_once() {
+        assert_eq!(
+            ALL_TERMINAL_PREDICATES.len(),
+            ALL_FIXED_TERMINALS.len() + EXTERNAL_TERMINAL_PREDICATES.len()
+        );
+        let holds = |wanted: TerminalPredicate| {
+            ALL_TERMINAL_PREDICATES
+                .into_iter()
+                .filter(|predicate| *predicate == wanted)
+                .count()
+        };
+        for terminal in ALL_FIXED_TERMINALS {
+            assert_eq!(holds(TerminalPredicate::Fixed(terminal)), 1);
+        }
+        for predicate in EXTERNAL_TERMINAL_PREDICATES {
+            assert_eq!(holds(predicate), 1);
+        }
+    }
+
+    /// `index()` is a `TerminalSet` bit position, so it must be distinct per
+    /// predicate and inside the `u128` the set is stored in. It is not an
+    /// index into the inventory above: the fixed terminals answer with their
+    /// declaration order and the inventory is in first-occurrence order.
+    #[test]
+    fn every_predicate_has_its_own_bit() {
+        let bits: BTreeSet<u8> = ALL_TERMINAL_PREDICATES
+            .into_iter()
+            .map(TerminalPredicate::index)
+            .collect();
+        assert_eq!(bits.len(), ALL_TERMINAL_PREDICATES.len());
+        assert!(
+            bits.iter()
+                .all(|bit| usize::from(*bit) < u128::BITS as usize)
+        );
     }
 
     #[test]

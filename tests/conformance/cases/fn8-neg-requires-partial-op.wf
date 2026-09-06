@@ -1,9 +1,9 @@
-fn partial_op(x: own i32) -> result: own i32 pure contract {
-  define incremented = x + 1_i32;
-  define permitted = incremented > x;
+fn partial_op(x: own u64) -> result: own u64 pure contract {
+  define halved = x / 2_u64;
+  define permitted = halved <= x;
   requires permitted;
 } {
-  doc "Only pure-total operations are legal in a static contract; a proof-required exact operation is partial and violates FN-8 even though it has no runtime fallback.";
+  doc "Only pure-total operations and the exact affine rows are legal in a static contract; exact division is proof-required on an input no relation states its way out of, so it remains partial and violates FN-8 even though it has no runtime fallback.";
   return x;
 }
 

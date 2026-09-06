@@ -1,0 +1,65 @@
+fn dot_product(left: own array<u32, 5>, right: own array<u32, 5>) -> value: own Option<u32> pure {
+  doc "WORKAROUND: dot product factored into its own function. Detecting multiply overflow with *checked forces the return type from own u32 to own Option<u32>, so every caller must match instead of using the value directly.";
+  let cursor_a = 0_u64;
+  let cursor_b = 0_u64;
+  let total = 0_u32;
+  loop @walk {
+    let a_in_bounds = cursor_a < 5_u64;
+    if a_in_bounds {
+    } else {
+      break @walk;
+    }
+    let b_in_bounds = cursor_b < 5_u64;
+    if b_in_bounds {
+    } else {
+      break @walk;
+    }
+    let lv = left[cursor_a];
+    let rv = right[cursor_b];
+    match lv *checked rv {
+      Ok(value: product) => {
+        match total +checked product {
+          Ok(value: next_total) => {
+            set total = next_total;
+          }
+          Err(error: overflow) => {
+            return None<u32>();
+          }
+        }
+      }
+      Err(error: overflow) => {
+        return None<u32>();
+      }
+    }
+    set cursor_a = cursor_a +wrap 1_u64;
+    set cursor_b = cursor_b +wrap 1_u64;
+  }
+  return Some<u32>(value: total);
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let left = array_new::<u32, 5>(0_u32);
+  let right = array_new::<u32, 5>(0_u32);
+  set left[0_u64] = 2_u32;
+  set left[1_u64] = 3_u32;
+  set left[2_u64] = 4_u32;
+  set left[3_u64] = 5_u32;
+  set left[4_u64] = 6_u32;
+  set right[0_u64] = 1_u32;
+  set right[1_u64] = 1_u32;
+  set right[2_u64] = 1_u32;
+  set right[3_u64] = 1_u32;
+  set right[4_u64] = 1_u32;
+  match dot_product(left: move left, right: move right) {
+    Some(value: total) => {
+      if total == 20_u32 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 250_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

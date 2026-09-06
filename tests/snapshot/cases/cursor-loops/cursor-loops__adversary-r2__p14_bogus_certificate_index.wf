@@ -12,7 +12,7 @@ command fn main() -> status: own ExitStatus pure {
   let bounded = cursor <= limit;
   if bounded {
     invariant sneaky: cursor < 3_u64 {
-      use cursor <= limit;
+      use (cursor <= limit);
     }
     let value = data[cursor];
     let correct = value == 0_u8;

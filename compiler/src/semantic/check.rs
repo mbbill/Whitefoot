@@ -3567,6 +3567,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                             ),
                             super::entailment::SourceProofCertificateFailure::RepeatedUse { .. }
                             | super::entailment::SourceProofCertificateFailure::UseCapacity { .. }
+                            | super::entailment::SourceProofCertificateFailure::NonlinearResidual
                             | super::entailment::SourceProofCertificateFailure::InvalidFactor { .. } => {
                                 return Err(SemanticCompilerFailure::InvalidResolution.into());
                             }
@@ -3623,6 +3624,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         super::entailment::SourceProofCertificateFailure::InvalidFactor {
                             use_index,
                         } => crate::SourceProofObligation::InvalidUseFactor { use_index },
+                        super::entailment::SourceProofCertificateFailure::NonlinearResidual => {
+                            crate::SourceProofObligation::NonlinearCertificateSum
+                        }
                     };
                     let obligation = if let Some(failure) = outcome.check.source_failure {
                         failure_obligation(failure)
@@ -3663,6 +3667,9 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                         }
                         crate::SourceProofObligation::InvalidUseFactor { .. } => {
                             "write a canonical positive bare-decimal factor, or omit the factor when it is one"
+                        }
+                        crate::SourceProofObligation::NonlinearCertificateSum => {
+                            "the multiplied operand must be one the checker holds as a single value — a parameter or a call result — because a locally derived one is expanded into its own operands and no admitted product then matches the sum; take it as a parameter, or scale the premise by a bare decimal instead"
                         }
                     };
                     Err(CheckStop::source_issue(SemanticIssue {

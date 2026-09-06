@@ -1,0 +1,19 @@
+fn measure(src: own buffer<u8>) -> n: own u64 reads(src) contract {
+  define twice = 2_u64;
+  ensures n <= twice;
+} {
+  doc "ensures relating result to a measure";
+  let count = len(src);
+  return count;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "drive";
+  let src = buffer_new(4_u64, 65_u8);
+  let got = measure(src: move src);
+  if got == 4_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

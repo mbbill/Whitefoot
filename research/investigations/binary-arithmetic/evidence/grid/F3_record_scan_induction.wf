@@ -1,0 +1,41 @@
+fn checksum_field(table: &buffer<u8>, stride: own u64, field: own u64) -> total: own u64 reads(table) contract {
+  requires field < stride;
+} {
+  doc "WORKAROUND: sum one field over every whole record in the table, carrying the record base as an induction variable.";
+  let capacity = len(deref(table));
+  let acc = 0_u64;
+  let base = 0_u64;
+  let remaining = capacity;
+  loop (
+    invariant span_lo: base + remaining <= capacity,
+    invariant span_hi: capacity <= base + remaining
+  ) {
+    let more = stride <= remaining;
+    if more {
+    } else {
+      break;
+    }
+    invariant span: base + stride <= capacity;
+    invariant slot: base + field < capacity;
+    let at = base + field;
+    let byte = deref(table)[at];
+    let wide = cvt::<u8, u64>(byte);
+    set acc = acc +wrap wide;
+    set base = base + stride;
+    set remaining = remaining - stride;
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(16_u64, 3_u8);
+  region {
+    let t = &table;
+    let total = checksum_field(table: t, stride: 4_u64, field: 1_u64);
+    if total == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -6,7 +6,7 @@ command fn main() -> status: own ExitStatus pure {
   let widened = count +wrap margin;
   for (i in 0_u64..count) {
     invariant bounded: i <= count {
-      use count >= 0_u64;
+      use (count >= 0_u64);
     }
     let seen = i;
     let doubled_seen = seen +wrap seen;

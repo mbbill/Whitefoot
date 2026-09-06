@@ -11,8 +11,8 @@ fn binary_search(table: own Slice<u32>, target: own u32) -> found: own Bool read
       let half = span / 2_u64;
       let mid = lo + half;
       invariant narrower: mid < hi {
-        use lo < hi;
-        use 2_u64 * half <= span;
+        use (lo < hi);
+        use (2_u64 * half <= span);
       }
       if mid <= spare {
       } else {

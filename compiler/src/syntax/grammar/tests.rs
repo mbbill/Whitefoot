@@ -10,20 +10,22 @@ use super::generated::{DECISIONS, SELECT_ROWS};
 
 /// The committed inventory's own shape. That this data belongs to the active
 /// specification is checked by regenerating it from the active grammar, in
-/// `committed_tables_are_derived_from_the_active_grammar`. The 6,311 select
-/// rows are the complete two-position derivation of the current 88
+/// `committed_tables_are_derived_from_the_active_grammar`. The 6,255 select
+/// rows are the complete two-position derivation of the current 89
 /// productions, not a separately chosen test allowance: [TYPE-2] gives
 /// `struct_decl` and `enum_decl` an optional `region_params`, which is two
-/// more decisions and fourteen more rows and no new production, and [VIEW-1]'s
+/// more decisions and fourteen more rows and no new production, [VIEW-1]'s
 /// second view atom `MutSlice` gives `type` one more alternative — one more
 /// decision, eighty-three more rows, one more diagnostic terminal, and again
-/// no new production.
+/// no new production — and [PRF-1]'s `use_premise` is one new production
+/// carrying one new Choice decision, whose delimited relation form removes
+/// more rows from the `proof_use` frontier than the premise node adds.
 #[test]
 fn complete_inventory_is_pinned() {
-    assert_eq!(productions().len(), 88);
-    assert_eq!(DECISIONS.len(), 136);
-    assert_eq!(SELECT_ROWS.len(), 6_318);
-    assert_eq!(diagnostic_terminal_order().len(), 111);
+    assert_eq!(productions().len(), 89);
+    assert_eq!(DECISIONS.len(), 137);
+    assert_eq!(SELECT_ROWS.len(), 6_255);
+    assert_eq!(diagnostic_terminal_order().len(), 112);
     assert_eq!(productions()[0], Production::Program);
     assert_eq!(productions()[12], Production::ContractDefine);
     assert_eq!(productions()[13], Production::RequiresClause);
@@ -40,18 +42,21 @@ fn complete_inventory_is_pinned() {
     assert_eq!(productions()[50], Production::HeaderInvariant);
     assert_eq!(productions()[51], Production::InvariantStmt);
     assert_eq!(productions()[52], Production::ProofUse);
-    assert_eq!(productions()[60], Production::DisposeStmt);
+    // [PRF-1] `use_premise` follows `proof_use` in [GRAM-4], so every later
+    // production moves one place further down the specification order again.
+    assert_eq!(productions()[53], Production::UsePremise);
+    assert_eq!(productions()[61], Production::DisposeStmt);
     // `compare_op` sits between `infix_op` and `atom` in [GRAM-5], so every
     // later production moves one place down the specification order; v0.44's
     // `clause_expr` sits between `atom_list` and `place` and moves the seven
     // after it one place further.
-    assert_eq!(productions()[69], Production::CompareOp);
-    assert_eq!(productions()[78], Production::ClauseExpr);
+    assert_eq!(productions()[70], Production::CompareOp);
+    assert_eq!(productions()[79], Production::ClauseExpr);
     // [MSR-5] `clause_op` is defined immediately after `clause_expr`, whose
     // tail it is, so the eight productions after it move one place down.
-    assert_eq!(productions()[79], Production::ClauseOp);
-    assert_eq!(productions()[86], Production::Effect);
-    assert_eq!(productions()[87], Production::EffectPath);
+    assert_eq!(productions()[80], Production::ClauseOp);
+    assert_eq!(productions()[87], Production::Effect);
+    assert_eq!(productions()[88], Production::EffectPath);
     assert_eq!(Production::ForStmt.index(), 68);
     assert_eq!(Production::ForBinding.index(), 69);
     assert_eq!(Production::HeaderInvariant.index(), 70);
@@ -68,11 +73,13 @@ fn complete_inventory_is_pinned() {
     assert_eq!(Production::ProofUse.index(), 81);
     assert_eq!(Production::ClauseExpr.index(), 83);
     // [MSR-5] `clause_op` takes the slot after the `clause_expr` it belongs
-    // to, so the three [PROV-6] productions after it move one place down.
+    // to, so the three [PROV-6] productions after it move one place down;
+    // [PRF-1]'s `use_premise` is newer still and takes the slot after them.
     assert_eq!(Production::ClauseOp.index(), 84);
     assert_eq!(Production::DisposeStmt.index(), 85);
     assert_eq!(Production::RegionParam.index(), 86);
     assert_eq!(Production::LinearityBound.index(), 87);
+    assert_eq!(Production::UsePremise.index(), 88);
     // [LIV-2] the `set` target list's value list is its own repetition, and
     // [TYPE-2]'s optional `region_params` on `struct_decl` and `enum_decl` is
     // two more, so every decision after them moves three places down the
@@ -93,8 +100,13 @@ fn complete_inventory_is_pinned() {
     assert_eq!(DECISIONS[81].kind(), DecisionKind::Choice);
     assert_eq!(DECISIONS[82].production(), Production::InvariantStmt);
     assert_eq!(DECISIONS[82].kind(), DecisionKind::Repeat1);
-    assert_eq!(DECISIONS[89].production(), Production::BreakStmt);
-    assert_eq!(DECISIONS[89].kind(), DecisionKind::Optional);
+    // [PRF-1] `use_premise`'s own Choice is a new decision between
+    // `invariant_stmt` and `break_stmt`, so every decision after `proof_use`
+    // moves one place further down again.
+    assert_eq!(DECISIONS[85].production(), Production::UsePremise);
+    assert_eq!(DECISIONS[85].kind(), DecisionKind::Choice);
+    assert_eq!(DECISIONS[90].production(), Production::BreakStmt);
+    assert_eq!(DECISIONS[90].kind(), DecisionKind::Optional);
     // [FORM-8] optional region spellings: the `Slice`, `MutSlice` and
     // `arena` type arms [VIEW-1], the two `mode` borrow arms, `region_stmt`,
     // and the two `borrow_expr` arms.
@@ -108,12 +120,12 @@ fn complete_inventory_is_pinned() {
     assert_eq!(DECISIONS[54].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[55].production(), Production::Mode);
     assert_eq!(DECISIONS[55].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[90].production(), Production::RegionStmt);
-    assert_eq!(DECISIONS[90].kind(), DecisionKind::Optional);
-    assert_eq!(DECISIONS[111].production(), Production::BorrowExpr);
-    assert_eq!(DECISIONS[111].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[91].production(), Production::RegionStmt);
+    assert_eq!(DECISIONS[91].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[112].production(), Production::BorrowExpr);
     assert_eq!(DECISIONS[112].kind(), DecisionKind::Optional);
+    assert_eq!(DECISIONS[113].production(), Production::BorrowExpr);
+    assert_eq!(DECISIONS[113].kind(), DecisionKind::Optional);
     assert_eq!(DECISIONS[23].production(), Production::ContractBlock);
     assert_eq!(DECISIONS[23].kind(), DecisionKind::Repeat0);
     assert_eq!(DECISIONS[24].production(), Production::ContractBlock);
@@ -169,7 +181,7 @@ fn every_decision_has_two_position_rows_and_complete_arm_coverage() {
             stack.extend_from_slice(node.children());
         }
     }
-    assert_eq!(decisions, 136);
+    assert_eq!(decisions, 137);
 }
 
 #[test]
@@ -237,7 +249,7 @@ fn overlaps(left: LookaheadPredicate, right: LookaheadPredicate) -> bool {
 
 #[test]
 fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
-    assert_eq!(DECISIONS.len(), 136);
+    assert_eq!(DECISIONS.len(), 137);
     let mut total_rows = 0_usize;
     let mut saw_atom_only = false;
     for decision in &DECISIONS {
@@ -282,6 +294,6 @@ fn all_detailed_rows_retain_provenance_and_remain_cross_arm_disjoint() {
         }
     }
     // This independent traversal must reproduce the complete generated table.
-    assert_eq!(total_rows, 6_318);
+    assert_eq!(total_rows, 6_255);
     assert!(saw_atom_only);
 }

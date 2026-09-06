@@ -1,0 +1,43 @@
+fn probe(pixels: &buffer<u8>, width: own u64, height: own u64) -> total: own u64 reads(pixels) contract {
+  requires width <= len(deref(pixels));
+} {
+  let capacity = len(deref(pixels));
+  let acc = 0_u64;
+  let row_base = 0_u64;
+  let remaining = capacity;
+  for (
+    r in 0_u64..height,
+    invariant span_lo: row_base + remaining <= capacity,
+    invariant span_hi: capacity <= row_base + remaining
+  ) {
+    let row_ok = width <= remaining;
+    if row_ok {
+    } else {
+      return acc;
+    }
+    invariant row_fits: row_base + width <= capacity;
+    for (c in 0_u64..width) {
+      invariant idx: row_base + c < capacity;
+      let at = row_base + c;
+      let byte = deref(pixels)[at];
+      let wide = cvt::<u8, u64>(byte);
+      set acc = acc +wrap wide;
+    }
+    set row_base = row_base + width;
+    set remaining = remaining - width;
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let pixels = buffer_new(12_u64, 1_u8);
+  region {
+    let p = &pixels;
+    let total = probe(pixels: p, width: 4_u64, height: 3_u64);
+    if total == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

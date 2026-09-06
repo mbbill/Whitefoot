@@ -220,11 +220,29 @@ fn requires_holds_an_infix_row_to_the_same_subset_as_its_named_spelling() {
             };
         },
     );
-    // A bare `+` is proof-required and therefore unavailable in a definition.
-    assert_rule(
+    // The exact affine rows are read mathematically in a clause, the carve-out
+    // INV-1 already gives an affine expression, so a bare `+` states a relation
+    // rather than requesting an operation.
+    with_semantics(
         b"fn f(x: own i32) -> result: own i32 pure contract {\n  \
           define raised = x + 1_i32;\n  \
           requires raised > x;\n} {\n  \
+          return x;\n}\n\n\
+          command fn main() -> status: own ExitStatus pure {\n  \
+          return exit_status(code: 0_u8);\n}\n",
+        |outcome| {
+            let SemanticOutcome::Complete(_) = outcome else {
+                panic!("an exact affine row is admitted in a clause: {outcome:?}");
+            };
+        },
+    );
+    // Every other exact row stays inadmissible: division has an input no
+    // relation can state its way out of, so admitting it would put a partial
+    // operation where no domain obligation discharges it.
+    assert_rule(
+        b"fn f(x: own u64) -> result: own u64 pure contract {\n  \
+          define half = x / 2_u64;\n  \
+          requires half <= x;\n} {\n  \
           return x;\n}\n\n\
           command fn main() -> status: own ExitStatus pure {\n  \
           return exit_status(code: 0_u8);\n}\n",
