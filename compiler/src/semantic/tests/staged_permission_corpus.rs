@@ -843,7 +843,7 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
 }
 "#;
 
-const A22_EXPR_STATEMENT: &[u8] = br#"fn stamp(slot: &uniq buffer<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
+const A22_EXPR_STATEMENT: &[u8] = br#"fn stamp(slot: &uniq MutSlice<u8>, index: own u64) -> result: own unit reads(slot), writes(slot) {
   doc "Writes one byte of the borrowed slot.";
   let spare = len_of(deref(slot));
   let wide = 0_u64 < spare;
@@ -859,7 +859,10 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
   for @scan (index in 0_u64..4_u64) {
     let name = buffer_new(16_u64, 97_u8);
     region {
-      stamp(slot: &uniq name, index: index);
+      let window = mut_slice_of(&uniq name);
+      region {
+        stamp(slot: &uniq window, index: index);
+      }
     }
     region 'f {
       let permit = reserve_file(factory: &uniq files);

@@ -921,25 +921,26 @@ command fn main() -> status: own ExitStatus pure {
     );
 }
 
-/// [ENT-5]'s element-storage exception holds across a callee boundary: one
-/// `len` bound above every write still discharges a later requirement.
+/// [CALL-3]'s viewed range holds across a callee boundary: one length bound
+/// above every write still discharges a later requirement.
 ///
-/// The rule says "for each length term `len_of(P)`, the root binding of `P` but
-/// not `P`'s element storage", so an element write never kills a length fact.
-/// A writer reading the rule's kill clause concluded the opposite and re-bound
-/// `len` after every call that wrote through a `&uniq` parameter: 34 of the 41
+/// A writer reading [ENT-5]'s kill clause concluded that every callee write
+/// killed the caller's length and re-bound it after each call: 34 of the 41
 /// length bindings in five programs existed only to re-establish a fact that
-/// had never died. Nothing in the tree showed a length fact surviving a write,
-/// so the belief cost them nothing the compiler could tell them about.
+/// had never died. What decides it is the callee's declared parameter and
+/// nothing else [CALL-5]. A `&uniq MutSlice<u8>` destination is a viewed range,
+/// so the write reaches element storage only and every measure the caller
+/// retained stands; a `&uniq buffer<u8>` destination selects no transport, so
+/// the same body costs its caller the length. Both halves are checked here.
 ///
-/// The second half is what makes the first half worth stating: the guard is
-/// load-bearing. Without any live length fact the call is undischarged, so the
-/// hoisted fact is doing real work rather than being redundant ceremony.
+/// The third is what makes the first worth stating: the guard is load-bearing.
+/// Without any live length fact the call is undischarged, so the hoisted fact
+/// is doing real work rather than being redundant ceremony.
 #[test]
-fn a_hoisted_length_fact_survives_a_callee_element_write() {
+fn a_hoisted_length_fact_survives_a_callee_write_through_a_view() {
     with_semantics(
-        br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
-  doc "Writes one byte through the borrow and returns the next position.";
+        br#"fn fill(destination: &uniq MutSlice<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Writes one byte through the view and returns the next position.";
   let spare = len_of(deref(destination));
   let inside = at < spare;
   if inside {
@@ -963,12 +964,15 @@ fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) c
 }
 
 command fn main() -> status: own ExitStatus pure {
-  doc "Emits a prefix without a live length fact.";
+  doc "Emits a prefix bounded by a length the view write left standing.";
   let line = buffer_new(64_u64, 0_u8);
   let spare = len_of(line);
   let end = 0_u64;
   region {
-    set end = fill(destination: &uniq line, at: end);
+    let window = mut_slice_of(&uniq line);
+    region {
+      set end = fill(destination: &uniq window, at: end);
+    }
   }
   let fits = end <= spare;
   if fits {
@@ -981,7 +985,7 @@ command fn main() -> status: own ExitStatus pure {
 "#,
         |outcome| {
             let SemanticOutcome::Complete(_) = outcome else {
-                panic!("a length fact bound above the write must survive it: {outcome:?}");
+                panic!("a length fact bound above a view write must survive it: {outcome:?}");
             };
         },
     );
@@ -1026,6 +1030,57 @@ command fn main() -> status: own ExitStatus pure {
         |outcome| {
             let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
                 panic!("with no length fact at all the call is undischarged: {outcome:?}");
+            };
+            assert_eq!(issue.rule(), SemanticRule::Fn8);
+        },
+    );
+    // [CALL-5] the same body at a `&uniq buffer<u8>` destination selects no
+    // transport, so hoisting the length above the write does not save it.
+    with_semantics(
+        br#"fn fill(destination: &uniq buffer<u8>, at: own u64) -> result: own u64 reads(destination), writes(destination) {
+  doc "Writes one byte through the borrow and returns the next position.";
+  let spare = len_of(deref(destination));
+  let inside = at < spare;
+  if inside {
+    set deref(destination)[at] = 65_u8;
+  }
+  let next = at +wrap 1_u64;
+  return next;
+}
+
+fn emit(source: &buffer<u8>, length: own u64) -> result: own u64 reads(source) contract {
+  define capacity = len_of(deref(source));
+  requires length <= capacity;
+} {
+  doc "Consumes a prefix whose length the caller has proved.";
+  let first = 0_u8;
+  let present = 0_u64 < length;
+  if present {
+    set first = deref(source)[0_u64];
+  }
+  return length;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "Hoists the length above a write the callee makes through a unique buffer borrow.";
+  let line = buffer_new(64_u64, 0_u8);
+  let spare = len_of(line);
+  let end = 0_u64;
+  region {
+    set end = fill(destination: &uniq line, at: end);
+  }
+  let fits = end <= spare;
+  if fits {
+    region {
+      let sent = emit(source: &line, length: end);
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            let SemanticOutcome::SourceIssue { issue, .. } = outcome else {
+                panic!("an unselected transport must cost the caller its length: {outcome:?}");
             };
             assert_eq!(issue.rule(), SemanticRule::Fn8);
         },

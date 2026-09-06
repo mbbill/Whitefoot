@@ -103,7 +103,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -136,7 +136,10 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   region {
     let value = fold(node: &uniq root);
     region {
-      let filled = spell(destination: &uniq report, at: 0_u64, value: value);
+      let window = mut_slice_of(&uniq report);
+      region {
+        let filled = spell(destination: &uniq window, at: 0_u64, value: value);
+      }
     }
   }
   region 'o {
@@ -1019,7 +1022,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = 0_u64;
   let rest = value;
   loop @octets {
@@ -1044,7 +1047,10 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let bits = reinterpret::<f64, u64>(total);
   let report = buffer_new(8_u64, 0_u8);
   region {
-    let filled = spell(destination: &uniq report, value: bits);
+    let window = mut_slice_of(&uniq report);
+    region {
+      let filled = spell(destination: &uniq window, value: bits);
+    }
   }
   region 'o {
     region {

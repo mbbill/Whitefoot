@@ -8291,12 +8291,30 @@ fn assert_real_read_bits_routes(program: &CheckedProgramData) {
             .count(),
         14
     );
+    // The boundary driver's `assemble_reason` publishes `result <= capacity`
+    // over its own declared result, which is the direct-result route. It came
+    // in with B3: a helper handed a view cannot form the shared child a
+    // `write_once` source needs [VIEW-2], so it hands its assembled length back
+    // and its caller publishes, and the caller proves the publish bound from
+    // that clause. Five call sites and the two returns of the clause's own
+    // proof are the seven. `give` and delivery-join routes stay absent.
+    assert_eq!(
+        program
+            .functions
+            .iter()
+            .flat_map(|function| &function.entailment.derivations.roots)
+            .filter(|root| matches!(
+                root.kind,
+                DerivationRootKind::PostconditionDirectResult { .. }
+            ))
+            .count(),
+        7
+    );
     assert!(program.functions.iter().all(|function| {
         function.entailment.derivations.roots.iter().all(|root| {
             !matches!(
                 root.kind,
-                DerivationRootKind::PostconditionDirectResult { .. }
-                    | DerivationRootKind::PostconditionGive { .. }
+                DerivationRootKind::PostconditionGive { .. }
                     | DerivationRootKind::PostconditionDeliveryJoin { .. }
             )
         })

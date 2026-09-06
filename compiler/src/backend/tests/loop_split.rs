@@ -82,7 +82,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -116,7 +116,10 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let value = folded(lo: 0_u64, hi: 400000_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
-    let filled = spell(destination: &uniq report, at: 0_u64, value: value);
+    let window = mut_slice_of(&uniq report);
+    region {
+      let filled = spell(destination: &uniq window, at: 0_u64, value: value);
+    }
   }
   region 'o {
     region {
@@ -299,7 +302,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -335,7 +338,10 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus rea
   let value = folded(salt: 9876543210_u64, rounds: 24_u64, stride: 7_u64);
   let report = buffer_new(8_u64, 0_u8);
   region {
-    let filled = spell(destination: &uniq report, at: 0_u64, value: value);
+    let window = mut_slice_of(&uniq report);
+    region {
+      let filled = spell(destination: &uniq window, at: 0_u64, value: value);
+    }
   }
   region 'o {
     region {
@@ -1247,7 +1253,7 @@ fn low_byte(v: own u64) -> result: own u8 pure {
   }
 }
 
-fn spell(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
+fn spell(destination: &uniq MutSlice<u8>, at: own u64, value: own u64) -> result: own u64 reads(destination), writes(destination) {
   let cursor = at;
   let rest = value;
   loop @octets {
@@ -1308,14 +1314,17 @@ fn admitted_combine_source() -> Vec<u8> {
     source.push_str(&format!(
         "\ncommand fn main(command.stdout as out: own Output) -> status: own ExitStatus \
          reads(out), writes(out) {{\n  \
-         let report = buffer_new({width}_u64, 0_u8);\n  region {{\n"
+         let report = buffer_new({width}_u64, 0_u8);\n  region {{\n    \
+         let window = mut_slice_of(&uniq report);\n"
     ));
     let mut at = "0_u64".to_owned();
     for (index, combine) in ADMITTED_COMBINES.iter().enumerate() {
         let name = combine.name;
         source.push_str(&format!(
             "    let v{index} = value_{name}(after: {at});\n    \
-             let a{index} = spell(destination: &uniq report, at: {at}, value: v{index});\n"
+             let a{index} = 0_u64;\n    region {{\n      \
+             set a{index} = spell(destination: &uniq window, at: {at}, value: v{index});\n    \
+             }}\n"
         ));
         at = format!("a{index}");
     }

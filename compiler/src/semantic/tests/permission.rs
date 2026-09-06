@@ -551,7 +551,14 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 /// The same hazard through a subscript rather than a whole binding: the
-/// element read is rooted at the buffer the first call writes through.
+/// element read is rooted at the storage the first call writes through.
+///
+/// The read is the earlier of the two statements. It used to be the later one,
+/// and under [CALL-5] a `&uniq buffer<u64>` destination selects no transport,
+/// so the write costs the caller the length the read's own [OP-4] bound needs —
+/// a question about the fact state, not about the permission judgment this
+/// fixture is evidence for. Ordering the read first keeps the footprints and
+/// the condition and puts that question outside the fixture.
 #[test]
 fn an_operand_element_read_of_a_written_buffer_is_denied_by_condition_two() {
     let source =
@@ -576,8 +583,8 @@ fn take(v: own u64) -> result: own u64 pure {
 command fn main() -> status: own ExitStatus pure {
   let buf = buffer_new(4_u64, 1_u64);
   region {
-    let a = fill(dst: &uniq buf, mark: 9_u64);
     let b = take(v: buf[0_u64]);
+    let a = fill(dst: &uniq buf, mark: 9_u64);
     let total = imax(a, b);
   }
   return exit_status(code: 0_u8);
@@ -591,8 +598,8 @@ command fn main() -> status: own ExitStatus pure {
     assert_eq!(
         *kind,
         ConflictKind {
-            earlier: FootprintHalf::ExclusiveLoan,
-            later: FootprintHalf::OperandRead
+            earlier: FootprintHalf::OperandRead,
+            later: FootprintHalf::ExclusiveLoan
         }
     );
 }
