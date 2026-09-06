@@ -1,0 +1,34 @@
+fn observe(view: own Slice<u8>) -> seen: own u64 reads(view) {
+  doc "Reads the child's measure and nothing else.";
+  return len_of(view);
+}
+
+fn fill(output: &uniq MutSlice<u8>, value: own u8) -> result: own unit pure {
+  doc "Takes the exclusive borrow the parent's holder hands it.";
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[OWN-5] the positive twin: the parent view's holder is borrowed exclusively after the shared child's last use, so the freeze has ended and the borrow is the ordinary one. Exit 0 is reached only through the child's own measure.";
+  let code = 0_u8;
+  region 'a {
+    let workspace = arena_frame::<8, 8, 'a>();
+    region {
+      let bytes = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
+      region {
+        let writer = mut_slice_of(&uniq bytes);
+        region {
+          let view = slice_of(&bytes);
+          let seen = observe(view: view);
+          if seen != 0_u64 {
+            set code = 1_u8;
+          }
+        }
+        region {
+          let done = fill(output: &uniq writer, value: 7_u8);
+        }
+      }
+    }
+  }
+  return exit_status(code: code);
+}

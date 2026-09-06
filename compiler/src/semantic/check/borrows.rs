@@ -209,6 +209,24 @@ pub(super) enum RequiredReferent {
     IndexableStorage,
 }
 
+/// How one liveness question reads a use written in the same statement as the
+/// access it is asked about.
+///
+/// This checker states no program point between two operands of one statement,
+/// which is why a loan no binding holds keeps its whole region extent. Where
+/// that reading is what the rule needs, the caller asks for it; where a rule
+/// was stated over document order and its diagnostics are pinned to that
+/// reading, it keeps it.
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum Simultaneity {
+    /// Document order decides, as it did before the sibling-operand question
+    /// arose.
+    Sequential,
+    /// A use anywhere in the access's own `let`, `set`, expression, or
+    /// `return` statement is simultaneous with the access.
+    OneStatementIsOneMoment,
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum AccessKind {
     Read,
@@ -1899,6 +1917,37 @@ and name it on the returned reborrow"
                 }
             }
         }
+        // [S31, OWN-5] the freeze a shared child reborrow puts on its parent
+        // reaches the parent's *holder*, not only its elements.
+        //
+        // The loans above are claims on the origin storage, and `&uniq
+        // writer` names the descriptor rather than that storage, so no claim
+        // on the origin sees it. But a `&uniq` of an exclusive view is
+        // exactly the borrow through which an element write of the frozen
+        // range is made, and a `move` of one hands that write to a callee
+        // outright; both are the access the element write already is, taken
+        // one indirection earlier. Refusing them here is what makes the
+        // freeze a property of the loan rather than of the one statement
+        // form that happened to check it.
+        if matches!(access, AccessKind::UniqueBorrow | AccessKind::Move) {
+            let frozen: Vec<ResolvedPlace> = bindings
+                .values()
+                .flat_map(|local| local.slice_loans.iter())
+                .filter(|loan| {
+                    loan.strength == LoanStrength::Exclusive
+                        && loan.descriptors.contains(&place.root)
+                })
+                .map(|loan| loan.place.clone())
+                .collect();
+            if !frozen.is_empty() {
+                self.check_child_reborrow_freeze_at(
+                    bindings,
+                    &frozen,
+                    node,
+                    Simultaneity::OneStatementIsOneMoment,
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -1918,13 +1967,25 @@ and name it on the returned reborrow"
         origins: &[ResolvedPlace],
         node: NodeId,
     ) -> Result<(), CheckStop> {
+        self.check_child_reborrow_freeze_at(bindings, origins, node, Simultaneity::Sequential)
+    }
+
+    /// [S31, PROV-3] the freeze, with the caller stating how it reads a use
+    /// written in the same statement as the access.
+    fn check_child_reborrow_freeze_at(
+        &self,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        origins: &[ResolvedPlace],
+        node: NodeId,
+        simultaneity: Simultaneity,
+    ) -> Result<(), CheckStop> {
         for local in bindings.values() {
             for loan in &local.slice_loans {
                 if loan.strength == LoanStrength::Shared
                     && origins
                         .iter()
                         .any(|origin| places_overlap(&loan.place, origin))
-                    && self.slice_loan_is_live(loan, bindings, node)?
+                    && self.slice_loan_is_live_at(loan, bindings, node, simultaneity)?
                 {
                     return self.issue_node(
                         SemanticRule::Own5,
@@ -1956,12 +2017,22 @@ and name it on the returned reborrow"
         bindings: &HashMap<DeclarationId, LocalBinding>,
         node: NodeId,
     ) -> Result<bool, CheckStop> {
+        self.slice_loan_is_live_at(loan, bindings, node, Simultaneity::Sequential)
+    }
+
+    fn slice_loan_is_live_at(
+        &self,
+        loan: &SliceLoan,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+        node: NodeId,
+        simultaneity: Simultaneity,
+    ) -> Result<bool, CheckStop> {
         if loan.strength != LoanStrength::Shared || loan.descriptors.is_empty() {
             return Ok(true);
         }
         for holder in &loan.descriptors {
             let live = bindings.get(holder).is_none_or(|binding| binding.live);
-            if live && self.declaration_is_used_at_or_after(*holder, node)? {
+            if live && self.declaration_is_used_at_or_after(*holder, node, simultaneity)? {
                 return Ok(true);
             }
         }
@@ -1972,20 +2043,40 @@ and name it on the returned reborrow"
     ///
     /// Document order is the canonical tree's own child-ordinal path order,
     /// so a use at a later statement — in either arm of a later branch
-    /// included — compares greater. The one place where document order is
-    /// not execution order is a loop body: a use textually before this node
-    /// but inside the innermost loop body containing it follows the node on
-    /// the next iteration, so such a use keeps the loan live.
+    /// included — compares greater. Document order is not execution order in
+    /// two places, and both keep a loan live.
+    ///
+    /// A loop body is the first: a use textually before this node but inside
+    /// the innermost loop body containing it follows the node on the next
+    /// iteration.
+    ///
+    /// One simple statement is the second: this checker states no program
+    /// point between two operands of one statement, which is the very reason
+    /// a loan no binding holds keeps its region extent. A use in the same
+    /// `let`, `set`, expression or `return` statement as this access is
+    /// therefore simultaneous with it and not before it, whichever operand
+    /// the canonical order writes first.
     fn declaration_is_used_at_or_after(
         &self,
         declaration: DeclarationId,
         node: NodeId,
+        simultaneity: Simultaneity,
     ) -> Result<bool, CheckStop> {
         let here = self.tree.path(node)?.components().to_vec();
         let mut repeated: Option<Vec<u32>> = None;
+        let mut simultaneous: Option<Vec<u32>> = None;
         let mut current = self.tree.parent(node)?;
         while let Some(ancestor) = current {
             match self.tree.production(ancestor)? {
+                Production::LetStmt
+                | Production::SetStmt
+                | Production::ExprStmt
+                | Production::ReturnStmt
+                    if simultaneous.is_none()
+                        && simultaneity == Simultaneity::OneStatementIsOneMoment =>
+                {
+                    simultaneous = Some(self.tree.path(ancestor)?.components().to_vec());
+                }
                 Production::LoopStmt | Production::ForStmt => {
                     repeated = Some(self.tree.path(ancestor)?.components().to_vec());
                     break;
@@ -2008,6 +2099,12 @@ and name it on the returned reborrow"
             }
             let path = usage.origin().node().components();
             if path >= here.as_slice() {
+                return Ok(true);
+            }
+            if simultaneous
+                .as_ref()
+                .is_some_and(|statement| path.starts_with(statement.as_slice()))
+            {
                 return Ok(true);
             }
             if repeated

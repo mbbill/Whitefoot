@@ -1,0 +1,22 @@
+fn consume(view: own Slice<u8>, output: &uniq MutSlice<u8>) -> result: own unit pure {
+  doc "Takes a shared child and an exclusive borrow of the view that child came from.";
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "[OWN-5] a shared child freezes its parent view, and the freeze reaches the parent's holder and not only its elements. `&uniq writer` is the borrow through which an element write of the frozen range would be made, so it is the access the write already is, taken one indirection earlier; the two operands are written in one statement, between which this checker states no program point.";
+  region 'a {
+    let workspace = arena_frame::<8, 8, 'a>();
+    region {
+      let bytes = arena_vector_proved::<u8>(store: &uniq workspace, count: 2_u64);
+      region {
+        let writer = mut_slice_of(&uniq bytes);
+        region {
+          let view = slice_of(&bytes);
+          let done = consume(view: view, output: &uniq writer);
+        }
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
