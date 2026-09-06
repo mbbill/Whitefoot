@@ -4,8 +4,8 @@ fn tight(x: own u8, middle: own u8) -> result: own u8 pure contract {
 } {
   doc "expect REJECT PRF-1: target x <= 253 is actually false when x == middle == 254; only x <= 254 holds.";
   invariant upper_bound: x <= 253_u8 {
-    use x <= middle;
-    use middle <= 254_u8;
+    use (x <= middle);
+    use (middle <= 254_u8);
   }
   return x;
 }

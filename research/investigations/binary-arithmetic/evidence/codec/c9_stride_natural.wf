@@ -1,0 +1,30 @@
+fn sample_pixel(pixels: own buffer<u8>, row_stride: own u64, bytes_per_pixel: own u64, x: own u64, y: own u64, channel: own u64) -> value: own u8 reads(pixels) contract {
+  define room = len(pixels);
+  requires row_stride >= 1_u64;
+  requires row_stride <= 65536_u64;
+  requires bytes_per_pixel >= 1_u64;
+  requires bytes_per_pixel <= 8_u64;
+  requires channel < bytes_per_pixel;
+  requires x <= 65535_u64;
+  requires y <= 65535_u64;
+  requires room >= row_stride;
+} {
+  doc "NATURAL: read one channel of pixel (x, y) out of a raw image whose row stride and pixel size both come from the file header.";
+  let row_base = y * row_stride;
+  let column_base = x * bytes_per_pixel;
+  let pixel_base = row_base + column_base;
+  let at = pixel_base + channel;
+  return pixels[at];
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "a 4x2 RGB image with a 12-byte row stride; read the green channel of pixel (1, 1)";
+  let pixels = buffer_new(24_u64, 0_u8);
+  set pixels[16_u64] = 200_u8;
+  let green = sample_pixel(pixels: move pixels, row_stride: 12_u64, bytes_per_pixel: 3_u64, x: 1_u64, y: 1_u64, channel: 1_u64);
+  if green == 200_u8 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

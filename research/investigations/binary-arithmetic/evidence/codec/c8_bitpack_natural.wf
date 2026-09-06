@@ -1,0 +1,36 @@
+fn packed_value(page: own buffer<u8>, bits_per_value: own u64, index: own u64) -> value: own u32 reads(page) contract {
+  define room = len(page);
+  requires bits_per_value >= 1_u64;
+  requires bits_per_value <= 16_u64;
+  requires index <= 65535_u64;
+  requires room >= 4_u64;
+} {
+  doc "NATURAL: read one value out of a bit-packed column page whose element width comes from the page header.";
+  let bit_offset = index * bits_per_value;
+  let byte_index = bit_offset / 8_u64;
+  let bit_in_byte = bit_offset % 8_u64;
+  let low = page[byte_index];
+  let wide = cvt::<u8, u32>(low);
+  let shift = match cvt::<u64, u32>(bit_in_byte) {
+    Ok(value: narrowed) => {
+      give narrowed;
+    }
+    Err(error: too_wide) => {
+      give 0_u32;
+    }
+  }
+  let aligned = ishr.wrap(wide, shift);
+  return aligned;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "read the third 4-bit value of a packed page";
+  let page = buffer_new(8_u64, 0_u8);
+  set page[1_u64] = 32_u8;
+  let value = packed_value(page: move page, bits_per_value: 4_u64, index: 3_u64);
+  if value == 2_u32 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

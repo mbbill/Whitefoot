@@ -1,0 +1,15 @@
+fn fill_records(records: own u64, width: own u64) -> written: own u64 pure contract {
+  ensures written <= records * width;
+} {
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "CONTRACT probe: can an ensures clause carry a product relation across a function boundary?";
+  let n = fill_records(records: 3_u64, width: 3_u64);
+  if n == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

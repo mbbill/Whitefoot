@@ -1,0 +1,49 @@
+fn scan_frames(wire: own buffer<u8>) -> frames: own u64 reads(wire) {
+  doc "C4: wire format whose array header carries an element count and an element size; the frame body length is their product, checked against the bytes that remain.";
+  let room = len(wire);
+  let cursor = 0_u64;
+  let frames = 0_u64;
+  loop @scan (
+    invariant cursor_in_room: cursor <= room
+  ) {
+    let left = room - cursor;
+    let have_header = left >= 3_u64;
+    if have_header {
+    } else {
+      break @scan;
+    }
+    let count_byte = wire[cursor];
+    let size_index = cursor + 1_u64;
+    let size_byte = wire[size_index];
+    let count = cvt::<u8, u64>(count_byte);
+    let element_size = cvt::<u8, u64>(size_byte);
+    let body = count * element_size;
+    let header_end = cursor + 3_u64;
+    let body_room = room - header_end;
+    let complete = body <= body_room;
+    if complete {
+    } else {
+      break @scan;
+    }
+    let next = header_end + body;
+    set frames = frames +wrap 1_u64;
+    invariant next_in_room: header_end + body <= room;
+    set cursor = next;
+  }
+  return frames;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "two frames: 2 elements of 3 bytes, then 1 element of 2 bytes";
+  let wire = buffer_new(14_u64, 0_u8);
+  set wire[0_u64] = 2_u8;
+  set wire[1_u64] = 3_u8;
+  set wire[9_u64] = 1_u8;
+  set wire[10_u64] = 2_u8;
+  let seen = scan_frames(wire: move wire);
+  if seen == 2_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

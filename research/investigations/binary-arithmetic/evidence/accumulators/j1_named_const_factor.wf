@@ -1,0 +1,21 @@
+const item_limit: u64 = 1000000_u64;
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "PROBE: can a named const stand as the literal factor in an invariant?";
+  let counters = buffer_new(8_u64, 7_u64);
+  let total = 0_u64;
+  for (
+    i in 0_u64..8_u64,
+    invariant capped: total <= item_limit * i
+  ) {
+    let item = counters[i];
+    let item_ok = item <= item_limit;
+    if item_ok {
+    } else {
+      return exit_status(code: 2_u8);
+    }
+    invariant step: item <= item_limit;
+    set total = total + item;
+  }
+  return exit_status(code: 0_u8);
+}

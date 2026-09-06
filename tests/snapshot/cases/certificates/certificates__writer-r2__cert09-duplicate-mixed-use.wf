@@ -6,7 +6,7 @@ fn duplicate_mixed(alpha: own u16, alpha_cap: own u16, beta: own u16, beta_cap: 
   invariant pair_bound: alpha + beta <= alpha_cap + beta_cap;
   invariant tripled_bound: 3_u16 * alpha + 3_u16 * beta <= 3_u16 * alpha_cap + 3_u16 * beta_cap {
     use pair_bound;
-    use alpha + beta <= alpha_cap + beta_cap;
+    use (alpha + beta <= alpha_cap + beta_cap);
     use pair_bound;
   }
   return unit;

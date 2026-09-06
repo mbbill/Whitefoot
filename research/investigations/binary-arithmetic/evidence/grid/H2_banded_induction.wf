@@ -1,0 +1,62 @@
+fn banded_sum(pixels: &buffer<u8>, width: own u64, band_h: own u64, bands: own u64) -> total: own u64 reads(pixels) contract {
+  requires width <= 65536_u64;
+  requires band_h <= 64_u64;
+} {
+  doc "WORKAROUND: a three-level induction stack. Each level carries a base and a shadow remaining-bytes counter, and each level pays one runtime guard.";
+  let capacity = len(deref(pixels));
+  let acc = 0_u64;
+  let band_base = 0_u64;
+  let band_left = capacity;
+  for (
+    b in 0_u64..bands,
+    invariant band_lo: band_base + band_left <= capacity,
+    invariant band_hi: capacity <= band_base + band_left
+  ) {
+    let band_span = band_h * width;
+    let band_ok = band_span <= band_left;
+    if band_ok {
+    } else {
+      return acc;
+    }
+    invariant band_fits: band_base + band_span <= capacity;
+    let row_base = band_base;
+    let row_left = band_left;
+    for (
+      rr in 0_u64..band_h,
+      invariant row_lo: row_base + row_left <= capacity,
+      invariant row_hi: capacity <= row_base + row_left
+    ) {
+      let row_ok = width <= row_left;
+      if row_ok {
+      } else {
+        return acc;
+      }
+      invariant row_fits: row_base + width <= capacity;
+      for (c in 0_u64..width) {
+        invariant slot: row_base + c < capacity;
+        let at = row_base + c;
+        let byte = deref(pixels)[at];
+        let wide = cvt::<u8, u64>(byte);
+        set acc = acc +wrap wide;
+      }
+      set row_base = row_base + width;
+      set row_left = row_left - width;
+    }
+    set band_base = band_base + band_span;
+    set band_left = band_left - band_span;
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let pixels = buffer_new(16_u64, 1_u8);
+  region {
+    let p = &pixels;
+    let t = banded_sum(pixels: p, width: 4_u64, band_h: 2_u64, bands: 2_u64);
+    if t == 16_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -259,7 +259,11 @@ fn admissible_classes(role: LexicalUseRole, spelling: &str) -> Vec<DeclarationCl
         LexicalUseRole::FunctionBinding => vec![DeclarationClass::Function],
         LexicalUseRole::GenericNumericSuffix => vec![DeclarationClass::GenericType],
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
-            vec![DeclarationClass::Value]
+            // A named integer const is already an [ENT-2] constant term, so it
+            // denotes the same value in a proof relation that it denotes
+            // everywhere else; excluding it here forced the digits to be
+            // rewritten inline in every invariant that names the same limit.
+            vec![DeclarationClass::Value, DeclarationClass::NamedConst]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }
@@ -304,7 +308,11 @@ fn universe_classes(role: LexicalUseRole) -> Vec<DeclarationClass> {
         ],
         LexicalUseRole::OperationCallee => vec![DeclarationClass::OperationFamily],
         LexicalUseRole::InvariantValue | LexicalUseRole::ProofValue => {
-            vec![DeclarationClass::Value]
+            // A named integer const is already an [ENT-2] constant term, so it
+            // denotes the same value in a proof relation that it denotes
+            // everywhere else; excluding it here forced the digits to be
+            // rewritten inline in every invariant that names the same limit.
+            vec![DeclarationClass::Value, DeclarationClass::NamedConst]
         }
         LexicalUseRole::InvariantFact => vec![DeclarationClass::Invariant],
     }

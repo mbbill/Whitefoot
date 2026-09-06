@@ -1,0 +1,23 @@
+fn sum_items(items: own buffer<u32>, max_item: own u32) -> total: own u64 reads(items) {
+  let count = len(items);
+  let total = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant bounded: total <= i * max_item
+  ) {
+    let item = cvt::<u32, u64>(items[i]);
+    set total = total + item;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "NATURAL FORM: a running total bounded by count * max_item, both runtime.";
+  let items = buffer_new(4_u64, 100_u32);
+  let total = sum_items(items: move items, max_item: 100_u32);
+  if total == 400_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

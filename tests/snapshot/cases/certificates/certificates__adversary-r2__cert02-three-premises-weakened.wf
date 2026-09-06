@@ -8,9 +8,9 @@ fn bounded_sum(first: own u8, first_limit: own u8, second: own u8, second_limit:
 } {
   doc "Expect ACCEPT: three explicit premises combined (coefficient one each), target is a direct weakening (+1_u8 slack) of the exact weighted sum.";
   invariant total_bound: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }
   let sum = first + second;
   let result = sum + third;

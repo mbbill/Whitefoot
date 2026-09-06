@@ -290,38 +290,35 @@ fn classify_node(
                 complete_counts,
             )?;
         }
-        Production::ProofUse => {
-            // A relation-form use has no direct IDENT: its values sit inside
-            // the affine expressions and take the `ProofValue` role below. A
-            // named use has exactly one, the invariant it cites.
-            let relation_form = topology
-                .node_children(owner)
-                .ok_or(ResolutionCompilerFailure::InvalidCanonicalTree)?
-                .iter()
-                .any(|child| {
-                    topology
-                        .node(*child)
-                        .is_some_and(|record| record.production == Production::AffineExpr)
-                });
-            if relation_form {
-                if !names.is_empty() {
-                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
-                }
+        // The premise of a `proof_use` is a `use_premise` node, so the two
+        // productions each own at most one direct IDENT and they mean
+        // different things: on the `proof_use` it is a term multiplicity,
+        // `use n times X;`, which reads a runtime value in the proof domain;
+        // on the `use_premise` it is the invariant the premise cites. A
+        // bare-decimal multiplicity is not a name, and a relation premise has
+        // no direct IDENT because its values sit inside the affine
+        // expressions and take the `ProofValue` role below.
+        Production::ProofUse | Production::UsePremise => {
+            let role = if production == Production::ProofUse {
+                LexicalUseRole::ProofValue
             } else {
-                let [carrier] = names.as_slice() else {
-                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
-                };
-                if name_predicate(classified, *carrier) != Some(TerminalPredicate::Identifier) {
-                    return Err(ResolutionCompilerFailure::InvalidRoleShape);
+                LexicalUseRole::InvariantFact
+            };
+            match names.as_slice() {
+                [] => {}
+                [name]
+                    if name_predicate(classified, *name) == Some(TerminalPredicate::Identifier) =>
+                {
+                    add_complete(
+                        classified,
+                        owner,
+                        *name,
+                        RawRoleKind::LexicalUse(role),
+                        roles,
+                        complete_counts,
+                    )?;
                 }
-                add_complete(
-                    classified,
-                    owner,
-                    *carrier,
-                    RawRoleKind::LexicalUse(LexicalUseRole::InvariantFact),
-                    roles,
-                    complete_counts,
-                )?;
+                _ => return Err(ResolutionCompilerFailure::InvalidRoleShape),
             }
         }
         Production::AffineFactor if !names.is_empty() => {

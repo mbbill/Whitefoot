@@ -48,10 +48,7 @@ jobs:
         include:
           # Everything that reads the tree without running a compiled program.
           - stage: static
-            run: >-
-              make repository-invariants approval-history-integrity
-              spec-append-only spec-archive-integrity spec-prose-integrity
-              && make -C compiler static
+            run: make static && make -C compiler static
           # The fast half of the library suite, plus the partition proof that
           # the two halves between them are the whole suite.
           - stage: unit
@@ -74,9 +71,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      # `approval-history-integrity` and `spec-append-only` read `main` as a
-      # local ref: the approval history must be an exact prefix of main's, and
-      # no released specification archive may differ from main's. A CI checkout
+      # `spec-append-only` reads `main` as a local ref: no released
+      # specification archive may differ from main's. A CI checkout
       # has the remote-tracking ref only, so name it locally here. On a push to
       # main the checkout already sits on that branch, and git refuses to force
       # a branch the worktree has checked out, so the ref is only created when

@@ -1,0 +1,32 @@
+fn chunk_checksums(data: own buffer<u8>, chunk_size: own u64, out: &uniq buffer<u8>) -> chunks: own u64 reads(data), writes(out) contract {
+  define room = len(data);
+  define slots = len(deref(out));
+  requires chunk_size >= 1_u64;
+  requires chunk_size <= 4096_u64;
+  requires slots >= 4096_u64;
+} {
+  doc "NATURAL: split a payload into fixed-size chunks whose size is a runtime parameter, and record one byte per chunk.";
+  let room = len(data);
+  let chunk_count = room / chunk_size;
+  for (c in 0_u64..chunk_count) {
+    let base = c * chunk_size;
+    let byte = data[base];
+    set deref(out)[c] = byte;
+  }
+  return chunk_count;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "split 12 bytes into 3 chunks of 4";
+  let data = buffer_new(12_u64, 7_u8);
+  let out = buffer_new(4096_u64, 0_u8);
+  region {
+    let handle = &uniq out;
+    let seen = chunk_checksums(data: move data, chunk_size: 4_u64, out: move handle);
+    if seen == 3_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,31 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "WORKAROUND W1: keep the record/column nesting; pay a provably-true bounds compare and a dead arm per byte.";
+  let header = buffer_new(2_u64, 3_u8);
+  let records = cvt::<u8, u64>(header[0_u64]);
+  let width = cvt::<u8, u64>(header[1_u64]);
+  let out = buffer_new(16_u64, 0_u8);
+  let room = len(out);
+  let needed = records * width;
+  let layout_ok = needed <= room;
+  if layout_ok {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let written = 0_u64;
+  for (r in 0_u64..records) {
+    for (c in 0_u64..width) {
+      let in_range = written < room;
+      if in_range {
+      } else {
+        return exit_status(code: 3_u8);
+      }
+      set out[written] = 7_u8;
+      set written = written + 1_u64;
+    }
+  }
+  if written == 9_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

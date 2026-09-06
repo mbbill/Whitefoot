@@ -42,23 +42,35 @@ probably not the next work.
 
 ## Authority and reading
 
-- `docs/roadmap.md` records the project's current landscape: active
-  specification, direction status, gaps, evidence links, and candidate
-  projects. `docs/current-plan.md` records the latest high-level plan. Neither
-  file grants or withholds permission to work on a branch.
-- The active specification at `spec/kernel-spec.md`, named by
-  `docs/roadmap.md`, defines the language. Compiler behavior, tests, archived
+- Work is not planned in a document up front. A selected direction goes to
+  `research/investigations/<name>/` for its design, measurements, and rejected
+  alternatives, and the reasoning that survives it is written to `mcts_mem/`.
+- `docs/roadmap.md` is a reference map of long-range directions and candidate
+  projects. It is not part of this loop: nothing waits on it, no step updates
+  it, and it grants or withholds nothing. Read it for orientation; do not treat
+  a line in it as a statement of what the compiler currently does, which is the
+  specification's and `compiler/README.md`'s to say.
+- The active specification at `spec/kernel-spec.md` defines the language. Compiler behavior, tests, archived
   code, and design prose do not.
 - `docs/constitution.md` records project law and `docs/patterns.md` records writer
   forms.
-- `docs/done/`, architecture dossiers, `mcts_mem/`, and
-  `archive/governance/decision-log.md` preserve current or historical evidence
-  and rationale. They do not define live approval or workflow requirements.
-  Any imperative process wording retained in those evidence artifacts is
-  historical and superseded by the four rules below.
-- `governance/APPROVALS.md` is an append-only historical record and the home
-  for the merge-time records required below. Historical entries do not impose
-  current process.
+- `mcts_mem/` is where decisions are recorded: what was tried, what was
+  concluded, why a form was chosen, and which implementations it replaced.
+  Write there when a question is settled, not when a batch ends.
+- Architecture dossiers, `archive/done/`, and
+  `archive/governance/decision-log.md` preserve historical evidence and
+  rationale. `archive/done/` is the retired per-batch record: frozen, not
+  written to again, and not cited. A finished task is not evidence — a claim
+  that needs support cites the specification, a conformance case, a measured
+  result under `research/experiments/`, a design under
+  `research/investigations/`, or a decision in `mcts_mem/`. None of these
+  defines live approval or workflow requirements. Any imperative process
+  wording retained in those evidence artifacts is historical and superseded by
+  the four rules below.
+- `archive/APPROVALS.md` is the retired approval ledger, frozen with the rest
+  of `archive/`. It recorded merge-time content when approval ran ahead of
+  implementation; that loop is gone, and the specification's bytes are now its
+  own identity.
 
 Read only the material relevant to the current task. Do not turn historical
 research into an implied implementation requirement.
@@ -74,11 +86,39 @@ These are the complete approval and workflow rules:
    revision to be merged.
 3. The exact revision merged into `main` must pass all repository tests through
    the canonical `make check` entry point before the merge.
-4. If the merge changes `spec/kernel-spec.md` or conformance evidence,
-   `governance/APPROVALS.md` records the content the owner approved as part of
-   the merge. A specification record identifies the exact specification bytes;
-   a conformance record identifies the exact added, modified, deleted, or
-   renamed conformance content and its before/after boundary.
+4. If the merge changes `spec/kernel-spec.md` or conformance evidence, the
+   pull request states what changed and its selection ground, answered against
+   the exact revision being merged. There is no separate ledger: the
+   specification's bytes are its identity, the released archives are
+   immutable, and git is the history.
+
+What the four rules mean exactly:
+
+- **Work branch** is any branch other than `main`. Branch work never pauses for
+  approval, including when it edits a specification, conformance evidence, or
+  these rules.
+- **Exact revision** is the complete tree that will enter `main`. If that tree
+  changes after approval or after its successful test run, rules 2 and 3 apply
+  to the new revision.
+- **All repository tests** is the root `make check` target: the compiler build,
+  format and lint, every maintained executable test target in the compiler and
+  the active research experiments, the specification checks, conformance
+  structure and coverage, and the full native conformance adapter including the
+  case ordinary Cargo runs mark ignored. A file retained as a deferred or
+  historical artifact that cannot run against the current toolchain is
+  evidence, not a test target.
+- **Conformance evidence** is `tests/conformance` case source and manifest
+  content, its runner and adapter, and any collection or invocation wiring that
+  can change which cases run or how their results are read.
+
+A specification amendment lands as one change: the active file retitled and
+redeclared vN+1, and the outgoing vN bytes archived as
+`spec/kernel-spec-vN.md`. Its identity follows its bytes without being
+recorded anywhere — `compiler/build.rs` derives it. The version number is
+claimed on the branch and settled at merge: two branches archive the same
+outgoing bytes under the same name, so only the new number collides, and the
+second to merge retitles two lines and rebuilds. There is no candidate state;
+a branch carrying an amendment is merge-ready when its gate is green.
 
 No plan status, branch charter, batch record, worktree arrangement, audit,
 packet, rebase method, commit shape, or other workflow step is an additional

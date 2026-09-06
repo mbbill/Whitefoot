@@ -8,8 +8,8 @@ fn probe(table: own buffer<u8>, lo: own u64, hi: own u64) -> found: own u8 reads
   let half = span / 2_u64;
   let mid = lo + half;
   invariant inside: mid < hi {
-    use lo < hi;
-    use 2_u64 * half <= span;
+    use (lo < hi);
+    use (2_u64 * half <= span);
   }
   let byte = table[mid];
   return byte;

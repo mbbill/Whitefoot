@@ -1,0 +1,20 @@
+fn inner(p: own u64, k: own u64, j: own u64) -> at: own u64 pure contract {
+  requires k <= 1000_u64;
+  requires p < k;
+  requires j < 4_u64;
+} {
+  doc "The matmul inner index at a literal stride: 4p + j < 4k, by one scaled premise and one plain one.";
+  let span = 4_u64 * k;
+  let base = 4_u64 * p;
+  let at = base + j;
+  invariant fits: 4_u64 * p + j < span {
+    use 4 times (p < k);
+    use (j < 4_u64);
+  }
+  return at;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = inner(p: 1_u64, k: 2_u64, j: 3_u64);
+  return exit_status(code: 0_u8);
+}

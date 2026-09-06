@@ -1,0 +1,51 @@
+fn column_sum(data: own buffer<u8>, record_width: own u64, record_count: own u64, field: own u64) -> total: own u64 reads(data) contract {
+  define room = len(data);
+  requires record_width >= 1_u64;
+  requires record_width <= 64_u64;
+  requires record_count <= 65535_u64;
+  requires field < record_width;
+  requires room >= record_count;
+} {
+  doc "WORKAROUND A: walk the table with a running record cursor and stop when no whole record remains; no product ever reaches the index path.";
+  let room = len(data);
+  let total = 0_u64;
+  let cursor = 0_u64;
+  let seen = 0_u64;
+  loop @records (
+    invariant cursor_in_room: cursor <= room
+  ) {
+    let done = seen >= record_count;
+    if done {
+      break @records;
+    }
+    let left = room - cursor;
+    let has_record = record_width <= left;
+    if has_record {
+    } else {
+      break @records;
+    }
+    let at = cursor + field;
+    let byte = data[at];
+    let wide = cvt::<u8, u64>(byte);
+    set total = total +wrap wide;
+    set seen = seen +wrap 1_u64;
+    invariant next_cursor: cursor + record_width <= room;
+    set cursor = cursor + record_width;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "a 4-record table of 3-byte records; sum column 1";
+  let table = buffer_new(12_u64, 0_u8);
+  set table[1_u64] = 10_u8;
+  set table[4_u64] = 20_u8;
+  set table[7_u64] = 30_u8;
+  set table[10_u64] = 40_u8;
+  let total = column_sum(data: move table, record_width: 3_u64, record_count: 4_u64, field: 1_u64);
+  if total == 100_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

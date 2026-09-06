@@ -28,8 +28,9 @@ use super::super::model::{
     CheckedArrayRoot, CheckedBooleanOperation, CheckedConst, CheckedConstructor, CheckedEnumType,
     CheckedExpression, CheckedFloatOperation, CheckedFunction, CheckedIntegerOperation,
     CheckedLoopId, CheckedLoopInvariant, CheckedMatchArm, CheckedMode, CheckedNominal,
-    CheckedNominalKind, CheckedNumericType, CheckedProofUseSource, CheckedSetTarget,
-    CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType, ValueInitializerKind,
+    CheckedNominalKind, CheckedNumericType, CheckedProofMultiplicity, CheckedProofUseSource,
+    CheckedSetTarget, CheckedStatement, CheckedType, CheckedValue, FloatType, IntegerType,
+    ValueInitializerKind,
 };
 use super::super::places::{BindingSummary, PlaceMap, ResolvedPlace};
 use super::super::postcondition::{
@@ -42,6 +43,7 @@ use super::affine::{
     integer_tightenings, interval_maximum, interval_proves, sum_explicit_inequalities,
     sum_explicit_scaled_inequalities,
 };
+use super::polynomial::{CertificatePolynomial, PolynomialError};
 use super::state::{
     AffinePremiseUse, ClosedState, CountedRootAtom, DerivationId, DerivationInventory,
     DerivationLedger, DerivationNode, DerivationRootKind, FactState, FlowEventId, FlowEventKind,
@@ -201,6 +203,31 @@ struct ProofFlowState {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 struct AffineFlowState {
     values: HashMap<BindingId, AffineForm>,
+    /// The affine atom standing for the measure of each unprojected place
+    /// live at this point, keyed by that place's root binding.
+    ///
+    /// A measure is fixed at its object's creation and an element write never
+    /// moves it [ENT-5], so the atom is stable while the object is: it is
+    /// minted once on first use and re-minted only when a write to that root
+    /// binding removes the entry, exactly as the binding's own image is.
+    /// Facts name the immutable atom and never this map, so a replacement
+    /// value cannot match an image published before the write. Keying on the
+    /// root binding rather than on an interned measure term is what lets a
+    /// read resolve the atom without interning anything.
+    length_values: HashMap<BindingId, AffineForm>,
+    /// One atom standing for the whole value of a binding whose image is not
+    /// already a single atom, minted on first demand.
+    ///
+    /// A local's image is transparent — `let stride = width + padding;` gives
+    /// `stride` the image `width + padding` — which is what an affine relation
+    /// wants and what [PRF-1]'s fold cannot use: a product over `stride`
+    /// distributes into its operands and no admitted multiplication matches
+    /// the pieces. This map is the opposite handle on the same binding, one
+    /// value the certificate can name, and the fact published beside it keeps
+    /// the transparent reading available to everything else. Keyed and killed
+    /// exactly as `values` is, so a write mints a fresh handle for a fresh
+    /// value.
+    opaque_values: HashMap<BindingId, AffineForm>,
     /// Every published affine conclusion at this control-flow point. Fact
     /// identity is only the canonical inequality over immutable value images;
     /// evidence is retained solely to explain a selected derivation.
@@ -342,6 +369,11 @@ struct ProofResult {
     route: Option<ProofRoute>,
     derivation: Option<DerivationId>,
     numeric_upper_bound: Option<ProvedNumericUpperBound>,
+    /// The interval [ENT-6]'s fixed interval-product rule proved for an
+    /// admitted non-constant multiplication. Carried out of the judgment so
+    /// [ENT-3.S14] publishes exactly the measurement the domain decision
+    /// consumed, rather than proving the same endpoints a second time.
+    product_interval: Option<AffineProductInterval>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -471,6 +503,77 @@ struct AffineIntegerProduct {
     left: AffineForm,
     right: AffineForm,
     ty: IntegerType,
+}
+
+/// One written multiplicity, resolved where the certificate is checked.
+///
+/// A named multiplicity carries the value image its binding holds at the
+/// entering program point, so the scaling step reads a value rather than a
+/// name and a later write cannot change what was scaled.
+#[derive(Clone, Debug)]
+enum CertificateMultiplicity {
+    Literal(i128),
+    Value(AffineForm),
+}
+
+/// The accumulated [PRF-1] certificate sum.
+///
+/// A bare-decimal certificate stays in `Affine` for its whole accumulation and
+/// reaches the residual as the inequality it always formed. The first term
+/// multiplicity moves the accumulation to `Nonlinear`, where it stays until
+/// the nonlinear monomials fold back to admitted products.
+enum CertificateSum {
+    Empty,
+    Affine(AffineInequality),
+    Nonlinear(CertificatePolynomial),
+}
+
+/// Why one accumulation step could not form, before it is attributed to the
+/// written entry that caused it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CertificateStepFailure {
+    Overflow,
+    UseCapacity,
+    Formation,
+    InvalidFactor,
+}
+
+impl From<AffineCheckError> for CertificateStepFailure {
+    fn from(error: AffineCheckError) -> Self {
+        match error {
+            AffineCheckError::ArithmeticOverflow => Self::Overflow,
+            AffineCheckError::LimitExceeded(AffineCheckLimit::CertificatePremises) => {
+                Self::UseCapacity
+            }
+            AffineCheckError::LimitExceeded(_) | AffineCheckError::CoefficientMismatch => {
+                Self::Formation
+            }
+            AffineCheckError::InvalidCertificateFactor => Self::InvalidFactor,
+        }
+    }
+}
+
+impl From<PolynomialError> for CertificateStepFailure {
+    fn from(error: PolynomialError) -> Self {
+        match error {
+            PolynomialError::ArithmeticOverflow => Self::Overflow,
+            // A degree-three product means one written multiplicity scaled a
+            // premise that already carried a nonlinear monomial; nothing in
+            // [PRF-1] forms such a step, so it stops as a formation failure
+            // rather than as a claim about the writer's factor.
+            PolynomialError::DegreeExceeded | PolynomialError::LimitExceeded => Self::Formation,
+        }
+    }
+}
+
+/// What the fixed interval-product rule proved about one admitted
+/// multiplication: the inclusive interval its four endpoint products bound,
+/// and the affine consequences that proved the operand endpoints.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct AffineProductInterval {
+    minimum: i128,
+    maximum: i128,
+    consequences: Box<[DerivationId]>,
 }
 
 #[derive(Clone, Copy)]
@@ -716,6 +819,10 @@ fn run(function: &CheckedFunction, context: &EntailmentContext<'_>) -> AnalysisR
         goals: GoalTable::default(),
         derivations: DerivationLedger::default(),
         obligations: Vec::new(),
+        product_intervals: HashMap::new(),
+        product_operands: HashSet::new(),
+        product_atoms: HashMap::new(),
+        handle_images: HashMap::new(),
         call_goals: Vec::new(),
         counted_derivations: Vec::new(),
         loop_invariants: Vec::new(),
@@ -944,6 +1051,32 @@ struct Analyzer<'check, 'unit> {
     goals: GoalTable,
     derivations: DerivationLedger,
     obligations: Vec<ObligationOutcome>,
+    /// The interval [ENT-6]'s interval-product rule proved at each admitted
+    /// non-constant multiplication, keyed by that operation's own node. The
+    /// domain is judged while the initializer is walked and [ENT-3.S14]
+    /// establishes at the binding the walk then reaches, so the measurement
+    /// waits here between the two rather than being proved again.
+    product_intervals: HashMap<crate::NodePath, AffineProductInterval>,
+    /// Which exact multiplications discharged their [OP-2] domain over affine
+    /// operand images, keyed by the operation's own node. Read once at the
+    /// binding the walk then reaches, exactly as the interval above is. It
+    /// records only that the domain held: which values the fold names is a
+    /// separate question the binding answers.
+    product_operands: HashSet<crate::NodePath>,
+    /// What every admitted exact product equals, as value identities: the atom
+    /// the multiplication bound, and the two operand atoms it is the product
+    /// of.
+    ///
+    /// An `AffineTermId` names one immutable value, so this map needs no kill
+    /// and no join: a write to the product or to an operand mints a new atom,
+    /// which is simply absent here, while the old atoms keep denoting the old
+    /// values and the recorded equality stays true. [PRF-1] reads it to fold a
+    /// term-scaled premise's nonlinear monomials back to affine.
+    product_atoms: HashMap<AffineTermId, (AffineTermId, AffineTermId)>,
+    /// What each minted opaque handle stands for. An `AffineTermId` is one
+    /// immutable value identity, so this needs no kill and no join, exactly as
+    /// `product_atoms` does.
+    handle_images: HashMap<AffineTermId, AffineForm>,
     call_goals: Vec<CallGoalOutcome>,
     counted_derivations: Vec<CountedDerivationSet>,
     loop_invariants: Vec<LoopInvariantOutcome>,
@@ -1356,6 +1489,12 @@ impl Analyzer<'_, '_> {
                 projections,
                 ty: CheckedType::Integer(_),
             }) if projections.is_empty() => state.values.get(root).cloned(),
+            GoalExpression::Operation { row, arguments, .. }
+                if Self::measure_place_root(row, arguments).is_some() =>
+            {
+                let root = Self::measure_place_root(row, arguments)?;
+                state.length_values.get(&root).cloned()
+            }
             GoalExpression::Operation {
                 row:
                     GoalOperation::NumericConversion {
@@ -3357,7 +3496,7 @@ impl Analyzer<'_, '_> {
         }
         self.promote_flow_contradiction(states);
         self.apply_kills_one(&mut states.facts, events);
-        Self::apply_affine_kills(&mut states.affine, events);
+        self.apply_affine_kills(&mut states.affine, events);
         self.invalidate_entry_images(states, events, None);
     }
 
@@ -3455,6 +3594,9 @@ impl Analyzer<'_, '_> {
             .copied()
             .collect::<HashSet<_>>();
         state.values.retain(|binding, _| !exited.contains(binding));
+        state
+            .length_values
+            .retain(|binding, _| !exited.contains(binding));
     }
 
     fn exit_scopes_to(&mut self, states: &mut ProofFlowState, depth: usize) {
@@ -5095,6 +5237,7 @@ impl Analyzer<'_, '_> {
                                     .expect("reached actuals have admitted argument slots"),
                             ),
                         );
+                        self.install_measure_atoms(&goal.root, &mut states.affine);
                         let (disposition, derivation) = self.judge_call_goal(
                             *function,
                             call,
@@ -5309,6 +5452,59 @@ impl Analyzer<'_, '_> {
         }
     }
 
+    /// The root binding of the place one measure operation measures, when
+    /// that place is the whole object rather than a part of it.
+    ///
+    /// A holder is named through `deref` and a value directly, and
+    /// `length_term` already derives which from the binding itself, so both
+    /// spellings key the same measure. A field projection names a different
+    /// object and is not this measure.
+    fn measure_place_root(row: &GoalOperation, arguments: &[GoalExpression]) -> Option<BindingId> {
+        if !matches!(
+            row,
+            GoalOperation::BufferLength { .. } | GoalOperation::SliceLength { .. }
+        ) {
+            return None;
+        }
+        let [
+            GoalExpression::Datum(GoalDatum::Place {
+                root, projections, ..
+            }),
+        ] = arguments
+        else {
+            return None;
+        };
+        match projections.as_slice() {
+            [] | [GoalProjection::Deref] => Some(*root),
+            _ => None,
+        }
+    }
+
+    /// Mints the stable affine atom for every measure this goal names, so the
+    /// read path can image it without interning anything.
+    ///
+    /// A measure of an unprojected place is one unknown u64 fixed at the
+    /// object's creation [ENT-5]. Installing it here rather than at the read
+    /// is what keeps `affine_goal_value` a pure read: the atom exists before
+    /// the proof runs, and the kill rule removes it when the root binding is
+    /// written, which is what re-mints it.
+    fn install_measure_atoms(&mut self, expression: &GoalExpression, state: &mut AffineFlowState) {
+        match expression {
+            GoalExpression::Operation { row, arguments, .. } => {
+                if let Some(root) = Self::measure_place_root(row, arguments)
+                    && !state.length_values.contains_key(&root)
+                {
+                    let atom = self.new_affine_atom(IntegerType::U64);
+                    state.length_values.insert(root, atom);
+                }
+                for argument in arguments {
+                    self.install_measure_atoms(argument, state);
+                }
+            }
+            GoalExpression::Datum(_) => {}
+        }
+    }
+
     fn judge_call_goal(
         &mut self,
         callee: super::super::model::FunctionId,
@@ -5463,6 +5659,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         let facts = Self::affine_facts(context.affine);
@@ -5474,6 +5671,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
@@ -5486,6 +5684,7 @@ impl Analyzer<'_, '_> {
             route: Some(ProofRoute::Affine),
             derivation: Some(derivation),
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -5508,6 +5707,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -5539,6 +5739,7 @@ impl Analyzer<'_, '_> {
                     &mut self.derivations,
                 ),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -5565,32 +5766,40 @@ impl Analyzer<'_, '_> {
                 }),
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
-        if let Some(target) = affine_target
-            && let Some(relation) = self.goals.projection(goal).cloned()
-        {
+        // The affine target is this goal's own comparison, normalized. Proving
+        // it proves the goal, so the L0 projection is what the evidence names,
+        // not what the route needs: a goal that carries a coefficient has no
+        // two-term projection to name and is proved by the consequence alone.
+        if let Some(target) = affine_target {
+            let projection = self.goals.projection(goal).cloned();
             let assumptions = Self::affine_facts(context.affine);
             if let Some(proof) =
                 self.affine_target_proof(target, &assumptions, context.affine, context.facts)
             {
                 let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
-                    relation: Some(Box::new(relation.clone())),
+                    relation: projection.clone().map(Box::new),
                     premises: proof.premises.into_boxed_slice(),
                     parents: proof.parents,
                 });
-                let derivation = self.derivations.intern(DerivationNode::GoalProjection {
-                    goal,
-                    sign: GoalSign::Positive,
-                    relation,
-                    parent: consequence,
-                });
+                let derivation = match projection {
+                    Some(relation) => self.derivations.intern(DerivationNode::GoalProjection {
+                        goal,
+                        sign: GoalSign::Positive,
+                        relation,
+                        parent: consequence,
+                    }),
+                    None => consequence,
+                };
                 return ProofResult {
                     disposition: ProofDisposition::Proved,
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5611,6 +5820,7 @@ impl Analyzer<'_, '_> {
             route: derivation.map(|_| ProofRoute::Affine),
             derivation,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -5756,6 +5966,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if closed.derives(relation) {
@@ -5768,6 +5979,7 @@ impl Analyzer<'_, '_> {
                         .expect("a proved L0 relation must retain its local derivation"),
                 ),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if closed.derives(&relation.negated()) {
@@ -5776,6 +5988,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::L0),
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -5785,6 +5998,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let assumptions = Self::affine_facts(context.affine);
@@ -5796,6 +6010,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let derivation = self.derivations.intern(DerivationNode::AffineConsequence {
@@ -5808,6 +6023,7 @@ impl Analyzer<'_, '_> {
             route: Some(ProofRoute::Affine),
             derivation: Some(derivation),
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -5831,6 +6047,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if let Some(canonical) = canonical {
@@ -5840,6 +6057,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: closed.opaque_proof(canonical, GoalSign::Positive),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.holds_opaque(canonical, GoalSign::Negative) {
@@ -5848,6 +6066,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5864,6 +6083,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.derives(&relation.negated()) {
@@ -5872,6 +6092,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5892,6 +6113,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5916,6 +6138,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
 
@@ -5936,6 +6159,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::Affine),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -5945,6 +6169,7 @@ impl Analyzer<'_, '_> {
             route: None,
             derivation: None,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -6020,6 +6245,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: closed.contradiction_proof(),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
         if let Some(goal) = goal {
@@ -6029,6 +6255,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: closed.opaque_proof(goal, GoalSign::Positive),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.holds_opaque(goal, GoalSign::Negative) {
@@ -6037,6 +6264,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -6051,6 +6279,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.derives(&relation.negated()) {
@@ -6059,6 +6288,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::L0),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -6069,6 +6299,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let assumptions = Self::affine_facts(context.affine);
@@ -6080,6 +6311,7 @@ impl Analyzer<'_, '_> {
                 route: None,
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         };
         let consequence = self.derivations.intern(DerivationNode::AffineConsequence {
@@ -6093,6 +6325,7 @@ impl Analyzer<'_, '_> {
             route: Some(ProofRoute::Affine),
             derivation: Some(derivation),
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -6859,6 +7092,30 @@ impl Analyzer<'_, '_> {
         let discharged = outcome.disposition == ProofDisposition::Proved;
         let refuted = outcome.disposition == ProofDisposition::Refuted;
         let contradictory = outcome.route == Some(ProofRoute::Contradiction);
+        // Both records below describe this walk of this operation. A loop body
+        // is walked more than once and the same node then carries different
+        // operand values each time, so the previous walk's measurement is
+        // dropped before this one decides: a judgment that does not discharge
+        // must leave nothing behind for the binding to read.
+        self.product_intervals.remove(node_path);
+        self.product_operands.remove(node_path);
+        // [ENT-3.S14] publishes only what an admitted multiplication proved,
+        // so the interval is retained exactly when this obligation discharged
+        // through the interval-product route.
+        if discharged && let Some(interval) = outcome.product_interval.clone() {
+            self.product_intervals.insert(node_path.clone(), interval);
+        }
+        // That the exact multiplication's domain held, for [PRF-1] to fold a
+        // term-scaled premise against. Recorded only when the domain
+        // discharged through an affine route, which is what committed
+        // `prepared_affine` and so fixed the images the judgment read.
+        if discharged
+            && outcome.route == Some(ProofRoute::Affine)
+            && operation == CheckedIntegerOperation::MultiplyExact
+            && affine_product.is_some()
+        {
+            self.product_operands.insert(node_path.clone());
+        }
         let ordinal = u32::try_from(self.obligations.len())
             .expect("ENT obligation-root ordinal exceeds the u32 identity space");
         if let Some(root) = outcome.derivation {
@@ -7180,10 +7437,11 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Affine),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
-        if let Some(derivation) = goal.affine_product.and_then(|product| {
+        if let Some((derivation, interval)) = goal.affine_product.and_then(|product| {
             self.affine_integer_product_derivation(
                 product,
                 context.affine,
@@ -7196,6 +7454,11 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Affine),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                // [ENT-3.S14] establishes this interval on whatever value the
+                // multiplication binds. It travels with the judgment because
+                // only this route proved it: a domain discharged by the finite
+                // L0 or affine-clause route publishes no product interval.
+                product_interval: Some(interval),
             };
         }
 
@@ -7204,6 +7467,7 @@ impl Analyzer<'_, '_> {
             route: None,
             derivation: None,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -7243,6 +7507,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::Contradiction),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -7260,6 +7525,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: Some(derivation),
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
             if closed.holds_opaque(canonical, GoalSign::Negative) {
@@ -7268,6 +7534,7 @@ impl Analyzer<'_, '_> {
                     route: Some(ProofRoute::FiniteGoal),
                     derivation: None,
                     numeric_upper_bound: None,
+                    product_interval: None,
                 };
             }
         }
@@ -7321,6 +7588,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::L0),
                 derivation: Some(derivation),
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -7344,6 +7612,7 @@ impl Analyzer<'_, '_> {
                 route: Some(ProofRoute::L0),
                 derivation: None,
                 numeric_upper_bound: None,
+                product_interval: None,
             };
         }
 
@@ -7352,6 +7621,7 @@ impl Analyzer<'_, '_> {
             route: None,
             derivation: None,
             numeric_upper_bound: None,
+            product_interval: None,
         }
     }
 
@@ -7433,7 +7703,26 @@ impl Analyzer<'_, '_> {
         affine: &AffineFlowState,
         facts: &FactState,
         goal: Option<GoalId>,
-    ) -> Option<DerivationId> {
+    ) -> Option<(DerivationId, AffineProductInterval)> {
+        let interval = self.affine_integer_product_interval(product, affine, facts)?;
+        let derivation = self.derivations.intern(DerivationNode::IntegerDomain {
+            goal,
+            parents: interval.consequences.to_vec(),
+        });
+        Some((derivation, interval))
+    }
+
+    /// The one measurement the fixed interval-product rule performs. The four
+    /// endpoint products decide [ENT-6]'s domain admission and bound
+    /// [ENT-3.S14]'s published interval, so both read this result rather than
+    /// proving the same endpoints twice: the admitted range and the published
+    /// bound then cannot disagree by construction.
+    fn affine_integer_product_interval(
+        &mut self,
+        product: &AffineIntegerProduct,
+        affine: &AffineFlowState,
+        facts: &FactState,
+    ) -> Option<AffineProductInterval> {
         let assumptions = Self::affine_facts(affine);
         let left = self.affine_closed_interval_proof(&product.left, &assumptions, affine, facts)?;
         let right =
@@ -7452,8 +7741,13 @@ impl Analyzer<'_, '_> {
         {
             return None;
         }
+        // The extrema of a product over two inclusive intervals occur among
+        // exactly these four pairs, so the tightest interval the rule can
+        // state is their own minimum and maximum.
+        let minimum = *products.iter().min()?;
+        let maximum = *products.iter().max()?;
 
-        let consequences = [
+        let consequences: Vec<DerivationId> = [
             left.minimum.consequence,
             left.maximum.consequence,
             right.minimum.consequence,
@@ -7468,10 +7762,11 @@ impl Analyzer<'_, '_> {
             })
         })
         .collect();
-        Some(self.derivations.intern(DerivationNode::IntegerDomain {
-            goal,
-            parents: consequences,
-        }))
+        Some(AffineProductInterval {
+            minimum,
+            maximum,
+            consequences: consequences.into_boxed_slice(),
+        })
     }
 
     /// Computes the tightest endpoint found by the existing coefficient-one
@@ -7965,6 +8260,56 @@ impl Analyzer<'_, '_> {
         Some(self.new_affine_atom(ty))
     }
 
+    /// The one atom that stands for a binding's whole value, for the length of
+    /// one certificate.
+    ///
+    /// A binding whose image is already a single atom is its own handle and
+    /// mints nothing. Otherwise a fresh atom is minted and the image it stands
+    /// for is remembered, so the handle can be unfolded again before anything
+    /// is proved.
+    ///
+    /// [PRF-1]'s fold needs this because a local's image is transparent by
+    /// design. `let stride = width + padding; let base = stride * row;` gives
+    /// the product the operands `width + padding` and `row`, so a certificate
+    /// scaling by `stride` distributes into pieces no admitted multiplication
+    /// matches. Naming the binding on both sides — the product it forms and
+    /// the multiplicity that scales by it — is what makes the two agree, and
+    /// it is the rule [PRF-1] already states one sentence away for a named
+    /// premise: resolve by the declaration the writer wrote, not by whatever
+    /// that declaration currently expands to.
+    ///
+    /// The handle is deliberately not published as a fact and does not replace
+    /// the binding's image. Both were tried and both cost more than they
+    /// bought: a published equality is invisible to the residual, which is the
+    /// direct L0 route by rule, and replacing the image makes every ordinary
+    /// premise about the binding need that equality to prove. Keeping it a
+    /// name that exists between the fold and the residual leaves the rest of
+    /// the checker reading exactly what it read before.
+    fn affine_opaque_handle(
+        &mut self,
+        binding: BindingId,
+        state: &mut AffineFlowState,
+    ) -> Option<AffineForm> {
+        if let Some(image) = state.values.get(&binding)
+            && image.unit_term().is_some()
+        {
+            return Some(image.clone());
+        }
+        if let Some(handle) = state.opaque_values.get(&binding) {
+            return Some(handle.clone());
+        }
+        let handle = self.new_affine_binding_atom(binding)?;
+        let Some(image) = state.values.get(&binding).cloned() else {
+            state.values.insert(binding, handle.clone());
+            state.opaque_values.insert(binding, handle.clone());
+            return Some(handle);
+        };
+        let atom = handle.unit_term()?;
+        self.handle_images.insert(atom, image);
+        state.opaque_values.insert(binding, handle.clone());
+        Some(handle)
+    }
+
     /// Intersects every published affine fact by canonical numeric content,
     /// then records representative predecessor evidence for diagnostics.
     ///
@@ -8139,8 +8484,40 @@ impl Analyzer<'_, '_> {
             };
             values.insert(binding, value);
         }
+        let mut length_values = HashMap::new();
+        // An opaque handle is a convenience for one certificate, not a fact,
+        // so a join keeps none: the next demand re-mints against whatever the
+        // joined image is.
+        let opaque_values: HashMap<BindingId, AffineForm> = HashMap::new();
+        // A measure is not arithmetic-updated, so there is no spread for a
+        // join delta to stand for: inputs that disagree disagree because some
+        // branch replaced the object, and the next read mints a new unknown.
+        let mut measures = first
+            .affine
+            .length_values
+            .keys()
+            .copied()
+            .collect::<Vec<_>>();
+        measures.sort_by_key(|binding| binding.0);
+        for binding in measures {
+            let Some(first_value) = first.affine.length_values.get(&binding) else {
+                continue;
+            };
+            if states.iter().skip(1).all(|state| {
+                state
+                    .affine
+                    .length_values
+                    .get(&binding)
+                    .is_some_and(|value| value == first_value)
+            }) {
+                length_values.insert(binding, first_value.clone());
+            }
+        }
+
         AffineFlowState {
             values,
+            length_values,
+            opaque_values,
             facts: self.join_affine_facts(states),
             published_invariants: first
                 .affine
@@ -8623,6 +9000,72 @@ impl Analyzer<'_, '_> {
             return None;
         };
         self.affine_pre_domain_form(dividend, state)
+    }
+
+    /// Records what one admitted exact multiplication's bound value equals.
+    ///
+    /// The domain judgment already measured the operands where the product was
+    /// formed; this pairs that measurement with the atom the binding took, so
+    /// [PRF-1] can recognize `n*p` in a certificate sum as the value `base`
+    /// already holds. A product whose result image is not one atom — a
+    /// conversion, a further operation — records nothing, because there is
+    /// then no single value the monomial equals.
+    fn record_product_atom(
+        &mut self,
+        binding: BindingId,
+        value: &CheckedExpression,
+        state: &mut AffineFlowState,
+    ) {
+        let CheckedExpression::IntegerOperation {
+            carrier, arguments, ..
+        } = value
+        else {
+            return;
+        };
+        if !self.product_operands.contains(carrier) {
+            return;
+        }
+        let [left, right] = arguments.as_slice() else {
+            return;
+        };
+        // What proved the domain and what the fold names are two questions.
+        // The domain judgment reads the transparent images, whose intervals are
+        // what admit the multiply at all; the record names the bindings, so a
+        // certificate scaling by one of them meets the same value here. Reading
+        // handles at the domain site instead was tried and costs the interval:
+        // an opaque operand is only bounded by its type, and the four endpoint
+        // products then leave the range.
+        let (Some(left), Some(right)) = (
+            self.affine_operand_handle(left, state),
+            self.affine_operand_handle(right, state),
+        ) else {
+            return;
+        };
+        let Some(product) = state.values.get(&binding).and_then(AffineForm::unit_term) else {
+            return;
+        };
+        self.product_atoms
+            .insert(product, (left.min(right), left.max(right)));
+    }
+
+    /// The atom a multiplication's operand contributes to the fold: the
+    /// binding's opaque handle when the operand is a plain read of one, and
+    /// nothing otherwise.
+    fn affine_operand_handle(
+        &mut self,
+        operand: &CheckedExpression,
+        state: &mut AffineFlowState,
+    ) -> Option<AffineTermId> {
+        let CheckedExpression::Binding { binding, ty, .. } = operand else {
+            return None;
+        };
+        let CheckedType::Integer(integer) = *ty else {
+            return None;
+        };
+        if self.affine_binding_type(*binding) != Some(integer) {
+            return None;
+        }
+        self.affine_opaque_handle(*binding, state)?.unit_term()
     }
 
     /// Retains the second fixed consequence of one S7 unsigned division:
@@ -9110,8 +9553,8 @@ impl Analyzer<'_, '_> {
     /// factors. It deliberately runs before premise availability is judged.
     fn source_proof_sum(
         &self,
-        premises: &[(AffineInequality, i128)],
-    ) -> Result<AffineInequality, (SourceProofCertificateFailure, u32)> {
+        premises: &[(AffineInequality, CertificateMultiplicity)],
+    ) -> Result<CertificateSum, (SourceProofCertificateFailure, u32)> {
         let actual = u32::try_from(premises.len()).unwrap_or(u32::MAX);
         if premises.len() > MAX_CERTIFICATE_PREMISES {
             let maximum =
@@ -9123,9 +9566,12 @@ impl Analyzer<'_, '_> {
         }
 
         let mut first_by_premise = HashMap::new();
-        for (index, (premise, factor)) in premises.iter().enumerate() {
+        for (index, (premise, multiplicity)) in premises.iter().enumerate() {
             let index = u32::try_from(index).expect("certificate capacity fits u32");
-            if *factor <= 0 {
+            // A term multiplicity is unsigned by [PRF-1], so only the written
+            // decimal can be degenerate. A runtime zero drops its premise and
+            // the sum stays sound, which is why nothing rejects it here.
+            if matches!(multiplicity, CertificateMultiplicity::Literal(factor) if *factor <= 0) {
                 return Err((
                     SourceProofCertificateFailure::InvalidFactor { use_index: index },
                     index,
@@ -9145,54 +9591,213 @@ impl Analyzer<'_, '_> {
         // Build the written sum one source entry at a time. Besides preserving
         // source order, this records the exact entry whose scale or addition
         // first exceeds the proof arithmetic or affine formation domain.
-        let mut sum = None;
-        for (index, (inequality, factor)) in premises.iter().enumerate() {
+        //
+        // The accumulator starts affine and becomes a degree-two polynomial at
+        // the first term multiplicity, if there is one; a certificate written
+        // entirely with bare decimals therefore never leaves the affine arm
+        // and forms exactly the inequality it always did.
+        let mut sum = CertificateSum::Empty;
+        for (index, (inequality, multiplicity)) in premises.iter().enumerate() {
             let index = u32::try_from(index).expect("certificate capacity fits u32");
-            let written = ScaledAffinePremise {
-                inequality,
-                factor: *factor,
-            };
-            let mut check = AffineCheckState::new();
-            let formed = if let Some(previous) = sum.as_ref() {
-                sum_explicit_scaled_inequalities(
-                    &[
-                        ScaledAffinePremise {
-                            inequality: previous,
-                            factor: 1,
-                        },
-                        written,
-                    ],
-                    &mut check,
-                )
-            } else {
-                sum_explicit_scaled_inequalities(&[written], &mut check)
-            };
-            sum = Some(formed.map_err(|error| {
-                let failure = match error {
-                    AffineCheckError::ArithmeticOverflow => {
-                        SourceProofCertificateFailure::ArithmeticOverflow
-                    }
-                    AffineCheckError::LimitExceeded(AffineCheckLimit::CertificatePremises) => {
-                        SourceProofCertificateFailure::UseCapacity {
-                            maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
-                                .expect("certificate capacity fits u32"),
-                            actual,
-                        }
-                    }
-                    AffineCheckError::LimitExceeded(_) => {
-                        SourceProofCertificateFailure::FormationCapacity
-                    }
-                    AffineCheckError::InvalidCertificateFactor => {
-                        SourceProofCertificateFailure::InvalidFactor { use_index: index }
-                    }
-                    AffineCheckError::CoefficientMismatch => {
-                        SourceProofCertificateFailure::FormationCapacity
-                    }
-                };
-                (failure, index)
-            })?);
+            sum =
+                Self::extend_certificate_sum(sum, inequality, multiplicity).map_err(|failure| {
+                    (
+                        Self::certificate_step_failure(failure, index, actual),
+                        index,
+                    )
+                })?;
         }
-        sum.ok_or((SourceProofCertificateFailure::FormationCapacity, 0))
+        match sum {
+            CertificateSum::Empty => Err((SourceProofCertificateFailure::FormationCapacity, 0)),
+            formed => Ok(formed),
+        }
+    }
+
+    /// Adds one written entry to the accumulated certificate sum.
+    fn extend_certificate_sum(
+        sum: CertificateSum,
+        inequality: &AffineInequality,
+        multiplicity: &CertificateMultiplicity,
+    ) -> Result<CertificateSum, CertificateStepFailure> {
+        if let CertificateMultiplicity::Literal(factor) = *multiplicity {
+            match sum {
+                CertificateSum::Empty => {
+                    let mut check = AffineCheckState::new();
+                    return Ok(CertificateSum::Affine(sum_explicit_scaled_inequalities(
+                        &[ScaledAffinePremise { inequality, factor }],
+                        &mut check,
+                    )?));
+                }
+                CertificateSum::Affine(previous) => {
+                    let mut check = AffineCheckState::new();
+                    return Ok(CertificateSum::Affine(sum_explicit_scaled_inequalities(
+                        &[
+                            ScaledAffinePremise {
+                                inequality: &previous,
+                                factor: 1,
+                            },
+                            ScaledAffinePremise { inequality, factor },
+                        ],
+                        &mut check,
+                    )?));
+                }
+                CertificateSum::Nonlinear(previous) => {
+                    let scaled =
+                        CertificatePolynomial::from_inequality(inequality)?.scale(factor)?;
+                    return Ok(CertificateSum::Nonlinear(previous.add(&scaled)?));
+                }
+            }
+        }
+        let CertificateMultiplicity::Value(value) = multiplicity else {
+            unreachable!("the literal arm returned above");
+        };
+        let scaled = CertificatePolynomial::from_inequality(inequality)?
+            .multiply(&CertificatePolynomial::from_form(value)?)?;
+        let previous = match sum {
+            CertificateSum::Empty => CertificatePolynomial::zero(),
+            CertificateSum::Affine(previous) => CertificatePolynomial::from_inequality(&previous)?,
+            CertificateSum::Nonlinear(previous) => previous,
+        };
+        Ok(CertificateSum::Nonlinear(previous.add(&scaled)?))
+    }
+
+    fn certificate_step_failure(
+        failure: CertificateStepFailure,
+        index: u32,
+        actual: u32,
+    ) -> SourceProofCertificateFailure {
+        match failure {
+            CertificateStepFailure::Overflow => SourceProofCertificateFailure::ArithmeticOverflow,
+            CertificateStepFailure::UseCapacity => SourceProofCertificateFailure::UseCapacity {
+                maximum: u32::try_from(MAX_CERTIFICATE_PREMISES)
+                    .expect("certificate capacity fits u32"),
+                actual,
+            },
+            CertificateStepFailure::Formation => SourceProofCertificateFailure::FormationCapacity,
+            CertificateStepFailure::InvalidFactor => {
+                SourceProofCertificateFailure::InvalidFactor { use_index: index }
+            }
+        }
+    }
+
+    /// Resolves one written multiplicity where the certificate is checked.
+    ///
+    /// A named multiplicity reads the value image its binding holds in the
+    /// entering context, minting the atom if this is the first read of it, so
+    /// the scaling step is over the same immutable value identity every other
+    /// affine premise names.
+    fn certificate_multiplicity(
+        &mut self,
+        multiplicity: CheckedProofMultiplicity,
+        state: &mut AffineFlowState,
+    ) -> Option<CertificateMultiplicity> {
+        match multiplicity {
+            CheckedProofMultiplicity::Literal(factor) => {
+                Some(CertificateMultiplicity::Literal(factor))
+            }
+            CheckedProofMultiplicity::Value { binding, .. } => Some(
+                CertificateMultiplicity::Value(self.affine_opaque_handle(binding, state)?),
+            ),
+        }
+    }
+
+    /// Brings the accumulated certificate sum back to one affine inequality
+    /// and checks the writer-selected residual against it.
+    ///
+    /// A nonlinear accumulation folds first: each degree-two monomial must be
+    /// the value image of an admitted exact product, which is the only way a
+    /// term-scaled premise can meet an affine target. Once folded, the residual
+    /// is the same one a bare-decimal certificate reaches, proved by the same
+    /// route; a monomial with no such product is a refusal, not a weaker check.
+    fn source_proof_certificate_residual(
+        &mut self,
+        target: &AffineInequality,
+        sum: &CertificateSum,
+        values: &AffineFlowState,
+        facts: &FactState,
+    ) -> Result<bool, SourceProofCertificateFailure> {
+        let folded;
+        let sum = match sum {
+            CertificateSum::Empty => {
+                return Err(SourceProofCertificateFailure::FormationCapacity);
+            }
+            CertificateSum::Affine(sum) => sum,
+            CertificateSum::Nonlinear(polynomial) => {
+                folded = self.folded_certificate_sum(polynomial, target)?;
+                &folded
+            }
+        };
+        self.source_proof_residual(target, sum, values, facts)
+    }
+
+    /// Folds a nonlinear certificate sum to the affine inequality it equals.
+    fn folded_certificate_sum(
+        &self,
+        polynomial: &CertificatePolynomial,
+        target: &AffineInequality,
+    ) -> Result<AffineInequality, SourceProofCertificateFailure> {
+        // Several bindings can hold the same product, and they are equal
+        // values, so any of them folds soundly. The target's own text picks
+        // among them: a monomial folded to the value the target already names
+        // cancels against it, while one folded to an equal value under
+        // another name does not. Failing that, the least atom is a canonical
+        // choice. Neither is a search — one pass, one winner per operand pair.
+        let named_by_target = target
+            .terms()
+            .iter()
+            .map(|coefficient| coefficient.term())
+            .collect::<HashSet<_>>();
+        let mut products = std::collections::BTreeMap::new();
+        for (product, operands) in &self.product_atoms {
+            products
+                .entry(*operands)
+                .and_modify(|chosen: &mut AffineTermId| {
+                    let better = match (
+                        named_by_target.contains(chosen),
+                        named_by_target.contains(product),
+                    ) {
+                        (false, true) => true,
+                        (true, false) => false,
+                        _ => *product < *chosen,
+                    };
+                    if better {
+                        *chosen = *product;
+                    }
+                })
+                .or_insert(*product);
+        }
+        let folded = polynomial
+            .fold_products(&products)
+            .map_err(Self::certificate_fold_failure)?;
+        let mut images = std::collections::BTreeMap::new();
+        for (handle, image) in &self.handle_images {
+            let mut weights = image
+                .terms()
+                .iter()
+                .map(|coefficient| (Some(coefficient.term()), coefficient.coefficient()))
+                .collect::<Vec<_>>();
+            weights.push((None, image.constant_value()));
+            images.insert(*handle, weights);
+        }
+        let folded = folded
+            .unfold_handles(&images)
+            .map_err(Self::certificate_fold_failure)?;
+        let mut check = AffineCheckState::new();
+        match folded.into_inequality(&mut check) {
+            Some(formed) => formed.map_err(Self::certificate_fold_failure),
+            None => Err(SourceProofCertificateFailure::NonlinearResidual),
+        }
+    }
+
+    fn certificate_fold_failure(error: PolynomialError) -> SourceProofCertificateFailure {
+        match error {
+            PolynomialError::ArithmeticOverflow => {
+                SourceProofCertificateFailure::ArithmeticOverflow
+            }
+            PolynomialError::DegreeExceeded | PolynomialError::LimitExceeded => {
+                SourceProofCertificateFailure::FormationCapacity
+            }
+        }
     }
 
     /// Checks the final writer-selected residual after every source proposition
@@ -9339,6 +9944,26 @@ impl Analyzer<'_, '_> {
             candidates.push(AffineL0Candidate {
                 term,
                 value: values.values[&binding].clone(),
+            });
+        }
+        // The same bridge for a measure: the L0 state carries the bounds a
+        // creation or a verified contract established on `len(P)`, and this
+        // pairs them with the atom that images it, so an atom minted as an
+        // unknown u64 tightens to what is actually known about the object.
+        let mut measures = values.length_values.keys().copied().collect::<Vec<_>>();
+        measures.sort_by_key(|binding| binding.0);
+        for binding in measures {
+            let term = self.length_term(
+                PlaceTerm {
+                    root: PlaceRoot::Binding(binding),
+                    deref: self.is_holder(binding),
+                    fields: Vec::new(),
+                },
+                None,
+            );
+            candidates.push(AffineL0Candidate {
+                term,
+                value: values.length_values[&binding].clone(),
             });
         }
         candidates
@@ -9745,8 +10370,22 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn apply_affine_kills(state: &mut AffineFlowState, events: &[KillEvent]) {
+    fn apply_affine_kills(&self, state: &mut AffineFlowState, events: &[KillEvent]) {
         state.values.retain(|binding, _| {
+            !events
+                .iter()
+                .any(|event| Self::affine_event_kills_binding(*binding, event))
+        });
+        // A measure survives every write to the measured object's elements and
+        // dies with a write to its root binding [ENT-5]. Dropping the entry is
+        // what re-mints the atom, so a length read after a replacement is a
+        // new unknown rather than the old one.
+        state.length_values.retain(|binding, _| {
+            !events
+                .iter()
+                .any(|event| Self::affine_event_kills_binding(*binding, event))
+        });
+        state.opaque_values.retain(|binding, _| {
             !events
                 .iter()
                 .any(|event| Self::affine_event_kills_binding(*binding, event))
@@ -9780,7 +10419,7 @@ impl Analyzer<'_, '_> {
                 };
                 let proof_event = self.proof_event(kind, Some(event.source()));
                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(state, std::slice::from_ref(event), Some(proof_event));
                 prepared.transfer_events.push(proof_event);
             }
@@ -9903,7 +10542,7 @@ impl Analyzer<'_, '_> {
             }
             for event in &target_kills {
                 self.apply_kills_one(&mut state.facts, std::slice::from_ref(event));
-                Self::apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
+                self.apply_affine_kills(&mut state.affine, std::slice::from_ref(event));
                 self.invalidate_entry_images(
                     state,
                     std::slice::from_ref(event),
@@ -10014,6 +10653,9 @@ impl Analyzer<'_, '_> {
                         established,
                         &mut state.affine,
                     );
+                }
+                if judgment.reached {
+                    self.record_product_atom(*binding, value, &mut state.affine);
                 }
                 true
             }
@@ -10160,13 +10802,17 @@ impl Analyzer<'_, '_> {
                         matches!(&written_use.source, CheckedProofUseSource::Named(_))
                     })
                     .collect::<Vec<_>>();
-                let certificate_premises = proof
+                let multiplicities = proof
                     .uses
                     .iter()
-                    .zip(&premises)
-                    .map(|(written_use, premise)| {
-                        premise.clone().map(|premise| (premise, written_use.factor))
+                    .map(|written_use| {
+                        self.certificate_multiplicity(written_use.multiplicity, &mut state.affine)
                     })
+                    .collect::<Vec<_>>();
+                let certificate_premises = premises
+                    .iter()
+                    .zip(&multiplicities)
+                    .map(|(premise, multiplicity)| premise.clone().zip(multiplicity.clone()))
                     .collect::<Option<Vec<_>>>();
 
                 // AUTO is exactly the unified zero-, one-, and exhaustive
@@ -10230,9 +10876,12 @@ impl Analyzer<'_, '_> {
                         target.as_ref(),
                         certificate_sum.as_ref().and_then(|sum| sum.as_ref().ok()),
                     ) {
-                        (Some(target), Some(sum)) => {
-                            self.source_proof_residual(target, sum, &state.affine, &state.facts)
-                        }
+                        (Some(target), Some(sum)) => self.source_proof_certificate_residual(
+                            target,
+                            sum,
+                            &state.affine,
+                            &state.facts,
+                        ),
                         _ => Err(SourceProofCertificateFailure::FormationCapacity),
                     }
                 };
@@ -11253,7 +11902,7 @@ impl Analyzer<'_, '_> {
     ) {
         self.promote_flow_contradiction(states);
         self.apply_loop_kills_one(&mut states.facts, kills);
-        Self::apply_affine_kills(&mut states.affine, &kills.events);
+        self.apply_affine_kills(&mut states.affine, &kills.events);
         let mut groups = kills.entry_image_groups.iter().collect::<Vec<_>>();
         groups.sort_by(|left, right| left.owner.components().cmp(right.owner.components()));
         for group in groups {

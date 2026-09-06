@@ -5,9 +5,9 @@ fn triple_sum(a: own u8, a_limit: own u8, b: own u8, b_limit: own u8, c: own u8,
 } {
   doc "expect ACCEPT: three premises combined with explicit factor 1 each; sum is exact and true.";
   invariant total_bound: a + b + c <= a_limit + b_limit + c_limit {
-    use a <= a_limit;
-    use b <= b_limit;
-    use c <= c_limit;
+    use (a <= a_limit);
+    use (b <= b_limit);
+    use (c <= c_limit);
   }
   return unit;
 }

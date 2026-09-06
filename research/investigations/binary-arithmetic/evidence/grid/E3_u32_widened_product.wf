@@ -1,0 +1,16 @@
+fn flat(row: own u32, width: own u32) -> at: own u64 pure {
+  doc "FACE B PROBE: two u32 values widened to u64; the product cannot overflow u64 by type alone.";
+  let r = cvt::<u32, u64>(row);
+  let w = cvt::<u32, u64>(width);
+  let at = r * w;
+  return at;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = flat(row: 2_u32, width: 4_u32);
+  if v == 8_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

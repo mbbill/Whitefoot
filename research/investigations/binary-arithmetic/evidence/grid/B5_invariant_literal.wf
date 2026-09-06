@@ -1,0 +1,15 @@
+fn probe(width: own u64, height: own u64) -> total: own u64 pure {
+  doc "FACE A PROBE: can a body invariant name the product of two runtime values?";
+  let area = 0_u64;
+  invariant area_bound: area <= 4_u64 * width;
+  return area;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let t = probe(width: 4_u64, height: 3_u64);
+  if t == 0_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

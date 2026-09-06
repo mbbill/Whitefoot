@@ -1499,7 +1499,7 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
   ) {
     invariant repeated: index <= limit {
       use ceiling;
-      use index <= limit;
+      use (index <= limit);
     }
     invariant chained: index <= limit {
       use repeated;
@@ -1590,7 +1590,7 @@ fn invariant_fact_names_resolve_only_after_their_complete_declaration() {
 fn an_unresolved_relation_use_value_is_reported_by_prf1() {
     let source = br#"fn probe(value: own u64, limit: own u64) -> result: own unit pure {
   invariant scaled: 3_u64 * value <= 3_u64 * limit {
-    use value <= missing;
+    use (value <= missing);
   }
   return unit;
 }

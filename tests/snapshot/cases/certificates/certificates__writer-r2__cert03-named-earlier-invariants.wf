@@ -8,9 +8,9 @@ fn combined_ports(p: own u32, p_cap: own u32, q: own u32, q_cap: own u32, r: own
   invariant base_q: q <= q_cap;
   invariant base_r: r <= r_cap;
   invariant combined: 2_u32 * p + 3_u32 * q + 4_u32 * r <= 2_u32 * p_cap + 3_u32 * q_cap + 4_u32 * r_cap {
-    use 2 * base_p;
-    use 3 * base_q;
-    use 4 * base_r;
+    use 2 times base_p;
+    use 3 times base_q;
+    use 4 times base_r;
   }
   return unit;
 }

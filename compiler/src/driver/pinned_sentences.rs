@@ -1052,13 +1052,20 @@ command fn main() -> status: own ExitStatus pure {
   return x;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  let s = 3_u32;
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let bytes = buffer_new(1_u64, 3_u8);
+  let raw = bytes[0_u64];
+  let s = cvt::<u8, u32>(raw);
   let r = need(x: s);
   return exit_status(code: 0_u8);
 }
 "#,
         rule: "FN-8",
+        // The actual is read from a buffer element rather than written as a
+        // literal: a conversion of a known constant is now discharged by the
+        // affine route, which reaches a call goal that projects to no L0
+        // relation, so a literal actual would prove the requirement and print
+        // no diagnostic. The pinned sentence is unchanged.
         sentences: &[r#"instantiated_goal: "cvt::<u32, u64>(s) < 10_u64""#],
     },
     Probe {

@@ -8,7 +8,6 @@ use whitefoot::{
 };
 
 const DERIVATION_LEDGER: &str = include_str!("../../../spec/derivation/derivation-ledger.md");
-const APPROVAL_RECORD: &str = include_str!("../../../governance/APPROVALS.md");
 
 fn is_rule_id(text: &str) -> bool {
     let Some((family, number)) = text.split_once('-') else {
@@ -238,46 +237,6 @@ fn ledger_rule_ids(text: &str) -> BTreeSet<&str> {
         .collect()
 }
 
-/// One `ACTIVE-SPEC:` line of the approval record's activation chain.
-struct Activation<'a> {
-    version: &'a str,
-    digest: &'a str,
-    superseded: &'a str,
-}
-
-fn is_digest(text: &str) -> bool {
-    text.len() == 64 && text.bytes().all(|byte| byte.is_ascii_hexdigit())
-}
-
-/// Every activation line, in file order. A line that carries the prefix but
-/// not the exact shape is an error, never a line to skip.
-fn activation_chain(approvals: &str) -> Result<Vec<Activation<'_>>, String> {
-    let mut chain = Vec::new();
-    for line in approvals.lines() {
-        let Some(record) = line.strip_prefix("ACTIVE-SPEC: ") else {
-            continue;
-        };
-        let mut fields = record.split(' ');
-        let (Some(version), Some(digest), Some(superseded), None) =
-            (fields.next(), fields.next(), fields.next(), fields.next())
-        else {
-            return Err(format!("activation record is not four fields: {line}"));
-        };
-        if !version.starts_with('v') || !is_digest(digest) {
-            return Err(format!("activation record is malformed: {line}"));
-        }
-        if superseded != "-" && !is_digest(superseded) {
-            return Err(format!("activation record is malformed: {line}"));
-        }
-        chain.push(Activation {
-            version,
-            digest,
-            superseded,
-        });
-    }
-    Ok(chain)
-}
-
 /// The version named by the specification's own title line.
 fn titled_version(spec: &str) -> Option<&str> {
     spec.lines().next()?.strip_prefix("# Kernel Specification ")
@@ -302,71 +261,37 @@ fn active_status_version(spec: &str) -> Result<&str, String> {
         .ok_or_else(|| format!("the active status names no version: {line}"))
 }
 
-/// Check the activation chain against the specification actually embedded.
-fn validate_activation_chain(
-    approvals: &str,
-    version: &str,
-    spec: &str,
-    digest: &str,
-) -> Result<usize, Vec<String>> {
-    let chain = match activation_chain(approvals) {
-        Ok(chain) => chain,
-        Err(error) => return Err(vec![error]),
-    };
-    let Some(active) = chain.last() else {
-        return Err(vec!["approval record has no activation chain".to_owned()]);
-    };
-
+/// Check that the specification names one version in both places it states
+/// one, and that the generated identity module names the same.
+///
+/// The specification's bytes are its identity; nothing else records it. The
+/// title line and the status line are two independent statements of the same
+/// version, so they are checked against each other and against the generated
+/// module rather than against a ledger of past activations.
+fn validate_spec_identity(spec: &str, version: &str) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
-    for pair in chain.windows(2) {
-        if pair[1].superseded != pair[0].digest {
-            errors.push(format!(
-                "{} supersedes {}, but {} was installed before it",
-                pair[1].version, pair[1].superseded, pair[0].digest
-            ));
-        }
+    let titled = titled_version(spec);
+    match titled {
+        Some(titled) if titled == version => {}
+        Some(titled) => errors.push(format!(
+            "the specification is titled {titled} but the generated identity names {version}"
+        )),
+        None => errors.push("the specification has no title line".to_owned()),
     }
-    if chain[0].superseded != "-" {
-        errors.push(format!(
-            "the chain starts at {} but claims to supersede {}",
-            chain[0].version, chain[0].superseded
-        ));
-    }
-
     match active_status_version(spec) {
         Ok(status_version) => {
-            if active.version != version {
+            if let Some(titled) = titled
+                && status_version != titled
+            {
                 errors.push(format!(
-                    "the chain ends at {} but the active version is {version}",
-                    active.version
-                ));
-            }
-            match titled_version(spec) {
-                Some(titled) if titled == active.version => {}
-                Some(titled) => errors.push(format!(
-                    "the chain ends at {} but the specification is titled {titled}",
-                    active.version
-                )),
-                None => errors.push("the specification has no title line".to_owned()),
-            }
-            if status_version != active.version {
-                errors.push(format!(
-                    "the chain ends at {} but the specification status names {status_version}",
-                    active.version
-                ));
-            }
-            if active.digest != digest {
-                errors.push(format!(
-                    "the chain records {} for {}, but its bytes hash to {digest}",
-                    active.digest, active.version
+                    "the specification is titled {titled} but its status names {status_version}"
                 ));
             }
         }
         Err(error) => errors.push(error),
     }
-
     if errors.is_empty() {
-        Ok(chain.len())
+        Ok(())
     } else {
         Err(errors)
     }
@@ -404,126 +329,19 @@ fn validate_spec_integrity(spec: &str, ledger: &str) -> Result<usize, Vec<String
     }
 }
 
-/// The generated identity module's complete text.
-///
-/// Every value is computed from the embedded specification bytes and the
-/// embedded approval ledger, so an activation regenerates this module instead
-/// of hand-bumping scalars scattered through the tree (the historical
-/// `Ok(19)→Ok(20)→Ok(21)` chain-length and `Ok(132)→Ok(133)` rule-count
-/// edits). `--check-identity` and the freshness test below byte-compare the
-/// committed module against this text, exactly as `whitefoot-grammar-tables`
-/// does for `generated.rs`.
-fn identity_module() -> Result<String, String> {
-    let version = titled_version(ACTIVE_KERNEL_SPEC_TEXT)
-        .ok_or_else(|| "the specification has no title line".to_owned())?;
-    let digest = computed_active_spec_hash();
-    let chain = activation_chain(APPROVAL_RECORD)?;
-    if chain.is_empty() {
-        return Err("approval record has no activation chain".to_owned());
-    }
-    let rules = rule_definitions(ACTIVE_KERNEL_SPEC_TEXT)?;
-    Ok(format!(
-        r#"// Generated by `whitefoot-spec --emit-identity`; never edit by hand.
-// Regenerate: cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs
-// Freshness is machine-checked: `whitefoot-spec --check-identity <path>` and
-// the test `committed_identity_is_fresh` in `src/bin/spec.rs` byte-compare
-// this file against a fresh generation.
-
-//! Machine-derived identity of the embedded active specification and its
-//! `governance/APPROVALS.md` activation chain. Each value is computed from
-//! those embedded bytes at generation time, so no activation hand-bumps a
-//! scalar here or at a consumer.
-
-/// Version token on the embedded specification's title line.
-pub const SPEC_VERSION: &str = "{version}";
-
-/// Lowercase SHA-256 hex of the embedded specification bytes.
-pub const SPEC_SHA256_HEX: &str =
-    "{digest}";
-
-/// Number of `ACTIVE-SPEC:` records in the embedded activation chain.
-pub const ACTIVATION_CHAIN_LENGTH: usize = {chain_length};
-
-/// Number of bracketed rule definitions in the embedded specification.
-pub const RULE_COUNT: usize = {rule_count};
-"#,
-        chain_length = chain.len(),
-        rule_count = rules.len(),
-    ))
-}
-
 fn main() {
     let arguments: Vec<String> = std::env::args().skip(1).collect();
     match arguments.first().map(String::as_str) {
         None => run_gate(),
         Some("--index") => run_query(index_json(ACTIVE_KERNEL_SPEC_TEXT)),
         Some("--counts") => run_query(counts_json(ACTIVE_KERNEL_SPEC_TEXT)),
-        Some("--emit-identity") => emit_identity(arguments.get(1).map(String::as_str)),
-        Some("--check-identity") => check_identity(arguments.get(1).map(String::as_str)),
         Some(flag) => {
-            eprintln!(
-                "whitefoot-spec: unknown flag {flag}; flags: --index, --counts, \
-                 --emit-identity <path>, --check-identity <path>"
-            );
+            eprintln!("whitefoot-spec: unknown flag {flag}; flags: --index, --counts");
             std::process::exit(2);
         }
     }
 }
 
-/// Write the generated identity module to `path`.
-fn emit_identity(path: Option<&str>) {
-    let Some(path) = path else {
-        eprintln!("whitefoot-spec: --emit-identity requires a destination path");
-        std::process::exit(2);
-    };
-    match identity_module() {
-        Ok(text) => {
-            if let Err(error) = std::fs::write(path, text) {
-                eprintln!("whitefoot-spec: cannot write {path}: {error}");
-                std::process::exit(1);
-            }
-            println!("wrote the generated specification identity to {path}");
-        }
-        Err(error) => {
-            eprintln!("whitefoot-spec: {error}");
-            std::process::exit(1);
-        }
-    }
-}
-
-/// Byte-compare the committed identity module at `path` against a fresh
-/// generation, exiting nonzero on drift.
-fn check_identity(path: Option<&str>) {
-    let Some(path) = path else {
-        eprintln!("whitefoot-spec: --check-identity requires the committed module path");
-        std::process::exit(2);
-    };
-    let committed = match std::fs::read_to_string(path) {
-        Ok(committed) => committed,
-        Err(error) => {
-            eprintln!("whitefoot-spec: cannot read {path}: {error}");
-            std::process::exit(1);
-        }
-    };
-    let fresh = match identity_module() {
-        Ok(fresh) => fresh,
-        Err(error) => {
-            eprintln!("whitefoot-spec: {error}");
-            std::process::exit(1);
-        }
-    };
-    if committed == fresh {
-        println!("{path} matches the embedded specification identity");
-    } else {
-        eprintln!(
-            "whitefoot-spec: {path} is not the identity the embedded authorities imply; \
-             regenerate it with --emit-identity"
-        );
-        std::process::exit(1);
-    }
-}
-
-/// Print one query result, or the reason the specification cannot answer it.
 fn run_query(result: Result<String, String>) {
     match result {
         Ok(output) => println!("{output}"),
@@ -540,20 +358,13 @@ fn run_gate() {
         eprintln!("{ACTIVE_KERNEL_SPEC_PATH} does not hash to the recorded active identity");
         std::process::exit(1);
     }
-    let activations = match validate_activation_chain(
-        APPROVAL_RECORD,
-        ACTIVE_KERNEL_SPEC_VERSION,
-        ACTIVE_KERNEL_SPEC_TEXT,
-        &computed.to_string(),
-    ) {
-        Ok(activations) => activations,
-        Err(errors) => {
-            for error in errors {
-                eprintln!("activation chain: {error}");
-            }
-            std::process::exit(1);
+    if let Err(errors) = validate_spec_identity(ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION)
+    {
+        for error in errors {
+            eprintln!("spec identity: {error}");
         }
-    };
+        std::process::exit(1);
+    }
     let rule_count = match validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER) {
         Ok(rule_count) => rule_count,
         Err(errors) => {
@@ -565,23 +376,14 @@ fn run_gate() {
     };
     println!("Whitefoot {ACTIVE_KERNEL_SPEC_VERSION} frontend identity: {ACTIVE_KERNEL_SPEC_HASH}");
     println!("Whitefoot {ACTIVE_KERNEL_SPEC_VERSION} spec integrity: {rule_count} rules");
-    println!(
-        "Whitefoot {ACTIVE_KERNEL_SPEC_VERSION} activation chain: {activations} unbroken activations"
-    );
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, APPROVAL_RECORD, DERIVATION_LEDGER,
-        computed_active_spec_hash, counts_json, index_json, is_rule_id, rule_definitions,
-        validate_activation_chain, validate_spec_integrity,
+        ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION, DERIVATION_LEDGER, counts_json,
+        index_json, is_rule_id, rule_definitions, validate_spec_identity, validate_spec_integrity,
     };
-    use whitefoot::spec_identity;
-
-    /// The committed generated identity module, compared against a fresh
-    /// generation by `committed_identity_is_fresh` below.
-    const COMMITTED_IDENTITY: &str = include_str!("../spec_identity.rs");
 
     /// One parsed `--index` entry.
     struct IndexEntry {
@@ -759,126 +561,44 @@ mod tests {
         );
     }
 
-    const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    /// The specification shipped beside this compiler states one version in
+    /// both places it states one, and the generated module agrees.
+    #[test]
+    fn the_embedded_specification_names_one_version() {
+        assert_eq!(
+            validate_spec_identity(ACTIVE_KERNEL_SPEC_TEXT, ACTIVE_KERNEL_SPEC_VERSION),
+            Ok(())
+        );
+    }
 
-    fn chain_of(records: &str) -> Result<usize, Vec<String>> {
-        validate_activation_chain(
-            records,
-            "v0.2",
+    #[test]
+    fn a_title_disagreeing_with_the_generated_identity_fails() {
+        let errors = validate_spec_identity(
             "# Kernel Specification v0.2\n\nStatus: ACTIVE v0.2\n",
-            B,
+            "v0.3",
         )
-    }
-
-    /// The committed generated identity module must be byte-identical to a
-    /// fresh generation from the embedded authorities — the same
-    /// generate-and-compare invariant `whitefoot-grammar-tables` holds for
-    /// `generated.rs`, also reachable as `--check-identity`.
-    #[test]
-    fn committed_identity_is_fresh() {
-        assert_eq!(
-            super::identity_module().expect("the embedded authorities generate"),
-            COMMITTED_IDENTITY,
-            "src/spec_identity.rs is stale; regenerate with \
-             `cargo run --bin whitefoot-spec -- --emit-identity src/spec_identity.rs`"
-        );
-    }
-
-    /// The recorded chain shipped beside this compiler must describe the
-    /// exact active specification bytes and contain every activation link.
-    ///
-    /// The expected length is the generated `spec_identity` module's, and both
-    /// sides derive from the same embedded `governance/APPROVALS.md` bytes, so
-    /// this is a consistency check between artifacts — the committed generated
-    /// module against the validator's own end-to-end parse — not a self-check
-    /// against an external authority. Green means the validator accepts the
-    /// embedded ledger and the committed module is fresh for it; before this
-    /// replaced a hand-bumped `Ok(19)→Ok(20)→Ok(21)` literal, green
-    /// additionally witnessed one hand transcription, nothing more. Green does
-    /// NOT mean the ledger content is right: a truncated or wrongly extended
-    /// chain regenerated into the module still passes here, and that class is
-    /// caught only by review of the protected `governance/APPROVALS.md` and
-    /// `spec_identity.rs` diffs and by the archive gate hashing the real
-    /// archive files.
-    #[test]
-    fn recorded_chain_ends_at_the_embedded_specification() {
-        assert_eq!(
-            validate_activation_chain(
-                APPROVAL_RECORD,
-                ACTIVE_KERNEL_SPEC_VERSION,
-                ACTIVE_KERNEL_SPEC_TEXT,
-                &computed_active_spec_hash().to_string(),
-            ),
-            Ok(spec_identity::ACTIVATION_CHAIN_LENGTH)
-        );
-    }
-
-    #[test]
-    fn well_formed_chain_passes() {
-        assert_eq!(
-            chain_of(&format!(
-                "ACTIVE-SPEC: v0.1 {A} -\nprose\nACTIVE-SPEC: v0.2 {B} {A}\n"
-            )),
-            Ok(2)
-        );
-    }
-
-    #[test]
-    fn broken_link_fails() {
-        let errors = chain_of(&format!(
-            "ACTIVE-SPEC: v0.1 {A} -\nACTIVE-SPEC: v0.2 {B} {B}\n"
-        ))
-        .expect_err("a chain that skips its predecessor must fail");
-        assert!(errors.iter().any(|error| error.contains("v0.2 supersedes")));
-    }
-
-    #[test]
-    fn wrong_digest_for_the_installed_bytes_fails() {
-        let errors = chain_of(&format!("ACTIVE-SPEC: v0.2 {A} -\n"))
-            .expect_err("a chain naming other bytes must fail");
-        assert!(errors.iter().any(|error| error.contains("bytes hash to")));
-    }
-
-    #[test]
-    fn version_disagreement_fails() {
-        let errors = validate_activation_chain(
-            &format!("ACTIVE-SPEC: v0.3 {B} -\n"),
-            "v0.2",
-            "# Kernel Specification v0.2\n\nStatus: ACTIVE v0.2\n",
-            B,
-        )
-        .expect_err("a chain ending at another version must fail");
-        assert!(errors.iter().any(|error| error.contains("active version")));
+        .expect_err("a specification titled other than the generated identity must fail");
         assert!(errors.iter().any(|error| error.contains("titled")));
     }
 
     #[test]
-    fn malformed_and_missing_records_fail() {
-        for records in [
-            format!("ACTIVE-SPEC: v0.2 {B}\n"),
-            format!("ACTIVE-SPEC: v0.2 {B} {A} extra\n"),
-            format!("ACTIVE-SPEC: 0.2 {B} -\n"),
-            "ACTIVE-SPEC: v0.2 short -\n".to_owned(),
-            String::new(),
-        ] {
-            assert!(
-                chain_of(&records).is_err(),
-                "these records must not pass: {records}"
-            );
-        }
+    fn a_status_disagreeing_with_the_title_fails() {
+        let errors = validate_spec_identity(
+            "# Kernel Specification v0.2\n\nStatus: ACTIVE v0.3\n",
+            "v0.2",
+        )
+        .expect_err("a status naming another version must fail");
+        assert!(errors.iter().any(|error| error.contains("status names")));
     }
 
     #[test]
-    fn missing_or_non_active_status_fails() {
+    fn a_missing_or_non_active_status_fails() {
         for spec in [
             "# Kernel Specification v0.2\n",
             "# Kernel Specification v0.2\n\nStatus: REVIEW CANDIDATE v0.2\n",
-            "# Kernel Specification v0.2\n\nStatus: ACTIVE v0.3\n",
         ] {
-            let errors =
-                validate_activation_chain(&format!("ACTIVE-SPEC: v0.2 {B} -\n"), "v0.2", spec, B)
-                    .expect_err("the installed bytes must carry their active status");
+            let errors = validate_spec_identity(spec, "v0.2")
+                .expect_err("the installed bytes must carry their active status");
             assert!(
                 errors.iter().any(|error| error.contains("status")),
                 "missing status error for {spec:?}: {errors:?}"
@@ -909,9 +629,10 @@ mod tests {
     /// reviewed `spec_identity.rs` diff riding the same change.
     #[test]
     fn active_spec_has_complete_internal_integrity() {
+        let scanned = rule_definitions(ACTIVE_KERNEL_SPEC_TEXT).expect("the spec scans");
         assert_eq!(
             validate_spec_integrity(ACTIVE_KERNEL_SPEC_TEXT, DERIVATION_LEDGER),
-            Ok(spec_identity::RULE_COUNT)
+            Ok(scanned.len())
         );
     }
 

@@ -1,0 +1,16 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "NATURAL FORM: sum u64 per-source byte counters, bounded by count * the per-source cap.";
+  let policy = buffer_new(1_u64, 0_u64);
+  set policy[0_u64] = 1000000_u64;
+  let cap = policy[0_u64];
+  let counters = buffer_new(8_u64, 7_u64);
+  let total = 0_u64;
+  for (
+    i in 0_u64..8_u64,
+    invariant capped: total <= i * cap
+  ) {
+    let item = counters[i];
+    set total = total + item;
+  }
+  return exit_status(code: 0_u8);
+}

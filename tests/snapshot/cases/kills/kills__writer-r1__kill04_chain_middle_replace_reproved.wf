@@ -10,15 +10,15 @@ fn blend(first: own u8, first_limit: own u8, second: own u8, second_limit: own u
 } {
   doc "expect ACCEPT: set first = replacement kills the old first/first_limit pairing, so total_bound is re-derived from replacement_limit rather than the dead first_limit fact.";
   invariant original_bound: first + second + third <= first_limit + second_limit + third_limit {
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }
   set first = replacement;
   invariant updated_bound: first + second + third <= replacement_limit + second_limit + third_limit {
-    use first <= replacement_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= replacement_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }
   invariant limit_sum: replacement_limit + second_limit + third_limit <= 250_u8;
   let result = first + second;

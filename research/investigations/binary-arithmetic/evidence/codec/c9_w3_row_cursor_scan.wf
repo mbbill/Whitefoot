@@ -1,0 +1,58 @@
+fn image_luma_total(pixels: own buffer<u8>, row_stride: own u64, bytes_per_pixel: own u64) -> total: own u64 reads(pixels) contract {
+  define room = len(pixels);
+  requires row_stride >= 1_u64;
+  requires bytes_per_pixel >= 1_u64;
+  requires bytes_per_pixel <= row_stride;
+  requires room >= row_stride;
+} {
+  doc "WORKAROUND C: a full-image scan walks rows and then pixels with two running cursors, so no product is ever formed; this costs the same per pixel as the flattened form.";
+  let room = len(pixels);
+  let row_limit = room - row_stride;
+  let total = 0_u64;
+  let row_base = 0_u64;
+  loop @rows (
+    invariant row_base_in_room: row_base <= room
+  ) {
+    let more_rows = row_base <= row_limit;
+    if more_rows {
+    } else {
+      break @rows;
+    }
+    let row_end = row_base + row_stride;
+    invariant row_end_in_room: row_end <= room;
+    let pixel_limit = row_end - bytes_per_pixel;
+    let pixel_at = row_base;
+    loop @pixels (
+      invariant pixel_at_in_room: pixel_at <= room
+    ) {
+      let more_pixels = pixel_at <= pixel_limit;
+      if more_pixels {
+      } else {
+        break @pixels;
+      }
+      invariant pixel_slot: pixel_at + bytes_per_pixel <= room;
+      let byte = pixels[pixel_at];
+      let wide = cvt::<u8, u64>(byte);
+      set total = total +wrap wide;
+      invariant next_pixel: pixel_at + bytes_per_pixel <= room;
+      set pixel_at = pixel_at + bytes_per_pixel;
+    }
+    invariant next_row: row_base + row_stride <= room;
+    set row_base = row_base + row_stride;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "a 4x2 RGB image with a 12-byte row stride; sum the red channel of every pixel";
+  let pixels = buffer_new(24_u64, 0_u8);
+  set pixels[0_u64] = 1_u8;
+  set pixels[3_u64] = 2_u8;
+  set pixels[12_u64] = 4_u8;
+  let total = image_luma_total(pixels: move pixels, row_stride: 12_u64, bytes_per_pixel: 3_u64);
+  if total == 7_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

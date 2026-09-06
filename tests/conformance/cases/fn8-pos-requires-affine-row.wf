@@ -1,0 +1,18 @@
+fn scaled(out: &uniq buffer<u8>, src: own buffer<u8>) -> written: own u64 pure contract {
+  define room = len(deref(out));
+  define count = len(src);
+  define needed = count * 2_u64;
+  requires room >= needed;
+} {
+  doc "The exact affine rows are read mathematically in a clause, so an expansion function states its own size precondition; the caller proves it from the lengths it allocated.";
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let src = buffer_new(4_u64, 0_u8);
+  let out = buffer_new(8_u64, 0_u8);
+  region {
+    let n = scaled(out: &uniq out, src: move src);
+  }
+  return exit_status(code: 0_u8);
+}

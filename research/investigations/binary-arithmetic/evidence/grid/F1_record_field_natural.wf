@@ -1,0 +1,26 @@
+fn record_byte(table: &buffer<u8>, stride: own u64, count: own u64, index: own u64, field: own u64) -> value: own u8 reads(table) contract {
+  requires index < count;
+  requires field < stride;
+  requires stride <= 65536_u64;
+  requires count <= 65536_u64;
+} {
+  doc "NATURAL: read one field byte out of a packed record table whose record size is a runtime header value.";
+  let base = index * stride;
+  let at = base + field;
+  let byte = deref(table)[at];
+  return byte;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(16_u64, 0_u8);
+  set table[9_u64] = 42_u8;
+  region {
+    let t = &table;
+    let byte = record_byte(table: t, stride: 4_u64, count: 4_u64, index: 2_u64, field: 1_u64);
+    if byte == 42_u8 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

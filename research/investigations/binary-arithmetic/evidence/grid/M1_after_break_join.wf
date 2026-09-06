@@ -1,0 +1,41 @@
+fn pack_rows(out: &uniq buffer<u8>, width: own u64, fill: own u8) -> used: own u64 reads(out), writes(out) contract {
+  requires 1_u64 <= width;
+} {
+  doc "JOIN PROBE: fill whole rows of `width` bytes, then use the induction variable after the loop to report and to write a terminator at the first unused byte.";
+  let capacity = len(deref(out));
+  let base = 0_u64;
+  let remaining = capacity;
+  loop (
+    invariant span_lo: base + remaining <= capacity,
+    invariant span_hi: capacity <= base + remaining
+  ) {
+    let more = width <= remaining;
+    if more {
+    } else {
+      break;
+    }
+    invariant row_fits: base + width <= capacity;
+    for (c in 0_u64..width) {
+      invariant slot: base + c < capacity;
+      let at = base + c;
+      set deref(out)[at] = fill;
+    }
+    set base = base + width;
+    set remaining = remaining - width;
+  }
+  invariant after: base <= capacity;
+  return base;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let out = buffer_new(10_u64, 0_u8);
+  region {
+    let d = &uniq out;
+    let used = pack_rows(out: move d, width: 4_u64, fill: 9_u8);
+    if used == 8_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

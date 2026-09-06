@@ -4,7 +4,7 @@
 
 Three times in one day an implementer's "no observable change" claim was
 refuted only because a reviewer hand-wrote a program the test corpus did not
-contain (`docs/done/0087-*`, `0091-*`, `0085-*`). A passing suite is not
+contain. A passing suite is not
 coverage: it is blind to every program nobody thought to write. This experiment
 is the mechanical source of programs nobody thought of.
 
@@ -73,4 +73,4 @@ This directory is removed when the campaign stops paying: when a full run over
 current shapes finds nothing across two consecutive language or runtime changes
 to the overlap path, and `probes/` is empty. Until then it is the only source of
 programs the corpus does not contain, and the campaign report in
-`docs/done/0097-differential-fuzz.md` records what each run covered.
+`RESULTS.md` records what each run covered.

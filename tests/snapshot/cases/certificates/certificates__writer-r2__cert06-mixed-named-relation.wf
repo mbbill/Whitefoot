@@ -7,8 +7,8 @@ fn mixed_sum(p: own u16, p_cap: own u16, q: own u16, q_cap: own u16, r: own u16,
   invariant base_p: p <= p_cap;
   invariant combined: p + q + r <= p_cap + q_cap + r_cap {
     use base_p;
-    use q <= q_cap;
-    use r <= r_cap;
+    use (q <= q_cap);
+    use (r <= r_cap);
   }
   return unit;
 }

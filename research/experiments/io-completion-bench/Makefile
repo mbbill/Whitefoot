@@ -372,7 +372,7 @@ $(WORK)/read-plan-4k.txt: Makefile | prepare
 # Batch 0092's first attempt had no such check. It took its "uncached" numbers
 # straight after generating the tree, when every page was still resident from
 # the writes, and published a page-cache table under the uncached label;
-# docs/done/0092-read-workload.md records what that cost.
+# That cost is recorded in this directory's README.
 #
 # The uncached tables run first, because they are the ones the design question
 # turns on and the ones a shared host can spoil; the warm tables follow, after

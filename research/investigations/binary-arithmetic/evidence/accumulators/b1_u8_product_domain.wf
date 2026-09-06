@@ -1,0 +1,13 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "FACE B probe: exact product of two runtime u64 values that came from u8 reads.";
+  let config = buffer_new(1_u64, 4_u8);
+  let gain = cvt::<u8, u64>(config[0_u64]);
+  let samples = buffer_new(8_u64, 3_u8);
+  let sample = cvt::<u8, u64>(samples[0_u64]);
+  let scaled = sample * gain;
+  if scaled == 12_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

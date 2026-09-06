@@ -1,0 +1,46 @@
+REJECT  a1_gain_natural.wf  [GRAM-4]  SyntaxIssue
+REJECT  a1_w1_budget.wf  [OP-2]  UndischargedIntegerDomainObligation
+REJECT  a1_w2_literal_worstcase.wf  [OP-2]  UndischargedIntegerDomainObligation
+ACCEPT  a1_w3_narrow_product.wf
+REJECT  a1b_gain_natural_bare.wf  [INV-1]  InvalidInvariant
+REJECT  a2_two_multiplications_grammar.wf  [GRAM-4]  SyntaxIssue
+ACCEPT  b1_u8_product_domain.wf
+REJECT  b2_u32_product_domain.wf  [OP-2]  UndischargedIntegerDomainObligation
+ACCEPT  b3_u32_product_guarded.wf
+REJECT  b4_product_result_bound.wf  [INV-1]  UndischargedLocalInvariant
+REJECT  c1_expand_natural.wf  [INV-1]  InvalidInvariant
+REJECT  c2_layout_natural.wf  [INV-1]  InvalidInvariant
+ACCEPT  c2_w1_guard.wf
+ACCEPT  c2_w2_flat.wf
+ACCEPT  c2_w3_flat_with_indices.wf
+ACCEPT  c2_w4_streaming.wf
+ACCEPT  c2_w5_per_record_guard.wf
+REJECT  d1_fixedpoint_natural.wf  [INV-1]  InvalidInvariant
+REJECT  d1_w1_operand_guards_only.wf  [OP-2]  UndischargedIntegerDomainObligation
+REJECT  d1_w2_result_guard.wf  [INV-1]  UndischargedLoopInvariant
+ACCEPT  d1_w2b_result_guard_restated.wf
+ACCEPT  d1_w3_narrow_landing.wf
+REJECT  d1b_fixedpoint_noinv.wf  [OP-2]  UndischargedIntegerDomainObligation
+REJECT  e1_prf1_use_probe.wf  [PRF-1]  InvalidSourceProof
+REJECT  e2_ensures_product.wf  [GRAM-5]  SyntaxIssue
+REJECT  e3_ensures_sum.wf  [GRAM-5]  SyntaxIssue
+REJECT  e4_contract_define_product.wf  [FN-8]  InvalidRequires
+ACCEPT  f1_hash_runtime_multiplier.wf
+REJECT  g1_sum_items_natural.wf  [INV-1]  InvalidInvariant
+REJECT  g1_w1_literal_factor_noguard.wf  [OP-2]  UndischargedIntegerDomainObligation
+ACCEPT  g1_w2_requires_count.wf
+REJECT  h1_stride_natural.wf  [INV-1]  InvalidInvariant
+ACCEPT  h1_w1_streaming.wf
+ACCEPT  h1_w1b_streaming_exact.wf
+ACCEPT  h1_w2_counted_guard.wf
+ACCEPT  h1_w2b_counted_guard_exact.wf
+REJECT  i1_budget_uncapped.wf  [OP-2]  UndischargedIntegerDomainObligation
+REJECT  i2_budget_capped.wf  [INV-1]  UndischargedLoopInvariant
+ACCEPT  i3_no_budget_literal.wf
+ACCEPT  i4_budget_guarded.wf
+REJECT  j0_counters_natural.wf  [INV-1]  InvalidInvariant
+REJECT  j1_named_const_factor.wf  [INV-1]  UnresolvedUse
+ACCEPT  j2_inline_digit_factor.wf
+REJECT  j3_local_limit_factor.wf  [INV-1]  InvalidInvariant
+REJECT  k1_grid_index_exact.wf  [OP-2]  UndischargedIntegerDomainObligation
+ACCEPT  k2_grid_index_exact_guarded.wf
