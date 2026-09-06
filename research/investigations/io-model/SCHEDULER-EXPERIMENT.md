@@ -2580,8 +2580,71 @@ the real IOCP staged socket program at one/two/four workers.
 
 This is neither a deadline guarantee nor an admission fix. The checkpoint
 does not create a stack or start an unstarted call, and the fixed-capacity
-fallback's progress question remains. No timing result has selected either
-budget policy yet.
+fallback's progress question remains.
+
+### Native service-budget results
+
+Revision `c35a6ef25e6dd1b36bf50f89290e297ad5fe8011` completed Linux echo job
+`101561489585` ([artifact 9997988029](https://github.com/mbbill/Whitefoot/actions/runs/34061037722/artifacts/9997988029))
+with all 980 rows and controls on an EPYC 9V74. Fixed-arrival job `101561489586`
+([artifact 9997980041](https://github.com/mbbill/Whitefoot/actions/runs/34061037722/artifacts/9997980041))
+completed all 588 rows on a Xeon Platinum 8573C. Both have four logical CPUs,
+two physical cores with SMT, Linux 6.17 and clang 18.1.3. The following ratios
+pair the same pass and CPU cohort; the two jobs are separate hosts. Gate,
+io-hosts and io-bench succeeded on this revision.
+
+The completed-I/O budgets do not solve the measured tail gap. Persistent
+worker cadence adds actual progress opportunities but regresses high-load
+echo relative to balanced:
+
+| split2 echo | Policy / balanced | Paired rate median (range) | Paired p99 median (range) |
+| --- | --- | ---: | ---: |
+| 4 peers, 64 bytes | per-turn 1 | 1.1478 (1.0575..1.1811) | 1.0328 (1.0161..1.0484) |
+| 64 peers, 64 bytes | persistent 16 | 0.9545 (0.9273..0.9696) | 1.7254 (1.2832..1.7663) |
+| 1024 peers, 64 bytes | persistent 16 | 0.9361 (0.9219..0.9903) | 1.7336 (1.6052..1.8111) |
+| 64 peers, 64 KiB | per-turn 1 | 1.0589 (0.9978..1.0930) | 1.5956 (1.5365..1.7155) |
+| 64 peers, 64 KiB | persistent 16 | 1.0143 (0.9999..1.0412) | 1.5133 (1.0009..1.5799) |
+
+At split2/four peers, even persistent 16 remains below base on every paired
+rate, median 0.7815; improving this weak balanced case does not restore base
+capacity. Per-turn 16 stays near balanced at high concurrency and does not
+establish a distinct improvement. Untimed split2/64 observations explain why
+that candidate can be inactive: per-turn 16 reports zero I/O checkpoints,
+per-turn 1 reports 256258, and persistent 16 reports 16016. The last switches
+to another ready stack 16011 times. Merely increasing progress/checkpoint
+counts therefore does not imply better tails or capacity.
+
+With fixed arrivals and long compute, split1 per-turn-1/balanced light p99
+ratios are 1.4610 (1.4184..1.5891) at 4800 light requests/s and 1.6229
+(1.4683..1.7821) at 24000. Persistent 16 also loses every pair, 1.3559
+(1.3041..1.5012) and 1.4319 (1.3140..1.5045). Heavy deadline capacity stays
+essentially equal to balanced. At split2, all three candidates lose every
+native-quantum light-tail pair at both arrival rates. Per-turn 16's paired
+ratios are 2.0841 (1.5616..2.8856) and 1.6605 (1.3462..4.4030), while
+persistent 16 is 2.0385 (1.5544..2.6345) and 1.9981 (1.2263..3.3071).
+Per-turn 1 is worse, 3.1506 and 2.3045 in the paired medians.
+
+The zero-compute split2 control remains far from native light tails: median
+p99 is 2144 us for balanced, 2725/2256/2192 for the three candidates and 87
+for native quantum. Every native comparison loses; paired candidate/native
+tail medians are 29.9451/26.5412/24.0879, with ranges 19.8736..117.9565,
+4.7174..34.9885 and 13.4505..128.3793. These noisy ratios do not select a
+budget from a single favorable median. Finite compute candidate/balanced
+medians stay within about 0.4%; file+compute changes are small, about
+142..151 ms across the candidates at two/four/eight workers.
+
+Keep `WF_SCHED_IO_QUANTUM=0` as the default. The per-join opportunity is not a
+substitute for understanding admission, event service and continuation order.
+The compiled-loop chunk result from experiment 12 remains separate evidence.
+
+Windows scheduler job `101561489440` timed out at its existing 20-minute job
+limit. Base file+compute passed at two/four workers and pinned passed at two;
+the pinned/four invocation produced neither output nor a final report. This
+occurred with `io_quantum=0`, before the new budget-policy socket cases were
+built or run. [Artifact 9997879897](https://github.com/mbbill/Whitefoot/actions/runs/34061037722/artifacts/9997879897)
+retains those partial results. The separate passing io-hosts suite does not
+qualify these unexecuted cases or explain the stall. Experiment 24 isolates a
+candidate Windows notification defect before any runtime fix is selected.
 
 ## Twenty-third experiment: receive storage and sequential-handler residency
 
@@ -2665,3 +2728,30 @@ completion suite before timing. All native stream checks run before timing,
 and the existing Windows memory and staged-IOCP qualification remains wired.
 Other placement and paced-load comparisons are deferred until this narrower
 experiment can distinguish receive storage from execution representation.
+
+## Twenty-fourth experiment: Windows wake ownership under re-entry
+
+The Windows timeout above makes progress qualification the immediate next
+runtime question. `wf_windows_iocp_notify` posts one unaddressed IOCP packet
+per announced sleeper. A polling reaper returns such a packet when sleepers
+remain, but `wf_windows_iocp_park` consumes a received wake unconditionally as
+its own. A newer park can capture the new epoch, enter the same port before an
+old sleeper reaches its kernel wait, and take the older sleeper's packet. A
+second such park can exhaust the remaining broadcast packets. Whether this
+explains the particular CI stall is not yet established.
+
+The native adapter regression gains `WF_WINDOWS_IOCP_WAKE_REPLAY` hooks that
+exist only in test links. Two threads announce against one epoch and stop at
+an event barrier immediately before their kernel waits. After publication,
+the caller performs two zero-timeout parks against the new epoch, then releases
+the old threads. Both old threads must receive actual wake packets. A finite
+test watchdog keeps a failure diagnosable; a timeout is explicitly not a wake.
+The probe reports the exact count received and cleans up both waiters and the
+port before checking it. The same case is wired into the existing native
+Windows adapter caller and its cross-build, retaining the original file I/O
+qualification. Production and timed links contain no replay hooks.
+
+This first revision adds the reproducer without changing the wake protocol.
+Native Windows execution is required to confirm the proposed interleaving;
+the M1 host has neither the Windows headers nor the Windows kernel. No timeout
+is added to a runtime progress or source-acceptance path.

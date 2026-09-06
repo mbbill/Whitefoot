@@ -212,7 +212,7 @@ jobs:
       # `completion-windows-cross`).
       - name: Build the Windows native adapter probe
         run: |
-          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic \
+          clang -std=c11 -O2 -g -Wall -Wextra -Werror -Wpedantic -DWF_WINDOWS_IOCP_WAKE_REPLAY \
             -I compiler/src/backend \
             -I compiler/src/backend/completion \
             compiler/src/backend/sched/core.c \

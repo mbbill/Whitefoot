@@ -1072,6 +1072,92 @@ static unsigned probe_state(const wf_completion_record *record) {
     return __atomic_load_n(&record->sched.state, __ATOMIC_ACQUIRE);
 }
 
+#if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
+/* Hold old sleepers after their announcement but before their kernel wait.
+ * A newly arriving worker then gets two opportunities to consume the wake
+ * packets. The old sleepers must still receive their notification afterward;
+ * a timeout only bounds a failed test and is never counted as a wake. */
+typedef struct probe_wake_context {
+    wf_windows_iocp_adapter *adapter;
+    uint64_t epoch;
+    HANDLE announced;
+    HANDLE release;
+    int result;
+    int received_wake;
+} probe_wake_context;
+
+static _Thread_local probe_wake_context *probe_current_waiter;
+
+void wf_windows_iocp_probe_before_park(void) {
+    probe_wake_context *context = probe_current_waiter;
+    if (context == NULL) return;
+    if (SetEvent(context->announced) == FALSE ||
+        WaitForSingleObject(context->release, 5000u) != WAIT_OBJECT_0) {
+        ExitProcess(2u);
+    }
+}
+
+void wf_windows_iocp_probe_after_park(int received_wake) {
+    if (probe_current_waiter != NULL) {
+        probe_current_waiter->received_wake = received_wake;
+    }
+}
+
+static DWORD WINAPI probe_wake_thread(LPVOID opaque) {
+    probe_wake_context *context = (probe_wake_context *)opaque;
+    probe_current_waiter = context;
+    context->result = wf_windows_iocp_park(context->adapter, context->epoch, 1000u);
+    probe_current_waiter = NULL;
+    return 0u;
+}
+
+static int probe_wake_survives_new_waiter(void) {
+    wf_completion_runtime runtime;
+    wf_windows_iocp_adapter adapter;
+    probe_wake_context contexts[2];
+    HANDLE threads[2];
+    HANDLE release = CreateEventW(NULL, TRUE, FALSE, NULL);
+    unsigned received = 0u;
+    PROBE_CHECK(release != NULL);
+    PROBE_CHECK(wf_completion_runtime_init(&runtime) == 0);
+    PROBE_CHECK(wf_windows_iocp_init(&adapter, &runtime, 4u) == 0);
+    PROBE_CHECK(wf_completion_set_wake_callback(&runtime, wf_windows_iocp_notify, &adapter) == 0);
+    memset(contexts, 0, sizeof(contexts));
+    for (unsigned index = 0u; index < 2u; index++) {
+        contexts[index].adapter = &adapter;
+        contexts[index].epoch = wf_completion_wake_epoch(&runtime);
+        contexts[index].announced = CreateEventW(NULL, TRUE, FALSE, NULL);
+        contexts[index].release = release;
+        contexts[index].result = -1;
+        PROBE_CHECK(contexts[index].announced != NULL);
+        threads[index] = CreateThread(NULL, 0u, probe_wake_thread, &contexts[index], 0u, NULL);
+        PROBE_CHECK(threads[index] != NULL);
+        PROBE_CHECK(WaitForSingleObject(contexts[index].announced, 5000u) == WAIT_OBJECT_0);
+    }
+    PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 2u);
+    wf_completion_notify_compute(&runtime);
+    PROBE_CHECK(wf_windows_iocp_statistics_snapshot(&adapter).host_wake_posts == 2u);
+    for (unsigned index = 0u; index < 2u; index++) {
+        PROBE_CHECK(wf_windows_iocp_park(&adapter, wf_completion_wake_epoch(&runtime), 0u) == 0);
+    }
+    PROBE_CHECK(SetEvent(release) != FALSE);
+    for (unsigned index = 0u; index < 2u; index++) {
+        PROBE_CHECK(WaitForSingleObject(threads[index], 5000u) == WAIT_OBJECT_0);
+        PROBE_CHECK(contexts[index].result == 0);
+        received += contexts[index].received_wake != 0;
+        PROBE_CHECK(CloseHandle(threads[index]) != FALSE);
+        PROBE_CHECK(CloseHandle(contexts[index].announced) != FALSE);
+    }
+    PROBE_CHECK(CloseHandle(release) != FALSE);
+    PROBE_CHECK(wf_completion_parked_scheduler_count(&runtime) == 0u);
+    PROBE_CHECK(wf_windows_iocp_destroy(&adapter) == 0);
+    PROBE_CHECK(wf_completion_runtime_destroy(&runtime) == 0);
+    (void)printf("native-adapter-probe wake-replay expected=2 received=%u\n", received);
+    PROBE_CHECK(received == 2u);
+    return 0;
+}
+#endif
+
 int main(int argc, char **argv) {
     wf_completion_runtime runtime;
     wf_windows_iocp_adapter adapter;
@@ -1089,6 +1175,9 @@ int main(int argc, char **argv) {
     if (argc != 2) {
         return 2;
     }
+#if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
+    PROBE_CHECK(probe_wake_survives_new_waiter() == 0);
+#endif
     PROBE_CHECK(contract.implemented == 1);
     PROBE_CHECK(contract.native_completion == 1);
     PROBE_CHECK(contract.may_use_blocking_helpers == 0);

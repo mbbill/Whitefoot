@@ -843,6 +843,12 @@ void wf_windows_iocp_notify(void *context) {
     }
 }
 
+#if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
+/* Native regression scheduling only; absent from production and timed links. */
+void wf_windows_iocp_probe_before_park(void);
+void wf_windows_iocp_probe_after_park(int received_wake);
+#endif
+
 int wf_windows_iocp_park(
     wf_windows_iocp_adapter *adapter,
     uint64_t observed_epoch,
@@ -907,6 +913,9 @@ int wf_windows_iocp_park(
         1,
         memory_order_relaxed
     );
+#if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
+    wf_windows_iocp_probe_before_park();
+#endif
     succeeded = GetQueuedCompletionStatus(
         adapter->port,
         &transferred,
@@ -915,6 +924,11 @@ int wf_windows_iocp_park(
         timeout
     );
     error_code = succeeded != FALSE ? 0u : GetLastError();
+#if defined(WF_WINDOWS_IOCP_WAKE_REPLAY)
+    wf_windows_iocp_probe_after_park(
+        succeeded != FALSE && overlapped == NULL && key == adapter->wake_key
+    );
+#endif
 
     wf_completion_wait_lock(&adapter->runtime->wait);
     {

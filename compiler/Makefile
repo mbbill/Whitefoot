@@ -523,7 +523,7 @@ completion-windows-cross:
 		$(COMPLETION_DIR)/bridge_default_probe.c \
 		-o "$(COMPLETION_TMP)/windows-default-route-probe.exe" \
 		$(WINDOWS_LINK_LIBRARIES)
-	$(WINDOWS_CC) $(WINDOWS_CFLAGS) \
+	$(WINDOWS_CC) $(WINDOWS_CFLAGS) -DWF_WINDOWS_IOCP_WAKE_REPLAY \
 		$(SCHED_DIR)/core.c \
 		$(SCHED_DIR)/prim_windows.c \
 		$(COMPLETION_DIR)/runtime.c \
