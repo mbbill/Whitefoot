@@ -2316,7 +2316,88 @@ The dispatch revision `b8c94ecd7a48b0fb235d20e821028ac90a51aba2` passed the
 canonical gate and io-hosts. Its native Windows placement job also passed all
 six staged socket runs and the retained memory/pinning IOCP checks in
 [run 34058004685](https://github.com/mbbill/Whitefoot/actions/runs/34058004685).
-The Linux measurement jobs are still required for its performance decision.
+The gate, io-hosts, ordinary benchmark and both Linux measurement jobs all
+completed successfully. The echo artifact has 840 validated timed rows; its
+Intel Xeon Platinum 8573C host exposes four logical CPUs on two SMT cores.
+The fixed-arrival artifact has 504 rows on an AMD EPYC 7763 with the same
+logical/physical CPU counts. Compare policies within each job, not absolute
+rates between these different hosts. Both series use seven paired passes.
+
+For split2 echo, deliberate distribution recovers the pinned policy's large
+capacity loss. Selected medians follow; rates are exchanges/s and p99 is us.
+
+| Case | Base rate / p99 | Pinned owner rate / p99 | Balanced rate / p99 | io_uring rate / p99 | epoll rate / p99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 64 peers, 64 bytes | 249630 / 305 | 171676 / 470 | 307263 / 234 | 318904 / 232 | 280708 / 261 |
+| 1024 peers, 64 bytes | 225258 / 5976 | — | 274812 / 4673 | 271990 / 4434 | 281181 / 4598 |
+| 64 peers, 64 KiB | 49089 / 1656 | — | 63146 / 1295 | 46862 / 2074 | 66230 / 1165 |
+
+Paired balanced/base throughput ratios are 1.2248 (1.1646..1.4670),
+1.2242 (1.1827..1.2463), and 1.2839 (1.2134..1.3401), respectively.
+Balanced/owner ratios are 1.8148, 2.4332 and 1.7002. This is a repeatable
+placement improvement in these cells, not a universal replacement. Split2
+four-peer throughput loses every pair to base, ratio 0.7667
+(0.7488..0.8262). Shared4/64 and /1024 improve median throughput but worsen
+every paired p99, ratios 3.7026 (3.3220..5.3678) and 2.8969
+(1.2368..4.0525). Their balanced median tails are 2705 and 16895 us.
+Shared4 large transfers also worsen every tail pair, ratio 1.7418.
+
+CPU and memory remain behind native references in important cells. At
+split2/64, balanced uses 6.641 us of server CPU per exchange versus io_uring
+5.938; RSS is 35780 versus 4696 KiB (epoll 1980). At 1024, balanced uses
+7.324 us and 79380 KiB versus epoll 6.592 us and 1992 KiB. The experiment
+deliberately leaves both memory policies off. Finite compute controls remain
+near base at two workers and improve about 1% at four; the eight-worker
+median is 1815 versus 1892 ms. File+compute medians are 159/160/166 ms versus
+base 167/170/196 at two/four/eight workers; these include startup.
+
+An independent untimed split2/64 observation starts exactly 32 handlers on
+each owner and has zero pinned resume migrations. It reports 4641 ring
+enters, 375 kernel waits and 366 wake writes, versus pinned owner's 5413,
+14 and zero. The pinned run's 1769 scheduler parks mostly are not ring waits;
+it uses one ring. Balanced uses two rings and 376 scheduler parks. These are
+mechanism observations from separate executions, not counters measured during
+the timed samples. They motivate the next wake test without establishing its
+benefit in advance.
+
+The fixed-arrival mixed test restores most heavy capacity but does not fix
+light tails. The table uses heavy requests completed by the one-second
+deadline, not completions during drain; light p99 includes client backlog.
+Every row has 64 peers and 2097152 recurrence steps per heavy request.
+
+| Placement / light arrivals per second | Chunk heavy / light p99 us | Chunk+owner | Chunk+balanced | Native quantum 16384 |
+| --- | ---: | ---: | ---: | ---: |
+| shared2 / 4800 | 464 / 1122 | 469 / 1018 | 472 / 1204 | 472 / 651 |
+| shared2 / 24000 | 384 / 930 | 160 / 1112 | 410 / 1444 | 416 / 668 |
+| shared4 / 4800 | 905 / 2966 | 463 / 1075 | 911 / 3889 | 925 / 3271 |
+| shared4 / 24000 | 720 / 2911 | 160 / 1234 | 745 / 3990 | 776 / 3277 |
+| split2 / 4800 | 464 / 1031 | 224 / 1007 | 466 / 1324 | 472 / 646 |
+| split2 / 24000 | 384 / 742 | 153 / 1094 | 408 / 994 | 416 / 669 |
+| split1 / 4800 | 224 / 994 | 225 / 999 | 226 / 994 | 240 / 865 |
+| split1 / 24000 | 192 / 935 | 192 / 1055 | 192 / 1094 | 192 / 858 |
+
+At split2, balanced/native heavy-capacity paired medians are 0.9873/0.9829
+at the two arrival rates. Every corresponding light-tail pair loses, with
+median ratios 1.8914/1.4490 and ranges 1.1921..17.2337/1.1077..11.5402.
+Shared2 also loses every native tail pair, ratios 1.8698/2.1991. Shared4 at
+24000 loses both every heavy-capacity pair (median 0.9617) and every light-tail
+pair (1.2671). Relative to unpinned chunk, balanced's heavy-capacity gain at
+split2/24000 is 1.0625 (1.0417..1.0833), while tail variation remains large.
+
+The zero-compute, 4800-light-arrivals control is a sharper counterexample:
+split2 balanced reaches 165449 exchanges/s versus chunk 127751 and native
+quantum 192472, but light p99 is 6971 us versus 2137 and 171. Every paired
+balanced/native tail ratio loses, median 41.2485 (7.7412..96.7836). Shared4
+balanced/chunk tail also loses every pair, median 5.4753. A candidate cannot
+be selected from heavy throughput or closed-loop echo alone.
+
+Initial placement was a real implementation defect in the tested fixed-owner
+policy. Removing it supports further owner-local work, but leaves service
+fairness, wake cost, shared-SMT interference, memory and dynamic load balance
+unresolved. The native quantum handler independently limits each service turn
+to eight replies; WF's chunk option still applies a 16384 backedge counter to
+unchunkable request loops. An operation-service budget is a distinct hypothesis
+to test, not yet an explanation established by these measurements.
 
 ## Twenty-first experiment: omit a running owner's redundant wake
 
