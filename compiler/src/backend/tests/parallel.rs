@@ -1766,8 +1766,9 @@ fn the_runtime_replaces_the_modules_weak_refusal() {
 /// because every other case here names a worker count. Before it, an unset
 /// variable meant the sequential world, so a `--par` binary handed to anybody
 /// who did not know about the variable was byte-for-byte a sequential program
-/// and the entire path was off for every real run. The grant count is the
-/// runtime's own counter, so "the pool started" is read rather than assumed.
+/// and the entire path was off for every real run. The started-worker count
+/// is the runtime's own counter, so "the pool started" is read rather than
+/// assumed.
 ///
 /// The opt-outs are pinned in the same case against the same executable, so a
 /// change that turned the default on by making *every* setting start a pool
@@ -1786,34 +1787,30 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
     let module = emit_with_overlap(OVERLAPPING_FOLD);
     let directory = test_directory();
 
-    // `wf__par_grants` counts steals, and a steal is a scheduling event: a
-    // pool thread has to be given a CPU before the offering lane finishes the
-    // work itself. On a saturated host that can fail to happen in one run of
-    // a program this short, so the existential observation (the default build CAN
-    // be granted lanes) is re-observed over [`GRANT_OBSERVATION_RUNS`] runs,
-    // exactly as the WF_WORKERS=4 case above does. A pool that never grants
-    // fails every one of them; the opt-out runs below stay exact.
+    // "The pool started" is read from the core's own count of the pool
+    // threads it started, which the observer prints on the `sched:` line
+    // after the grant line. It is not read from the grant count: a grant is a
+    // steal, and a steal is a scheduling event that needs a pool thread to be
+    // given a CPU while the offering lane still holds the work. The
+    // three-core macOS gate runner, saturated by the sibling cases of this
+    // suite, ran this program to its end before either of its two started
+    // workers was scheduled at all (`workers_started=2 parks=0 steals=0
+    // inline_runs=63`), and that is the default doing exactly what it should
+    // with the CPU it was given, not the path being off. That the default
+    // build CAN be granted lanes is the WF_WORKERS=4 case above, which makes
+    // that existential observation over [`GRANT_OBSERVATION_RUNS`] runs; this
+    // case is about which world an absent setting selects, and the started
+    // count states that directly. The opt-out runs below stay exact.
     let counted = CountedProgram::link(&module, &directory);
-    let (defaulted, published) = counted.run(None);
+    let (_, published) = counted.run(None);
     assert_eq!(published.status.code(), Some(0));
-    let observed_grants = if defaulted == 0 {
-        counted.grants_over_runs(None, GRANT_OBSERVATION_RUNS)
-    } else {
-        defaulted
-    };
-    if observed_grants == 0 {
-        // One more run, for its counters: the observer prints the core's own
-        // statistics after the grant line when the run asks for them, and a
-        // failure here is read from what the threads did rather than from the
-        // zero alone.
-        let (_, last) = counted.run(None);
-        panic!(
-            "a --par binary with no worker setting must run in the overlapped \
-             world and be granted lanes, or the path is off for every real run; \
-             the last run reported: {}",
-            String::from_utf8_lossy(&last.stderr).trim()
-        );
-    }
+    let started = workers_started(&published);
+    assert!(
+        started >= 1,
+        "a --par binary with no worker setting must start the pool, or the \
+         path is off for every real run; the run reported: {}",
+        String::from_utf8_lossy(&published.stderr).trim()
+    );
 
     let mut runs = vec![("WF_WORKERS absent".to_owned(), published.stdout)];
     for setting in ["0", "1"] {
@@ -1821,6 +1818,11 @@ fn an_absent_worker_setting_starts_the_pool_and_an_explicit_opt_out_does_not() {
         assert_eq!(output.status.code(), Some(0), "WF_WORKERS={setting}");
         assert_eq!(
             granted, 0,
+            "WF_WORKERS={setting} is an opt-out and must never grant a lane"
+        );
+        assert_eq!(
+            workers_started(&output),
+            0,
             "WF_WORKERS={setting} is an opt-out and must never start the pool"
         );
         runs.push((format!("WF_WORKERS={setting}"), output.stdout));
@@ -2269,6 +2271,22 @@ fn counted_run(executable: &Path, workers: Option<&str>) -> (u64, std::process::
         .and_then(|count| count.trim().parse::<u64>().ok())
         .unwrap_or_else(|| panic!("the observer must report a grant count, got {report:?}"));
     (granted, output)
+}
+
+/// The number of pool threads the core started in one counted run, read from
+/// the `sched:` line the observer prints after the grant line when the run
+/// asks for the core's counters, which every counted run does.
+fn workers_started(output: &std::process::Output) -> u64 {
+    let report = String::from_utf8_lossy(&output.stderr).into_owned();
+    report
+        .lines()
+        .find(|line| line.starts_with("sched: "))
+        .and_then(|line| {
+            line.split_whitespace()
+                .find_map(|field| field.strip_prefix("workers_started="))
+        })
+        .and_then(|count| count.parse::<u64>().ok())
+        .unwrap_or_else(|| panic!("the observer must report the core's counters, got {report:?}"))
 }
 
 /// Every sequential clone the module defines, by symbol.
