@@ -2965,7 +2965,7 @@ ACTIVE-SPEC: v0.48 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70
   record creates no separate approval step, and nothing in this record asserts
   that the approval has been given.
 - SPECIFICATION: activate Whitefoot v0.49 at exact SHA-256
-  `a318b7ab29b4a270a0857f56781a5301e502fd8e66f15d040af11f2637f173b2`.
+  `ba0d9e277c3c0d2d46123a6cc12869d8ffbbab7e9c922a03bb165259cc5ce696`.
   It supersedes active v0.48 at SHA-256
   `1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc`;
   those outgoing bytes are preserved byte-for-byte as
@@ -2998,4 +2998,4 @@ ACTIVE-SPEC: v0.48 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70
   `prf1-pos-derived-multiplicity`, rules PRF-1, ENT-6, expect run exit 0: a
   padded-bitmap row offset over a computed stride. Rule coverage is 136/136
   before and after.
-ACTIVE-SPEC: v0.49 a318b7ab29b4a270a0857f56781a5301e502fd8e66f15d040af11f2637f173b2 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc
+ACTIVE-SPEC: v0.49 ba0d9e277c3c0d2d46123a6cc12869d8ffbbab7e9c922a03bb165259cc5ce696 1df543b91d20e7f5800bc0fea79b5154ae7bf9bda265e45491e2170bf5a70dcc
