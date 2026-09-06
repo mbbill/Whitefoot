@@ -57,6 +57,16 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
+    // Each function's compiler-owned suspension summary, indexed the same way.
+    // A staged loop whose cut is a user call needs it: whether that call may
+    // suspend is the callee's declared contract, not something a call site can
+    // read off its own shape.
+    let function_actions = checked
+        .data
+        .functions
+        .iter()
+        .map(|function| function.target_action)
+        .collect::<Vec<_>>();
     // The [PAR-1 candidate] permission table, read exactly as the checker
     // produced it. Lowering selects which permitted groups it can actualize
     // and never widens one — and reads the table at all only when this
@@ -77,6 +87,7 @@ pub fn lower_checked<'classified, 'lexed, 'source>(
         nominals: &nominals,
         constants: &constants,
         function_results: &function_results,
+        function_actions: &function_actions,
         synthesis: &synthesis,
     };
     let mut functions = checked
@@ -122,6 +133,8 @@ struct LoweringContext<'program> {
     constants: &'program [IrGlobalConstant],
     /// Every source function's declared IR result, indexed by [`FunctionId`].
     function_results: &'program [IrType],
+    /// Every source function's suspension summary, indexed the same way.
+    function_actions: &'program [crate::TargetAction],
     synthesis: &'program SynthesisCell,
 }
 
@@ -236,7 +249,7 @@ fn lower_nominals(
                             break;
                         };
                         let constructor =
-                            crate::system_constructor_index(declaration, crate::Inventory::ACTIVE)
+                            crate::system_constructor_index(declaration, data.inventory)
                                 .and_then(|index| {
                                     crate::SYSTEM_CONSTRUCTORS.get(usize::from(index))
                                 })
@@ -251,8 +264,20 @@ fn lower_nominals(
                     }
                     owner.map_or(IrNominalIdentity::Ordinary, IrNominalIdentity::System)
                 }
-                CheckedNominalKind::Struct { .. }
-                | CheckedNominalKind::Enum { .. }
+                // A system-declared struct is an ordinary checked struct, so
+                // the fact that it came from a catalog row is carried beside
+                // the nominals rather than inside one [SYS-18]. Keeping its
+                // system identity here is what lets the backend resolve the
+                // operation-table type of `close_connection`'s parameter by
+                // the same route every other exact system type takes.
+                CheckedNominalKind::Struct { .. } => data
+                    .system_structs
+                    .iter()
+                    .find(|(_, id)| id.0 as usize == index)
+                    .map_or(IrNominalIdentity::Ordinary, |(nominal, _)| {
+                        IrNominalIdentity::System(*nominal)
+                    }),
+                CheckedNominalKind::Enum { .. }
                 | CheckedNominalKind::Box { .. }
                 | CheckedNominalKind::Arena { .. }
                 | CheckedNominalKind::ArenaStorage => IrNominalIdentity::Ordinary,
@@ -445,6 +470,10 @@ struct IrBuilder<'program> {
     /// call defines exactly the callee's declared result type — an address
     /// for a borrow of addressed content [OWN-2, TYPE-7].
     function_results: &'program [IrType],
+    /// Every function's compiler-owned suspension summary, indexed the same
+    /// way, so a staged cut that is a user call can be recognized by the
+    /// callee's declared contract rather than by its shape.
+    function_actions: &'program [crate::TargetAction],
     /// For each statement holding exactly one named-function call in call
     /// position — a `let` right-hand side or a `match` scrutinee — the block
     /// the call's definition landed in and the value it defined. The
@@ -502,6 +531,7 @@ impl<'program> IrBuilder<'program> {
             nominals,
             constants,
             function_results,
+            function_actions,
             synthesis,
         } = context;
         let mut builder = Self {
@@ -517,6 +547,7 @@ impl<'program> IrBuilder<'program> {
             result,
             addressed_bindings,
             function_results,
+            function_actions,
             call_results: HashMap::new(),
             permissions,
             overlap,
@@ -549,6 +580,7 @@ impl<'program> IrBuilder<'program> {
             nominals: self.nominals,
             constants: self.constants,
             function_results: self.function_results,
+            function_actions: self.function_actions,
             synthesis: self.synthesis,
         }
     }
@@ -956,13 +988,20 @@ impl<'program> IrBuilder<'program> {
         // dependency set when the call is already present; otherwise add the
         // single finite step.  The `driver_ready` gate is what prevents a
         // permission-only descriptor from changing emitted execution.
+        //
+        // The cut may be a may-suspend user call rather than a system
+        // operation. That is the same schedule with a lane frame in the slot
+        // instead of a completion record, so it is the same step: what the
+        // backend puts in the slot is the backend's choice over one accepted
+        // program, exactly as the choice between a typed adapter and a
+        // qualified wrapper is.
         if self
             .completion_pipeline
             .as_ref()
             .is_some_and(IrCompletionPipeline::driver_ready)
             && let Some(cut) = self.staged_cut.as_ref()
             && let Some((_, result)) = self.call_results.get(cut).copied()
-            && self.direct_may_suspend_system_call(result)
+            && self.may_suspend_staged_call(result)
         {
             if let Some(step) = lowered.iter_mut().find(|step| step.call == result) {
                 step.submit = true;
@@ -1012,6 +1051,41 @@ impl<'program> IrBuilder<'program> {
                     } if *result == value && target_action.may_suspend()
                 )
             })
+        })
+    }
+
+    /// Whether this value is a may-suspend call of either kind.
+    ///
+    /// A staged cut is a call the checker judged may suspend, and that is a
+    /// property of the operation for a system call and of the callee's
+    /// declared contract for a user call. Both reach the same schedule: the
+    /// system call is submitted to the completion runtime, the user call is
+    /// handed to a compute lane, and the pipeline holds one address per
+    /// in-flight iteration either way.
+    fn may_suspend_staged_call(&self, value: IrValueId) -> bool {
+        self.blocks.iter().any(|block| {
+            block
+                .instructions
+                .iter()
+                .any(|instruction| match instruction {
+                    IrInstruction::Define {
+                        result,
+                        operation: IrOperation::SystemCall { target_action, .. },
+                        ..
+                    } => *result == value && target_action.may_suspend(),
+                    IrInstruction::Define {
+                        result,
+                        operation: IrOperation::Call { function, .. },
+                        ..
+                    } => {
+                        *result == value
+                            && self
+                                .function_actions
+                                .get(*function as usize)
+                                .is_some_and(|action| action.may_suspend())
+                    }
+                    _ => false,
+                })
         })
     }
 
@@ -1590,11 +1664,22 @@ impl<'program> IrBuilder<'program> {
             }
             // An opaque resource value is its own borrow: it has no
             // source-visible content and needs no stable address, exactly as
-            // a `box` borrow does.
+            // a `box` borrow does. A borrow of one that is a struct field is
+            // the same value, read out of the aggregate: the field path is
+            // projected without consuming the root, because a borrow leaves
+            // the whole value live [SYS-18].
             CheckedExpression::BorrowSystemResource {
-                binding, nominal, ..
+                binding,
+                fields,
+                nominal,
+                ..
             } => {
-                let value = self.binding_value(*binding)?;
+                let root = self.binding_value(*binding)?;
+                let value = if fields.is_empty() {
+                    root
+                } else {
+                    self.project_struct_path(root, fields, false)?
+                };
                 if self.value_type(value)? != IrType::Nominal(self.erased(*nominal)) {
                     return Err(LoweringFailure::InvalidCheckedProgram);
                 }

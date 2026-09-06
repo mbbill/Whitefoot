@@ -1,0 +1,49 @@
+fn drain(link: &uniq TcpConnection, scratch: &uniq buffer<u8>) -> result: own u8 reads(link.receive, link.send, scratch), writes(link.receive, link.send, scratch) contract {
+  define room = len_of(deref(scratch));
+  requires 32_u64 <= room;
+} {
+  doc "Reads one chunk through the receiving direction only, naming that direction as its effect path.";
+  let outcome = 0_u8;
+  region {
+    match receive_next(receive: &uniq deref(link).receive, destination: &uniq deref(scratch), start: 0_u64, end: 32_u64) {
+      ReadBytes(next: endpoint) => {
+      }
+      ReadEnd() => {
+      }
+      ReadFailed(error: problem) => {
+        set outcome = 2_u8;
+      }
+    }
+  }
+  return outcome;
+}
+
+command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
+  doc "EFF-1, SYS-18: an effect path may name a struct field, and a system struct's two directions are ordinary fields, so `link.receive` and `link.send` are the paths a helper over a whole connection declares and the row is stated leaf by leaf rather than over the aggregate. The checker admits this program and lowering lowers it; the target has no approved row for a TCP submission in this version, so it stops at target qualification, which is not a source-language rejection [QUAL-1].";
+  let scratch = buffer_new(32_u64, 0_u8);
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9103_u16);
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &address) {
+            Connected(connection: link) => {
+              let outcome = 0_u8;
+              region {
+                set outcome = drain(link: &uniq link, scratch: &uniq scratch);
+              }
+              let returned = close_connection(connection: move link);
+              return exit_status(code: outcome);
+            }
+            ConnectFailed(error: problem, permit: returned) => {
+              return exit_status(code: 4_u8);
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+}

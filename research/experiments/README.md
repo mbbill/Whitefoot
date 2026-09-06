@@ -14,6 +14,11 @@ high-level sequencing; plans do not grant or withhold branch permission.
 
 ## Current flagship experiment evidence
 
+- `park-on-miss-switch-cost/` — the first §12 measurement of the park-on-miss
+  design: one hand-written stack switch against a condition-variable
+  park-and-wake on the same host. Measured 2026-09-04 (Darwin arm64): 9.8–10.4
+  ns per switch, 872–934 ns per park-and-wake, 84–95×; `swapcontext` 345–355
+  ns. The design's bar (a switch well under one park-and-wake) is met.
 - `wfgrep-baseline/` — the PERF-1 zero-change baseline of the frozen
   sequential wfgrep against the pinned system `grep -h -F`, preregistered
   with null-comparison precision gates per the RG-BASE lesson. Measured:
@@ -80,6 +85,27 @@ high-level sequencing; plans do not grant or withhold branch permission.
   quiet-host medians. Fourteen defects with dispositions in
   [`blind-writer/`](blind-writer/). It
   is removed when the language stops changing.
+- `park-on-miss-measurements/` — the rest of the §12 measurements and the four
+  choices the plan added on 2026-09-05, each alternative built behind a
+  compile-time `-D` in the scheduler core and measured against the shipped form
+  with the io-completion-bench runner's discipline. Measured 2026-09-05 (Linux,
+  four cores, clang 18): the shipped park and publish is 4.40 µs at best and
+  6.23 µs at the median, against this host's own 16.2 µs condition-variable
+  park-and-wake and the design's quoted 2.2 µs; the lane slot count cannot be
+  separated between 4 and 64; the pool stops refusing at twelve stacks at four
+  workers and twenty at eight, and a refusal costs no measurable wall time; the
+  record's growth is exactly 32 bytes per outstanding operation a frame holds;
+  every hand-out entry in `tests/programs` is bounded by 80 bytes. Nothing is
+  chosen here. The result that decides the rest is that five of the six
+  behavioural variants cannot be measured: four are rejected by the §11
+  enumerator, and `WF_SCHED_WEAK_ORDERS` passes the enumerator and then hangs
+  `par_layout` deterministically at two workers and above, which is the
+  sequentially consistent blind spot the plan's deferred GenMC note names,
+  witnessed. Slice 4b acted on that record: the six behavioural switches are
+  deleted from the core, `WF_SCHED_LANE_SLOTS` stays the `#if !defined`
+  override of `core.h` it was before the sweep, and the bundle keeps its
+  tables and the sections it can still reproduce. It goes when §12 item 1 and
+  the chain bar are answered or retired.
 - `io-completion-bench/` — the program-level answer to whether the unified-state
   completion I/O model reaches native performance on whole programs, which
   until 2026-08-27 had only C-level component evidence. Three lines per

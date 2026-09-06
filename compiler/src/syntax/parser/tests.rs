@@ -674,7 +674,7 @@ fn main() -> result: own unit pure {}
     assert!(finalized.node_count() >= productions().len());
 }
 
-const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus pure {\n  return unit;\n}\n";
+const KIND_DECLARING_ENTRY: &[u8] = b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus pure {\n  return unit;\n}\n";
 
 const EXTERNAL_EFFECT_ROW: &[u8] =
     b"fn probe() -> result: own unit external {\n  return unit;\n}\n";

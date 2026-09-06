@@ -8,9 +8,11 @@ then against a read-dominated workload whose files are opened once and
 whose reads are taken past the page cache, and finally re-measured on 2026-08-28
 after the Darwin helper path's per-operation cost was rebuilt.
 
-Read the batch-0096 section last and the batch-0092 section first. Batch 0092
-is the only workload here whose operations genuinely wait, and it is where the
-design's own question is answered; batch 0096 is the same workload re-measured
+Read the batch-0108 section at the end for the network control test, the first
+workload here whose peer decides when an operation completes. Of the file
+workloads, read the batch-0096 section last and the batch-0092 section first.
+Batch 0092 is the only file workload whose operations genuinely wait, and it
+is where the design's own question is answered; batch 0096 is the same workload re-measured
 after the Darwin adapter was changed, and it is the current reading of the
 standing bar. Read the batch-0090 section for the Linux-hardware result that the
 container's headline ratio does not reproduce, the batch-0086 one for absolute
@@ -2243,3 +2245,337 @@ native io_uring throughput, Windows IOCP execution, scheduler contention in a
 complete Whitefoot program, or continuation-frame resume cost. Cached
 operations produced no helper crossover; that observation does not imply that
 high-latency operations have none.
+
+## TCP echo control test, batch 0108 (2026-09-06)
+
+The control test `NETWORK.md` §6 asks for, in
+`research/experiments/io-completion-bench/`: `uring_echo.c` is the io_uring
+reference (raw ABI, multishot accept and receive into a registered buffer
+ring, one ring and one `SO_REUSEPORT` listener per thread, single-issuer
+deferred task running), `epoll_echo.c` the second reference (one
+edge-triggered epoll and listener per thread), `programs/tcp_echo_server.wf`
+the Whitefoot line (a fixed-trip accept loop over the connection count the
+invocation names, one parked callee per connection, built with `--par` and
+run with `WF_STACKS=1100`), `netload.c` the one load generator, and
+`linux-net-bench.sh` the protocol: warm-up and recorded passes in alternating
+order, medians over the recorded passes, every echoed byte verified, no
+timeout deciding anything. `io-bench.yml`'s Linux job runs it after the file
+tables; the tables below are the development host, Linux 6.18 on four cores,
+`ROUNDS=3 WARMUP=1`. First the batch's last revision, after the three runtime
+changes the single-variable isolation in `archive/done/0108-streams-and-tcp.md`
+§6 arrived at (the progress pass reaps 64 completions instead of one, a
+socket transfer the host answers at once completes on the submitting thread
+without the ring, and the ring is set up with `IORING_SETUP_COOP_TASKRUN`):
+
+```text
+line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
+uring.k1                1      64    20000      28086.8       33.0       62.0         87.0       1.00       0.95
+epoll.k1                1      64    20000      29613.8       32.0       57.0         79.0       1.05       1.00
+wf.k1                   1      64    20000      35468.5        6.0      188.0        122.0       1.26       1.20
+uring.k64              64      64     2000     314881.9       60.0     2204.0        497.0       1.00       1.02
+epoll.k64              64      64     2000     307524.1       53.0     2834.0        457.0       0.98       1.00
+wf.k64                 64      64     2000     232273.0      245.0      714.0        497.0       0.74       0.76
+uring.k1024          1024      64      200     349084.5     2408.0     9383.0       5056.0       1.00       1.08
+epoll.k1024          1024      64      200     323565.8     1403.0    12823.0       3341.0       0.93       1.00
+wf.k1024             1024      64      200     201527.1     4870.0     7192.0       5445.0       0.58       0.62
+uring.k64.64k          64   65536      200      60512.3      576.0     4476.0        348.0       1.00       0.80
+epoll.k64.64k          64   65536      200      75730.4      305.0     5189.0        494.0       1.25       1.00
+wf.k64.64k             64   65536      200      52176.5     1064.0     3572.0        436.0       0.86       0.69
+
+line                  bytes_per_s
+uring.k64.64k        3965736271.7
+epoll.k64.64k        4963069082.4
+wf.k64.64k           3419437103.7
+```
+
+The Whitefoot line leads both references at one connection, where nearly
+every operation is answered at once, and is 0.74 of io_uring at 64
+connections, 0.58 at 1024 and 0.86 on the 64 KiB payload (after the first two
+changes alone: 1.08, 0.68, 0.48, 0.78). What remains on the ring is the
+receive whose peer has not sent yet, and the record's second series measured
+where its cost is: the `io_uring_enter` that hands staged receives to the
+kernel takes a microsecond an entry, 22 percent of the wall time, serialized
+on the pool's one ring, and two threads reach 85 percent of four; the
+reference arms one multishot receive per connection on a ring per thread and
+submits no receive at all. The third series then built the ring per
+thread, the kernel submission thread and the armed multishot receive and
+measured the rate unmoved by all three; the profile (`perf` on the
+development host) puts the remaining cost in the scheduler's shape, one
+ready list and one lock for every connection and the context switches that
+follow, and none of the three is kept (the record's §6, third series). The first
+reading of the same protocol, at a6b31b5 before either change:
+
+```text
+line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
+uring.k1                1      64    20000      28538.2       33.0       63.0         81.0       1.00       0.98
+epoll.k1                1      64    20000      29235.4       32.0       62.0         26.0       1.02       1.00
+wf.k1                   1      64    20000      15354.3       48.0      234.0        101.0       0.54       0.53
+uring.k64              64      64     2000     329876.3       64.0     2070.0        440.0       1.00       1.12
+epoll.k64              64      64     2000     294618.1       51.0     3532.0        520.0       0.89       1.00
+wf.k64                 64      64     2000      35993.9     1862.0     2792.0        636.0       0.11       0.12
+uring.k1024          1024      64      200     343760.3     1481.0    10234.0       5370.0       1.00       1.04
+epoll.k1024          1024      64      200     330230.5     1634.0    10224.0       3305.0       0.96       1.00
+wf.k1024             1024      64      200      26782.6    38105.0    43023.0       3771.0       0.08       0.08
+uring.k64.64k          64   65536      200      59161.2      696.0     4131.0        423.0       1.00       0.79
+epoll.k64.64k          64   65536      200      74564.0      324.0     5362.0        501.0       1.26       1.00
+wf.k64.64k             64   65536      200      18242.5     3302.0     8699.0        539.0       0.31       0.24
+
+line                  bytes_per_s
+uring.k64.64k        3877187281.9
+epoll.k64.64k        4886625315.3
+wf.k64.64k           1195542174.9
+```
+
+There the Whitefoot line stayed at 27 to 36 thousand round trips a second
+whatever the connection count while the references reached 330 to 344
+thousand, the mark of one serial resource rather than of the number of peers;
+the isolation found two, the one-completion reap under the ring's locks on
+every progress pass (E1, 35 to 69 thousand) and the park on a transfer the
+host could answer at once (E5, 69 to 205 thousand). The test also found the ring's
+completion-queue overflow stall at 129 connections, fixed in the same slice;
+`archive/done/0108-streams-and-tcp.md` §6 carries the reading of this table and
+§5 the defect. 8192 connections in flight is outside the shapes and the stack
+pool, and the table stops at 1024.
+
+The runner's own reading, `io-bench.yml`'s Linux job on a6b31b5 (ubuntu-24.04,
+four cores, kernel 6.8, `ROUNDS=3 WARMUP=1`), where both references are
+slower than here and the Whitefoot line faster, so the ratios differ from this
+host's by about a factor of two:
+
+```text
+line                conns   bytes    trips     rt_per_s     p50_us     p99_us   connect_us   vs_uring   vs_epoll
+wf.k1                   1      64    20000      16179.3       60.0      116.0         89.0       0.80       0.71
+uring.k64              64      64     2000     186447.5      135.0     2717.0        796.0       1.00       1.05
+epoll.k64              64      64     2000     177846.4       89.0     4246.0       1021.0       0.95       1.00
+wf.k64                 64      64     2000      50283.0     1280.0     2080.0       1198.0       0.27       0.28
+uring.k1024          1024      64      200     193084.2     5090.0     9698.0       9489.0       1.00       1.03
+epoll.k1024          1024      64      200     187009.6     5333.0     9886.0       8694.0       0.97       1.00
+wf.k1024             1024      64      200      50056.8    20328.0    25674.0       9987.0       0.26       0.27
+uring.k64.64k          64   65536      200      23527.3     2313.0     6528.0       1147.0       1.00       0.64
+epoll.k64.64k          64   65536      200      36791.7     1032.0     5885.0        552.0       1.56       1.00
+wf.k64.64k             64   65536      200      19670.4     2556.0     5420.0         34.0       0.84       0.53
+```
+
+The shape was the same on both hosts: the Whitefoot line flat across the
+connection counts while the references scale, and the ratio at one connection
+the cost of one park-and-wake per operation on that host.
+
+The three single-variable series, the measured basis of the readings above,
+each on the same 64-connection echo with the observer's counters:
+
+### Isolating the serial resource, one variable at a time
+
+Every row below is the same server, hand-linked with the grant observer so
+the core's counters print at exit, at 64 connections and 2000 round trips of
+64 bytes, three trials per variable, on this host; the reference io_uring
+line is 330 thousand round trips a second here. The counters for the shipped
+runtime said what the threads did: `parks=256132 resumes=256132 steals=64
+inline_runs=0` for 256 thousand operations, one park and one resume per
+receive and per send, and `strace -c` counted 720 thousand `futex` calls and
+178 thousand `io_uring_enter` calls per run, 5.6 and 1.4 per round trip.
+
+| variable | rt/s (three trials) | what it says |
+|---|---:|---|
+| shipped runtime | 34.0k, 35.0k, 37.2k | the baseline |
+| WF_WORKERS 2 / 4 / 8 | 35.0k / 36.0k / same | flat: a serial resource, not the core count |
+| E1: the progress pass reaps 64 completions instead of 1 | 69.8k, 69.5k, 69.4k | the reap was the serial resource; futex calls fall to 19 thousand a run |
+| E2: read the staged count without the submission lock before kicking | 69.1k, 69.6k, 70.5k | nothing; reverted |
+| E3: reap in batches and publish after dropping the completion lock | 66.4k, 68.5k, 68.8k | nothing; reverted |
+| E4: idle spin 0 rounds, and 4096 rounds with no yields | 68.3k, 69.8k, 67.7k and 69.9k, 68.5k, 68.2k | the spin is not in this path |
+| E6: WF_WORKERS 2 / 8 on E1 | 67.7k to 70.7k / 68.6k to 71.3k | still flat: one more serial resource |
+| E5a: a send the host accepts at once completes without the ring | 208.5k, 207.3k, 197.0k | half the parks gone (127 thousand); three times the rate |
+| E5b: the same attempt for a receive whose bytes have arrived | 215.5k, 208.1k, 204.8k | parks 107 to 115 thousand; kept, it is the same rule |
+| E7: reap budget 1024 | 214.6k, 202.4k, 217.1k | the same as 64 |
+
+What E1 and E5 are. The progress pass a scheduler thread makes on every idle
+turn reaped exactly one completion, taking the submission lock to kick and
+the completion lock to read it; with four threads doing that for 64
+connections the two mutexes were the convoy the futex count showed. The
+budget is `WF_BRIDGE_REAP_BUDGET`, 64, in `bridge.c`. E5 is the rule the
+bounded adapter already applies to a positioned read the submitting thread
+would run itself, applied to a socket transfer: `wf_file_transfer_now` in
+the platform leaf asks the host once with `MSG_DONTWAIT`, and an answer that
+is the operation's own outcome, bytes moved, the peer's end, or a definite
+refusal, completes the record where it was submitted, with no ring, no park
+and no wake; only the answer that the host would have to wait leaves the
+record for the engine. A send on a loopback whose window has room is always
+that first case, so the send half of every round trip stopped parking. The
+Windows leaf answers that the host would wait for every transfer, so nothing
+moves there.
+
+### The second series: where the remaining margin is
+
+The same method on the runtime after E1 and E5, at 64 connections, three
+trials per variable, with the ring's own counters printed beside the core's
+(`wf__bridge_report`, printed by the grant observer after the `sched:` line).
+The counters for the changed runtime: `parks=112130`, `submissions=112656
+submission_enters=4319 completions=112656 kernel_waits=31 host_wake_writes=100
+inline=143473`. Every send and one receive in eight complete at once; the
+other 112 thousand receives go to the ring, 26 to an `io_uring_enter`; and a
+thread slept in the kernel 31 times in a run, so the threads are never
+waiting for a completion the kernel has not posted.
+
+| variable | rt/s (three trials) | what it says |
+|---|---:|---|
+| the runtime at e134360 | 199.6k to 225.9k over three runs of three | the baseline of this series |
+| E8: a progress pass on every round of the idle spin, or every sixteenth | 206.2k to 213.4k | nothing: the spin holds no completion |
+| E9: `io_uring_enter` at every submission | 107.2k, 110.6k, 118.1k | half the rate: the deferred doorbell is right, one syscall per operation is not affordable |
+| E10: the enter outside the submission lock | 200.8k, 207.9k, 216.7k | nothing: the lock is not what the other threads wait on |
+| E12: `IORING_SETUP_COOP_TASKRUN` | 241.3k, 244.4k, 251.5k | kept: a completion the kernel finishes for a thread is posted at that thread's next syscall, not by an interrupt |
+| E15: kick at submission once eight entries are staged, on E12 | 168.6k, 177.8k, 188.2k | worse: four times the enters |
+| E16: `IORING_RECVSEND_POLL_FIRST` on a receive the host has just refused, on E12 | 207.5k, 218.8k, 237.7k | nothing measurable |
+| E17: a progress pass before every ready stack when the queue holds a completion, on E12 | 228.8k to 245.1k | nothing: reaping sooner during the busy phase changes no rate |
+| E12 at WF_WORKERS 2 / 4 / 8 | 202.9k to 211.6k / 234.3k to 251.5k / 218.5k to 235.4k | two threads reach 85 percent of four, eight are no better: mostly serial |
+
+Where the time goes, measured. Timing the two ring passes under a
+compile-time counter (not shipped) on E12 at 64 connections:
+
+```text
+timing: kick_ns=119016584 kick_entries=121848 reap_ns=21305268
+ring: submissions=121848 submission_enters=4268 ... inline=134281
+```
+
+The kick, the `io_uring_enter` that hands staged receives to the kernel,
+costs 0.98 microseconds an entry and 28 microseconds a call, 119
+milliseconds of a run whose exchange takes about 540: 22 percent of the wall
+time, serialized under one lock on one ring, and the kernel does the same
+work whichever thread rings the bell. The reap is 21 milliseconds. The CPU
+accounting of the servers over one run of 128 thousand round trips at 64
+connections, from the shell's `time`:
+
+```text
+server           wall    user    sys    rt/s
+uring_echo      0.72    0.03   0.69   325k
+epoll_echo      0.79    0.05   0.75   280k
+wf_echo         0.90    0.17   1.00   223k
+netload (against epoll)   0.51 wall, 0.06 user, 0.69 sys
+netload (against wf)      0.66 wall, 0.08 user, 0.76 sys
+```
+
+The Whitefoot server spends 7.8 microseconds of system time and 1.3 of user
+time per round trip against the references' 5.5 and 0.3, on 1.3 cores of the
+four; nothing is saturated, the client's four threads included, and pinning
+the server to two cores and the client to the other two changes nothing
+(316k, 198k, 285k). The line is latency-bound: at 64 connections a round
+trip takes 250 microseconds at the median against 62, and 64 divided by 250
+microseconds is the rate. That latency is the batch the pipeline moves in:
+a thread reaches the ring only when the ready list is empty, so a staged
+receive waits for the current batch of stacks to run, is kicked with 26
+others in one enter that takes 28 microseconds, and its completion is reaped
+at the next pass; E17 tried to break the batch and moved nothing, because
+the kick is the same serial work wherever it is placed. Two threads reach 85
+percent of four and eight reach less, which is what one serial resource that
+costs a quarter of the wall time does.
+
+The connection count, on the runtime at e134360 with the trips scaled to keep
+128 thousand round trips: 64 gives 219k to 229k, 128 gives 208k, 256 gives
+198k, 512 gives 176k, and 1024 gives 161k. The rate falls with the peers in
+flight because the batches grow with them, and each batch is serialized in
+the kick.
+
+What the reference does instead, and why it is structural. `uring_echo`
+never submits a receive: one multishot receive per connection is armed at
+accept and the kernel posts a completion per arrival with no `io_uring_enter`
+behind it; each thread has its own ring with no lock, so the four kicks of
+the sends run in parallel; and single-issuer deferred task running posts the
+completions inside the thread's own enter. The Whitefoot runtime has one
+ring for the pool, because the scheduler design's records are one operation,
+one completion, one owning frame, and a reaper on any thread publishes any
+record: a ring per thread needs the record to name its ring and the
+reaper to walk several, and a receive that stays armed across arrivals is a
+record that completes more than once, which the emitter's submit-then-join
+shape, the core's one park per record, and the bridge's route field all
+assume away. Those are the changes the next version makes for this line,
+with the data above as the reason: the serial kick is a quarter of the wall
+time and parallelizes only with a ring per thread; the receive that must
+wait is the whole of what is left after E5, and only a receive armed once
+per connection removes its submission.
+
+Two things this series settled that are not runtime defects. `WF_WORKERS=1`
+is the opt-out: the loop is not staged, the program serves one connection to
+its end before it accepts the next, and a client that drives every
+connection at once waits on the first, as the sequential program says. And a
+server whose port is still in `TIME_WAIT` from the previous trial refuses
+its bind; the trials draw ports from a wider range.
+
+### The third series: the ring is not where the time is
+
+The owner's answer to the second series was to keep going in this PR, so
+the structural candidates it named were built and measured one at a time,
+on the same 64-connection echo with the observer's counters, then on the
+protocol. None of them is kept; what they measured is the result.
+
+| variable | rt/s at 64 connections (three trials) | what it says |
+|---|---:|---|
+| the runtime at d016afb | 234.3k to 251.5k | the baseline of this series |
+| E18: one ring per scheduler thread, own ring kicked and reaped first, the rest reaped by every pass | 197k to 267k at four workers, 228k to 235k at two, 219k to 287k at eight | enters triple, to 13 thousand, because each ring kicks a smaller batch; no gain at four threads on four cores |
+| E20: `IORING_SETUP_SQPOLL`, idle 1 ms and 100 ms | 183k to 190k; 181k to 228k | the poll thread takes a core the client needs; enters fall to one and the rate falls with them |
+| E19: one multishot `IORING_OP_POLL_ADD` per receive half, armed by the first receive that waits, the reaper moving the bytes with one `recv`, a `POLL_REMOVE` rung at the half's release | 188k to 226k | receives submit nothing and enters fall from 4 thousand to 120; the rate does not move |
+| E26: the idle spin once per idle period, later turns park at once | 182k to 186k; 64k at 4 connections | the spin is not the cost |
+| E25: a publisher inside its own progress pass defers the wake it would send, and sends one only when it published more than it will pop | 189k to 216k; 60k at 4 connections | the wake is not the cost |
+| E29: `EPOLLEXCLUSIVE` on the ring descriptor in the shared epoll | 254k to 268k before the host restarted; no difference on the protocol after it | one parked thread wakes per completion instead of all; within the host's noise |
+
+The stage dwell of one waiting receive, timed under a compile-time counter
+(not shipped) at 64 connections on the runtime of d016afb: 70 microseconds
+from staging to the kick, 305 from the kick to the reap, 95 from the
+publication to the stack running again, about 470 in all, against a 60
+microsecond client turnaround. Every stage is a queue: the receive waits for
+the current batch of stacks to drain before anyone reaches the ring, the
+completion waits for the next pass, the resumed stack waits behind the batch
+in the ready list. Taking the kick out (E19), moving it to a kernel thread
+(E20) or splitting it four ways (E18) left the rate where it was: the batch
+cycle, not the kick, is the period, and the second series' "22 percent of
+the wall time" was serial work that the cycle hid rather than paid for.
+
+The two readings of E19 on the protocol, on the host after its restart, say
+what the armed receive is worth. Skipping the host attempt when the half's
+poll is armed and has reported nothing (fewer syscalls, more parks) reads
+0.94 at one connection against the baseline's 1.26, 0.72 against 0.76 at
+64, 0.75 against 0.64 at 1024 and 0.96 against 0.82 on 64 KiB; always
+attempting first reads 1.30, 0.77, 0.63 and 0.84, the baseline within noise.
+A four-hundred-line lock-free slot protocol that trades one connection for a
+thousand is not kept; the design is in this record if the thousand-connection
+line becomes the target.
+
+What `perf` says. With `linux-tools-generic` installed on the development
+host (perf 6.8 sampling `cpu-clock` at 4 kHz), the Whitefoot server at 64
+connections spends 20 percent of its samples in `_raw_spin_unlock_irqrestore`
+and 9 in `finish_task_switch`; the reference spends 14 and 14. Reading the
+callers, 17.8 of the 20 are under the program's own `send`: the loopback
+delivery wakes the client's thread (`tcp_data_ready`, `sock_def_readable`,
+`__wake_up_sync_key`) and both servers pay it in full. The runtime's own
+symbols at 64 connections are `pthread_mutex_lock` at 2.8 percent, the
+progress pass, the completion and the submit at about one each; the
+kernel's TCP path is the rest. At 4 connections the picture is different:
+`finish_task_switch` is 21 percent, `pthread_mutex_lock` 8, the steal scan
+`wf_sched_find` 3.7 and `wf_prim_pause` 3.2, and the Whitefoot line runs at
+65 to 70 thousand round trips a second against the reference's 294
+thousand, on 4.5 CPU-seconds against 0.76: four scheduler threads chasing
+four connections through one ready list and one lock, switching context once
+or twice per round trip, where the reference's four threads each own one
+connection and switch once, on the arrival of their own data. That shape, a
+connection that stays on the thread that reaped it, a per-thread ready list,
+a steal only from an idle thread, is what the profile points at, and it is a
+core change the enumerator has to cover, not a ring change: the next
+version's work, with this as its reason.
+
+Two host states. The development host restarted during this series, and
+after the restart the same binary measures in two states at 64 connections,
+180 to 195 thousand and 255 to 275 thousand, baseline and candidates alike
+when run alternately, and the references move by a fifth between protocol
+runs. Only ratios within one run are read above, and the runner's own table
+on this revision is the check. One defect the series found in the tests:
+`a_peer_that_resets_reaches_the_program_as_its_own_outcome_on_both_routes`
+closed the peer as soon as its payload was written, so on the macOS runner
+the close raced ahead of the echo, sent a graceful end instead of a reset,
+and the program read the direction's end and exited zero; the peer now
+peeks one echoed byte before it closes, so the queue holds data at the close
+on every host.
+
+The ratio is the batch's result, and the plan carries what it points at:
+the connection that stays on its reaping thread, the per-thread ready list
+and the steal from idleness are scheduler structure the design did not have
+to decide for files, where every operation of a program went through one
+thread's submissions; they are the next performance work on this line, in a
+new PR by the owner's decision.
+

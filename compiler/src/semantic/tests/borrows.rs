@@ -747,7 +747,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
     // it into a system operation whose own parameter is that same mode
     // [SYS-2]. An opaque resource has no source-visible content, so its
     // borrow is the value itself.
-    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, count: own u64) -> result: own unit reads(output, source), writes(output) contract {
+    let source = br#"fn publish(output: &uniq OutputStream, source: &buffer<u8>, count: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len_of(deref(source));
   requires count <= capacity;
 } {
@@ -762,7 +762,7 @@ fn borrow_mode_parameters_of_system_types_carry_the_ordinary_borrow_judgments() 
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let batch = buffer_new(1_u64, 0_u8);
   region {
     publish(output: &uniq out, source: &batch, count: 1_u64);
@@ -1408,7 +1408,7 @@ fn extension_writes_through_result_holders_kill_source_facts() {
 ///
 /// Spelled out here rather than imported, like the [FN-1] fix above, so a
 /// change to the text a writer reads has to be made twice on purpose.
-const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_file::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f FileFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
+const OWN6_STATEMENT_SCOPE: &str = "a child reborrow's region admits exactly one statement, and a value that statement binds dies at the region's end, so `region 'r { let permit = reserve_handle::<'r>(factory: &uniq 'r holder); match open_...(permit: move permit, ...) { ... } }` is two statements and cannot be repaired by shortening the region. The whole idiom is three parts: move the reserve and the open into one helper that takes the holder as `&uniq 'f` and returns the opened value (`fn open_source_from_factory['f, 'd](factory: &uniq 'f HandleFactory, directory: &'d DirectoryRead) -> result: own Result<DirectorySource, IoError>`); make the single statement of the region the `match` on that helper's call; and write every statement that uses the opened value inside that `match` arm, because the opened value dies with the region (P4 linear threading, P15 recursive walker). The other route, `let stale = replace target = call(...);`, applies only where the call leaves the target's root alive: a call that consumes the target root — one taking `move permit` — rejects OWN-1 instead.";
 
 const OWN6_ARGUMENT_POSITION: &str = "a reborrow is an argument only to a call returning an owned \
      value or unit, or in the one argument position a borrow-returning call takes its result \

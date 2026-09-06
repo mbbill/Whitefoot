@@ -221,10 +221,6 @@ sequential build's exact bytes. A fixed-host paired gate qualifies compute,
 warm IOCP, and mixed compute-plus-IOCP execution against matched controls on
 the same revision.
 
-Selective stackless continuation lowering is deliberately narrow; unsupported
-control-flow shapes retain the synchronous ABI instead of weakening ownership
-or completion bounds.
-
 `--par-ledger` prints the permission and actualization explanation for compiler
 development. `--stack-ledger` reports selected-host frame costs. Neither report
 participates in source acceptance or lowering authority.

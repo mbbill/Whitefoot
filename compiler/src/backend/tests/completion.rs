@@ -10,7 +10,7 @@ use crate::OverlapLowering;
 use crate::backend::emitter::emit_llvm_for_target;
 use crate::backend::qualification::SystemTarget;
 
-const INDEPENDENT_WRITES: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+const INDEPENDENT_WRITES: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let bulk = buffer_new(1048576_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
   region 'out {
@@ -46,7 +46,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let first_bytes = buffer_new(1_u64, 65_u8);
   let middle_bytes = buffer_new(1_u64, 66_u8);
   let last_bytes = buffer_new(1_u64, 67_u8);
@@ -67,7 +67,7 @@ const REUSED_OUTPUT_AROUND_INDEPENDENT_OUTPUT: &[u8] = br#"command fn main(comma
 }
 "#;
 
-const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files) {
+const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, out, files), writes(cwd, out, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -76,14 +76,20 @@ const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args:
             let first_bytes = buffer_new(1_u64, 65_u8);
             let last_bytes = buffer_new(1_u64, 67_u8);
             region 'state {
-              let permit = reserve_file(factory: &uniq files);
-              region 'out {
-                region 'first_bytes {
-                  region {
-                    let first = write_once(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
-                    let middle = open_read(permit: move permit, root: &'state cwd, path: &'state path);
-                    let last = write_once(output: &uniq 'out out, source: &last_bytes, start: 0_u64, end: 1_u64);
+              match reserve_handle(factory: &uniq files) {
+                Ok(value: permit) => {
+                  region 'out {
+                    region 'first_bytes {
+                      region {
+                        let first = write_once(output: &uniq 'out out, source: &'first_bytes first_bytes, start: 0_u64, end: 1_u64);
+                        let middle = open_read(permit: move permit, root: &'state cwd, path: &'state path);
+                        let last = write_once(output: &uniq 'out out, source: &last_bytes, start: 0_u64, end: 1_u64);
+                      }
+                    }
                   }
+                }
+                Err(error: spent) => {
+                  return exit_status(code: 8_u8);
                 }
               }
             }
@@ -102,7 +108,7 @@ const REUSED_OUTPUT_EDGE_CASE: &[u8] = br#"command fn main(command.args as args:
 }
 "#;
 
-const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files) {
+const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -113,9 +119,15 @@ const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args
               region 'p {
                 region 'err {
                   region {
-                    let permit = reserve_file(factory: &uniq 'c files);
-                    let opened = open_read(permit: move permit, root: &'c cwd, path: &'p path);
-                    let announced = write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64);
+                    match reserve_handle(factory: &uniq 'c files) {
+                      Ok(value: permit) => {
+                        let opened = open_read(permit: move permit, root: &'c cwd, path: &'p path);
+                        let announced = write_once(output: &uniq 'err err, source: &marker, start: 0_u64, end: 1_u64);
+                      }
+                      Err(error: spent) => {
+                        return exit_status(code: 8_u8);
+                      }
+                    }
                   }
                 }
               }
@@ -135,20 +147,26 @@ const BLOCKING_OPEN_AND_MARKER: &[u8] = br#"command fn main(command.args as args
 }
 "#;
 
-const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
         match relative_path(value: move text) {
           Ok(value: path) => {
             region {
-              let permit = reserve_file(factory: &uniq files);
-              match open_read(permit: move permit, root: &cwd, path: &path) {
-                Ok(value: file) => {
-                  return exit_status(code: 1_u8);
+              match reserve_handle(factory: &uniq files) {
+                Ok(value: permit) => {
+                  match open_read(permit: move permit, root: &cwd, path: &path) {
+                    FileOpened(value: file) => {
+                      return exit_status(code: 1_u8);
+                    }
+                    FileOpenFailed(error: problem, permit: refused_2) => {
+                      return exit_status(code: 0_u8);
+                    }
+                  }
                 }
-                Err(error: problem) => {
-                  return exit_status(code: 0_u8);
+                Err(error: spent) => {
+                  return exit_status(code: 8_u8);
                 }
               }
             }
@@ -166,7 +184,7 @@ const DIRECT_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: 
 }
 "#;
 
-const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files) {
+const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stderr as err: own OutputStream, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, err, files), writes(cwd, err, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -174,19 +192,25 @@ const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as ar
           Ok(value: path) => {
             let marker = buffer_new(1_u64, 77_u8);
             region 'state {
-              let permit = reserve_file(factory: &uniq files);
-              region 'marker {
-                region {
-                  let opened = open_read(permit: move permit, root: &'state cwd, path: &'state path);
-                  let announced = write_once(output: &uniq err, source: &'marker marker, start: 0_u64, end: 1_u64);
-                  match move opened {
-                    Ok(value: file) => {
-                      return exit_status(code: 1_u8);
-                    }
-                    Err(error: problem) => {
-                      return exit_status(code: 0_u8);
+              match reserve_handle(factory: &uniq files) {
+                Ok(value: permit) => {
+                  region 'marker {
+                    region {
+                      let opened = open_read(permit: move permit, root: &'state cwd, path: &'state path);
+                      let announced = write_once(output: &uniq err, source: &'marker marker, start: 0_u64, end: 1_u64);
+                      match move opened {
+                        FileOpened(value: file) => {
+                          return exit_status(code: 1_u8);
+                        }
+                        FileOpenFailed(error: problem, permit: refused) => {
+                          return exit_status(code: 0_u8);
+                        }
+                      }
                     }
                   }
+                }
+                Err(error: spent) => {
+                  return exit_status(code: 8_u8);
                 }
               }
             }
@@ -204,77 +228,125 @@ const COMPLETION_NONREGULAR_OPEN: &[u8] = br#"command fn main(command.args as ar
 }
 "#;
 
-const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+const INDEPENDENT_COMPONENT_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let first_name = buffer_new(1_u64, 46_u8);
   let second_name = buffer_new(1_u64, 46_u8);
   region 'c {
-    let first_permit = reserve_file(factory: &uniq files);
-    let second_permit = reserve_file(factory: &uniq files);
-    region {
-      let first = open_directory(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
-      let second = open_directory(permit: move second_permit, root: &'c cwd, name: &second_name, start: 0_u64, end: 1_u64);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  region {
-    let first_permit = reserve_file(factory: &uniq files);
-    let second_permit = reserve_file(factory: &uniq files);
-    let first = open_directory_source(permit: move first_permit, directory: &cwd);
-    let second = open_directory_source(permit: move second_permit, directory: &cwd);
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let first_name = buffer_new(1_u64, 120_u8);
-  let second_name = buffer_new(1_u64, 120_u8);
-  region 'c {
-    let first_permit = reserve_file(factory: &uniq files);
-    let second_permit = reserve_file(factory: &uniq files);
-    region {
-      let first = open_file(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
-      let second = open_file(permit: move second_permit, root: &'c cwd, name: &second_name, start: 0_u64, end: 1_u64);
-    }
-  }
-  return exit_status(code: 0_u8);
-}
-"#;
-
-const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
-  let first_bytes = buffer_new(4096_u64, 0_u8);
-  let second_bytes = buffer_new(4096_u64, 0_u8);
-  region {
-    let first_permit = reserve_file(factory: &uniq files);
-    let second_permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move first_permit, directory: &cwd) {
-      Ok(value: first_list) => {
-        match open_directory_source(permit: move second_permit, directory: &cwd) {
-          Ok(value: second_list) => {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: first_permit) => {
+        match reserve_handle(factory: &uniq files) {
+          Ok(value: second_permit) => {
             region {
-              let first = directory_next(source: &uniq first_list, destination: &uniq first_bytes, start: 0_u64, end: 4096_u64);
-              let second = directory_next(source: &uniq second_list, destination: &uniq second_bytes, start: 0_u64, end: 4096_u64);
+              let first = open_directory(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
+              let second = open_directory(permit: move second_permit, root: &'c cwd, name: &second_name, start: 0_u64, end: 1_u64);
             }
-            return exit_status(code: 0_u8);
           }
-          Err(error: problem) => {
-            return exit_status(code: 201_u8);
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
           }
         }
       }
-      Err(error: problem) => {
-        return exit_status(code: 202_u8);
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const INDEPENDENT_DIRECTORY_SOURCE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  region {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: first_permit) => {
+        match reserve_handle(factory: &uniq files) {
+          Ok(value: second_permit) => {
+            let first = open_directory_source(permit: move first_permit, directory: &cwd);
+            let second = open_directory_source(permit: move second_permit, directory: &cwd);
+          }
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const INDEPENDENT_REGULAR_FILE_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  let first_name = buffer_new(1_u64, 120_u8);
+  let second_name = buffer_new(1_u64, 120_u8);
+  region 'c {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: first_permit) => {
+        match reserve_handle(factory: &uniq files) {
+          Ok(value: second_permit) => {
+            region {
+              let first = open_file(permit: move first_permit, root: &'c cwd, name: &first_name, start: 0_u64, end: 1_u64);
+              let second = open_file(permit: move second_permit, root: &'c cwd, name: &second_name, start: 0_u64, end: 1_u64);
+            }
+          }
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
+      }
+    }
+  }
+  return exit_status(code: 0_u8);
+}
+"#;
+
+const INDEPENDENT_DIRECTORY_READS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+  let first_bytes = buffer_new(4096_u64, 0_u8);
+  let second_bytes = buffer_new(4096_u64, 0_u8);
+  region {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: first_permit) => {
+        match reserve_handle(factory: &uniq files) {
+          Ok(value: second_permit) => {
+            match open_directory_source(permit: move first_permit, directory: &cwd) {
+              SourceOpened(value: first_list) => {
+                match open_directory_source(permit: move second_permit, directory: &cwd) {
+                  SourceOpened(value: second_list) => {
+                    region {
+                      let first = directory_next(source: &uniq first_list, destination: &uniq first_bytes, start: 0_u64, end: 4096_u64);
+                      let second = directory_next(source: &uniq second_list, destination: &uniq second_bytes, start: 0_u64, end: 4096_u64);
+                    }
+                    return exit_status(code: 0_u8);
+                  }
+                  SourceOpenFailed(error: problem, permit: refused_2) => {
+                    return exit_status(code: 201_u8);
+                  }
+                }
+              }
+              SourceOpenFailed(error: problem, permit: refused_2) => {
+                return exit_status(code: 202_u8);
+              }
+            }
+          }
+          Err(error: spent) => {
+            return exit_status(code: 8_u8);
+          }
+        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
 }
 "#;
 
-const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
+const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let bytes = buffer_new(1_u64, 65_u8);
   region 'out {
     region {
@@ -302,7 +374,7 @@ const EMPTY_WRITE: &[u8] = br#"command fn main(command.stdout as out: own Output
 /// from the arm's own `bbN` header, so the join block's phis have to name that
 /// block. Nothing else in this corpus puts a hand-out in a block whose
 /// successor carries block parameters.
-const OVERLAP_BEFORE_A_BLOCK_JOIN: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+const OVERLAP_BEFORE_A_BLOCK_JOIN: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let first = buffer_new(2_u64, 65_u8);
   let second = buffer_new(2_u64, 66_u8);
   region 'o {
@@ -337,7 +409,7 @@ const COMPUTE_AND_IO: &[u8] = br#"fn choose(value: own u64) -> result: own u64 p
   return imax(value, value);
 }
 
-command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   let left = choose(value: 1_u64);
   let right = choose(value: 2_u64);
   let total = imax(left, right);
@@ -355,18 +427,24 @@ command fn main(command.stdout as out: own Output, command.stderr as err: own Ou
 }
 "#;
 
-const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let opened = 0_u64;
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..12_u64) {
-    let permit = reserve_file(factory: &uniq files);
-    region {
-      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-        Ok(value: handle) => {
-          set opened = opened +wrap 1_u64;
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+              set opened = opened +wrap 1_u64;
+            }
+            FileOpenFailed(error: problem, permit: refused_2) => {
+            }
+          }
         }
-        Err(error: problem) => {
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -381,16 +459,22 @@ const BOUNDED_BATCH_OPENS: &[u8] = br#"command fn main(command.cwd as cwd: own D
 }
 "#;
 
-const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let name = buffer_new(4_u64, 97_u8);
   for @scan (index in 0_u64..1_u64) {
-    let permit = reserve_file(factory: &uniq files);
-    region {
-      match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
-        Ok(value: handle) => {
+    match reserve_handle(factory: &uniq files) {
+      Ok(value: permit) => {
+        region {
+          match open_file(permit: move permit, root: &cwd, name: &name, start: 0_u64, end: 4_u64) {
+            FileOpened(value: handle) => {
+            }
+            FileOpenFailed(error: problem, permit: refused_2) => {
+            }
+          }
         }
-        Err(error: problem) => {
-        }
+      }
+      Err(error: spent) => {
+        return exit_status(code: 8_u8);
       }
     }
   }
@@ -398,7 +482,7 @@ const ONE_SLOT_STAGED_OPEN: &[u8] = br#"command fn main(command.cwd as cwd: own 
 }
 "#;
 
-const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   let opened = 0_u64;
   let names = buffer_new(5_u64, 97_u8);
   set names[1_u64] = 98_u8;
@@ -408,14 +492,20 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
   for @scan (index in 0_u64..5_u64) {
     let end = index + 1_u64;
     region 'f {
-      let permit = reserve_file(factory: &uniq files);
-      region {
-        match open_file(permit: move permit, root: &'f cwd, name: &names, start: index, end: end) {
-          Ok(value: handle) => {
-            set opened = opened +wrap 1_u64;
+      match reserve_handle(factory: &uniq files) {
+        Ok(value: permit) => {
+          region {
+            match open_file(permit: move permit, root: &'f cwd, name: &names, start: index, end: end) {
+              FileOpened(value: handle) => {
+                set opened = opened +wrap 1_u64;
+              }
+              FileOpenFailed(error: problem, permit: refused_2) => {
+              }
+            }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
+          return exit_status(code: 8_u8);
         }
       }
     }
@@ -433,21 +523,21 @@ const ODD_BATCH_WITH_DISTINCT_PATHS: &[u8] = br#"command fn main(command.cwd as 
 
 fn more_than_target_capacity_reads(count: usize) -> Vec<u8> {
     let mut source = String::from(
-        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {\n  region {\n    match arg_get(args: &args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region {\n                let permit = reserve_file(factory: &uniq 'c files);\n                match open_read(permit: move permit, root: &'c cwd, path: &path) {\n                  Ok(value: file) => {\n",
+        "command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {\n  region {\n    match arg_get(args: &args, position: 1_u64) {\n      Ok(value: text) => {\n        match relative_path(value: move text) {\n          Ok(value: path) => {\n            region 'c {\n              region {\n                match reserve_handle(factory: &uniq 'c files) {\n                  Ok(value: permit) => {\n                    match open_read(permit: move permit, root: &'c cwd, path: &path) {\n                      FileOpened(value: file) => {\n",
     );
     for index in 0..count {
         source.push_str(&format!(
-            "                    let bytes{index} = buffer_new(1_u64, 0_u8);\n"
+            "                        let bytes{index} = buffer_new(1_u64, 0_u8);\n"
         ));
     }
-    source.push_str("                    region {\n                      region {\n");
+    source.push_str("                        region {\n                          region {\n");
     for index in 0..count {
         source.push_str(&format!(
-            "                        let read{index} = read_at(file: &file, destination: &uniq bytes{index}, file_offset: 0_u64, start: 0_u64, end: 1_u64);\n"
+            "                            let read{index} = read_at(file: &file, destination: &uniq bytes{index}, file_offset: 0_u64, start: 0_u64, end: 1_u64);\n"
         ));
     }
     source.push_str(
-        "                      }\n                    }\n                    return exit_status(code: 0_u8);\n                  }\n                  Err(error: problem) => {\n                    return exit_status(code: 201_u8);\n                  }\n                }\n              }\n            }\n          }\n          Err(error: problem) => {\n            return exit_status(code: 202_u8);\n          }\n        }\n      }\n      Err(error: problem) => {\n        return exit_status(code: 203_u8);\n      }\n    }\n  }\n}\n",
+        "                          }\n                        }\n                        return exit_status(code: 0_u8);\n                      }\n                      FileOpenFailed(error: problem, permit: refused) => {\n                        return exit_status(code: 201_u8);\n                      }\n                    }\n                  }\n                  Err(error: spent) => {\n                    return exit_status(code: 8_u8);\n                  }\n                }\n              }\n            }\n          }\n          Err(error: problem) => {\n            return exit_status(code: 202_u8);\n          }\n        }\n      }\n      Err(error: problem) => {\n        return exit_status(code: 203_u8);\n      }\n    }\n  }\n}\n",
     );
     source.into_bytes()
 }
@@ -467,17 +557,24 @@ fn windows_completion_modules_require_the_native_runtime_at_link_time() {
     let module = emit_windows_completion(POSITIONED_READS);
 
     assert!(crate::module_requires_completion_runtime(&module));
+    // The `wf__completion_wait_core_capacity` entry is retired here with the
+    // Windows verdict fork that called it, on the owner's ruling recorded in
+    // design section 8: a submit answers nothing, so core pressure is the
+    // target runtime's own business and never reaches emitted code.
     for declaration in [
-        "declare i32 @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)",
-        "declare i32 @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)",
+        "declare void @wf__completion_file_pread_submit(i32, ptr, i64, i64, ptr)",
+        "declare void @wf__completion_file_open_at_submit(i32, ptr, i32, i32, i32, i32, i32, ptr)",
         "declare void @wf__completion_file_join(ptr, ptr, ptr)",
-        "declare void @wf__completion_wait_core_capacity()",
     ] {
         assert!(
             module.contains(declaration),
             "Windows completion must name the native ABI `{declaration}`:\n{module}"
         );
     }
+    assert!(
+        !module.contains("@wf__completion_wait_core_capacity"),
+        "the retired capacity wait must not be named at all:\n{module}"
+    );
     assert!(
         !module.contains("define weak i32 @wf__completion_file_read_submit"),
         "a missing Windows runtime must be a link error, not a direct backend"
@@ -488,88 +585,67 @@ fn windows_completion_modules_require_the_native_runtime_at_link_time() {
     );
 }
 
+/// Core pressure on the Windows target must never become an inline arm of the
+/// emitted function.
+///
+/// The retry-shape assertions of
+/// `windows_core_pressure_materializes_the_oldest_owned_result_and_retries`
+/// are retired here on the owner's ruling recorded in design section 8: the
+/// verdict fork they described is gone with the inline arm it selected, so a
+/// submit answers nothing and there is no oldest owned result to materialize
+/// and no retry to shape. The assertion design section 8 says **stays** is the
+/// one below, and it is now the stronger statement the one lowering makes:
+/// there is no second arm in the emitted function at all — the direct family
+/// it would have selected is gone from the compiler.
 #[test]
-fn windows_core_pressure_materializes_the_oldest_owned_result_and_retries() {
+fn windows_core_pressure_never_becomes_inline_execution() {
     let source = more_than_target_capacity_reads(3);
     let module = emit_windows_completion(&source);
     let body = emitted_function(&module, "main");
     let submissions = body
-        .matches("call i32 @wf__completion_file_pread_submit")
+        .matches("call void @wf__completion_file_pread_submit")
         .count();
 
-    assert_eq!(submissions, 2, "the source-last read remains direct");
+    // Two of the three reads are handed out and submit here; the source-last
+    // read submits from inside its own qualified wrapper, which is a separate
+    // definition this body does not hold (design §8).
     assert_eq!(
-        body.matches(" = icmp eq i32 ").count(),
-        submissions * 3,
-        "each submit distinguishes DIRECT_ONLY, ACCEPTED, and WAIT_CORE_CAPACITY"
+        submissions, 2,
+        "the two handed-out reads submit in the body"
     );
-    assert_eq!(
-        body.matches(", 2\n  br i1 ").count(),
-        submissions,
-        "status 2 must have its own branch at every submit"
+    assert!(
+        module.contains(
+            "call void @wf__completion_file_pread_submit(i32 %file, ptr %target, \
+             i64 %extent, i64 %file_offset, ptr %record)"
+        ),
+        "the source-last read submits from its wrapper's own record"
     );
-    assert_eq!(
-        body.matches("call void @wf__completion_wait_core_capacity()")
-            .count(),
-        submissions,
-        "every site has a no-owned-token capacity wait before retry"
+    assert!(
+        !body.contains("completion.inline."),
+        "core pressure must never become direct execution:\n{body}"
     );
-    assert_eq!(
-        body.matches("completion.capacity.consume.").count(),
-        2,
-        "the second submit has one consume label and one branch to it"
+    assert!(
+        !body.contains("completion.verdict."),
+        "a submit that answers nothing has no verdict to branch on:\n{body}"
+    );
+    assert!(
+        !body.contains("completion.capacity."),
+        "capacity is the target runtime's own business:\n{body}"
+    );
+    assert!(
+        !body.contains("@wf__completion_wait_core_capacity"),
+        "the emitted module must not name the retired capacity wait:\n{body}"
     );
     assert_eq!(
         body.matches("call void @wf__completion_file_join").count(),
-        3,
-        "two source joins plus one pressure-path materialization consume each token at most once"
+        submissions,
+        "each submitted read is joined exactly once, with no pressure-path \
+         materialization beside it"
     );
-
-    let lines = body.lines().collect::<Vec<_>>();
-    let wait_verdicts = lines
-        .windows(3)
-        .filter(|window| {
-            window[0].trim().starts_with("completion.verdict.wait.")
-                && window[0].trim().ends_with(':')
-        })
-        .map(|window| window[2])
-        .collect::<Vec<_>>();
-    assert_eq!(wait_verdicts.len(), submissions);
-    for branch in wait_verdicts {
-        assert!(branch.contains("label %completion.capacity."), "{branch}");
-        assert!(
-            branch.contains("label %completion.verdict.invalid."),
-            "{branch}"
-        );
-        assert!(
-            !branch.contains("completion.inline."),
-            "core pressure must never become direct execution: {branch}"
-        );
-    }
-
-    let consume = body
-        .split_once("\ncompletion.capacity.consume.")
-        .expect("the second submit can consume the first request")
-        .1
-        .split_once("\ncompletion.capacity.next.")
-        .expect("the consume arm rejoins the owner scan")
-        .0;
-    assert!(consume.contains("call void @wf__completion_file_join"));
-    let mapped = consume
-        .find("@wf.sys.read.completion(")
-        .expect("the pressure path maps the raw result");
-    let stored = consume[mapped..]
-        .find("\n  store ")
-        .map(|offset| mapped + offset)
-        .expect("the pressure path stores the typed result");
-    let cleared = consume
-        .find("store i1 false")
-        .expect("the pressure path relinquishes target ownership");
-    assert!(mapped < stored && stored < cleared, "{consume}");
-    assert!(consume.contains("br label %completion.submit."));
-    assert!(
-        body.matches("call void @abort()").count() >= submissions,
-        "an unknown runtime verdict must abort"
+    assert_eq!(
+        body.matches("@wf.sys.read_at.v1(").count(),
+        1,
+        "only the source-last read, which was never handed out, runs directly"
     );
 }
 
@@ -685,11 +761,27 @@ fn only_an_actualized_target_operation_selects_the_completion_runtime() {
     assert!(crate::module_requires_completion_runtime(&sequential));
     assert!(crate::module_requires_completion_runtime(&completion));
     assert!(!crate::module_requires_completion_runtime(&pure));
-    assert!(!crate::module_requires_writer_scheduler(&sequential));
-    assert!(!crate::module_requires_writer_scheduler(&completion));
-    assert!(!crate::module_requires_writer_scheduler(&pure));
-    assert!(sequential.contains("@wf__completion_file_write_direct"));
-    assert!(!sequential.contains("call i32 @wf__completion_file_write_submit"));
+    // Three writer-scheduler assertions retired here with the stackless plan
+    // (design section 8): no module can publish a writer frame any more, so
+    // there is no predicate left to ask.
+    // One lowering: a source-order call and a handed-out call both submit and
+    // join (`research/investigations/io-model/PARK-ON-MISS.md` §8), so the
+    // question the predicate answers is only whether the module submits
+    // anything at all. What still separates the two worlds is *where* the
+    // record lives: the sequential module submits from inside the qualified
+    // wrapper, against the block that wrapper reserves in its own frame, and
+    // never from a call site against a planned-frame element.
+    assert!(sequential.contains(
+        "call void @wf__completion_file_write_submit(i32 %output, ptr %target, i64 %extent, \
+         ptr %record)"
+    ));
+    for line in sequential.lines() {
+        assert!(
+            !line.contains("call void @wf__completion_file_write_submit(")
+                || line.ends_with("ptr %record)"),
+            "a sequential call submits from its wrapper's own record:\n{line}"
+        );
+    }
     assert!(!pure.contains("wf__completion_"));
     assert_eq!(pure, pure_sequential);
 }
@@ -699,12 +791,26 @@ fn compute_world_selection_does_not_disable_completion_io() {
     let module = super::emit_with_overlap(COMPUTE_AND_IO);
     assert!(crate::module_requires_parallel_runtime(&module));
     assert!(crate::module_requires_completion_runtime(&module));
+    // Two handed-out submissions, one per compute world, and the source-last
+    // call submits from inside its own qualified wrapper — one lowering, three
+    // submissions (design §8).
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_write_submit")
+            .matches("call void @wf__completion_file_write_submit")
             .count(),
-        2,
-        "both compute worlds submit the earlier I/O and keep the source-last call direct"
+        3,
+        "both compute worlds submit the earlier I/O, and the source-last call \
+         submits from its wrapper"
+    );
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_write_submit(i32 %output, ptr %target, \
+                      i64 %extent, ptr %record)"
+            )
+            .count(),
+        1,
+        "exactly one of the three is the wrapper's own"
     );
     let directory = test_directory();
     let executable = build_executable(&module, &directory);
@@ -761,7 +867,7 @@ fn one_slot_submission_crosses_its_edge_before_the_drain_joins_and_dispatches() 
     assert!(feeder_start < drain_start);
     let feeder_body = &body[feeder_start..drain_start];
     let submit = feeder_body
-        .find("call i32 @wf__completion_file_open_at_submit")
+        .find("call void @wf__completion_file_open_at_submit")
         .expect("the feeder must submit the open");
     let branch = feeder_body
         .find(&format!("br label %{drain_label}"))
@@ -852,29 +958,52 @@ fn source_derived_two_slot_batch_links_and_preserves_every_iteration() {
     std::fs::remove_dir(directory).expect("remove completion test directory");
 }
 
-/// Windows pressure recovery may inspect a ring element before that iteration
-/// takes its submit arm. Its submission-state array must therefore start false
-/// in the entry prelude, not on a path through the loop body.
+/// Every route through a staged iteration writes that slot's submission state
+/// before any drain can read it.
+///
+/// The entry-prelude `zeroinitializer` this used to pin is retired with the
+/// Windows pressure fork that needed it (design section 8): nothing inspects
+/// another iteration's slot any more, and both routes an iteration can take --
+/// the submit and the refused component name -- store the flag on the way to
+/// the drain. That is the property asserted here instead, and it is what makes
+/// the pre-initialization unnecessary rather than merely absent.
 #[test]
 fn windows_staged_ring_initializes_submission_state_before_pressure_recovery() {
     let module = emit_windows_completion(BOUNDED_BATCH_OPENS);
     let body = emitted_function(&module, "main");
-    let initialized = body
-        .find("store [2 x i1] zeroinitializer, ptr ")
-        .expect("the submission-state ring is initialized in the entry prelude");
-    let submit = body
-        .find("call i32 @wf__completion_file_open_at_submit")
-        .expect("the source-derived batch submits an open");
-    let pressure = body
-        .find("completion.capacity.v")
-        .expect("Windows emits a capacity-recovery path");
     assert!(
-        initialized < submit && initialized < pressure,
-        "the state ring starts false before either an accepted submit or a pressure path"
+        !body.contains("completion.capacity.v"),
+        "Windows emits no capacity-recovery path any more:\n{body}"
+    );
+    assert!(
+        !body.contains("store [2 x i1] zeroinitializer, ptr "),
+        "no route reads a submission state it did not write:\n{body}"
+    );
+    let submit = body
+        .find("call void @wf__completion_file_open_at_submit")
+        .expect("the source-derived batch submits an open");
+    let refused = body
+        .find("completion.not_submitted.v")
+        .expect("a refused component name is the one route without a submission");
+    let stored = body
+        .match_indices("store i1 ")
+        .map(|(position, _)| position)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        stored.len(),
+        1,
+        "one iteration owns one submission-state element:\n{body}"
+    );
+    let loaded = body
+        .find("load i1, ptr ")
+        .expect("the drain reads the submission state of the slot it retires");
+    assert!(
+        submit < stored[0] && refused < stored[0] && stored[0] < loaded,
+        "both routes reach the store, and the store precedes the drain's load"
     );
     assert!(
         module.contains("declare void @abort() noreturn"),
-        "the invalid Windows submit verdict remains fail-closed"
+        "the Windows floor remains fail-closed"
     );
 }
 
@@ -920,7 +1049,7 @@ fn a_target_without_native_completion_runs_the_same_batch_one_iteration_at_a_tim
         "the direct target must not materialize a native K=2 completion ring"
     );
     assert!(module.contains("= add i64 0, 1"));
-    assert!(module.contains("call ") && module.contains("@wf_test_openat("));
+    assert!(module.contains("call ") && module.contains("@wf_test_open_at_submit("));
     assert!(!crate::module_requires_completion_runtime(&module));
 
     let run =
@@ -938,26 +1067,42 @@ fn a_target_without_native_completion_runs_the_same_batch_one_iteration_at_a_tim
 fn the_file_helper_receives_a_typed_request_and_never_a_writer_thunk() {
     let module = emit(INDEPENDENT_WRITES);
     let first = module
-        .find("call i32 @wf__completion_file_write_submit")
+        .find("call void @wf__completion_file_write_submit")
         .expect("submit the first owned operation");
     let join = module[first..]
         .find("call void @wf__completion_file_join")
         .map(|offset| first + offset)
         .expect("the earlier operation must join after the source-last direct call");
     assert!(first < join);
+    // One lowering: every call submits and joins (design §8). The call with
+    // later independent work is handed out and submits at its call site; the
+    // source-last call submits from inside the qualified wrapper, against the
+    // record that wrapper reserved in its own frame. What the hand-out buys is
+    // the distance between the submission and the join, which the two offsets
+    // above are what this case reads.
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_write_submit")
+            .matches("call void @wf__completion_file_write_submit")
+            .count(),
+        2,
+        "both calls submit; only one is handed out"
+    );
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_write_submit(i32 %output, ptr %target, \
+                      i64 %extent, ptr %record)"
+            )
             .count(),
         1,
-        "only a call with later independent work is submitted"
+        "the source-last call submits from its wrapper's own record"
     );
     assert_eq!(
         module
             .matches("call void @wf__completion_file_join")
             .count(),
-        1,
-        "each submitted operation owns and consumes its own token"
+        2,
+        "each submitted operation owns and consumes its own record"
     );
     assert!(!module.contains("wf__completion_file_batch_claim"));
     assert!(!module.contains("submit_reserved"));
@@ -972,24 +1117,38 @@ fn the_file_helper_receives_a_typed_request_and_never_a_writer_thunk() {
 fn positioned_read_emits_a_checked_typed_pread_request() {
     let module = emit(POSITIONED_READS);
     assert!(crate::module_requires_completion_runtime(&module));
+    // One lowering (design §8): the handed-out read submits at its call site
+    // and the source-last read submits from inside the qualified wrapper,
+    // against the record that wrapper reserved in its own frame.
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_pread_submit")
+            .matches("call void @wf__completion_file_pread_submit")
+            .count(),
+        2,
+        "both positioned reads submit"
+    );
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_pread_submit(i32 %file, ptr %target, \
+                      i64 %extent, i64 %file_offset, ptr %record)"
+            )
             .count(),
         1,
-        "the final positioned read keeps the direct specialization"
+        "the source-last read submits from its wrapper's own record"
     );
-    assert!(module.contains("%offset.fits = icmp ule i64 %file_offset"));
-    assert!(module.contains("9223372036854775807"));
-    assert!(module.contains("call i64 @wf__completion_file_pread_direct(i32"));
+    // The offset the target ABI cannot express is refused by the runtime and
+    // published as the host's own `EINVAL`, so no wrapper carries a second arm
+    // for it any more.
+    assert!(!module.contains("%offset.fits = icmp ule i64 %file_offset"));
     assert!(crate::COMPLETION_BRIDGE_SOURCE.contains("request.kind = WF_FILE_PREAD"));
     assert!(crate::COMPLETION_BRIDGE_SOURCE.contains("file_offset > (uint64_t)INT64_MAX"));
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
     let pread = bridge
-        .split_once("int wf__completion_file_pread_submit(")
+        .split_once("void wf__completion_file_pread_submit(")
         .expect("the bridge exposes positioned read")
         .1
-        .split_once("int wf__completion_file_write_submit(")
+        .split_once("void wf__completion_file_write_submit(")
         .expect("positioned read precedes write")
         .0;
     assert!(
@@ -997,29 +1156,20 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
         "Linux must try native completion before constructing the typed fallback"
     );
     let write = bridge
-        .split_once("int wf__completion_file_write_submit(")
+        .split_once("void wf__completion_file_write_submit(")
         .expect("the bridge exposes write_once")
         .1
-        .split_once("int wf__completion_file_open_at_submit(")
+        .split_once("void wf__completion_file_open_at_submit(")
         .expect("ordinary write submit precedes the open submission")
         .0;
     assert!(!write.contains("wf_bridge_submit_linux"));
     assert!(write.contains("current-position and"));
-    let direct_write = bridge
-        .split_once("int64_t wf__completion_file_write_direct(")
-        .expect("the bridge exposes direct write progress")
-        .1
-        .split_once("int wf__completion_file_open_at_direct(")
-        .expect("direct write precedes the direct open")
-        .0;
-    assert!(!direct_write.contains("wf_bridge_submit_linux"));
-    // A direct call executes the typed request through the bridge's own
-    // executor, which is what enters it in the process-wide retirement ledger
-    // for as long as it runs.
-    assert!(direct_write.contains("wf_bridge_execute_direct"));
-    // Inside that executor the host attempt is timed rather than plain, so
-    // the adapter's measurement of what its own operations cost keeps
-    // running on the route it may have declined a submission in favour of.
+    // The direct family is gone from the bridge with the second lowering that
+    // named it (design §8). What executed a typed request inside the bridge
+    // for it is the same engine an operation with no kernel completion form
+    // still reaches, and there the host attempt is timed rather than plain, so
+    // the adapter keeps measuring what its own operations cost.
+    assert!(!bridge.contains("_direct("));
     assert!(bridge.contains("wf_file_execute_timed(&wf_bridge_adapter"));
     assert!(crate::COMPLETION_LINUX_IO_URING_HEADER.contains("#if defined(__linux__)"));
     assert!(
@@ -1039,10 +1189,15 @@ fn positioned_read_emits_a_checked_typed_pread_request() {
 }
 
 #[test]
-fn one_empty_write_uses_the_normal_direct_operation_path() {
+fn one_empty_write_uses_the_one_normal_operation_path() {
     let module = emit(EMPTY_WRITE);
+    // An empty transfer takes the same lowering as every other: it is
+    // submitted, completed by the runtime with no external action, and the
+    // mapper answers `Ok(start)` for it, which is the arm read here
+    // (`research/investigations/io-model/PARK-ON-MISS.md` §8).
     assert!(module.contains("%empty = icmp eq i64 %extent, 0"));
     assert!(module.contains("label %vacant, label %nonempty"));
+    assert!(module.contains("call void @wf__completion_file_write_submit"));
     assert!(!module.contains("wf__completion_file_batch_claim"));
     assert!(!module.contains("wf__completion_output_batch"));
     assert!(!module.contains("submit_reserved"));
@@ -1070,9 +1225,15 @@ fn one_empty_write_uses_the_normal_direct_operation_path() {
 /// The emitter writes a block's phis before it writes the blocks that reach
 /// it, so an incoming edge is named by predicting the label its predecessor
 /// will end at. Every construct that opens a further LLVM block moves that
-/// label; a direct completion hand-out does too, and naming the plain `bbN`
-/// header instead produced a module `clang` rejects outright. Building the
-/// executable is the assertion: an invalid module never links.
+/// label; naming the plain `bbN` header where the predecessor ends somewhere
+/// else produced a module `clang` rejects outright. Building the executable is
+/// the assertion: an invalid module never links.
+///
+/// The prediction this pins was `%par.done.`, which is retired here with the
+/// two-arm join (design section 8): a write submits and joins in straight line
+/// now, so its hand-out opens no block and the prediction is the plain header
+/// again. Getting that wrong is the same link failure in the other direction,
+/// so the same test still holds it.
 #[test]
 fn a_completion_window_before_a_block_join_names_its_join_block() {
     for lowering in [OverlapLowering::Completion, OverlapLowering::On] {
@@ -1090,9 +1251,22 @@ fn a_completion_window_before_a_block_join_names_its_join_block() {
         );
         for phi in block_parameters {
             assert!(
-                phi.contains("%par.done."),
-                "{lowering:?}: the arm's edge leaves the completion join block: {phi}"
+                !phi.contains("%par.done."),
+                "{lowering:?}: a write's one-route join opens no block of its \
+                 own, so no edge can leave one: {phi}"
             );
+            for edge in phi.split("], [") {
+                let label = edge
+                    .rsplit_once("%")
+                    .expect("every phi edge names a predecessor label")
+                    .1
+                    .trim_end_matches([' ', ']']);
+                assert!(
+                    joined.contains(&format!("\n{label}:")),
+                    "{lowering:?}: the predicted label `{label}` is not a block \
+                     of this function: {phi}"
+                );
+            }
         }
 
         let directory = test_directory();
@@ -1132,23 +1306,55 @@ fn a_completion_window_before_a_block_join_names_its_join_block() {
 #[test]
 fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     let directory = test_directory();
-    let units: [(&str, &str); 12] = [
-        ("contract.h", crate::COMPLETION_CONTRACT_HEADER),
-        ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
-        ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
-        ("writer_scheduler.h", crate::WRITER_SCHEDULER_HEADER),
-        ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
-        ("runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
-        ("file_adapter.c", crate::COMPLETION_FILE_ADAPTER_SOURCE),
-        ("bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
-        ("writer_scheduler.c", crate::WRITER_SCHEDULER_SOURCE),
-        ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
-        ("floor.c", crate::FLOOR_RUNTIME_SOURCE),
+    // The staged tree keeps the repository's own two directories, because the
+    // completion header reaches the scheduler core by the relative path it
+    // uses in the tree: the completion record begins with a `wf_sched_record`.
+    let units: [(&str, &str); 20] = [
+        ("completion/contract.h", crate::COMPLETION_CONTRACT_HEADER),
         (
-            "par_completion.c",
-            crate::PARALLEL_COMPLETION_RUNTIME_SOURCE,
+            "completion/file_adapter.h",
+            crate::COMPLETION_FILE_ADAPTER_HEADER,
         ),
+        (
+            "completion/file_posix.h",
+            crate::COMPLETION_FILE_POSIX_HEADER,
+        ),
+        (
+            "completion/socket_address.h",
+            crate::COMPLETION_SOCKET_ADDRESS_HEADER,
+        ),
+        ("completion/bridge.h", crate::COMPLETION_BRIDGE_HEADER),
+        (
+            "completion/linux_io_uring.h",
+            crate::COMPLETION_LINUX_IO_URING_HEADER,
+        ),
+        ("sched/core.h", crate::SCHED_CORE_HEADER),
+        ("sched/prim.h", crate::SCHED_PRIM_HEADER),
+        ("sched/switch.h", crate::SCHED_SWITCH_HEADER),
+        ("sched/entry.h", crate::SCHED_ENTRY_HEADER),
+        ("completion/runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
+        ("completion/wait_host.c", crate::COMPLETION_WAIT_HOST_SOURCE),
+        (
+            "completion/file_adapter.c",
+            crate::COMPLETION_FILE_ADAPTER_SOURCE,
+        ),
+        (
+            "completion/file_posix.c",
+            crate::COMPLETION_FILE_POSIX_SOURCE,
+        ),
+        ("completion/bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
+        (
+            "completion/linux_io_uring.c",
+            crate::COMPLETION_LINUX_IO_URING_SOURCE,
+        ),
+        ("sched/core.c", crate::SCHED_CORE_SOURCE),
+        ("sched/prim_host.c", crate::SCHED_PRIM_HOST_SOURCE),
+        ("sched/entry.c", crate::SCHED_ENTRY_SOURCE),
+        ("completion/floor.c", crate::FLOOR_RUNTIME_SOURCE),
     ];
+    for staged in ["completion", "sched"] {
+        std::fs::create_dir_all(directory.join(staged)).expect("stage runtime directory");
+    }
     for (name, source) in units {
         std::fs::write(directory.join(name), source).expect("write compiler-owned C unit");
     }
@@ -1160,7 +1366,7 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
             .arg("-fsyntax-only")
             .arg("-pthread")
             .arg("-I")
-            .arg(&directory)
+            .arg(directory.join("completion"))
             .arg("-x")
             .arg("c")
             .arg(directory.join(name))
@@ -1175,32 +1381,72 @@ fn the_compiler_owned_c_units_compile_in_the_default_dialect() {
     for (name, _) in units {
         std::fs::remove_file(directory.join(name)).expect("remove compiler-owned C unit");
     }
+    for staged in ["completion", "sched"] {
+        std::fs::remove_dir(directory.join(staged)).expect("remove staged runtime directory");
+    }
     std::fs::remove_dir(directory).expect("remove the default-dialect directory");
 }
 
+/// The completion runtime has no capacity of any kind left, and the ready
+/// queue that had the last one is gone with the unit that owned it.
+///
+/// This case used to tie three numbers together: the completion slot count,
+/// the bridge's operation capacity, and the writer scheduler's ready cells.
+/// The first two went with the record pool — the record is a block of the
+/// submitting frame, so there is no slot to run out of and no operation
+/// capacity anywhere in the runtime
+/// (`research/investigations/io-model/PARK-ON-MISS.md` §7, "The record's pool
+/// machinery: deleted, not answered"). The third goes here, with
+/// `completion/writer_scheduler.c` itself: its handshake is the scheduler
+/// core's stack park and its bounded ready array is the core's intrusive ready
+/// list, whose capacity is the stack count by construction (§6, §7's
+/// "`writer_scheduler.c` ... retired"). What is asserted now is the deletion,
+/// so no capacity can creep back in unnoticed.
 #[test]
-fn completion_slots_and_writer_ready_cells_have_one_capacity_source() {
-    let header = crate::WRITER_SCHEDULER_HEADER;
+fn the_writer_ready_cells_have_one_capacity_source() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let scheduler = crate::WRITER_SCHEDULER_SOURCE;
 
-    assert_eq!(
-        header
-            .matches("#define WF_COMPLETION_SLOT_CAPACITY 64u")
-            .count(),
-        1,
-        "the bounded process runtime must name its capacity once"
-    );
-    assert!(header.contains("#define WF_WRITER_READY_CAPACITY WF_COMPLETION_SLOT_CAPACITY"));
-    assert!(bridge.contains("#define WF_BRIDGE_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY"));
-    assert!(bridge.contains("WF_BRIDGE_SLOT_COUNT == WF_WRITER_READY_CAPACITY"));
-    assert!(!bridge.contains("#define WF_BRIDGE_OPERATION_CAPACITY 64u"));
-    assert!(!scheduler.contains("#define WF_WRITER_READY_COUNT"));
-    assert!(scheduler.contains("wf_writer_ready[WF_WRITER_READY_CAPACITY]"));
-    assert!(scheduler.contains("wf_writer_count == WF_WRITER_READY_CAPACITY"));
+    for gone in [
+        "WF_COMPLETION_SLOT_CAPACITY",
+        "WF_WRITER_READY_CAPACITY",
+        "wf__writer_scheduler_ready",
+        "wf__writer_run_root",
+    ] {
+        assert!(
+            !bridge.contains(gone),
+            "the bridge still names the retired writer scheduler: {gone}"
+        );
+    }
     assert!(
-        include_str!("../completion/harness.c")
-            .contains("#define WF_HARNESS_OPERATION_CAPACITY WF_COMPLETION_SLOT_CAPACITY")
+        !crate::COMPLETION_BRIDGE_HEADER.contains("#include \"writer_scheduler.h\""),
+        "the bridge header still reaches for the retired writer scheduler"
+    );
+
+    // The bridge keeps no operation capacity, no slot array and no queue
+    // array, so nothing there can refuse an operation.
+    for gone in [
+        "WF_BRIDGE_OPERATION_CAPACITY",
+        "WF_BRIDGE_SLOT_COUNT",
+        "WF_BRIDGE_QUEUE_COUNT",
+        "wf_bridge_slots",
+        "wf_bridge_queue",
+        "wf_bridge_linux_entries",
+        "wf_completion_claim",
+        "WAIT_CAPACITY",
+        "wf_completion_notify_capacity",
+    ] {
+        assert!(
+            !bridge.contains(gone),
+            "the bridge still names the deleted pool machinery: {gone}"
+        );
+    }
+    assert!(
+        !crate::COMPLETION_CONTRACT_HEADER.contains("wf_completion_slot"),
+        "the contract header still declares a slot pool"
+    );
+    assert!(
+        !crate::COMPLETION_CONTRACT_HEADER.contains("wf_completion_token"),
+        "the contract header still declares a token"
     );
 }
 
@@ -1221,11 +1467,11 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
     assert!(contract.contains("wf_completion_set_wake_callback"));
 
     let notify = runtime
-        .split_once("static void wf_completion_notify_scheduler")
-        .expect("completion core has one scheduler announcer")
+        .split_once("static void wf_completion_notify_scheduler(wf_completion_runtime *runtime) {")
+        .expect("completion runtime has one scheduler announcer")
         .1
-        .split_once("static enum wf_completion_publish_result")
-        .expect("announcer precedes publication")
+        .split_once("\nuint64_t wf_completion_wake_epoch")
+        .expect("announcer precedes the epoch reader")
         .0;
     let parked = notify
         .find("parked_schedulers")
@@ -1235,16 +1481,28 @@ fn linux_native_wait_unifies_cq_compute_and_capacity_without_polling() {
         .expect("announced native sleeper receives the unified wake");
     assert!(parked < callback);
 
+    // The ring's own bounded pass, which is the Linux arm of the bridge's one
+    // ring seam. A failed pass is a fail-stop rather than a value the routing
+    // could interpret, so the fail-stop is what is pinned here. It is
+    // `wf_bridge_fail_with_code` rather than a bare `abort` because a
+    // fail-stop that writes nothing cannot be diagnosed from a crash log, and
+    // because the code the target answered is a different question from which
+    // call failed: EPROTO from a reaping pass says the ring handed back
+    // something that is not one of this runtime's records, which no site name
+    // alone distinguishes from a host error in the same place
+    // (`completion/bridge.c`, "the bridge's one fail-stop").
     let progress = bridge
-        .split_once("static int wf_bridge_progress(void)")
-        .expect("bridge has bounded progress")
+        .split_once("static int wf_bridge_ring_progress(void) {")
+        .expect("the Linux ring arm has a bounded progress pass")
         .1
-        .split_once("void wf__writer_scheduler_notify")
-        .expect("progress precedes writer notification")
+        .split_once("\nstatic void wf_bridge_ring_flush(void) {")
+        .expect("progress precedes the flush")
         .0;
-    assert!(progress.contains("int error = wf_linux_io_uring_progress"));
-    assert!(progress.contains("if (error != 0)"));
-    assert!(progress.contains("abort();"));
+    assert!(progress.contains("wf_linux_io_uring_progress("));
+    assert!(progress.contains("if (reap_error != 0) {"));
+    assert!(progress.contains("wf_bridge_fail_with_code("));
+    assert!(progress.contains("reap_error\n"));
+    assert!(!progress.contains("abort();"));
     assert!(!progress.contains("(void)wf_linux_io_uring_progress"));
     assert!(!bridge.contains("wf_completion_park_if_unchanged(\n                    &wf_bridge_runtime,\n                    epoch,\n                    1u"));
 }
@@ -1343,7 +1601,7 @@ fn a_reused_unique_output_waits_only_for_its_own_prior_operation() {
         .expect("command entry is emitted")
         .1;
     let submits = body
-        .match_indices("call i32 @wf__completion_file_write_submit")
+        .match_indices("call void @wf__completion_file_write_submit")
         .map(|(position, _)| position)
         .collect::<Vec<_>>();
     let joins = body
@@ -1360,16 +1618,19 @@ fn a_reused_unique_output_waits_only_for_its_own_prior_operation() {
         "A and B submit; source-last C stays direct"
     );
     assert_eq!(joins.len(), 2, "each submitted operation is consumed once");
+    // One direct call, not three: A and B have no inline arm to name the
+    // sequential wrapper from any more, so the only direct call left is C,
+    // which was never handed out (design section 8).
     assert_eq!(
         direct_calls.len(),
-        3,
-        "each path retains its direct fallback"
+        1,
+        "only the call that was never handed out stays direct"
     );
     assert!(
         submits[0] < submits[1]
             && submits[1] < joins[0]
-            && joins[0] < direct_calls[2]
-            && direct_calls[2] < joins[1],
+            && joins[0] < direct_calls[0]
+            && direct_calls[0] < joins[1],
         "C must wait for A, then run while unrelated B remains pending"
     );
 }
@@ -1421,12 +1682,25 @@ fn reused_output_progress_preserves_ac_around_an_independent_rejected_open() {
 fn more_than_sixty_four_calls_progress_by_falling_back_only_the_full_call() {
     let source = more_than_target_capacity_reads(66);
     let module = emit(&source);
+    // Sixty-five handed-out submissions, one per call with later work, plus
+    // the one the qualified wrapper makes for the source-last call: one
+    // lowering, so no call is left without a submission (design §8).
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_pread_submit")
+            .matches("call void @wf__completion_file_pread_submit")
             .count(),
-        65,
-        "every call with later work attempts its own submission"
+        66,
+        "every call submits, and the sixty-five with later work are handed out"
+    );
+    assert_eq!(
+        module
+            .matches(
+                "call void @wf__completion_file_pread_submit(i32 %file, ptr %target, \
+                      i64 %extent, i64 %file_offset, ptr %record)"
+            )
+            .count(),
+        1,
+        "exactly one of them is the wrapper's own"
     );
 
     let directory = test_directory();
@@ -1448,7 +1722,7 @@ fn more_than_sixty_four_calls_progress_by_falling_back_only_the_full_call() {
 #[test]
 fn a_rejected_nonregular_open_does_not_delay_independent_writer_work() {
     let module = emit(BLOCKING_OPEN_AND_MARKER);
-    assert!(module.contains("call i32 @wf__completion_file_open_at_submit"));
+    assert!(module.contains("call void @wf__completion_file_open_at_submit"));
     let directory = test_directory();
     let fifo = directory.join("blocking-open");
     let created = Command::new("mkfifo")
@@ -1481,8 +1755,19 @@ fn a_rejected_nonregular_open_does_not_delay_independent_writer_work() {
 fn direct_and_completion_open_read_reject_a_fifo_without_blocking() {
     let direct = emit_lowered(DIRECT_NONREGULAR_OPEN, crate::OverlapLowering::Off);
     let completion = emit(COMPLETION_NONREGULAR_OPEN);
-    assert!(!direct.contains("@wf__completion_file_open_at_submit"));
-    assert!(completion.contains("call i32 @wf__completion_file_open_at_submit"));
+    // One lowering: both modules submit and join. What separates them is where
+    // the record lives — the source-order open reserves it inside the
+    // qualified wrapper, the handed-out open in the submitting function's own
+    // planned frame (design §8). Both reject the FIFO the same way, which is
+    // what the runs below observe.
+    assert_eq!(
+        direct
+            .matches("call void @wf__completion_file_open_at_submit")
+            .count(),
+        1
+    );
+    assert!(direct.contains("call void @wf__completion_file_open_at_submit(i32 %root, ptr %text,"));
+    assert!(completion.contains("call void @wf__completion_file_open_at_submit"));
     assert!(completion.contains("i32 1, ptr %"));
 
     let directory = test_directory();
@@ -1519,11 +1804,21 @@ fn direct_and_completion_open_read_reject_a_fifo_without_blocking() {
 #[test]
 fn component_directory_open_uses_the_same_typed_completion_route() {
     let module = emit(INDEPENDENT_COMPONENT_OPENS);
+    // The handed-out open submits at its call site and the qualified wrapper
+    // submits from its own frame: one lowering, two submissions of the one
+    // route (`research/investigations/io-model/PARK-ON-MISS.md` §8).
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_open_at_submit")
+            .matches("call void @wf__completion_file_open_at_submit")
             .count(),
-        1
+        2
+    );
+    assert_eq!(
+        module
+            .matches("call void @wf__completion_file_open_at_submit(i32 %root, ptr %component,")
+            .count(),
+        1,
+        "one of the two is the wrapper's own"
     );
     assert!(module.contains("completion.component.scan"));
     assert!(module.contains("i32 2, ptr %"));
@@ -1555,7 +1850,7 @@ fn windows_component_completion_stages_one_terminated_utf16_name() {
         .split_once("completion.component.entry.")
         .expect("the Windows completion route validates the component")
         .1
-        .split_once("call i32 @wf__completion_file_open_at_submit")
+        .split_once("call void @wf__completion_file_open_at_submit")
         .expect("the validated component reaches the typed submit")
         .0;
 
@@ -1572,11 +1867,20 @@ fn windows_component_completion_stages_one_terminated_utf16_name() {
 #[test]
 fn directory_source_open_uses_the_typed_completion_route() {
     let module = emit(INDEPENDENT_DIRECTORY_SOURCE_OPENS);
+    // The handed-out open and the qualified wrapper both submit: one lowering
+    // (design §8).
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_open_at_submit")
+            .matches("call void @wf__completion_file_open_at_submit")
             .count(),
-        1
+        2
+    );
+    assert_eq!(
+        module
+            .matches("call void @wf__completion_file_open_at_submit(i32 %directory,")
+            .count(),
+        1,
+        "one of the two is the wrapper's own"
     );
     assert!(module.contains("@wf.sys.open_directory_source.completion"));
     assert!(module.contains("i32 2, ptr %"));
@@ -1600,21 +1904,25 @@ fn directory_source_open_uses_the_typed_completion_route() {
 #[test]
 fn regular_file_open_maps_status_and_release_after_completion() {
     let module = emit(INDEPENDENT_REGULAR_FILE_OPENS);
+    // The handed-out open and the qualified wrapper both submit: one lowering
+    // (design §8).
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_file_open_at_submit")
+            .matches("call void @wf__completion_file_open_at_submit")
             .count(),
-        1
+        2
     );
     assert!(module.contains("@wf.sys.open_file.completion"));
-    assert!(module.contains("@wf__completion_file_close_direct"));
+    // The release closes the same way: submitted into the record the releasing
+    // frame reserved, and joined there.
+    assert!(module.contains("call void @wf__completion_file_close_submit(i32 %descriptor,"));
     assert!(module.contains("i32 1, ptr %"));
     // The kind decision reads the mode of the descriptor the open produced.
     // It moved out of this adapter into the one shared rule every target
     // answers with, so the adapter now calls that rule with its own fstat.
-    assert!(crate::COMPLETION_FILE_ADAPTER_HEADER.contains("S_ISREG(file_mode)"));
-    assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("fstat(descriptor, &status)"));
-    assert!(crate::COMPLETION_FILE_ADAPTER_SOURCE.contains(
+    assert!(crate::COMPLETION_FILE_POSIX_HEADER.contains("S_ISREG(file_mode)"));
+    assert!(crate::COMPLETION_FILE_POSIX_SOURCE.contains("fstat(descriptor, &status)"));
+    assert!(crate::COMPLETION_FILE_POSIX_SOURCE.contains(
         "wf_file_kind_outcome(\n                request->operation.open_at.expected_kind,"
     ));
     let directory = test_directory();
@@ -1640,11 +1948,20 @@ fn regular_file_open_maps_status_and_release_after_completion() {
 #[test]
 fn directory_enumeration_completes_before_writer_normalization() {
     let module = emit(INDEPENDENT_DIRECTORY_READS);
+    // The handed-out enumeration and the qualified wrapper both submit: one
+    // lowering (design §8).
     assert_eq!(
         module
-            .matches("call i32 @wf__completion_directory_next_submit")
+            .matches("call void @wf__completion_directory_next_submit")
             .count(),
-        1
+        2
+    );
+    assert_eq!(
+        module
+            .matches("call void @wf__completion_directory_next_submit(i32 %list, ptr %window,")
+            .count(),
+        1,
+        "one of the two is the wrapper's own"
     );
     assert!(module.contains("@wf.sys.directory_next.completion"));
     let directory = test_directory();
@@ -1668,67 +1985,151 @@ fn directory_enumeration_completes_before_writer_normalization() {
     std::fs::remove_dir(directory).expect("remove directory completion directory");
 }
 
-/// A scheduler waiting for a completion must sleep rather than spin whenever
-/// some other thread owns the work it is waiting for.
+/// A join that cannot read its record yet waits in place: nothing runs above
+/// it, and it sleeps on the one primitive rather than spinning.
 ///
-/// The park guard used to refuse to park while the target queue held anything
-/// at all. With helpers that is a busy wait for exactly as long as a helper
-/// keeps the queue non-empty, because `wf_bridge_progress` deliberately does
-/// not let a waiting scheduler execute an unrelated queued request when
-/// helpers exist — so the loop spins, makes no progress, and refuses to sleep.
-/// Measured on a four-wide many-file program, the one-helper configuration
-/// burned about 270 ms of user CPU against 71 ms for the same program at four
-/// helpers. Only the zero-helper configuration, where the waiting scheduler
-/// really is the target's engine, may refuse to park.
+/// The park guard this case used to pin — `wf_bridge_target_work_needs_this_thread`,
+/// which refused to park while the target queue held anything — is deleted
+/// with the drain it protected (design §7). The arm that replaces it is §2's
+/// fourth line for an I/O target: read the record, yield through COMPLETING,
+/// run one bounded progress pass, register this thread as the record's
+/// in-place waiter, capture the epoch, re-check, and only then park. The
+/// property that survives is the one the old guard bought — a thread with
+/// nothing to do sleeps rather than spinning — and it is now a property of the
+/// arm's order rather than of a predicate.
 #[test]
-fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
+fn a_join_waits_in_place_and_sleeps_on_the_one_primitive() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let predicate = bridge
-        .split_once("static int wf_bridge_target_work_needs_this_thread(void) {")
-        .expect("the park guard is one named predicate")
+    let arm = bridge
+        .split_once("static void wf_bridge_wait_in_place(wf_completion_record *record) {")
+        .expect("the I/O arm of the fourth line is one named function")
         .1
-        .split_once('}')
-        .expect("the predicate has a body")
+        .split_once("\n}\n")
+        .expect("the arm ends with the function")
         .0;
     assert!(
-        predicate.contains("wf_file_adapter_helper_count"),
-        "the guard must read the helper count: {predicate}"
+        arm.contains("wf_prim_yield()"),
+        "COMPLETING is DONE a few instructions away and is yielded through: {arm}"
     );
     assert!(
-        predicate.contains("wf_file_adapter_queued"),
-        "the guard must read the queue: {predicate}"
+        arm.contains("wf_bridge_progress()"),
+        "the arm makes one bounded progress pass before it sleeps: {arm}"
     );
-    // Every join's park decision goes through the predicate, so no site may
-    // still spell the old queue-only condition.
     assert!(
-        !bridge.contains("|| wf_file_adapter_queued(&wf_bridge_adapter) == 0)"),
-        "a join still refuses to park on a non-empty queue alone"
+        arm.contains("WF_SCHED_WAITER_IN_PLACE"),
+        "the arm registers itself as the record's in-place waiter: {arm}"
+    );
+    assert!(
+        arm.contains("wf_bridge_park(epoch)"),
+        "the arm sleeps on the one primitive: {arm}"
+    );
+    assert!(
+        arm.find("WF_SCHED_WAITER_IN_PLACE") < arm.find("wf_completion_wake_epoch"),
+        "the registration goes up before the epoch is captured: {arm}"
+    );
+    assert!(
+        arm.find("wf_completion_wake_epoch") < arm.find("wf_bridge_park(epoch)"),
+        "the epoch is captured before the park: {arm}"
+    );
+    // The deleted guard, and the drain it protected, are gone from every site.
+    for gone in [
+        "wf_bridge_target_work_needs_this_thread",
+        "wf_bridge_drain",
+        "wf_completion_ready_event_count",
+        "wf__par_help_once",
+    ] {
+        assert!(
+            !bridge.contains(gone),
+            "the bridge still names the deleted drain machinery: {gone}"
+        );
+    }
+    // Every join runs the one dispatch, and the dispatch runs the arm above
+    // for a thread with no stack to park (design §2's third line takes the
+    // rest). A thread on a pool stack parks instead, which is the whole of
+    // this design; the arm stays because the harness and the probes call these
+    // joins from plain threads.
+    // The four are the file join, the open join, the status join, and the
+    // accept join a TCP connection's peer address needs [SYS-17]; a join added
+    // for a new operation raises this number and must still enter here.
+    assert_eq!(
+        bridge.matches("wf_bridge_join(held)").count(),
+        bridge.matches("_join(\n    const void *record,").count(),
+        "every join enters the rule the same way"
     );
     assert_eq!(
-        bridge
-            .matches("!wf_bridge_target_work_needs_this_thread()")
-            .count(),
-        3,
-        "each of the three joins asks the same question"
+        bridge.matches("wf_bridge_join(held)").count(),
+        4,
+        "each of the four joins enters the rule the same way"
+    );
+    let dispatch = bridge
+        .split_once("static void wf_bridge_join(wf_completion_record *record) {")
+        .expect("the joins share one dispatch")
+        .1
+        .split_once("\n}\n")
+        .expect("the dispatch ends with the function")
+        .0;
+    assert!(
+        dispatch.contains("wf__sched_current_stack() != NULL"),
+        "a stack to park is what selects the third line: {dispatch}"
+    );
+    assert!(
+        dispatch.contains("wf_sched_join(&wf__sched_core, &record->sched, 1)"),
+        "a thread on a pool stack runs the core's rule: {dispatch}"
+    );
+    assert!(
+        dispatch.contains("wf_bridge_wait_in_place(record)"),
+        "a thread with no pool stack waits in place: {dispatch}"
+    );
+    // Running one's own still-queued submission here is licensed by having
+    // nothing else to do until it is DONE, which is true of the in-place arm
+    // and false of a pool stack: the join below parks that stack and the
+    // thread goes on to other work, so a host call made here holds a worker.
+    // For a peer-bound wait, which another program ends whenever it likes,
+    // that is a worker held for as long as the far side stays quiet, so a pool
+    // stack leaves such a record to the helper pool -- once there is one.
+    let own = bridge
+        .split_once("static int wf_bridge_own_runs_on_this_thread(")
+        .expect("one rule decides whether the claim happens here")
+        .1
+        .split_once("\n}\n")
+        .expect("the rule ends with the function")
+        .0;
+    assert!(
+        own.contains("on_pool_stack == 0"),
+        "a thread with nothing else to run always claims its own: {own}"
+    );
+    assert!(
+        own.contains("!wf_file_request_is_peer_bound(&record->request)"),
+        "only a peer-bound record is withheld from a pool stack: {own}"
+    );
+    assert!(
+        own.contains("wf_file_adapter_helper_count(&wf_bridge_adapter) == 0"),
+        "with no helper the claim happens anyway, or nothing would run it: {own}"
     );
 }
 
-/// A positioned read the submitting thread would run itself is not submitted.
+/// A positioned read the submitting thread would run itself is executed there
+/// and published, rather than queued.
 ///
 /// The completion path exists so a program is not stalled by a wait it could
 /// have overlapped. When the bounded adapter holds no helper, has nothing
-/// queued, and has measured its own operations as not waiting, the submitted
-/// read would be executed by the submitting thread anyway — at its join, after
-/// a queue crossing, a claim, four slot transitions and a drain. On the
-/// `macos-14` runner that machinery is about 400 ns against a warm 4 KiB read
-/// of about 1.2 us, which is why the eight-wide warm program cost 41.78 ms
-/// with the pool off against 32.80 ms for the sequential build of the same
-/// source. Declining the submission leaves the caller the ordinary direct call
-/// the emitter already emits for a refused one.
+/// queued, and has measured its own operations as not waiting, the queued read
+/// would be executed by the submitting thread anyway — at its join, after a
+/// queue crossing. On the `macos-14` runner that machinery is about 400 ns
+/// against a warm 4 KiB read of about 1.2 us, which is why the eight-wide warm
+/// program cost 41.78 ms with the pool off against 32.80 ms for the sequential
+/// build of the same source.
+///
+/// What changed is the answer, not the question. The rule used to refuse the
+/// submission and leave the caller its own direct call; there is no refusal
+/// left to give, because every submit ends in a published record and the
+/// emitted program has one lowering (design §7, "Every submit path ends in a
+/// published record"). So the same host call is made on the same thread inside
+/// submit, and the record is completed there.
 ///
 /// Two limits are what make it safe rather than merely fast.
 ///
-/// Only a *positioned* transfer is declined. An offset is meaningful only on a
+/// Only a *positioned* transfer takes it. An offset is meaningful only on a
 /// seekable object and the typed opens that produce one admit nothing but a
 /// regular file, so a positioned read waits on storage. A non-positioned read
 /// or write may be waiting on something another part of the same program has
@@ -1737,17 +2138,17 @@ fn a_waiting_scheduler_parks_unless_it_is_itself_the_target_engine() {
 /// `independent_io_reaches_the_second_operation_before_the_first_unblocks`
 /// pins, and it writes to a pipe.
 ///
-/// And a written `WF_IO_HELPERS` declines nothing. It pins the route with the
-/// count, which is what makes a pinned line of a measurement a measurement of
-/// the completion path rather than of the policy that may decline it.
+/// And a written `WF_IO_HELPERS` takes nothing inline. It pins the route with
+/// the count, which is what makes a pinned line of a measurement a measurement
+/// of the completion path rather than of the policy that may leave it.
 #[test]
-fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
+fn a_positioned_read_the_submitting_thread_would_run_itself_runs_there() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
     let adapter = crate::COMPLETION_FILE_ADAPTER_SOURCE;
 
     let rule = bridge
         .split_once("static int wf_bridge_positioned_read_runs_on_caller(uint64_t count) {")
-        .expect("one rule decides whether a positioned read is declined")
+        .expect("one rule decides whether a positioned read runs on its caller")
         .1
         .split_once("\n}\n")
         .expect("the rule ends with the function")
@@ -1758,7 +2159,7 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
     );
     assert!(
         rule.contains("wf_bridge_helpers_pinned == 0"),
-        "a written helper count declines nothing: {rule}"
+        "a written helper count takes nothing inline: {rule}"
     );
     assert!(
         rule.contains("wf_file_adapter_transfer_runs_on_caller(&wf_bridge_adapter)"),
@@ -1771,24 +2172,48 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
             .matches("wf_bridge_positioned_read_runs_on_caller(count)")
             .count(),
         1,
-        "only the positioned read may be declined"
+        "only the positioned read may run on its caller"
     );
     let pread = bridge
-        .split_once("int wf__completion_file_pread_submit(")
+        .split_once("void wf__completion_file_pread_submit(")
         .expect("the bridge exposes positioned read")
         .1
-        .split_once("int wf__completion_file_write_submit(")
+        .split_once("void wf__completion_file_write_submit(")
         .expect("positioned read precedes write")
         .0;
     assert!(
         pread.find("wf_bridge_positioned_read_runs_on_caller(count)")
-            < pread.find("request.kind = WF_FILE_PREAD"),
-        "the decision comes before anything is claimed: {pread}"
+            < pread.find("wf_bridge_submit_file(held);\n}"),
+        "the decision comes before the record reaches an engine: {pread}"
     );
     assert!(
-        pread.find("wf_bridge_submit_linux_pread")
+        pread.find("wf_bridge_ring_offer(held)")
             < pread.find("wf_bridge_positioned_read_runs_on_caller(count)"),
         "a native completion path is tried before the bounded adapter's rule"
+    );
+    // Whichever arm it takes, the record is published: there is no `0`.
+    assert!(
+        pread.contains("wf_bridge_execute_here(held);"),
+        "the inline arm publishes the record rather than answering 0: {pread}"
+    );
+    // The one refusal a writer can spell: an offset the target ABI cannot
+    // express. It is the host's own EINVAL, published into the record, and no
+    // longer a reason to terminate now that no direct wrapper can take the
+    // shape instead (design section 8).
+    assert!(
+        pread.contains("wf_bridge_complete_refused(held, EINVAL);"),
+        "an offset above INT64_MAX is published as EINVAL: {pread}"
+    );
+    let submits = bridge
+        .split_once("void wf__completion_file_read_submit(")
+        .expect("the submit family starts at the plain read")
+        .1
+        .split_once("/* ------------------------------------------------------------ the window */")
+        .expect("the submit family ends before the window query")
+        .0;
+    assert!(
+        !submits.contains("return 0;"),
+        "no submit answers 0 any more: {submits}"
     );
 
     // The adapter's half: no helper, nothing queued, and a measured
@@ -1849,6 +2274,18 @@ fn a_positioned_read_the_submitting_thread_would_run_itself_is_not_submitted() {
 /// never grows at all. On the quiet macOS host that left the four-wide program
 /// at 919 ms against 625 ms for the depth rule. Queue depth is a lagging
 /// signal, but it is a true one.
+///
+/// Both of those facts are about a wait that has already happened, which is
+/// exactly what a peer-bound request does not have. Its wait is ended by
+/// another program, so no execution this adapter has finished can see it
+/// coming and the queue is not deep yet at the submission that will occupy a
+/// helper for as long as the far side stays quiet. So an accept, a receive, a
+/// connect or a send grows a helper on the cap alone. Without that, the second
+/// concurrent accept found one helper held and one entry queued, the depth
+/// term refused it, and the two accepts ran one after the other on a pool
+/// whose one helper was inside the first of them: three workers of
+/// `tests/programs/tcp_fanout.wf` inside receives from silent peers and no
+/// thread left to accept the fourth connection.
 #[test]
 fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
@@ -1860,9 +2297,11 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         .split_once("\nstatic ")
         .expect("the policy ends before the next definition")
         .0;
-    // A written value pins both ends, so growth cannot move it.
-    assert!(policy.contains("*initial = (size_t)parsed;"));
-    assert!(policy.contains("*cap = (size_t)parsed;"));
+    // A written value pins both ends, so growth cannot move it, and it is read
+    // under the one rule every startup setting of this runtime follows.
+    assert!(policy.contains("wf__sched_setting(\"WF_IO_HELPERS\""));
+    assert!(policy.contains("*initial = (size_t)written;"));
+    assert!(policy.contains("*cap = (size_t)written;"));
     // Unset starts with no helper and lets the operation bound, not the core
     // count, be the ceiling.
     assert!(
@@ -1879,7 +2318,7 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
     );
 
     let growth = adapter
-        .split_once("static void wf_file_grow_helpers_locked(wf_file_adapter *adapter) {")
+        .split_once("static void wf_file_grow_helpers_locked(\n    wf_file_adapter *adapter,\n    int peer_bound\n) {")
         .expect("growth is one named function")
         .1
         .split_once("\n}\n")
@@ -1897,6 +2336,25 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         growth.contains("wf_file_adapter_wait_verdict(adapter) != WF_FILE_WAIT_LONG"),
         "growth must also require a measured wait to overlap: {growth}"
     );
+    // Both of those terms are about a wait this adapter has already seen, and
+    // a peer-bound request's wait has not started: it is ended by another
+    // program, so the kind is the only thing that can know it is coming. A
+    // peer-bound submission therefore takes neither term and grows on the cap
+    // alone, which is what keeps the two terms above from serializing several
+    // connections onto one helper.
+    assert!(
+        growth.contains("if (peer_bound == 0) {"),
+        "the two measured terms must be the non-peer-bound arm: {growth}"
+    );
+    let peer_bound_arm = growth
+        .split_once("if (peer_bound == 0) {")
+        .expect("the measured terms are one arm")
+        .1;
+    assert!(
+        peer_bound_arm.contains("adapter->queue_count <= held")
+            && peer_bound_arm.contains("WF_FILE_WAIT_LONG"),
+        "both measured terms belong inside that arm: {growth}"
+    );
     // Growth runs inside the one enqueue that already holds the queue lock,
     // so it creates at most one helper per submission and needs no second
     // lock, and every kind of queued work reaches the pool the same way.
@@ -1908,8 +2366,9 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         .expect("the enqueue ends with the function")
         .0;
     assert!(
-        enqueue.contains("wf_file_grow_helpers_locked(adapter)"),
-        "the enqueue is where growth happens: {enqueue}"
+        enqueue.contains("wf_file_grow_helpers_locked(")
+            && enqueue.contains("wf_file_request_is_peer_bound(&record->request)"),
+        "the enqueue is where growth happens, and it is what reads the kind: {enqueue}"
     );
     // One queued request wakes one helper, never every helper, only a helper
     // that is actually asleep, and never from inside the queue lock: a signal
@@ -1919,7 +2378,7 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         "the enqueue decides the wake under the lock: {enqueue}"
     );
     assert!(
-        !enqueue.contains("pthread_cond_signal"),
+        !enqueue.contains("wf_completion_wait_wake"),
         "the enqueue must not issue the wake while it holds the lock: {enqueue}"
     );
     let submit = adapter
@@ -1930,14 +2389,14 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
         .expect("the submission ends with the function")
         .0;
     let unlock = submit
-        .find("(void)pthread_mutex_unlock(&adapter->queue_lock);\n    if (wake != 0) {")
+        .find("wf_completion_wait_unlock(&adapter->queue_wait);\n    if (wake != 0) {")
         .expect("the wake follows the unlock");
     let signal = submit
-        .find("pthread_cond_signal(&adapter->queue_available)")
+        .find("wf_completion_wait_wake(&adapter->queue_wait, 0)")
         .expect("a submission announces to exactly one helper");
     assert!(unlock < signal, "the wake is issued outside the queue lock");
     assert!(
-        !submit.contains("pthread_cond_broadcast(&adapter->queue_available)"),
+        !submit.contains("wf_completion_wait_wake(&adapter->queue_wait, 1)"),
         "a submission must not wake every helper"
     );
     // The bridge owns no second helper pool layered over this one.
@@ -1972,7 +2431,7 @@ fn an_unset_helper_setting_selects_a_bounded_demand_driven_pool() {
 fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
     let ring = crate::COMPLETION_LINUX_IO_URING_SOURCE;
     let bridge = crate::COMPLETION_BRIDGE_SOURCE;
-    let adapter_header = crate::COMPLETION_FILE_ADAPTER_HEADER;
+    let posix_header = crate::COMPLETION_FILE_POSIX_HEADER;
 
     for opcode in ["IORING_OP_OPENAT", "IORING_OP_CLOSE"] {
         assert!(
@@ -1980,17 +2439,20 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
             "the ring adapter must submit {opcode}"
         );
     }
-    // The kind decision is one rule, stated once, called by both adapters.
+    // The kind decision is one rule, stated once, called by both POSIX
+    // engines. It moved out of the adapter's own header when that header
+    // became shared with a platform that has no `struct stat`, and into the
+    // POSIX leaf both engines include (design section 7).
     assert!(
-        adapter_header.contains("wf_file_kind_outcome("),
-        "the open-kind rule belongs to the shared typed file contract"
+        posix_header.contains("wf_file_kind_outcome("),
+        "the open-kind rule belongs to the POSIX file leaf's contract"
     );
     assert!(
         ring.contains("wf_file_kind_outcome("),
         "the ring adapter must answer with the shared open-kind rule"
     );
     assert!(
-        crate::COMPLETION_FILE_ADAPTER_SOURCE.contains("wf_file_kind_outcome("),
+        crate::COMPLETION_FILE_POSIX_SOURCE.contains("wf_file_kind_outcome("),
         "the bounded POSIX adapter must answer with the shared open-kind rule"
     );
     // The part of an open that can wait is the path resolution, and no
@@ -2012,32 +2474,34 @@ fn a_native_ring_carries_opens_and_closes_under_one_kind_rule() {
          round trip that measured 31 percent slower"
     );
     assert!(
-        decision.contains("fstat(entry->opened_descriptor"),
+        decision.contains("fstat(record->opened_descriptor"),
         "the kind check reads the mode of the descriptor the open produced: \
          {decision}"
     );
-    // The bridge offers both operations to the ring before the bounded
-    // fallback, and answers -1 rather than claiming an operation it cannot
-    // then hand over.
-    for route in [
-        "wf_bridge_submit_linux_open_at(",
-        "wf_bridge_submit_linux_close(",
-    ] {
-        assert!(bridge.contains(route), "the bridge must offer {route}");
-    }
-    let open_submit = bridge
-        .split_once("int wf__completion_file_open_at_submit(")
-        .expect("one open submission entry point")
-        .1;
-    let native = open_submit
-        .find("wf_bridge_submit_linux_open_at(")
-        .expect("the open tries the ring");
-    let fallback = open_submit
-        .find("request.kind = WF_FILE_OPEN_AT;")
-        .expect("the open keeps its bounded fallback");
+    // Every submit routes through one dispatcher, which asks the ring whether
+    // it has a form for this kind before it reaches the bounded adapter. The
+    // question is asked before the record is offered, so a kind the ring does
+    // not carry is never refused after the operation was already the ring's.
+    let dispatch = bridge
+        .split_once("static void wf_bridge_dispatch(wf_completion_record *record) {")
+        .expect("one dispatcher")
+        .1
+        .split_once("\n}\n")
+        .expect("the dispatcher ends with the function")
+        .0;
+    let native = dispatch
+        .find("wf_bridge_ring_offer(record)")
+        .expect("the dispatcher asks the ring first");
+    let fallback = dispatch
+        .find("wf_bridge_submit_file(record);")
+        .expect("the dispatcher keeps the bounded adapter");
     assert!(
         native < fallback,
-        "the ring is tried before the bounded POSIX adapter"
+        "the ring is asked before the bounded POSIX adapter: {dispatch}"
+    );
+    assert!(
+        ring.contains("int wf_linux_io_uring_carries(const wf_completion_record *record) {"),
+        "the ring answers which kinds it has a form for"
     );
 }
 
@@ -2055,14 +2519,27 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
     for (name, source) in [
         ("bridge.c", crate::COMPLETION_BRIDGE_SOURCE),
         ("runtime.c", crate::COMPLETION_RUNTIME_SOURCE),
+        ("wait_host.c", crate::COMPLETION_WAIT_HOST_SOURCE),
+        ("wait_windows.c", crate::COMPLETION_WAIT_WINDOWS_SOURCE),
         ("file_adapter.c", crate::COMPLETION_FILE_ADAPTER_SOURCE),
+        ("file_posix.c", crate::COMPLETION_FILE_POSIX_SOURCE),
+        ("file_windows.c", crate::COMPLETION_FILE_WINDOWS_SOURCE),
         ("linux_io_uring.c", crate::COMPLETION_LINUX_IO_URING_SOURCE),
-        ("writer_scheduler.c", crate::WRITER_SCHEDULER_SOURCE),
+        ("windows_iocp.c", crate::COMPLETION_WINDOWS_IOCP_SOURCE),
+        ("sched/core.c", crate::SCHED_CORE_SOURCE),
+        ("sched/prim_host.c", crate::SCHED_PRIM_HOST_SOURCE),
+        ("sched/prim_windows.c", crate::SCHED_PRIM_WINDOWS_SOURCE),
+        ("sched/entry.c", crate::SCHED_ENTRY_SOURCE),
         ("contract.h", crate::COMPLETION_CONTRACT_HEADER),
         ("bridge.h", crate::COMPLETION_BRIDGE_HEADER),
         ("file_adapter.h", crate::COMPLETION_FILE_ADAPTER_HEADER),
+        ("file_posix.h", crate::COMPLETION_FILE_POSIX_HEADER),
+        ("socket_address.h", crate::COMPLETION_SOCKET_ADDRESS_HEADER),
         ("linux_io_uring.h", crate::COMPLETION_LINUX_IO_URING_HEADER),
-        ("writer_scheduler.h", crate::WRITER_SCHEDULER_HEADER),
+        ("windows_iocp.h", crate::COMPLETION_WINDOWS_IOCP_HEADER),
+        ("sched/core.h", crate::SCHED_CORE_HEADER),
+        ("sched/prim.h", crate::SCHED_PRIM_HEADER),
+        ("sched/entry.h", crate::SCHED_ENTRY_HEADER),
     ] {
         for reserved in ["linux", "unix"] {
             for shape in [format!(" {reserved};"), format!(".{reserved}")] {
@@ -2085,7 +2562,7 @@ fn linked_c_units_avoid_identifiers_the_host_compiler_predefines() {
 /// program had no pair at all — one candidate is not a window — so its first
 /// write was never handed out and the two spellings compiled to different
 /// work for no semantic reason.
-const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   doc "Two independent writes whose second call is bound before it is matched.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
@@ -2109,7 +2586,7 @@ const SCRUTINEE_TAIL_LET_FORM: &[u8] = br#"command fn main(command.stdout as out
 }
 "#;
 
-const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   doc "Two independent writes whose second call is written in scrutinee position.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
@@ -2141,7 +2618,7 @@ const SCRUTINEE_TAIL_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as o
 /// a binding exists and is the wrong identity for the site — `written` is what
 /// the arms give, not what `write_once` returned — which is why the site's
 /// identity had to become the call occurrence.
-const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   doc "Two independent writes whose second call is a value match's scrutinee.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
@@ -2172,7 +2649,7 @@ const SCRUTINEE_VALUE_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as 
 /// dispatch and the arm it selects read the call's result, so every statement
 /// after the match already stands behind that read. Handing the scrutinee call
 /// out would run the second write before the first write's arms.
-const SCRUTINEE_HEAD_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own Output, command.stderr as err: own Output) -> status: own ExitStatus reads(out, err), writes(out, err) {
+const SCRUTINEE_HEAD_MATCH_FORM: &[u8] = br#"command fn main(command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus reads(out, err), writes(out, err) {
   doc "A scrutinee call followed by an independent call, which cannot overlap.";
   let bulk = buffer_new(1_u64, 65_u8);
   let marker = buffer_new(1_u64, 77_u8);
@@ -2202,7 +2679,7 @@ fn completion_write_shape(module: &str) -> (usize, usize, usize) {
         .expect("command entry is emitted")
         .1;
     (
-        body.matches("call i32 @wf__completion_file_write_submit")
+        body.matches("call void @wf__completion_file_write_submit")
             .count(),
         body.matches("call void @wf__completion_file_join").count(),
         body.matches("@wf.sys.write_once.v1(").count(),
@@ -2236,9 +2713,12 @@ fn assert_publishes_marked_streams(module: &str) {
 fn a_call_in_scrutinee_position_is_handed_out_exactly_as_a_bound_call_is() {
     let bound = emit(SCRUTINEE_TAIL_LET_FORM);
     let scrutinee = emit(SCRUTINEE_TAIL_MATCH_FORM);
+    // One direct call, not two: the handed-out write no longer has an inline
+    // arm to name the sequential wrapper from, so the only direct call left is
+    // the source-last write that was never handed out (design section 8).
     assert_eq!(
         completion_write_shape(&bound),
-        (1, 1, 2),
+        (1, 1, 1),
         "the bound form submits the first write and leaves the second direct"
     );
     assert_eq!(

@@ -7434,14 +7434,14 @@ command fn main() -> status: own ExitStatus pure {
 fn a_failed_system_endpoint_expression_prevents_unreached_range_obligations() {
     let source = br#"const endpoints: FixedVector<u64, 1> =[0_u64];
 
-fn publish(output: &uniq Output, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
+fn publish(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
   region {
     let outcome = write_once(output: &uniq deref(output), source: source, start: 0_u64, end: endpoints[1_u64]);
   }
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7461,7 +7461,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
 
 #[test]
 fn one_system_call_retains_two_independent_ordered_range_obligations() {
-    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
+    let source = br#"fn publish(output: &uniq OutputStream, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
   region {
     match write_once(output: &uniq deref(output), source: source, start: start, end: end) {
       Ok(value: next) => {
@@ -7473,7 +7473,7 @@ fn one_system_call_retains_two_independent_ordered_range_obligations() {
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus pure {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;
@@ -7502,7 +7502,7 @@ command fn main(command.stdout as out: own Output) -> status: own ExitStatus pur
 
 #[test]
 fn ordinary_source_relations_discharge_both_system_ranges() {
-    let source = br#"fn publish(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
+    let source = br#"fn publish(output: &uniq OutputStream, source: &buffer<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len_of(deref(source));
   requires start <= end;
   requires end <= capacity;
@@ -7564,7 +7564,7 @@ command fn main() -> status: own ExitStatus pure {
 fn indexed_system_guards_discharge_both_structurally_identical_ranges() {
     let source = br#"const endpoints: FixedVector<u64, 2> =[0_u64, 0_u64];
 
-fn publish(output: &uniq Output, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
+fn publish(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
   let capacity = len_of(deref(source));
   if endpoints[0_u64] <= endpoints[1_u64] {
     if endpoints[1_u64] <= capacity {
@@ -7634,7 +7634,7 @@ command fn main() -> status: own ExitStatus pure {
 fn a_nonterm_system_endpoint_is_never_replaced_by_the_zero_term() {
     let source = br#"const endpoints: FixedVector<u64, 1> =[0_u64];
 
-fn publish(output: &uniq Output, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
+fn publish(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
   region {
     let outcome = write_once(output: &uniq deref(output), source: source, start: 1_u64, end: endpoints[0_u64]);
   }
@@ -7671,7 +7671,7 @@ fn a_transfer_endpoint_is_bounded_by_end_and_not_beyond_it() {
 
 const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn under(output: &uniq Output, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
+fn under(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len_of(deref(source));
   let enough = 3_u64 <= source_length;
   if enough {
@@ -7688,7 +7688,7 @@ fn under(output: &uniq Output, source: &buffer<u8>) -> result: own unit reads(ou
   return unit;
 }
 
-fn exact(output: &uniq Output, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
+fn exact(output: &uniq OutputStream, source: &buffer<u8>) -> result: own unit reads(output, source), writes(output) {
   let source_length = len_of(deref(source));
   let enough = 4_u64 <= source_length;
   if enough {
@@ -7705,7 +7705,7 @@ fn exact(output: &uniq Output, source: &buffer<u8>) -> result: own unit reads(ou
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let batch = buffer_new(4_u64, 0_u8);
   region {
     under(output: &uniq out, source: &batch);
@@ -7836,7 +7836,7 @@ fn a_let_bound_transfer_outcome_carries_the_same_endpoint_bound() {
 
 const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-fn deferred(output: own Output, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+fn deferred(output: own OutputStream, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len_of(deref(source));
   requires 3_u64 <= capacity;
 } {
@@ -7853,7 +7853,7 @@ fn deferred(output: own Output, source: &buffer<u8>, limit: own u64) -> result: 
   return unit;
 }
 
-fn killed(output: own Output, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
+fn killed(output: own OutputStream, source: &buffer<u8>, limit: own u64) -> result: own unit reads(output, source), writes(output) contract {
   define capacity = len_of(deref(source));
   requires limit <= capacity;
 } {
@@ -7871,7 +7871,7 @@ fn killed(output: own Output, source: &buffer<u8>, limit: own u64) -> result: ow
   return unit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out) {
   let batch = buffer_new(3_u64, 0_u8);
   region {
     deferred(output: move out, source: &batch, limit: 3_u64);
@@ -7906,7 +7906,7 @@ fn a_read_at_endpoint_is_observed_on_its_own_outcome_variant() {
 
 const table: FixedVector<u8, count> =[0_u8, 0_u8, 0_u8, 0_u8];
 
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files) {
   region {
     match arg_get(args: &args, position: 1_u64) {
       Ok(value: text) => {
@@ -7914,25 +7914,31 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
           Ok(value: path) => {
             region 'c {
               region {
-                let permit = reserve_file(factory: &uniq 'c files);
-                match open_read(permit: move permit, root: &'c cwd, path: &path) {
-                  Ok(value: file) => {
-                    let bytes = buffer_new(64_u64, 0_u8);
-                    region 'f {
-                      region {
-                        match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
-                          ReadBytes(next: n) => {
-                            let sample = table[n];
-                          }
-                          ReadEnd() => {
-                          }
-                          ReadFailed(error: problem) => {
+                match reserve_handle(factory: &uniq 'c files) {
+                  Ok(value: permit) => {
+                    match open_read(permit: move permit, root: &'c cwd, path: &path) {
+                      FileOpened(value: file) => {
+                        let bytes = buffer_new(64_u64, 0_u8);
+                        region 'f {
+                          region {
+                            match read_at(file: &'f file, destination: &uniq bytes, file_offset: 0_u64, start: 0_u64, end: 3_u64) {
+                              ReadBytes(next: n) => {
+                                let sample = table[n];
+                              }
+                              ReadEnd() => {
+                              }
+                              ReadFailed(error: problem) => {
+                              }
+                            }
                           }
                         }
                       }
+                      FileOpenFailed(error: unopened, permit: refused) => {
+                      }
                     }
                   }
-                  Err(error: unopened) => {
+                  Err(error: spent) => {
+                    return exit_status(code: 8_u8);
                   }
                 }
               }
@@ -8234,7 +8240,7 @@ fn frozen_real_sources_retain_complete_proof_roots_without_counted_false_positiv
         )],
     ];
     // Every frozen source now names the active inventory. In particular,
-    // `wfgrep.wf` reserves a FilePermit before each typed open, so the older
+    // `wfgrep.wf` reserves a HandlePermit before each typed open, so the older
     // pre-permit `OpenByName` inventory can no longer resolve that bundle.
     let inventories = [
         crate::Inventory::ACTIVE,

@@ -158,13 +158,48 @@ pub(crate) fn operation_spelling(id: OperationFamilyId) -> Option<&'static str> 
     OPERATION_FAMILIES.get(usize::from(id.0)).copied()
 }
 
+/// Which of [SYS-2]'s three categories one system nominal type belongs to.
+///
+/// A system-declared struct is the third category, added by v0.50 for
+/// `TcpConnection` [SYS-18]. It contributes one nominal-type entry and no
+/// constructor entry, so no source expression constructs one; its two field
+/// records are owner-local to the nominal, and every rule that already
+/// governs a source struct's fields governs them unchanged.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SystemNominalCategory {
+    /// An opaque type with no writer-visible field, variant, or literal.
+    Opaque,
+    /// A system-declared struct with owner-local field records.
+    Struct,
+    /// An outcome enum whose variants are constructor entries.
+    Enum,
+}
+
 /// One [SYS-2] system nominal type in normative table order.
 #[derive(Clone, Copy, Debug)]
 pub struct SystemNominal {
     /// Exact TYPEID spelling.
     pub spelling: &'static str,
-    /// `true` for the ten opaque types, `false` for the eight outcome enums.
-    pub opaque: bool,
+    /// The [SYS-2] category this nominal belongs to.
+    pub category: SystemNominalCategory,
+    /// Declared fields in declared order, for a struct nominal only; every
+    /// other category declares none here, because an enum's fields belong to
+    /// its constructors and an opaque type has none.
+    pub fields: &'static [SystemField],
+}
+
+impl SystemNominal {
+    /// Whether this is one of [SYS-2]'s opaque types.
+    #[must_use]
+    pub const fn is_opaque(&self) -> bool {
+        matches!(self.category, SystemNominalCategory::Opaque)
+    }
+
+    /// Whether this is a system-declared struct [SYS-18].
+    #[must_use]
+    pub const fn is_struct(&self) -> bool {
+        matches!(self.category, SystemNominalCategory::Struct)
+    }
 }
 
 /// One [SYS-2] enum-variant constructor in normative table order.
@@ -350,6 +385,8 @@ pub enum SystemParameterMode {
 pub enum SystemTypeRef {
     /// `u8`.
     U8,
+    /// `u16`.
+    U16,
     /// `u32`.
     U32,
     /// `u64`.
@@ -416,8 +453,20 @@ const READ_OUTCOME: u8 = 12;
 const IO_ERROR: u8 = 13;
 const DIRECTORY_SOURCE: u8 = 14;
 const LIST_OUTCOME: u8 = 15;
-const FILE_FACTORY: u8 = 16;
-const FILE_PERMIT: u8 = 17;
+const HANDLE_FACTORY: u8 = 16;
+const HANDLE_PERMIT: u8 = 17;
+const FILE_OPEN_OUTCOME: u8 = 18;
+const DIRECTORY_OPEN_OUTCOME: u8 = 19;
+const SOURCE_OPEN_OUTCOME: u8 = 20;
+const INPUT_STREAM: u8 = 21;
+const SOCKET_ADDRESS: u8 = 22;
+const TCP_LISTENER: u8 = 23;
+const TCP_RECEIVE: u8 = 24;
+const TCP_SEND: u8 = 25;
+const TCP_CONNECTION: u8 = 26;
+const LISTEN_OUTCOME: u8 = 27;
+const ACCEPT_OUTCOME: u8 = 28;
+const CONNECT_OUTCOME: u8 = 29;
 
 /// The traversal surface switch [SYS-2, SYS-14], activated as v0.32.
 ///
@@ -444,6 +493,20 @@ pub const TRAVERSAL_SURFACE: bool = true;
 /// the ordinary path; `false` remains the exact superseded-v0.32 differential.
 pub const OPEN_BY_NAME: bool = true;
 
+/// The active v0.50 streams-and-TCP switch [SYS-2, SYS-15, SYS-16, SYS-17,
+/// SYS-18].
+///
+/// `false` admits exactly the superseded v0.49 inventory: the stream, address,
+/// listener and connection rows below are unreachable, every declaration
+/// ordinal keeps its v0.49 value, and the resolver, checker, and backend see
+/// the same two hundred twenty-seven records that archive declares. `true`
+/// admits the active surface — `InputStream`, `SocketAddress`, `TcpListener`,
+/// `TcpReceive`, `TcpSend`, the system-declared struct `TcpConnection`, the
+/// three connection outcome enums, and the ten operations of §4 — as the last
+/// rows of each [SYS-2] table. The compiler selects `true`; `false` remains
+/// the exact superseded-v0.49 differential.
+pub const STREAMS_AND_TCP: bool = true;
+
 /// One selected [SYS-2] inventory state.
 ///
 /// The three states are strictly nested prefixes of the tables below, taken
@@ -462,15 +525,23 @@ pub enum Inventory {
     /// The active v0.33 inventory: [`Inventory::Traversal`] plus the
     /// [SYS-11] `open_file` operation.
     OpenByName,
-    /// The active unified-state file-open surface: [`Inventory::OpenByName`]
-    /// plus the explicit file factory, one-shot permit, and reservation row.
+    /// The superseded v0.49 unified-state file-open surface:
+    /// [`Inventory::OpenByName`] plus the explicit handle factory, one-shot
+    /// permit, and reservation row.
     FilePermits,
+    /// The active v0.50 surface: [`Inventory::FilePermits`] plus the readable
+    /// stream, the socket address, the listener, the connection struct with
+    /// its two direction resources, the three connection outcome enums, and
+    /// their ten operations.
+    StreamsAndTcp,
 }
 
 impl Inventory {
     /// The inventory the shipped compilation path selects, fixed by the two
     /// switches above and read once, by `compile` and `resolve`.
-    pub const ACTIVE: Self = if OPEN_BY_NAME {
+    pub const ACTIVE: Self = if STREAMS_AND_TCP {
+        Self::StreamsAndTcp
+    } else if OPEN_BY_NAME {
         Self::FilePermits
     } else if TRAVERSAL_SURFACE {
         Self::Traversal
@@ -483,7 +554,8 @@ impl Inventory {
         match self {
             Self::Base => BASE_NOMINALS,
             Self::Traversal | Self::OpenByName => OPEN_BY_NAME_NOMINALS,
-            Self::FilePermits => SYSTEM_NOMINALS.len(),
+            Self::FilePermits => FILE_PERMIT_NOMINALS,
+            Self::StreamsAndTcp => SYSTEM_NOMINALS.len(),
         }
     }
 
@@ -491,7 +563,9 @@ impl Inventory {
     const fn constructors(self) -> usize {
         match self {
             Self::Base => BASE_CONSTRUCTORS,
-            Self::Traversal | Self::OpenByName | Self::FilePermits => SYSTEM_CONSTRUCTORS.len(),
+            Self::Traversal | Self::OpenByName => OPEN_BY_NAME_CONSTRUCTORS,
+            Self::FilePermits => FILE_PERMIT_CONSTRUCTORS,
+            Self::StreamsAndTcp => SYSTEM_CONSTRUCTORS.len(),
         }
     }
 
@@ -501,7 +575,8 @@ impl Inventory {
             Self::Base => BASE_OPERATIONS,
             Self::Traversal => TRAVERSAL_OPERATIONS,
             Self::OpenByName => OPEN_BY_NAME_OPERATIONS,
-            Self::FilePermits => SYSTEM_OPERATIONS.len(),
+            Self::FilePermits => FILE_PERMIT_OPERATIONS,
+            Self::StreamsAndTcp => SYSTEM_OPERATIONS.len(),
         }
     }
 }
@@ -522,31 +597,60 @@ const TRAVERSAL_OPERATIONS: usize = 14;
 const OPEN_BY_NAME_OPERATIONS: usize = 15;
 /// The v0.33-v0.36 nominal count before explicit file-open authority.
 const OPEN_BY_NAME_NOMINALS: usize = 16;
+/// The v0.32-v0.41 constructor count before the open outcome enums.
+const OPEN_BY_NAME_CONSTRUCTORS: usize = 40;
+/// The v0.49 nominal count before the streams-and-TCP surface.
+const FILE_PERMIT_NOMINALS: usize = 21;
+/// The v0.49 constructor count before the streams-and-TCP surface.
+const FILE_PERMIT_CONSTRUCTORS: usize = 46;
+/// The v0.49 operation count before the streams-and-TCP surface.
+const FILE_PERMIT_OPERATIONS: usize = 19;
 
 /// The [SYS-2] nominal types in normative table order.
 ///
 /// The first fourteen are v0.31's; the last two are v0.32's traversal-surface
 /// additions and are admitted only under
 /// [`TRAVERSAL_SURFACE`].
-pub const SYSTEM_NOMINALS: [SystemNominal; 18] = [
-    nominal("Args", true),
-    nominal("HostString", true),
-    nominal("RelativePath", true),
-    nominal("DirectoryRead", true),
-    nominal("ReadFile", true),
-    nominal("Output", true),
-    nominal("ExitStatus", true),
-    nominal("ArgError", false),
-    nominal("Utf8Error", false),
-    nominal("CopyError", false),
-    nominal("Utf8CopyError", false),
-    nominal("PathError", false),
-    nominal("ReadOutcome", false),
-    nominal("IoError", false),
-    nominal("DirectorySource", true),
-    nominal("ListOutcome", false),
-    nominal("FileFactory", true),
-    nominal("FilePermit", true),
+pub const SYSTEM_NOMINALS: [SystemNominal; 30] = [
+    opaque("Args"),
+    opaque("HostString"),
+    opaque("RelativePath"),
+    opaque("DirectoryRead"),
+    opaque("ReadFile"),
+    opaque("OutputStream"),
+    opaque("ExitStatus"),
+    enumeration("ArgError"),
+    enumeration("Utf8Error"),
+    enumeration("CopyError"),
+    enumeration("Utf8CopyError"),
+    enumeration("PathError"),
+    enumeration("ReadOutcome"),
+    enumeration("IoError"),
+    opaque("DirectorySource"),
+    enumeration("ListOutcome"),
+    opaque("HandleFactory"),
+    opaque("HandlePermit"),
+    enumeration("FileOpenOutcome"),
+    enumeration("DirectoryOpenOutcome"),
+    enumeration("SourceOpenOutcome"),
+    opaque("InputStream"),
+    opaque("SocketAddress"),
+    opaque("TcpListener"),
+    opaque("TcpReceive"),
+    opaque("TcpSend"),
+    // The one system-declared struct [SYS-18]. It carries its two field
+    // records here, contributes no constructor entry, and is therefore
+    // constructed by no source expression.
+    system_struct("TcpConnection", &CONNECTION_DIRECTIONS),
+    enumeration("ListenOutcome"),
+    enumeration("AcceptOutcome"),
+    enumeration("ConnectOutcome"),
+];
+
+/// The two owner-local field records of [SYS-18]'s `TcpConnection`.
+const CONNECTION_DIRECTIONS: [SystemField; 2] = [
+    field("receive", SystemTypeRef::Nominal(TCP_RECEIVE)),
+    field("send", SystemTypeRef::Nominal(TCP_SEND)),
 ];
 
 /// The [SYS-2] nominal types one inventory state admits.
@@ -567,8 +671,28 @@ pub fn system_operations(inventory: Inventory) -> &'static [SystemOperation] {
     &SYSTEM_OPERATIONS[..inventory.operations()]
 }
 
-const fn nominal(spelling: &'static str, opaque: bool) -> SystemNominal {
-    SystemNominal { spelling, opaque }
+const fn opaque(spelling: &'static str) -> SystemNominal {
+    SystemNominal {
+        spelling,
+        category: SystemNominalCategory::Opaque,
+        fields: &[],
+    }
+}
+
+const fn enumeration(spelling: &'static str) -> SystemNominal {
+    SystemNominal {
+        spelling,
+        category: SystemNominalCategory::Enum,
+        fields: &[],
+    }
+}
+
+const fn system_struct(spelling: &'static str, fields: &'static [SystemField]) -> SystemNominal {
+    SystemNominal {
+        spelling,
+        category: SystemNominalCategory::Struct,
+        fields,
+    }
 }
 
 /// The exact inline detail carried by every [SYS-2] `IoError` class.
@@ -586,6 +710,27 @@ const NEXT_AND_ENTRIES_U64: [SystemField; 2] = [
     field("next", SystemTypeRef::U64),
     field("entries", SystemTypeRef::U64),
 ];
+/// The one payload of a successful open: the fresh owner [SYS-10].
+const OPENED_FILE: [SystemField; 1] = [field("value", SystemTypeRef::Nominal(READ_FILE))];
+const OPENED_DIRECTORY: [SystemField; 1] = [field("value", SystemTypeRef::Nominal(DIRECTORY_READ))];
+const OPENED_SOURCE: [SystemField; 1] = [field("value", SystemTypeRef::Nominal(DIRECTORY_SOURCE))];
+/// The payload of a refused open: the host's error and the permit the open
+/// took, handed back because no descriptor was taken [SYS-10].
+const ERROR_AND_PERMIT: [SystemField; 2] = [
+    field("error", SystemTypeRef::Nominal(IO_ERROR)),
+    field("permit", SystemTypeRef::Nominal(HANDLE_PERMIT)),
+];
+
+/// The one payload of a successful `tcp_listen`: the fresh listener [SYS-17].
+const LISTENING: [SystemField; 1] = [field("listener", SystemTypeRef::Nominal(TCP_LISTENER))];
+/// The payload of a successful `tcp_accept`: the fresh connection pair and the
+/// address the target reported for its peer [SYS-17, SYS-18].
+const ACCEPTED: [SystemField; 2] = [
+    field("connection", SystemTypeRef::Nominal(TCP_CONNECTION)),
+    field("peer", SystemTypeRef::Nominal(SOCKET_ADDRESS)),
+];
+/// The one payload of a successful `tcp_connect`: the fresh connection pair.
+const CONNECTED: [SystemField; 1] = [field("connection", SystemTypeRef::Nominal(TCP_CONNECTION))];
 
 const fn field(name: &'static str, ty: SystemTypeRef) -> SystemField {
     SystemField { name, ty }
@@ -617,7 +762,7 @@ const fn constructor(
 /// The first thirty-nine are the active specification's; the last three are
 /// the traversal-surface candidate's `ListOutcome` variants, admitted only
 /// under [`TRAVERSAL_SURFACE`].
-pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 40] = [
+pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 52] = [
     constructor("InvalidIndex", ARG_ERROR, &[]),
     constructor("Utf8Invalid", UTF8_ERROR, &[]),
     constructor("CopyTooSmall", COPY_ERROR, &REQUIRED_U64),
@@ -658,6 +803,22 @@ pub const SYSTEM_CONSTRUCTORS: [SystemConstructor; 40] = [
     constructor("ListBytes", LIST_OUTCOME, &NEXT_AND_ENTRIES_U64),
     constructor("ListEnd", LIST_OUTCOME, &[]),
     constructor("ListFailed", LIST_OUTCOME, &ERROR_IO),
+    constructor("FileOpened", FILE_OPEN_OUTCOME, &OPENED_FILE),
+    constructor("FileOpenFailed", FILE_OPEN_OUTCOME, &ERROR_AND_PERMIT),
+    constructor("DirectoryOpened", DIRECTORY_OPEN_OUTCOME, &OPENED_DIRECTORY),
+    constructor(
+        "DirectoryOpenFailed",
+        DIRECTORY_OPEN_OUTCOME,
+        &ERROR_AND_PERMIT,
+    ),
+    constructor("SourceOpened", SOURCE_OPEN_OUTCOME, &OPENED_SOURCE),
+    constructor("SourceOpenFailed", SOURCE_OPEN_OUTCOME, &ERROR_AND_PERMIT),
+    constructor("Listening", LISTEN_OUTCOME, &LISTENING),
+    constructor("ListenFailed", LISTEN_OUTCOME, &ERROR_AND_PERMIT),
+    constructor("Accepted", ACCEPT_OUTCOME, &ACCEPTED),
+    constructor("AcceptFailed", ACCEPT_OUTCOME, &ERROR_AND_PERMIT),
+    constructor("Connected", CONNECT_OUTCOME, &CONNECTED),
+    constructor("ConnectFailed", CONNECT_OUTCOME, &ERROR_AND_PERMIT),
 ];
 
 const fn parameter(
@@ -694,7 +855,7 @@ const fn ok_u64(err: u8) -> SystemTypeRef {
 /// obligations and host failures are typed outcomes. State entries are the
 /// exact stored declaration row and are rendered as formal-parameter paths by
 /// [`operation_state_effects`].
-pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
+pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
     SystemOperation {
         spelling: "args_count",
         regions: &["'a"],
@@ -830,7 +991,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
             parameter(
                 "permit",
                 SystemParameterMode::Own,
-                SystemTypeRef::Nominal(FILE_PERMIT),
+                SystemTypeRef::Nominal(HANDLE_PERMIT),
             ),
             parameter(
                 "root",
@@ -843,7 +1004,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
                 SystemTypeRef::Nominal(RELATIVE_PATH),
             ),
         ],
-        result: ok_nominal(READ_FILE, IO_ERROR),
+        result: SystemTypeRef::Nominal(FILE_OPEN_OUTCOME),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
         integer_result_bound: None,
@@ -922,7 +1083,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
             parameter(
                 "permit",
                 SystemParameterMode::Own,
-                SystemTypeRef::Nominal(FILE_PERMIT),
+                SystemTypeRef::Nominal(HANDLE_PERMIT),
             ),
             parameter(
                 "root",
@@ -937,7 +1098,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
-        result: ok_nominal(DIRECTORY_READ, IO_ERROR),
+        result: SystemTypeRef::Nominal(DIRECTORY_OPEN_OUTCOME),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
         integer_result_bound: None,
@@ -951,7 +1112,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
             parameter(
                 "permit",
                 SystemParameterMode::Own,
-                SystemTypeRef::Nominal(FILE_PERMIT),
+                SystemTypeRef::Nominal(HANDLE_PERMIT),
             ),
             parameter(
                 "directory",
@@ -959,7 +1120,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
                 SystemTypeRef::Nominal(DIRECTORY_READ),
             ),
         ],
-        result: ok_nominal(DIRECTORY_SOURCE, IO_ERROR),
+        result: SystemTypeRef::Nominal(SOURCE_OPEN_OUTCOME),
         state_reads: &[0, 1],
         state_writes: &[0],
         integer_result_bound: None,
@@ -1000,7 +1161,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
             parameter(
                 "permit",
                 SystemParameterMode::Own,
-                SystemTypeRef::Nominal(FILE_PERMIT),
+                SystemTypeRef::Nominal(HANDLE_PERMIT),
             ),
             parameter(
                 "root",
@@ -1015,7 +1176,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
             parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
             parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
         ],
-        result: ok_nominal(READ_FILE, IO_ERROR),
+        result: SystemTypeRef::Nominal(FILE_OPEN_OUTCOME),
         state_reads: &[0, 1, 2],
         state_writes: &[0],
         integer_result_bound: None,
@@ -1023,18 +1184,287 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 16] = [
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
     SystemOperation {
-        spelling: "reserve_file",
+        spelling: "reserve_handle",
         regions: &["'f"],
         parameters: &[parameter(
             "factory",
             SystemParameterMode::UniqueBorrow(0),
-            SystemTypeRef::Nominal(FILE_FACTORY),
+            SystemTypeRef::Nominal(HANDLE_FACTORY),
         )],
-        result: SystemTypeRef::Nominal(FILE_PERMIT),
+        result: ok_nominal(HANDLE_PERMIT, IO_ERROR),
         state_reads: &[0],
         state_writes: &[0],
         integer_result_bound: None,
         target_action: TargetAction::INLINE,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    // The three explicit closes [SYS-10]: each consumes its owner, performs
+    // the one native close attempt derived release would perform, and returns
+    // the credit the open spent as one fresh permit on every outcome.
+    SystemOperation {
+        spelling: "close_read",
+        regions: &[],
+        parameters: &[parameter(
+            "file",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(READ_FILE),
+        )],
+        result: SystemTypeRef::Nominal(HANDLE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "close_directory",
+        regions: &[],
+        parameters: &[parameter(
+            "directory",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(DIRECTORY_READ),
+        )],
+        result: SystemTypeRef::Nominal(HANDLE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "close_directory_source",
+        regions: &[],
+        parameters: &[parameter(
+            "source",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(DIRECTORY_SOURCE),
+        )],
+        result: SystemTypeRef::Nominal(HANDLE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    // The v0.50 stream row [SYS-15]: the unpositioned read of the entry's
+    // standard input. It writes the stream because the position it advances is
+    // the whole of that value's state, which is exactly what `read_at` does
+    // not do.
+    SystemOperation {
+        spelling: "read_next",
+        regions: &["'i", "'d"],
+        parameters: &[
+            parameter(
+                "input",
+                SystemParameterMode::UniqueBorrow(0),
+                SystemTypeRef::Nominal(INPUT_STREAM),
+            ),
+            parameter(
+                "destination",
+                SystemParameterMode::UniqueBorrow(1),
+                SystemTypeRef::DestinationU8,
+            ),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: SystemTypeRef::Nominal(READ_OUTCOME),
+        state_reads: &[0, 1],
+        state_writes: &[0, 1],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::None,
+    },
+    // The two address constructors [SYS-16]: total, pure, no host call.
+    SystemOperation {
+        spelling: "socket_address_v4",
+        regions: &[],
+        parameters: &[
+            parameter("a", SystemParameterMode::Own, SystemTypeRef::U8),
+            parameter("b", SystemParameterMode::Own, SystemTypeRef::U8),
+            parameter("c", SystemParameterMode::Own, SystemTypeRef::U8),
+            parameter("d", SystemParameterMode::Own, SystemTypeRef::U8),
+            parameter("port", SystemParameterMode::Own, SystemTypeRef::U16),
+        ],
+        result: SystemTypeRef::Nominal(SOCKET_ADDRESS),
+        state_reads: &[],
+        state_writes: &[],
+        integer_result_bound: None,
+        target_action: TargetAction::INLINE,
+        result_state_origin: SystemResultStateOrigin::None,
+    },
+    SystemOperation {
+        spelling: "socket_address_v6",
+        regions: &[],
+        parameters: &[
+            parameter("a", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("b", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("c", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("d", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("e", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("f", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("g", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("h", SystemParameterMode::Own, SystemTypeRef::U16),
+            parameter("port", SystemParameterMode::Own, SystemTypeRef::U16),
+        ],
+        result: SystemTypeRef::Nominal(SOCKET_ADDRESS),
+        state_reads: &[],
+        state_writes: &[],
+        integer_result_bound: None,
+        target_action: TargetAction::INLINE,
+        result_state_origin: SystemResultStateOrigin::None,
+    },
+    // The three permit-consuming TCP rows [SYS-17]. Each takes the permit by
+    // `own` and hands it back inside its failed variant, exactly as an open
+    // does, because the handle a listener or a connection costs is one credit
+    // of the same factory.
+    SystemOperation {
+        spelling: "tcp_listen",
+        regions: &["'a"],
+        parameters: &[
+            parameter(
+                "permit",
+                SystemParameterMode::Own,
+                SystemTypeRef::Nominal(HANDLE_PERMIT),
+            ),
+            parameter(
+                "address",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(SOCKET_ADDRESS),
+            ),
+        ],
+        result: SystemTypeRef::Nominal(LISTEN_OUTCOME),
+        state_reads: &[0, 1],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "tcp_accept",
+        regions: &["'l"],
+        parameters: &[
+            parameter(
+                "permit",
+                SystemParameterMode::Own,
+                SystemTypeRef::Nominal(HANDLE_PERMIT),
+            ),
+            parameter(
+                "listener",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(TCP_LISTENER),
+            ),
+        ],
+        result: SystemTypeRef::Nominal(ACCEPT_OUTCOME),
+        state_reads: &[0, 1],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "tcp_connect",
+        regions: &["'a"],
+        parameters: &[
+            parameter(
+                "permit",
+                SystemParameterMode::Own,
+                SystemTypeRef::Nominal(HANDLE_PERMIT),
+            ),
+            parameter(
+                "address",
+                SystemParameterMode::Borrow(0),
+                SystemTypeRef::Nominal(SOCKET_ADDRESS),
+            ),
+        ],
+        result: SystemTypeRef::Nominal(CONNECT_OUTCOME),
+        state_reads: &[0, 1],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    // The two direction transfers [SYS-18]. Each borrows one direction of one
+    // connection `&uniq`, so the two directions of one connection are two
+    // places that overlap under [PAR-1] with nothing added.
+    SystemOperation {
+        spelling: "receive_next",
+        regions: &["'r", "'d"],
+        parameters: &[
+            parameter(
+                "receive",
+                SystemParameterMode::UniqueBorrow(0),
+                SystemTypeRef::Nominal(TCP_RECEIVE),
+            ),
+            parameter(
+                "destination",
+                SystemParameterMode::UniqueBorrow(1),
+                SystemTypeRef::DestinationU8,
+            ),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: SystemTypeRef::Nominal(READ_OUTCOME),
+        state_reads: &[0, 1],
+        state_writes: &[0, 1],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::None,
+    },
+    SystemOperation {
+        spelling: "send_once",
+        regions: &["'s", "'b"],
+        parameters: &[
+            parameter(
+                "send",
+                SystemParameterMode::UniqueBorrow(0),
+                SystemTypeRef::Nominal(TCP_SEND),
+            ),
+            parameter(
+                "source",
+                SystemParameterMode::Borrow(1),
+                SystemTypeRef::SourceU8,
+            ),
+            parameter("start", SystemParameterMode::Own, SystemTypeRef::U64),
+            parameter("end", SystemParameterMode::Own, SystemTypeRef::U64),
+        ],
+        result: ok_u64(IO_ERROR),
+        state_reads: &[0, 1],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::None,
+    },
+    // The two explicit closes that return the credit [SYS-17, SYS-18].
+    // `close_connection` takes the whole pair, because one connection is one
+    // credit and the close must name the thing that holds it.
+    SystemOperation {
+        spelling: "close_connection",
+        regions: &[],
+        parameters: &[parameter(
+            "connection",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(TCP_CONNECTION),
+        )],
+        result: SystemTypeRef::Nominal(HANDLE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
+        result_state_origin: SystemResultStateOrigin::Fresh,
+    },
+    SystemOperation {
+        spelling: "close_listener",
+        regions: &[],
+        parameters: &[parameter(
+            "listener",
+            SystemParameterMode::Own,
+            SystemTypeRef::Nominal(TCP_LISTENER),
+        )],
+        result: SystemTypeRef::Nominal(HANDLE_PERMIT),
+        state_reads: &[0],
+        state_writes: &[0],
+        integer_result_bound: None,
+        target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
 ];
@@ -1089,15 +1519,25 @@ pub enum SystemResourceType {
     /// One shareable open file for positioned reads [SYS-11].
     ReadFile,
     /// One stateful output sink [SYS-12].
-    Output,
+    OutputStream,
     /// One immutable portable command code [SYS-13].
     ExitStatus,
     /// One ordered directory-entry source [SYS-14].
     DirectorySource,
-    /// One explicit source of one-shot file-open permits.
-    FileFactory,
-    /// One affine, one-shot authorization for a single file-open attempt.
-    FilePermit,
+    /// One explicit source of one-shot handle permits.
+    HandleFactory,
+    /// One affine, one-shot authorization for a single handle-taking attempt.
+    HandlePermit,
+    /// One readable byte stream with an implicit position [SYS-15].
+    InputStream,
+    /// One immutable internet address and port [SYS-16].
+    SocketAddress,
+    /// One bound, listening TCP endpoint [SYS-17].
+    TcpListener,
+    /// The receiving direction of one TCP connection [SYS-18].
+    TcpReceive,
+    /// The sending direction of one TCP connection [SYS-18].
+    TcpSend,
 }
 
 /// The [SYS-5] consuming release action of one system resource type.
@@ -1113,10 +1553,17 @@ pub enum SystemReleaseAction {
     /// diagnostic and never retries an ambiguous close, because the native
     /// descriptor may already be closed and reusable.
     NativeCloseAttempt,
-    /// `Output`'s logical source detach: it neither closes nor flushes the
-    /// host descriptor [SYS-12], and operating-system process teardown closes
-    /// the native descriptor afterwards.
+    /// `OutputStream`'s and `InputStream`'s logical source detach: it neither
+    /// closes, flushes, nor drains the host descriptor [SYS-12, SYS-15], and
+    /// operating-system process teardown closes the native descriptor
+    /// afterwards.
     SourceDetach,
+    /// At most one native direction-close attempt: the half-close of one
+    /// direction of one connection, with the same discarded diagnostic and the
+    /// same no-retry rule as a close. The target releases the underlying
+    /// object once both directions have been released, and that second release
+    /// is the one that spends the credit [SYS-18].
+    NativeDirectionCloseAttempt,
 }
 
 /// How one system resource value is backed.
@@ -1205,7 +1652,7 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
             SystemResourceBacking::Opaque,
         ),
         OUTPUT => (
-            SystemResourceType::Output,
+            SystemResourceType::OutputStream,
             SystemReleaseAction::SourceDetach,
             SystemResourceBacking::Opaque,
         ),
@@ -1219,22 +1666,51 @@ pub fn system_resource_contract(nominal: u8) -> Option<SystemResourceContract> {
             SystemReleaseAction::NativeCloseAttempt,
             SystemResourceBacking::Opaque,
         ),
-        FILE_FACTORY => (
-            SystemResourceType::FileFactory,
+        HANDLE_FACTORY => (
+            SystemResourceType::HandleFactory,
             SystemReleaseAction::LogicalConsume,
             SystemResourceBacking::Opaque,
         ),
-        FILE_PERMIT => (
-            SystemResourceType::FilePermit,
+        HANDLE_PERMIT => (
+            SystemResourceType::HandlePermit,
             SystemReleaseAction::LogicalConsume,
             SystemResourceBacking::Opaque,
         ),
+        INPUT_STREAM => (
+            SystemResourceType::InputStream,
+            SystemReleaseAction::SourceDetach,
+            SystemResourceBacking::Opaque,
+        ),
+        SOCKET_ADDRESS => (
+            SystemResourceType::SocketAddress,
+            SystemReleaseAction::LogicalConsume,
+            SystemResourceBacking::Opaque,
+        ),
+        TCP_LISTENER => (
+            SystemResourceType::TcpListener,
+            SystemReleaseAction::NativeCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        TCP_RECEIVE => (
+            SystemResourceType::TcpReceive,
+            SystemReleaseAction::NativeDirectionCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        TCP_SEND => (
+            SystemResourceType::TcpSend,
+            SystemReleaseAction::NativeDirectionCloseAttempt,
+            SystemResourceBacking::Opaque,
+        ),
+        // `TcpConnection` is a system struct, not a resource type: it takes no
+        // row in the [SYS-5] release table, and releasing one is releasing its
+        // two fields [SYS-18].
         _ => return None,
     };
     let row = match action {
         // Only a native close attempt reaches the host; a logical consume and
         // a source detach make no target call and perform no external effect.
-        SystemReleaseAction::NativeCloseAttempt => SystemReleaseRow {
+        SystemReleaseAction::NativeCloseAttempt
+        | SystemReleaseAction::NativeDirectionCloseAttempt => SystemReleaseRow {
             target_action: TargetAction::MAY_SUSPEND,
             state_write: true,
         },
@@ -1267,18 +1743,43 @@ pub fn system_release_row(nominal: u8) -> SystemReleaseRow {
     }
 }
 
+/// How many declaration records one inventory's nominal-type block occupies.
+///
+/// A nominal-type row occupies one record, and a struct nominal's own field
+/// records follow it immediately [SYS-2], so this is no longer the count of
+/// nominal types.
+fn nominal_record_count(inventory: Inventory) -> usize {
+    system_nominals(inventory)
+        .iter()
+        .map(|nominal| 1 + nominal.fields.len())
+        .sum()
+}
+
 /// Maps one lookup-class [SYS-2] declaration to its nominal-table index.
+///
+/// Returns `None` for a struct nominal's owner-local field ordinal, which
+/// never enters source lookup.
 #[must_use]
 pub fn system_nominal_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
-    let ordinal = id.ordinal();
-    (usize::from(ordinal) < system_nominals(inventory).len()).then_some(ordinal)
+    let mut ordinal = usize::from(id.ordinal());
+    for (index, nominal) in system_nominals(inventory).iter().enumerate() {
+        if ordinal == 0 {
+            return u8::try_from(index).ok();
+        }
+        ordinal -= 1;
+        if ordinal < nominal.fields.len() {
+            return None;
+        }
+        ordinal -= nominal.fields.len();
+    }
+    None
 }
 
 /// Maps one lookup-class [SYS-2] declaration to its constructor-table index.
 #[must_use]
 pub fn system_constructor_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(inventory).len();
+    let nominals = nominal_record_count(inventory);
     if ordinal < nominals {
         return None;
     }
@@ -1302,10 +1803,10 @@ pub fn system_constructor_declaration(
     index: u8,
     inventory: Inventory,
 ) -> Option<SystemDeclarationId> {
-    let mut ordinal = system_nominals(inventory).len();
+    let mut ordinal = nominal_record_count(inventory);
     for (constructor_index, constructor) in system_constructors(inventory).iter().enumerate() {
         if constructor_index == usize::from(index) {
-            return u8::try_from(ordinal).ok().map(SystemDeclarationId::new);
+            return u16::try_from(ordinal).ok().map(SystemDeclarationId::new);
         }
         ordinal += 1 + constructor.fields.len();
     }
@@ -1316,7 +1817,7 @@ pub fn system_constructor_declaration(
 #[must_use]
 pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> Option<u8> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(inventory).len();
+    let nominals = nominal_record_count(inventory);
     if ordinal < nominals {
         return None;
     }
@@ -1345,13 +1846,13 @@ pub fn system_operation_index(id: SystemDeclarationId, inventory: Inventory) -> 
 /// operations carry a lookup class; fields and parameters are owner-local
 /// records with none.
 ///
-/// The active specification's complete inventory is one hundred ninety-four
+/// The active specification's complete inventory is three hundred and seven
 /// records; the retained prefix states are smaller exact table prefixes.
 pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclarationRecord> {
-    let mut records = Vec::with_capacity(203);
+    let mut records = Vec::with_capacity(307);
     let push = |spelling: &'static str, class: Option<DeclarationClass>, records: &mut Vec<_>| {
-        let Ok(ordinal) = u8::try_from(records.len()) else {
-            unreachable!("the closed SYS-2 inventory fits one byte of ordinals");
+        let Ok(ordinal) = u16::try_from(records.len()) else {
+            unreachable!("the closed SYS-2 inventory fits two bytes of ordinals");
         };
         records.push(SystemDeclarationRecord {
             id: SystemDeclarationId::new(ordinal),
@@ -1365,6 +1866,13 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
             Some(DeclarationClass::NominalType),
             &mut records,
         );
+        // A system struct's field records follow its own row immediately and
+        // carry no lookup class: they are owner-local to the nominal, exactly
+        // as a constructor's fields are owner-local to the constructor
+        // [SYS-2, SYS-18].
+        for field in nominal.fields {
+            push(field.name, None, &mut records);
+        }
     }
     for constructor in system_constructors(inventory) {
         push(
@@ -1398,11 +1906,16 @@ pub(crate) fn system_declarations(inventory: Inventory) -> Vec<SystemDeclaration
 /// value-parameter ordinal, which never enters source lookup.
 pub fn system_entity(id: SystemDeclarationId, inventory: Inventory) -> Option<SystemEntity> {
     let mut ordinal = usize::from(id.ordinal());
-    let nominals = system_nominals(inventory);
-    if ordinal < nominals.len() {
-        return Some(SystemEntity::Nominal(&nominals[ordinal]));
+    for nominal in system_nominals(inventory) {
+        if ordinal == 0 {
+            return Some(SystemEntity::Nominal(nominal));
+        }
+        ordinal -= 1;
+        if ordinal < nominal.fields.len() {
+            return None;
+        }
+        ordinal -= nominal.fields.len();
     }
-    ordinal -= nominals.len();
     for constructor in system_constructors(inventory) {
         if ordinal == 0 {
             return Some(SystemEntity::Constructor(constructor));
@@ -1451,9 +1964,10 @@ mod tests {
     use super::{
         DeclarationClass, Inventory, MODE_WORDS, OPERATION_FAMILIES, PRELUDE_DECLARATIONS,
         ReservedNameClass, SYSTEM_CONSTRUCTORS, SYSTEM_NOMINALS, SYSTEM_OPERATIONS,
-        SystemDeclarationId, SystemEntity, SystemParameterMode, SystemResultPayload, SystemTypeRef,
-        operation_state_effects, reserved_name, system_constructors, system_declarations,
-        system_entity, system_nominals, system_operations,
+        SystemDeclarationId, SystemEntity, SystemNominalCategory, SystemParameterMode,
+        SystemResultPayload, SystemTypeRef, operation_state_effects, reserved_name,
+        system_constructors, system_declarations, system_entity, system_nominals,
+        system_operations,
     };
 
     #[test]
@@ -1467,7 +1981,7 @@ mod tests {
         let constructors = system_constructors(Inventory::Base);
         let operations = system_operations(Inventory::Base);
         assert_eq!(nominals.len(), 14);
-        assert_eq!(nominals.iter().filter(|n| n.opaque).count(), 7);
+        assert_eq!(nominals.iter().filter(|n| n.is_opaque()).count(), 7);
         assert_eq!(constructors.len(), 37);
         assert_eq!(
             constructors
@@ -1611,7 +2125,7 @@ mod tests {
             );
         }
         for constructor in &SYSTEM_CONSTRUCTORS {
-            assert!(!SYSTEM_NOMINALS[usize::from(constructor.owner)].opaque);
+            assert!(!SYSTEM_NOMINALS[usize::from(constructor.owner)].is_opaque());
             let field_names: HashSet<_> =
                 constructor.fields.iter().map(|field| field.name).collect();
             assert_eq!(field_names.len(), constructor.fields.len());
@@ -1655,7 +2169,7 @@ mod tests {
             (14, 37, 11, 101)
         );
         assert!(system_entity(SystemDeclarationId::new(163), Inventory::Base).is_none());
-        assert!(system_entity(SystemDeclarationId::new(u8::MAX), Inventory::Base).is_none());
+        assert!(system_entity(SystemDeclarationId::new(u16::MAX), Inventory::Base).is_none());
     }
 
     /// The v0.32 traversal inventory is the v0.31 inventory plus exactly the
@@ -1670,7 +2184,7 @@ mod tests {
         let constructors = system_constructors(Inventory::Traversal);
         let operations = system_operations(Inventory::Traversal);
         assert_eq!(nominals.len(), 16);
-        assert_eq!(nominals.iter().filter(|n| n.opaque).count(), 8);
+        assert_eq!(nominals.iter().filter(|n| n.is_opaque()).count(), 8);
         assert_eq!(constructors.len(), 40);
         assert_eq!(
             constructors
@@ -1820,10 +2334,16 @@ mod tests {
         let nominals = system_nominals(Inventory::FilePermits);
         let constructors = system_constructors(Inventory::FilePermits);
         let operations = system_operations(Inventory::FilePermits);
-        assert_eq!(nominals.len(), 18);
-        assert_eq!(nominals.iter().filter(|nominal| nominal.opaque).count(), 10);
-        assert_eq!(constructors.len(), 40);
-        assert_eq!(operations.len(), 16);
+        assert_eq!(nominals.len(), 21);
+        assert_eq!(
+            nominals
+                .iter()
+                .filter(|nominal| nominal.is_opaque())
+                .count(),
+            10
+        );
+        assert_eq!(constructors.len(), 46);
+        assert_eq!(operations.len(), 19);
         assert_eq!(
             operations
                 .iter()
@@ -1836,28 +2356,28 @@ mod tests {
                 .iter()
                 .map(|operation| operation.parameters.len())
                 .sum::<usize>(),
-            44
+            47
         );
         let records = system_declarations(Inventory::FilePermits);
-        assert_eq!(records.len(), 203);
-        let reserve = SystemDeclarationId::new(200);
+        assert_eq!(records.len(), 227);
+        let reserve = SystemDeclarationId::new(218);
         let Some(SystemEntity::Operation(operation)) =
             system_entity(reserve, Inventory::FilePermits)
         else {
-            panic!("the final active ordinal must name reserve_file");
+            panic!("the final active ordinal must name reserve_handle");
         };
-        assert_eq!(operation.spelling, "reserve_file");
+        assert_eq!(operation.spelling, "reserve_handle");
         assert_eq!(operation.target_action, super::TargetAction::INLINE);
-        assert!(system_entity(SystemDeclarationId::new(203), Inventory::FilePermits).is_none());
+        assert!(system_entity(SystemDeclarationId::new(209), Inventory::FilePermits).is_none());
     }
 
     #[test]
     fn system_inventory_matches_independent_extraction_from_exact() {
         let spec = crate::ACTIVE_KERNEL_SPEC_TEXT;
 
-        // The ten opaque nominal types, from the [SYS-2] prose sentence.
+        // The fifteen opaque nominal types, from the [SYS-2] prose sentence.
         let opaque_sentence = spec
-            .split_once("Ten opaque nominal types: ")
+            .split_once("Fifteen opaque nominal types: ")
             .expect("exact SYS-2 opaque sentence")
             .1
             .split_once('.')
@@ -1872,19 +2392,73 @@ mod tests {
             opaque,
             system_nominals(Inventory::ACTIVE)
                 .iter()
-                .filter(|nominal| nominal.opaque)
+                .filter(|nominal| nominal.is_opaque())
                 .map(|nominal| nominal.spelling)
                 .collect::<Vec<_>>()
         );
 
-        // The seven enums, their thirty-nine variants, and every field, from
-        // the first [SYS-2] code block.
         let sys2 = spec
             .split_once("[SYS-2] The system inventory is exactly:")
             .expect("exact SYS-2 opening")
             .1;
+
+        // The one system-declared struct and its two field records, from the
+        // first [SYS-2] code block [SYS-18].
+        let struct_block = sys2
+            .split_once("One struct nominal type with two owner-local field records:\n\n```\n")
+            .expect("SYS-2 struct block opening")
+            .1
+            .split_once("\n```\n")
+            .expect("SYS-2 struct block closing")
+            .0;
+        let mut extracted_structs: Vec<(String, Vec<(String, String)>)> = Vec::new();
+        for line in struct_block.lines() {
+            let trimmed = line.trim();
+            if let Some(header) = trimmed.strip_prefix("struct ") {
+                let name = header.strip_suffix(" {").expect("SYS-2 struct header");
+                extracted_structs.push((name.to_owned(), Vec::new()));
+            } else if let Some(field) = trimmed.strip_suffix(';') {
+                let (name, ty) = field.split_once(": ").expect("SYS-2 struct field");
+                extracted_structs
+                    .last_mut()
+                    .expect("SYS-2 field outside struct")
+                    .1
+                    .push((name.to_owned(), ty.to_owned()));
+            }
+        }
+        let catalog_structs: Vec<(String, Vec<(String, String)>)> =
+            system_nominals(Inventory::ACTIVE)
+                .iter()
+                .filter(|nominal| nominal.is_struct())
+                .map(|nominal| {
+                    let fields = nominal
+                        .fields
+                        .iter()
+                        .map(|field| (field.name.to_owned(), render_type(field.ty)))
+                        .collect();
+                    (nominal.spelling.to_owned(), fields)
+                })
+                .collect();
+        assert_eq!(extracted_structs, catalog_structs);
+        // A struct nominal contributes no constructor entry, so no source
+        // expression constructs one [SYS-2, SYS-18].
+        for (index, nominal) in system_nominals(Inventory::ACTIVE).iter().enumerate() {
+            if !nominal.is_struct() {
+                continue;
+            }
+            assert!(
+                system_constructors(Inventory::ACTIVE)
+                    .iter()
+                    .all(|constructor| usize::from(constructor.owner) != index),
+                "{} contributes a constructor entry",
+                nominal.spelling
+            );
+        }
+
+        // The fourteen enums, their fifty-two variants, and every field, from
+        // the second [SYS-2] code block.
         let enum_block = sys2
-            .split_once("```\n")
+            .split_once("Fourteen enum nominal types with fifty-two variant constructors:\n\n```\n")
             .expect("SYS-2 enum block opening")
             .1
             .split_once("\n```\n")
@@ -1920,7 +2494,7 @@ mod tests {
         let catalog_enums: Vec<ExtractedEnum> = system_nominals(Inventory::ACTIVE)
             .iter()
             .enumerate()
-            .filter(|(_, nominal)| !nominal.opaque)
+            .filter(|(_, nominal)| matches!(nominal.category, SystemNominalCategory::Enum))
             .map(|(owner, nominal)| {
                 let variants = system_constructors(Inventory::ACTIVE)
                     .iter()
@@ -1939,8 +2513,8 @@ mod tests {
             .collect();
         assert_eq!(extracted_enums, catalog_enums);
 
-        // The fourteen complete operation signatures, from the second [SYS-2]
-        // code block, including each written effect row.
+        // The twenty-nine complete operation signatures, from the third
+        // [SYS-2] code block, including each written effect row.
         let operation_block = sys2
             .split_once("`fn_sig` shape:\n\n```\n")
             .expect("SYS-2 operation block opening")
@@ -1968,6 +2542,7 @@ mod tests {
     fn render_type(ty: SystemTypeRef) -> String {
         match ty {
             SystemTypeRef::U8 => "u8".to_owned(),
+            SystemTypeRef::U16 => "u16".to_owned(),
             SystemTypeRef::U32 => "u32".to_owned(),
             SystemTypeRef::U64 => "u64".to_owned(),
             SystemTypeRef::DestinationU8 => "MutSlice<u8>".to_owned(),

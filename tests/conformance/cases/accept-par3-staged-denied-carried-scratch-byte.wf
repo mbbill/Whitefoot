@@ -42,7 +42,7 @@ fn first_byte(source: own Slice<u8>) -> result: own u64 reads(source) {
   return cvt::<u8, u64>(byte);
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "The marker byte one iteration writes into the hoisted scratch survives into the next, because stamp writes it only on odd indices. Executing the prologue in index order preserves that carried byte, but the remainder reads the same storage, so no single segment serializes it and PAR-3 denies with condition 5. Whole-place write-before-read would admit this program and publish a different total.";
   region 'w {
     let workspace = arena_frame::<1, 1, 'w>();
@@ -66,20 +66,26 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
           }
         }
         region 'f {
-          let permit = reserve_file(factory: &uniq files);
-          let window = slice_of(&name);
-          region {
-            match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
-              Ok(value: handle) => {
-                let seen = 0_u64;
-                region {
-                  let source = slice_of(&scratch);
-                  set seen = first_byte(source: source);
+          match reserve_handle(factory: &uniq files) {
+            Ok(value: permit) => {
+              let window = slice_of(&name);
+              region {
+                match open_file(permit: move permit, root: &'f cwd, name: &window, start: 0_u64, end: 4_u64) {
+                  FileOpened(value: handle) => {
+                    let seen = 0_u64;
+                    region {
+                      let source = slice_of(&scratch);
+                      set seen = first_byte(source: source);
+                    }
+                    set total = total +wrap seen;
+                  }
+                  FileOpenFailed(error: problem, permit: refused) => {
+                  }
                 }
-                set total = total +wrap seen;
               }
-              Err(error: problem) => {
-              }
+            }
+            Err(error: spent) => {
+              return exit_status(code: 1_u8);
             }
           }
         }

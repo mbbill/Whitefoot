@@ -520,9 +520,21 @@ impl PlaceMap {
                 };
                 Some((self.resolve(&place), false))
             }
+            // A borrowed system resource that is a struct field names that
+            // field, so a write through it kills the facts on the field and
+            // not on its siblings [SYS-18, ENT-5].
+            CheckedExpression::BorrowSystemResource {
+                binding, fields, ..
+            } => {
+                let place = PlaceTerm {
+                    root: PlaceRoot::Binding(*binding),
+                    deref: self.is_holder(*binding),
+                    fields: fields.clone(),
+                };
+                Some((self.resolve(&place), false))
+            }
             CheckedExpression::BorrowAddressed { binding, .. }
-            | CheckedExpression::BorrowBox { binding, .. }
-            | CheckedExpression::BorrowSystemResource { binding, .. } => {
+            | CheckedExpression::BorrowBox { binding, .. } => {
                 let place = PlaceTerm {
                     root: PlaceRoot::Binding(*binding),
                     deref: self.is_holder(*binding),
@@ -543,9 +555,14 @@ impl PlaceMap {
 
 pub(crate) fn holder_from_value(value: &CheckedExpression) -> Option<HolderReferent> {
     match value {
+        CheckedExpression::BorrowSystemResource {
+            binding, fields, ..
+        } => Some(HolderReferent::Place {
+            binding: *binding,
+            fields: fields.clone(),
+        }),
         CheckedExpression::BorrowAddressed { binding, .. }
-        | CheckedExpression::BorrowBox { binding, .. }
-        | CheckedExpression::BorrowSystemResource { binding, .. } => Some(HolderReferent::Place {
+        | CheckedExpression::BorrowBox { binding, .. } => Some(HolderReferent::Place {
             binding: *binding,
             fields: Vec::new(),
         }),

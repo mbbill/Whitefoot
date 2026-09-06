@@ -17,11 +17,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-_Static_assert(
-    sizeof(wf_linux_file_result) <= WF_COMPLETION_RESULT_CAPACITY,
-    "completion result cell must hold a Linux file result"
-);
-
 static unsigned wf_linux_load_acquire(const unsigned *value) {
     return __atomic_load_n(value, __ATOMIC_ACQUIRE);
 }
@@ -165,31 +160,29 @@ static int wf_linux_init_wait_set(wf_linux_io_uring_adapter *adapter) {
 static void wf_linux_init_statistics(wf_linux_io_uring_adapter *adapter) {
     atomic_init(&adapter->stat_submissions, 0);
     atomic_init(&adapter->stat_submission_enters, 0);
-    atomic_init(&adapter->stat_exhaustion_retries, 0);
-    atomic_init(&adapter->stat_capacity_waits, 0);
     atomic_init(&adapter->stat_completions, 0);
-    atomic_init(&adapter->stat_publication_failures, 0);
     atomic_init(&adapter->stat_enter_failures, 0);
     atomic_init(&adapter->stat_kernel_waits, 0);
     atomic_init(&adapter->stat_kernel_wakes, 0);
     atomic_init(&adapter->stat_host_wake_writes, 0);
+    atomic_init(&adapter->stat_overflow_flushes, 0);
     atomic_init(&adapter->progress_error, 0);
 }
 
 int wf_linux_io_uring_init(
     wf_linux_io_uring_adapter *adapter,
     wf_completion_runtime *runtime,
-    wf_linux_io_uring_entry *entry_storage,
-    size_t entry_capacity
+    size_t depth,
+    size_t completions
 ) {
     struct io_uring_params parameters;
     size_t submission_size;
     size_t completion_size;
-    size_t entry_index;
     int error;
 
-    if (adapter == NULL || runtime == NULL || entry_storage == NULL
-        || entry_capacity == 0 || entry_capacity > UINT_MAX) {
+    if (adapter == NULL || runtime == NULL || depth == 0
+        || depth > UINT_MAX || completions < depth
+        || completions > UINT_MAX) {
         return EINVAL;
     }
     memset(adapter, 0, sizeof(*adapter));
@@ -200,32 +193,50 @@ int wf_linux_io_uring_init(
     adapter->completion_mapping = MAP_FAILED;
     adapter->submission_entries = MAP_FAILED;
     adapter->runtime = runtime;
-    adapter->entries = entry_storage;
-    adapter->entry_capacity = entry_capacity;
-    atomic_init(&adapter->entry_cursor, 0);
+    adapter->depth = depth;
     atomic_init(&adapter->in_flight, 0);
-    atomic_init(&adapter->retry_held, 0);
     wf_linux_init_statistics(adapter);
-    for (entry_index = 0; entry_index < entry_capacity; ++entry_index) {
-        atomic_init(
-            &entry_storage[entry_index].state,
-            WF_LINUX_IO_URING_ENTRY_FREE
-        );
-    }
 
     memset(&parameters, 0, sizeof(parameters));
+    /* The completion queue is sized by the caller rather than left at the
+     * kernel's twice-the-depth default, because the depth is a throughput
+     * choice about submission and the queue's size is a bound on how many
+     * completions can be posted before the overflow path. */
+    /* IORING_SETUP_COOP_TASKRUN: a completion the kernel finishes on the
+     * submitting thread's behalf (a receive whose poll fired) is posted when
+     * that thread next enters the kernel, which every scheduler thread does
+     * within a bounded spin, instead of by an inter-processor interrupt that
+     * stops whatever the thread was running.  Measured on the TCP echo
+     * control test at 64 connections it is the difference between 200 to
+     * 225 thousand and 240 to 250 thousand round trips a second, with the
+     * same parks and the same enters (`research/investigations/io-model/RESULTS.md`,
+     * the batch 0108 section).  A kernel before 5.19 refuses the flag with EINVAL, and
+     * the ring is then made without it. */
+    parameters.flags = IORING_SETUP_CQSIZE | IORING_SETUP_COOP_TASKRUN;
+    parameters.cq_entries = (unsigned)completions;
     adapter->ring_descriptor = (int)syscall(
         __NR_io_uring_setup,
-        (unsigned)entry_capacity,
+        (unsigned)depth,
         &parameters
     );
+    if (adapter->ring_descriptor < 0 && errno == EINVAL) {
+        memset(&parameters, 0, sizeof(parameters));
+        parameters.flags = IORING_SETUP_CQSIZE;
+        parameters.cq_entries = (unsigned)completions;
+        adapter->ring_descriptor = (int)syscall(
+            __NR_io_uring_setup,
+            (unsigned)depth,
+            &parameters
+        );
+    }
     if (adapter->ring_descriptor < 0) {
         error = errno;
         adapter->ring_descriptor = -1;
         return error;
     }
     if ((parameters.features & IORING_FEAT_NODROP) == 0
-        || parameters.sq_entries < entry_capacity) {
+        || parameters.sq_entries < depth
+        || parameters.cq_entries < completions) {
         (void)close(adapter->ring_descriptor);
         adapter->ring_descriptor = -1;
         return ENOTSUP;
@@ -335,6 +346,11 @@ int wf_linux_io_uring_init(
         parameters.sq_off.array,
         unsigned
     );
+    adapter->submission_flags = WF_RING_POINTER(
+        adapter->submission_mapping,
+        parameters.sq_off.flags,
+        unsigned
+    );
     adapter->completion_head = WF_RING_POINTER(
         adapter->completion_mapping,
         parameters.cq_off.head,
@@ -395,169 +411,237 @@ int wf_linux_io_uring_init(
     return 0;
 }
 
-static int wf_linux_request_valid(const wf_linux_file_request *request) {
-    if (request == NULL || request->count > UINT32_MAX
-        || request->offset > INT64_MAX) {
+/* Whether this ring has a form for one record's request kind.
+ *
+ * Asked by the bridge before the record is handed over, so a kind the ring
+ * does not carry goes to the bounded POSIX adapter or the inline executor
+ * instead of being refused after the operation was already the ring's
+ * (design §7: every submit path ends in a published record). */
+int wf_linux_io_uring_carries(const wf_completion_record *record) {
+    if (record == NULL) {
         return 0;
     }
-    switch (request->kind) {
-    case WF_LINUX_FILE_READ_AT:
-        return request->descriptor >= 0
-            && (request->buffer.read_buffer != NULL || request->count == 0);
-    case WF_LINUX_FILE_WRITE_AT:
-        return request->descriptor >= 0
-            && (request->buffer.write_buffer != NULL || request->count == 0);
-    case WF_LINUX_FILE_OPEN_AT:
+    switch (record->request.kind) {
+    /* One unpositioned stream read [SYS-15]. The ring carries it as a read at
+     * offset -1, which is io_uring's own spelling for "the file's current
+     * position", so the request needs no offset and the descriptor's own
+     * position advances exactly as it does through `read`. */
+    case WF_FILE_READ:
+        return record->request.operation.read.descriptor >= 0
+            && record->request.operation.read.count != 0
+            && record->request.operation.read.count <= UINT32_MAX
+            && record->request.operation.read.buffer != NULL;
+    case WF_FILE_PREAD:
+        return record->request.operation.pread.descriptor >= 0
+            && record->request.operation.pread.count != 0
+            && record->request.operation.pread.count <= UINT32_MAX
+            && record->request.operation.pread.offset >= 0
+            && record->request.operation.pread.buffer != NULL;
+    case WF_FILE_PWRITE:
+        return record->request.operation.pwrite.descriptor >= 0
+            && record->request.operation.pwrite.count != 0
+            && record->request.operation.pwrite.count <= UINT32_MAX
+            && record->request.operation.pwrite.offset >= 0
+            && record->request.operation.pwrite.buffer != NULL;
+    case WF_FILE_OPEN_AT:
         /* An open resolves its path against a directory descriptor, and
          * AT_FDCWD is a negative one, so the transfer descriptor check does
-         * not apply here.  The name must fit the entry that will own it,
-         * because that copy is what the kernel resolves. */
-        return wf_file_path_fits(request->buffer.path)
-            && request->has_open_mode <= 1u
-            && request->expected_kind <= WF_FILE_EXPECT_DIRECTORY;
-    case WF_LINUX_FILE_CLOSE:
-        return request->descriptor >= 0;
+         * not apply here.  The bytes the kernel resolves are the submitting
+         * frame's own and stay live until the join, so there is no name this
+         * adapter cannot hold (design §5). */
+        return record->request.operation.open_at.path != NULL
+            && record->request.operation.open_at.has_mode <= 1u
+            && record->request.operation.open_at.expected_kind
+                <= WF_FILE_EXPECT_DIRECTORY;
+    case WF_FILE_CLOSE:
+        return record->request.operation.close.descriptor >= 0;
+    /* The four TCP kinds the ring carries [SYS-17, SYS-18], which is where a
+     * program that waits on a peer first waits in the kernel rather than on a
+     * helper thread.  A listen, a bind and a half-close are immediate host
+     * calls with nothing to wait for, so they stay on the adapter and this
+     * answers no for them
+     * (`research/investigations/io-model/NETWORK.md` §5). */
+    case WF_FILE_SOCKET_ACCEPT:
+        return record->request.operation.accept.descriptor >= 0;
+    case WF_FILE_SOCKET_CONNECT:
+        return 1;
+    case WF_FILE_SOCKET_RECEIVE:
+        return record->request.operation.receive.descriptor >= 0
+            && record->request.operation.receive.count != 0
+            && record->request.operation.receive.count <= UINT32_MAX
+            && record->request.operation.receive.buffer != NULL;
+    case WF_FILE_SOCKET_SEND:
+        return record->request.operation.send.descriptor >= 0
+            && record->request.operation.send.count != 0
+            && record->request.operation.send.count <= UINT32_MAX
+            && record->request.operation.send.buffer != NULL;
     default:
         return 0;
     }
 }
 
-static wf_linux_io_uring_entry *wf_linux_reserve_entry(
-    wf_linux_io_uring_adapter *adapter,
-    size_t *entry_index
-) {
-    size_t start = atomic_fetch_add_explicit(
-        &adapter->entry_cursor,
-        1,
-        memory_order_relaxed
-    );
-    size_t offset;
-    size_t index = start % adapter->entry_capacity;
-    for (offset = 0; offset < adapter->entry_capacity; ++offset) {
-        unsigned expected = WF_LINUX_IO_URING_ENTRY_FREE;
-        if (atomic_compare_exchange_strong_explicit(
-                &adapter->entries[index].state,
-                &expected,
-                WF_LINUX_IO_URING_ENTRY_RESERVED,
-                memory_order_acquire,
-                memory_order_relaxed
-            )) {
-            *entry_index = index;
-            return &adapter->entries[index];
-        }
-        index = index + 1u == adapter->entry_capacity ? 0u : index + 1u;
+/* The descriptor one record's request operates on, or resolves against. */
+static int wf_linux_record_descriptor(const wf_completion_record *record) {
+    switch (record->request.kind) {
+    case WF_FILE_READ:
+        return record->request.operation.read.descriptor;
+    case WF_FILE_PREAD:
+        return record->request.operation.pread.descriptor;
+    case WF_FILE_PWRITE:
+        return record->request.operation.pwrite.descriptor;
+    case WF_FILE_OPEN_AT:
+        return record->request.operation.open_at.directory;
+    case WF_FILE_SOCKET_ACCEPT:
+        return record->request.operation.accept.descriptor;
+    case WF_FILE_SOCKET_CONNECT:
+        return record->request.operation.endpoint.descriptor;
+    case WF_FILE_SOCKET_RECEIVE:
+        return record->request.operation.receive.descriptor;
+    case WF_FILE_SOCKET_SEND:
+        return record->request.operation.send.descriptor;
+    case WF_FILE_CLOSE:
+    default:
+        return record->request.operation.close.descriptor;
     }
-    return NULL;
 }
 
-static enum wf_linux_io_uring_submit_result wf_linux_wait_capacity(
-    wf_linux_io_uring_adapter *adapter,
-    wf_completion_token token
-) {
-    enum wf_completion_transition_result transition =
-        wf_completion_begin_submit(adapter->runtime, token);
-    if (transition == WF_COMPLETION_TRANSITION_STALE) {
-        return WF_LINUX_IO_URING_SUBMIT_STALE;
-    }
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        return WF_LINUX_IO_URING_SUBMIT_INVALID;
-    }
-    if (wf_completion_mark_wait_capacity(adapter->runtime, token)
-        != WF_COMPLETION_TRANSITIONED) {
-        return WF_LINUX_IO_URING_SUBMIT_INVALID;
-    }
-    atomic_fetch_add_explicit(
-        &adapter->stat_capacity_waits,
-        1,
-        memory_order_relaxed
-    );
-    return WF_LINUX_IO_URING_WAIT_CAPACITY;
+static int wf_linux_transfer_kind(enum wf_file_operation_kind kind) {
+    return kind == WF_FILE_PREAD || kind == WF_FILE_PWRITE
+        || kind == WF_FILE_READ || kind == WF_FILE_SOCKET_RECEIVE
+        || kind == WF_FILE_SOCKET_SEND;
 }
 
+/* Whether a re-armed operation waits to read or to write.  A receive waits
+ * for the same readiness a read does, and a send for the same a write
+ * does. */
+static int wf_linux_waits_readable(enum wf_file_operation_kind kind) {
+    return kind == WF_FILE_PREAD || kind == WF_FILE_READ
+        || kind == WF_FILE_SOCKET_RECEIVE;
+}
+
+/* Builds one SQE straight from the record and names the record's own address
+ * as the completion's `user_data`.
+ *
+ * That address is the whole of the identity this adapter keeps: there is no
+ * entry pool to index into, no generation to compare, and no range test, so a
+ * completion is delivered to the operation that produced it by construction
+ * rather than by a check (design §7).  The frame that holds the record joins
+ * every outstanding operation before any terminator, so the record is still
+ * there when its CQE arrives. */
 static void wf_linux_stage_entry_locked(
     wf_linux_io_uring_adapter *adapter,
-    size_t entry_index,
-    wf_linux_io_uring_entry *entry
+    wf_completion_record *record
 ) {
     unsigned tail = wf_linux_load_relaxed(adapter->submission_tail);
     unsigned ring_index = tail & *adapter->submission_mask;
     struct io_uring_sqe *submission =
         &adapter->submission_entries[ring_index];
     memset(submission, 0, sizeof(*submission));
-    if (entry->waiting_readiness != 0) {
+    if (record->ring.waiting_readiness != 0) {
         submission->opcode = IORING_OP_POLL_ADD;
-        submission->fd = entry->request.descriptor;
-        submission->poll_events = entry->request.kind == WF_LINUX_FILE_READ_AT
-            ? POLLIN
-            : POLLOUT;
+        submission->fd = wf_linux_record_descriptor(record);
+        submission->poll_events =
+            wf_linux_waits_readable(record->request.kind) ? POLLIN : POLLOUT;
     } else {
-        switch (entry->request.kind) {
-        case WF_LINUX_FILE_OPEN_AT:
+        switch (record->request.kind) {
+        case WF_FILE_OPEN_AT:
             submission->opcode = IORING_OP_OPENAT;
-            submission->fd = entry->request.descriptor;
-            submission->addr = (uint64_t)(uintptr_t)entry->request.buffer.path;
+            submission->fd = record->request.operation.open_at.directory;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.open_at.path;
             submission->open_flags = (uint32_t)(
-                entry->request.open_flags
-                | wf_file_open_kind_flags(entry->request.expected_kind)
+                record->request.operation.open_at.flags
+                | wf_file_open_kind_flags(
+                      record->request.operation.open_at.expected_kind
+                  )
             );
-            submission->len = entry->request.has_open_mode != 0
-                ? (uint32_t)entry->request.open_mode
-                : 0u;
+            submission->len =
+                record->request.operation.open_at.has_mode != 0
+                    ? (uint32_t)record->request.operation.open_at.mode
+                    : 0u;
             break;
-        case WF_LINUX_FILE_CLOSE:
+        case WF_FILE_CLOSE:
             submission->opcode = IORING_OP_CLOSE;
-            submission->fd = entry->request.descriptor;
+            submission->fd = record->request.operation.close.descriptor;
             break;
-        case WF_LINUX_FILE_READ_AT:
-        case WF_LINUX_FILE_WRITE_AT:
+        case WF_FILE_PWRITE:
+            submission->opcode = IORING_OP_WRITE;
+            submission->fd = record->request.operation.pwrite.descriptor;
+            submission->off =
+                (uint64_t)record->request.operation.pwrite.offset;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.pwrite.buffer;
+            submission->len = (uint32_t)record->request.operation.pwrite.count;
+            break;
+        case WF_FILE_READ:
+            /* Offset -1 is io_uring's "use the file's current position", so
+             * this is the same opcode as a positioned read with the position
+             * left to the descriptor [SYS-15]. */
+            submission->opcode = IORING_OP_READ;
+            submission->fd = record->request.operation.read.descriptor;
+            submission->off = (uint64_t)-1;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.read.buffer;
+            submission->len = (uint32_t)record->request.operation.read.count;
+            break;
+        case WF_FILE_SOCKET_ACCEPT:
+            /* The peer record and its length are the request's own storage,
+             * so the kernel writes them where the accept join reads them; the
+             * length cell is `socklen_t` by the assertion in `file_posix.h`.
+             * The connection is closed on exec in the same step that takes
+             * it, exactly as `accept4` does it on the adapter. */
+            submission->opcode = IORING_OP_ACCEPT;
+            submission->fd = record->request.operation.accept.descriptor;
+            submission->addr = (uint64_t)(uintptr_t)
+                record->request.operation.accept.peer.native.bytes;
+            submission->off = (uint64_t)(uintptr_t)
+                &record->request.operation.accept.peer_length;
+            submission->accept_flags = (uint32_t)SOCK_CLOEXEC;
+            break;
+        case WF_FILE_SOCKET_CONNECT:
+            /* The socket was created and the address record built by the
+             * submit below, because the kernel reads that record after this
+             * call returns and it therefore has to be the record's. */
+            submission->opcode = IORING_OP_CONNECT;
+            submission->fd = record->request.operation.endpoint.descriptor;
+            submission->addr = (uint64_t)(uintptr_t)
+                record->request.operation.endpoint.address.native.bytes;
+            submission->off =
+                (uint64_t)record->request.operation.endpoint.address_length;
+            break;
+        case WF_FILE_SOCKET_RECEIVE:
+            submission->opcode = IORING_OP_RECV;
+            submission->fd = record->request.operation.receive.descriptor;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.receive.buffer;
+            submission->len =
+                (uint32_t)record->request.operation.receive.count;
+            break;
+        case WF_FILE_SOCKET_SEND:
+            submission->opcode = IORING_OP_SEND;
+            submission->fd = record->request.operation.send.descriptor;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.send.buffer;
+            submission->len = (uint32_t)record->request.operation.send.count;
+            submission->msg_flags = (uint32_t)WF_SOCKET_SEND_FLAGS;
+            break;
+        case WF_FILE_PREAD:
         default:
-            submission->opcode = entry->request.kind == WF_LINUX_FILE_READ_AT
-                ? IORING_OP_READ
-                : IORING_OP_WRITE;
-            submission->fd = entry->request.descriptor;
-            submission->off = entry->request.offset;
-            submission->addr = entry->request.kind == WF_LINUX_FILE_READ_AT
-                ? (uint64_t)(uintptr_t)entry->request.buffer.read_buffer
-                : (uint64_t)(uintptr_t)entry->request.buffer.write_buffer;
-            submission->len = (uint32_t)entry->request.count;
+            submission->opcode = IORING_OP_READ;
+            submission->fd = record->request.operation.pread.descriptor;
+            submission->off = (uint64_t)record->request.operation.pread.offset;
+            submission->addr =
+                (uint64_t)(uintptr_t)record->request.operation.pread.buffer;
+            submission->len = (uint32_t)record->request.operation.pread.count;
             break;
         }
     }
-    submission->user_data = (uint64_t)entry_index + 1u;
+    submission->user_data = (uint64_t)(uintptr_t)record;
     adapter->submission_array[ring_index] = ring_index;
-    atomic_store_explicit(
-        &entry->state,
-        WF_LINUX_IO_URING_ENTRY_IN_FLIGHT,
-        memory_order_release
-    );
     wf_linux_store_release(adapter->submission_tail, tail + 1u);
 }
 
-static void wf_linux_stage_pending_locked(
-    wf_linux_io_uring_adapter *adapter
-) {
-    size_t index;
-    for (index = 0; index < adapter->entry_capacity; ++index) {
-        unsigned head = wf_linux_load_acquire(adapter->submission_head);
-        unsigned tail = wf_linux_load_relaxed(adapter->submission_tail);
-        if (tail - head >= *adapter->submission_count) {
-            return;
-        }
-        if (atomic_load_explicit(
-                &adapter->entries[index].state,
-                memory_order_acquire
-            ) == WF_LINUX_IO_URING_ENTRY_RETRY_PENDING) {
-            wf_linux_stage_entry_locked(
-                adapter,
-                index,
-                &adapter->entries[index]
-            );
-        }
-    }
-}
-
 static int wf_linux_kick_locked(wf_linux_io_uring_adapter *adapter) {
-    wf_linux_stage_pending_locked(adapter);
     unsigned head = wf_linux_load_acquire(adapter->submission_head);
     unsigned tail = wf_linux_load_acquire(adapter->submission_tail);
     unsigned pending = tail - head;
@@ -584,118 +668,95 @@ static int wf_linux_kick_locked(wf_linux_io_uring_adapter *adapter) {
     return 0;
 }
 
+/* Makes room in the submission queue for one more entry, with this thread's
+ * own `io_uring_enter` and never with a wait on an event.
+ *
+ * A deferred doorbell fills the submission queue with entries the kernel has
+ * not been told about, so a full queue is first this thread's own backlog.
+ * Ringing it is what advances the head, and the kernel consumes the whole
+ * staged range synchronously because this design uses no SQPOLL, so a
+ * submission waits on a syscall and never on a completion (design §1, §7).
+ * A kick that reports success and still leaves no room is a target-runtime
+ * defect, not backpressure: it is recorded and the caller fail-stops.  The
+ * caller holds the submission lock.  Returns zero when there is room. */
+static int wf_linux_make_room_locked(wf_linux_io_uring_adapter *adapter) {
+    for (;;) {
+        unsigned head = wf_linux_load_acquire(adapter->submission_head);
+        unsigned tail = wf_linux_load_relaxed(adapter->submission_tail);
+        int error;
+        if (tail - head < *adapter->submission_count) {
+            return 0;
+        }
+        error = wf_linux_kick_locked(adapter);
+        if (error != 0) {
+            return error;
+        }
+        if (wf_linux_load_acquire(adapter->submission_head) == head) {
+            return EBUSY;
+        }
+    }
+}
+
 enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
     wf_linux_io_uring_adapter *adapter,
-    wf_completion_token token,
-    const wf_linux_file_request *request
+    wf_completion_record *record
 ) {
-    wf_linux_io_uring_entry *entry;
-    enum wf_completion_transition_result transition;
-    unsigned head;
-    unsigned tail;
-    size_t entry_index;
+    int error;
 
-    if (adapter == NULL || adapter->initialized == 0
-        || !wf_linux_request_valid(request)) {
-        return adapter == NULL || adapter->initialized == 0
-            ? WF_LINUX_IO_URING_UNAVAILABLE
-            : WF_LINUX_IO_URING_SUBMIT_INVALID;
+    if (adapter == NULL || adapter->initialized == 0) {
+        return WF_LINUX_IO_URING_UNAVAILABLE;
     }
+    if (!wf_linux_io_uring_carries(record)) {
+        return WF_LINUX_IO_URING_SUBMIT_INVALID;
+    }
+    if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
+        /* A connect needs a socket before the ring has anything to connect,
+         * and the host's own address record before the kernel has anything to
+         * read.  Both are made here, in the submitting call, for the same
+         * reason the completed open's kind check is made on the reaping
+         * thread: neither can wait on anything -- `socket` allocates a kernel
+         * object and the conversion touches no host at all -- so a second
+         * ring round trip would cost more than the operation it wraps.
+         *
+         * A host that refuses the socket leaves this record for the bounded
+         * adapter, which makes the same two host calls and produces the
+         * program's outcome from the host's own refusal.  Nothing is
+         * published here and nothing is left half-owned. */
+        wf_socket_address portable =
+            record->request.operation.endpoint.address.portable;
+        int descriptor = wf_socket_open(&portable);
+        if (descriptor < 0) {
+            return WF_LINUX_IO_URING_SUBMIT_INVALID;
+        }
+        /* The portable value is read out of the union before the native
+         * record is written back over it, because the two share the arm. */
+        record->request.operation.endpoint.address_length =
+            wf_socket_native_from_address(
+                &portable,
+                &record->request.operation.endpoint.address.native
+            );
+        record->request.operation.endpoint.descriptor = descriptor;
+    }
+
+    record->route = WF_COMPLETION_ROUTE_LINUX_IO_URING;
+    record->ring.waiting_readiness = 0;
+    record->opened_descriptor = -1;
+    record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    record->open_error = 0;
 
     (void)pthread_mutex_lock(&adapter->submission_lock);
-    head = wf_linux_load_acquire(adapter->submission_head);
-    tail = wf_linux_load_relaxed(adapter->submission_tail);
-    if (tail - head >= *adapter->submission_count) {
-        /* A deferred doorbell fills the submission queue with entries the
-         * kernel has not been told about, so a full queue is first this
-         * thread's own backlog and only then real backpressure.  Ring the
-         * doorbell, which is what advances the head, and re-read it once
-         * before declaring a capacity wait. */
-        int error = wf_linux_kick_locked(adapter);
-        if (error != 0) {
-            wf_linux_record_progress_error(adapter, error);
-        }
-        head = wf_linux_load_acquire(adapter->submission_head);
-        if (tail - head >= *adapter->submission_count) {
-            (void)pthread_mutex_unlock(&adapter->submission_lock);
-            return wf_linux_wait_capacity(adapter, token);
-        }
-    }
-    entry = wf_linux_reserve_entry(adapter, &entry_index);
-    if (entry == NULL) {
+    error = wf_linux_make_room_locked(adapter);
+    if (error != 0) {
         (void)pthread_mutex_unlock(&adapter->submission_lock);
-        return wf_linux_wait_capacity(adapter, token);
-    }
-
-    transition = wf_completion_begin_submit(adapter->runtime, token);
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        atomic_store_explicit(
-            &entry->state,
-            WF_LINUX_IO_URING_ENTRY_FREE,
-            memory_order_release
-        );
-        (void)pthread_mutex_unlock(&adapter->submission_lock);
-        return transition == WF_COMPLETION_TRANSITION_STALE
-            ? WF_LINUX_IO_URING_SUBMIT_STALE
-            : WF_LINUX_IO_URING_SUBMIT_INVALID;
-    }
-
-    entry->token = token;
-    entry->kind = request->kind;
-    entry->request = *request;
-    if (request->kind == WF_LINUX_FILE_OPEN_AT) {
-        /* The SQE keeps this pointer until the kernel resolves the name, and
-         * the caller regains its buffer as soon as submission returns, so the
-         * bytes become the entry's before any SQE names them.  The length was
-         * checked by wf_linux_request_valid before anything was claimed. */
-        (void)wf_file_stage_path(entry->path_storage, request->buffer.path);
-        entry->request.buffer.path = entry->path_storage;
-    }
-    entry->waiting_readiness = 0;
-    entry->exhaustion_retried = 0;
-    entry->retry_result = 0;
-    /* Snapshot before the kernel can attempt this operation, so an operation
-     * that returns a descriptor anywhere in this process while it is in flight
-     * is visible as one that came back after the attempt began. */
-    entry->retirements_seen = wf_completion_descriptor_returns();
-    entry->opened_descriptor = -1;
-    entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
-    entry->open_error = 0;
-    transition = wf_completion_target_accepted(adapter->runtime, token);
-    if (transition != WF_COMPLETION_TRANSITIONED) {
-        atomic_store_explicit(
-            &entry->state,
-            WF_LINUX_IO_URING_ENTRY_FREE,
-            memory_order_release
-        );
-        (void)pthread_mutex_unlock(&adapter->submission_lock);
-        return transition == WF_COMPLETION_TRANSITION_STALE
-            ? WF_LINUX_IO_URING_SUBMIT_STALE
-            : WF_LINUX_IO_URING_SUBMIT_INVALID;
-    }
-
-    if (request->kind == WF_LINUX_FILE_OPEN_AT) {
-        /* [SYS-2]'s `loan-released(path)` for this open holds from here: the
-         * name the kernel will resolve is the entry's own, so the caller's
-         * buffer is free before the SQE exists.  A refusal is an
-         * adapter/core contract defect; it is counted, never retried. */
-        if (wf_completion_publish_milestone(
-                adapter->runtime,
-                token,
-                WF_COMPLETION_PAYLOAD_RELEASED
-            ) != WF_COMPLETION_PUBLISHED) {
-            atomic_fetch_add_explicit(
-                &adapter->stat_publication_failures,
-                1,
-                memory_order_relaxed
-            );
-        }
+        wf_linux_record_progress_error(adapter, error);
+        return WF_LINUX_IO_URING_SUBMIT_FAILED;
     }
     atomic_fetch_add_explicit(&adapter->in_flight, 1, memory_order_relaxed);
-    /* Accepted from here in the process-wide ledger too: a refused open on
-     * any engine may wait for this operation to give its descriptor back. */
-    wf_completion_operation_accepted();
-    wf_linux_stage_entry_locked(adapter, entry_index, entry);
+    /* Every word of the record the reaper will read is written above and by
+     * the submitting bridge before this call; this release is what orders
+     * them before the reaper's acquire (contract.h, `issued`). */
+    atomic_store_explicit(&record->issued, 1u, memory_order_release);
+    wf_linux_stage_entry_locked(adapter, record);
     atomic_fetch_add_explicit(
         &adapter->stat_submissions,
         1,
@@ -714,11 +775,7 @@ enum wf_linux_io_uring_submit_result wf_linux_io_uring_submit(
      * `wf_linux_io_uring_progress` kicks before it reaps or sleeps, and every
      * join and park in the bridge reaches the kernel through it.  The bridge
      * also flushes before a blocking direct host call, so a submitted open can
-     * never sit unkicked behind one.
-     *
-     * A full submission queue is the one case the submitting thread must
-     * resolve itself, and it does so above, before it declares a capacity
-     * wait. */
+     * never sit unkicked behind one. */
     (void)pthread_mutex_unlock(&adapter->submission_lock);
     return WF_LINUX_IO_URING_TARGET_OWNS;
 }
@@ -731,59 +788,32 @@ static int wf_linux_kick(wf_linux_io_uring_adapter *adapter) {
     return result;
 }
 
-static int wf_linux_resubmit_entry(
+/* Re-arms one record that a readiness refusal did not finish.
+ *
+ * It publishes nothing and re-arms the same operation, so several CQEs may
+ * name one record while exactly one of them is terminal (design §7).  The
+ * doorbell rings here and not at some later pass: a re-attempt left staged
+ * behind a completion-only sleep would wait for a CQE the kernel has not been
+ * asked to produce. */
+static int wf_linux_resubmit_record(
     wf_linux_io_uring_adapter *adapter,
-    size_t entry_index,
-    wf_linux_io_uring_entry *entry,
+    wf_completion_record *record,
     unsigned waiting_readiness
 ) {
-    unsigned head;
-    unsigned tail;
     int result;
-    entry->waiting_readiness = waiting_readiness;
+    record->ring.waiting_readiness = waiting_readiness;
     (void)pthread_mutex_lock(&adapter->submission_lock);
-    head = wf_linux_load_acquire(adapter->submission_head);
-    tail = wf_linux_load_relaxed(adapter->submission_tail);
-    result = 0;
-    if (tail - head >= *adapter->submission_count) {
-        /* A deferred doorbell fills the submission queue with entries the
-         * kernel has not been told about, so a full queue is first this
-         * thread's own backlog.  Ring it, which is what advances the head,
-         * before deciding this entry cannot be staged. */
-        result = wf_linux_kick_locked(adapter);
-        head = wf_linux_load_acquire(adapter->submission_head);
-    }
-    if (tail - head < *adapter->submission_count) {
+    result = wf_linux_make_room_locked(adapter);
+    if (result == 0) {
         int kicked;
-        wf_linux_stage_entry_locked(adapter, entry_index, entry);
-        /* The doorbell rings here and not at some later pass.  A re-attempt
-         * left staged behind a completion-only sleep would wait for a CQE the
-         * kernel has not been asked to produce. */
+        wf_linux_stage_entry_locked(adapter, record);
         kicked = wf_linux_kick_locked(adapter);
-        if (result == 0) {
+        if (kicked != 0) {
             result = kicked;
         }
-    } else {
-        atomic_store_explicit(
-            &entry->state,
-            WF_LINUX_IO_URING_ENTRY_RETRY_PENDING,
-            memory_order_release
-        );
     }
     (void)pthread_mutex_unlock(&adapter->submission_lock);
     return result;
-}
-
-/* True exactly for the completion results of an open the host refused
- * because it had no descriptor to give: the process limit and the system
- * limit.  Both are [SYS-7] `ResourceExhausted`, and both are recoverable by
- * giving a descriptor back. */
-static int wf_linux_open_lacked_a_descriptor(int32_t completion_result) {
-    return completion_result == -EMFILE || completion_result == -ENFILE;
-}
-
-static int wf_linux_transfer_kind(enum wf_linux_file_operation_kind kind) {
-    return kind == WF_LINUX_FILE_READ_AT || kind == WF_LINUX_FILE_WRITE_AT;
 }
 
 /* Decides a completed open's typed outcome.
@@ -805,201 +835,103 @@ static int wf_linux_transfer_kind(enum wf_linux_file_operation_kind kind) {
  * check refuses is disposed of by the same single close the direct path
  * makes, on the error path where nothing is waiting for throughput. */
 static void wf_linux_decide_open(
-    wf_linux_io_uring_entry *entry,
+    wf_completion_record *record,
     int32_t completion_result
 ) {
     struct stat status;
     if (completion_result < 0) {
-        entry->opened_descriptor = -1;
-        entry->open_error = -completion_result;
-        entry->open_outcome = WF_FILE_OPEN_FAILED;
+        record->opened_descriptor = -1;
+        record->open_error = -completion_result;
+        record->open_outcome = WF_FILE_OPEN_FAILED;
         return;
     }
-    entry->opened_descriptor = completion_result;
-    entry->open_error = 0;
-    entry->open_outcome = WF_FILE_OPEN_SUCCEEDED;
-    if (entry->request.expected_kind == WF_FILE_EXPECT_ANY) {
+    record->opened_descriptor = completion_result;
+    record->open_error = 0;
+    record->open_outcome = WF_FILE_OPEN_SUCCEEDED;
+    if (record->request.operation.open_at.expected_kind
+        == WF_FILE_EXPECT_ANY) {
         /* WF_IO_NOCACHE, applied to the descriptor the ring produced,
          * exactly where the bounded adapter applies it to the one openat
          * produced, so both backends answer the same policy. */
-        wf_file_apply_uncached_reads(entry->opened_descriptor);
+        wf_file_apply_uncached_reads(record->opened_descriptor);
         return;
     }
-    if (fstat(entry->opened_descriptor, &status) != 0) {
-        entry->open_error = errno;
-        entry->open_outcome = WF_FILE_OPEN_STATUS_FAILED;
+    if (fstat(record->opened_descriptor, &status) != 0) {
+        record->open_error = errno;
+        record->open_outcome = WF_FILE_OPEN_STATUS_FAILED;
     } else {
-        entry->open_outcome = wf_file_kind_outcome(
-            entry->request.expected_kind,
+        record->open_outcome = (unsigned)wf_file_kind_outcome(
+            record->request.operation.open_at.expected_kind,
             (unsigned int)status.st_mode
         );
-        if (entry->open_outcome == WF_FILE_OPEN_SUCCEEDED) {
-            wf_file_apply_uncached_reads(entry->opened_descriptor);
+        if (record->open_outcome == WF_FILE_OPEN_SUCCEEDED) {
+            wf_file_apply_uncached_reads(record->opened_descriptor);
             return;
         }
     }
     /* One close attempt whose diagnostic is discarded, exactly as the direct
      * path makes it, and never retried. */
-    (void)close(entry->opened_descriptor);
+    (void)close(record->opened_descriptor);
 }
 
-/* Publishes one entry's terminal result, frees it, and counts it.
+/* Stores one record's terminal result and completes it.
  *
- * Every route out of an owned operation ends here — the ordinary reap, and
- * the refusal a held open publishes when nothing is left that could give a
- * descriptor back — so an operation's completion is counted in exactly one
- * place and the retire-and-retry gate below can read that count as the
- * adapter's own measure of progress. */
-static int wf_linux_publish_entry_locked(
+ * Every route out of a ring-owned operation ends here, so an operation's
+ * completion is counted in exactly one place, and the store of DONE inside
+ * `wf_completion_record_complete` is this adapter's last touch of a record
+ * that is a block of the joiner's frame. */
+static void wf_linux_complete_record(
     wf_linux_io_uring_adapter *adapter,
-    wf_linux_io_uring_entry *entry,
+    wf_completion_record *record,
     int32_t completion_result
 ) {
-    wf_linux_file_result result;
-    wf_completion_publication publication;
-    enum wf_completion_publish_result published;
-    /* Read while this entry is still this thread's: the store below hands it
-     * back to the free pool, after which a submitting thread may already be
-     * writing the next operation into it. */
-    int returned_a_descriptor =
-        (entry->request.kind == WF_LINUX_FILE_CLOSE && completion_result >= 0)
-        || (entry->request.kind == WF_LINUX_FILE_OPEN_AT
-            && entry->opened_descriptor >= 0
-            && entry->open_outcome != WF_FILE_OPEN_SUCCEEDED);
-
+    wf_file_result_head result;
     memset(&result, 0, sizeof(result));
-    result.kind = entry->kind;
-    if (entry->request.kind == WF_LINUX_FILE_OPEN_AT) {
+    result.kind = record->request.kind;
+    if (record->request.kind == WF_FILE_OPEN_AT) {
         /* The kind decision is the whole answer, and it names the descriptor
          * even where it refused it, exactly as the direct path does. */
-        result.open_outcome = entry->open_outcome;
-        result.error_code = entry->open_error;
-        result.value = entry->opened_descriptor;
+        result.open_outcome = (enum wf_file_open_outcome)record->open_outcome;
+        result.error_code = record->open_error;
+        result.value = record->opened_descriptor;
+    } else if (record->request.kind == WF_FILE_SOCKET_CONNECT) {
+        /* The ring's connect answers zero, not the descriptor: the socket is
+         * the one this adapter created at submit, and a refusal disposes of
+         * it with the one close attempt the adapter's own leaf makes, because
+         * a connection that was never made holds no credit and the permit
+         * goes back to the program [SYS-10]. */
+        if (completion_result < 0) {
+            (void)close(record->request.operation.endpoint.descriptor);
+            result.value = -1;
+            result.error_code = -completion_result;
+        } else {
+            result.value = record->request.operation.endpoint.descriptor;
+        }
+    } else if (record->request.kind == WF_FILE_SOCKET_ACCEPT) {
+        if (completion_result < 0) {
+            result.value = -1;
+            result.error_code = -completion_result;
+        } else {
+            /* The kernel wrote the peer's own record and its length into the
+             * request; the same rewrite the adapter's leaf performs puts it
+             * in the form the accept join publishes. */
+            wf_socket_publish_peer(&record->request);
+            result.value = completion_result;
+        }
     } else if (completion_result < 0) {
         result.value = -1;
         result.error_code = -completion_result;
     } else {
         result.value = completion_result;
     }
-    publication.milestones = WF_COMPLETION_OWNERSHIP_COMPLETE;
-    publication.terminal_kind = result.error_code == 0 ? 1u : 2u;
-    publication.result = &result;
-    publication.result_size = sizeof(result);
-    published = wf_completion_publish_terminal(
-        adapter->runtime,
-        entry->token,
-        &publication
-    );
-    if (published != WF_COMPLETION_PUBLISHED) {
-        atomic_fetch_add_explicit(
-            &adapter->stat_publication_failures,
-            1,
-            memory_order_relaxed
-        );
-    }
-    atomic_store_explicit(
-        &entry->state,
-        WF_LINUX_IO_URING_ENTRY_FREE,
-        memory_order_release
-    );
     atomic_fetch_sub_explicit(&adapter->in_flight, 1, memory_order_relaxed);
     atomic_fetch_add_explicit(
         &adapter->stat_completions,
         1,
         memory_order_relaxed
     );
-    /* The ledger is told this operation has ended, and whether its ending put a
-     * descriptor back in the host's table.  The ring answers that from the
-     * entry, exactly as the bounded adapter answers it from its result: a close
-     * ran the host call that returns one, and an open whose descriptor the kind
-     * check refused was disposed of by `wf_linux_decide_open`, which is a close
-     * this runtime made.  A transfer that ended returns nothing, and an open
-     * the kernel refused never held one. */
-    wf_completion_operation_retired(returned_a_descriptor);
-    /* A held open — this ring's or the bounded adapter's — is released by
-     * whichever thread next asks the ledger, and that thread may have asked
-     * in the instant before the line above and parked on the wake the
-     * publication gave it.  So the retirement gets a wake of its own, and
-     * only where something is waiting for one. */
-    if (wf_completion_retirement_waiters() != 0) {
-        wf_completion_notify_capacity(adapter->runtime);
-    }
-    return published == WF_COMPLETION_PUBLISHED ? 0 : EPROTO;
-}
-
-/* Settles every open this ring is holding for retire-and-retry.
- *
- * A held open asks the process-wide ledger where it stands, exactly as a
- * refused open on the bounded adapter does and with the same three answers.
- * `mine` is zero here because a held entry blocks no thread: nothing in this
- * process is waiting on this thread to run something before it can retire.
- *
- * Called with the completion lock held, both before this thread may wait for
- * a completion and after it has reaped one, so a held open is never carried
- * across a sleep that nothing could end.  `restaged` counts the re-attempts
- * sent to the kernel, which the caller must not sleep behind.
- *
- * The pass count is bounded by the entry capacity: an entry leaves
- * `RETRY_HELD` at most once, because `exhaustion_retried` allows one
- * re-attempt and the refusal that re-attempt may bring is published where it
- * is reaped.  A pass that settles nothing returns. */
-static void wf_linux_resolve_retry_held_locked(
-    wf_linux_io_uring_adapter *adapter,
-    int *first_error,
-    size_t *restaged
-) {
-    size_t pass;
-    for (pass = 0; pass <= adapter->entry_capacity; ++pass) {
-        size_t settled = 0;
-        size_t index;
-        if (atomic_load_explicit(&adapter->retry_held, memory_order_acquire)
-            == 0) {
-            return;
-        }
-        for (index = 0; index < adapter->entry_capacity; ++index) {
-            wf_linux_io_uring_entry *entry = &adapter->entries[index];
-            enum wf_retirement_state state;
-            int error;
-            if (atomic_load_explicit(&entry->state, memory_order_acquire)
-                != WF_LINUX_IO_URING_ENTRY_RETRY_HELD) {
-                continue;
-            }
-            state = wf_completion_retirement_state(
-                &entry->retirement_waiter
-            );
-            if (state == WF_RETIREMENT_AWAITED) {
-                continue;
-            }
-            wf_completion_retirement_wait_end(&entry->retirement_waiter);
-            atomic_fetch_sub_explicit(
-                &adapter->retry_held,
-                1,
-                memory_order_relaxed
-            );
-            settled += 1;
-            /* Either a descriptor came back while the kernel was refusing this
-             * open, or nothing is left in this runtime that could bring one and
-             * this is the earliest open waiting — the last moment at which an
-             * attempt could see anything the first did not, a descriptor a
-             * thread of the program's own gave back included.  One re-attempt
-             * either way, counted here because this is where it is made; the
-             * refusal it may bring is published where it is reaped, with
-             * `exhaustion_retried` set so it is never held again. */
-            atomic_fetch_add_explicit(
-                &adapter->stat_exhaustion_retries,
-                1,
-                memory_order_relaxed
-            );
-            error = wf_linux_resubmit_entry(adapter, index, entry, 0);
-            *restaged += 1;
-            if (*first_error == 0 && error != 0) {
-                *first_error = error;
-            }
-        }
-        if (settled == 0) {
-            return;
-        }
-    }
+    record->result = result;
+    wf_completion_record_complete(record);
 }
 
 static int wf_linux_publish_completion(
@@ -1007,107 +939,38 @@ static int wf_linux_publish_completion(
     const struct io_uring_cqe *completion,
     int *terminal_published
 ) {
-    uint64_t encoded = completion->user_data;
-    size_t entry_index;
-    wf_linux_io_uring_entry *entry;
+    wf_completion_record *record =
+        (wf_completion_record *)(uintptr_t)completion->user_data;
 
     *terminal_published = 0;
-    if (encoded == 0 || encoded > adapter->entry_capacity) {
-        return EPROTO;
-    }
-    entry_index = (size_t)(encoded - 1u);
-    entry = &adapter->entries[entry_index];
-    if (atomic_load_explicit(&entry->state, memory_order_acquire)
-        != WF_LINUX_IO_URING_ENTRY_IN_FLIGHT) {
+    if (record == NULL
+        || atomic_load_explicit(&record->issued, memory_order_acquire) == 0) {
         return EPROTO;
     }
 
-    if (wf_linux_transfer_kind(entry->kind)) {
+    if (wf_linux_transfer_kind(record->request.kind)) {
         /* Interruption and readiness refusal are adapter progress on a
          * transfer, exactly as on the bounded POSIX adapter, and never a
          * writer-visible outcome. */
-        if (entry->waiting_readiness != 0) {
+        if (record->ring.waiting_readiness != 0) {
             if (completion->res >= 0) {
-                return wf_linux_resubmit_entry(adapter, entry_index, entry, 0);
+                return wf_linux_resubmit_record(adapter, record, 0);
             }
             if (completion->res == -EINTR || completion->res == -EAGAIN) {
-                return wf_linux_resubmit_entry(adapter, entry_index, entry, 1);
+                return wf_linux_resubmit_record(adapter, record, 1);
             }
         } else if (completion->res == -EINTR) {
-            return wf_linux_resubmit_entry(adapter, entry_index, entry, 0);
+            return wf_linux_resubmit_record(adapter, record, 0);
         } else if (completion->res == -EAGAIN) {
-            return wf_linux_resubmit_entry(adapter, entry_index, entry, 1);
+            return wf_linux_resubmit_record(adapter, record, 1);
         }
-    } else if (entry->request.kind == WF_LINUX_FILE_OPEN_AT) {
-        if (wf_linux_open_lacked_a_descriptor(completion->res)
-            && entry->exhaustion_retried == 0) {
-            /* Retire and retry, the rule stated in contract.h, on the
-             * route a kernel completion ring carries.  A schedule that keeps
-             * several iterations in flight holds several descriptors where
-             * source order holds one, so a host limit the sequential program
-             * never reaches can turn an `Ok` into an
-             * `Err(ResourceExhausted)`.  [SYS-10] is explicit that a
-             * `FilePermit` promises no native descriptor, and [PAR-1]'s
-             * exhaustion clause excuses only the resources an implementation
-             * spends on overlapping — never the descriptors the program's own
-             * opens consume.  So this outcome is not published here.
-             *
-             * The entry is held instead, with the refusal it is carrying, and
-             * the process-wide ledger decides what becomes of it.  Deciding it
-             * here would be deciding it from this ring's own state, and the
-             * descriptor this open needs may be held by a read running on a
-             * helper thread or by a blocking direct call, neither of which
-             * this ring can see.  Re-staging inside this reap pass would not
-             * do either: the pass sees only the completions that existed when
-             * it read the ring's tail, so a close submitted before this open,
-             * whose completion has not been posted yet, would lose the race to
-             * the very open it was going to make room for.
-             *
-             * The language sees one `open_file` call with one outcome however
-             * many host attempts formed it, exactly as it already does for a
-             * submission that waited for capacity.
-             *
-             * Exactly one re-attempt.  If the second attempt also fails, that
-             * is the outcome source-order execution produces and the program
-             * is entitled to see it. */
-            entry->exhaustion_retried = 1;
-            entry->retry_result = completion->res;
-            wf_completion_retirement_wait_begin(
-                &entry->retirement_waiter,
-                entry->retirements_seen,
-                NULL,
-                NULL,
-                0
-            );
-            atomic_fetch_add_explicit(
-                &adapter->retry_held,
-                1,
-                memory_order_relaxed
-            );
-            atomic_store_explicit(
-                &entry->state,
-                WF_LINUX_IO_URING_ENTRY_RETRY_HELD,
-                memory_order_release
-            );
-            return 0;
-        }
-        wf_linux_decide_open(entry, completion->res);
-        if (entry->opened_descriptor >= 0) {
-            /* The kernel satisfied this open, so it took a descriptor out of
-             * the host's table, and the ledger is told so before anything else
-             * can be promised that descriptor.  An open the ring satisfied at
-             * its first attempt never became a waiter and spent no award; one
-             * it satisfied on a re-attempt spent the mark when the award was
-             * granted, and `awarded` is what tells the two apart. */
-            wf_completion_retirement_open_took_a_descriptor(
-                entry->exhaustion_retried != 0
-                && entry->retirement_waiter.awarded != 0
-            );
-        }
+    } else if (record->request.kind == WF_FILE_OPEN_AT) {
+        wf_linux_decide_open(record, completion->res);
     }
 
     *terminal_published = 1;
-    return wf_linux_publish_entry_locked(adapter, entry, completion->res);
+    wf_linux_complete_record(adapter, record, completion->res);
+    return 0;
 }
 
 int wf_linux_io_uring_progress(
@@ -1118,7 +981,6 @@ int wf_linux_io_uring_progress(
 ) {
     size_t total = 0;
     size_t processed = 0;
-    size_t restaged = 0;
     int first_error = 0;
     unsigned head;
     unsigned tail;
@@ -1141,20 +1003,12 @@ int wf_linux_io_uring_progress(
 
     first_error = wf_linux_kick(adapter);
     (void)pthread_mutex_lock(&adapter->completion_lock);
-    /* Settle held opens before this pass can sleep.  One whose gate has opened
-     * is re-attempted now, and so is one that nothing is left to release —
-     * that is the rule's fourth step — so either way its SQE reaches the
-     * kernel before the wait below and no thread waits for a completion the
-     * kernel has not been asked to produce. */
-    wf_linux_resolve_retry_held_locked(adapter, &first_error, &restaged);
     head = wf_linux_load_relaxed(adapter->completion_head);
     tail = wf_linux_load_acquire(adapter->completion_tail);
     /* Never enter a completion-only sleep while staged SQEs failed to reach
-     * the kernel, or while a re-attempt this pass staged has not been
-     * answered; the scheduler must observe and resolve those rather than
+     * the kernel; the scheduler must observe and resolve those rather than
      * waiting for a CQE which cannot yet exist. */
-    if (head == tail && wait != 0 && first_error == 0 && total == 0
-        && restaged == 0) {
+    if (head == tail && wait != 0 && first_error == 0 && total == 0) {
         int entered;
         do {
             entered = wf_linux_enter(
@@ -1175,39 +1029,78 @@ int wf_linux_io_uring_progress(
         tail = wf_linux_load_acquire(adapter->completion_tail);
     }
 
-    while (head != tail && processed < budget) {
-        unsigned completion_index = head & *adapter->completion_mask;
-        struct io_uring_cqe completion =
-            adapter->completion_entries[completion_index];
-        int terminal_published = 0;
-        int error = wf_linux_publish_completion(
-            adapter,
-            &completion,
-            &terminal_published
-        );
-        head += 1u;
-        wf_linux_store_release(adapter->completion_head, head);
-        if (first_error == 0 && error != 0) {
-            first_error = error;
+    for (;;) {
+        while (head != tail && processed < budget) {
+            unsigned completion_index = head & *adapter->completion_mask;
+            struct io_uring_cqe completion =
+                adapter->completion_entries[completion_index];
+            int terminal_published = 0;
+            int error = wf_linux_publish_completion(
+                adapter,
+                &completion,
+                &terminal_published
+            );
+            head += 1u;
+            wf_linux_store_release(adapter->completion_head, head);
+            if (first_error == 0 && error != 0) {
+                first_error = error;
+            }
+            total += (size_t)terminal_published;
+            processed += 1;
+            tail = wf_linux_load_acquire(adapter->completion_tail);
         }
-        total += (size_t)terminal_published;
-        processed += 1;
-        tail = wf_linux_load_acquire(adapter->completion_tail);
+        /* The queue is drained, or the budget is spent.  A queue the kernel
+         * overflowed holds its remaining completions on the kernel's own
+         * list, and nothing but an `io_uring_enter` moves them into the
+         * queue: not a submission, since every submitter may be parked on
+         * one of them, and not the ring descriptor's readiness, which stays
+         * raised for exactly that reason.  So an empty queue under the
+         * overflow flag is entered once, for no minimum, and reaped again.
+         * A kick that leaves the flag raised and the queue empty is a
+         * kernel that has nothing more to move, and the loop ends. */
+        if (processed >= budget || head != tail
+            || (wf_linux_load_acquire(adapter->submission_flags)
+                & IORING_SQ_CQ_OVERFLOW) == 0) {
+            break;
+        }
+        {
+            int entered;
+            atomic_fetch_add_explicit(
+                &adapter->stat_overflow_flushes,
+                1,
+                memory_order_relaxed
+            );
+            do {
+                entered = wf_linux_enter(
+                    adapter->ring_descriptor,
+                    0,
+                    0,
+                    IORING_ENTER_GETEVENTS
+                );
+            } while (entered == -EINTR);
+            if (entered < 0) {
+                if (first_error == 0) {
+                    first_error = -entered;
+                }
+                atomic_fetch_add_explicit(
+                    &adapter->stat_enter_failures,
+                    1,
+                    memory_order_relaxed
+                );
+                break;
+            }
+            tail = wf_linux_load_acquire(adapter->completion_tail);
+            if (head == tail) {
+                break;
+            }
+        }
     }
-    /* Whatever this pass published may be exactly the descriptor a held open
-     * was waiting for, so settle them again before releasing the lock: the
-     * re-attempt is staged and its doorbell rung here, while this thread
-     * still owns the decision and before the caller can park. */
-    wf_linux_resolve_retry_held_locked(adapter, &first_error, &restaged);
     (void)pthread_mutex_unlock(&adapter->completion_lock);
 
     if (first_error != 0) {
         wf_linux_record_progress_error(adapter, first_error);
     }
 
-    if (total != 0) {
-        wf_completion_notify_capacity(adapter->runtime);
-    }
     *published = total;
     return first_error;
 }
@@ -1288,21 +1181,22 @@ int wf_linux_io_uring_park(
      * publisher before this point leaves only an epoch/CQ fact and performs
      * no host wake. A publisher after the second recheck sees the announced
      * sleeper and leaves a level-readable eventfd. */
-    error = pthread_mutex_lock(&adapter->runtime->wake_lock);
-    if (error != 0) {
-        /* A broken compiler-owned wake mutex cannot be reported through that
-         * same mutex without risking a silent recursive stall. */
-        abort();
-    }
+    wf_completion_wait_lock(&adapter->runtime->wait);
+    /* Completions the kernel holds on its overflow list are completions the
+     * reaper has not seen, so the overflow flag is a non-empty queue here and
+     * below: a sleeper would otherwise be woken at once by the descriptor's
+     * readiness and reap nothing, over and over. */
     if (wf_completion_wake_epoch(adapter->runtime) != observed_epoch
         || wf_linux_load_acquire(adapter->completion_head)
-            != wf_linux_load_acquire(adapter->completion_tail)) {
-        (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
+            != wf_linux_load_acquire(adapter->completion_tail)
+        || (wf_linux_load_acquire(adapter->submission_flags)
+            & IORING_SQ_CQ_OVERFLOW) != 0) {
+        wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
     /* Sequentially consistent, and paired with the sequentially consistent
      * epoch load below: a core publisher raises the epoch and then reads this
-     * count without taking wake_lock, so this announcement and that read are
+     * count without taking the wait's lock, so this announcement and that read are
      * what keeps an eventfd wake from being lost. */
     atomic_fetch_add_explicit(
         &adapter->runtime->parked_schedulers,
@@ -1320,16 +1214,18 @@ int wf_linux_io_uring_park(
             memory_order_seq_cst
         ) != observed_epoch
         || wf_linux_load_acquire(adapter->completion_head)
-            != wf_linux_load_acquire(adapter->completion_tail)) {
+            != wf_linux_load_acquire(adapter->completion_tail)
+        || (wf_linux_load_acquire(adapter->submission_flags)
+            & IORING_SQ_CQ_OVERFLOW) != 0) {
         atomic_fetch_sub_explicit(
             &adapter->runtime->parked_schedulers,
             1,
             memory_order_relaxed
         );
-        (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
+        wf_completion_wait_unlock(&adapter->runtime->wait);
         return 0;
     }
-    (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
+    wf_completion_wait_unlock(&adapter->runtime->wait);
     timeout = timeout_milliseconds == UINT32_MAX
         ? -1
         : timeout_milliseconds > (uint32_t)INT_MAX
@@ -1377,34 +1273,31 @@ int wf_linux_io_uring_park(
     }
 
     /* Stop advertising this lane before removing the persistent wake record.
-     * Both happen while publishers are excluded by wake_lock, so no eventfd
+     * Both happen while publishers are excluded by the wait's lock, so no eventfd
      * write can land after the drain for a lane that is already active. */
     if (announced != 0) {
-        int lock_error = pthread_mutex_lock(&adapter->runtime->wake_lock);
-        if (lock_error != 0) {
+        unsigned previous;
+        wf_completion_wait_lock(&adapter->runtime->wait);
+        previous = atomic_fetch_sub_explicit(
+            &adapter->runtime->parked_schedulers,
+            1,
+            memory_order_relaxed
+        );
+        if (previous == 0) {
             abort();
-        } else {
-            unsigned previous = atomic_fetch_sub_explicit(
-                &adapter->runtime->parked_schedulers,
-                1,
-                memory_order_relaxed
-            );
-            if (previous == 0) {
-                abort();
-            }
-            /* The eventfd is one broadcast level fact, not a consumable wake
-             * for whichever lane happens to run first. Keep it readable until
-             * every scheduler that was announced has left epoll; otherwise a
-             * lane waiting for unrelated capacity can steal the only wake
-             * from the lane that owns a completed token. */
-            if (previous == 1) {
-                int drain_error = wf_linux_drain_wake_descriptor(adapter);
-                if (error == 0 && drain_error != 0) {
-                    error = drain_error;
-                }
-            }
-            (void)pthread_mutex_unlock(&adapter->runtime->wake_lock);
         }
+        /* The eventfd is one broadcast level fact, not a consumable wake for
+         * whichever lane happens to run first. Keep it readable until every
+         * scheduler that was announced has left epoll; otherwise a lane
+         * waiting for unrelated capacity can steal the only wake from the lane
+         * that owns a completed token. */
+        if (previous == 1) {
+            int drain_error = wf_linux_drain_wake_descriptor(adapter);
+            if (error == 0 && drain_error != 0) {
+                error = drain_error;
+            }
+        }
+        wf_completion_wait_unlock(&adapter->runtime->wait);
     }
     if (error != 0 && error != ETIMEDOUT) {
         wf_linux_record_progress_error(adapter, error);
@@ -1440,13 +1333,10 @@ size_t wf_linux_io_uring_in_flight(
 size_t wf_linux_io_uring_capacity(
     const wf_linux_io_uring_adapter *adapter
 ) {
-    size_t submission;
     if (adapter == NULL || adapter->initialized == 0) {
         return 0;
     }
-    submission = (size_t)*adapter->submission_count;
-    return submission < adapter->entry_capacity ? submission
-                                                : adapter->entry_capacity;
+    return (size_t)*adapter->submission_count;
 }
 
 int wf_linux_io_uring_flush(wf_linux_io_uring_adapter *adapter) {
@@ -1513,24 +1403,16 @@ wf_linux_io_uring_statistics wf_linux_io_uring_statistics_snapshot(
         &adapter->stat_submission_enters,
         memory_order_relaxed
     );
-    statistics.exhaustion_retries = atomic_load_explicit(
-        &adapter->stat_exhaustion_retries,
-        memory_order_relaxed
-    );
-    statistics.capacity_waits = atomic_load_explicit(
-        &adapter->stat_capacity_waits,
-        memory_order_relaxed
-    );
     statistics.completions = atomic_load_explicit(
         &adapter->stat_completions,
         memory_order_relaxed
     );
-    statistics.publication_failures = atomic_load_explicit(
-        &adapter->stat_publication_failures,
-        memory_order_relaxed
-    );
     statistics.enter_failures = atomic_load_explicit(
         &adapter->stat_enter_failures,
+        memory_order_relaxed
+    );
+    statistics.overflow_flushes = atomic_load_explicit(
+        &adapter->stat_overflow_flushes,
         memory_order_relaxed
     );
     statistics.kernel_waits = atomic_load_explicit(

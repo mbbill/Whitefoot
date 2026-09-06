@@ -162,7 +162,7 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn unproved_system_endpoints_reject_under_sys8() {
-    let source = br#"fn publish(output: &uniq Output, source: own Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
+    let source = br#"fn publish(output: &uniq OutputStream, source: own Slice<u8>, start: own u64, end: own u64) -> result: own unit reads(output, source), writes(output) {
   region {
     match write_once(output: &uniq deref(output), source: &source, start: start, end: end) {
       Ok(value: next) => {
@@ -174,7 +174,7 @@ fn unproved_system_endpoints_reject_under_sys8() {
   return unit;
 }
 
-command fn main(command.stdout as output: own Output) -> status: own ExitStatus pure {
+command fn main(command.stdout as output: own OutputStream) -> status: own ExitStatus pure {
   return exit_status(code: 0_u8);
 }
 "#;

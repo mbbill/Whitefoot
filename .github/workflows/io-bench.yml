@@ -17,9 +17,7 @@ on:
     paths:
       - 'compiler/src/backend/completion/**'
       - 'compiler/src/backend/emitter/**'
-      - 'compiler/src/backend/par_runtime.c'
-      - 'compiler/src/backend/par_runtime_windows.c'
-      - 'compiler/src/backend/par_runtime_windows_probe.c'
+      - 'compiler/src/backend/sched/**'
       - 'compiler/src/backend/windows_runtime.c'
       - 'compiler/src/backend/windows_runtime.h'
       - 'compiler/src/backend/wf_floor_windows.c'
@@ -92,6 +90,35 @@ jobs:
           export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/compiler/target"
           sh research/experiments/io-completion-bench/linux-bench.sh 2>&1 | tee bench.txt
 
+      # The TCP echo control test of NETWORK.md section 6: the io_uring
+      # reference, the epoll reference, and the Whitefoot server, over one
+      # loopback and one load generator. ROUNDS is 3 rather than the 9 the
+      # read protocol takes, because a pass here is twelve whole processes
+      # over four connection counts, each of them a second or more of real
+      # exchange, and the step has to fit beside the table above inside this
+      # job's ninety minutes. One pass of the two reference lines is about two
+      # seconds on the development host and the Whitefoot line is several
+      # times that, so four passes is minutes rather than tens of minutes; the
+      # bound below is what holds that true on a runner nobody has measured.
+      #
+      # The step carries its own bound. The protocol decides nothing by a
+      # timeout -- it waits only for a port to appear and for a child to exit
+      # -- so a server that stops making progress would otherwise hold the
+      # step until the job's own limit and take the summary above down with
+      # it. This bound ends the step instead, and the tables already produced
+      # are still published.
+      - name: Run the Linux network protocol
+        if: always()
+        timeout-minutes: 12
+        env:
+          ROOT: ${{ github.workspace }}
+          ROUNDS: "3"
+          WARMUP: "1"
+        run: |
+          export OUT="$RUNNER_TEMP/io-net-bench"
+          export CARGO_TARGET_DIR="$GITHUB_WORKSPACE/compiler/target"
+          sh research/experiments/io-completion-bench/linux-net-bench.sh 2>&1 | tee bench-net.txt
+
       - name: Publish the table
         if: always()
         run: |
@@ -102,6 +129,8 @@ jobs:
             cat host.txt
             echo
             cat bench.txt
+            echo
+            cat bench-net.txt 2>/dev/null || echo "the network table did not run"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -112,6 +141,7 @@ jobs:
           path: |
             host.txt
             bench.txt
+            bench-net.txt
 
   # The read-dominated tables, on hosts the maintainer's machine cannot stand
   # in for. The macOS job matters twice over: its numbers are the first clean

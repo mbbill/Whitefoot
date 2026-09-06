@@ -38,9 +38,12 @@ use crate::SYSTEM_OPERATIONS;
 /// The [SYS-2] operations whose outcome carries an [ENT-3] S10 absolute
 /// endpoint, with the observing variant. Both endpoint actuals are found by
 /// parameter name in the catalog row, never by a hardcoded position.
-const BOUNDARY_ENDPOINTS: [(&str, &str); 5] = [
+const BOUNDARY_ENDPOINTS: [(&str, &str); 8] = [
     ("read_at", "ReadBytes"),
+    ("read_next", "ReadBytes"),
+    ("receive_next", "ReadBytes"),
     ("write_once", "Ok"),
+    ("send_once", "Ok"),
     ("host_copy_bytes", "Ok"),
     ("host_copy_utf8", "Ok"),
     ("directory_next", "ListBytes"),

@@ -1,0 +1,25 @@
+command fn main(command.handles as handles: own HandleFactory) -> status: own ExitStatus reads(handles), writes(handles) {
+  doc "OWN-1, SYS-18: moving one direction out of a connection is the language's own partial move, which kills the whole binding, so a broken pair can never reach `close_connection`. The moved half lives on as an ordinary owner and the remainder is derived-released; nothing about this is a special case for a system struct.";
+  let address = socket_address_v4(a: 127_u8, b: 0_u8, c: 0_u8, d: 1_u8, port: 9102_u16);
+  region {
+    match reserve_handle(factory: &uniq handles) {
+      Ok(value: permit) => {
+        region {
+          match tcp_connect(permit: move permit, address: &address) {
+            Connected(connection: link) => {
+              let half = move link.receive;
+              let returned = close_connection(connection: move link);
+              return exit_status(code: 0_u8);
+            }
+            ConnectFailed(error: problem, permit: returned) => {
+              return exit_status(code: 4_u8);
+            }
+          }
+        }
+      }
+      Err(error: problem) => {
+        return exit_status(code: 5_u8);
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@ fn digit_byte(value: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
   doc "Probe C-inline: probe C's length guard, collapsed region and rebound name with reserve and open still written inline; the control that isolates the helper boundary.";
   let digest = 0_u64;
   for @scan index in 0_u64..8_u64 {
@@ -27,30 +27,35 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.files as files: o
       break @scan;
     }
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
-      match open_file<'f, 'f>(permit: move permit, root: &'f cwd, name: &'f name, start: 0_u64, end: 2_u64) {
-        Ok(value: handle) => {
-          region 'read {
-            match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
-              ReadBytes(next: reached) => {
-                let room = len_of(data);
-                let fits = ile(reached, room);
-                if fits {
-                  for @fold at in 0_u64..reached {
-                    let byte = data[at];
-                    let widened = cvt<u8, u64>(byte);
-                    set digest = digest +wrap widened;
+      match reserve_file<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          match open_file<'f, 'f>(permit: move permit, root: &'f cwd, name: &'f name, start: 0_u64, end: 2_u64) {
+            FileOpened(value: handle) => {
+              region 'read {
+                match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
+                  ReadBytes(next: reached) => {
+                    let room = len_of(data);
+                    let fits = ile(reached, room);
+                    if fits {
+                      for @fold at in 0_u64..reached {
+                        let byte = data[at];
+                        let widened = cvt<u8, u64>(byte);
+                        set digest = digest +wrap widened;
+                      }
+                    }
+                  }
+                  ReadEnd() => {
+                  }
+                  ReadFailed(error: problem) => {
                   }
                 }
               }
-              ReadEnd() => {
-              }
-              ReadFailed(error: problem) => {
-              }
+            }
+            FileOpenFailed(error: problem, permit: refused) => {
             }
           }
         }
-        Err(error: problem) => {
+        Err(error: spent) => {
         }
       }
     }

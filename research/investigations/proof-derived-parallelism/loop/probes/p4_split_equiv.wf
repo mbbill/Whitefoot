@@ -71,7 +71,7 @@ fn spell_hex(destination: &uniq buffer<u8>, at: own u64, value: own u64) -> resu
   return limit;
 }
 
-command fn main(command.stdout as out: own Output) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream) -> status: own ExitStatus reads(out), writes(out), allocates(heap) {
   let n = 1048576_u64;
   let sequential = loop_total(n: n);
   let tree = split_total(lo: 0_u64, hi: n);

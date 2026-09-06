@@ -467,7 +467,7 @@ fn the_search_source_requires_the_complete_file_permit_inventory() {
     let failure = compile_program_rejection_with("wfgrep.wf", Inventory::OpenByName);
     assert!(
         failure.contains("UnresolvedUse")
-            && (failure.contains("FileFactory") || failure.contains("reserve_file")),
+            && (failure.contains("HandleFactory") || failure.contains("reserve_handle")),
         "the pre-permit inventory must reject explicit file authority: {failure}"
     );
 }

@@ -11,7 +11,7 @@ fn digit_byte(value: own u64) -> result: own u8 pure {
   }
 }
 
-command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files), allocates(heap) {
+command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, out, files), writes(cwd, out, files) {
   doc "Probe B1: probe B with the same standard-output parameter and the same single write, moved below the loop; the control that isolates the write's position.";
   let digest = 0_u64;
   for @scan index in 0_u64..8_u64 {
@@ -21,32 +21,37 @@ command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: ow
     set name[0_u64] = 102_u8;
     set name[1_u64] = glyph;
     region 'f {
-      let permit = reserve_file<'f>(factory: &uniq 'f files);
-      region 'n {
-        match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 2_u64) {
-          Ok(value: handle) => {
-            region 'read {
-              match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
-                ReadBytes(next: reached) => {
-                  let room = len_of(data);
-                  let fits = ile(reached, room);
-                  if fits {
-                    for @fold at in 0_u64..reached {
-                      let byte = data[at];
-                      let widened = cvt<u8, u64>(byte);
-                      set digest = digest +wrap widened;
+      match reserve_file<'f>(factory: &uniq 'f files) {
+        Ok(value: permit) => {
+          region 'n {
+            match open_file<'f, 'n>(permit: move permit, root: &'f cwd, name: &'n name, start: 0_u64, end: 2_u64) {
+              FileOpened(value: handle) => {
+                region 'read {
+                  match read_at<'read, 'read>(file: &'read handle, destination: &uniq 'read data, file_offset: 0_u64, start: 0_u64, end: 65536_u64) {
+                    ReadBytes(next: reached) => {
+                      let room = len_of(data);
+                      let fits = ile(reached, room);
+                      if fits {
+                        for @fold at in 0_u64..reached {
+                          let byte = data[at];
+                          let widened = cvt<u8, u64>(byte);
+                          set digest = digest +wrap widened;
+                        }
+                      }
+                    }
+                    ReadEnd() => {
+                    }
+                    ReadFailed(error: problem) => {
                     }
                   }
                 }
-                ReadEnd() => {
-                }
-                ReadFailed(error: problem) => {
-                }
+              }
+              FileOpenFailed(error: problem, permit: refused) => {
               }
             }
           }
-          Err(error: problem) => {
-          }
+        }
+        Err(error: spent) => {
         }
       }
     }

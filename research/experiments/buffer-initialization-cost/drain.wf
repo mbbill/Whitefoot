@@ -1,4 +1,4 @@
-command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.files as files: own FileFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
+command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.handles as files: own HandleFactory) -> status: own ExitStatus reads(args, cwd, files), writes(cwd, files), allocates(heap) {
   doc "Drains one named file through one reusable initialized buffer and reports a witness of what it read.";
   let page = buffer_new(4096_u64, 0_u8);
   let arguments = 0_u64;
@@ -19,40 +19,46 @@ command fn main(command.args as args: own Args, command.cwd as cwd: own Director
         match relative_path(value: move text) {
           Ok(value: path) => {
             region {
-              let permit = reserve_file(factory: &uniq files);
-              match open_read(permit: move permit, root: &cwd, path: &path) {
-                Ok(value: file) => {
-                  let file_offset = 0_u64;
-                  loop @chunks {
-                    let taken = 0_u64;
-                    let ended = 0_u8;
-                    region {
-                      match read_at(file: &file, destination: &uniq page, file_offset: file_offset, start: 0_u64, end: 4096_u64) {
-                        ReadBytes(next: delivered) => {
-                          set taken = delivered;
-                          set file_offset = file_offset +wrap delivered;
+              match reserve_handle(factory: &uniq files) {
+                Ok(value: permit) => {
+                  match open_read(permit: move permit, root: &cwd, path: &path) {
+                    FileOpened(value: file) => {
+                      let file_offset = 0_u64;
+                      loop @chunks {
+                        let taken = 0_u64;
+                        let ended = 0_u8;
+                        region {
+                          match read_at(file: &file, destination: &uniq page, file_offset: file_offset, start: 0_u64, end: 4096_u64) {
+                            ReadBytes(next: delivered) => {
+                              set taken = delivered;
+                              set file_offset = file_offset +wrap delivered;
+                            }
+                            ReadEnd() => {
+                              set ended = 1_u8;
+                            }
+                            ReadFailed(error: problem) => {
+                              set ended = 2_u8;
+                            }
+                          }
                         }
-                        ReadEnd() => {
-                          set ended = 1_u8;
+                        if ended == 0_u8 {
+                        } else {
+                          if ended == 2_u8 {
+                            set failed = 1_u8;
+                          }
+                          break @chunks;
                         }
-                        ReadFailed(error: problem) => {
-                          set ended = 2_u8;
-                        }
+                        set total = total +wrap taken;
+                        let byte = page[0_u64];
+                        set witness = witness +wrap byte;
                       }
                     }
-                    if ended == 0_u8 {
-                    } else {
-                      if ended == 2_u8 {
-                        set failed = 1_u8;
-                      }
-                      break @chunks;
+                    FileOpenFailed(error: problem, permit: refused) => {
+                      set failed = 1_u8;
                     }
-                    set total = total +wrap taken;
-                    let byte = page[0_u64];
-                    set witness = witness +wrap byte;
                   }
                 }
-                Err(error: problem) => {
+                Err(error: spent) => {
                   set failed = 1_u8;
                 }
               }

@@ -19,7 +19,6 @@ mod parallel;
 mod reinterpret;
 mod runs;
 mod slice;
-mod stackless;
 mod system;
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -45,28 +44,23 @@ use cleanup::{emit_resource_drop_helpers, emit_value_cleanup, type_requires_clea
 use completion::completion_offered_label;
 pub use completion::{
     COMPLETION_BRIDGE_HEADER, COMPLETION_BRIDGE_SOURCE, COMPLETION_CONTRACT_HEADER,
-    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE,
-    COMPLETION_LINUX_IO_URING_HEADER, COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE,
-    COMPLETION_WINDOWS_BLOCKING_HEADER, COMPLETION_WINDOWS_BLOCKING_SOURCE,
-    COMPLETION_WINDOWS_BRIDGE_SOURCE, COMPLETION_WINDOWS_HEADER, COMPLETION_WINDOWS_IOCP_HEADER,
-    COMPLETION_WINDOWS_IOCP_SOURCE, COMPLETION_WINDOWS_NATIVE_API_HEADER,
-    COMPLETION_WINDOWS_SOURCE, WRITER_SCHEDULER_HEADER, WRITER_SCHEDULER_SOURCE,
-    WRITER_SCHEDULER_WINDOWS_SOURCE, module_requires_completion_runtime,
-    module_requires_writer_scheduler,
+    COMPLETION_FILE_ADAPTER_HEADER, COMPLETION_FILE_ADAPTER_SOURCE, COMPLETION_FILE_POSIX_HEADER,
+    COMPLETION_FILE_POSIX_SOURCE, COMPLETION_FILE_WINDOWS_SOURCE, COMPLETION_LINUX_IO_URING_HEADER,
+    COMPLETION_LINUX_IO_URING_SOURCE, COMPLETION_RUNTIME_SOURCE, COMPLETION_SOCKET_ADDRESS_HEADER,
+    COMPLETION_WAIT_HOST_SOURCE, COMPLETION_WAIT_WINDOWS_SOURCE, COMPLETION_WINDOWS_IOCP_HEADER,
+    COMPLETION_WINDOWS_IOCP_SOURCE, SCHED_CORE_HEADER, SCHED_CORE_SOURCE, SCHED_ENTRY_HEADER,
+    SCHED_ENTRY_SOURCE, SCHED_PRIM_HEADER, SCHED_PRIM_HOST_SOURCE, SCHED_PRIM_WINDOWS_SOURCE,
+    SCHED_SWITCH_HEADER, module_requires_completion_runtime,
 };
 use floor::FLOOR_RUNTIME_FALLBACK;
 pub use floor::FLOOR_STACK_BYTES;
 pub use floor::{FLOOR_RUNTIME_SOURCE, FLOOR_WINDOWS_RUNTIME_SOURCE};
+pub use parallel::module_requires_parallel_runtime;
 use parallel::{
     HandedOut, LoopSplitSite, PARALLEL_POOL_QUERY_DECLARATION, PARALLEL_POOL_QUERY_FALLBACK,
     PARALLEL_RUNTIME_DECLARATIONS, PARALLEL_RUNTIME_FALLBACK, PARALLEL_SPLIT_BUDGET_DECLARATION,
-    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, par_done_label, sequential_clone_set,
-    sequential_clone_symbol,
-};
-pub use parallel::{
-    PARALLEL_COMPLETION_RUNTIME_SOURCE, PARALLEL_RUNTIME_SOURCE,
-    PARALLEL_WINDOWS_COMPLETION_RUNTIME_SOURCE, PARALLEL_WINDOWS_RUNTIME_SOURCE,
-    module_requires_parallel_runtime,
+    PARALLEL_SPLIT_BUDGET_FALLBACK, ParallelThunks, compute_join_order, par_done_label,
+    sequential_clone_set, sequential_clone_symbol,
 };
 pub use system::{WINDOWS_RUNTIME_HEADER, WINDOWS_RUNTIME_SOURCE};
 
@@ -151,8 +145,7 @@ fn emit_llvm_for(
     let mut thunks = ParallelThunks::default();
     let mut completion_used = false;
     let mut functions = String::new();
-    let stackless = stackless::StacklessPlan::build(program, &qualification);
-    for (ordinal, function) in program.functions().iter().enumerate() {
+    for function in program.functions() {
         let emitter = FunctionEmitter::new(
             program,
             &qualification,
@@ -165,18 +158,7 @@ fn emit_llvm_for(
                 sequential_clones: None,
             },
         )?;
-        let emitted = if stackless
-            .as_ref()
-            .is_some_and(|plan| u32::try_from(ordinal).ok() == Some(plan.root_ordinal()))
-        {
-            emitter.emit_stackless_root(stackless.as_ref().expect("checked above"))?
-        } else {
-            emitter.emit()?
-        };
-        functions.push_str(&emitted);
-    }
-    if let Some(plan) = &stackless {
-        functions.push_str(&plan.emit_tail_definitions(program, &qualification)?);
+        functions.push_str(&emitter.emit()?);
     }
     // The second world. It exists only where the first one actualizes
     // something, so a build that hands nothing out — every default build among
@@ -297,10 +279,7 @@ fn emit_llvm_for(
             system_declarations.remove("declare i64 @write(i32, ptr, i64)");
         }
     }
-    if writes_a_record
-        || has_matches
-        || (system_target.is_windows() && (completion_used || stackless.is_some()))
-    {
+    if writes_a_record || has_matches || (system_target.is_windows() && completion_used) {
         text.push_str("declare void @abort() noreturn\n");
         system_declarations.remove("declare void @abort() noreturn");
     }
@@ -378,7 +357,7 @@ fn emit_llvm_for(
     }
     // Emitted only where a permitted overlap group is actually handed out, so
     // a module that overlaps nothing names no runtime symbol at all.
-    if thunks.requires_runtime() {
+    if thunks.is_used() {
         text.push('\n');
         text.push_str(if system_target.is_windows() {
             PARALLEL_RUNTIME_DECLARATIONS
@@ -403,11 +382,28 @@ fn emit_llvm_for(
     }
     if completion_used {
         text.push('\n');
-        text.push_str(if system_target.is_windows() {
+        // Declarations on both platforms now: a submit answers nothing, so
+        // there is no weak body that could stand in for the runtime, and a
+        // link that omits it is an unresolved symbol rather than a program
+        // that silently runs a second arm (design §8).
+        //
+        // The qualified wrappers reach the same entries, and declared the ones
+        // they name through the system interface above, so the two sets
+        // overlap wherever a module both hands an operation out and calls a
+        // wrapper. One module declares each entry once, the same way the
+        // resource record and the system interface share a host symbol.
+        let runtime = if system_target.is_windows() {
             completion::COMPLETION_WINDOWS_RUNTIME_DECLARATIONS
         } else {
-            completion::COMPLETION_RUNTIME_FALLBACK
-        });
+            completion::COMPLETION_RUNTIME_DECLARATIONS
+        };
+        for declaration in runtime.lines() {
+            if system_declarations.contains(declaration) {
+                continue;
+            }
+            text.push_str(declaration);
+            text.push('\n');
+        }
         // Emitted only where a module actually asks for a window, exactly as
         // the split budget's fallback is, so a module that stages no loop
         // names no such symbol at all.
@@ -418,14 +414,6 @@ fn emit_llvm_for(
                 completion::COMPLETION_WINDOW_FALLBACK
             });
         }
-    }
-    if stackless.is_some() {
-        text.push('\n');
-        text.push_str(if system_target.is_windows() {
-            stackless::STACKLESS_WINDOWS_RUNTIME_DECLARATIONS
-        } else {
-            stackless::STACKLESS_RUNTIME_FALLBACK
-        });
     }
     if !functions.is_empty() {
         text.push('\n');
@@ -689,11 +677,22 @@ enum FunctionSlot {
     Address(IrValueId),
     ArenaList(IrValueId),
     Completion(IrValueId, CompletionSlot),
+    /// The lane frame each in-flight iteration of a staged loop was granted,
+    /// or null where it was refused one. This is what the pipeline slot holds
+    /// for the lane form, exactly as the record block is what it holds for a
+    /// submitted system operation.
+    StagedFrame(IrValueId),
+    /// Each in-flight iteration's own answer, written where the call ran and
+    /// read by the drain.
+    StagedResult(IrValueId),
+    /// One issue-stage value per in-flight iteration, keyed by the value the
+    /// issue stage defines.
+    StagedCarry(IrValueId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 enum CompletionSlot {
-    Token,
+    Record,
     Result,
     RawValue,
     RawError,
@@ -731,6 +730,7 @@ impl FunctionFramePlan {
         function: &IrFunction,
         completion_steps: &HashMap<IrValueId, IrCompletionStep>,
         pipeline: Option<&crate::IrCompletionPipeline>,
+        staged_lane: Option<&parallel::StagedLane>,
     ) -> Result<Self, BackendFailure> {
         let mut specifications = Vec::new();
         let mut ordered = Vec::new();
@@ -753,12 +753,14 @@ impl FunctionFramePlan {
                             &mut ordered,
                             FunctionSlot::ArrayFillValue(*result),
                             TargetStorageType::source(*ty),
+                            None,
                         )?;
                         push_function_slot(
                             &mut specifications,
                             &mut ordered,
                             FunctionSlot::ArrayFillIndex(*result),
                             TargetStorageType::integer(64),
+                            None,
                         )?;
                     }
                     IrOperation::ArrayIndex {
@@ -773,6 +775,7 @@ impl FunctionFramePlan {
                             &mut ordered,
                             FunctionSlot::ArrayRoot(*result),
                             TargetStorageType::source(root_type),
+                            None,
                         )?;
                     }
                     IrOperation::InsertArray { .. } => push_function_slot(
@@ -780,6 +783,7 @@ impl FunctionFramePlan {
                         &mut ordered,
                         FunctionSlot::InsertArray(*result),
                         TargetStorageType::source(*ty),
+                        None,
                     )?,
                     // [BLK-1] a frame-resident run's element access goes
                     // through storage, because the slot index is computed.
@@ -799,6 +803,7 @@ impl FunctionFramePlan {
                                 &mut ordered,
                                 FunctionSlot::RunStorage(*result),
                                 TargetStorageType::source(run_type),
+                                None,
                             )?;
                         }
                     }
@@ -813,6 +818,7 @@ impl FunctionFramePlan {
                             &mut ordered,
                             FunctionSlot::SliceRoot(*result),
                             TargetStorageType::source(array_type),
+                            None,
                         )?;
                     }
                     IrOperation::AddressOf { referent, .. } => push_function_slot(
@@ -820,12 +826,14 @@ impl FunctionFramePlan {
                         &mut ordered,
                         FunctionSlot::Address(*result),
                         TargetStorageType::source(referent.ty()),
+                        None,
                     )?,
                     IrOperation::ArenaListNew => push_function_slot(
                         &mut specifications,
                         &mut ordered,
                         FunctionSlot::ArenaList(*result),
                         TargetStorageType::pointer(),
+                        None,
                     )?,
                     // [BLK-2] the reserved extent itself. Its alignment is
                     // the store's own type constant, which is what makes the
@@ -863,6 +871,42 @@ impl FunctionFramePlan {
                     }
                     _ => {}
                 }
+            }
+        }
+        // The staged lane hand-out's ring, reserved once for the whole loop.
+        // Its elements are a *plan* of the emission rather than an instruction
+        // of the IR, so they are pushed here rather than found in the walk
+        // above: the frame the iteration was granted, the answer it produced,
+        // and the issue-stage values its drain reads back.
+        if let Some(staged) = staged_lane {
+            let slots = staged.slots;
+            if staged.frame_bytes.is_some() {
+                push_function_slot(
+                    &mut specifications,
+                    &mut ordered,
+                    FunctionSlot::StagedFrame(staged.result),
+                    TargetStorageType::array(TargetStorageType::pointer(), slots),
+                    None,
+                )?;
+            }
+            push_function_slot(
+                &mut specifications,
+                &mut ordered,
+                FunctionSlot::StagedResult(staged.result),
+                TargetStorageType::array(TargetStorageType::source(staged.result_type), slots),
+                None,
+            )?;
+            for (origin, _) in &staged.carries {
+                let carried = function
+                    .value_type(*origin)
+                    .ok_or(BackendFailure::InvalidIr)?;
+                push_function_slot(
+                    &mut specifications,
+                    &mut ordered,
+                    FunctionSlot::StagedCarry(*origin),
+                    TargetStorageType::array(TargetStorageType::source(carried), slots),
+                    None,
+                )?;
             }
         }
 
@@ -939,16 +983,26 @@ impl FunctionFramePlan {
     }
 }
 
+/// Reserves one logical frame slot under its semantic key.
+///
+/// `alignment` is `None` for the ordinary case, where the storage type's own
+/// natural alignment is the slot's. It is `Some` only where an external
+/// contract states the alignment the reservation must have, which a byte
+/// block's natural alignment of one would otherwise understate.
 fn push_function_slot(
     specifications: &mut Vec<TargetFrameSlot>,
     ordered: &mut Vec<FunctionSlot>,
     key: FunctionSlot,
     ty: TargetStorageType,
+    alignment: Option<u64>,
 ) -> Result<(), BackendFailure> {
     if ordered.contains(&key) {
         return Err(BackendFailure::InvalidIr);
     }
-    specifications.push(TargetFrameSlot::natural(ty));
+    specifications.push(match alignment {
+        Some(alignment) => TargetFrameSlot::aligned(ty, alignment),
+        None => TargetFrameSlot::natural(ty),
+    });
     ordered.push(key);
     Ok(())
 }
@@ -975,34 +1029,56 @@ fn plan_completion_slots(
     } else {
         1
     };
-    let mut add = |role, element| {
+    let mut add = |role, element, alignment| {
         push_function_slot(
             specifications,
             ordered,
             FunctionSlot::Completion(result, role),
             TargetStorageType::array(element, slot_count),
+            alignment,
         )
     };
+    // The opaque record block, reserved by the two ABI constants the
+    // completion contract states rather than by any layout this compiler
+    // knows. A byte block's natural alignment is one, so the contract's
+    // alignment is the reservation's; the C side asserts its own record
+    // against the same two numbers.
     add(
-        CompletionSlot::Token,
-        TargetStorageType::array(TargetStorageType::integer(64), 2),
+        CompletionSlot::Record,
+        TargetStorageType::bytes(completion::COMPLETION_RECORD_BYTES),
+        Some(completion::COMPLETION_RECORD_ALIGN),
     )?;
     add(
         CompletionSlot::Result,
         TargetStorageType::source(result_type),
+        None,
     )?;
-    add(CompletionSlot::RawValue, TargetStorageType::integer(64))?;
-    add(CompletionSlot::RawError, TargetStorageType::integer(32))?;
+    add(
+        CompletionSlot::RawValue,
+        TargetStorageType::integer(64),
+        None,
+    )?;
+    add(
+        CompletionSlot::RawError,
+        TargetStorageType::integer(32),
+        None,
+    )?;
 
     match operation {
         system::CompletionFileOperation::OpenRead
         | system::CompletionFileOperation::OpenDirectory
         | system::CompletionFileOperation::OpenDirectorySource
         | system::CompletionFileOperation::OpenFile => {
-            add(CompletionSlot::OpenOutcome, TargetStorageType::integer(32))?;
+            add(
+                CompletionSlot::OpenOutcome,
+                TargetStorageType::integer(32),
+                None,
+            )?;
         }
         system::CompletionFileOperation::Read
         | system::CompletionFileOperation::Write
+        | system::CompletionFileOperation::Receive
+        | system::CompletionFileOperation::Send
         | system::CompletionFileOperation::DirectoryNext => {}
     }
     if matches!(
@@ -1018,23 +1094,34 @@ fn plan_completion_slots(
                 1
             })
             .ok_or(BackendFailure::CounterOverflow)?;
-        add(CompletionSlot::Component, TargetStorageType::bytes(bytes))?;
+        add(
+            CompletionSlot::Component,
+            TargetStorageType::bytes(bytes),
+            None,
+        )?;
     }
     if operation == system::CompletionFileOperation::DirectoryNext {
-        add(CompletionSlot::Cursor, TargetStorageType::integer(64))?;
+        add(CompletionSlot::Cursor, TargetStorageType::integer(64), None)?;
     }
     if !uses_ring && !qualification.target().is_windows() {
         return Ok(());
     }
 
-    add(CompletionSlot::Submitted, TargetStorageType::integer(1))?;
+    add(
+        CompletionSlot::Submitted,
+        TargetStorageType::integer(1),
+        None,
+    )?;
     if !uses_ring {
         return Ok(());
     }
     match operation {
-        system::CompletionFileOperation::Read | system::CompletionFileOperation::Write => {
-            add(CompletionSlot::Start, TargetStorageType::integer(64))?;
-            add(CompletionSlot::Extent, TargetStorageType::integer(64))?;
+        system::CompletionFileOperation::Read
+        | system::CompletionFileOperation::Write
+        | system::CompletionFileOperation::Receive
+        | system::CompletionFileOperation::Send => {
+            add(CompletionSlot::Start, TargetStorageType::integer(64), None)?;
+            add(CompletionSlot::Extent, TargetStorageType::integer(64), None)?;
         }
         system::CompletionFileOperation::DirectoryNext => {
             let [_, destination, _, _] = arguments else {
@@ -1046,9 +1133,10 @@ fn plan_completion_slots(
             add(
                 CompletionSlot::Destination,
                 TargetStorageType::source(destination_type),
+                None,
             )?;
-            add(CompletionSlot::Start, TargetStorageType::integer(64))?;
-            add(CompletionSlot::Extent, TargetStorageType::integer(64))?;
+            add(CompletionSlot::Start, TargetStorageType::integer(64), None)?;
+            add(CompletionSlot::Extent, TargetStorageType::integer(64), None)?;
         }
         system::CompletionFileOperation::OpenRead
         | system::CompletionFileOperation::OpenDirectory
@@ -1106,6 +1194,16 @@ struct FunctionEmitter<'program, 'state> {
     /// step reaches.  Their wait sets contain only ordinary prior result/loan
     /// dependencies retained by lowering.
     completion_steps: HashMap<IrValueId, crate::IrCompletionStep>,
+    /// The handed-out completion results whose lowering opens LLVM blocks of
+    /// its own.
+    ///
+    /// Exactly one shape does: an open by component name, the one operation
+    /// that can reach an outcome without submitting, so its submit ends in a
+    /// `completion.offered` selecting the route and its join ends in a
+    /// `par.done` selecting the value. Every other shape is straight-line in
+    /// both places (design §8), and `block_exit_label` has to say so or a phi
+    /// would name a block that is not its predecessor.
+    branching_completions: HashSet<IrValueId>,
     /// Hand-outs emitted and not yet joined.
     ///
     /// Ordinarily this is empty at every terminator, because a block joins
@@ -1121,6 +1219,10 @@ struct FunctionEmitter<'program, 'state> {
     /// use typed completion; another qualified target executes a bounded
     /// batch with a direct-call window of one.
     pipeline: Option<&'program crate::IrCompletionPipeline>,
+    /// The staged lane hand-out this world emits for this function's driven
+    /// loop, or `None` where the loop's staged call is a submitted system
+    /// operation and where the function drives no such loop at all.
+    staged_lane: Option<parallel::StagedLane>,
     /// The slot index the block being emitted addresses its ring through,
     /// where the pipeline gives it one.
     ///
@@ -1186,6 +1288,14 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             completion_used,
             sequential_clones,
         } = module;
+        // The staged call of a driven [PAR-3] loop, when that call is a
+        // may-suspend user call. It has a hand-out form of its own — the lane
+        // frame — so it is not a call the emitter has to withdraw the
+        // submission of.
+        let staged_lane_call = function
+            .driven_completion_pipeline()
+            .filter(|pipeline| pipeline.lane_handout())
+            .and_then(crate::IrCompletionPipeline::driven_result);
         // A sequential clone suppresses compute hand-outs only. Target
         // completion is independent of the compute-pool choice and remains
         // active in both worlds.
@@ -1195,7 +1305,32 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .completion_steps()
                     .iter()
                     .cloned()
-                    .map(|step| (step.call(), step))
+                    .map(|step| {
+                        // A step submits only where the typed adapter has a
+                        // hand-out form for that exact operation. Every other
+                        // permitted may-suspend call keeps its qualified
+                        // wrapper, which is the same one lowering — submit,
+                        // then join, through the frame's own record — and
+                        // differs only in holding one operation of that site
+                        // rather than several. Selecting the wrapper here is
+                        // an emission choice over one accepted program; it
+                        // changes no judgment, no outcome, and no published
+                        // byte (`backend/qualification.rs`, the [PAR-1]
+                        // review: "a may-suspend record selects completion
+                        // lowering only when the backend has a typed adapter
+                        // for the exact operation").
+                        let handed_out = matches!(
+                            definition_operation(function, step.call()),
+                            Some(IrOperation::SystemCall { operation, .. })
+                                if system::completion_file_operation(*operation).is_some()
+                        ) || staged_lane_call == Some(step.call());
+                        let step = if handed_out {
+                            step
+                        } else {
+                            step.without_submission()
+                        };
+                        (step.call(), step)
+                    })
                     .collect()
             } else {
                 HashMap::new()
@@ -1204,19 +1339,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         let mut ordinary_lane_frames = HashMap::new();
         if sequential_clones.is_none() {
             for overlap in function.overlaps() {
-                if overlap
-                    .members()
-                    .iter()
-                    .any(|member| completion_steps.contains_key(member))
-                {
-                    continue;
-                }
+                // A group that also carries completion steps is not excluded
+                // here: a mixed group hands its compute members to lanes and
+                // its submitting members to the completion source, and
+                // `ordinary_overlap_lane_frames` is the one place that decides
+                // whether every member of this group can be handed out at all.
                 let Some(frames) = ordinary_overlap_lane_frames(
                     program,
                     qualification,
                     target,
                     function,
                     overlap,
+                    &completion_steps,
                 )?
                 else {
                     continue;
@@ -1229,6 +1363,23 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 overlaps.push(overlap.clone());
             }
         }
+        let branching_completions = function
+            .blocks()
+            .iter()
+            .flat_map(crate::IrBlock::instructions)
+            .filter_map(|instruction| match instruction {
+                IrInstruction::Define {
+                    result,
+                    operation: IrOperation::SystemCall { operation, .. },
+                    ..
+                } if completion_steps.contains_key(result) => {
+                    system::completion_file_operation(*operation)
+                        .filter(|operation| completion::completion_may_skip_submission(*operation))
+                        .map(|_| *result)
+                }
+                _ => None,
+            })
+            .collect();
         let overlap_handed_out = overlaps
             .iter()
             .flat_map(|overlap| overlap.handed_out().iter().copied())
@@ -1262,6 +1413,15 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                     .is_some_and(crate::IrCompletionStep::submit)
             })
         });
+        let staged_lane = parallel::staged_lane_plan(
+            program,
+            qualification,
+            target,
+            function,
+            pipeline,
+            &completion_steps,
+            sequential_clones.is_none(),
+        )?;
         let frame = FunctionFramePlan::build(
             target,
             program,
@@ -1269,6 +1429,7 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             function,
             &completion_steps,
             pipeline,
+            staged_lane.as_ref(),
         )?;
         let entry_prelude = frame.render(program)?;
         Ok(Self {
@@ -1287,8 +1448,10 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             overlap_join_sites,
             ordinary_lane_frames,
             completion_steps,
+            branching_completions,
             handed_out: Vec::new(),
             pipeline,
+            staged_lane,
             block_slot: None,
             block_carries: false,
             block_drains: false,
@@ -1359,6 +1522,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .pipeline
                 .is_some_and(|pipeline| pipeline.drains(block_id));
             self.emit_completion_window(block_id)?;
+            if self.block_drains {
+                self.emit_staged_lane_retirement()?;
+            }
             for (instruction_index, instruction) in block.instructions().iter().enumerate() {
                 self.emit_instruction(block_id, instruction_index, instruction)?;
             }
@@ -1391,6 +1557,16 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
             {
                 let predecessor =
                     IrBlockId::from_index(index).map_err(|_| BackendFailure::CounterOverflow)?;
+                // The same rule `emit_terminator` applies: on a target without
+                // native completion a gate's pending-exit edge is emitted as
+                // `unreachable`, so it is no predecessor of the drain.
+                if !self.qualification.target().supports_posix_file_completion()
+                    && self
+                        .pipeline
+                        .is_some_and(|pipeline| pipeline.pending_exit_edge(predecessor))
+                {
+                    continue;
+                }
                 incoming
                     .get_mut(target.index())
                     .ok_or(BackendFailure::InvalidIr)?
@@ -1450,7 +1626,9 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         self.block(edge.predecessor)?,
                         &self.overlaps,
                         &self.completion_steps,
+                        &self.branching_completions,
                         self.pipeline,
+                        self.staged_lane.as_ref(),
                     )
                 )
                 .map_err(|_| BackendFailure::TextEmission)?;
@@ -1460,7 +1638,26 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         Ok(())
     }
 
+    /// One instruction, and then the ring element any value it defines owes a
+    /// staged loop's drain.
+    ///
+    /// The store is separate from the definition because the definition is an
+    /// ordinary one: what the drain needs is not a second lowering of the
+    /// value but a copy of it kept per in-flight iteration.
     fn emit_instruction(
+        &mut self,
+        block: IrBlockId,
+        index: usize,
+        instruction: &IrInstruction,
+    ) -> Result<(), BackendFailure> {
+        self.emit_instruction_body(block, index, instruction)?;
+        if let IrInstruction::Define { result, .. } = instruction {
+            self.store_staged_carry(*result)?;
+        }
+        Ok(())
+    }
+
+    fn emit_instruction_body(
         &mut self,
         _block: IrBlockId,
         _index: usize,
@@ -1475,19 +1672,39 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         {
             self.emit_completion_dependencies(step.wait_for())?;
             if step.submit() {
-                let IrOperation::SystemCall {
-                    operation,
-                    target_action,
-                    arguments,
-                } = operation
-                else {
-                    return Err(BackendFailure::InvalidIr);
-                };
-                if !target_action.may_suspend() {
-                    return Err(BackendFailure::InvalidIr);
+                match operation {
+                    IrOperation::SystemCall {
+                        operation,
+                        target_action,
+                        arguments,
+                    } => {
+                        if !target_action.may_suspend() {
+                            return Err(BackendFailure::InvalidIr);
+                        }
+                        self.emit_handed_out_system_call(*result, *ty, *operation, arguments)?;
+                    }
+                    // A staged may-suspend user call: the lane frame is what
+                    // the slot holds for this iteration, and the exact drain
+                    // is where its answer is read.
+                    IrOperation::Call {
+                        function,
+                        arguments,
+                    } => self.emit_staged_lane_call(*result, *ty, *function, arguments)?,
+                    _ => return Err(BackendFailure::InvalidIr),
                 }
-                self.emit_handed_out_system_call(*result, *ty, *operation, arguments)?;
+            } else if self.is_overlap_join_site(*result) {
+                // A mixed group's join site is an ordinary step of the same
+                // schedule. Its definition is emitted exactly as below, and
+                // then the group's joins run through `compute_join_order`:
+                // compute members newest first, completion members where they
+                // were published (design section 4). `emit_overlap_joins`
+                // takes the whole queue, so the `finish` drain below finds no
+                // member of this group left and joins only what is outside it.
+                self.emit_definition_then_join(instruction, *result)?;
             } else {
+                // A compute member of the group is handed out by
+                // `emit_definition` itself, through the same
+                // `overlap_handed_out` test every other call takes.
                 self.emit_definition(*result, *ty, operation)?;
             }
             // Ordinary completion steps still finish at their source-owned
@@ -1798,6 +2015,19 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                 .map_err(|_| BackendFailure::TextEmission)?;
             return Ok(());
         }
+        // A world that offers no lane carries no iteration in flight, so it
+        // asks for no depth: one issue before every drain is the sequential
+        // schedule, iteration by iteration, which is what the sequential clone
+        // exists to be and what a frame the runtime's slot cannot hold gets.
+        if self
+            .staged_lane
+            .as_ref()
+            .is_some_and(|staged| staged.frame_bytes.is_none())
+        {
+            writeln!(self.output, "  %{name} = add i64 0, 1")
+                .map_err(|_| BackendFailure::TextEmission)?;
+            return Ok(());
+        }
         writeln!(
             self.output,
             "  %{name} = call i64 @wf__completion_window(i64 {}, i64 {}, i64 {})",
@@ -1819,6 +2049,18 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
         // one exception: `emit_completion_dependencies` leaves it outstanding
         // until `block_drains` names this exact generated drain.
         self.emit_all_completion_joins()?;
+        // A target without native completion admits one issue before every
+        // drain, so a prologue gate never leaves with an operation in flight:
+        // the edge that would drain first is unreachable there, and saying so
+        // keeps the drain's one submission the only definition it reads.
+        if !self.qualification.target().supports_posix_file_completion()
+            && self
+                .pipeline
+                .is_some_and(|pipeline| pipeline.pending_exit_edge(block))
+        {
+            return writeln!(self.output, "  unreachable")
+                .map_err(|_| BackendFailure::TextEmission);
+        }
         match terminator {
             IrTerminator::Unreachable => {
                 writeln!(self.output, "  unreachable").map_err(|_| BackendFailure::TextEmission)
@@ -2004,7 +2246,6 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
                         system::emit_resource_release(
                             self.qualification,
                             &mut self.output,
-                            &mut self.temporary,
                             contract,
                             &value_name,
                         )?;
@@ -2062,17 +2303,34 @@ impl<'program, 'state> FunctionEmitter<'program, 'state> {
 /// Selected-target lane layouts for every member which would leave the
 /// calling thread, or `None` when the permission remains sequential.
 ///
-/// A possibly-suspending Whitefoot wrapper is intentionally declined until
-/// selective stackless frames exist; only its direct compiler-owned file
-/// operation can enter completion. An ordinary call additionally has to fit
-/// the runtime lane slot as one complete `{ arguments..., result }` aggregate.
+/// A possibly-suspending Whitefoot wrapper is declined here; only its direct
+/// compiler-owned file operation can enter completion, and such a function
+/// keeps the synchronous ABI of the sequential world (design section 8). An
+/// ordinary call additionally has to fit the runtime lane slot as one
+/// complete `{ arguments..., result }` aggregate.
 fn ordinary_overlap_lane_frames(
     program: &IrProgram<'_, '_, '_>,
     qualification: &Qualification,
     target: TargetLayout,
     function: &IrFunction,
     overlap: &IrOverlap,
+    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
 ) -> Result<Option<Vec<(IrValueId, TargetAggregateLayout)>>, BackendFailure> {
+    // A submitting completion member carries the typed completion protocol and
+    // takes no lane frame at all, so it is the one member allowed to suspend.
+    // Every other member is an ordinary call this thread hands to a lane, and
+    // one that may suspend still declines the whole group.
+    let submits = |member: &IrValueId| {
+        completion_steps
+            .get(member)
+            .is_some_and(IrCompletionStep::submit)
+    };
+    // The group's joins ride the join site's own definition, which the submit
+    // arm of `emit_instruction` does not reach. A group whose last member
+    // submits therefore keeps today's pure completion lowering.
+    if overlap.join_site().is_some_and(|site| submits(&site)) {
+        return Ok(None);
+    }
     if overlap
         .members()
         .iter()
@@ -2083,7 +2341,9 @@ fn ordinary_overlap_lane_frames(
                 .functions()
                 .get(*callee as usize)
                 .is_none_or(|callee| callee.target_action().may_suspend()),
-            Some(IrOperation::SystemCall { target_action, .. }) => target_action.may_suspend(),
+            Some(IrOperation::SystemCall { target_action, .. }) => {
+                target_action.may_suspend() && !submits(member)
+            }
             _ => false,
         })
     {
@@ -2091,6 +2351,9 @@ fn ordinary_overlap_lane_frames(
     }
     let mut frames = Vec::with_capacity(overlap.handed_out().len());
     for member in overlap.handed_out() {
+        if submits(member) {
+            continue;
+        }
         let Some(IrOperation::Call {
             function: callee, ..
         }) = definition_operation(function, *member)
@@ -2326,17 +2589,52 @@ fn variant_field_base(
     Err(BackendFailure::InvalidIr)
 }
 
-/// The last handed-out member of the overlap group `result` joins, if it is a
-/// join site at all. Its `par.done` block is where the block continues.
+/// The member of the overlap group `result` joins whose join settles the
+/// block's label, if `result` is a join site at all. Its `par.done` block is
+/// where the block continues.
+///
+/// The group's members are joined in [`compute_join_order`], so the last one
+/// is that order's last member and not the publish queue's — with two or more
+/// compute members it is the *first* published compute member. `emit_overlap_joins`
+/// reads the same order from the same function, so the label named here is the
+/// one emission actually ends at.
+///
+/// A member is a completion member exactly when it is a completion step that
+/// submits, which is the test `emit_instruction` itself takes before it can
+/// reach a compute hand-out; `completion_steps` is passed in rather than
+/// guessed at from the value id.
+///
+/// Not every join opens a block, so the answer is the last member that
+/// *settles* a label rather than the last member joined. A compute member
+/// always ends at its own `par.done`. A completion member ends at one only
+/// when it is a branching completion — the single route that can reach an
+/// outcome without submitting — and every other completion join is
+/// straight-line and leaves the label where the join before it left it. A
+/// mixed group whose join order ends in a plain completion member therefore
+/// continues at the `par.done` of the last compute member before it.
 ///
 /// `overlaps` is the emitting world's set, never `IrFunction::overlaps`: a
 /// clone actualizes nothing, so it emits no `par.done` block and must not name
 /// one either.
-fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValueId> {
-    overlaps
+fn overlap_join_tail(
+    overlaps: &[IrOverlap],
+    completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    branching_completions: &HashSet<IrValueId>,
+    result: IrValueId,
+) -> Option<IrValueId> {
+    let members = overlaps
         .iter()
-        .find(|overlap| overlap.join_site() == Some(result))
-        .and_then(|overlap| overlap.handed_out().last().copied())
+        .find(|overlap| overlap.join_site() == Some(result))?
+        .handed_out()
+        .to_vec();
+    let submits = |member: &IrValueId| {
+        completion_steps
+            .get(member)
+            .is_some_and(IrCompletionStep::submit)
+    };
+    let mut order = compute_join_order(members, |member| !submits(member));
+    order.retain(|member| !submits(member) || branching_completions.contains(member));
+    order.last().copied()
 }
 
 /// Where a block's terminator is actually emitted.
@@ -2350,17 +2648,21 @@ fn overlap_join_tail(overlaps: &[IrOverlap], result: IrValueId) -> Option<IrValu
 ///
 /// The two hand-out mechanisms both leave the block somewhere else. A compute
 /// overlap settles on its group's `par.done` when its join site runs. A direct
-/// completion step submits into `completion.offered` and is joined later, and
-/// its join settles on that operation's own `par.done`. Ordinary outstanding
-/// work is joined before the terminator; a driven result is preserved until
-/// the exact drain block, so this walk uses the same owner and queue order as
-/// `emit_completion_dependencies`.
+/// completion step that can reach an outcome without submitting -- an open by
+/// component name, and nothing else -- submits into `completion.offered` and
+/// settles its join on that operation's own `par.done`; every other completion
+/// step is straight-line at both points and moves the label nowhere. Ordinary
+/// outstanding work is joined before the terminator; a driven result is
+/// preserved until the exact drain block, so this walk uses the same owner and
+/// queue order as `emit_completion_dependencies`.
 fn block_exit_label(
     block_id: IrBlockId,
     block: &IrBlock,
     overlaps: &[IrOverlap],
     completion_steps: &HashMap<IrValueId, IrCompletionStep>,
+    branching_completions: &HashSet<IrValueId>,
     pipeline: Option<&crate::IrCompletionPipeline>,
+    staged_lane: Option<&parallel::StagedLane>,
 ) -> String {
     let mut label = block_label(block_id);
     let driven_result = pipeline
@@ -2372,6 +2674,16 @@ fn block_exit_label(
         });
     let drains_pipeline = pipeline.is_some_and(|pipeline| pipeline.drains(block_id));
     let protected_result = driven_result.filter(|_| !drains_pipeline);
+    // A staged lane retirement is emitted before this block's own
+    // instructions, so the drain starts where that retirement left it. Only a
+    // world that offers a lane opens a block there; the sequential form is one
+    // load and moves the label nowhere.
+    if let Some(staged) = staged_lane
+        && drains_pipeline
+        && staged.frame_bytes.is_some()
+    {
+        label = parallel::par_staged_done_label(staged.result);
+    }
     // The direct completion hand-outs this block has submitted and not yet
     // joined, in `FunctionEmitter::handed_out` order. The exact drain starts
     // with the pipeline result its feeder left outstanding on the incoming
@@ -2382,19 +2694,63 @@ fn block_exit_label(
         .collect();
     for (index, instruction) in block.instructions().iter().enumerate() {
         // `emit_instruction` checks the completion step first and returns, so
-        // a step's call never reaches the compute-overlap join below.
+        // a step's call never reaches the compute-overlap join below; a step
+        // that is also its group's join site carries that join in this arm
+        // instead.
         if let IrInstruction::Define { result, .. } = instruction
             && let Some(step) = completion_steps.get(result)
         {
-            drain_completions(&mut outstanding, step.wait_for(), &mut label);
+            drain_completions(
+                &mut outstanding,
+                step.wait_for(),
+                branching_completions,
+                &mut label,
+            );
             if step.submit() {
-                outstanding.push(*result);
-                label = completion_offered_label(*result);
+                // A staged lane hand-out is not an outstanding completion
+                // operation: nothing joins it at a block boundary, and its own
+                // drain reads it from the ring rather than from this queue.
+                match staged_lane.filter(|staged| staged.result == *result) {
+                    Some(staged) => {
+                        if staged.frame_bytes.is_some() {
+                            label = parallel::par_staged_offered_label(*result);
+                        }
+                    }
+                    None => {
+                        outstanding.push(*result);
+                        if branching_completions.contains(result) {
+                            label = completion_offered_label(*result);
+                        }
+                    }
+                }
             } else {
                 definition_exit_label(block_id, index, instruction, &mut label);
+                // A mixed group's join site is an ordinary step, and its
+                // definition carries the group's joins. Those joins consume
+                // every member of the group, its completion members included,
+                // so they leave the outstanding set here as well as the label.
+                if let Some(overlap) = overlaps
+                    .iter()
+                    .find(|overlap| overlap.join_site() == Some(*result))
+                {
+                    outstanding.retain(|held| !overlap.handed_out().contains(held));
+                    if let Some(last) = overlap_join_tail(
+                        overlaps,
+                        completion_steps,
+                        branching_completions,
+                        *result,
+                    ) {
+                        label = par_done_label(last);
+                    }
+                }
             }
             if step.finish() {
-                drain_all_completions_except(&mut outstanding, protected_result, &mut label);
+                drain_all_completions_except(
+                    &mut outstanding,
+                    protected_result,
+                    branching_completions,
+                    &mut label,
+                );
             }
             continue;
         }
@@ -2402,22 +2758,37 @@ fn block_exit_label(
         // The overlap join rides its last member's own emission, so it settles
         // the label after whatever that emission left.
         if let IrInstruction::Define { result, .. } = instruction
-            && let Some(last) = overlap_join_tail(overlaps, *result)
+            && let Some(last) =
+                overlap_join_tail(overlaps, completion_steps, branching_completions, *result)
         {
             label = par_done_label(last);
         }
     }
-    drain_all_completions_except(&mut outstanding, protected_result, &mut label);
+    drain_all_completions_except(
+        &mut outstanding,
+        protected_result,
+        branching_completions,
+        &mut label,
+    );
     label
 }
 
 /// Replays `emit_completion_dependencies`: each named operation still
-/// outstanding is joined, and each join leaves the block at its `par.done`.
-fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], label: &mut String) {
+/// outstanding is joined, and a join that selects between two routes leaves
+/// the block at its `par.done`. A one-route join emits no block of its own and
+/// leaves the label where it was.
+fn drain_completions(
+    outstanding: &mut Vec<IrValueId>,
+    wanted: &[IrValueId],
+    branching_completions: &HashSet<IrValueId>,
+    label: &mut String,
+) {
     for value in wanted {
         if let Some(position) = outstanding.iter().position(|held| held == value) {
             outstanding.remove(position);
-            *label = par_done_label(*value);
+            if branching_completions.contains(value) {
+                *label = par_done_label(*value);
+            }
         }
     }
 }
@@ -2427,6 +2798,7 @@ fn drain_completions(outstanding: &mut Vec<IrValueId>, wanted: &[IrValueId], lab
 fn drain_all_completions_except(
     outstanding: &mut Vec<IrValueId>,
     protected: Option<IrValueId>,
+    branching_completions: &HashSet<IrValueId>,
     label: &mut String,
 ) {
     let mut last = None;
@@ -2434,7 +2806,9 @@ fn drain_all_completions_except(
         if Some(*value) == protected {
             true
         } else {
-            last = Some(*value);
+            if branching_completions.contains(value) {
+                last = Some(*value);
+            }
             false
         }
     });

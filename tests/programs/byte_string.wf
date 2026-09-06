@@ -249,7 +249,7 @@ fn bs_push_decimal(s: own Vector<u8>, value: own u64) -> result: own Vector<u8> 
   return move built;
 }
 
-fn publish_all(output: &uniq Output, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
+fn publish_all(output: &uniq OutputStream, source: own Slice<u8>, length: own u64) -> result: own Result<unit, IoError> reads(output, source), writes(output) contract {
   define source_length = len_of(source);
   requires length <= source_length;
 } {
@@ -275,7 +275,7 @@ fn publish_all(output: &uniq Output, source: own Slice<u8>, length: own u64) -> 
   return Ok<unit, IoError>(value: unit);
 }
 
-command fn main(command.stdout as out: own Output, command.heap as heap: own Heap) -> status: own ExitStatus reads(out, heap), writes(out, heap), allocates(heap) {
+command fn main(command.stdout as out: own OutputStream, command.heap as heap: own Heap) -> status: own ExitStatus reads(out, heap), writes(out, heap), allocates(heap) {
   doc "Builds one byte string from literals, grows its backing run, concatenates, searches it, and publishes the measured report.";
   region {
     let head_view = slice_of(&subject_head);
