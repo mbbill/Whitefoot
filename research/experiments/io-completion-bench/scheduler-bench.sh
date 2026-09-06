@@ -61,7 +61,7 @@ if [[ $MODE != bench || $(uname -s) != Linux ]]; then
     echo 'scheduler-bench: use check on POSIX, or bench on Linux with io_uring' >&2
     exit 2
 fi
-[[ $EXPERIMENT == idle || $EXPERIMENT == mixed ]] || exit 2
+[[ $EXPERIMENT == idle || $EXPERIMENT == mixed || $EXPERIMENT == fairness ]] || exit 2
 [[ $ROUNDS =~ ^[1-9][0-9]*$ && $WARMUP =~ ^[0-9]+$ ]] || exit 2
 [[ $(nproc) -ge 4 ]] || { echo 'scheduler-bench: this CPU-placement experiment needs four logical CPUs' >&2; exit 2; }
 mkdir -p "$OUT/bin" "$OUT/samples" "$OUT/observed" "$OUT/tree"
@@ -101,11 +101,12 @@ printf 'shared4\t4\t4\t%s\t%s\nshared2\t2\t2\t%s\t%s\nsplit2\t2\t2\t%s\t%s\nspli
     "$allowed" "$allowed" "$allowed" "$allowed" "$server_two" "$client_two" "$server_one" "$client_one" > "$OUT/cohorts.tsv"
 
 forms=(base sleep short spin poll1 poll16)
-if [[ $EXPERIMENT == mixed ]]; then
+if [[ $EXPERIMENT != idle ]]; then
     forms=(base sleep poll1)
     awk '$1=="shared4" || $1=="split2"' "$OUT/cohorts.tsv" > "$OUT/cohorts-selected.tsv"
     mv "$OUT/cohorts-selected.tsv" "$OUT/cohorts.tsv"
 fi
+if [[ $EXPERIMENT == fairness ]]; then forms=(base); fi
 form_flags() {
     case $1 in
         base) spin=256; yields=16; progress=0 ;;
@@ -136,7 +137,7 @@ link_form() {
 
 programs=(echo compute mixed)
 echo_source="$HERE/programs/tcp_echo_server.wf"
-if [[ $EXPERIMENT == mixed ]]; then
+if [[ $EXPERIMENT != idle ]]; then
     echo_source="$HERE/programs/tcp_compute_server.wf"
     programs=(echo)
 else
@@ -150,9 +151,13 @@ for policy in "${forms[@]}"; do
     done
     link_form "$OUT/echo.ll" "$OUT/bin/echo-$policy-observed" "$policy" 1
 done
-if [[ $EXPERIMENT == mixed ]]; then
+if [[ $EXPERIMENT != idle ]]; then
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE \
         "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_compute"
+fi
+if [[ $EXPERIMENT == fairness ]]; then
+    "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread -DWF_BENCH_COMPUTE -DWF_BENCH_QUANTUM \
+        "$HERE/epoll_echo.c" -o "$OUT/bin/epoll_quantum"
 fi
 for tool in netload uring_echo epoll_echo runner gen; do
     "$CLANG" -std=c11 -O2 -Wall -Wextra -Werror -pthread "$HERE/$tool.c" -o "$OUT/bin/$tool"
@@ -192,22 +197,25 @@ network_case() {
     local form=$1 connections=$2 trips=$3 bytes=$4 pass=$5 observed=$6
     local binary environment=() arguments=() directory port
     sample=$((sample + 1))
-    directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes-r$compute_rounds"
-    if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections"; fi
+    directory="$OUT/samples/$sample-$cohort-$form-k$connections-b$bytes-r$compute_rounds-a$admitted"
+    if [[ $observed == 1 ]]; then directory="$OUT/observed/$cohort-$form-k$connections-a$admitted"; fi
     mkdir -p "$directory"
     port=$(free_port)
     case $form in
         uring|epoll)
             binary="$OUT/bin/${form}_echo"
-            if [[ $EXPERIMENT == mixed ]]; then binary="$OUT/bin/epoll_compute"; fi
+            if [[ $EXPERIMENT != idle ]]; then binary="$OUT/bin/epoll_compute"; fi
             arguments=(--threads "$server_workers") ;;
+        q1024|q16384|q65536)
+            binary="$OUT/bin/epoll_quantum"
+            arguments=(--threads "$server_workers" --quantum "${form#q}") ;;
         base|sleep|short|spin|poll1|poll16)
             binary="$OUT/bin/echo-$form"
             if [[ $observed == 1 ]]; then binary="$binary-observed"; fi
             environment=("WF_WORKERS=$server_workers" WF_STACKS=1100 "WF_SCHED_REPORT=$observed") ;;
         *) return 2 ;;
     esac
-    echo "sample=$sample pass=$pass cohort=$cohort form=$form connections=$connections compute=$compute_rounds observed=$observed"
+    echo "sample=$sample pass=$pass cohort=$cohort form=$form connections=$connections compute=$compute_rounds observed=$observed admitted=$admitted"
     setsid timeout --signal=TERM --kill-after=5s 120s \
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/resources.tsv" taskset -c "$server_cpus" \
         env "${environment[@]}" "$binary" "$port" "$connections" "${arguments[@]}" \
@@ -222,7 +230,8 @@ network_case() {
         sleep 0.01
     done
     local client_arguments=()
-    if [[ $EXPERIMENT == mixed ]]; then client_arguments=(--compute "$compute_rounds" --heavy-every 4); fi
+    if [[ $EXPERIMENT != idle ]]; then client_arguments=(--compute "$compute_rounds" --heavy-every 4); fi
+    if [[ $admitted == 1 ]]; then client_arguments+=(--admit); fi
     timeout --signal=TERM --kill-after=5s 120s \
         /usr/bin/time -f '%U\t%S\t%M\t%w\t%c' -o "$directory/client-resources.tsv" taskset -c "$client_cpus" \
         "$OUT/bin/netload" "$port" "$connections" "$trips" "$bytes" --threads "$client_workers" "${client_arguments[@]}" \
@@ -232,7 +241,7 @@ network_case() {
     [[ ! -s $directory/server.out && ! -s $directory/client.err ]]
     if [[ $observed == 0 ]]; then [[ ! -s $directory/server.err ]]; fi
     if [[ $pass -ge 0 ]]; then
-        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+        printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
             "$pass" "$form" "$connections" "$bytes" "$trips" \
             "$(field "$directory/client.tsv" rt_per_s)" \
             "$(field "$directory/client.tsv" p50_us)" "$(field "$directory/client.tsv" p99_us)" \
@@ -240,7 +249,7 @@ network_case() {
             "$(cat "$directory/client-resources.tsv")" "$compute_rounds" \
             "$(field "$directory/client.tsv" light_p99_us)" "$(field "$directory/client.tsv" heavy_p99_us)" \
             "$(field "$directory/client.tsv" light_span_us)" "$(field "$directory/client.tsv" heavy_span_us)" \
-            "$(field "$directory/client.tsv" client_exchange_user_us)" "$(field "$directory/client.tsv" client_exchange_system_us)" >> "$OUT/network.tsv"
+            "$(field "$directory/client.tsv" client_exchange_user_us)" "$(field "$directory/client.tsv" client_exchange_system_us)" "$admitted" >> "$OUT/network.tsv"
     fi
 }
 
@@ -248,29 +257,36 @@ network_case() {
 # io_uring reference as well: absence of the native engine is a failed run.
 references=(uring epoll)
 compute_rounds=0
-if [[ $EXPERIMENT == mixed ]]; then references=(epoll); compute_rounds=262144; fi
+admitted=0
+admissions=(0)
+if [[ $EXPERIMENT == fairness ]]; then admissions=(0 1); fi
+if [[ $EXPERIMENT != idle ]]; then references=(epoll); compute_rounds=262144; fi
+if [[ $EXPERIMENT == fairness ]]; then references=(epoll q1024 q16384 q65536); fi
 while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
-    for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
+    for admitted in "${admissions[@]}"; do
+        for form in "${references[@]}" "${forms[@]}"; do network_case "$form" 4 20 64 -1 0; done
+    done
+    admitted=0
     for form in "${forms[@]}"; do
       for connections in 4 64; do
         observed_trips=2000
-        if [[ $EXPERIMENT == mixed ]]; then observed_trips=64; fi
+        if [[ $EXPERIMENT != idle ]]; then observed_trips=64; fi
         network_case "$form" "$connections" "$observed_trips" 64 -1 1
         # A Linux reading must actually use the native ring. Keep these
         # observations separate from the timed binaries and their diagnostics.
         awk '/^sched:/ { scheduler=1 }
              /^ring:/ { ring=1; for(i=2;i<=NF;i++) { split($i,a,"="); value[a[1]]=a[2]+0 } }
              END { exit !(scheduler && ring && value["submissions"] > 0 && value["completions"] > 0) }' \
-            "$OUT/observed/$cohort-$form-k$connections/server.err"
+            "$OUT/observed/$cohort-$form-k$connections-a$admitted/server.err"
       done
     done
 done < "$OUT/cohorts.tsv"
 
-printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\tcompute_rounds\tlight_p99_us\theavy_p99_us\tlight_span_us\theavy_span_us\tclient_exchange_user_us\tclient_exchange_system_us\n' > "$OUT/network.tsv"
+printf 'pass\tform\tconnections\tbytes\ttrips\trt_per_s\tp50_us\tp99_us\tuser_s\tsystem_s\tmax_rss_kib\tvoluntary_switches\tinvoluntary_switches\tsample\tcohort\tclient_user_s\tclient_system_s\tclient_max_rss_kib\tclient_voluntary_switches\tclient_involuntary_switches\tcompute_rounds\tlight_p99_us\theavy_p99_us\tlight_span_us\theavy_span_us\tclient_exchange_user_us\tclient_exchange_system_us\tadmitted\n' > "$OUT/network.tsv"
 forward=("${forms[@]}" "${references[@]}")
 reverse=()
 for ((at=${#forward[@]}-1;at>=0;at--)); do reverse+=("${forward[at]}"); done
-if [[ $EXPERIMENT == mixed ]]; then
+if [[ $EXPERIMENT != idle ]]; then
     cat > "$OUT/cases.tsv" <<'CASES'
 4 2000 64 0
 64 2000 64 0
@@ -288,15 +304,22 @@ else
 64 2000 64 0
 CASES
 fi
+if [[ $EXPERIMENT == fairness ]]; then
+    # Zero-compute control plus two sustained compute costs; retain both peer counts.
+    awk '$4 != 16384' "$OUT/cases.tsv" > "$OUT/cases-selected.tsv"
+    mv "$OUT/cases-selected.tsv" "$OUT/cases.tsv"
+fi
 for ((pass=-WARMUP; pass<ROUNDS; pass++)); do
     order=("${forward[@]}")
     if (( (pass + WARMUP) % 2 )); then order=("${reverse[@]}"); fi
   while IFS=$'\t' read -r cohort server_workers client_workers server_cpus client_cpus; do
     while read -r connections trips bytes compute_rounds; do
+      for admitted in "${admissions[@]}"; do
         for form in "${order[@]}"; do
             echo "network pass=$pass cohort=$cohort form=$form connections=$connections bytes=$bytes compute=$compute_rounds"
             network_case "$form" "$connections" "$trips" "$bytes" "$pass" 0
         done
+      done
     done < "$OUT/cases.tsv"
   done < "$OUT/cohorts.tsv"
 done
@@ -305,7 +328,7 @@ done
 # Warm positioned reads plus compute measure coexistence; they do not establish
 # a bound on network latency while every worker runs a long computation.
 cpu_programs=(compute mixed)
-if [[ $EXPERIMENT == mixed ]]; then cpu_programs=(); fi
+if [[ $EXPERIMENT != idle ]]; then cpu_programs=(); fi
 for program in "${cpu_programs[@]}"; do
     : > "$OUT/$program.plan"
     for workers in 2 4 8; do
@@ -330,7 +353,7 @@ done
 # the global FIFO measured in the same pass, connection count and payload.
 awk -F '\t' '
     NR == 1 { next }
-    { key=$15 "/" $3 "/" $4 "/" ($21+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
+    { key=$15 "/" $3 "/" $4 "/" ($21+0) "/" ($28+0); cohort=$1 SUBSEP key; group=$2 SUBSEP key
       count[group]++; rates[group,count[group]]=$6; lat[group,count[group]]=$7;
       tail[group,count[group]]=$8; cpu[group,count[group]]=($9+$10)*1e6/($3*$5);
       rss[group,count[group]]=$11; switches[group,count[group]]=($12+$13)/($3*$5);

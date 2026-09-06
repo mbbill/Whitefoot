@@ -51,6 +51,9 @@
 #if defined(WF_BENCH_COMPUTE)
 #include "compute_protocol.h"
 #endif
+#if defined(WF_BENCH_QUANTUM) && !defined(WF_BENCH_COMPUTE)
+#error "The compute quantum reference requires the compute protocol"
+#endif
 
 /* One receive per thread and one pending buffer per connection, both this
  * size. The loop reads only when the pending buffer is empty, so what a short
@@ -70,6 +73,12 @@ struct connection {
 #if defined(WF_BENCH_COMPUTE)
     unsigned received;
 #endif
+#if defined(WF_BENCH_QUANTUM)
+    int queued;
+    int computing;
+    uint64_t value;
+    uint64_t remaining;
+#endif
 };
 
 struct worker {
@@ -79,6 +88,12 @@ struct worker {
     int listener;
     int wake;
     unsigned char *scratch;
+#if defined(WF_BENCH_QUANTUM)
+    int *queue;
+    unsigned head;
+    unsigned tail;
+    unsigned count;
+#endif
 };
 
 static uint64_t option_connections;
@@ -92,6 +107,9 @@ static _Atomic uint64_t accepted_total;
 static _Atomic uint64_t closed_total;
 static _Atomic int finished;
 static _Atomic int failed;
+#if defined(WF_BENCH_QUANTUM)
+static uint64_t option_quantum = 16384;
+#endif
 
 static void report(const char *what, int error) {
     fprintf(stderr, "epoll_echo: %s: %s\n", what, strerror(error));
@@ -161,6 +179,25 @@ static void close_connection(struct worker *worker, int descriptor) {
     check_finished();
 }
 
+#if defined(WF_BENCH_QUANTUM)
+/* One owner and at most one queue entry per connection. No per-step allocation
+ * or shared scheduler word: this is the explicit continuation reference for
+ * the mixed-load experiment, not a replacement for the language scheduler. */
+static void enqueue(struct worker *worker, int descriptor) {
+    struct connection *link = &table[descriptor];
+    if (link->queued) return;
+    if (worker->count == descriptor_capacity) {
+        fprintf(stderr, "epoll_compute: duplicate or overflowing ready queue\n");
+        mark_failed();
+        return;
+    }
+    link->queued = 1;
+    worker->queue[worker->tail] = descriptor;
+    worker->tail = worker->tail + 1u == descriptor_capacity ? 0u : worker->tail + 1u;
+    worker->count++;
+}
+#endif
+
 /* Drives one connection as far as it will go without blocking: flush what a
  * short write left behind, then read until EAGAIN, echoing each arrival as it
  * comes. A read happens only with the pending buffer empty, which is what
@@ -172,6 +209,9 @@ static void close_connection(struct worker *worker, int descriptor) {
  * never be told about. */
 static void service(struct worker *worker, int descriptor) {
     struct connection *link = &table[descriptor];
+#if defined(WF_BENCH_QUANTUM)
+    unsigned replies = 0;
+#endif
     for (;;) {
         while (link->length > link->offset) {
             ssize_t moved = send(descriptor, link->pending + link->offset,
@@ -186,9 +226,33 @@ static void service(struct worker *worker, int descriptor) {
             close_connection(worker, descriptor);
             return;
         }
+#if defined(WF_BENCH_QUANTUM)
+        if (link->length != 0) replies++;
+#endif
         link->offset = 0;
         link->length = 0;
+#if defined(WF_BENCH_QUANTUM)
+        if (replies == 8u) {
+            enqueue(worker, descriptor);
+            return;
+        }
+#endif
 #if defined(WF_BENCH_COMPUTE)
+#if defined(WF_BENCH_QUANTUM)
+        if (link->computing) {
+            uint64_t steps = link->remaining < option_quantum ? link->remaining : option_quantum;
+            link->value = compute_churn(link->value, steps);
+            link->remaining -= steps;
+            if (link->remaining != 0) {
+                enqueue(worker, descriptor);
+                return;
+            }
+            link->computing = 0;
+            compute_encode(link->pending, link->value);
+            link->length = COMPUTE_BYTES;
+            continue;
+        }
+#endif
         while (link->received < COMPUTE_BYTES) {
             ssize_t taken = recv(descriptor, link->pending + link->received,
                                  COMPUTE_BYTES - link->received, 0);
@@ -202,12 +266,29 @@ static void service(struct worker *worker, int descriptor) {
             close_connection(worker, descriptor);
             return;
         }
+#if defined(WF_BENCH_QUANTUM)
+        link->value = compute_decode(link->pending);
+        link->remaining = compute_decode(link->pending + 8);
+        if (link->remaining > COMPUTE_MAX_ROUNDS) {
+            mark_failed();
+            close_connection(worker, descriptor);
+            return;
+        }
+        link->received = 0;
+        if (link->remaining != 0) {
+            link->computing = 1;
+            enqueue(worker, descriptor);
+            return;
+        }
+        compute_encode(link->pending, link->value);
+#else
         if (!compute_response(link->pending)) {
             mark_failed();
             close_connection(worker, descriptor);
             return;
         }
         link->received = 0;
+#endif
         link->length = COMPUTE_BYTES;
 #else
         ssize_t taken = recv(descriptor, worker->scratch, TRANSFER_BYTES, 0);
@@ -276,6 +357,10 @@ static void accept_ready(struct worker *worker) {
 #if defined(WF_BENCH_COMPUTE)
         link->received = 0;
 #endif
+#if defined(WF_BENCH_QUANTUM)
+        link->queued = 0;
+        link->computing = 0;
+#endif
         struct epoll_event registration;
         registration.events = EPOLLIN | EPOLLOUT | EPOLLET;
         registration.data.fd = descriptor;
@@ -288,7 +373,11 @@ static void accept_ready(struct worker *worker) {
         atomic_fetch_add_explicit(&accepted_total, 1, memory_order_relaxed);
         /* The connection may already hold bytes: an edge for them was consumed
          * by the accept, not by a later epoll_wait. */
+#if defined(WF_BENCH_QUANTUM)
+        enqueue(worker, descriptor);
+#else
         service(worker, descriptor);
+#endif
     }
 }
 
@@ -297,7 +386,11 @@ static void *worker_main(void *raw) {
     struct epoll_event events[256];
     while (!atomic_load_explicit(&finished, memory_order_relaxed) &&
            !atomic_load_explicit(&failed, memory_order_relaxed)) {
-        int ready = epoll_wait(worker->epoll, events, 256, -1);
+        int timeout = -1;
+#if defined(WF_BENCH_QUANTUM)
+        if (worker->count != 0) timeout = 0;
+#endif
+        int ready = epoll_wait(worker->epoll, events, 256, timeout);
         if (ready < 0) {
             if (errno == EINTR) {
                 continue;
@@ -321,8 +414,24 @@ static void *worker_main(void *raw) {
             if (!table[descriptor].active) {
                 continue;
             }
+#if defined(WF_BENCH_QUANTUM)
+            enqueue(worker, descriptor);
+#else
+            service(worker, descriptor);
+#endif
+        }
+#if defined(WF_BENCH_QUANTUM)
+        /* Poll between groups of at most eight continuation turns, with FIFO
+         * service inside each owner. Requeued work waits behind older work. */
+        unsigned turns = worker->count < 8u ? worker->count : 8u;
+        for (unsigned turn = 0; turn < turns; turn++) {
+            int descriptor = worker->queue[worker->head];
+            worker->head = worker->head + 1u == descriptor_capacity ? 0u : worker->head + 1u;
+            worker->count--;
+            table[descriptor].queued = 0;
             service(worker, descriptor);
         }
+#endif
     }
     return NULL;
 }
@@ -376,6 +485,13 @@ int main(int argc, char **argv) {
             option_threads = (unsigned)strtoul(argv[++at], NULL, 10);
             continue;
         }
+#if defined(WF_BENCH_QUANTUM)
+        if (strcmp(argv[at], "--quantum") == 0 && at + 1 < argc) {
+            option_quantum = strtoull(argv[++at], NULL, 10);
+            if (option_quantum == 0 || option_quantum > COMPUTE_MAX_ROUNDS) return 2;
+            continue;
+        }
+#endif
         fprintf(stderr, "epoll_echo: unknown argument %s\n", argv[at]);
         return 2;
     }
@@ -404,6 +520,13 @@ int main(int argc, char **argv) {
         struct worker *worker = &workers[at];
         worker->index = (int)at;
         worker->scratch = malloc(TRANSFER_BYTES);
+#if defined(WF_BENCH_QUANTUM)
+        worker->queue = malloc((size_t)descriptor_capacity * sizeof *worker->queue);
+        if (worker->queue == NULL) {
+            fprintf(stderr, "epoll_compute: out of memory for ready queue\n");
+            return 1;
+        }
+#endif
         worker->epoll = epoll_create1(0);
         worker->listener = listener_for(option_port);
         worker->wake = eventfd(0, EFD_NONBLOCK);
@@ -438,6 +561,9 @@ int main(int argc, char **argv) {
     }
     for (unsigned at = 0; at < option_threads; at++) {
         free(workers[at].scratch);
+#if defined(WF_BENCH_QUANTUM)
+        free(workers[at].queue);
+#endif
         close(workers[at].wake);
         close(workers[at].listener);
         close(workers[at].epoll);

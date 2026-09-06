@@ -9,7 +9,7 @@
  * with.
  *
  *   netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T]
- *           [--compute ROUNDS] [--heavy-every N]
+ *           [--compute ROUNDS] [--heavy-every N] [--admit]
  *
  * Compute mode uses compute_protocol.h: every Nth connection requests ROUNDS
  * recurrence steps, the others request zero. Expected results are computed
@@ -83,6 +83,7 @@ struct client {
     struct connection *first;
     uint64_t count;
     uint64_t outstanding;
+    int admitting;
 };
 
 static uint64_t option_connections;
@@ -94,6 +95,7 @@ static struct connection *connections;
 static struct client *clients;
 static pthread_barrier_t gate;
 static int option_compute;
+static int option_admit;
 static uint64_t option_compute_rounds;
 static uint64_t option_heavy_every = 4;
 static uint64_t *expected_compute;
@@ -175,14 +177,15 @@ static void fill_message(struct connection *link) {
     }
 }
 
-static void begin_round(struct connection *link) {
+static void begin_round(struct connection *link, int admitting) {
     link->sent = 0;
     link->received = 0;
     if (option_compute) {
-        uint64_t rounds = link->index % option_heavy_every == 0 ? option_compute_rounds : 0;
-        compute_request(link->outgoing, compute_seed(link->index, link->round), rounds);
+        uint64_t rounds = !admitting && link->index % option_heavy_every == 0 ? option_compute_rounds : 0;
+        compute_request(link->outgoing,
+                        compute_seed(link->index, admitting ? UINT64_MAX : link->round), rounds);
     } else {
-        link->outgoing[0] = (unsigned char)(link->round * 17u + 3u);
+        link->outgoing[0] = admitting ? 250u : (unsigned char)(link->round * 17u + 3u);
     }
     clock_gettime(CLOCK_MONOTONIC, &link->started);
     if (link->round == 0) link->first_started = link->started;
@@ -229,7 +232,9 @@ static void pump(struct client *owner, struct connection *link) {
         unsigned char computed[COMPUTE_BYTES];
         const unsigned char *expected = link->outgoing;
         if (option_compute) {
-            compute_encode(computed, expected_compute[link->index * option_roundtrips + link->round]);
+            uint64_t value = owner->admitting ? compute_seed(link->index, UINT64_MAX)
+                : expected_compute[link->index * option_roundtrips + link->round];
+            compute_encode(computed, value);
             expected = computed;
         }
         if (memcmp(link->incoming, expected, (size_t)option_bytes) != 0) {
@@ -244,16 +249,47 @@ static void pump(struct client *owner, struct connection *link) {
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
         uint64_t elapsed = microseconds_between(link->started, now);
-        latency_us[link->index * option_roundtrips + link->round] =
-            elapsed > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed;
+        if (!owner->admitting) {
+            latency_us[link->index * option_roundtrips + link->round] =
+                elapsed > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed;
+        }
         link->round++;
-        if (link->round == option_roundtrips) {
+        if (link->round == (owner->admitting ? 1u : option_roundtrips)) {
             link->last_finished = now;
             link->finished = 1;
             owner->outstanding--;
             return;
         }
-        begin_round(link);
+        begin_round(link, owner->admitting);
+    }
+}
+
+/* The admission handshake and the timed exchange use the same byte verifier. */
+static void exchange(struct client *owner) {
+    struct epoll_event events[256];
+    owner->outstanding = owner->count;
+    for (uint64_t at = 0; at < owner->count; at++) {
+        struct connection *link = &owner->first[at];
+        link->round = 0;
+        link->finished = 0;
+        begin_round(link, owner->admitting);
+        pump(owner, link);
+    }
+    while (owner->outstanding > 0) {
+        int ready = epoll_wait(owner->epoll, events, 256, -1);
+        if (ready < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            fail("epoll_wait on exchange: %s", strerror(errno));
+        }
+        for (int at = 0; at < ready; at++) {
+            struct connection *link = events[at].data.ptr;
+            if (link->finished) {
+                continue;
+            }
+            pump(owner, link);
+        }
     }
 }
 
@@ -344,7 +380,7 @@ static void *client_main(void *raw) {
 
     pthread_barrier_wait(&gate);
 
-    pthread_barrier_wait(&gate); /* release after the exchange CPU snapshot */
+    if (!option_admit) pthread_barrier_wait(&gate); /* timed release without handshake */
 
     /* Phase two: every connection is armed edge triggered for both directions
      * and starts its first round, so all of them are in flight at once. */
@@ -357,27 +393,14 @@ static void *client_main(void *raw) {
             fail("epoll_ctl on exchange: %s", strerror(errno));
         }
     }
-    for (uint64_t at = 0; at < owner->count; at++) {
-        struct connection *link = &owner->first[at];
-        begin_round(link);
-        pump(owner, link);
+    if (option_admit) {
+        owner->admitting = 1;
+        exchange(owner);
+        pthread_barrier_wait(&gate); /* every peer has answered the handshake */
+        pthread_barrier_wait(&gate); /* release after the exchange snapshot */
+        owner->admitting = 0;
     }
-    while (owner->outstanding > 0) {
-        int ready = epoll_wait(owner->epoll, events, 256, -1);
-        if (ready < 0) {
-            if (errno == EINTR) {
-                continue;
-            }
-            fail("epoll_wait on exchange: %s", strerror(errno));
-        }
-        for (int at = 0; at < ready; at++) {
-            struct connection *link = events[at].data.ptr;
-            if (link->finished) {
-                continue;
-            }
-            pump(owner, link);
-        }
-    }
+    exchange(owner);
 
     pthread_barrier_wait(&gate);
 
@@ -390,7 +413,7 @@ static void *client_main(void *raw) {
 
 int main(int argc, char **argv) {
     if (argc < 5) {
-        fprintf(stderr, "usage: netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T] [--compute ROUNDS] [--heavy-every N]\n");
+        fprintf(stderr, "usage: netload PORT CONNECTIONS ROUNDTRIPS BYTES [--threads T] [--compute ROUNDS] [--heavy-every N] [--admit]\n");
         return 2;
     }
     unsigned long port = strtoul(argv[1], NULL, 10);
@@ -411,6 +434,10 @@ int main(int argc, char **argv) {
         }
         if (strcmp(argv[at], "--heavy-every") == 0 && at + 1 < argc) {
             option_heavy_every = strtoull(argv[++at], NULL, 10);
+            continue;
+        }
+        if (strcmp(argv[at], "--admit") == 0) {
+            option_admit = 1;
             continue;
         }
         fprintf(stderr, "netload: unknown argument %s\n", argv[at]);
@@ -479,6 +506,7 @@ int main(int argc, char **argv) {
 
     struct timespec connect_start;
     struct timespec connect_end;
+    struct timespec exchange_start;
     struct timespec exchange_end;
     struct rusage exchange_cpu_start;
     struct rusage exchange_cpu_end;
@@ -486,8 +514,10 @@ int main(int argc, char **argv) {
     clock_gettime(CLOCK_MONOTONIC, &connect_start);
     pthread_barrier_wait(&gate);
     pthread_barrier_wait(&gate);
-    getrusage(RUSAGE_SELF, &exchange_cpu_start);
     clock_gettime(CLOCK_MONOTONIC, &connect_end);
+    if (option_admit) pthread_barrier_wait(&gate);
+    getrusage(RUSAGE_SELF, &exchange_cpu_start);
+    clock_gettime(CLOCK_MONOTONIC, &exchange_start);
     pthread_barrier_wait(&gate);
     pthread_barrier_wait(&gate);
     clock_gettime(CLOCK_MONOTONIC, &exchange_end);
@@ -531,11 +561,12 @@ int main(int argc, char **argv) {
     }
     qsort(latency_us, (size_t)total, sizeof *latency_us, compare_u32);
     uint64_t connect_us = microseconds_between(connect_start, connect_end);
-    double exchange_seconds = seconds_between(connect_end, exchange_end);
-    uint64_t exchange_us = microseconds_between(connect_end, exchange_end);
+    double exchange_seconds = seconds_between(exchange_start, exchange_end);
+    uint64_t exchange_us = microseconds_between(exchange_start, exchange_end);
     double per_second = exchange_seconds > 0.0 ? (double)total / exchange_seconds : 0.0;
     double bytes_per_second =
         exchange_seconds > 0.0 ? (double)total * (double)option_bytes / exchange_seconds : 0.0;
+    printf("admitted=%d\tadmission_us=%llu\t", option_admit, (unsigned long long)microseconds_between(connect_end, exchange_start));
     printf("connect_us=%llu\texchange_us=%llu\troundtrips=%llu\trt_per_s=%.1f"
            "\tbytes_per_s=%.1f\tp50_us=%u\tp90_us=%u\tp99_us=%u\tmax_us=%u"
            "\tclient_exchange_user_us=%lld\tclient_exchange_system_us=%lld\n",

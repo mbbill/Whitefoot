@@ -420,3 +420,91 @@ that difference. It does not establish steady-state open-loop SLOs. Inline
 epoll is a reference control, not an assertion of the best mixed-load design;
 CPU offload, prioritization, full per-worker ownership, and continuation
 representation remain candidates if losses justify them.
+
+### First mixed-load results
+
+Revision e3fa2a6a, [mixed job 101481087471](https://github.com/mbbill/Whitefoot/actions/runs/34031265140/job/101481087471),
+[artifact 9988791681](https://github.com/mbbill/Whitefoot/actions/runs/34031265140/artifacts/9988791681).
+The mixed job succeeded independently of the idle job's observer failure.
+Its host was a four-logical-CPU Xeon Platinum 8573C VM, two physical cores with
+SMT, Linux 6.17.0-1022-azure, clang 18.1.3. All 448 timed samples completed;
+every case has seven paired passes, after two warm-up passes. Columns below
+use the median of within-pass WF/inline-epoll throughput ratios and the
+separate median light-request p99 values in microseconds.
+
+| placement | peers | compute rounds | paired WF/C rate | WF light p99 | C light p99 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| shared4 | 64 | 0 | 0.801 | 917 | 2902 |
+| shared4 | 64 | 16384 | 0.975 | 3153 | 3285 |
+| shared4 | 64 | 262144 | 1.415 | 30457 | 36953 |
+| shared4 | 64 | 2097152 | 1.401 | 203486 | 226662 |
+| split2 | 64 | 0 | 0.865 | 471 | 323 |
+| split2 | 64 | 262144 | 1.216 | 4664 | 5777 |
+| split2 | 64 | 2097152 | 1.138 | 34581 | 39383 |
+| shared4 | 4 | 2097152 | 0.999 | 126 | 4325 |
+
+The heavy 64-peer shared4 paired ranges were 1.233..1.632 and 1.116..1.637;
+the split2 ranges were 1.061..1.337 and 1.120..1.239. These are repeat ranges,
+not confidence intervals. At four peers with heavy compute, the light-class
+span was only 0.006 of the heavy span, so the low light p99 does not describe
+continuous competing traffic. At 64 peers and the largest compute count,
+that fraction was 0.875 in shared4 and 0.950 in split2.
+
+Sleep and poll1 did not solve the mixed-load tail. At 64 peers and 2097152
+rounds in shared4, their paired throughput relative to base was 1.004 and
+0.992, while light p99 was 185366 and 217980 microseconds. At four peers and
+zero compute, their paired rates were only 0.597 and 0.632 of base. A policy
+that wins one placement cannot be selected for all loads from these readings.
+
+This result supports keeping ownership-derived overlap as a useful source
+model: in a compute-heavy case the current WF implementation outperformed
+this native inline reference. It does not establish the best implementation.
+The large tail can include both delayed first service of a connection and
+worker occupancy after admission. Completion polling alone does not resolve
+either CPU occupancy or fairness between ready stacks and queued callees.
+
+## Fourth experiment: admission and cooperative compute reference
+
+The next comparison separates those two causes. `scheduler-fairness` uses
+the same mixed protocol and baseline WF code, with both fresh connections
+and `netload --admit`. Admission sends one zero-compute request per connection,
+verifies all responses, then releases the timed exchange through a barrier.
+Every connection remains open. Admission time is reported separately; neither
+the handshake nor its CPU work enters exchange timing or latency samples.
+
+The C reference now has an optional explicit continuation form, compiled only
+with `WF_BENCH_QUANTUM`. Each connection owns its value and remaining compute
+count; each worker owns a FIFO of runnable connections. One turn executes at
+most 1024, 16384, or 65536 recurrence steps, then enqueues the continuation
+when work remains. The worker polls I/O between groups of at most eight
+turns. A turn also yields after eight complete replies, so a stream of
+zero-compute requests cannot bypass the scheduling boundary indefinitely.
+No queue or continuation allocation occurs during the exchange. The original
+inline reference remains a separate build of the same protocol path.
+
+This is a candidate native implementation that WF must compete with, not a
+new WF source requirement or a selected runtime policy. The measured controls
+are base, inline epoll, and three native compute quanta, at 4/64 peers and
+0/262144/2097152 rounds in shared4/split2. Both admission states receive two
+warm-up and seven recorded passes. The summary key includes admission state,
+so a fresh sample cannot be paired with an admitted baseline.
+
+The distinction has precedents but no performance conclusion is imported.
+[Seastar's documented scheduler](https://docs.seastar.io/master/tutorial.html#preemption-and-task-quota)
+checks a task quota at explicit preemption points; long compute without such
+points can starve its reactor. Its
+[stackful thread form](https://docs.seastar.io/master/split/25.html) also keeps
+sequential-looking code, with extra stack storage and cooperative yielding.
+[Go's runtime](https://go.dev/src/runtime/preempt.go) instead supports
+asynchronous safe points and signal-assisted preemption, with register state
+and runtime-lock constraints. These are separate choices from proving that
+two tasks may access disjoint state. A future WF lowering could insert its
+own continuations or safe points without requiring user-written callbacks;
+whether that cost is justified must be measured against these native forms.
+
+The capacity witness also exposes a specification question independent of
+these timing policies. PAR-3 explicitly permits an implementation to overlap
+nothing, while interactive peer protocols can require independent callees to
+be started before another callee completes. A required-concurrency scope with
+backed admission, or a different progress contract, needs explicit design.
+Silently increasing a fixed stack count cannot settle that semantic question.
