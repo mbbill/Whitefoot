@@ -9,7 +9,7 @@ fn grayscale_value(red: own u8, green: own u8, blue: own u8) -> result: own Resu
   return cvt::<f32, u8>(rounded);
 }
 
-fn grayscale(input: &buffer<u8>, output: &uniq buffer<u8>) -> result: own Result<unit, NarrowError> reads(input, output), writes(output) contract {
+fn grayscale(input: &buffer<u8>, output: &uniq MutSlice<u8>) -> result: own Result<unit, NarrowError> reads(input, output), writes(output) contract {
   define input_length = len_of(deref(input));
   define output_length = len_of(deref(output));
   requires input_length >= 24_u64;
@@ -78,12 +78,15 @@ command fn main() -> status: own ExitStatus pure {
   set input[23_u64] = 252_u8;
   let output = buffer_new(8_u64, 0_u8);
   region {
-    let result = grayscale(input: &input, output: &uniq output);
-    match move result {
-      Ok(value: success) => {
-      }
-      Err(error: failure) => {
-        return exit_status(code: 1_u8);
+    let window = mut_slice_of(&uniq output);
+    region {
+      let result = grayscale(input: &input, output: &uniq window);
+      match move result {
+        Ok(value: success) => {
+        }
+        Err(error: failure) => {
+          return exit_status(code: 1_u8);
+        }
       }
     }
   }
