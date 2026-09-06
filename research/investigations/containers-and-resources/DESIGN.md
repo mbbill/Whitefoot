@@ -8254,7 +8254,8 @@ holding runs, both keeping exit 0.
    handed on as `&Vector<f64>` — a shared borrow of the run, which resolves — instead of
    as a view, and it is why four `accept-par3-staged-*` cases now report condition 7 where
    they reported 3 or 5. The fix is a declaration-to-binding map the footprint resolver
-   does not have; it is a compiler gap and not a rule.
+   does not have; it is a compiler gap and not a rule. **Closed in 6.0x**, by exactly that
+   map: the four cases report 3, 3, 5 and permitted again.
 
 3. **3.L.5's growth policy is writable except for its contract.** `bs_new` and
    `bs_reserve` compile verbatim — the drain-front/append-back walk, its eight invariants,
@@ -8362,6 +8363,145 @@ holds and is left standing.
 **Verdicts.** Unchanged in every corpus: the adapter at Pass=702 Skip=3 over
 705 with coverage 157/157, and the recorded-verdict snapshot corpus at
 Pass=484 Flip=0. No conformance case is added, modified, deleted or renamed.
+
+### 6.0x B7c4b-4a landed (v0.51)
+
+**The two compiler capabilities the retirement's remaining judgments needed, and
+the last conformance and writer material off the retiring surface.** Numbered
+rules +0, grammar productions +0, records +0: nothing here changes the
+specification. Both items are the existing rules read over the container
+surface, and both were measured as compiler gaps in 6.0v rather than as
+questions about the language.
+
+- **A view argument is a footprint on the storage it was formed over, and 6.0v's
+  second defect is closed.** [VIEW-1] makes a view a claim on its origin range
+  and [VIEW-2] puts the loan there rather than on the descriptor, so the fix is
+  a per-binding origin the place prepass records at the formation and every
+  consumer reads through: `argument_place` for a bound view handed on directly
+  or borrowed, `collect_operand_reads` for a view subscript and a view measure,
+  and the `set` target of a view element write, which had been resolving to the
+  descriptor's own place and was therefore the fail-**open** direction. A view
+  parameter and a view a callee handed back stay unresolved and still deny,
+  which is what the condition-7 advice now names. `par_layout.wf` needed no
+  change: it had already been restructured to hand its metric table on as
+  `&Vector<f64>`, and both folds stayed eligible throughout. Five
+  `accept-par3-staged-*` cases reported condition 7 and none does now:
+  `denied-hoisted-scratch` and `denied-read-before-write` report 3,
+  `denied-carried-scratch-byte` reports 5, and `iteration-own-scratch` and
+  `loop-with-prologue-break` are **permitted**, which is what the first one's
+  own doc always said its shape was for. The fifth case was not in 6.0v's
+  list; its doc stated no condition, so nothing there had to be corrected.
+
+- **A run the iteration takes from a store is iteration-own storage, and the
+  provider borrow the take holds is the serialized provider access.** [PAR-3]
+  states no member-form enumeration — that is [PAR-1]'s window — so a kernel
+  row is projected by its own record: its parameter modes give the loans, and
+  `reads(store)`, `writes(store)` and `allocates(store)` each project onto the
+  store operand's place. An extent reserved outside the loop is therefore
+  serialized-P and the run it hands out is replicated, which is exactly the
+  table `par3-pos-a-per-iteration-run-from-the-store-is-iteration-own` reports
+  and runs on.
+
+- **The give-back the general store is owed is modelled, and it is what
+  separates the two stores.** A `Vector<'s, T>` at a general store is released
+  to that store when its scope exits [PROV-6, STOR-1], and that release is not
+  a statement, so a walk over the body reaches it nowhere. Recorded in the
+  remainder — every scope of the body exits on the iteration's own edge — a
+  per-iteration `heap_vector` take puts its store on both sides of the cut and
+  condition 5 denies it, while a bump extent, whose release is empty [BLK-2],
+  keeps its take in the prologue alone. Without this the resolver above would
+  have been fail-open for the general store: two overlapped iterations giving
+  storage back to one allocator at once, reported permitted.
+
+- **The store's two rows are validated against the selected target, and the
+  README defect is confined rather than repaired.** `StoreTake` and `StoreBox`
+  reached no arm of `backend::target` at all, so `heap_vector`, `arena_vector`,
+  `arena_vector_proved`, `heap_box` and `arena_box` were size- and
+  alignment-unchecked. They now carry the element's actual layout against
+  [OP-9]'s ceilings, its alignment against what the storage can promise — the
+  allocator's guarantee for a general store, the extent's own constant for a
+  bump one — and the non-overflow of [OP-9]'s retained count bound times the
+  actual stride, which is the joint fact [STOR-6] says neither the source proof
+  nor the qualification establishes alone. What they deliberately do **not**
+  carry is the retiring rows' byte ceiling against the allocator-parameter
+  domain, and that omission is the finding: a take the store cannot satisfy
+  hands back `None`, which is an arm of the source program, so an unproved
+  runtime count is an ordinary program on the store surface where it is a
+  ruleless `TargetLayout(Unrepresentable(RuntimeSizedAllocation))` stop on the
+  buffer's. `op9-neg-kernel-acquisition-without-a-fit-proof` is the rejection
+  that still stands, at the source, with the rule and a residual. The README
+  paragraph is therefore narrowed to `buffer_new` and `buffer_vacant` and kept
+  until they go, not deleted.
+
+**Three defects the work found.**
+
+1. **The handed-out completion transfer refused a view destination.** The
+   moment the resolver made `completion_read_boundary.wf`'s two `read_at` calls
+   a permitted pair, the program stopped with `Backend: InvalidIr`: the
+   handed-out submit asserted its destination's IR type was `IrType::Buffer`
+   exactly, while the direct wrapper it replaced had only ever named the
+   *rendered* type, which a view and a buffer share. Both are one contiguous
+   `{ ptr, i64 }` range, and [VIEW-1]'s measure row is what says so, so the
+   assertion is now over the element type and admits either descriptor. The
+   program's own subject — two independent positioned reads in flight — was
+   dead for as long as the resolver denied the pair.
+
+2. **The staged judgment modelled no compiler-derived release.** Recorded above
+   as the give-back; it is listed again here because it was found by asking
+   what a `heap_vector` inside a staged loop would be reported as, not by a
+   failing test, and because the same hole may exist for other derived actions
+   the judgment's statement walk cannot see.
+
+3. **The staged *lowering* refuses a region that carries a drop record, and
+   that is what keeps `tcp_fanout.wf` on `buffer_new`.** The permission was
+   never the obstacle: with the scratch an extent reserved inside the loop body
+   and the destination a view of the run it hands out, the ledger prints the
+   same verdict and the same four dispositions the buffer form prints, with
+   only the replicated row's citation moved. What does not follow is the
+   hand-out. `direct_staged_tail` walks into the last statement of the body
+   only through a `region` whose `fallthrough_drops` are **empty**, and a
+   region binding a store-backed run carries the run's release, while a region
+   binding a view of one carries the view's — a record for a value that owns
+   nothing and whose release is empty [VIEW-1, PROV-6]. Hoisting the view out
+   of the region is not available either: [OWN-10] refuses a borrow of local
+   storage whose region is the loop body's own, so a view over iteration-own
+   storage needs a `region_stmt` and therefore a drop record. Measured on the
+   flagship: with the migration applied the loop is still permitted and
+   `@wf__par_publish` disappears from the module, which is
+   `four_peers_are_served_at_once_under_par_on_both_routes` failing on the
+   fourth peer. `tcp_fanout.wf` is therefore left exactly as it was, and the
+   migration is stated here as remaining work rather than half-landed; the
+   repair is to place a region's fallthrough drops in the staged drain, or to
+   record no drop for a value whose release action is empty.
+
+4. **The wide probe is a `buffer<T>` lowering at both ends.** The recognizer
+   matches a `CheckedExpression::BufferIndex` byte walk and the emitter refuses
+   any operand whose IR type is not `IrType::Buffer`, so a run walk is not
+   recognized at all. `wide_scan.rs` therefore cannot be migrated: its subject
+   is three wide loads, and a migrated oracle would assert three and find none.
+   Extending the probe is not a rename — a buffer is one contiguous range whose
+   descriptor's second word is its length, and a run is a window whose base is
+   `head_of` modulo `cap_of` [BLK-1], so the window guard needs three measure
+   words and `base + index` is right only where `head_of` is proved zero. It is
+   a precondition of the `buffer<T>` retirement with its own cases.
+
+**What did not land.** `tests/programs/tcp_fanout.wf` keeps its `buffer_new`
+scratch and its `&uniq buffer<u8>` destination, for the lowering reason above;
+it is the last `tests/programs` source on the retiring surface that a judgment
+rather than a program shape holds back. The retiring surface's own test suites
+stay:
+`compiler/src/semantic/tests/buffers.rs` (50 hits) and `arenas.rs` (35), each
+now carrying a module note saying which judgments have no run twin and why;
+`compiler/src/backend/tests/exhaustion.rs` (45), whose allocation-refusal
+fixtures pin an abort edge the refusing rows do not have and whose cycle
+fixtures do have a twin but are calibrated to the retiring layout at every
+depth, frame size and symbol count; and `compiler/tests/programs/wide_scan.rs`
+(10), for the probe above. In `backend/tests/buffers.rs` the two target-domain
+cases marked "no twin" in 6.0v are re-answered: the alignment half now has one
+and is migrated to `heap_vector` and `heap_box`, and the byte-ceiling half has
+none for the reason the finding above states rather than for a missing arm.
+
+**Verdicts.** VERDICTS_PLACEHOLDER
 
 ### 6.1 What the compiler did in this session
 
