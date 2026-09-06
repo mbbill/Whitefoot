@@ -22,18 +22,47 @@ command fn main() -> status: own ExitStatus pure {
 }
 "#;
 
-const U64_BUFFER_ALLOCATION: &[u8] = br#"command fn main() -> status: own ExitStatus pure {
-  let values = buffer_new(1_u64, 0_u64);
-  return exit_status(code: 0_u8);
+const U64_STORE_TAKE: &[u8] = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "One eight-byte slot taken from the general store, whose actual alignment the selected allocator has to promise.";
+  region {
+    match heap_vector::<u64>(store: &uniq heap, count: 1_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: taken) => {
+        let values = move taken;
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
 }
 "#;
 
-/// LEFT ON `buffer<T>` DELIBERATELY: the run has no twin for this subject.
-/// The selected target's runtime-allocation ceiling is checked in
-/// `backend::target` for `BufferFill`, `BufferVacant`, `BoxNew` and
-/// `ArenaNew`; the run's own store take reaches none of those arms, so a
-/// `heap_vector` of an invariant-bounded length is not target-validated at
-/// all and there is no boundary to sit just inside and just outside of.
+const U64_STORE_CELL: &[u8] = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "One eight-byte cell taken from the same store, the other half of the same obligation S39.";
+  region {
+    match heap_box(store: &uniq heap, value: 7_u64) {
+      Ok(value: made) => {
+        let cell = move made;
+        return exit_status(code: 0_u8);
+      }
+      Err(error: back) => {
+        return exit_status(code: 70_u8);
+      }
+    }
+  }
+}
+"#;
+
+/// LEFT ON `buffer<T>` DELIBERATELY: the run has no twin for this subject,
+/// and the reason is now a measured property of the store surface rather than
+/// a missing arm. The store's take *is* target-validated — the case below is
+/// the alignment half of exactly that validation — but a byte **ceiling**
+/// against the allocator-parameter domain is not part of it: a take the store
+/// cannot satisfy hands back `None`, which is an arm of the source program
+/// [BLK-2], so an unproved runtime count is an ordinary program and there is
+/// no boundary a run can sit just inside and just outside of. The buffer's
+/// fill has no such arm, which is why this boundary is its own.
 #[test]
 fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
     with_ir(AFFINE_INVARIANT_BOUNDED_ALLOCATION, |program| {
@@ -56,31 +85,90 @@ fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
     });
 }
 
-/// LEFT ON `buffer<T>` DELIBERATELY: same missing twin as the ceiling case
-/// above. The cell would be the natural carrier of the alignment half — a
-/// referent layout is checked against the allocator's alignment — but that
-/// check is on `BoxNew`, the retiring operation, and the store's own cell
-/// take is not validated there.
+/// The target stage never reports a runtime-sized allocation failure for a
+/// store take the semantic stage accepted.
+///
+/// This is the half of `compiler/README.md`'s known defect that the store
+/// surface answers. `buffer_new(n, 0_u8)` at an unproved runtime `n` passes
+/// semantic checking and stops four stages later with
+/// `Unrepresentable(RuntimeSizedAllocation)` and no rule; the same count at
+/// `heap_vector::<u8>` reaches the same target stage and emits, because the
+/// row hands back an `Option` and a store that cannot satisfy the take is the
+/// `None` arm the writer already wrote [BLK-2]. What still refuses an
+/// unproved count is [OP-9] itself, at the source, with a rule and a residual
+/// — at any element type whose stride makes the fit goal underivable.
 #[test]
-fn buffer_representation_alignment_must_fit_the_selected_allocator_alignment() {
-    with_ir(U64_BUFFER_ALLOCATION, |program| {
+fn a_store_take_of_an_unbounded_runtime_count_emits_rather_than_stopping_at_the_target() {
+    const UNBOUNDED_STORE_TAKE: &[u8] = br#"command fn main(command.args as args: own Args, command.heap as heap: own Heap) -> status: own ExitStatus reads(args, heap), writes(heap), allocates(heap) {
+  doc "The count is the invocation's own argument count, which no source fact bounds.";
+  let n = 0_u64;
+  region {
+    set n = args_count(args: &args);
+  }
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: n) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: taken) => {
+        let values = move taken;
+        return exit_status(code: 0_u8);
+      }
+    }
+  }
+}
+"#;
+    with_ir(UNBOUNDED_STORE_TAKE, |program| {
         let host = TargetLayout::host().expect("the backend test runs on a qualified host");
         let system_target = SystemTarget::for_triple(host.triple())
             .expect("the host triple has one qualified system target");
         let qualification = qualify_program(system_target, program)
-            .expect("the buffer-alignment fixture must qualify");
-
-        let exact = host.with_runtime_allocation_limits_for_test(8, 8);
-        assert_eq!(validate_program(exact, &qualification, program), Ok(()));
-
-        let one_alignment_step_short = host.with_runtime_allocation_limits_for_test(8, 4);
-        assert_eq!(
-            validate_program(one_alignment_step_short, &qualification, program),
-            Err(TargetLayoutFailure::Unrepresentable(
-                TargetObject::RuntimeSizedAllocation
-            ))
-        );
+            .expect("the unbounded store take must qualify");
+        assert_eq!(validate_program(host, &qualification, program), Ok(()));
     });
+    let output = compile_and_run(&compile(UNBOUNDED_STORE_TAKE));
+    assert!(output.status.success());
+}
+
+/// The store surface's own alignment boundary, for the run and for the cell.
+///
+/// A general store hands out raw storage its host allocator supplies, so the
+/// element's *actual* target alignment must be one that allocator promises —
+/// the same obligation `buffer_new` and `box_new` carry, now read off the
+/// store's two rows [BLK-2, S39, STOR-6]. Both directions are pinned at the
+/// exact boundary: eight-byte alignment admits an eight-byte slot and a
+/// four-byte guarantee refuses it, and refuses it as a runtime-sized
+/// allocation rather than as a representation failure, because what is short
+/// is the allocator's promise and not the language ceiling.
+#[test]
+fn a_store_take_and_a_store_cell_must_fit_the_selected_allocator_alignment() {
+    for fixture in [U64_STORE_TAKE, U64_STORE_CELL] {
+        with_ir(fixture, |program| {
+            let host = TargetLayout::host().expect("the backend test runs on a qualified host");
+            let system_target = SystemTarget::for_triple(host.triple())
+                .expect("the host triple has one qualified system target");
+            let qualification = qualify_program(system_target, program)
+                .expect("the store-alignment fixture must qualify");
+
+            // The byte domain stays the host's own: a store take is not judged
+            // against an allocator byte ceiling at all, and cutting the
+            // address-index domain to the take's own size would refuse the
+            // run's thirty-two-byte descriptor before the alignment is
+            // reached. Only the alignment guarantee moves here.
+            let byte_domain = i64::MAX as u64;
+            let exact = host.with_runtime_allocation_limits_for_test(byte_domain, 8);
+            assert_eq!(validate_program(exact, &qualification, program), Ok(()));
+
+            let one_alignment_step_short =
+                host.with_runtime_allocation_limits_for_test(byte_domain, 4);
+            assert_eq!(
+                validate_program(one_alignment_step_short, &qualification, program),
+                Err(TargetLayoutFailure::Unrepresentable(
+                    TargetObject::RuntimeSizedAllocation
+                ))
+            );
+        });
+    }
 }
 
 #[test]
