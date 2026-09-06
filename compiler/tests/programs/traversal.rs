@@ -131,26 +131,45 @@ fn the_traversal_source_requires_the_complete_file_permit_inventory() {
 /// from ownership rather than from any traversal-specific rule.
 #[test]
 fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
   doc "Moves one enumeration handle and then uses the moved binding.";
-  let scratch = buffer_new(64_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
-        let taken = move list;
+    match heap_vector::<u8>(store: &uniq heap, count: 64_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let scratch = move fresh;
+        for @blank (
+          at in 0_u64..64_u64,
+          invariant grown: len_of(scratch) >= at,
+          invariant capped: len_of(scratch) <= at,
+          invariant spare: room_of(scratch) + at >= 64_u64,
+          invariant flat: head_of(scratch) <= 0_u64
+        ) {
+          set scratch = place_back(vector: move scratch, value: 0_u8);
+        }
         region {
-          match directory_next(source: &uniq list, destination: &uniq scratch, start: 0_u64, end: 64_u64) {
-            ListBytes(next: endpoint, entries: reported) => {
+          let window = mut_slice_of(&uniq scratch);
+          let permit = reserve_file(factory: &uniq files);
+          match open_directory_source(permit: move permit, directory: &cwd) {
+            Ok(value: list) => {
+              let taken = move list;
+              region {
+                match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 64_u64) {
+                  ListBytes(next: endpoint, entries: reported) => {
+                  }
+                  ListEnd() => {
+                  }
+                  ListFailed(error: problem) => {
+                  }
+                }
+              }
             }
-            ListEnd() => {
-            }
-            ListFailed(error: problem) => {
+            Err(error: problem) => {
             }
           }
         }
-      }
-      Err(error: problem) => {
       }
     }
   }
@@ -164,26 +183,36 @@ fn an_enumeration_handle_is_not_usable_after_it_is_moved() {
     );
 }
 
-/// A name buffer is not a path value: no operation turns program bytes into a
-/// `RelativePath`, so the deferred path algebra of [PATH-1] stays deferred
-/// even with the traversal surface admitted.
+/// A run of name bytes is not a path value: no operation turns program bytes
+/// into a `RelativePath`, so the deferred path algebra of [PATH-1] stays
+/// deferred even with the traversal surface admitted. The rejection is
+/// TYPE-5's, naming the run where it named the buffer.
 #[test]
 fn program_bytes_still_cannot_become_a_path_value() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output) -> status: own ExitStatus writes(cwd) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(cwd, heap), allocates(heap) {
   doc "Attempts to construct a relative path from program bytes.";
-  let name = buffer_new(8_u64, 97_u8);
   region {
-    match relative_path(value: move name) {
-      Ok(value: path) => {
+    match heap_vector::<u8>(store: &uniq heap, count: 8_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
       }
-      Err(error: problem) => {
+      Some(value: fresh) => {
+        let name = move fresh;
+        region {
+          match relative_path(value: move name) {
+            Ok(value: path) => {
+            }
+            Err(error: problem) => {
+            }
+          }
+        }
       }
     }
   }
   return exit_status(code: 0_u8);
 }
 "#;
-    let failure = compile_rejection(&[("buffer_path.wf", source)]);
+    let failure = compile_rejection(&[("run_path.wf", source)]);
     assert!(
         failure.contains("Semantics"),
         "expected a type rejection, got {failure}"
@@ -195,23 +224,42 @@ fn program_bytes_still_cannot_become_a_path_value() {
 /// missing arm is a rejection rather than a silent fallthrough.
 #[test]
 fn an_enumeration_match_that_omits_an_outcome_is_rejected() {
-    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory) -> status: own ExitStatus reads(cwd, files), writes(cwd, files) {
+    let source = br#"command fn main(command.cwd as cwd: own DirectoryRead, command.stdout as out: own Output, command.files as files: own FileFactory, command.heap as heap: own Heap) -> status: own ExitStatus reads(cwd, files, heap), writes(cwd, files, heap), allocates(heap) {
   doc "Omits one enumeration outcome from an otherwise complete match.";
-  let scratch = buffer_new(64_u64, 0_u8);
   region {
-    let permit = reserve_file(factory: &uniq files);
-    match open_directory_source(permit: move permit, directory: &cwd) {
-      Ok(value: list) => {
+    match heap_vector::<u8>(store: &uniq heap, count: 64_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let scratch = move fresh;
+        for @blank (
+          at in 0_u64..64_u64,
+          invariant grown: len_of(scratch) >= at,
+          invariant capped: len_of(scratch) <= at,
+          invariant spare: room_of(scratch) + at >= 64_u64,
+          invariant flat: head_of(scratch) <= 0_u64
+        ) {
+          set scratch = place_back(vector: move scratch, value: 0_u8);
+        }
         region {
-          match directory_next(source: &uniq list, destination: &uniq scratch, start: 0_u64, end: 64_u64) {
-            ListBytes(next: endpoint, entries: reported) => {
+          let window = mut_slice_of(&uniq scratch);
+          let permit = reserve_file(factory: &uniq files);
+          match open_directory_source(permit: move permit, directory: &cwd) {
+            Ok(value: list) => {
+              region {
+                match directory_next(source: &uniq list, destination: &uniq window, start: 0_u64, end: 64_u64) {
+                  ListBytes(next: endpoint, entries: reported) => {
+                  }
+                  ListEnd() => {
+                  }
+                }
+              }
             }
-            ListEnd() => {
+            Err(error: problem) => {
             }
           }
         }
-      }
-      Err(error: problem) => {
       }
     }
   }

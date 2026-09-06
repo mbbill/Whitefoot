@@ -1,6 +1,6 @@
 use super::{compile, compile_and_run, compile_rejection, emitted_function};
 
-const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq MutSlice<u8>, source: own buffer<u8>) -> written: own u64 reads(source), writes(out) contract {
+const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq MutSlice<u8>, source: own Vector<u8>, store: &uniq Heap) -> written: own u64 reads(source), writes(out, store) contract {
   define out_length = len_of(deref(out));
   define source_length = len_of(source);
   requires source_length <= out_length;
@@ -13,22 +13,60 @@ const OUTPUT_CAPACITY: &[u8] = br#"fn copy_bytes(out: &uniq MutSlice<u8>, source
   return length;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let length = 4_u64;
-  let source = buffer_new(length, 7_u8);
-  let output = buffer_new(length, 0_u8);
   region {
-    let destination = mut_slice_of(&uniq output);
-    region {
-      let written = copy_bytes(out: &uniq destination, source: move source);
-      if written != length {
-        return exit_status(code: 1_u8);
+    match heap_vector::<u8>(store: &uniq heap, count: length) {
+      None() => {
+        return exit_status(code: 4_u8);
+      }
+      Some(value: blank) => {
+        let output = move blank;
+        for @clear (
+          at in 0_u64..4_u64,
+          invariant grown: len_of(output) >= at,
+          invariant spare: room_of(output) + at >= 4_u64,
+          invariant flat: head_of(output) <= 0_u64
+        ) {
+          set output = place_back(vector: move output, value: 0_u8);
+        }
+        match heap_vector::<u8>(store: &uniq heap, count: length) {
+          None() => {
+            return exit_status(code: 3_u8);
+          }
+          Some(value: fresh) => {
+            let source = move fresh;
+            for @fill (
+              at in 0_u64..4_u64,
+              invariant grown: len_of(source) >= at,
+              invariant spare: room_of(source) + at >= 4_u64,
+              invariant flat: head_of(source) <= 0_u64
+            ) {
+              set source = place_back(vector: move source, value: 7_u8);
+            }
+            region {
+              let destination = mut_slice_of(&uniq output);
+              let room = len_of(destination);
+              let held = len_of(source);
+              if held <= room {
+              } else {
+                return exit_status(code: 5_u8);
+              }
+              region {
+                let written = copy_bytes(out: &uniq destination, source: move source, store: &uniq heap);
+                if written != length {
+                  return exit_status(code: 1_u8);
+                }
+              }
+            }
+            let last = output[3_u64];
+            if last != 7_u8 {
+              return exit_status(code: 2_u8);
+            }
+          }
+        }
       }
     }
-  }
-  let last = output[3_u64];
-  if last != 7_u8 {
-    return exit_status(code: 2_u8);
   }
   return exit_status(code: 0_u8);
 }
@@ -192,6 +230,9 @@ fn borrowed_output_capacity_contract_informs_the_body_without_a_callee_prologue(
     assert_eq!(copy.matches("call void @wf_trap").count(), 0);
     assert!(copy.contains("load i8"));
     assert!(copy.contains("store i8"));
+    // One release, for the reason the buffer's free had: the callee holds
+    // the store's provider, so the run it was handed is affine there and its
+    // release is derived on the return edge [PROV-1, BLK-1, STOR-3].
     assert_eq!(copy.matches("call void @free").count(), 1);
     assert!(!copy.contains("llvm.assume"));
 

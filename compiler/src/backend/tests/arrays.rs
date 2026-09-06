@@ -29,7 +29,7 @@ fn slot_declarations(function: &str) -> (usize, usize) {
 }
 
 #[test]
-fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
+fn const_runs_are_immutable_globals_and_execute_through_index_and_len() {
     let llvm = compile(include_bytes!(
         "../../../../tests/conformance/cases/const2-pos-array-lookup.wf"
     ));
@@ -50,6 +50,13 @@ fn const_arrays_are_immutable_globals_and_execute_through_index_and_len() {
     assert!(output.stderr.is_empty());
 }
 
+/// LEFT ON `array<T, n>` DELIBERATELY: this test's subject is the array's own
+/// inline-fill lowering, and the run has no twin for it. `array_new` is one
+/// operation that fills every slot, which is what `array.fill.head` and
+/// `array.fill.done` name; a run is filled by a source-level counted loop
+/// [BLK-1], so there is no emitted fill region to assert over. Dropping those
+/// two assertions to migrate the rest would loosen the test, so the retirement
+/// batch retires it with that explanation instead.
 #[test]
 fn filled_arrays_cross_function_boundaries_and_keep_a_checked_read() {
     let source = br#"fn make() -> result: own array<u16, 4> pure {
@@ -102,7 +109,7 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn an_out_of_bounds_array_read_is_an_op4_compile_rejection() {
+fn an_out_of_bounds_run_read_is_an_op4_compile_rejection() {
     // Under discharge-or-reject [OP-4] no runtime bounds trap exists: the
     // underivable obligation rejects at compile time with the exact
     // [ENT-6] residual.
@@ -129,13 +136,15 @@ fn compiler_independent_array_checksum_executes() {
 }
 
 #[test]
-fn indexed_set_checks_before_rhs_and_updates_the_array() {
+fn indexed_set_checks_before_rhs_and_updates_the_run() {
     let source = br#"fn replacement() -> result: own u8 pure {
   return 9_u8;
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(0_u8);
+  let empty = fixed_vector::<u8, 2>();
+  let one = place_back(vector: move empty, value: 0_u8);
+  let values = place_back(vector: move one, value: 0_u8);
   set values[1_u64] = replacement();
   let stored = values[1_u64];
   if stored != 9_u8 {
@@ -159,7 +168,7 @@ command fn main() -> status: own ExitStatus pure {
     let store = main[rhs..]
         .find("store i8")
         .map(|offset| rhs + offset)
-        .expect("array update must store only after the RHS");
+        .expect("run element update must store only after the RHS");
     assert!(rhs < store);
 
     let output = compile_and_run(&llvm);
@@ -177,7 +186,9 @@ fn an_out_of_bounds_indexed_set_is_an_op4_compile_rejection() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(0_u8);
+  let empty = fixed_vector::<u8, 2>();
+  let one = place_back(vector: move empty, value: 0_u8);
+  let values = place_back(vector: move one, value: 0_u8);
   set values[2_u64] = replacement();
   return exit_status(code: 0_u8);
 }
@@ -188,22 +199,39 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn a_long_loop_over_a_dynamically_indexed_array_keeps_the_frame_bounded() {
-    // Both the read and the indexed set need a stack slot for the array value,
+fn a_long_loop_over_a_dynamically_indexed_run_keeps_the_frame_bounded() {
+    // Both the read and the indexed set need a stack slot for the run value,
     // and the index is not a compile-time constant, so neither slot can be
     // promoted away. The structural half is what discriminates: no slot may be
     // declared outside the entry block, so a frame that grew once per
     // iteration fails here whatever it would survive. The run is a
-    // corroboration rather than the measurement — 200000 iterations of two
-    // 64-byte slots is about 25 MB, which used to be past a default 8 MB limit
-    // and now fits inside the 1 GiB stack the runtime gives every thread.
+    // corroboration rather than the measurement — 200000 iterations of a
+    // 64-byte slot is about 12 MB, which used to be past a default 8 MB limit
+    // and now fits inside the 1 GiB stack the runtime gives every thread. A
+    // run's length is not a fact of its type [BLK-1], so the two loops carry
+    // the `len_of` invariant the array place had standing.
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  doc "Nested counted loops read and write one fixed array for two hundred thousand iterations.";
-  let window = array_new::<u64, 8>(1_u64);
+  doc "Nested counted loops read and write one fixed run for two hundred thousand iterations.";
+  let built = fixed_vector::<u64, 8>();
+  for @fill (
+    at in 0_u64..8_u64,
+    invariant grown: len_of(built) >= at,
+    invariant spare: room_of(built) + at >= 8_u64,
+    invariant flat: head_of(built) <= 0_u64
+  ) {
+    set built = place_back(vector: move built, value: 1_u64);
+  }
+  let window = move built;
   let completed = 0_u64;
   let total = 0_u64;
-  for (batch in 0_u64..25000_u64) {
-    for (cursor in 0_u64..8_u64) {
+  for @outer (
+    batch in 0_u64..25000_u64,
+    invariant held: len_of(window) >= 8_u64
+  ) {
+    for @inner (
+      cursor in 0_u64..8_u64,
+      invariant still: len_of(window) >= 8_u64
+    ) {
       let previous = window[cursor];
       let mixed = ixor(previous, completed);
       set window[cursor] = mixed *wrap 1099511628211_u64;
@@ -250,9 +278,9 @@ fn compiler_independent_mutable_array_checksum_executes() {
 }
 
 #[test]
-fn nested_struct_array_updates_rebuild_every_aggregate_layer_after_the_rhs() {
+fn nested_struct_run_updates_rebuild_every_aggregate_layer_after_the_rhs() {
     let source = br#"struct Inner {
-  values: array<u8, 2>;
+  values: FixedVector<u8, 2>;
   sibling: u16;
 }
 
@@ -266,7 +294,9 @@ fn replacement() -> result: own u8 pure {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let values = array_new::<u8, 2>(0_u8);
+  let empty = fixed_vector::<u8, 2>();
+  let one = place_back(vector: move empty, value: 0_u8);
+  let values = place_back(vector: move one, value: 0_u8);
   let inner = Inner(values: move values, sibling: 77_u16);
   let outer = Outer(prefix: 123_u32, inner: move inner);
   set outer.inner.values[1_u64] = replacement();

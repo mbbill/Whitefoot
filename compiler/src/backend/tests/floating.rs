@@ -216,16 +216,18 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn float_constants_work_in_aggregates_arrays_and_buffers() {
+fn float_constants_work_in_aggregates_and_runs() {
     let source = br#"struct Sample {
   value: f32;
 }
 
-const values: array<f32, 2> =[1.5_f32, 2.5_f32];
+const values: FixedVector<f32, 2> =[1.5_f32, 2.5_f32];
 
 command fn main() -> status: own ExitStatus pure {
   let sample = Sample(value: values[0_u64]);
-  let storage = buffer_new(2_u64, 0.0_f32);
+  let empty = fixed_vector::<f32, 2>();
+  let one = place_back(vector: move empty, value: 0.0_f32);
+  let storage = place_back(vector: move one, value: 0.0_f32);
   set storage[1_u64] = sample.value;
   let loaded = storage[1_u64];
   if feq(loaded, 1.5_f32) {

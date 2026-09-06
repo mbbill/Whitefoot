@@ -28,6 +28,12 @@ const U64_BUFFER_ALLOCATION: &[u8] = br#"command fn main() -> status: own ExitSt
 }
 "#;
 
+/// LEFT ON `buffer<T>` DELIBERATELY: the run has no twin for this subject.
+/// The selected target's runtime-allocation ceiling is checked in
+/// `backend::target` for `BufferFill`, `BufferVacant`, `BoxNew` and
+/// `ArenaNew`; the run's own store take reaches none of those arms, so a
+/// `heap_vector` of an invariant-bounded length is not target-validated at
+/// all and there is no boundary to sit just inside and just outside of.
 #[test]
 fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
     with_ir(AFFINE_INVARIANT_BOUNDED_ALLOCATION, |program| {
@@ -50,6 +56,11 @@ fn affine_invariant_ceiling_controls_the_exact_selected_target_boundary() {
     });
 }
 
+/// LEFT ON `buffer<T>` DELIBERATELY: same missing twin as the ceiling case
+/// above. The cell would be the natural carrier of the alignment half — a
+/// referent layout is checked against the allocator's alignment — but that
+/// check is on `BoxNew`, the retiring operation, and the store's own cell
+/// take is not validated there.
 #[test]
 fn buffer_representation_alignment_must_fit_the_selected_allocator_alignment() {
     with_ir(U64_BUFFER_ALLOCATION, |program| {
@@ -74,8 +85,8 @@ fn buffer_representation_alignment_must_fit_the_selected_allocator_alignment() {
 
 #[test]
 fn weigh_invariant_proves_domains_then_erases_before_llvm() {
-    let source = br#"fn weigh(weights: &buffer<u8>, count: own u64) -> total: own u32 reads(weights) contract {
-  define capacity = len_of(deref(weights));
+    let source = br#"fn weigh(weights: own Slice<u8>, count: own u64) -> total: own u32 reads(weights) contract {
+  define capacity = len_of(weights);
   requires count <= capacity;
   requires count <= 1000_u64;
   ensures total <= 255000_u32;
@@ -85,7 +96,7 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
     i in 0_u64..count,
     invariant per_byte: sum <= 255_u32 * i
   ) {
-    let w = deref(weights)[i];
+    let w = weights[i];
     let wide = cvt::<u8, u32>(w);
     set sum = sum + wide;
   }
@@ -93,10 +104,15 @@ fn weigh_invariant_proves_domains_then_erases_before_llvm() {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let weights = buffer_new(4_u64, 7_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 7_u8);
+  let two = place_back(vector: move one, value: 7_u8);
+  let three = place_back(vector: move two, value: 7_u8);
+  let weights = place_back(vector: move three, value: 7_u8);
   let code = 0_u8;
   region {
-    let total = weigh(weights: &weights, count: 4_u64);
+    let window = slice_of(&weights);
+    let total = weigh(weights: window, count: 4_u64);
     if total != 28_u32 {
       set code = 1_u8;
     }
@@ -120,6 +136,12 @@ command fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty());
 }
 
+/// LEFT ON `buffer<T>` DELIBERATELY: its subject includes the buffer's own
+/// refusal edge — `buffer.fill.oom.` reaching `wf_resource_abort()` — and the
+/// run has no such edge. A store take is refusable in the source: it hands
+/// back an `Option` the writer matches, so the refusal is an arm of the
+/// program rather than an emitted abort, and there is nothing for these
+/// assertions to name. Migrating the rest would mean dropping them.
 #[test]
 fn primitive_buffers_cross_functions_update_and_free_once() {
     let source = br#"fn bounded_count(n: own u64) -> result: own u64 pure contract {
@@ -204,6 +226,10 @@ command fn main() -> status: own ExitStatus pure {
     assert!(output.stderr.is_empty());
 }
 
+/// LEFT ON `buffer<T>` DELIBERATELY: it asserts that a proved length emits
+/// no `buffer.fill.target.` guard. The run surface emits no target guard for
+/// any length, proved or not, so the same assertion over a run would pass
+/// vacuously and would stop being evidence of anything.
 #[test]
 fn buffer_length_qualifies_same_element_reallocation_without_a_target_guard() {
     let source = br#"fn refill(source: own buffer<u8>) -> result: own buffer<u8> reads(source) {
@@ -243,8 +269,17 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn op9_overflow_is_rejected_before_lowering() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = buffer_new(18446744073709551615_u64, 0_u64);
+    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u64>(store: &uniq heap, count: 18446744073709551615_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let values = move fresh;
+      }
+    }
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -258,16 +293,26 @@ fn op9_overflow_is_rejected_before_lowering() {
 }
 
 #[test]
-fn an_out_of_bounds_buffer_set_is_an_op4_compile_rejection() {
-    // The allocation-length equality proves 2 < 2 underivable, so the
-    // program rejects at compile time with the residual [OP-4, ENT-6].
+fn an_out_of_bounds_run_set_is_an_op4_compile_rejection() {
+    // The take's count fixes the run's length, so 2 < 2 is underivable and
+    // the program rejects at compile time with the residual the buffer
+    // origin gave, byte for byte [OP-4, ENT-6].
     let source = br#"fn replacement() -> result: own u8 pure {
   return 9_u8;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  let values = buffer_new(2_u64, 0_u8);
-  set values[2_u64] = replacement();
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 2_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let values = move fresh;
+        set values[2_u64] = replacement();
+      }
+    }
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -277,12 +322,21 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn empty_buffer_has_zero_length_and_a_normal_free() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let values = buffer_new(0_u64, 7_u8);
-  let length = len_of(values);
-  if length != 0_u64 {
-    return exit_status(code: 1_u8);
+fn an_empty_run_has_zero_length_and_a_normal_release() {
+    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 0_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let values = move fresh;
+        let length = len_of(values);
+        if length != 0_u64 {
+          return exit_status(code: 1_u8);
+        }
+      }
+    }
   }
   return exit_status(code: 0_u8);
 }
@@ -294,29 +348,53 @@ fn empty_buffer_has_zero_length_and_a_normal_free() {
 }
 
 #[test]
-fn buffer_cleanup_is_explicit_on_return_and_break_edges() {
-    let source = br#"fn cleanup(flag: own Bool) -> result: own unit pure {
-  let values = buffer_new(2_u64, 0_u8);
-  if flag {
-    return unit;
+fn run_cleanup_is_explicit_on_return_and_break_edges() {
+    let source = br#"fn cleanup(flag: own Bool, store: &uniq Heap) -> result: own unit reads(store), writes(store), allocates(store) {
+  doc "Every edge that leaves this scope holding a run carries that run's release: the early return, the loop break, and the final return.";
+  region {
+    match heap_vector::<u8>(store: &uniq deref(store), count: 2_u64) {
+      None() => {
+        return unit;
+      }
+      Some(value: fresh) => {
+        let values = move fresh;
+        if flag {
+          return unit;
+        }
+        loop @done {
+          match heap_vector::<u16>(store: &uniq deref(store), count: 1_u64) {
+            None() => {
+              break @done;
+            }
+            Some(value: spare) => {
+              let scratch = move spare;
+              break @done;
+            }
+          }
+        }
+        return unit;
+      }
+    }
   }
-  loop @done {
-    let scratch = buffer_new(1_u64, 0_u16);
-    break @done;
-  }
-  return unit;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let true_value = True();
   let false_value = False();
-  cleanup(flag: true_value);
-  cleanup(flag: false_value);
+  region {
+    cleanup(flag: true_value, store: &uniq heap);
+  }
+  region {
+    cleanup(flag: false_value, store: &uniq heap);
+  }
   return exit_status(code: 0_u8);
 }
 "#;
     let llvm = compile(source);
     let cleanup = emitted_function(&llvm, "cleanup");
+    // Three release sites, exactly as the buffer shape had: the early
+    // return, the loop break, and the final return each carry the release of
+    // what that edge holds [STOR-3].
     assert_eq!(cleanup.matches("call void @free").count(), 3);
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -371,6 +449,12 @@ fn borrowed_columns_cross_helpers_without_transferring_ownership() {
     assert!(output.stderr.is_empty());
 }
 
+/// LEFT ON `buffer<T>` DELIBERATELY: [BLK-4] refuses a `&uniq` whose
+/// referent reaches a run, so a pool of runs cannot be lent as one struct
+/// pointer at all. The address-path property this pins — one caller-storage
+/// update through a single `ptr` parameter — has no run shape to hold it;
+/// `compiler_independent_borrowed_pool_tree_executes` above records what the
+/// migrated pool does instead, which is to lend two views and a scalar.
 #[test]
 fn borrowed_struct_projection_updates_caller_storage_through_one_address_path() {
     let source = br#"struct Pool {
@@ -573,31 +657,73 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn nested_struct_cleanup_frees_buffer_fields_in_reverse_order() {
-    let source = br#"struct Pair {
-  first: buffer<u8>;
-  second: buffer<u16>;
+fn nested_struct_cleanup_releases_run_fields_in_reverse_order() {
+    let source = br#"struct Pair['s] {
+  first: Vector<'s, u8>;
+  second: Vector<'s, u16>;
 }
 
-struct Owner {
-  prefix: buffer<u32>;
-  pair: Pair;
-  suffix: buffer<u64>;
+struct Owner['s] {
+  prefix: Vector<'s, u32>;
+  pair: Pair<'s>;
+  suffix: Vector<'s, u64>;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(1_u64, 0_u8);
-  let second = buffer_new(1_u64, 0_u16);
-  let pair = Pair(first: move first, second: move second);
-  let prefix = buffer_new(1_u64, 0_u32);
-  let suffix = buffer_new(1_u64, 0_u64);
-  let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
-  return exit_status(code: 0_u8);
+fn release['s](owner: own Owner<'s>, store: &uniq Heap<'s>) -> result: own unit writes(store) {
+  doc "Holds the whole nested owner and nothing else, so its one return edge carries exactly the four field releases in reverse declared order.";
+  return unit;
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: first) => {
+        match heap_vector::<u16>(store: &uniq heap, count: 1_u64) {
+          None() => {
+            return exit_status(code: 70_u8);
+          }
+          Some(value: second) => {
+            let pair = Pair(first: move first, second: move second);
+            match heap_vector::<u32>(store: &uniq heap, count: 1_u64) {
+              None() => {
+                return exit_status(code: 70_u8);
+              }
+              Some(value: prefix) => {
+                match heap_vector::<u64>(store: &uniq heap, count: 1_u64) {
+                  None() => {
+                    return exit_status(code: 70_u8);
+                  }
+                  Some(value: suffix) => {
+                    let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
+                    region {
+                      release(owner: move owner, store: &uniq heap);
+                    }
+                    return exit_status(code: 0_u8);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 "#;
     let llvm = compile(source);
+    // `release` holds the whole nested owner and nothing else, so its one
+    // return edge carries exactly the four field releases in reverse declared
+    // order — the number and the order the buffer fields had.
+    let release = emitted_function(&llvm, "release");
+    assert_eq!(release.matches("call void @free").count(), 4);
+    // A store take is refusable where `buffer_new` aborted, so `main` also
+    // carries the releases each refusal edge owes: the four arms hold 0, 1, 2
+    // and 3 runs, and the success edge hands the owner to `release`.
     let main = emitted_function(&llvm, "main");
-    assert_eq!(main.matches("call void @free").count(), 4);
+    assert_eq!(main.matches("call void @free").count(), 6);
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
     assert!(output.stdout.is_empty());
@@ -605,41 +731,74 @@ command fn main() -> status: own ExitStatus pure {
 }
 
 #[test]
-fn projected_buffer_move_frees_only_residual_siblings() {
-    let source = br#"struct Pair {
-  first: buffer<u8>;
-  second: buffer<u8>;
+fn a_projected_run_move_releases_only_residual_siblings() {
+    let source = br#"struct Pair['s] {
+  first: Vector<'s, u8>;
+  second: Vector<'s, u8>;
 }
 
-struct Owner {
-  prefix: buffer<u8>;
-  pair: Pair;
-  suffix: buffer<u8>;
+struct Owner['s] {
+  prefix: Vector<'s, u8>;
+  pair: Pair<'s>;
+  suffix: Vector<'s, u8>;
 }
 
-fn take(owner: own Owner) -> result: own buffer<u8> pure {
+fn take['s](owner: own Owner<'s>) -> result: own Vector<'s, u8> pure {
+  doc "Takes one field out; the three residual siblings are released here, on the store whose provider this scope holds.";
   return move owner.pair.first;
 }
 
-command fn main() -> status: own ExitStatus pure {
-  let first = buffer_new(1_u64, 0_u8);
-  let second = buffer_new(1_u64, 0_u8);
-  let pair = Pair(first: move first, second: move second);
-  let prefix = buffer_new(1_u64, 0_u8);
-  let suffix = buffer_new(1_u64, 0_u8);
-  let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
-  let retained = take(owner: move owner);
-  return exit_status(code: 0_u8);
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: first) => {
+        match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+          None() => {
+            return exit_status(code: 70_u8);
+          }
+          Some(value: second) => {
+            let pair = Pair(first: move first, second: move second);
+            match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+              None() => {
+                return exit_status(code: 70_u8);
+              }
+              Some(value: prefix) => {
+                match heap_vector::<u8>(store: &uniq heap, count: 1_u64) {
+                  None() => {
+                    return exit_status(code: 70_u8);
+                  }
+                  Some(value: suffix) => {
+                    let owner = Owner(prefix: move prefix, pair: move pair, suffix: move suffix);
+                    region {
+                      let retained = take(owner: move owner);
+                    }
+                    return exit_status(code: 0_u8);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
 }
 "#;
     let llvm = compile(source);
     let take = emitted_function(&llvm, "take");
+    // Three residual siblings released where the projected field left, the
+    // number the buffer shape had.
     assert_eq!(take.matches("call void @free").count(), 3);
+    // One retained run released in `main`, plus the releases the four
+    // refusable takes owe on their arms — 0, 1, 2 and 3 runs held.
     assert_eq!(
         emitted_function(&llvm, "main")
             .matches("call void @free")
             .count(),
-        1
+        7
     );
     let output = compile_and_run(&llvm);
     assert!(output.status.success());
@@ -735,10 +894,28 @@ fn affine_element_buffers_construct_replace_vacate_and_drop_per_element() {
 
 #[test]
 fn trivially_droppable_affine_elements_keep_the_single_free() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let slots = buffer_vacant::<u32>(4_u64);
-  let filled = Some<u32>(value: 7_u32);
-  let vacant = replace slots[2_u64] = move filled;
+    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<Option<u32>>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let slots = move fresh;
+        for @vacate (
+          at in 0_u64..4_u64,
+          invariant grown: len_of(slots) >= at,
+          invariant spare: room_of(slots) + at >= 4_u64,
+          invariant flat: head_of(slots) <= 0_u64
+        ) {
+          let empty = None<u32>();
+          set slots = place_back(vector: move slots, value: move empty);
+        }
+        let filled = Some<u32>(value: 7_u32);
+        let vacant = replace slots[2_u64] = move filled;
+      }
+    }
+  }
   return exit_status(code: 0_u8);
 }
 "#;
@@ -746,6 +923,7 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
     // An element type whose own drop derives no action keeps the composite
     // action exactly the heap free [STOR-3]: no drop loop is generated.
     assert!(!llvm.contains("@wf.drop.buffer"));
+    assert!(!llvm.contains("@wf.drop.run"));
     let main = emitted_function(&llvm, "main");
     assert_eq!(main.matches("call void @free").count(), 1);
     let output = compile_and_run(&llvm);
@@ -755,9 +933,18 @@ fn trivially_droppable_affine_elements_keep_the_single_free() {
 }
 
 #[test]
-fn buffer_vacant_op9_overflow_is_rejected_before_lowering() {
-    let source = br#"command fn main() -> status: own ExitStatus pure {
-  let slots = buffer_vacant::<u64>(18446744073709551615_u64);
+fn a_vacant_run_op9_overflow_is_rejected_before_lowering() {
+    let source = br#"command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  region {
+    match heap_vector::<Option<u32>>(store: &uniq heap, count: 18446744073709551615_u64) {
+      None() => {
+        return exit_status(code: 70_u8);
+      }
+      Some(value: fresh) => {
+        let slots = move fresh;
+      }
+    }
+  }
   return exit_status(code: 0_u8);
 }
 "#;
