@@ -1,0 +1,34 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "WORKAROUND W2b: flat loop, but the body still needs the record and column indices, so it divides per element.";
+  let header = buffer_new(2_u64, 3_u8);
+  let records = cvt::<u8, u64>(header[0_u64]);
+  let width = cvt::<u8, u64>(header[1_u64]);
+  let out = buffer_new(16_u64, 0_u8);
+  let room = len(out);
+  let needed = records * width;
+  let layout_ok = needed <= room;
+  if layout_ok {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  let width_ok = width >= 1_u64;
+  if width_ok {
+  } else {
+    return exit_status(code: 4_u8);
+  }
+  for (k in 0_u64..needed) {
+    let record = k / width;
+    let column = k % width;
+    let is_tag = column == 0_u64;
+    if is_tag {
+      set out[k] = 1_u8;
+    } else {
+      set out[k] = 7_u8;
+    }
+  }
+  if needed == 9_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

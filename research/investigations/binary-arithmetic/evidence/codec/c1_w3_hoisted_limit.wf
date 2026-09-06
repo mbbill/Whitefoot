@@ -1,0 +1,53 @@
+fn escape_all(out: &uniq buffer<u8>, src: own buffer<u8>, width: own u64) -> written: own u64 reads(out, src), writes(out) contract {
+  define room = len(deref(out));
+  define count = len(src);
+  requires width >= 1_u64;
+  requires width <= 4_u64;
+  requires count <= 4096_u64;
+  requires room >= width;
+} {
+  doc "W3 (best): the span limit is hoisted out of the loop, so the price of the missing capacity bound is exactly one extra compare and branch per input byte, provably never taken when the caller sized the buffer correctly.";
+  let count = len(src);
+  let room = len(deref(out));
+  let limit = room - width;
+  let cursor = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant cursor_in_room: cursor <= room
+  ) {
+    let span_ok = cursor <= limit;
+    if span_ok {
+    } else {
+      return cursor;
+    }
+    let byte = src[i];
+    invariant span_fits: cursor + width <= room;
+    for (k in 0_u64..width) {
+      invariant slot_in_room: cursor + k < room;
+      let at = cursor + k;
+      set deref(out)[at] = byte;
+    }
+    set cursor = cursor + width;
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "encode a small payload with the 3-bytes-per-byte style";
+  let src = buffer_new(4_u64, 65_u8);
+  let out = buffer_new(32_u64, 0_u8);
+  region {
+    let handle = &uniq out;
+    let produced = escape_all(out: move handle, src: move src, width: 3_u64);
+    if produced == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  let last = out[11_u64];
+  if last == 65_u8 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}

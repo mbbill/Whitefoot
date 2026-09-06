@@ -1,0 +1,19 @@
+fn image_sum(pixels: &buffer<u8>, width: own u64, height: own u64) -> total: own u64 reads(pixels) contract {
+  requires 4_u64 * width <= len(deref(pixels));
+} {
+  doc "FACE A PROBE: can the real precondition of a 2-D buffer even be stated?";
+  return 0_u64;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let pixels = buffer_new(12_u64, 1_u8);
+  region {
+    let p = &pixels;
+    let total = image_sum(pixels: p, width: 4_u64, height: 3_u64);
+    if total == 0_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

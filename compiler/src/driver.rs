@@ -854,13 +854,13 @@ mod tests {
             ),
             (
                 "use-relation-formation.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use value == limit;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value == limit);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Semantics,
                 "PRF-1",
             ),
             (
                 "use-relation-name.wf",
-                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use value <= missing;\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
+                b"fn check(value: own u64, limit: own u64) -> result: own unit pure {\n  invariant scaled: 2_u64 * value <= 2_u64 * limit {\n    use (value <= missing);\n  }\n  return unit;\n}\n\ncommand fn main() -> status: own ExitStatus pure {\n  return exit_status(code: 0_u8);\n}\n",
                 CompilationStage::Resolution,
                 "PRF-1",
             ),

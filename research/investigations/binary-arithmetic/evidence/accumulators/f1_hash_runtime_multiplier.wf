@@ -1,0 +1,17 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "NEGATIVE PROBE: a rolling polynomial hash with a runtime-chosen base; wrapping is the intended semantics.";
+  let seed = buffer_new(1_u64, 31_u8);
+  let base = cvt::<u8, u32>(seed[0_u64]);
+  let data = buffer_new(8_u64, 3_u8);
+  let hash = 2166136261_u32;
+  for (i in 0_u64..8_u64) {
+    let byte = cvt::<u8, u32>(data[i]);
+    set hash = hash *wrap base;
+    set hash = hash +wrap byte;
+  }
+  let degenerate = hash == 0_u32;
+  if degenerate {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

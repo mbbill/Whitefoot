@@ -5,7 +5,7 @@ fn scale_zero(first: own u64, first_limit: own u64, second: own u64, second_limi
   doc "expect REJECT: an explicit use factor of zero drops the premise entirely and cannot combine to the target.";
   invariant pair_bound: first + second <= first_limit + second_limit;
   invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
-    use 0 * pair_bound;
+    use 0 times pair_bound;
   }
   return unit;
 }

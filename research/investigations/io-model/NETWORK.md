@@ -4,12 +4,12 @@ Status: AMENDED. Slice 1 of §7 landed as specification v0.46 on
 `io/t4-resource-relations` on 2026-09-05: the two renames, `command.stdin` and
 `read_next`, and the types and operations of §4 are in `spec/kernel-spec.md`
 under [SYS-15] through [SYS-18], with the merge-time record in
-`governance/APPROVALS.md` and the derivation rows in
+`archive/APPROVALS.md` and the derivation rows in
 `spec/derivation/derivation-ledger.md`. Slice 2 landed on the same branch on
 2026-09-05: every TCP operation lowers and runs on POSIX, on both the ring and
 the adapter routes §5 names. Slice 3 landed on 2026-09-06: every TCP operation
 runs on Windows too, on the completion port and on the adapter. Slice 4, the
-control test, and slice 5, the batch record `docs/done/0108-streams-and-tcp.md`,
+control test, and slice 5, the batch record `archive/done/0108-streams-and-tcp.md`,
 landed on 2026-09-06 and close the batch; the owner decisions at the end are
 the ones the amendment implements. Where this document and the specification
 differ, the specification is the language.

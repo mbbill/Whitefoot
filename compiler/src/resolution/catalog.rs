@@ -156,7 +156,7 @@ pub(crate) fn operation_spelling(id: OperationFamilyId) -> Option<&'static str> 
 
 /// Which of [SYS-2]'s three categories one system nominal type belongs to.
 ///
-/// A system-declared struct is the third category, added by v0.46 for
+/// A system-declared struct is the third category, added by v0.50 for
 /// `TcpConnection` [SYS-18]. It contributes one nominal-type entry and no
 /// constructor entry, so no source expression constructs one; its two field
 /// records are owner-local to the nominal, and every rule that already
@@ -476,18 +476,18 @@ pub const TRAVERSAL_SURFACE: bool = true;
 /// the ordinary path; `false` remains the exact superseded-v0.32 differential.
 pub const OPEN_BY_NAME: bool = true;
 
-/// The active v0.46 streams-and-TCP switch [SYS-2, SYS-15, SYS-16, SYS-17,
+/// The active v0.50 streams-and-TCP switch [SYS-2, SYS-15, SYS-16, SYS-17,
 /// SYS-18].
 ///
-/// `false` admits exactly the superseded v0.45 inventory: the stream, address,
+/// `false` admits exactly the superseded v0.49 inventory: the stream, address,
 /// listener and connection rows below are unreachable, every declaration
-/// ordinal keeps its v0.45 value, and the resolver, checker, and backend see
+/// ordinal keeps its v0.49 value, and the resolver, checker, and backend see
 /// the same two hundred twenty-seven records that archive declares. `true`
 /// admits the active surface — `InputStream`, `SocketAddress`, `TcpListener`,
 /// `TcpReceive`, `TcpSend`, the system-declared struct `TcpConnection`, the
 /// three connection outcome enums, and the ten operations of §4 — as the last
 /// rows of each [SYS-2] table. The compiler selects `true`; `false` remains
-/// the exact superseded-v0.45 differential.
+/// the exact superseded-v0.49 differential.
 pub const STREAMS_AND_TCP: bool = true;
 
 /// One selected [SYS-2] inventory state.
@@ -508,11 +508,11 @@ pub enum Inventory {
     /// The active v0.33 inventory: [`Inventory::Traversal`] plus the
     /// [SYS-11] `open_file` operation.
     OpenByName,
-    /// The superseded v0.45 unified-state file-open surface:
+    /// The superseded v0.49 unified-state file-open surface:
     /// [`Inventory::OpenByName`] plus the explicit handle factory, one-shot
     /// permit, and reservation row.
     FilePermits,
-    /// The active v0.46 surface: [`Inventory::FilePermits`] plus the readable
+    /// The active v0.50 surface: [`Inventory::FilePermits`] plus the readable
     /// stream, the socket address, the listener, the connection struct with
     /// its two direction resources, the three connection outcome enums, and
     /// their ten operations.
@@ -582,11 +582,11 @@ const OPEN_BY_NAME_OPERATIONS: usize = 15;
 const OPEN_BY_NAME_NOMINALS: usize = 16;
 /// The v0.32-v0.41 constructor count before the open outcome enums.
 const OPEN_BY_NAME_CONSTRUCTORS: usize = 40;
-/// The v0.45 nominal count before the streams-and-TCP surface.
+/// The v0.49 nominal count before the streams-and-TCP surface.
 const FILE_PERMIT_NOMINALS: usize = 21;
-/// The v0.45 constructor count before the streams-and-TCP surface.
+/// The v0.49 constructor count before the streams-and-TCP surface.
 const FILE_PERMIT_CONSTRUCTORS: usize = 46;
-/// The v0.45 operation count before the streams-and-TCP surface.
+/// The v0.49 operation count before the streams-and-TCP surface.
 const FILE_PERMIT_OPERATIONS: usize = 19;
 
 /// The [SYS-2] nominal types in normative table order.
@@ -1229,7 +1229,7 @@ pub const SYSTEM_OPERATIONS: [SystemOperation; 29] = [
         target_action: TargetAction::MAY_SUSPEND,
         result_state_origin: SystemResultStateOrigin::Fresh,
     },
-    // The v0.46 stream row [SYS-15]: the unpositioned read of the entry's
+    // The v0.50 stream row [SYS-15]: the unpositioned read of the entry's
     // standard input. It writes the stream because the position it advances is
     // the whole of that value's state, which is exactly what `read_at` does
     // not do.

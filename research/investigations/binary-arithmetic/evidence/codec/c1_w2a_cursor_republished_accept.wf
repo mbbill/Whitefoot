@@ -1,0 +1,44 @@
+fn escape_all(out: &uniq buffer<u8>, src: own buffer<u8>, width: own u64) -> written: own u64 reads(out, src), writes(out) contract {
+  define room = len(deref(out));
+  define count = len(src);
+  requires width >= 1_u64;
+  requires width <= 4_u64;
+  requires count <= 4096_u64;
+  requires room >= count;
+} {
+  doc "dbg: cursor invariant with no inner loop";
+  let count = len(src);
+  let room = len(deref(out));
+  let cursor = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant cursor_in_room: cursor <= room
+  ) {
+    let byte = src[i];
+    let left = room - cursor;
+    let span_ok = width <= left;
+    if span_ok {
+    } else {
+      return cursor;
+    }
+    set deref(out)[cursor] = byte;
+    invariant span_fits: cursor + width <= room;
+    set cursor = cursor + width;
+  }
+  return cursor;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "x";
+  let src = buffer_new(4_u64, 65_u8);
+  let out = buffer_new(32_u64, 0_u8);
+  region {
+    let handle = &uniq out;
+    let produced = escape_all(out: move handle, src: move src, width: 3_u64);
+    if produced == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

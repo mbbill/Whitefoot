@@ -4,8 +4,8 @@ fn pair_sum(first: own u64, first_limit: own u64, second: own u64, second_limit:
 } {
   doc "Expect REJECT [PRF-1 redundant use block]: the outer target is already discharged by AUTO's coefficient-one pair rule (two distinct premises, coefficient one each) without any use block, so the nonempty use block below naming the very same two premises is redundant.";
   invariant pair_bound: first + second <= first_limit + second_limit {
-    use first <= first_limit;
-    use second <= second_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
   }
   return unit;
 }

@@ -1,0 +1,77 @@
+fn matmul(a: &buffer<u32>, b: &buffer<u32>, out: &uniq buffer<u64>, m: own u64, k: own u64, n: own u64) -> written: own u64 reads(a, b, out), writes(out) {
+  doc "WORKAROUND: A and C row bases carried as induction variables; B's column walk survives only a per-multiply-accumulate bound test.";
+  let acap = len(deref(a));
+  let bcap = len(deref(b));
+  let ccap = len(deref(out));
+  let written = 0_u64;
+  let a_row = 0_u64;
+  let a_left = acap;
+  let c_row = 0_u64;
+  let c_left = ccap;
+  for (
+    i in 0_u64..m,
+    invariant a_lo: a_row + a_left <= acap,
+    invariant a_hi: acap <= a_row + a_left,
+    invariant c_lo: c_row + c_left <= ccap,
+    invariant c_hi: ccap <= c_row + c_left
+  ) {
+    let a_ok = k <= a_left;
+    if a_ok {
+    } else {
+      return written;
+    }
+    let c_ok = n <= c_left;
+    if c_ok {
+    } else {
+      return written;
+    }
+    invariant a_span: a_row + k <= acap;
+    invariant c_span: c_row + n <= ccap;
+    for (j in 0_u64..n) {
+      invariant c_slot: c_row + j < ccap;
+      let acc = 0_u64;
+      let b_at = j;
+      for (p in 0_u64..k) {
+        invariant a_slot: a_row + p < acap;
+        let a_at = a_row + p;
+        let b_fits = b_at < bcap;
+        if b_fits {
+        } else {
+          return written;
+        }
+        let av = deref(a)[a_at];
+        let bv = deref(b)[b_at];
+        let aw = cvt::<u32, u64>(av);
+        let bw = cvt::<u32, u64>(bv);
+        let prod = aw * bw;
+        set acc = acc +wrap prod;
+        set b_at = b_at +wrap n;
+      }
+      let c_at = c_row + j;
+      set deref(out)[c_at] = acc;
+      set written = written +wrap 1_u64;
+    }
+    set a_row = a_row + k;
+    set a_left = a_left - k;
+    set c_row = c_row + n;
+    set c_left = c_left - n;
+  }
+  return written;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let a = buffer_new(6_u64, 2_u32);
+  let b = buffer_new(6_u64, 3_u32);
+  let out = buffer_new(4_u64, 0_u64);
+  region {
+    let pa = &a;
+    let pb = &b;
+    let pc = &uniq out;
+    let written = matmul(a: pa, b: pb, out: move pc, m: 2_u64, k: 3_u64, n: 2_u64);
+    if written == 4_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

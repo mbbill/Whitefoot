@@ -10,7 +10,7 @@ fn retain(value: own u64, limit: own u64) -> result: own unit pure contract {
 } {
   doc "expect REJECT: [PRF-1] the invariant target is already provable by AUTO from the requirement alone, so the use block is redundant";
   invariant upper_bound: value <= limit {
-    use value <= limit;
+    use (value <= limit);
   }
   return unit;
 }

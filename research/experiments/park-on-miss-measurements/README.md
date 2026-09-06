@@ -2,7 +2,7 @@
 
 `research/investigations/io-model/PARK-ON-MISS.md` §12 lists the measurements
 that must exist before the design's choices are made, and
-`docs/current-plan.md`'s "Decided 2026-09-05: measured before chosen" adds four
+`archive/current-plan.md`'s "Decided 2026-09-05: measured before chosen" adds four
 more: the claim protocol, the in-place wait of the idle window, the memory
 orders, and the lane slot count with the ready list. This bundle is those
 numbers.
@@ -28,7 +28,7 @@ why, so the numbers stay readable. `run.sh` keeps every line it can still
 reproduce and has lost the per-form gate table and the per-form liveness probe,
 which were sweeps of forms that no longer exist. What is still open is design
 §12 item 1, the compute-miss regression and its fallback, which is the owner's
-decision (`docs/current-plan.md`, Batch 2).
+decision (`archive/current-plan.md`, Batch 2).
 
 **Added 2026-09-05, after that: the "§12 addendum: the idle spin" at the foot of
 this file.** It is the one measurement here that judges a change to the core
@@ -230,7 +230,7 @@ the reason its second column is absent.
 *The shipped column below is still measured by `run.sh`'s `compute` section.
 The second column's form, `WF_SCHED_NESTED_NEVER_SUSPENDS`, was deleted at
 slice 4b: the enumerator finds it a live-lock at one thread, for the reason
-this section gives. §12 item 1 stays open in `docs/current-plan.md` as the
+this section gives. §12 item 1 stays open in `archive/current-plan.md` as the
 owner's decision, and what it needs is the target-action bit at the hand-out,
 not this variant.*
 

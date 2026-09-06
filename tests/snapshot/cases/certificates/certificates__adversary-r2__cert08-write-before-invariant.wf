@@ -6,7 +6,7 @@ fn write_then_use(first: own u8, first_limit: own u8, second: own u8, second_lim
   invariant pair_bound: first + second <= first_limit + second_limit;
   set first = replacement;
   invariant scaled_bound: 3_u8 * first + 3_u8 * second <= 3_u8 * first_limit + 3_u8 * second_limit {
-    use 3 * pair_bound;
+    use 3 times pair_bound;
   }
   return unit;
 }

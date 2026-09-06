@@ -6,8 +6,8 @@ fn half_budget(total: own u8, used: own u8) -> remaining: own u8 pure contract {
   let half = span / 2_u8;
   let extended = used + half;
   invariant bounded: extended < total {
-    use used < total;
-    use 2_u8 * half <= span;
+    use (used < total);
+    use (2_u8 * half <= span);
   }
   return extended;
 }

@@ -3,9 +3,15 @@
 Status: ACTIVE v0.45
 Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
 
-META-5 delta declaration: numbered rules +0/-0 (136 remain); grammar productions +0/-0 (84 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +3/-0 (`close_read`, `close_directory`, `close_directory_source`); opaque system nominal spellings +0/-0; enum system nominal spellings +3/-0 (`FileOpenOutcome`, `DirectoryOpenOutcome`, `SourceOpenOutcome`, six constructors); runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations +3/-0 (19 remain) and declaration records +24/-0 (227 remain); exception clauses +0/-0. The changed rows are `reserve_file`, whose outcome becomes `Result<FilePermit, IoError>`, the four opens, whose outcomes become the three open outcome enums that hand a refused open's permit back to the program, and the three added explicit closes that return the permit; [SYS-10], [SYS-11] and [SYS-14] are respelled to the backed permit. No rule id is added or retired.
-This version backs the file permit: the factory's capacity is a count fixed at program start, a permit is one credit of it, a refused open hands the credit back beside the host's error, and an explicit close returns it, so every dependency between a close and a later open is a relation on the API that the checker sees.
-Selection ground: evidence-selected under constitution T4 (resource dependencies are API relations, owner ruling 2026-09-04) and FIRST-PRINCIPLES §12: the proof-only permit let a pipeline overlap `close` with a later `open`, and the descriptor retirement ledger that hid the resulting `EMFILE` (963 of 1000 misawards without its order) is the measured cost of the missing relation; this version deletes that ledger. Prior selection ground for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for v0.42's canonical region spelling, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
+META-5 delta declaration: numbered rules +0/-0 (136 remain); grammar productions +0/-0 (84 remain); changed productions 0; unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +0/-0; opaque system nominal spellings +0/-0; runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); contract block forms +0/-0; system operations and declaration records +0/-0 (203 remain); exception clauses +0/-0. [ENT-3] gains one enumerated source, S14; no source label is retired or reused. [ENT-3] and [ENT-6] are amended; no rule id is retired.
+This version stops discarding a measurement the checker already performed. [ENT-6]'s fixed interval-product rule proves an inclusive interval for each operand of a non-constant multiplication and forms the four products of their endpoint pairs; the multiplication is admitted exactly when all four lie in the result type. Those same four products bound the value the operation produced, and v0.44 published none of it, so a multiplication was admitted and the value it bound carried no bound at all. [ENT-3.S14] now establishes the least and greatest of those four products on that value. Nothing about the derivation widens: the published relations are constant bounds against the zero term Z, so they are ordinary L0 facts with the bound value as their whole support, and no relation over the operands, no new term, and no automatic route by which a product enters a premise family is added. A written `use` remains the only way a product participates in a certificate, and a domain discharged by the finite L0 route or by an affine clause still publishes nothing. The measurement is stated from the one computation the domain decision consumed, so the admitted range and the published bound cannot disagree.
+Selection ground: evidence-selected. Four independent sweeps against the v0.44 compiler measured what the discarded interval costs, and all four converged on this sentence rather than on the strength of the prover. The decisive pair is `E1_bounded_product.wf`, which is accepted because the interval rule discharges `r * w`, beside `E5_product_then_add.wf`, which is the same program plus `base + c` and is refused [OP-2] because the admitted product bounded nothing; supplying exactly the discarded interval as a written guard turns E5 into an accept, so that interval is the whole missing premise. The cost of supplying it by hand is one comparison, one branch and one unreachable arm per site, and a flattened index accessor pays it while widening its result to an option, which propagates a match to every caller. Over 55 constructed multi-dimensional and strided programs the amendment moves exactly two verdicts, both from refusal to acceptance, and it relocates the refusal of the guarded flattened-index programs from the arithmetic domain [OP-2] to the subscript bound [OP-4] they were always about. The programs, their compiled verdicts, and the corpus count that motivated the sweep are recorded in `research/investigations/binary-arithmetic/`. Prior selection ground for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
+This candidate lands the fact machinery: what a contract may be written over, and where a declared relation is computed and established.
+The first amendment, [MSR-5], widens the contract-clause operand set. A `requires` and an `ensures` take a `clause_expr` whose operands are an `atom`, a `call`, or a `construct`, so a measure of a place is an operand on either side of the comparison and `ensures len(rest) >= len(out);` is a written clause where it was a [GRAM-5] parse rejection. The judgment over the widened set is the [OP-5] condition [FN-8] and [FN-9] already apply; no route, fact source, or proof authority is added. The measure formers are table data with one row in this version, `len(P)`, admitted exactly where [ENT-2] clause (b) admits a length term.
+The second, [MSR-3], states one denotation per operand position, keyed on the parameter's mode, in one table rather than distributed over three rules. An `own` operand read at a caller denotes that call's **call datum** — a compiler-owned immutable term with empty support — which is what makes a relation naming a consumed operand's measure mean what it reads as at the caller. A `&uniq` parameter's measure is inadmissible in a source-declared `ensures` and is a hard error citing MSR-3, because that parameter is the one position from which a callee could leave a caller holding a measure of a value the callee replaced.
+The third, [CALL-4], states the contract vocabulary over the result: a `fn_decl` declares exactly one result, so a route names no ordinal and no ordinal binder is written, and the destinations stay [ENT-3.S12]'s closed list.
+The fourth, [CALL-6], states publication once — the substitution, the point at which a relation is instantiated, the point at which it is established, the destination, and the support — and adds [ENT-3]'s source S13, which mints each `own` operand's call datum at the call's pre-transfer point. A routed relation is instantiated at the call and restricted to its arm rather than deferred to it, so an event between the call and the arm kills what it removes. And a `contract_block` whose published relations are contradictory at their establishment point is a hard error at the `fn_decl`: at a contradictory point every relation and both signs of every goal are derivable, so an inconsistent contract is not one wrong fact at a caller but every fact at every caller.
+Selection ground: evidence-selected. The operand widening is selected by probe `q7` of the containers-and-resources design session, which is a [GRAM-5] parse rejection of `ensures len(kept) >= 1_u64;` on the build of record, and by the same file's measurement that the surviving spelling costs one `contract_define` per measure named. The call datum and the two establishment points are selected by that design's seventh falsifier round, which reached memory three times through a published relation computed at one program point and used at another, and once through a relation set that was contradictory and therefore discharged every goal a caller submitted; the two BREAK programs and their refutations are recorded in `research/investigations/containers-and-resources/DESIGN.md` §3.K.1, §3.K.6 and §6.11. Prior selection ground for v0.43's loop-body region and [ENT-6] join repair, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
 R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
@@ -2242,7 +2248,7 @@ It is not const-eligible [CONST-2], is not a `cvt` or `reinterpret` domain [OP-6
 Its values are produced only by the operations in this rule and by the command entry's standard input bindings.
 Every value of an opaque type is affine under [OWN-1].
 
-Eleven enum nominal types with forty-six variant constructors:
+Eight enum nominal types with forty variant constructors:
 
 ```
 enum ArgError {
@@ -2307,21 +2313,9 @@ enum ListOutcome {
   ListEnd();
   ListFailed(error: IoError);
 }
-enum FileOpenOutcome {
-  FileOpened(value: ReadFile);
-  FileOpenFailed(error: IoError, permit: FilePermit);
-}
-enum DirectoryOpenOutcome {
-  DirectoryOpened(value: DirectoryRead);
-  DirectoryOpenFailed(error: IoError, permit: FilePermit);
-}
-enum SourceOpenOutcome {
-  SourceOpened(value: DirectorySource);
-  SourceOpenFailed(error: IoError, permit: FilePermit);
-}
 ```
 
-Nineteen operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
+Sixteen operations, each one complete signature record in the [GRAM-2] `fn_sig` shape:
 
 ```
 fn args_count(args: &Args) -> result: own u64 reads(args);
@@ -2331,21 +2325,18 @@ fn host_copy_bytes(value: &HostString, destination: &uniq buffer<u8>, start: own
 fn host_utf8_len(value: &HostString) -> result: own Result<u64, Utf8Error> reads(value);
 fn host_copy_utf8(value: &HostString, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, Utf8CopyError> reads(value, destination), writes(destination);
 fn relative_path(value: own HostString) -> result: own Result<RelativePath, PathError> pure;
-fn open_read(permit: own FilePermit, root: &DirectoryRead, path: &RelativePath) -> result: own FileOpenOutcome reads(permit, root, path), writes(permit);
+fn open_read(permit: own FilePermit, root: &DirectoryRead, path: &RelativePath) -> result: own Result<ReadFile, IoError> reads(permit, root, path), writes(permit);
 fn read_at(file: &ReadFile, destination: &uniq buffer<u8>, file_offset: own u64, start: own u64, end: own u64) -> result: own ReadOutcome reads(file, destination), writes(destination);
 fn write_once(output: &uniq Output, source: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<u64, IoError> reads(output, source), writes(output);
 fn exit_status(code: own u8) -> result: own ExitStatus pure;
-fn open_directory(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own DirectoryOpenOutcome reads(permit, root, name), writes(permit);
-fn open_directory_source(permit: own FilePermit, directory: &DirectoryRead) -> result: own SourceOpenOutcome reads(permit, directory), writes(permit);
+fn open_directory(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<DirectoryRead, IoError> reads(permit, root, name), writes(permit);
+fn open_directory_source(permit: own FilePermit, directory: &DirectoryRead) -> result: own Result<DirectorySource, IoError> reads(permit, directory), writes(permit);
 fn directory_next(source: &uniq DirectorySource, destination: &uniq buffer<u8>, start: own u64, end: own u64) -> result: own ListOutcome reads(source, destination), writes(source, destination);
-fn open_file(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own FileOpenOutcome reads(permit, root, name), writes(permit);
-fn reserve_file(factory: &uniq FileFactory) -> result: own Result<FilePermit, IoError> reads(factory), writes(factory);
-fn close_read(file: own ReadFile) -> result: own FilePermit reads(file), writes(file);
-fn close_directory(directory: own DirectoryRead) -> result: own FilePermit reads(directory), writes(directory);
-fn close_directory_source(source: own DirectorySource) -> result: own FilePermit reads(source), writes(source);
+fn open_file(permit: own FilePermit, root: &DirectoryRead, name: &buffer<u8>, start: own u64, end: own u64) -> result: own Result<ReadFile, IoError> reads(permit, root, name), writes(permit);
+fn reserve_file(factory: &uniq FileFactory) -> result: own FilePermit reads(factory), writes(factory);
 ```
 
-The inventory is therefore exactly twenty-one nominal types, forty-six enum-variant constructors, seventy-two variant fields, nineteen operations, twenty-two operation region parameters, and forty-seven operation value parameters.
+The inventory is therefore exactly eighteen nominal types, forty enum-variant constructors, sixty-three variant fields, sixteen operations, twenty-two operation region parameters, and forty-four operation value parameters.
 
 Each operation's state access is fixed by its own signature. Immutable invocation and host-string state is observed through shared parameters and contributes `reads(parameter)`. Every buffer or system resource the operation changes is supplied through `&uniq` and contributes `writes(parameter)`. The lifetime on each borrow states only how long that loan lives and never appears in the row.
 The rows above are exactly those state accesses; a system operation's row is declaration data and is never derived from a body, narrowed by a proof, or selected by a call site [ERR-4].
@@ -2354,11 +2345,11 @@ A returned or loaded runtime value enters the caller only as a typed symbolic te
 No system operation allocates.
 
 Each operation additionally carries one compiler-owned target contract. This record is not source syntax and does not change contract equality.
-The target contract is `never-suspends` for `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`, `host_utf8_len`, `host_copy_utf8`, `relative_path`, `exit_status`, and `reserve_file`. It is `may-suspend` for `open_read`, `read_at`, `write_once`, `open_directory`, `open_directory_source`, `directory_next`, `open_file`, `close_read`, `close_directory`, and `close_directory_source`.
+The target contract is `never-suspends` for `args_count`, `arg_get`, `host_bytes_len`, `host_copy_bytes`, `host_utf8_len`, `host_copy_utf8`, `relative_path`, `exit_status`, and `reserve_file`. It is `may-suspend` for `open_read`, `read_at`, `write_once`, `open_directory`, `open_directory_source`, `directory_next`, and `open_file`.
 A `may-suspend` operation is a finite one-shot operation. Its logical record exists before target handoff and carries separate `result-ready`, one `loan-released(path)` fact for every retained borrow, and `terminal` milestones. In this first system slice the `loan-released(path)` fact for the name an open borrows — `open_read`'s `path`, `open_file`'s and `open_directory`'s `name` — is published before target transfer, because forming the request copies the admitted code-unit range into compiler-owned storage and that copy is the operation's last access to the caller's buffer; every other applicable fact is published by the same exactly-once terminal transition. Keeping them distinct is required contract structure, not a promise that later operations publish them together.
 The operation result becomes an ordinary usable source value only when its `result-ready` fact holds, and each borrow held for the call remains live until its own `loan-released(path)` fact holds. The call's ownership-complete requirement is the conjunction of its result fact and every loan-release fact the caller regains.
 
-Every borrow keeps its ordinary [OWN-5] loan until the target contract releases it. A successful `reserve_file` returns one fresh ordinary `FilePermit`, and each explicit close returns one; a successful open which returns `ReadFile`, `DirectoryRead`, or `DirectorySource` likewise produces one fresh ordinary owned value. Each result has its own binding identity and no compiler-retained parent relation to the parameter that produced it [EFF-2].
+Every borrow keeps its ordinary [OWN-5] loan until the target contract releases it. `reserve_file` returns one fresh ordinary `FilePermit`; a successful open which returns `ReadFile`, `DirectoryRead`, or `DirectorySource` likewise produces one fresh ordinary owned value. Each result has its own binding identity and no compiler-retained parent relation to the parameter that produced it [EFF-2].
 
 Submission has exactly three internal outcomes. `inline-terminal` publishes every promised milestone and guarantees that no later completion can arrive. `target-owned` transfers the complete operation bundle to the qualified adapter. `wait-capacity` transfers nothing to the target and retains the bundle in the runtime so another ready frame can run until bounded target capacity is available. No source value observes which outcome occurred.
 A qualified target may implement this contract with native completion, readiness plus a nonblocking attempt, polling, interrupts, or a bounded blocking helper. A helper executes only the typed target adapter and publishes milestones; it never executes a writer function or writer continuation. Target completion publication may make a stackless writer frame runnable, but target code never invokes that frame directly.
@@ -2374,7 +2365,7 @@ A call whose callee resolves to a system operation writes its region arguments a
 Positional operands are not admitted.
 A system operation is not a contract member, is not the right IDENT of an [FN-3] `fn_bind`, and never satisfies [FN-4]'s bound-function premise; a conformance binds only a top-level source function.
 
-The inventory contributes exactly two hundred and twenty-seven declaration records in this preorder: each nominal type in table order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
+The inventory contributes exactly two hundred and three declaration records in this preorder: each nominal type in table order; then each constructor in table order, and within one constructor each of its fields in declared order; then each operation in table order, and within one operation each of its region parameters in declared order followed by each of its value parameters in declared order.
 Exactly the nominal types, the constructors, and the operations enter the source resolver's whole-unit lookup inventory of a system-admitted unit [SYS-1].
 The field and parameter records are owner-local: a field record enters only its owning constructor's table and a parameter record only its owning operation signature, and neither is visible to source lookup.
 
@@ -2509,7 +2500,7 @@ A logical consume performs no host call, no target call, no handle lookup, no by
 A native close attempt discards only the close diagnostic and never retries an ambiguous close: a consuming close invalidates the source handle on success and on error, because the native descriptor may already be closed and reusable.
 Its one-shot terminal transition consumes the moved owner and carries no writer result. A consuming caller cannot continue past the release until `terminal`, but a scheduler lane need not remain occupied while the target owns the close.
 `Output`'s logical source detach neither closes nor flushes the host descriptor [SYS-12].
-Release of an outcome value is release of its components: `ArgError`, `Utf8Error`, `CopyError`, `Utf8CopyError`, `PathError`, `IoError`, `ReadOutcome`, `ListOutcome`, `FileOpenOutcome`, `DirectoryOpenOutcome`, and `SourceOpenOutcome` have no release action and take no row above, and a `ReadOutcome`, `ListOutcome`, `FileOpenOutcome`, `DirectoryOpenOutcome`, `SourceOpenOutcome`, or `Result` carrying a system value releases that value by this table.
+Release of an outcome value is release of its components: `ArgError`, `Utf8Error`, `CopyError`, `Utf8CopyError`, `PathError`, `IoError`, `ReadOutcome`, and `ListOutcome` have no release action and take no row above, and a `ReadOutcome`, `ListOutcome`, or `Result` carrying a system value releases that value by this table.
 
 A release action is compiler-derived and explicit in the checked program [STOR-3, DIAG-2].
 `flush`, `sync`, directory sync, atomic commit, and final handle release are different semantic operations; this specification declares none of them, and release is never a substitute for one.
@@ -2530,18 +2521,15 @@ The complete inventory is:
 | `host_copy_bytes` | `own Result<u64, CopyError>` |
 | `host_copy_utf8` | `own Result<u64, Utf8CopyError>` |
 | `relative_path` | `own Result<RelativePath, PathError>` |
-| `open_read` | `own FileOpenOutcome` |
+| `open_read` | `own Result<ReadFile, IoError>` |
 | `read_at` | `own ReadOutcome` |
 | `write_once` | `own Result<u64, IoError>` |
 | `exit_status` | `own ExitStatus`; total, no failure outcome |
-| `open_directory` | `own DirectoryOpenOutcome` |
-| `open_directory_source` | `own SourceOpenOutcome` |
+| `open_directory` | `own Result<DirectoryRead, IoError>` |
+| `open_directory_source` | `own Result<DirectorySource, IoError>` |
 | `directory_next` | `own ListOutcome` |
-| `open_file` | `own FileOpenOutcome` |
-| `reserve_file` | `own Result<FilePermit, IoError>` |
-| `close_read` | `own FilePermit`; total, no failure outcome |
-| `close_directory` | `own FilePermit`; total, no failure outcome |
-| `close_directory_source` | `own FilePermit`; total, no failure outcome |
+| `open_file` | `own Result<ReadFile, IoError>` |
+| `reserve_file` | `own FilePermit`; total, no failure outcome |
 ```
 
 `InvalidIndex` states that the requested argument index is not present and returns no value.
@@ -2639,11 +2627,11 @@ The one-host-string-type rule, the command-lifetime backing, the distinct owned-
 No system value stores an ordinary source borrow or needs a runtime handle-table lookup.
 
 [SYS-10] `FileFactory`, `FilePermit`, and `DirectoryRead` are ordinary affine opaque values; none is a writer-visible capability category.
-Program start supplies one `FileFactory` only when the entry selects `command.files`. The factory carries a capacity fixed at program start: the number of native descriptors the target provides to this program, less the descriptors the runtime itself holds and the handles the entry already supplies. That capacity is not a source constant and no operation reports it; it is observed only through `reserve_file`'s outcome. `reserve_file` takes a call-scoped `&uniq FileFactory`, exhibits `reads(factory), writes(factory)`, performs no host call, and returns `Ok(FilePermit)` while the factory holds an unspent credit and `Err(ResourceExhausted)` otherwise; that error is the program's own source-order outcome, never one an overlapped schedule invents. The factory loan ends when that inline operation returns, so a caller may reserve several permits through short sequential loans and then move those permits into independent long-running opens.
+Program start supplies one `FileFactory` only when the entry selects `command.files`. `reserve_file` takes a call-scoped `&uniq FileFactory`, exhibits `reads(factory), writes(factory)`, and returns one fresh `FilePermit`. The factory loan ends when that inline operation returns, so a caller may reserve several permits through short sequential loans and then move those permits into independent long-running opens.
 
-A `FilePermit` is one credit of that capacity and authorizes exactly one attempt by `open_read`, `open_file`, `open_directory`, or `open_directory_source`. Each operation takes `permit: own FilePermit`, exhibits `reads(permit), writes(permit)`, and consumes it; its outcome is the operation's own two-variant enum (`FileOpenOutcome`, `DirectoryOpenOutcome`, or `SourceOpenOutcome`), whose opened variant carries the fresh owner and whose failed variant carries the host's `IoError` beside the very permit the open took, handed back because no descriptor was taken. The program reuses that permit or lets derived release spend it; no count changes on a failure. An open holding a permit cannot fail for want of a descriptor the program's own opens consumed: `ResourceExhausted` on an open names only honest target exhaustion, a limit changed outside the program such as a system-wide file table. The credit a successful open holds comes back to the program as the fresh `FilePermit` the explicit closes `close_read`, `close_directory`, and `close_directory_source` return on every outcome; each consumes the owner, performs the native close attempt derived release would perform, and discards its diagnostic exactly as derived release does. The factory's count is never raised: a credit is at every moment exactly one of unreserved in the factory, a `FilePermit` value, an open resource value, or spent for the rest of the program. Compiler-derived release of an open resource closes it and spends the credit: it returns nothing to the factory, so a program that reuses its capacity closes explicitly.
+A `FilePermit` authorizes exactly one attempt by `open_read`, `open_file`, `open_directory`, or `open_directory_source`. Each operation takes `permit: own FilePermit`, exhibits `reads(permit), writes(permit)`, and consumes it on every success or recoverable-failure outcome. This first slice never returns or recycles the permit. Reserving it promises no native descriptor, handle-table entry, kernel memory, or host quota: host exhaustion remains the ordinary `ResourceExhausted` member of the open operation's typed `IoError` result.
 
-`DirectoryRead` is a stable directory-selector resource with one live state. It is live from its entry binding or from the `open_directory` that created it until its release or its `close_directory`. This specification declares no duplicate or split operation for it.
+`DirectoryRead` is a stable directory-selector resource with one live state. It is live from its entry binding or from the `open_directory` that created it until its release. This specification declares no duplicate, split, or explicit close operation for it.
 
 `open_read`, `open_file`, and `open_directory` borrow `DirectoryRead` through `&` as `root`; `open_directory_source` borrows it through `&` as `directory`. They exhibit `reads(root)` or `reads(directory)` and do not change that value. The changing observation occurrence belongs to the consumed `FilePermit`, not to hidden mutation behind the shared directory borrow [EFF-5]. The directory owner remains live on every outcome.
 
@@ -2653,7 +2641,7 @@ Its completion policy is release-complete [SYS-5], on the same ground as `ReadFi
 
 Two opens using two distinct owned permits may overlap through shared loans of the same `DirectoryRead` when their other ordinary loans, data dependencies, and exits permit it. Reserving those permits does not keep a long factory loan alive. Operations on distinct directory values may likewise overlap even when the host environment later makes those values contact one physical object.
 
-`FileFactory` and `FilePermit` have no native representation beyond one process-wide credit count the runtime keeps for the factory: `reserve_file` takes a credit or refuses without a host call, nothing raises the count again, an explicit close returns the credit as a permit value and touches no count, and a qualified open wrapper consumes the permit in the checked program but passes no extra argument to the native open facility. Thus explicit authority changes source ownership and effect facts without adding a native open hot-path ABI argument [QUAL-3]. Both types release by logical consume with the empty row [SYS-5]; releasing an unspent `FilePermit` spends its credit for the rest of the program, exactly as derived release of an open resource does.
+`FileFactory` and `FilePermit` have proof-only target representation. `reserve_file` performs no host call and returns a harmless opaque value; a qualified open wrapper consumes that value in the checked program but passes no extra argument to the native open facility. Thus explicit authority changes source ownership and effect facts without adding a native open hot-path ABI argument [QUAL-3]. Both types release by logical consume with the empty row [SYS-5].
 
 Resolution, process-equivalence, the no-emulation qualification rule, and the deferred confined form are [PATH-2].
 
@@ -2667,7 +2655,8 @@ Several reads through the same `ReadFile` may overlap when their destination loa
 
 `ReadFile` is release-complete [SYS-5].
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about bytes already observed and no durability guarantee.
-`close_read` is the explicit consuming close: it takes `file: own ReadFile`, exhibits `reads(file), writes(file)`, performs the same one native close attempt with the same discarded diagnostic, consumes the owner on every outcome, and returns one fresh `FilePermit` carrying the credit the open spent [SYS-10]. It changes no derived-release semantics; derived release differs from it only in returning no permit.
+This specification declares no separate explicit-close operation.
+A later consuming close may expose that diagnostic, but it must consume the owner on every outcome and may not change derived-release semantics.
 If the host terminates the process because an external resource is unavailable under [SCOPE-3], native descriptor reclamation is host behavior rather than a Whitefoot release edge [SYS-5].
 
 [SYS-12] `Output` is a state resource with one live state.
@@ -2704,7 +2693,6 @@ Startup or external-resource failure before entry is outside this mapping [PROG-
 `directory_next` is call-scoped, takes `&uniq DirectorySource` and `&uniq buffer<u8>`, exhibits `reads(source, destination), writes(source, destination)`, and leaves both owners live on every outcome; its transfer, cursor, and buffer semantics are [SYS-8]. Only one call through one Source may be pending because the exclusive source loan remains live until `loan-released(source)`. Calls through distinct Sources may overlap under [PAR-1].
 It reports the entries the host reported, in the host's own order: this specification fixes no enumeration order, promises no stability across two enumerations of the same directory, and states no relationship to a concurrent change of that directory's content.
 A program that needs a deterministic order sorts what it collected.
-`close_directory_source` is the explicit consuming close of a `DirectorySource`, and `close_directory` of a `DirectoryRead` other than the entry's: each takes its owner by `own`, exhibits `reads(owner), writes(owner)` with the table-local path substituted [EFF-2], performs the one native close attempt derived release would perform with the same discarded diagnostic, consumes the owner on every outcome, and returns one fresh `FilePermit` [SYS-10]. Closing the entry's `DirectoryRead` through `close_directory` is admitted and returns a permit as well, because that handle is counted in the factory's capacity.
 
 The reported entries are exactly what the target's directory holds, including the self and parent entries when the target's directory holds them.
 They are not filtered, because filtering them would cost a second host call in the batch that held only them [QUAL-3], and a program that descends must exclude them anyway to terminate.
@@ -2727,7 +2715,7 @@ On success `open_directory` returns an independent `DirectoryRead` for the named
 
 `DirectorySource` is release-complete [SYS-5].
 Compiler-derived release consumes the resource and may discard only a close diagnostic, which carries no guarantee about entries already observed.
-A deep traversal holds one descriptor per live level until `close_directory` or derived release closes that level; only `close_directory` returns the level's credit to the factory.
+This specification declares no separate explicit-close operation, and a deep traversal therefore holds one descriptor per live level.
 If the host terminates the process because an external resource is unavailable under [SCOPE-3], native descriptor reclamation is host behavior rather than a Whitefoot release edge [SYS-5].
 
 ## 18. Obligation discharge: deterministic facts, invariants, and local certificates (normative)
@@ -2963,6 +2951,15 @@ The operand's pre-transfer term is the one [FN-9]'s `A0(c)` substitution already
 A datum has empty support, so [ENT-5]'s pre-kill closure carries its consequences across the same statement's kills while every fact whose support those kills remove dies normally.
 An operand the substitution leaves without an [ENT-2] term mints no datum, exactly as it makes only that relation unavailable under `M(c,q)`.
 S13 is the one source by which a declared relation's substitution is computed at a point other than the point at which the relation is established, and [CALL-6] states both points.
+
+[ENT-3.S14]
+- S14 (admitted product interval).
+At an `ordinary_let_rhs` binding or a [SET-1] commit whose right-hand side is one non-constant integer multiplication that [ENT-6]'s fixed interval-product rule admitted, establish on the bound value the two constant bounds that rule's four endpoint products fix: the least of those four products is no greater than the bound value, and the bound value is no greater than the greatest of them.
+The published bounds are exactly the measurement the domain decision consumed, so an implementation states them from that one computation and never proves the endpoints a second time; a domain discharged by the finite L0 route or by an affine clause publishes nothing here, because neither computed those products.
+Both relations name only the bound value and the distinguished zero term Z, so the support [ENT-5] derives is the bound value alone.
+That is what they mean: they describe the value the multiplication already produced, so a later write to either operand leaves them true, while a write to the bound place kills them under the ordinary rule.
+A `let` binder is fresh and a commit value is compiler-owned [ENT-2], so the bound value never aliases an operand.
+This source adds no relation over the operands, no term the multiplication did not already bind, and no route by which a product enters an automatic premise family: a written `use` remains the only way a product participates in a certificate.
 
 The label S8 is retired, not reused: its midpoint family was struck as an owner-approved version amendment and may return as a later version's monotone addition the day a corpus program writes the shape.
 
@@ -3216,7 +3213,8 @@ Thus two nonconstant affine add or subtract operands have this automatic route e
 When neither multiplication operand image is constant but both are affine, the only nonlinear automatic rule is the fixed interval product.
 For each operand independently, start with its direct closed L0/type interval, then visit each canonical premise once in the AUTO traversal and retain a strictly tighter endpoint when subtracting that one premise followed by fixed interval substitution proves it; the selected lower and upper endpoints are each re-proved by `AUTO`.
 Form the four products of the two inclusive endpoint pairs with checked `i128` arithmetic.
-The multiplication domain succeeds exactly when all four are in `min(T)..=max(T)`; this rule publishes no product inequality or intermediate premise.
+The multiplication domain succeeds exactly when all four are in `min(T)..=max(T)`.
+The rule publishes no product inequality over the operands and no intermediate premise; the one thing it publishes is the constant interval its own four products bound, established by [ENT-3.S14] on the value the admitted multiplication binds.
 
 The finite L0 normalization for exact division and remainder is `d != Z` together with a second component: ground true for unsigned T, and `(n != min(T)) or (d != -1)` for signed T, testing the dividend witness before the divisor witness.
 It is refuted when `d = Z`, or when T is signed and both `n = min(T)` and `d = -1` are derived.

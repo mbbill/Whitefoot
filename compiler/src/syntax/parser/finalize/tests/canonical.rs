@@ -549,9 +549,9 @@ fn a_counted_header_without_an_invariant_stays_on_one_line() {
 
 #[test]
 fn local_invariant_certificates_render_their_header_and_steps_canonically() {
-    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 * (left <= right);\n    use earlier;\n  }\n  return unit;\n}\n";
+    let canonical = b"fn probe(left: own i32, right: own i32) -> result: own unit pure {\n  invariant ordered: left + 1_i32 <= right + 1_i32 {\n    use 2 times (left <= right);\n    use earlier;\n  }\n  return unit;\n}\n";
     only_these_trivia_bytes_render(canonical);
-    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ invariant ordered : left+1_i32 <= right+1_i32 { use 2 * ( left <= right ) ; use earlier; } return unit; }";
+    let sloppy = b"fn probe(left:own i32,right:own i32)->result:own unit pure{ invariant ordered : left+1_i32 <= right+1_i32 { use 2 times ( left <= right ); use earlier; } return unit; }";
     assert_eq!(
         rendered_bytes(sloppy).as_deref(),
         Some(canonical.as_slice())

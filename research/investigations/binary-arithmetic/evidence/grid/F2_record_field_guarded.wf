@@ -1,0 +1,49 @@
+fn record_byte(table: &buffer<u8>, stride: own u64, count: own u64, index: own u64, field: own u64) -> value: own Option<u8> reads(table) contract {
+  requires index < count;
+  requires field < stride;
+} {
+  doc "WORKAROUND: the same read, with a wrapping flatten and one runtime bound test. The result type is widened even though the caller already promised index < count and field < stride.";
+  let base = index *wrap stride;
+  let at = base +wrap field;
+  let capacity = len(deref(table));
+  let fits = at < capacity;
+  if fits {
+  } else {
+    return None<u8>();
+  }
+  let byte = deref(table)[at];
+  return Some<u8>(value: byte);
+}
+
+fn row_of_sums(table: &buffer<u8>, stride: own u64, count: own u64, field: own u64) -> total: own u64 reads(table) contract {
+  requires field < stride;
+} {
+  doc "The caller cost: every use of record_byte must destructure an Option that cannot be None.";
+  let acc = 0_u64;
+  for (i in 0_u64..count) {
+    let got = record_byte(table: table, stride: stride, count: count, index: i, field: field);
+    match got {
+      Some(value: byte) => {
+        let wide = cvt::<u8, u64>(byte);
+        set acc = acc +wrap wide;
+      }
+      None() => {
+        return acc;
+      }
+    }
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let table = buffer_new(16_u64, 3_u8);
+  region {
+    let t = &table;
+    let total = row_of_sums(table: t, stride: 4_u64, count: 4_u64, field: 1_u64);
+    if total == 12_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

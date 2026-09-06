@@ -195,6 +195,9 @@ pub(crate) enum FlowEventKind {
     S11,
     /// [ENT-3.S13] one declared relation instantiated at its call.
     S13,
+    /// [ENT-3.S14] the interval the fixed interval-product rule proved for one
+    /// admitted non-constant multiplication, published on the value it bound.
+    S14,
     Join,
     Snapshot,
     PostconditionEntryImageInvalidation,

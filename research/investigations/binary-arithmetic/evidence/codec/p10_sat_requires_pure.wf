@@ -1,0 +1,26 @@
+fn needs_capacity(room: own u64, count: own u64, width: own u64) -> ok: own u64 pure contract {
+  define needed = count *sat width;
+  requires room >= needed;
+} {
+  doc "probe: minimal *sat capacity requirement, no borrows, no buffers";
+  return 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "caller establishes the identical *sat comparison with a dominating branch";
+  let room = 32_u64;
+  let count = 4_u64;
+  let width = 3_u64;
+  let needed = count *sat width;
+  let enough = room >= needed;
+  if enough {
+  } else {
+    return exit_status(code: 3_u8);
+  }
+  let flag = needs_capacity(room: room, count: count, width: width);
+  if flag == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

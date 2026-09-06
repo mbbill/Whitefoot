@@ -12,8 +12,8 @@ use super::super::super::entailment::affine::{
 };
 use super::super::super::model::{
     CheckedAffineExpression, CheckedAffineExpressionKind, CheckedAffineRelation, CheckedMode,
-    CheckedProofUse, CheckedProofUseSource, CheckedSourceProof, CheckedStatement, CheckedType,
-    CheckedValue, IntegerType,
+    CheckedProofMultiplicity, CheckedProofUse, CheckedProofUseSource, CheckedSourceProof,
+    CheckedStatement, CheckedType, CheckedValue, IntegerType,
 };
 use super::super::{CheckStop, Checker, EffectSet, LocalBinding};
 use super::StatementResult;
@@ -70,23 +70,31 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         let premise_nodes = self.tree.children_with(node, Production::ProofUse)?;
         let mut uses = Vec::with_capacity(premise_nodes.len());
         for premise_node in premise_nodes {
-            let factor = self.invariant_use_factor(premise_node)?;
-            // [GRAM-4] a relation-form use carries its relation as two affine
-            // expressions around a `compare_op` and has no direct IDENT; a
-            // named use has exactly the one IDENT it cites.
+            let multiplicity = self.invariant_use_multiplicity(premise_node, bindings)?;
+            // [GRAM-4] the premise the use cites is a `use_premise` node: a
+            // relation premise delimits its relation with parentheses and
+            // carries two affine expressions around a `compare_op`; a named
+            // premise is exactly the one IDENT it cites.
+            let premise_children = self
+                .tree
+                .children_with(premise_node, Production::UsePremise)?;
+            let [premise] = premise_children.as_slice() else {
+                return Err(SemanticCompilerFailure::InvalidCanonicalTree.into());
+            };
+            let premise = *premise;
             let relation_form = !self
                 .tree
-                .children_with(premise_node, Production::AffineExpr)?
+                .children_with(premise, Production::AffineExpr)?
                 .is_empty();
             let source = if relation_form {
                 CheckedProofUseSource::Relation(self.check_ordered_affine_relation(
-                    premise_node,
+                    premise,
                     bindings,
                     &allowed_values,
                     AffineProofOwner::ProofUse,
                 )?)
             } else {
-                let usage = self.use_at(premise_node, LexicalUseRole::InvariantFact)?;
+                let usage = self.use_at(premise, LexicalUseRole::InvariantFact)?;
                 let ResolvedTarget::Source {
                     declaration,
                     class: DeclarationClass::Invariant,
@@ -98,7 +106,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             };
             uses.push(CheckedProofUse {
                 node_path: self.tree.path(premise_node)?.clone(),
-                factor,
+                multiplicity,
                 source,
             });
         }
@@ -115,18 +123,26 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         ))
     }
 
-    /// Reads the optional proof-domain multiplier on one `use`.
+    /// Reads the optional multiplicity on one `use`.
     ///
-    /// The lexer already classifies bare `[0-9]+` as `digits`; typed runtime
-    /// literals are deliberately a different terminal. This keeps the
-    /// multiplier independent of machine integer types. Omission is the
-    /// canonical spelling of factor one; an explicit `1 *` is rejected.
-    fn invariant_use_factor(&self, node: NodeId) -> Result<i128, CheckStop> {
+    /// [GRAM-4] spells it `N times` before the premise, and the two forms it
+    /// admits are checked here. A bare decimal is a proof-domain integer: the
+    /// lexer classifies `[0-9]+` as `digits` and a typed runtime literal is a
+    /// different terminal, which keeps the written multiplicity independent of
+    /// machine integer types. A name is a live own local of unsigned integer
+    /// type, so a written multiplicity is never negative by construction.
+    /// Omission is the canonical spelling of one, and an explicit `1 times`
+    /// is rejected.
+    fn invariant_use_multiplicity(
+        &self,
+        node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<CheckedProofMultiplicity, CheckStop> {
         let Some(token) = self
             .tree
             .direct_token_with(node, crate::syntax::terminal::TerminalPredicate::Digits)?
         else {
-            return Ok(1);
+            return self.invariant_use_value_multiplicity(node, bindings);
         };
         let bytes = self.tree.token_bytes(token)?;
         if bytes == b"0" {
@@ -164,7 +180,80 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 "write a positive bare-decimal multiplier no greater than 170141183460469231731687303715884105727",
             );
         };
-        Ok(factor)
+        Ok(CheckedProofMultiplicity::Literal(factor))
+    }
+
+    /// The named form of the multiplicity, `use n times X;`.
+    ///
+    /// A `proof_use` owns at most one direct IDENT and it is exactly this
+    /// multiplicity, because the premise it cites is a `use_premise` node of
+    /// its own. The value must be readable where the certificate is checked
+    /// and unsigned: nonnegativity is what makes scaling a premise sound, and
+    /// taking it from the written type keeps it structural.
+    fn invariant_use_value_multiplicity(
+        &self,
+        node: NodeId,
+        bindings: &HashMap<DeclarationId, LocalBinding>,
+    ) -> Result<CheckedProofMultiplicity, CheckStop> {
+        if self.tree.direct_identifiers(node)?.is_empty() {
+            return Ok(CheckedProofMultiplicity::Literal(1));
+        }
+        let usage = self.use_at(node, LexicalUseRole::ProofValue)?;
+        if let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::NamedConst,
+        } = usage.target()
+        {
+            let (value, ty) =
+                self.affine_named_const(declaration, node, AffineProofOwner::ProofUse)?;
+            if ty.signed() || value < 1 {
+                return self.invalid_affine_proof(
+                    AffineProofOwner::ProofUse,
+                    node,
+                    "a named use multiplicity is not a positive unsigned integer",
+                    "name a live own unsigned integer local, or write a positive bare decimal",
+                );
+            }
+            return Ok(CheckedProofMultiplicity::Literal(value));
+        }
+        let ResolvedTarget::Source {
+            declaration,
+            class: DeclarationClass::Value,
+        } = usage.target()
+        else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let local = bindings
+            .get(&declaration)
+            .ok_or(SemanticCompilerFailure::InvalidResolution)?;
+        if !local.live || local.mode != CheckedMode::Own {
+            return self.invalid_affine_proof(
+                AffineProofOwner::ProofUse,
+                node,
+                "a use multiplicity reads a moved or borrowed local",
+                "name a live own unsigned integer local",
+            );
+        }
+        let CheckedType::Integer(ty) = local.ty else {
+            return self.invalid_affine_proof(
+                AffineProofOwner::ProofUse,
+                node,
+                "a use multiplicity does not have a closed integer type",
+                "name a live own unsigned integer local",
+            );
+        };
+        if ty.signed() {
+            return self.invalid_affine_proof(
+                AffineProofOwner::ProofUse,
+                node,
+                "a use multiplicity is a signed integer, which may scale a premise by a negative number",
+                "name an unsigned integer local, or convert the value to an unsigned type before the invariant",
+            );
+        }
+        Ok(CheckedProofMultiplicity::Value {
+            binding: local.binding,
+            ty,
+        })
     }
 
     /// [INV-1] the `compare_op` between the two affine expressions selects
@@ -382,6 +471,32 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         }
     }
 
+    /// The closed integer value of one named const named by a proof relation.
+    ///
+    /// A const-generic parameter is symbolic rather than closed, so it is not
+    /// this and stays inadmissible: an affine factor is a number, and a
+    /// symbolic constant would need an atom of its own.
+    fn affine_named_const(
+        &self,
+        declaration: DeclarationId,
+        node: NodeId,
+        owner: AffineProofOwner,
+    ) -> Result<(i128, IntegerType), CheckStop> {
+        let Some(constant) = self.constants.get(&declaration).copied() else {
+            return Err(SemanticCompilerFailure::InvalidResolution.into());
+        };
+        let constant = self.constant(constant)?;
+        let CheckedValue::Integer { ty, bits } = &constant.value else {
+            return self.invalid_affine_proof(
+                owner,
+                node,
+                "an affine factor names a const that is not an integer",
+                "name an integer const, an integer literal, or a live own integer local",
+            );
+        };
+        Ok((affine_integer_value(*ty, *bits), *ty))
+    }
+
     fn check_affine_factor(
         &self,
         node: NodeId,
@@ -422,6 +537,24 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
         if !self.tree.direct_identifiers(node)?.is_empty() {
             let usage = self.use_at(node, owner.value_role())?;
+            // A named integer const denotes one closed value, so it folds to
+            // the constant it is. It reads the same in a relation as it does
+            // in the body, which is the whole reason to admit it: a limit
+            // written once is stated once.
+            if let ResolvedTarget::Source {
+                declaration,
+                class: DeclarationClass::NamedConst,
+            } = usage.target()
+            {
+                let (value, ty) = self.affine_named_const(declaration, node, owner)?;
+                return Ok((
+                    CheckedAffineExpression {
+                        node_path: self.tree.path(node)?.clone(),
+                        kind: CheckedAffineExpressionKind::Constant { value, ty },
+                    },
+                    Some((value, ty)),
+                ));
+            }
             let ResolvedTarget::Source {
                 declaration,
                 class: DeclarationClass::Value,

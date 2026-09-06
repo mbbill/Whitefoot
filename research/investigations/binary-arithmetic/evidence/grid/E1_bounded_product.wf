@@ -1,0 +1,17 @@
+fn scale(sample: own u64, gain: own u64) -> out: own u64 pure contract {
+  requires sample <= 65535_u64;
+  requires gain <= 65535_u64;
+} {
+  doc "FACE B PROBE: both operands are proved <= 65535, so the exact product is at most 2^32 and cannot overflow u64.";
+  let out = sample * gain;
+  return out;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let v = scale(sample: 3_u64, gain: 4_u64);
+  if v == 12_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

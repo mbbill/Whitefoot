@@ -1,0 +1,24 @@
+fn expand(out: &uniq buffer<u8>, needed: own u64) -> written: own u64 writes(out) contract {
+  requires needed >= 1_u64;
+  requires len(deref(out)) >= needed;
+} {
+  doc "no moved operand: does a caller-side product discharge the length goal?";
+  set deref(out)[0_u64] = 0_u8;
+  return needed;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "drive";
+  let out = buffer_new(8_u64, 0_u8);
+  let base = 4_u64;
+  region {
+    let handle = &uniq out;
+    let needed = base;
+    let produced = expand(out: move handle, needed: needed);
+    if produced == 4_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

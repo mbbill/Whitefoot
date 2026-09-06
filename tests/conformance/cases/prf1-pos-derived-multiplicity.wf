@@ -1,0 +1,23 @@
+fn inner(stride_src: own u64, padding: own u64, height: own u64, row: own u64, width: own u64) -> at: own u64 pure contract {
+  requires stride_src <= 2048_u64;
+  requires padding <= 64_u64;
+  requires height <= 2048_u64;
+  requires row < height;
+  requires width <= stride_src;
+} {
+  doc "A padded-bitmap row offset. The stride is computed rather than passed in, which is what every real stride is.";
+  let stride = stride_src + padding;
+  let span = stride * height;
+  let base = stride * row;
+  let at = base + width;
+  invariant fits: base + width <= span {
+    use stride times (row < height);
+    use (width <= stride);
+  }
+  return at;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let at = inner(stride_src: 40_u64, padding: 3_u64, height: 11_u64, row: 4_u64, width: 37_u64);
+  return exit_status(code: 0_u8);
+}

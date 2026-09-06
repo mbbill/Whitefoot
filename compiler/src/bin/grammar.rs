@@ -15,7 +15,7 @@ const PARSER_PROBES: [&[u8]; 5] = [
     b"fn probe() -> result: own unit pure {\n  return unit;\n}\n",
     b"command fn main(command.args as args: own Args, command.cwd as cwd: own DirectoryRead, command.stdout as out: own OutputStream, command.stderr as err: own OutputStream) -> status: own ExitStatus writes(cwd) {\n  return exit_status(code: 0_u8);\n}\n",
     b"fn range() -> result: own unit pure {\n  for @range (\n    index in 0_u64..1_u64,\n    invariant limit: index <= 1_u64\n  ) {\n    break @range;\n  }\n  return unit;\n}\n",
-    b"fn proof(left: own i32, left_limit: own i32, middle: own i32, middle_limit: own i32, right: own i32, right_limit: own i32) -> result: own unit pure contract {\n  requires left <= left_limit;\n  requires middle <= middle_limit;\n  requires right <= right_limit;\n} {\n  invariant ordered: left + middle + right <= left_limit + middle_limit + right_limit {\n    use left <= left_limit;\n    use middle <= middle_limit;\n    use right <= right_limit;\n  }\n  return unit;\n}\n",
+    b"fn proof(left: own i32, left_limit: own i32, middle: own i32, middle_limit: own i32, right: own i32, right_limit: own i32) -> result: own unit pure contract {\n  requires left <= left_limit;\n  requires middle <= middle_limit;\n  requires right <= right_limit;\n} {\n  invariant ordered: left + middle + right <= left_limit + middle_limit + right_limit {\n    use (left <= left_limit);\n    use (middle <= middle_limit);\n    use (right <= right_limit);\n  }\n  return unit;\n}\n",
     b"fn checked(value: own i32) -> result: own Result<i32, i32> pure contract {\n  define admitted = value == value;\n  requires admitted;\n  ensures when Ok(value: returned): returned == value;\n} {\n  return Ok<i32, i32>(value: value);\n}\n",
 ];
 
@@ -389,9 +389,9 @@ mod tests {
     #[test]
     fn active_compiler_grammar_is_consistent() {
         let report = verify_compiler_grammar().expect("compiler grammar data must be consistent");
-        assert_eq!(report.productions, 84);
-        assert_eq!(report.decisions, 120);
-        assert_eq!(report.terminals, 106);
+        assert_eq!(report.productions, 85);
+        assert_eq!(report.decisions, 121);
+        assert_eq!(report.terminals, 107);
         run_parser_probes().expect("the compiler must parse its own probes");
     }
 

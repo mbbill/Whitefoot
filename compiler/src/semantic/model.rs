@@ -73,15 +73,28 @@ pub(crate) struct CheckedLoopInvariant {
 
 /// One source-written `use` in a local invariant certificate.
 ///
-/// `factor` is a positive proof-domain integer. The omitted source spelling is
-/// represented as one. This record deliberately contains no accumulating
-/// state: every use is checked against the invariant statement's same entering
-/// proof context.
+/// `multiplicity` is how many times the premise is added into the certificate
+/// sum. The omitted source spelling is represented as the literal one. This
+/// record deliberately contains no accumulating state: every use is checked
+/// against the invariant statement's same entering proof context.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CheckedProofUse {
     pub(crate) node_path: NodePath,
-    pub(crate) factor: i128,
+    pub(crate) multiplicity: CheckedProofMultiplicity,
     pub(crate) source: CheckedProofUseSource,
+}
+
+/// How many times one written `use` adds its premise into the certificate sum.
+///
+/// A bare decimal is a proof-domain integer known where the certificate is
+/// checked. A named value is read at the entering program point instead;
+/// [PRF-1] admits only an unsigned integer there, so the nonnegativity the
+/// scaling step needs is a property of the written type rather than an
+/// obligation the certificate must separately discharge.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CheckedProofMultiplicity {
+    Literal(i128),
+    Value { binding: BindingId, ty: IntegerType },
 }
 
 /// The source selected by one written `use`.

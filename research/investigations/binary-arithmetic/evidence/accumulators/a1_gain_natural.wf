@@ -1,0 +1,20 @@
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "NATURAL FORM: scale each sample by a runtime gain and accumulate the total.";
+  let config = buffer_new(1_u64, 4_u8);
+  let gain = cvt::<u8, u64>(config[0_u64]);
+  let samples = buffer_new(8_u64, 3_u8);
+  let total = 0_u64;
+  for (
+    i in 0_u64..8_u64,
+    invariant scaled_total: total <= 255_u64 * gain * i
+  ) {
+    let sample = cvt::<u8, u64>(samples[i]);
+    let scaled = sample * gain;
+    set total = total + scaled;
+  }
+  if total == 96_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

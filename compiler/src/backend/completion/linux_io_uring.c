@@ -209,8 +209,8 @@ int wf_linux_io_uring_init(
      * stops whatever the thread was running.  Measured on the TCP echo
      * control test at 64 connections it is the difference between 200 to
      * 225 thousand and 240 to 250 thousand round trips a second, with the
-     * same parks and the same enters (`docs/done/0108-streams-and-tcp.md`
-     * section 6).  A kernel before 5.19 refuses the flag with EINVAL, and
+     * same parks and the same enters (`research/investigations/io-model/RESULTS.md`,
+     * the batch 0108 section).  A kernel before 5.19 refuses the flag with EINVAL, and
      * the ring is then made without it. */
     parameters.flags = IORING_SETUP_CQSIZE | IORING_SETUP_COOP_TASKRUN;
     parameters.cq_entries = (unsigned)completions;

@@ -310,6 +310,11 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
         event: &mut Option<(FlowEventKind, FlowEventId)>,
     ) -> Option<EstablishedUnsignedDivision> {
+        // [ENT-3.S14] attaches to the multiplication the initializer already
+        // performed rather than competing for the initializer's shape, so it
+        // runs beside the mutually exclusive image rules below instead of
+        // consuming the value from them.
+        self.establish_product_interval(node_path, destination, value, state, event);
         if self.establish_length_facts(node_path, destination, value, state, event) {
             return None;
         }
@@ -1052,6 +1057,63 @@ impl Analyzer<'_, '_> {
     /// vlo <= x and x <= vhi over its N declared element values. The index's
     /// own bounds obligation is judged separately and is unaffected. Deeper
     /// const shapes establish nothing.
+    /// [ENT-3.S14] the interval one admitted non-constant multiplication
+    /// proved, published on the value it bound.
+    ///
+    /// [ENT-6]'s fixed interval-product rule proves an inclusive interval for
+    /// each operand and forms the four products of their endpoint pairs; the
+    /// multiplication is admitted exactly when all four lie in the result
+    /// type. Those same four products bound the value the operation produced,
+    /// so this publishes the minimum and maximum of the measurement the
+    /// domain decision already consumed. It is retained by the judgment only
+    /// when that route discharged the obligation, so a domain proved by the
+    /// finite L0 or affine-clause route publishes nothing here.
+    ///
+    /// Both published relations are ground: each names the bound value and
+    /// the zero term, and neither names an operand. The support [ENT-5]
+    /// derives from those terms is therefore the bound value alone, which is
+    /// what the relation means — it describes the value already produced, so
+    /// a later write to an operand leaves it true, while a write to the bound
+    /// place kills it under the ordinary rule. A binder is fresh and a commit
+    /// value is compiler-owned, so the bound value never aliases an operand.
+    fn establish_product_interval(
+        &mut self,
+        node_path: &crate::NodePath,
+        destination: ValueImage<'_>,
+        value: &CheckedExpression,
+        state: &mut FactState,
+        event: &mut Option<(FlowEventKind, FlowEventId)>,
+    ) {
+        let CheckedExpression::IntegerOperation { carrier, .. } = value else {
+            return;
+        };
+        let Some(interval) = self.product_intervals.get(carrier).cloned() else {
+            return;
+        };
+        let Some(bound) = self.bound_term(destination, value) else {
+            return;
+        };
+        let event = self.binding_event(event, FlowEventKind::S14, node_path);
+        state.establish(
+            &Relation::Bound {
+                left: ZERO,
+                right: bound,
+                bound: -interval.minimum,
+            },
+            &mut self.derivations,
+            event,
+        );
+        state.establish(
+            &Relation::Bound {
+                left: bound,
+                right: ZERO,
+                bound: interval.maximum,
+            },
+            &mut self.derivations,
+            event,
+        );
+    }
+
     fn establish_element_range(
         &mut self,
         node_path: &crate::NodePath,

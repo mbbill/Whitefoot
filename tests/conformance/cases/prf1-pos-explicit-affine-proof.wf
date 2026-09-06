@@ -8,9 +8,9 @@ fn bounded_sum(first: own u8, first_limit: own u8, second: own u8, second_limit:
   ensures result <= 254_u8;
 } {
   invariant component_sum: first + second + third <= first_limit + second_limit + third_limit + 1_u8 {
-    use first <= first_limit;
-    use second <= second_limit;
-    use third <= third_limit;
+    use (first <= first_limit);
+    use (second <= second_limit);
+    use (third <= third_limit);
   }
   invariant limit_sum: first_limit + second_limit + third_limit <= 253_u8;
   invariant total_bound: first + second + third <= 254_u8;

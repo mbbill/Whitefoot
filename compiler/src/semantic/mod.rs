@@ -429,6 +429,10 @@ pub enum SourceProofObligation {
     /// A nonpositive factor reached the certificate core. Canonical source
     /// checking normally rejects this before entailment.
     InvalidUseFactor { use_index: u32 },
+    /// A term multiplicity left the certificate sum with a product of two
+    /// values that no admitted exact multiplication in scope equals, so the
+    /// sum never reduced to an affine inequality.
+    NonlinearCertificateSum,
 }
 
 /// One non-discharged [FN-8] ordinary-call goal disposition.

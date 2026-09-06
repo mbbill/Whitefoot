@@ -199,7 +199,74 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // static domain obligation before emission. No system operation, resource
 // representation, release row, result shape, entry form, or host ABI mapping
 // changes, so the v0.43 mapping carries forward complete.
-// v0.45 backed-permit review (2026-09-05): `reserve_handle` answers
+// v0.45 product-interval review (2026-09-05): the one amendment is front-end
+// fact publication. [ENT-6]'s interval-product rule already proved the four
+// endpoint products it needs to admit a non-constant multiplication; [ENT-3]'s
+// new source S14 stops discarding their least and greatest and establishes
+// them on the value that multiplication binds. Both published relations are
+// constant bounds against the distinguished zero term, they live in the
+// erased proof state, and [ENT-1] erases every one of them before lowering,
+// so nothing reaches the value graph. The amendment only admits programs it
+// previously refused, and every operation those programs emit is a shape this
+// mapping already qualifies: no operation kind, entry form, or result shape is
+// introduced, and every emitted partial operation still passes its static
+// domain obligation before emission. No system operation, resource
+// representation, release row, result shape, entry form, or host ABI mapping
+// changes, so the v0.44 mapping carries forward complete.
+// v0.46 clause-and-measure review (2026-09-05): all three amendments are
+// front-end. FN-8 admits three exact rows in a clause and reads them over the
+// mathematical integers; FN-9 already erases every clause before lowering, so
+// no clause reaches emission whatever row it names. The measure atom lives in
+// the affine proof domain, which ENT-1 erases with the rest of the proof
+// syntax and which owns no storage, address, or runtime read. Widening which
+// goals the affine route may discharge changes acceptance and nothing after
+// it: every emitted partial operation still passes its static domain
+// obligation before emission, and the amendment only admits programs
+// previously refused, whose operations are shapes this mapping already
+// qualifies. No system operation, resource representation, release row,
+// result shape, entry form, or host ABI mapping changes, so the v0.45
+// mapping carries forward complete.
+// v0.47 named-const atom review (2026-09-05): the amendment admits an
+// integer-typed named const as an affine atom and folds it at formation to
+// the value it declares, so nothing downstream sees a new atom kind and a
+// relation naming a const renders exactly as the same relation naming its
+// literal. It lives entirely in the affine proof domain, which ENT-1 erases
+// before lowering. No system operation, resource representation, release
+// row, result shape, entry form, or host ABI mapping changes, so the v0.46
+// mapping carries forward complete.
+// v0.48 use-premise review (2026-09-05): both amendments are front-end. GRAM-4
+// gains the `use_premise` production and the fixed atom `times`, which changes
+// only how a certificate is written: `proof_use` is proof syntax, ENT-1 erases
+// it before lowering, and no operation, expression form, or type is reachable
+// through it. PRF-1's named multiplicity makes the certificate accumulator a
+// degree-two polynomial that must fold back to an affine inequality before the
+// residual forms; that polynomial exists only inside the check and no fact,
+// published conclusion, or invariant target can hold one, so nothing nonlinear
+// reaches the value graph. The amendment only admits programs previously
+// refused, and every operation those programs emit is a shape this mapping
+// already qualifies — a `let base = n * p;` still passes its own static OP-2
+// domain obligation before emission, which is the very fact the fold reads. No
+// system operation, resource representation, release row, result shape, entry
+// form, or host ABI mapping changes, so the v0.47 mapping carries forward
+// complete.
+// v0.49 fold-identity review (2026-09-05): the amendment is front-end and
+// narrower than v0.48's. It changes which of two equal spellings [PRF-1]'s
+// certificate names between its fold and its residual, and the handle it mints
+// for that span is replaced by the value image it stands for before any
+// residual forms, so nothing downstream ever sees it. The domain judgment that
+// admits a multiplication is untouched and still reads the transparent operand
+// images, which is what proves the interval; only the record the fold consults
+// changes. ENT-1 erases every certificate before lowering. No system
+// operation, resource representation, release row, result shape, entry form,
+// or host ABI mapping changes, so the v0.48 mapping carries forward complete.
+// v0.50 review (2026-09-06), the backed file permit and streams-and-TCP
+// landing together over v0.49 from the I/O branch; the two reviews below were
+// written as that branch's own v0.45 and v0.46 and read unchanged over v0.49,
+// whose amendments (v0.45 through v0.49 above) are all front-end and touch no
+// system operation, resource, release row, result shape, entry form or host
+// ABI mapping.
+//
+// Backed-permit review: `reserve_handle` answers
 // `Result<HandlePermit, IoError>` from the floor's credit count and three
 // explicit closes (`close_read`, `close_directory`, `close_directory_source`,
 // ordinals 16 to 18) return the credit after the same native close attempt
@@ -255,7 +322,7 @@ const OPERATION_COUNT: usize = crate::SYSTEM_OPERATIONS.len();
 // leaf normalizes a Winsock code onto the Win32 code that table already
 // carries for the same condition (`../windows_runtime.h`,
 // `wf__windows_error_from_socket`).
-const REVIEWED_FOR: &str = "v0.46";
+const REVIEWED_FOR: &str = "v0.50";
 
 /// The number of [SYS-2] opaque resource types with a release row.
 ///

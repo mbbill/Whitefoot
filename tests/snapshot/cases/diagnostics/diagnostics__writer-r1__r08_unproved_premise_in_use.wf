@@ -10,8 +10,8 @@ fn increment(x: own u8, middle: own u8) -> result: own u8 pure contract {
 } {
   doc "expect REJECT: [PRF-1] the first use relation x <= middle is not established by anything before the invariant statement";
   invariant upper_bound: x <= 254_u8 {
-    use x <= middle;
-    use middle <= 254_u8;
+    use (x <= middle);
+    use (middle <= 254_u8);
   }
   return x;
 }

@@ -1,0 +1,14 @@
+fn ordered(x: own u8, middle: own u8) -> result: own unit pure contract {
+  requires x <= middle;
+  requires middle <= 254_u8;
+} {
+  invariant reachable: x <= 254_u8 {
+    use x <= middle;
+    use (middle <= 254_u8);
+  }
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}

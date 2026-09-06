@@ -173,6 +173,7 @@ pub fn fixed_terminal(spelling: &str) -> Pred {
         ("<=", "LessEqual"),
         (">=", "GreaterEqual"),
         ("::", "ColonColon"),
+        ("times", "Times"),
     ];
     if spelling == "[0-9]+" {
         return Pred::Digits;

@@ -1,0 +1,31 @@
+fn tri_trace(packed: &buffer<u32>, order: own u64) -> total: own u64 reads(packed) contract {
+  requires order <= 4096_u64;
+} {
+  doc "NATURAL: sum a packed lower-triangular matrix; row i starts at i*(i+1)/2.";
+  let acc = 0_u64;
+  for (i in 0_u64..order) {
+    let next = i + 1_u64;
+    let twice = i * next;
+    let base = twice / 2_u64;
+    for (j in 0_u64..next) {
+      let at = base + j;
+      let v = deref(packed)[at];
+      let w = cvt::<u32, u64>(v);
+      set acc = acc +wrap w;
+    }
+  }
+  return acc;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  let packed = buffer_new(6_u64, 1_u32);
+  region {
+    let p = &packed;
+    let t = tri_trace(packed: p, order: 3_u64);
+    if t == 6_u64 {
+    } else {
+      return exit_status(code: 1_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

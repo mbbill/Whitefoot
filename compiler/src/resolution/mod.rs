@@ -142,7 +142,7 @@ impl PreludeDeclarationId {
 
 /// Dense identity of one normative [SYS-2] system declaration record.
 ///
-/// The ordinal is a `u16` because v0.46's inventory is three hundred and seven
+/// The ordinal is a `u16` because v0.50's inventory is three hundred and seven
 /// records; it was a `u8` while the inventory fitted one byte.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SystemDeclarationId(u16);

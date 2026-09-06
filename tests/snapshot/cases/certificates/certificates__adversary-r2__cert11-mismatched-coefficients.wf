@@ -11,9 +11,9 @@ fn mismatched(first: own u8, first_limit: own u8, second: own u8, second_limit: 
   invariant second_bound: second <= second_limit;
   invariant third_bound: third <= third_limit;
   invariant total_bound: 2_u8 * first + 2_u8 * second + 2_u8 * third <= 2_u8 * first_limit + 2_u8 * second_limit + 2_u8 * third_limit {
-    use 2 * first_bound;
-    use 3 * second_bound;
-    use 5 * third_bound;
+    use 2 times first_bound;
+    use 3 times second_bound;
+    use 5 times third_bound;
   }
   return unit;
 }

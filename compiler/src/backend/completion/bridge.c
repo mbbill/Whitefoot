@@ -91,7 +91,7 @@ _Static_assert(
  * and 64 connections ping-ponging through one ring made 720 thousand futex
  * calls a run.  At 64 the same run makes 19 thousand and the round-trip rate
  * doubles, 35 to 69 thousand a second on the development host; 1024 measures
- * the same as 64 (`docs/done/0108-streams-and-tcp.md` section 6). */
+ * the same as 64 (`research/investigations/io-model/RESULTS.md` section 6). */
 #define WF_BRIDGE_REAP_BUDGET 64u
 static wf_completion_runtime wf_bridge_runtime;
 static wf_file_adapter wf_bridge_adapter;

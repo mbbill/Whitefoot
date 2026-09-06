@@ -5,7 +5,7 @@ living record. The research-era material (debates, sources, matrices,
 synthesis) moved to `../archive/research/`.
 
 Research supplies facts to the living [`Direction Outline`](../docs/roadmap.md).
-[`docs/current-plan.md`](../docs/current-plan.md) records current high-level
+[`docs/roadmap.md`](../docs/roadmap.md) records current high-level
 sequencing. Neither it nor a research note or experiment grants or withholds
 permission to work on a branch.
 

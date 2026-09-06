@@ -6,7 +6,7 @@ fn probe(table: own buffer<u8>, a: own u64) -> found: own u8 reads(table) contra
   let idx = a -wrap 1_u64;
   let bound_room = len(table);
   invariant bound: idx < bound_room {
-    use a <= bound_room;
+    use (a <= bound_room);
   }
   let byte = table[idx];
   return byte;

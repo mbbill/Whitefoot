@@ -1,0 +1,61 @@
+fn sample_pixel(pixels: own buffer<u8>, row_stride: own u64, bytes_per_pixel: own u64, x: own u64, y: own u64, channel: own u64) -> value: own Option<u8> reads(pixels) contract {
+  define room = len(pixels);
+  requires row_stride >= 1_u64;
+  requires row_stride <= 65536_u64;
+  requires bytes_per_pixel >= 1_u64;
+  requires bytes_per_pixel <= 8_u64;
+  requires channel < bytes_per_pixel;
+  requires x <= 65535_u64;
+  requires y <= 65535_u64;
+  requires room >= row_stride;
+} {
+  doc "WORKAROUND A: four dominating guards rebuild, at runtime, the containment the two products already imply; the result widens to Option<u8>.";
+  let room = len(pixels);
+  let row_base = y * row_stride;
+  let row_start_ok = row_base <= room;
+  if row_start_ok {
+  } else {
+    return None<u8>();
+  }
+  let row_left = room - row_base;
+  let row_fits = row_stride <= row_left;
+  if row_fits {
+  } else {
+    return None<u8>();
+  }
+  let column_base = x * bytes_per_pixel;
+  let column_start_ok = column_base <= row_stride;
+  if column_start_ok {
+  } else {
+    return None<u8>();
+  }
+  let column_left = row_stride - column_base;
+  let pixel_fits = bytes_per_pixel <= column_left;
+  if pixel_fits {
+  } else {
+    return None<u8>();
+  }
+  invariant pixel_in_room: row_base + column_base + channel < room;
+  let pixel_base = row_base + column_base;
+  let at = pixel_base + channel;
+  let byte = pixels[at];
+  return Some<u8>(value: byte);
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "a 4x2 RGB image with a 12-byte row stride; read the green channel of pixel (1, 1)";
+  let pixels = buffer_new(24_u64, 0_u8);
+  set pixels[16_u64] = 200_u8;
+  match sample_pixel(pixels: move pixels, row_stride: 12_u64, bytes_per_pixel: 3_u64, x: 1_u64, y: 1_u64, channel: 1_u64) {
+    Some(value: green) => {
+      if green == 200_u8 {
+      } else {
+        return exit_status(code: 1_u8);
+      }
+    }
+    None() => {
+      return exit_status(code: 2_u8);
+    }
+  }
+  return exit_status(code: 0_u8);
+}

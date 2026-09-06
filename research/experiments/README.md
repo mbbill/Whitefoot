@@ -8,7 +8,7 @@ evidence remain useful, but their old runner is not replayable from HEAD and is
 not a current compiler gate. Historical chronology and decisions are indexed
 by `../../archive/governance/decision-log.md`; current design decisions live in
 `../../mcts_mem/`, current direction status in `../../docs/roadmap.md`, current
-execution proposal and status in `../../docs/current-plan.md`, and
+execution proposal and status in `../../docs/roadmap.md`, and
 implementation detail in `../../compiler/README.md`. The current plan records
 high-level sequencing; plans do not grant or withhold branch permission.
 
@@ -73,7 +73,7 @@ high-level sequencing; plans do not grant or withhold branch permission.
   findings were a harness defect (argument zero reaching a program's digest,
   fixed) and a spec-conformant [CLM-1] rejection recorded for the owner. Not a
   gate and not reachable from `make check`; report and reasoning in
-  [`docs/done/0097-differential-fuzz.md`](../../docs/done/0097-differential-fuzz.md).
+  [`differential-fuzz/RESULTS.md`](differential-fuzz/RESULTS.md).
 - `blind-writer/` — the standing corpus of what unguided writers write, one
   dated directory per trial. The 2026-08-28 trial handed a senior systems
   programmer with no prior Whitefoot exposure the spec, `docs/patterns.md`, the
@@ -83,7 +83,7 @@ high-level sequencing; plans do not grant or withhold branch permission.
   compile to code byte-identical to `--no-overlap`, against a hand-widened
   comparator 1.78x faster on this host and 2.17x/2.90x faster on the committed
   quiet-host medians. Fourteen defects with dispositions in
-  [`docs/done/0098-blind-writer.md`](../../docs/done/0098-blind-writer.md). It
+  [`blind-writer/`](blind-writer/). It
   is removed when the language stops changing.
 - `park-on-miss-measurements/` — the rest of the §12 measurements and the four
   choices the plan added on 2026-09-05, each alternative built behind a

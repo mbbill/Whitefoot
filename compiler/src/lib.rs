@@ -17,7 +17,11 @@ mod resolution;
 mod semantic;
 mod source;
 mod spec;
-pub mod spec_identity;
+/// Machine-derived identity of the embedded active specification, computed by
+/// `build.rs` from those bytes. Not committed: the bytes are the only copy.
+pub mod spec_identity {
+    include!(concat!(env!("OUT_DIR"), "/spec_identity.rs"));
+}
 mod syntax;
 
 /// The parallel runtime a module that hands work out must be linked against,

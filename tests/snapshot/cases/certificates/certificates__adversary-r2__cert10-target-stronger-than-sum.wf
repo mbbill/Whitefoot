@@ -7,7 +7,7 @@ fn overtight(first: own u8, first_limit: own u8, second: own u8, second_limit: o
   doc "Expect REJECT: the use-block's weighted sum only establishes 3*first+3*second <= 3*first_limit+3*second_limit, but the stated target subtracts 10_u8 of slack from the right side -- a STRENGTHENING, not a weakening, of the weighted sum. If accepted this is unsound: concrete violation first=4_u8, first_limit=4_u8, second=4_u8, second_limit=4_u8 gives 3*first+3*second = 24 while first_limit+second_limit-scaled+10 side = 3*4+3*4-10 = 14, so 24 <= 14 is false yet requires are satisfied (4<=4).";
   invariant pair_bound: first + second <= first_limit + second_limit;
   invariant scaled_tight: 3_u8 * first + 3_u8 * second + 10_u8 <= 3_u8 * first_limit + 3_u8 * second_limit {
-    use 3 * pair_bound;
+    use 3 times pair_bound;
   }
   return unit;
 }

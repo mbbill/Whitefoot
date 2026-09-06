@@ -2,7 +2,7 @@
  *
  * Design `research/investigations/io-model/PARK-ON-MISS.md` §12 item 2 asks
  * for the park cost of the handshake of §6 "against the same 2.2 microsecond
- * park-and-wake figure", and the plan's added choices (docs/current-plan.md,
+ * park-and-wake figure", and the plan's added choices (archive/current-plan.md,
  * "Decided 2026-09-05: measured before chosen") ask for the claim protocol and
  * the memory orders on the same scale. This is that measurement: the round
  * trip of one park, one publish and one resume through `sched/core.c`, over

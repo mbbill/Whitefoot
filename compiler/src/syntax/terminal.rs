@@ -216,10 +216,12 @@ pub enum FixedTerminal {
     GreaterEqual,
     /// `::`.
     ColonColon,
+    /// `times`, the multiplicity of one cited proof premise [PRF-1].
+    Times,
 }
 
 /// Every fixed raw-token predicate in the active specification, in first occurrence order.
-pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
+pub const ALL_FIXED_TERMINALS: [FixedTerminal; 99] = [
     FixedTerminal::Struct,
     FixedTerminal::LeftBrace,
     FixedTerminal::RightBrace,
@@ -280,6 +282,7 @@ pub const ALL_FIXED_TERMINALS: [FixedTerminal; 98] = [
     FixedTerminal::DotDot,
     FixedTerminal::Invariant,
     FixedTerminal::Use,
+    FixedTerminal::Times,
     FixedTerminal::Star,
     FixedTerminal::Plus,
     FixedTerminal::Minus,
@@ -423,6 +426,7 @@ impl FixedTerminal {
             Self::PercentDefined => "%defined",
             Self::Invariant => "invariant",
             Self::Use => "use",
+            Self::Times => "times",
             Self::EqualEqual => "==",
             Self::BangEqual => "!=",
             Self::LessEqual => "<=",
@@ -510,39 +514,63 @@ pub enum TerminalPredicate {
     Digits,
 }
 
+/// The predicates that are not one fixed spelling, in inventory order.
+///
+/// [FORM-3] and [FORM-5] give the classes; `SOURCE_END` is intentionally
+/// absent from the inventory this list completes.
+const EXTERNAL_TERMINAL_PREDICATES: [TerminalPredicate; 8] = [
+    TerminalPredicate::Identifier,
+    TerminalPredicate::TypeIdentifier,
+    TerminalPredicate::RegionIdentifier,
+    TerminalPredicate::Label,
+    TerminalPredicate::OperationName,
+    TerminalPredicate::Literal,
+    TerminalPredicate::String,
+    TerminalPredicate::Digits,
+];
+
+/// Where [`EXTERNAL_TERMINAL_PREDICATES`] starts in the inventory: immediately
+/// after the last fixed terminal.
+///
+/// Deriving this rather than writing it is what keeps a new keyword from
+/// silently overwriting an external predicate. The inventory below copies the
+/// fixed terminals in first, so a hardcoded external position that no longer
+/// clears them is a collision the array initializer cannot report.
+const EXTERNAL_TERMINAL_BASE: usize = ALL_FIXED_TERMINALS.len();
+
 /// Every approved active-specification token predicate: the fixed inventory in
 /// first occurrence order followed by the external predicates. `SOURCE_END` is
 /// intentionally absent.
-pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate; 106] = {
-    let mut predicates = [TerminalPredicate::Identifier; 106];
+pub const ALL_TERMINAL_PREDICATES: [TerminalPredicate;
+    ALL_FIXED_TERMINALS.len() + EXTERNAL_TERMINAL_PREDICATES.len()] = {
+    let mut predicates = [TerminalPredicate::Identifier;
+        ALL_FIXED_TERMINALS.len() + EXTERNAL_TERMINAL_PREDICATES.len()];
     let mut index = 0;
     while index < ALL_FIXED_TERMINALS.len() {
         predicates[index] = TerminalPredicate::Fixed(ALL_FIXED_TERMINALS[index]);
         index += 1;
     }
-    predicates[98] = TerminalPredicate::Identifier;
-    predicates[99] = TerminalPredicate::TypeIdentifier;
-    predicates[100] = TerminalPredicate::RegionIdentifier;
-    predicates[101] = TerminalPredicate::Label;
-    predicates[102] = TerminalPredicate::OperationName;
-    predicates[103] = TerminalPredicate::Literal;
-    predicates[104] = TerminalPredicate::String;
-    predicates[105] = TerminalPredicate::Digits;
+    let mut offset = 0;
+    while offset < EXTERNAL_TERMINAL_PREDICATES.len() {
+        predicates[EXTERNAL_TERMINAL_BASE + offset] = EXTERNAL_TERMINAL_PREDICATES[offset];
+        offset += 1;
+    }
     predicates
 };
 
 impl TerminalPredicate {
     const fn index(self) -> u8 {
+        let base = EXTERNAL_TERMINAL_BASE as u8;
         match self {
             Self::Fixed(terminal) => terminal.index(),
-            Self::Identifier => 98,
-            Self::TypeIdentifier => 99,
-            Self::RegionIdentifier => 100,
-            Self::Label => 101,
-            Self::OperationName => 102,
-            Self::Literal => 103,
-            Self::String => 104,
-            Self::Digits => 105,
+            Self::Identifier => base,
+            Self::TypeIdentifier => base + 1,
+            Self::RegionIdentifier => base + 2,
+            Self::Label => base + 3,
+            Self::OperationName => base + 4,
+            Self::Literal => base + 5,
+            Self::String => base + 6,
+            Self::Digits => base + 7,
         }
     }
 
@@ -772,8 +800,8 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        ALL_FIXED_TERMINALS, FixedTerminal, TerminalPredicate, TerminalSet, is_identifier,
-        is_literal, is_operation_name, is_string,
+        ALL_FIXED_TERMINALS, ALL_TERMINAL_PREDICATES, EXTERNAL_TERMINAL_PREDICATES, FixedTerminal,
+        TerminalPredicate, TerminalSet, is_identifier, is_literal, is_operation_name, is_string,
     };
 
     #[test]
@@ -797,8 +825,55 @@ mod tests {
         assert_eq!(FixedTerminal::Replace as u8, 84);
         assert_eq!(FixedTerminal::Invariant as u8, 91);
         assert_eq!(FixedTerminal::Use as u8, 92);
-        assert_eq!(TerminalPredicate::Identifier.index(), 98);
-        assert_eq!(TerminalPredicate::Digits.index(), 105);
+        assert_eq!(FixedTerminal::Times as u8, 98);
+        assert_eq!(TerminalPredicate::Identifier.index(), 99);
+        assert_eq!(TerminalPredicate::Digits.index(), 106);
+    }
+
+    /// The inventory holds every predicate, once.
+    ///
+    /// This is the invariant a hardcoded external position broke: the array
+    /// copies the fixed terminals in first and then writes the external
+    /// predicates at fixed slots, so adding a ninety-ninth fixed terminal
+    /// while those slots still started at 98 overwrote `Fixed(Times)` with
+    /// `Identifier`. The inventory then held 106 predicates instead of 107,
+    /// and the missing one was a keyword the parser had just gained. Counting
+    /// what is actually there catches both the loss and any duplicate.
+    #[test]
+    fn the_inventory_holds_every_predicate_once() {
+        assert_eq!(
+            ALL_TERMINAL_PREDICATES.len(),
+            ALL_FIXED_TERMINALS.len() + EXTERNAL_TERMINAL_PREDICATES.len()
+        );
+        let holds = |wanted: TerminalPredicate| {
+            ALL_TERMINAL_PREDICATES
+                .into_iter()
+                .filter(|predicate| *predicate == wanted)
+                .count()
+        };
+        for terminal in ALL_FIXED_TERMINALS {
+            assert_eq!(holds(TerminalPredicate::Fixed(terminal)), 1);
+        }
+        for predicate in EXTERNAL_TERMINAL_PREDICATES {
+            assert_eq!(holds(predicate), 1);
+        }
+    }
+
+    /// `index()` is a `TerminalSet` bit position, so it must be distinct per
+    /// predicate and inside the `u128` the set is stored in. It is not an
+    /// index into the inventory above: the fixed terminals answer with their
+    /// declaration order and the inventory is in first-occurrence order.
+    #[test]
+    fn every_predicate_has_its_own_bit() {
+        let bits: BTreeSet<u8> = ALL_TERMINAL_PREDICATES
+            .into_iter()
+            .map(TerminalPredicate::index)
+            .collect();
+        assert_eq!(bits.len(), ALL_TERMINAL_PREDICATES.len());
+        assert!(
+            bits.iter()
+                .all(|bit| usize::from(*bit) < u128::BITS as usize)
+        );
     }
 
     #[test]

@@ -1,11 +1,8 @@
-# Kernel Specification v0.46
+# Kernel Specification v0.50
 
-Status: ACTIVE v0.46
-Prior versions: the immutable `spec/kernel-spec-vN.md` archives and the `ACTIVE-SPEC:` chain in `governance/APPROVALS.md`.
+Status: ACTIVE v0.50
+Prior versions: the immutable `spec/kernel-spec-vN.md` archives. These bytes are this version's identity; nothing else records it.
 
-META-5 delta declaration: numbered rules +4/-0 (140 remain: [SYS-15], [SYS-16], [SYS-17], [SYS-18]); grammar productions +0/-0 (84 remain); unique fixed lowercase grammar atoms +0/-0 (54 remain); compound punctuation tokens +0/-0 (8 remain); token bytes +0/-0; writer operation spellings +10/-0 and 1 respelled (`read_next`, `socket_address_v4`, `socket_address_v6`, `tcp_listen`, `tcp_accept`, `tcp_connect`, `receive_next`, `send_once`, `close_connection`, `close_listener` are added; `reserve_file` is respelled `reserve_handle`); opaque system nominal spellings +5/-0 and 3 respelled (`InputStream`, `SocketAddress`, `TcpListener`, `TcpReceive`, `TcpSend` are added; `Output`, `FileFactory`, `FilePermit` are respelled `OutputStream`, `HandleFactory`, `HandlePermit`); struct system nominal spellings +1/-0 (`TcpConnection`; a system-declared struct is a new category of system nominal beside the opaque and enum ones, and it contributes one nominal-type entry, two owner-local field records, and no constructor entry); enum system nominal spellings +3/-0 (`ListenOutcome`, `AcceptOutcome`, `ConnectOutcome`, six constructors with ten variant fields); runtime-trap families +0/-0 (0 remain); entry forms +0/-0 (1 remains); entry standard-input rows +1/-0 (6 remain: ordinal 5 is `command.stdin`, and ordinal 4 is respelled `command.handles`); contract block forms +0/-0; system operations +10/-0 (29 remain) and declaration records +80/-0 (307 remain); exception clauses +0/-0. The changed rows are the six respellings above wherever they are written; [SYS-2]'s inventory, preorder and counts; [SYS-4]'s no-split sentence, which now states that a connection's two halves are two fields of one returned struct rather than the product of a split operation; [SYS-5]'s release table, which gains five rows and states that a system struct takes no row of its own; [SYS-6]'s outcome table and its `propagate` sentence, whose operation list was stale from v0.45 (an open's outcome has not been a `Result` since that version) and is corrected here to the three operations that answer `Result<_, IoError>`; [SYS-8]'s range-bearing set, which gains `read_next`, `receive_next` and `send_once`; [SYS-10]'s permit accounting, which gains three consuming operations and two returning closes; and [FN-7]'s standard-input table and canonical entry header. No rule id is retired.
-This version adds the first system operations that wait on something other than a local file: one readable byte stream, supplied to the entry as `command.stdin`, and TCP over address literals. A connection is two owners from the first version that has one, because a system operation has one signature and a later split would need a second `receive` and `send` over half types: `tcp_accept` and `tcp_connect` return one `TcpConnection`, the system-declared struct whose `receive` and `send` fields are two ordinary places, so full duplex is two loans on disjoint fields under [OWN-5] with nothing added. The descriptor factory and its permit are respelled `HandleFactory` and `HandlePermit` because a listener and a connection draw one credit each from the same capacity a file open draws from, and the standard sinks are respelled `OutputStream` beside the new `InputStream`.
-Selection ground: evidence-selected under constitution T4 (resource dependencies are API relations, owner ruling 2026-09-04), applied to every socket resource in `research/investigations/io-model/NETWORK.md` §2: a native descriptor for a listener and for every connection is one credit of the entry's factory, consumed by listen, accept and connect and handed back by the failed variant and by the explicit closes; a local port is the `SocketAddress` value the program binds, so two binds of one port are the program's own source-order conflict; an ephemeral port, the accept queue and the socket buffers are outside the program, and each answers with honest target exhaustion or with partial progress the sequential program already produces. Overlap therefore invents no outcome the sequential program does not: two accepts on one listener each hold their own permit, and the two directions of one connection are two places under [PAR-1]. The pairing is on the API by the owner's decision of 2026-09-05 (NETWORK.md §3, §4 and §8) rather than in a later `split`. Prior selection ground for v0.45's backed permit, for v0.44's fact machinery, for v0.43's loop-body region and [ENT-6] join repair, for v0.42's canonical region spelling, for the v0.41 comparison spellings, for the v0.40 proof surface, and for [PAR-3] remains as those versions recorded it.
 Rule IDs are stable; diagnostics cite rule IDs. Sections marked DEFERRED record obligations with spec deltas per META-5, not normative content.
 
 R3-PROVISIONAL REGISTER (constitution audit 2026-07-05; these forms were minimality-selected, not evidence-selected, and require validation before ratification; their derivation status and open evidence are recorded in `spec/derivation/derivation-ledger.md` and relevant live `mcts_mem/` decisions): ordinary loop form (GRAM-4/6; the counted `for_stmt` is evidence-selected in v0.25 and is not this register item), statement-only match (GRAM-7), boundary annotation surface (TYPE-5), no-shadowing (TYPE-6), env-struct closures replacement (FN-5), contracts/conform as interfaces replacement (FN-3 — round-2 verdict still needs_evidence), byte-format choices and reject-vs-canonicalize (FORM-1/2), forced region elision (FORM-8), no-comments (FORM-4), decimal-only literals (FORM-5), checker completeness levers (OWN-3/8/11 — rejection-rate unmeasured), and deref prefix places (GRAM-5).
@@ -71,7 +68,7 @@ An `invariant_stmt` ending in `;` renders completely on one line.
 An `invariant_stmt` carrying a proof block renders its introducer through `{` on one line, each `proof_use` on a following line at depth plus one, and `}` on its own line at the original depth.
 
 A `for_stmt` renders `for`, its optional label, exactly one space, and `(`; this stated space overrides the generic right attachment of `(`.
-A `proof_use` whose multiplied source is a parenthesized relation renders exactly one space between its `*` and that `(`, `use 3 * (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, while the relation's own affine parentheses keep the generic attachment.
+A `proof_use` whose `use_premise` is a delimited relation renders exactly one space before that premise's `(`, `use (a <= b);` and `use 3 times (a <= b);`; this stated space likewise overrides the generic right attachment of `(`, exactly as the `for_stmt` space above does, while the relation's own affine parentheses keep the generic attachment.
 A `for_stmt` with no `header_invariant` renders its whole header, from `for` through `) {`, on one line; a counted loop with no invariant therefore has the one-line header `for (i in 0_u64..count) {`.
 A `for_stmt` with at least one `header_invariant` breaks after `(` instead: its `for_binding` and every `header_invariant` each render on a separate following line at depth plus one, with a comma after every item except the last; and `) {` renders on one line at the original depth.
 An ordinary `loop_stmt` without a parenthesized invariant header keeps the one-line introducer `loop` plus optional label through `{`.
@@ -185,7 +182,7 @@ Otherwise each byte in `(`, `)`, `{`, `}`, `[`, `]`, `<`, `>`, `,`, `:`, `;`, `.
 
 In source EBNF, each quoted fixed atom denotes the unique sequence of raw formed tokens whose concatenated bytes equal that atom.
 In particular, `"&uniq"` expands to the punctuation token `&` followed by the fixed lower-word token `uniq`, while `"->"`, `"=>"`, `".."`, `"=="`, `"!="`, `"<="`, `">="`, and `"::"` each denote one compound punctuation token.
-The quoted `"[0-9]+"` occurrences in the `const` production and the optional multiplier position of `proof_use` share the grammar's sole pattern predicate: each denotes one numeric-form token whose complete bytes match `[0-9]+`, and neither is a fixed atom.
+The quoted `"[0-9]+"` occurrences in the `const` production and the optional multiplicity position of `proof_use` share the grammar's sole pattern predicate: each denotes one numeric-form token whose complete bytes match `[0-9]+`, and neither is a fixed atom.
 `SELECT_2` and the two-token parser bound count the expanded raw formed tokens, not quoted-atom occurrences.
 An external terminal denotes one predicate over one formed token.
 
@@ -276,8 +273,8 @@ for_binding := IDENT "in" atom ".." atom
 header_invariant := "invariant" IDENT ":" affine_expr compare_op affine_expr
 invariant_stmt := "invariant" IDENT ":" affine_expr compare_op affine_expr
                   (";" | "{" proof_use+ "}")
-proof_use   := "use" ( "[0-9]+" "*" (IDENT | "(" affine_expr compare_op affine_expr ")")
-             | IDENT | affine_expr compare_op affine_expr ) ";"
+proof_use   := "use" (("[0-9]+" | IDENT) "times")? use_premise ";"
+use_premise := IDENT | "(" affine_expr compare_op affine_expr ")"
 affine_expr := affine_term (affine_add_op affine_term)*
 affine_term := affine_factor ("*" affine_factor)?
 affine_factor := literal | IDENT | "(" affine_expr ")"
@@ -446,7 +443,7 @@ The grammar role, never an inferred type or expected result, selects the domain 
 | contract TYPEID | source `contract_decl` names and PRE-1 contract names, including `Int` and `Float` | the optional bound TYPEID of a type `gparam` and the contract TYPEID of `conform_decl` |
 | REGIONID | `region_params` and a named `region_stmt` | every written REGIONID in `type`, `mode`, `targ`, arena-allocation effects, and `borrow_expr` [FORM-8] |
 | LABEL | an optional LABEL written by `loop_stmt` or `for_stmt` | an optional LABEL written by `break_stmt` |
-| invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the bare-IDENT source of `proof_use` |
+| invariant IDENT | names written by `header_invariant` and `invariant_stmt` | the IDENT premise alternative of `use_premise` |
 
 A source struct contributes one declaration event that adds one nominal-type entry and one constructor entry with the same spelling.
 Those entries do not collide because the grammar distinguishes a `type` role from a `construct` or `arm` role.
@@ -494,7 +491,7 @@ The resolved loop's structural identity, not a LABEL declaration, is the target 
 A `header_invariant` name is a proof-only declaration in a separate invariant-name domain.
 All names in one header must be distinct; none is visible in the header itself or before the loop, and after the complete header all become visible simultaneously throughout that loop body only.
 An `invariant_stmt` name becomes visible only after its complete statement through the remainder of its lexical block and nested blocks.
-An invariant name never denotes a runtime value, place, ownership object, label, or callable, and it is referenced only by the bare-IDENT source alternative of `proof_use` under [PRF-1].
+An invariant name never denotes a runtime value, place, ownership object, label, or callable, and it is referenced only by the IDENT premise alternative of `use_premise` under [PRF-1].
 Within the invariant-name domain a new live declaration may not shadow another live declaration, while disjoint expired scopes may reuse a spelling.
 Adding, removing, or changing a loop label cannot change any invariant binding.
 A named const becomes visible only after its complete `const_decl`, preserving CONST-2's explicitly-earlier rule.
@@ -1307,7 +1304,7 @@ Grammar fixes all definitions before all requirements and all requirements befor
 
 The definition scope initially contains the function parameters, named consts, and live type and const parameters, then each earlier definition after its complete initializer.
 Every definition and clause expression must consist only of non-consuming datums and operation-table forms that are pure and total for every value in their selected operand domain.
-User and system calls, construction, move, borrow, subscript, mutation, control flow, allocation, and every proof-required exact or otherwise partial operation are inadmissible even when another clause states their domain.
+User and system calls, construction, move, borrow, subscript, mutation, control flow, allocation, and every proof-required exact or otherwise partial operation are inadmissible even when another clause states their domain, with one exception: exact addition, subtraction, and multiplication are admitted and are read as operations over the mathematical integers rather than as evaluations, exactly as an `affine_expr` is [INV-1]. A clause is erased before lowering and evaluates nothing, so a row whose meaning is total over the mathematical integers states a relation where it would otherwise request an operation, and no domain obligation arises to discharge. Exact division, remainder, negation, absolute value, and the shifts stay inadmissible: each has an input its own relation cannot state its way out of, so admitting it would place a partial operation where nothing discharges it.
 The corresponding `.defined` queries are total and admissible.
 Each definition produces an own copy value, follows ordinary typing and no-shadowing, and is erased by recursive alpha-expansion into every later clause; no definition is evaluated, snapshotted, lowered, or visible in the body.
 
@@ -1422,9 +1419,12 @@ The measure formers are table data over the measured types, with one row in this
 A measure former is written as an ordinary `call` whose one `atom_list` operand is that place; a written type argument, a `fieldinit_list`, or a second operand is the ordinary [OP-1] rejection.
 A clause operand that is neither an [ENT-2] term nor a constant stays an ordinary pure total operand contributing no L0 projection; clause position makes nothing a term.
 
-The affine surface is unchanged.
-The `affine_factor` production of [GRAM-4] is not widened, so a `header_invariant`, an `invariant_stmt`, and a `proof_use` keep exactly [INV-1] 3109-3113's atom admission and a measure term is a clause operand and not yet an affine atom.
-DEFERRED: admitting a measure term as an affine atom, which requires the affine domain to carry one immutable atom per measure term and the L0-to-affine index to range over measure terms; its delta is grammar productions +0, numbered rules +0, and it is recorded here rather than taken.
+The `affine_factor` production of [GRAM-4] is not widened, so a `header_invariant`, an `invariant_stmt`, and a `proof_use` keep exactly [INV-1] 3109-3113's atom admission.
+A measure term is now an affine atom, which is the admission the previous version recorded as deferred and did not take.
+The affine domain carries one atom per measured place, minted on first use at its full u64 range and identified by that place's root binding, and the L0-to-affine index ranges over measure terms, so the bounds a creation or a verified contract established on `len(P)` tighten that atom exactly as an ordinary binding's bounds tighten its own image.
+The atom is stable while the object is: a measure is fixed at its object's creation and an element write never moves it [ENT-5], so only a write to the root binding removes it, which mints a new unknown for the next read.
+A structural join keeps the atom where every input agrees and drops it otherwise; a measure is not arithmetic-updated, so there is no spread for a join delta to stand for, and inputs that disagree disagree because some branch replaced the object.
+A measure of a projected place is not this atom and remains an ordinary clause operand.
 
 [CALL-4] Contract vocabulary, the result ordinal, the routes, and where the relations land.
 The clause operands of [FN-9] are terms [MSR-5], so a measure over an admitted formal place is an operand with no per-family admission, and so is one over an admitted result place.
@@ -1826,8 +1826,9 @@ For one lexical-use event the closed lookup rank is:
 | `fn_bind` right IDENT | FN-3 |
 | FORM-5 generic-numeric TYPEID suffix | FORM-5 |
 | affine IDENT in a `header_invariant` or `invariant_stmt` target | INV-1 |
-| affine IDENT in a relation-form `proof_use` source | PRF-1 |
-| bare-IDENT `proof_use` invariant source | INV-1 |
+| affine IDENT in a relation-form `use_premise` | PRF-1 |
+| the named multiplicity IDENT of `proof_use` | PRF-1 |
+| IDENT premise of `use_premise`, an invariant name | INV-1 |
 
 A successful non-LABEL lookup has exactly one visible admissible target; a successful LABEL lookup has exactly one enclosing target.
 A rank-1 payload is `(spelling, lexical_use_role, ordered_admissible_classes, ordered_nonempty_invisible_origins)`.
@@ -1853,7 +1854,7 @@ No result datum is visible in a contract definition, requirement, function body,
 The table-checked carriers are exactly the `program_kind` IDENT and both IDENTs of an `input_label`.
 Each produces one record for later [FN-7] table checking; none produces a declaration, lexical-use, dependent-declaration, or deferred-use record, none enters or queries a lexical name domain, and none participates in FORM-3's reservation inventory.
 The name of every `header_invariant` and `invariant_stmt` produces one proof-only invariant declaration record that uses TYPE-6's inventory and scope machinery; [INV-1] owns collision and lookup failure in this domain.
-A bare-IDENT `proof_use` source produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling.
+An IDENT premise of `use_premise` produces one lexical-use record querying only that domain; it can never resolve to a value declaration that happens to have the same spelling. A `proof_use`'s own IDENT is the named multiplicity and queries the value domain instead, so the two positions never compete for one spelling.
 These records have no runtime declaration or value identity, but they participate in FORM-3 reservation and deterministic lexical resolution exactly at their stated scopes.
 The lexical generic suffix inside a deferred literal law argument additionally receives its ordinary lexical-use record; this X09/U18 pair is the only same-token overlap and produces two distinct role records.
 In an `arm` or `result_route`, the leading TYPEID first resolves globally to an enum variant.
@@ -3059,6 +3060,15 @@ A datum has empty support, so [ENT-5]'s pre-kill closure carries its consequence
 An operand the substitution leaves without an [ENT-2] term mints no datum, exactly as it makes only that relation unavailable under `M(c,q)`.
 S13 is the one source by which a declared relation's substitution is computed at a point other than the point at which the relation is established, and [CALL-6] states both points.
 
+[ENT-3.S14]
+- S14 (admitted product interval).
+At an `ordinary_let_rhs` binding or a [SET-1] commit whose right-hand side is one non-constant integer multiplication that [ENT-6]'s fixed interval-product rule admitted, establish on the bound value the two constant bounds that rule's four endpoint products fix: the least of those four products is no greater than the bound value, and the bound value is no greater than the greatest of them.
+The published bounds are exactly the measurement the domain decision consumed, so an implementation states them from that one computation and never proves the endpoints a second time; a domain discharged by the finite L0 route or by an affine clause publishes nothing here, because neither computed those products.
+Both relations name only the bound value and the distinguished zero term Z, so the support [ENT-5] derives is the bound value alone.
+That is what they mean: they describe the value the multiplication already produced, so a later write to either operand leaves them true, while a write to the bound place kills them under the ordinary rule.
+A `let` binder is fresh and a commit value is compiler-owned [ENT-2], so the bound value never aliases an operand.
+This source adds no relation over the operands, no term the multiplication did not already bind, and no route by which a product enters an automatic premise family: a written `use` remains the only way a product participates in a certificate.
+
 The label S8 is retired, not reused: its midpoint family was struck as an owner-approved version amendment and may return as a later version's monotone addition the day a corpus program writes the shape.
 
 [CALL-6] Publication: how a declared relation becomes a fact, where it is computed, where it is established, and that the set it belongs to is consistent.
@@ -3092,7 +3102,7 @@ Literal `True()` has an implicit positive proof and literal `False()` an implici
 No `bxor` or Boolean-equivalence introduction is admitted in this version.
 The closure considers only already-interned exact parent trees, uses the written rule order and minimum non-cyclic derivation depth, and creates no new formula.
 Exact signed-goal identity includes every selected operation-table row, concrete selected operand type, and complete ordered operand GoalExpression.
-`+G` is derivable when that exact positive fact is present, when G has an exact comparison projection R and L0 derives R, or when G is an integer-domain predicate whose fixed [ENT-6] component normalization proves true.
+`+G` is derivable when that exact positive fact is present, when G has an exact comparison projection R and L0 derives R, when G is an integer-domain predicate whose fixed [ENT-6] component normalization proves true, or when G's comparison root has an affine normalization and `AUTO` proves it. The affine route is the goal's own comparison normalized, so proving it proves the goal and an L0 projection is what the retained evidence names rather than what the route requires: a goal carrying a coefficient has no two-term projection to name and its retained derivation is the affine consequence alone.
 `-G` is derivable when that exact negative fact is present, when G has a comparison projection and L0 derives R's exact negation, or when G is an integer-domain predicate whose fixed normalization proves false.
 Integer-domain component relations are only an alternate derivation route into that same exact signed goal; they establish no second source goal and receive no source-obligation identity of their own.
 Derivability never decomposes a merely derived parent: [ENT-3] decomposes only the specification-enumerated source establishments.
@@ -3311,7 +3321,8 @@ Thus two nonconstant affine add or subtract operands have this automatic route e
 When neither multiplication operand image is constant but both are affine, the only nonlinear automatic rule is the fixed interval product.
 For each operand independently, start with its direct closed L0/type interval, then visit each canonical premise once in the AUTO traversal and retain a strictly tighter endpoint when subtracting that one premise followed by fixed interval substitution proves it; the selected lower and upper endpoints are each re-proved by `AUTO`.
 Form the four products of the two inclusive endpoint pairs with checked `i128` arithmetic.
-The multiplication domain succeeds exactly when all four are in `min(T)..=max(T)`; this rule publishes no product inequality or intermediate premise.
+The multiplication domain succeeds exactly when all four are in `min(T)..=max(T)`.
+The rule publishes no product inequality over the operands and no intermediate premise; the one thing it publishes is the constant interval its own four products bound, established by [ENT-3.S14] on the value the admitted multiplication binds.
 
 The finite L0 normalization for exact division and remainder is `d != Z` together with a second component: ground true for unsigned T, and `(n != min(T)) or (d != -1)` for signed T, testing the dividend witness before the divisor witness.
 It is refuted when `d = Z`, or when T is signed and both `n = min(T)` and `d = -1` are derived.
@@ -3352,7 +3363,7 @@ Internal derivation metadata is only the diagnostic explanation of that acceptan
 A loop-header placement additionally creates induction obligations because control may enter that point from the preheader and from a backedge; a body placement creates only the one ordinary program-point obligation in its entering ProofContext.
 The spelling `invariant` therefore describes the writer-visible meaning in both positions, while the control-flow owner determines how many incoming-edge obligations exist.
 
-The `compare_op` of a `header_invariant`, an `invariant_stmt`, or a relation-form `proof_use` must be exactly `<=`, `<`, `>=`, or `>`; it selects a proof-domain relation over its two affine expressions and performs no [OP-1] operation, and `==` or `!=` in that position is a hard error citing INV-1 at the `compare_op` node.
+The `compare_op` of a `header_invariant`, an `invariant_stmt`, or a relation-form `use_premise` must be exactly `<=`, `<`, `>=`, or `>`; it selects a proof-domain relation over its two affine expressions and performs no [OP-1] operation, and `==` or `!=` in that position is a hard error at the `compare_op` node. It cites INV-1 in a `header_invariant` or an `invariant_stmt` target, and PRF-1 in a `use_premise`, because a relation source is owned diagnostically by PRF-1 as that rule states; the restriction itself is one rule stated once, and only its citation follows the owning position.
 The checker normalizes `a <= b` to `a-b <= 0`, `a < b` to `a-b <= -1`, `a >= b` to `b-a <= 0`, and `a > b` to `b-a <= -1`.
 Equality, disequality, and every other Bool root are outside this version's invariant surface.
 
@@ -3360,7 +3371,7 @@ An `affine_expr` denotes a mathematical integer expression and never a runtime e
 At a counted-loop header an IDENT may resolve to that header's `for_binding` binder or to a live own-mode integer value in the preheader.
 At an ordinary-loop header it may resolve only to a live own-mode integer value in the preheader.
 At an `invariant_stmt` it may resolve only to a live own-mode integer value in the statement's entering lexical context.
-Named constants, calls, construction, dereference, subscript, field selection, allocation, borrow holders, moved values, and every other runtime expression form are not admitted as affine atoms in this version.
+An integer-typed named const is admitted and denotes the one closed value it declares, folded to that value at formation; it is already an [ENT-2] constant term, so it means in a relation exactly what it means everywhere else. An integer-typed const-generic parameter is symbolic rather than closed and is not this admission. Calls, construction, dereference, subscript, field selection, allocation, borrow holders, moved values, and every other runtime expression form are not admitted as affine atoms in this version.
 Every literal and local value has its exact closed source integer type and is lifted to its mathematical integer value; mixed widths and signedness create no runtime conversion.
 `+` and `-` associate from left to right in source order.
 `*` is admitted only when at least one direct operand is an integer literal; two local or parenthesized nonliteral operands are non-affine.
@@ -3419,18 +3430,18 @@ The second uses one explicit non-unit factor, which `AUTO` never guesses:
 
 ```wf
 invariant component_sum: first + second + third <= first_limit + second_limit + third_limit {
-  use first <= first_limit;
-  use second <= second_limit;
-  use third <= third_limit;
+  use (first <= first_limit);
+  use (second <= second_limit);
+  use (third <= third_limit);
 }
 
 invariant pair_bound: first + second <= first_limit + second_limit;
 invariant scaled_bound: 3_u64 * first + 3_u64 * second <= 3_u64 * first_limit + 3_u64 * second_limit {
-  use 3 * pair_bound;
+  use 3 times pair_bound;
 }
 ```
 
-A bare-IDENT source in `proof_use` resolves in the invariant-name domain to the exact immutable normalized target published by that dominating invariant declaration; it is not reparsed using the current value bound to each source spelling.
+An IDENT premise of `use_premise` resolves in the invariant-name domain to the exact immutable normalized target published by that dominating invariant declaration; it is not reparsed using the current value bound to each source spelling.
 The checked reference stores `(concrete function instance, invariant declaration identity)` obtained from that lexical resolution, never the IDENT spelling or a later spelling lookup.
 Inside a loop body a header declaration identity denotes the currently activated arbitrary-iteration header theorem, not its base value images and not the still-unproved next-header target.
 A relation-form source in `proof_use` uses INV-1's exact affine formation and normalization rules, including substitution of every referenced local's current value image before canonical normalization. It is owned diagnostically by PRF-1 and must itself be proved by `AUTO`.
@@ -3438,15 +3449,28 @@ A named source must be in lexical scope and its published fact must be available
 Every use, named or written, is checked against the same snapshot immediately before the owning `invariant_stmt`.
 No use publishes a fact, and no earlier use can help prove a later use.
 
-The optional bare-decimal multiplier in `proof_use` is a proof-domain positive integer factor.
-A multiplied relation-form source writes its relation in parentheses, `use 3 * (a <= b);`, an unmultiplied relation-form source is bare, `use a <= b;`, and a named source is never parenthesized [GRAM-4]; those parentheses delimit the premise the factor scales and are the grammar's own, not an affine grouping.
-Its canonical spelling is one bare decimal with no leading zero, its value must be in `2..=i128::MAX`, and omission alone means one.
+A `proof_use` cites exactly one premise, its `use_premise`, and states how many times that premise is added into the certificate sum.
+A relation premise is always delimited, `use (a <= b);` and `use 3 times (a <= b);`, and a named premise never is [GRAM-4]; the delimiting parentheses are the grammar's own and are not an affine grouping.
+The optional `N times` prefix is that multiplicity, and it is written either as a bare decimal or as a name.
+A bare-decimal multiplicity is a proof-domain positive integer factor: its canonical spelling is one decimal with no leading zero, its value must be in `2..=i128::MAX`, and omission alone means one.
 It is neither a source integer literal nor a runtime type.
 Zero, an explicit one, a leading zero, an out-of-range factor, a negative or typed literal, and arithmetic overflow reject.
-No two `proof_use` entries may resolve to the same normalized premise, regardless of factor; their total scaling must be expressed by one factor on one use.
+A named multiplicity denotes the value image its declaration holds in the same entering ProofContext every premise is checked against.
+It must be a live own-mode integer value binding — a `let_stmt` local, a `param`, a `for_stmt` binder, or a match binder — or an integer `const`, and its type must be **unsigned**; a signed type, a borrow, and a non-integer type each reject. Every admitted type is copy, so a moved binding is [OWN-1]'s hard error before this rule reads it.
+That restriction is what makes the scaling step sound without a further obligation: multiplying a normalized `p <= 0` by a value known nonnegative from its written type yields `m*p <= 0`, while a negative multiplier would reverse the premise.
+A runtime multiplicity of zero drops its premise and is not a rejection, because no written text asserts that it is nonzero.
+No two `proof_use` entries may resolve to the same normalized premise, regardless of multiplicity; their total scaling must be expressed by one multiplicity on one use.
 No global or subset-minimality judgment is performed on the remaining list.
 
-The checker forms S independently of premise admission by multiplying each normalized premise by its written positive factor and adding the results in source order with checked `i128` arithmetic; acceptance additionally requires every source to be independently admitted.
+The checker forms S independently of premise admission by multiplying each normalized premise by its written multiplicity and adding the results in source order with checked `i128` arithmetic; acceptance additionally requires every source to be independently admitted.
+A bare-decimal multiplicity keeps that accumulation affine.
+A named multiplicity does not: scaling a normalized premise by a value introduces products of two value images, so the accumulation is a polynomial of degree at most two whose nonlinear monomials exist only while S is being formed.
+Before S is used, every such monomial is folded to the one value that already equals it: the value image bound by an admitted exact multiplication [ENT-6] whose two operands are the same two values, where that multiplication's own [OP-2] domain discharged over affine operand images — by the fixed interval-product rule or by an affine clause, either of which fixes the images the judgment read. A domain discharged by the finite L0 route alone records nothing, because that route reads no affine image.
+A multiplication's operand and a written multiplicity name the same value when they name the same declaration, not when their images coincide. A local's image is transparent: `let stride = width + padding;` gives `stride` the image `width + padding`, so a product over `stride` and a certificate scaling by `stride` would otherwise reach the fold as different arithmetic. Each such binding therefore contributes one opaque handle, minted at its type range on first demand and killed with the binding's image, and the product record and the multiplicity both name that handle. This is the rule [PRF-1] already applies to a named premise, which resolves to its declaration identity and is never reparsed from the current value of its spelling.
+A handle exists only between the fold and the residual. Once every nonlinear monomial has folded, each handle is replaced by the image it stands for, so what reaches the residual is written in exactly the terms every other premise and the target are written in, and no certificate can be discharged by a handle's own defining equation.
+When several bindings hold that product, the one the target itself names is chosen, and otherwise the least; they are equal values, so either choice is sound and this one is a canonical form rather than a search.
+S is that folded accumulation, and it must be an affine inequality: a certificate that leaves any nonlinear monomial unfolded rejects and proves nothing.
+Nothing else in this specification carries a nonlinear term — no fact, no published conclusion, no invariant target, and no `affine_expr` [INV-1] — so the accumulation above is the complete extent of degree two in the language.
 Let S be that one accumulated inequality and T the owning invariant target.
 The certificate succeeds exactly when `DIRECT(T - S)` succeeds in the same entering ProofContext, or when `DIRECT(T - S/k)` succeeds there for one of the two integer-tightening factors k that [ENT-6] fixes for S and T.
 In particular, when S's coefficient vector is exactly k times T's, that tightened residual is constant and the target is admitted whenever the mathematical floor of S's bound divided by k is no greater than T's bound.
@@ -3462,7 +3486,7 @@ At most 4096 `proof_use` entries are admitted by one block; this is a source str
 Only the owning invariant target is published after a successful certificate.
 The `proof_use` list and all of its intermediate arithmetic are erased with the invariant and have no runtime semantics.
 An unresolved invariant name is the ordinary INV-1 lexical-scope failure and forms no certificate source.
-A resolved but unavailable named source, undischarged or malformed relation source, invalid factor, duplicate source, arithmetic or structural overflow, failed final `DIRECT` residual, or redundant block cites PRF-1 at the smallest owning source node and publishes no target.
+A resolved but unavailable named source, undischarged or malformed relation source, invalid multiplicity, duplicate source, arithmetic or structural overflow, unfolded nonlinear monomial in S, failed final `DIRECT` residual, or redundant block cites PRF-1 at the smallest owning source node and publishes no target.
 
 ## 19. Worked example (normative bytes)
 
@@ -3519,8 +3543,9 @@ Its unique machine-checked content is that no rule ID is defined twice and every
 [META-2] No context-dependent spellings or rule variants: no rule's meaning depends on surrounding context; defaulting rules do not exist.
 [META-3] No rule carries an exception clause; conditional structure is expressed as total positive rules or table data.
 [META-4] Every normative fact is stated once; other mentions are rule-ID cross-references.
-[META-5] Every change to this artifact declares its spec delta (rules ±, tokens ±, spellings ±, exceptions ±) and its SELECTION GROUND (evidence-selected vs minimality-selected) in this document's status header.
-`docs/WORKFLOW.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
+[META-5] Every change to this artifact declares its spec delta (rules ±, tokens ±, spellings ±, exceptions ±) and its SELECTION GROUND (evidence-selected vs minimality-selected) in the change that makes it.
+This document states the language and carries no commentary about its own versions: no delta declaration, no description of what a version changed, and no selection ground appear in these bytes, and a version's own such text is not retained here after it activates.
+`CLAUDE.md` defines the repository's four branch-and-main rules: work-branch changes need no approval, while merging into `main` requires owner approval of the exact tested revision and the records those rules require.
 DEFERRED markers are tracked specification-delta obligations and do not create another approval point.
 [META-6] Every rule carries an entry in `spec/derivation/derivation-ledger.md` tracing it to `docs/constitution.md`; a rule whose chain is refuted or orphaned (evidence card dies, constitutional premise amended) is flagged for re-grounding, and underived rules may not ratify.
 The native `whitefoot-spec` gate checks that every active rule ID has a ledger row.

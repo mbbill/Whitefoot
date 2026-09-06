@@ -1,0 +1,15 @@
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/signed/signed__writer-r2__10_i16_checked_multiply.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/indexing/indexing__writer-r1__grid_index.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/indexing/indexing__writer-r1__bucket_index.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/arithmetic-domain/arithmetic-domain__writer-r2__p08_checked_multiply_loop.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/arithmetic-domain/arithmetic-domain__writer-r1__11_mul_checked_result.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/snapshot/cases/arithmetic-domain/arithmetic-domain__writer-r2__p02_mul_by_literal.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/conformance/cases/run-invariant-exact-sum.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/conformance/cases/x-arith-loop-checked-multiply-overflow.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/conformance/cases/x-match-give1-nested-value-match.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/tests/conformance/cases/x-integ-loop-product-checked-overflow.wf
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/research/experiments/auto-parallelism-feasibility/RESULTS.md
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/research/investigations/spec-representation/DOSSIER.md
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/research/investigations/obligation-discharge/CANDIDATE-REVIEW.md
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/research/investigations/obligation-discharge/SYS-POSTCONDITIONS.md
+/tmp/claude-0/-home-user-Whitefoot/1dea2c46-aae2-5e06-954f-b60e9c5b442c/scratchpad/main-v044/research/investigations/containers-and-resources/DESIGN.md

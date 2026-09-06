@@ -1,5 +1,17 @@
 use core::fmt;
 
+/// SHA-256, so the active specification's identity can be derived from its own
+/// bytes instead of being taken on trust.
+///
+/// The crate has no dependencies and keeps none, so this is written by hand.
+/// It is a `const fn` and usable in constant position for small inputs, but the
+/// active specification is hashed at runtime: see `computed_active_spec_hash`
+/// for why. Names inside the compression function follow FIPS 180-4 section 6.2
+/// so the code can be read against the standard.
+///
+/// The documentation lives here rather than as a `//!` header inside the file
+/// because `build.rs` includes those same bytes to derive the identity, and an
+/// inner attribute cannot appear in an `include!` expansion.
 mod sha256;
 
 /// The SHA-256 identity of one exact kernel specification.
@@ -85,7 +97,7 @@ const fn hex_value(digit: u8) -> u8 {
 /// SHA-256 of the embedded active specification, computed from its bytes.
 ///
 /// The one quantity in this module that no one transcribes. Comparing it with
-/// the digest recorded in `governance/APPROVALS.md`, which the `whitefoot-spec`
+/// the digest the generated identity module names, which the `whitefoot-spec`
 /// gate does, compares this implementation against the independently measured
 /// `shasum -a 256` the record was written from.
 #[must_use]
@@ -101,7 +113,7 @@ mod tests {
     };
 
     /// The decoded constant is checked against the bytes, never trusted. The
-    /// independent measurement enters through `governance/APPROVALS.md`: its
+    /// independent measurement enters through the generated identity module: its
     /// digests were recorded from `shasum -a 256`, the archive gate hashes the
     /// same file with `shasum`, and `whitefoot-spec` compares this computed
     /// value against that chain tail, so a wrong SHA-256 implementation cannot

@@ -166,7 +166,7 @@ The knob alone does not make a table uncached. `F_NOCACHE` stops a read
 populating the page cache; it does not evict a page that is already resident,
 so a table run over a tree that was just written, or just read by a warm
 table, is served from memory however loudly it asks for the device. Batch
-0092 published a table that way once; `docs/done/0092-read-workload.md`
+an early table was published that way once; the correction
 records it.
 
 Three things now stand between that mistake and the table.

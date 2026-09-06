@@ -1,0 +1,31 @@
+fn needs_capacity(room: own u64, count: own u64, width: own u64) -> ok: own u64 pure contract {
+  define needed = count *sat width;
+  requires room >= needed;
+} {
+  doc "probe: can the callee turn the *sat capacity requirement back into a usable affine fact?";
+  let recomputed = count *sat width;
+  invariant capacity: recomputed <= room;
+  return 1_u64;
+}
+
+fn caller(room: own u64, count: own u64, width: own u64) -> ok: own u64 pure {
+  doc "establish and call";
+  let needed = count *sat width;
+  let enough = room >= needed;
+  if enough {
+  } else {
+    return 0_u64;
+  }
+  let flag = needs_capacity(room: room, count: count, width: width);
+  return flag;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "drive";
+  let flag = caller(room: 32_u64, count: 4_u64, width: 3_u64);
+  if flag == 1_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

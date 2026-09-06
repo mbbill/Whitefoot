@@ -5,8 +5,8 @@ fn scale_pair(first: own u64, first_limit: own u64, second: own u64, second_limi
   doc "Expect REJECT [PRF-1 duplicate premise]: same premise cited twice with two different explicit factors (2 and 3) instead of one combined factor of 5.";
   invariant pair_bound: first + second <= first_limit + second_limit;
   invariant scaled_bound: 5_u64 * first + 5_u64 * second <= 5_u64 * first_limit + 5_u64 * second_limit {
-    use 2 * pair_bound;
-    use 3 * pair_bound;
+    use 2 times pair_bound;
+    use 3 times pair_bound;
   }
   return unit;
 }

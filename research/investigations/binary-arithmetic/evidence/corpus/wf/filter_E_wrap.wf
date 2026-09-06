@@ -1,0 +1,37 @@
+struct DelayLine {
+  samples: array<u32, 4>;
+}
+
+struct Filter {
+  delay: DelayLine;
+  gain: u32;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "SNAPSHOT REJECT [OP-2]: the finder expected ACCEPT, and the re-read chain after the middle-term replace is now accepted, but the later checked product after * filter.gain still has no proved domain.";
+  let first_samples = array_new::<u32, 4>(1_u32);
+  let first_delay = DelayLine(samples: move first_samples);
+  let filter = Filter(delay: move first_delay, gain: 2_u32);
+  let before = filter.delay.samples[0_u64];
+  let before_ok = before == 1_u32;
+  if before_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let second_samples = array_new::<u32, 4>(9_u32);
+  let second_delay = DelayLine(samples: move second_samples);
+  let old = replace filter.delay = move second_delay;
+  let after = filter.delay.samples[0_u64];
+  let after_ok = after == 9_u32;
+  if after_ok {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let scaled = after *wrap filter.gain;
+  let correct = scaled == 18_u32;
+  if correct {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

@@ -1,0 +1,28 @@
+const item_limit: u64 = 4294967296_u64;
+
+fn sum_items(items: own buffer<u32>, max_item: own u32) -> total: own u64 reads(items) contract {
+  define count = len(items);
+  requires count <= item_limit;
+} {
+  let count = len(items);
+  let total = 0_u64;
+  for (
+    i in 0_u64..count,
+    invariant bounded: total <= 4294967295_u64 * i
+  ) {
+    let item = cvt::<u32, u64>(items[i]);
+    set total = total + item;
+  }
+  return total;
+}
+
+command fn main() -> status: own ExitStatus allocates(heap) {
+  doc "WORKAROUND W2: publish the element-count bound as a requires; the caller discharges it.";
+  let items = buffer_new(4_u64, 100_u32);
+  let total = sum_items(items: move items, max_item: 100_u32);
+  if total == 400_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  return exit_status(code: 0_u8);
+}

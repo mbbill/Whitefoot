@@ -900,9 +900,9 @@ fn prove_only(left: own u64, left_limit: own u64, middle: own u64, middle_limit:
   requires right <= right_limit;
 } {
   invariant combined: left + middle + right <= left_limit + middle_limit + right_limit {
-    use left <= left_limit;
-    use middle <= middle_limit;
-    use right <= right_limit;
+    use (left <= left_limit);
+    use (middle <= middle_limit);
+    use (right <= right_limit);
   }
   return unit;
 }
