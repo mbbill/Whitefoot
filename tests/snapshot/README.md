@@ -16,8 +16,9 @@ the survivors on every gate run and notice when one of them changes verdict.
 Only sweep programs whose author stated an expectation are here; a program with
 no stated expectation records a verdict nobody predicted, which is not worth a
 gate row. That excludes the sweep's known unsound accept, which is tracked
-where a language claim belongs — the conformance xfail case
-`ent5-neg-callee-uniq-buffer-replace-kills-length`.
+where a language claim belongs — the conformance case
+`ent5-neg-callee-uniq-buffer-replace-kills-length`, which v0.45's [CALL-5]
+closed and which now runs.
 
 ## What is here
 
@@ -50,13 +51,18 @@ rejection cites is a diagnostic choice, and pinning it here would turn every
 diagnostic improvement into a corpus failure. If you want a cited rule pinned,
 that is a conformance case, not a snapshot row.
 
-Thirteen rows carry `agreement = no`: the author expected an accept and this
+Twenty-one rows carry `agreement = no`: the author expected an accept and this
 compiler rejects. Each row's `doc` gives the rule that decides it and the
-mechanism behind it — twelve are expectation errors, and the thirteenth
+mechanism behind it — twelve are expectation errors; one
 (`kills__writer-r2__06_chain_middle_replace`) is a program whose stated
 expectation the compiler now meets in the part it was written to exercise, yet
-which still rejects for an unrelated unproved product. They are kept because a
-wrong expectation is still a fixed verdict worth watching.
+which still rejects for an unrelated unproved product; and eight are programs
+whose expectation the language itself moved under. Those eight hand a
+`&uniq buffer<u8>` to a helper, and v0.45's [CALL-5] selects no transport for
+such a parameter, so the call kills the caller's length whatever the callee
+does — the shape that keeps a caller's measures is the exclusive view
+[CALL-3]. They are kept because a wrong or superseded expectation is still a
+fixed verdict worth watching.
 
 ## When a verdict flips
 
