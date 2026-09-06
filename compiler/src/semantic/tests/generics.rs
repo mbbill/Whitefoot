@@ -151,18 +151,51 @@ command fn main() -> status: own ExitStatus pure {
     });
 }
 
-/// The negative control for the three [FN-6] rejections below: a cycle whose
-/// every call does instantiate the callee at exactly the caller's own type
-/// parameters is *permitted* by FN-6, so it must not reach that rule. It stops
-/// as an unimplemented capability instead, which is what this compiler owes a
-/// legal program it cannot yet monomorphize.
+/// The positive control for the three [FN-6] rejections below: a cycle whose
+/// every call does instantiate the callee at exactly the caller's own
+/// parameters is *permitted* by FN-6, and it is also finite — the call mints
+/// no instance the caller is not already at — so it monomorphizes to the one
+/// instance the program reaches rather than stopping as an unimplemented
+/// capability.
 #[test]
-fn generic_call_cycle_stops_before_concrete_instance_enumeration() {
+fn a_generic_call_cycle_at_the_callers_own_parameters_monomorphizes() {
     let source = br#"fn recursive<T: Int>(value: own T) -> result: own T pure {
   return recursive::<T>(value: value);
 }
 
 command fn main() -> status: own ExitStatus pure {
+  let seen = recursive::<u16>(value: 1_u16);
+  return exit_status(code: 0_u8);
+}
+"#;
+    with_semantics(source, |outcome| {
+        let SemanticOutcome::Complete(checked) = outcome else {
+            panic!("a cycle at the caller's own parameters must check: {outcome:?}");
+        };
+        assert_eq!(checked.function_count(), 2);
+    });
+}
+
+/// The one generic cycle that still stops: [FN-6]'s syntactic rule speaks of
+/// *type* parameters, so it does not refuse a call that derives its const
+/// argument from the caller's own const parameter. Each such call mints a
+/// second instance, which mints a third, and the instantiation worklist does
+/// not terminate. That is an unimplemented capability of this compiler and is
+/// reported as one, never as a source rejection.
+#[test]
+fn a_generic_cycle_varying_a_const_argument_stops_before_instance_enumeration() {
+    let source = br#"fn grow<const n: u64>(at: own u64) -> total: own u64 pure {
+  let done = at == 0_u64;
+  if done {
+    return 0_u64;
+  }
+  let next = at -wrap 1_u64;
+  let rest = grow::<n + 1>(at: next);
+  return rest +wrap 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let total = grow::<1>(at: 3_u64);
   return exit_status(code: 0_u8);
 }
 "#;

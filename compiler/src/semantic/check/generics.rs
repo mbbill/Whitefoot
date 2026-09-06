@@ -354,11 +354,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             name: declaration.spelling().to_owned(),
             generic_parameters: self.parse_generic_parameters(node)?,
         };
-        if !template.generic_parameters.is_empty()
-            && let Some(regions) = self.tree.first_child_with(node, Production::RegionParams)?
-        {
-            return self.unsupported(UnsupportedSemanticFeature::Generics, regions);
-        }
         let index = self.function_templates.len();
         if self
             .templates_by_declaration
@@ -1859,7 +1854,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 },
             );
         }
-        if let Some(call) = self.generic_cycle_components(&edges).1 {
+        if let Some(call) = self.generic_cycle_components(&edges)?.1 {
             return self.unsupported(UnsupportedSemanticFeature::Generics, call);
         }
         Ok(())
@@ -2075,18 +2070,35 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
 
     fn generic_cycle_analysis(&self) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
         let edges = self.generic_call_edges()?;
-        Ok(self.generic_cycle_components(&edges))
+        self.generic_cycle_components(&edges)
     }
 
+    /// The generic call cycles whose instance set this compiler cannot
+    /// enumerate, and the first call that makes one of them so.
+    ///
+    /// [FN-6] has already refused every cycle whose call writes anything but
+    /// the caller's own *type* parameters, so what survives it is a cycle each
+    /// of whose calls repeats the caller's type parameters. That leaves the
+    /// const arguments, which FN-6 does not speak about: a call writing a
+    /// const argument derived from the caller's own const parameter mints a
+    /// second instance, which mints a third, and the worklist does not
+    /// terminate. Such a cycle is an explicit unsupported capability.
+    ///
+    /// A call that repeats the caller's complete parameter list — every type
+    /// parameter and every const parameter, in position — is the caller's own
+    /// instance and mints nothing, so its cycle is finite and is compiled.
     fn generic_cycle_components(
         &self,
         edges: &[Vec<(usize, NodeId)>],
-    ) -> (Vec<bool>, Option<NodeId>) {
+    ) -> Result<(Vec<bool>, Option<NodeId>), CheckStop> {
         let mut unavailable = vec![false; self.function_templates.len()];
         let mut first = None;
         for (caller, outgoing) in edges.iter().enumerate() {
             for (callee, call) in outgoing {
                 if !Self::graph_reaches(*callee, caller, edges) {
+                    continue;
+                }
+                if self.call_repeats_caller_generic_arguments(*call, caller, *callee)? {
                     continue;
                 }
                 let generic_component = (0..self.function_templates.len()).any(|candidate| {
@@ -2110,7 +2122,100 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
         }
-        (unavailable, first)
+        Ok((unavailable, first))
+    }
+
+    /// Whether one call writes exactly its caller's own generic parameters,
+    /// in order, at every one of the callee's generic-parameter positions.
+    ///
+    /// The judgment is syntactic, as [FN-6]'s own is: a type position is
+    /// satisfied by a bare TYPEID carrying no arguments that resolves to the
+    /// caller's type parameter there, and a const position by a bare
+    /// identifier — no literal, no operator — that resolves to the caller's
+    /// const parameter there. A callee with a different parameter shape, or a
+    /// call writing no argument list at all, satisfies neither.
+    fn call_repeats_caller_generic_arguments(
+        &self,
+        call: NodeId,
+        caller: usize,
+        callee: usize,
+    ) -> Result<bool, CheckStop> {
+        let caller_parameters = &self.function_templates[caller].generic_parameters;
+        let callee_parameters = &self.function_templates[callee].generic_parameters;
+        if caller_parameters.is_empty() || caller_parameters.len() != callee_parameters.len() {
+            return Ok(caller_parameters.is_empty() && callee_parameters.is_empty());
+        }
+        let Some(targs) = self.tree.first_child_with(call, Production::Targs)? else {
+            return Ok(false);
+        };
+        let arguments = self.tree.children_with(targs, Production::Targ)?;
+        if arguments.len() != callee_parameters.len() {
+            return Ok(false);
+        }
+        for ((caller_parameter, callee_parameter), argument) in caller_parameters
+            .iter()
+            .zip(callee_parameters)
+            .zip(&arguments)
+        {
+            let repeats = match (caller_parameter, callee_parameter) {
+                (
+                    GenericParameter::Type {
+                        declaration: expected,
+                        ..
+                    },
+                    GenericParameter::Type { .. },
+                ) => self.targ_names_type_parameter(*argument, *expected)?,
+                (
+                    GenericParameter::Const {
+                        declaration: expected,
+                        ..
+                    },
+                    GenericParameter::Const { .. },
+                ) => self.targ_names_const_parameter(*argument, *expected)?,
+                _ => false,
+            };
+            if !repeats {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether one `targ` is written as exactly the named const parameter.
+    fn targ_names_const_parameter(
+        &self,
+        argument: NodeId,
+        expected: DeclarationId,
+    ) -> Result<bool, CheckStop> {
+        let Some(value) = self.tree.first_child_with(argument, Production::Const)? else {
+            return Ok(false);
+        };
+        if self
+            .tree
+            .first_child_with(value, Production::InfixOp)?
+            .is_some()
+            || !self
+                .tree
+                .direct_tokens_matching(value, &[TerminalPredicate::Digits])?
+                .is_empty()
+        {
+            return Ok(false);
+        }
+        let [_] = self.tree.direct_identifiers(value)?.as_slice() else {
+            return Ok(false);
+        };
+        let path = self.tree.path(value)?;
+        Ok(self.resolved.lexical_uses().iter().any(|usage| {
+            usage.role() == LexicalUseRole::Const
+                && usage.origin().node() == path
+                && matches!(
+                    usage.target(),
+                    ResolvedTarget::Source {
+                        declaration,
+                        class: DeclarationClass::ConstGeneric,
+                    } if declaration == expected
+                )
+        }))
     }
 
     pub(super) fn call_is_inside_postcondition(&self, call: NodeId) -> Result<bool, CheckStop> {

@@ -793,7 +793,12 @@ command fn main() -> status: own ExitStatus pure {
         SemanticIssueKind::BorrowConflict,
     );
 
-    assert_rule(
+    // [OWN-12] compares the resolved places two argument positions reach. A
+    // view parameter is one binding of its declaration, and the region its
+    // elided type carries is a region of its own [FORM-8] that no other
+    // position of the declaration names, so forwarding it beside a unique
+    // borrow of a different binding overlaps nothing.
+    with_semantics(
         br#"fn consume(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
   return unit;
 }
@@ -803,6 +808,31 @@ fn wrapper(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pu
 }
 
 command fn main() -> status: own ExitStatus pure {
+  return exit_status(code: 0_u8);
+}
+"#,
+        |outcome| {
+            assert!(
+                matches!(outcome, SemanticOutcome::Complete(_)),
+                "forwarding a view beside a unique borrow of another binding is no overlap: {outcome:?}"
+            );
+        },
+    );
+
+    // The overlap is refused where it is written: the caller that forms the
+    // view over the very storage it hands to the unique position reaches one
+    // place twice, once uniquely.
+    assert_rule(
+        br#"fn consume(view: own Slice<u8>, output: &uniq buffer<u8>) -> result: own unit pure {
+  return unit;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  let bytes = buffer_new(2_u64, 0_u8);
+  region {
+    let view = slice_of(&bytes);
+    let done = consume(view: view, output: &uniq bytes);
+  }
   return exit_status(code: 0_u8);
 }
 "#,

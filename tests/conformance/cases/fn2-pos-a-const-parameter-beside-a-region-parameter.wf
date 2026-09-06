@@ -1,0 +1,26 @@
+fn publish<const n: u64>['s](store: &uniq Heap<'s>, source: own FixedVector<u8, n>) -> made: own Option<Vector<'s, u8>> reads(store, source), writes(store), allocates(store) contract {
+  define size = len_of(source);
+  requires buffer_fits::<u8>(size);
+} {
+  doc "One declaration carrying both a const generic parameter [MSR-6] and a region parameter [FORM-8]: the instance is keyed on the const argument and the region is substituted positionally from the call's own operands [FN-2], so the two axes are independent and neither is a capability limit.";
+  let size = len_of(source);
+  region {
+    return heap_vector::<u8>(store: &uniq deref(store), count: size);
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  doc "One instance, at the entry heap's store region.";
+  let run = fixed_vector::<u8, 4>();
+  set run = place_back(vector: move run, value: 9_u8);
+  region {
+    match publish::<4>(store: &uniq heap, source: move run) {
+      Some(value: made) => {
+        return exit_status(code: 0_u8);
+      }
+      None() => {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+}

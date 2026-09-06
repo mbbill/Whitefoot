@@ -1,0 +1,45 @@
+fn walk<const n: u64>(run: own FixedVector<u8, n>, at: own u64) -> total: own u64 reads(run) contract {
+  requires at <= len_of(run);
+} {
+  doc "[FN-6] permits recursion and refuses only polymorphic recursion. A call that writes exactly the caller's own parameters, as this one writes `n`, is the caller's own instance and mints no second one, so the cycle's instance set is finite and it monomorphizes.";
+  let held = len_of(run);
+  let more = at < held;
+  if more {
+  } else {
+    return 0_u64;
+  }
+  let here = run[at];
+  let widened = cvt::<u8, u64>(here);
+  let next = at + 1_u64;
+  let rest = walk::<n>(run: move run, at: next);
+  return widened +wrap rest;
+}
+
+fn countdown<T: Int>(at: own u64) -> total: own u64 pure {
+  doc "The same cycle over a type parameter.";
+  let done = at == 0_u64;
+  if done {
+    return 0_u64;
+  }
+  let next = at -wrap 1_u64;
+  let rest = countdown::<T>(at: next);
+  return rest +wrap 1_u64;
+}
+
+command fn main() -> status: own ExitStatus pure {
+  doc "3 + 4 from the run, then 3 from the countdown.";
+  let run = fixed_vector::<u8, 2>();
+  set run = place_back(vector: move run, value: 3_u8);
+  set run = place_back(vector: move run, value: 4_u8);
+  let total = walk::<2>(run: move run, at: 0_u64);
+  if total == 7_u64 {
+  } else {
+    return exit_status(code: 1_u8);
+  }
+  let counted = countdown::<u16>(at: 3_u64);
+  if counted == 3_u64 {
+  } else {
+    return exit_status(code: 2_u8);
+  }
+  return exit_status(code: 0_u8);
+}
