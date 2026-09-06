@@ -66,11 +66,13 @@ fn const_evaluation_rejects_every_out_of_domain_result() {
 
 /// The positive source-level case: one operation written at a `const`
 /// position parses under the candidate tables and reaches the evaluator, so
-/// `array_new<u64, 2 * 3>` is an accepted six-element array rather than the
-/// syntax rejection v0.30 gave it.
+/// `fixed_vector<u64, 2 * 3>` is an accepted six-slot run rather than the
+/// syntax rejection v0.30 gave it. `cap_of` is the measure the written const
+/// generic fixes on a fresh run [BLK-1], which is where the evaluated `2 * 3`
+/// is observable.
 #[test]
 fn const_position_arithmetic_parses_and_evaluates() {
-    let source = b"command fn main() -> status: own ExitStatus pure {\n  let filled = array_new::<u64, 2 * 3>(0_u64);\n  let count = len_of(filled);\n  return exit_status(code: 0_u8);\n}\n";
+    let source = b"command fn main() -> status: own ExitStatus pure {\n  let filled = fixed_vector::<u64, 2 * 3>();\n  let count = cap_of(filled);\n  return exit_status(code: 0_u8);\n}\n";
     with_semantics(source, |outcome| {
         assert!(
             matches!(outcome, SemanticOutcome::Complete(_)),
