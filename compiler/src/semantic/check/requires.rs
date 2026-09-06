@@ -465,7 +465,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Array { element, length } => {
                     (Some(CheckedElement::Flat(element)), Some(length))
                 }
-                CheckedType::Buffer { element } | CheckedType::Slice { element, .. } => {
+                CheckedType::Slice { element, .. } => {
                     (Some(CheckedElement::Flat(element)), None)
                 }
                 _ => return Err(SemanticCompilerFailure::InvalidResolution.into()),

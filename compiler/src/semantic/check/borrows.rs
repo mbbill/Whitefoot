@@ -827,7 +827,7 @@ absent when it writes none",
     /// source.
     pub(super) fn borrowable_type(&self, ty: CheckedType) -> Result<bool, CheckStop> {
         Ok(match ty {
-            CheckedType::Buffer { .. } | CheckedType::Slice { .. } => true,
+            CheckedType::Slice { .. } => true,
             // A store-resident run is a descriptor and a provider is its own
             // handle, so each is already the thing a borrow carries; a
             // frame-resident run is inline storage, so a borrow of it is the
@@ -849,8 +849,7 @@ absent when it writes none",
             | CheckedType::Bool
             | CheckedType::Integer(_)
             | CheckedType::Float(_) => true,
-            CheckedType::Array { .. }
-            | CheckedType::Generic(_)
+            CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_) => false,
         })
@@ -885,9 +884,7 @@ absent when it writes none",
             | CheckedType::Extent { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. } => true,
-            CheckedType::Buffer { .. }
-            | CheckedType::Slice { .. }
-            | CheckedType::Array { .. }
+            CheckedType::Slice { .. }
             | CheckedType::Generic(_)
             | CheckedType::GenericInt(_)
             | CheckedType::GenericFloat(_) => false,
@@ -1076,14 +1073,6 @@ inside the `region` block whose region it takes",
         };
         let slice = local.slice.clone();
         let expression = match ty {
-            CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
-                carrier: self.tree.path(carrier)?.clone(),
-                root: CheckedBufferRoot {
-                    binding: local.binding,
-                    fields,
-                    element,
-                },
-            },
             CheckedType::Nominal(nominal)
                 if fields.is_empty()
                     && matches!(self.nominal(nominal)?.kind, CheckedNominalKind::Box { .. }) =>
@@ -1485,14 +1474,6 @@ and name it on the returned reborrow"
             node,
         )?;
         let expression = match ty {
-            CheckedType::Buffer { element } => CheckedExpression::BorrowBuffer {
-                carrier: self.tree.path(carrier)?.clone(),
-                root: CheckedBufferRoot {
-                    binding: local.binding,
-                    fields,
-                    element,
-                },
-            },
             // An opaque resource value is its own borrow, so a child reborrow
             // of a borrow-mode holder is that same inline value: there is no
             // content to address and nothing to reload [SYS-2, OWN-6].
@@ -1759,9 +1740,7 @@ and name it on the returned reborrow"
             // referent is required is the same [TYPE-7] missing `deref`.
             RequiredReferent::IndexableStorage => matches!(
                 ty,
-                CheckedType::Array { .. }
-                    | CheckedType::Buffer { .. }
-                    | CheckedType::Slice { .. }
+                CheckedType::Slice { .. }
                     | CheckedType::FixedVector { .. }
                     | CheckedType::Vector { .. }
             ),

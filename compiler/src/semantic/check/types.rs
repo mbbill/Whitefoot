@@ -180,56 +180,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
         if self.has_fixed(node, FixedTerminal::F64)? {
             return Ok(CheckedType::Float(FloatType::F64));
         }
-        if self.has_fixed(node, FixedTerminal::Array)? {
-            let element_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(element_node, substitution)?;
-            let length_node = self
-                .tree
-                .first_child_with(node, Production::Const)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            let element_type = self.parse_type_with(element_node, substitution)?;
-            let element = self.checked_flat_element(element_type, element_node)?;
-            return Ok(CheckedType::Array {
-                element,
-                length: self.parse_const_expression_with(length_node, substitution)?,
-            });
-        }
-        if self.has_fixed(node, FixedTerminal::Buffer)? {
-            let element_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(element_node, substitution)?;
-            let element_type = self.parse_type_with(element_node, substitution)?;
-            // [TYPE-2] v0.31 forms buffers over copy elements and over
-            // region-free affine nominal elements. The structural affine
-            // composites (`buffer<buffer<T>>`, `buffer<array<T, N>>`) and
-            // generic elements have no implemented representation yet and
-            // stop as an explicit unsupported capability rather than a
-            // source rejection.
-            return match self.buffer_element(element_type)? {
-                Some(element) => Ok(CheckedType::Buffer { element }),
-                None => self.unsupported(UnsupportedSemanticFeature::CompositeValues, element_node),
-            };
-        }
-        if self.has_fixed(node, FixedTerminal::Arena)? {
-            let content_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(content_node, substitution)?;
-            let content = self.parse_type_with(content_node, substitution)?;
-            let region = self.substituted_type_region(node, substitution)?;
-            return self
-                .arena_nominals
-                .get(&(region, content))
-                .copied()
-                .map(CheckedType::Nominal)
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
-        }
         // [VIEW-1] the two views are one type shape at two loan strengths,
         // and the atom the writer wrote is which strength this is.
         if let Some(strength) = self.written_loan_strength(node)? {
@@ -247,20 +197,6 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 element,
                 strength,
             });
-        }
-        if self.has_fixed(node, FixedTerminal::Box)? {
-            let referent_node = self
-                .tree
-                .first_child_with(node, Production::Type)?
-                .ok_or(SemanticCompilerFailure::InvalidCanonicalTree)?;
-            self.reject_region_bearing_storage_type(referent_node, substitution)?;
-            let referent = self.parse_type_with(referent_node, substitution)?;
-            return self
-                .box_nominals
-                .get(&referent)
-                .copied()
-                .map(CheckedType::Nominal)
-                .ok_or_else(|| SemanticCompilerFailure::InvalidResolution.into());
         }
         if self
             .tree
@@ -465,7 +401,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Slice { .. }
                 | CheckedType::Heap { .. }
                 | CheckedType::Extent { .. } => return Ok(true),
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 CheckedType::FixedVector { element, .. } | CheckedType::Vector { element, .. } => {
@@ -1432,9 +1368,7 @@ extent's region is one the caller must choose, so it is written at every positio
             // the descriptor binding. Region-bearing storage fields are
             // rejected before this point, so the embedded case is defensive.
             CheckedType::Slice { .. } if !embedded => Vec::new(),
-            CheckedType::Array { .. }
-            | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
+            CheckedType::Slice { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Heap { .. }
@@ -1942,7 +1876,6 @@ extent's region is one the caller must choose, so it is written at every positio
             // `array`'s retirement; a run, a heap, and an extent are not
             // static rodata in this version.
             CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Heap { .. }
@@ -2033,9 +1966,7 @@ extent's region is one the caller must choose, so it is written at every positio
             }
             CheckedType::Generic(_)
             | CheckedType::Nominal(_)
-            | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Heap { .. }

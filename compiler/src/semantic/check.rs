@@ -240,9 +240,7 @@ fn type_carries_region(ty: CheckedType, region: DeclarationId) -> bool {
         | CheckedType::Integer(_)
         | CheckedType::Float(_)
         | CheckedType::Nominal(_)
-        | CheckedType::Buffer { .. }
-        | CheckedType::FixedVector { .. }
-        | CheckedType::Array { .. } => false,
+        | CheckedType::FixedVector { .. } => false,
     }
 }
 
@@ -3176,9 +3174,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 }
             }
             CheckedType::Generic(_)
-            | CheckedType::Array { .. }
             | CheckedType::Slice { .. }
-            | CheckedType::Buffer { .. }
             | CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Heap { .. }

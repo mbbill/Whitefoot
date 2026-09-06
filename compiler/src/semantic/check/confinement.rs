@@ -147,7 +147,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 CheckedType::Vector { element, .. } | CheckedType::FixedVector { element, .. } => {
                     pending.push(element.ty())
                 }
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 CheckedType::Nominal(id) => {
@@ -214,7 +214,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
                 // its caller's own measures standing.
                 CheckedType::Slice { .. } => {}
                 CheckedType::Generic(_) => return Ok(Some(ReachedSurface::TypeParameter)),
-                CheckedType::Array { element, .. } | CheckedType::Buffer { element } => {
+                CheckedType::Buffer { element } => {
                     pending.push(element.ty());
                 }
                 CheckedType::Nominal(id) => {

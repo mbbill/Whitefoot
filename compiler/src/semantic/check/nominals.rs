@@ -125,9 +125,7 @@ impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 's
             // has nothing to release twice. The exclusive view stays affine
             // because [OWN-5] refuses two exclusive loans on one range.
             CheckedType::Slice { strength, .. } => strength == LoanStrength::Shared,
-            CheckedType::Array { .. }
-            | CheckedType::Buffer { .. }
-            | CheckedType::FixedVector { .. }
+            CheckedType::FixedVector { .. }
             | CheckedType::Vector { .. }
             | CheckedType::Heap { .. }
             | CheckedType::Extent { .. } => false,
