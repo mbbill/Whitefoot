@@ -1,8 +1,12 @@
 use super::*;
 
 #[test]
-fn array_and_buffer_slices_share_one_read_only_descriptor_path() {
-    let source = br#"const bytes: array<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
+fn const_local_and_store_run_slices_share_one_read_only_descriptor_path() {
+    // The three view origins are now the three run storages [STOR-1]: the
+    // const run's read-only static rodata, a frame-resident `FixedVector`,
+    // and one run taken from the general store. One `Slice` consumer reads
+    // all three, which is the property the retired array/buffer pair pinned.
+    let source = br#"const bytes: FixedVector<u8, 4> =[1_u8, 2_u8, 3_u8, 4_u8];
 
 fn sum(values: own Slice<u8>) -> result: own u64 reads(values) {
   let total = 0_u64;
@@ -15,7 +19,7 @@ fn sum(values: own Slice<u8>) -> result: own u64 reads(values) {
   return total;
 }
 
-command fn main() -> status: own ExitStatus pure {
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
   let code = 0_u8;
   region {
     let view = slice_of(&bytes);
@@ -24,7 +28,11 @@ command fn main() -> status: own ExitStatus pure {
       set code = 1_u8;
     }
   }
-  let local = array_new::<u8, 4>(3_u8);
+  let empty = fixed_vector::<u8, 4>();
+  let one = place_back(vector: move empty, value: 3_u8);
+  let two = place_back(vector: move one, value: 3_u8);
+  let three = place_back(vector: move two, value: 3_u8);
+  let local = place_back(vector: move three, value: 3_u8);
   region {
     let view = slice_of(&local);
     let total = sum(values: view);
@@ -32,12 +40,29 @@ command fn main() -> status: own ExitStatus pure {
       set code = 2_u8;
     }
   }
-  let runtime = buffer_new(4_u64, 2_u8);
   region {
-    let view = slice_of(&runtime);
-    let total = sum(values: view);
-    if total != 8_u64 {
-      set code = 3_u8;
+    match heap_vector::<u8>(store: &uniq heap, count: 4_u64) {
+      None() => {
+        return exit_status(code: 4_u8);
+      }
+      Some(value: fresh) => {
+        let runtime = move fresh;
+        for @fill (
+          at in 0_u64..4_u64,
+          invariant grown: len_of(runtime) >= at,
+          invariant spare: room_of(runtime) + at >= 4_u64,
+          invariant flat: head_of(runtime) <= 0_u64
+        ) {
+          set runtime = place_back(vector: move runtime, value: 2_u8);
+        }
+        region {
+          let view = slice_of(&runtime);
+          let total = sum(values: view);
+          if total != 8_u64 {
+            set code = 3_u8;
+          }
+        }
+      }
     }
   }
   return exit_status(code: code);
@@ -50,6 +75,9 @@ command fn main() -> status: own ExitStatus pure {
     // element address forms directly without a runtime bounds branch.
     assert!(sum.contains("getelementptr inbounds i8"));
     assert!(!sum.contains("call void @free"));
+    // One release, for the reason the buffer's free had: exactly one of the
+    // three origins owns store storage, and `main` holds the provider that
+    // its release spends [PROV-1, BLK-1].
     assert_eq!(main.matches("call void @free").count(), 1);
 
     let output = compile_and_run(&llvm);
@@ -60,11 +88,13 @@ command fn main() -> status: own ExitStatus pure {
 
 #[test]
 fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
-    // The slice carries its source array's length, so the constant offset
-    // is refutable at compile time and the program rejects with the
-    // residual [OP-4, ENT-6].
+    // The slice carries its source run's window length, so the constant
+    // offset is refutable at compile time and the program rejects with the
+    // residual [OP-4, ENT-6] — the same residual the array origin gave.
     let source = br#"command fn main() -> status: own ExitStatus pure {
-  let bytes = array_new::<u8, 2>(0_u8);
+  let empty = fixed_vector::<u8, 2>();
+  let one = place_back(vector: move empty, value: 0_u8);
+  let bytes = place_back(vector: move one, value: 0_u8);
   region {
     let window = slice_of(&bytes);
     let value = window[2_u64];
@@ -79,7 +109,7 @@ fn an_out_of_bounds_slice_read_is_an_op4_compile_rejection() {
 
 #[test]
 fn returned_slice_descriptors_execute_without_transferring_storage() {
-    let source = br#"const fixed: array<u8, 2> =[7_u8, 13_u8];
+    let source = br#"const fixed: FixedVector<u8, 2> =[7_u8, 13_u8];
 
 fn pass['r](value: own Slice<'r, u8>) -> result: own Slice<'r, u8> pure {
   return value;
@@ -105,8 +135,12 @@ fn borrowed_first(value: &Slice<u8>) -> result: own u8 reads(value) contract {
 }
 
 command fn main() -> status: own ExitStatus pure {
-  let left = array_new::<u8, 2>(11_u8);
-  let right = array_new::<u8, 2>(29_u8);
+  let left_empty = fixed_vector::<u8, 2>();
+  let left_one = place_back(vector: move left_empty, value: 11_u8);
+  let left = place_back(vector: move left_one, value: 11_u8);
+  let right_empty = fixed_vector::<u8, 2>();
+  let right_one = place_back(vector: move right_empty, value: 29_u8);
+  let right = place_back(vector: move right_one, value: 29_u8);
   region 'view {
     let borrowed_source = slice_of(&left);
     region {
