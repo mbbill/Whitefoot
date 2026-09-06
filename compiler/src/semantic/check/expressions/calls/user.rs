@@ -66,23 +66,20 @@ pub(in crate::semantic::check) enum ModeExpectation {
     },
 }
 
+/// One access an argument position claims for the duration of the call: the
+/// resolved place it reaches and the strength it reaches it with [OWN-12].
+///
+/// A view argument claims the storage its origin names. Where that origin is
+/// the enclosing declaration's own view parameter, the place is that
+/// parameter's binding: inside the callee a formal view's region is a region
+/// of its own and is incomparable with every other formal region [OWN-3,
+/// FORM-8], so the storage it reaches is exactly what that one binding
+/// reaches. A concrete overlap with another argument is decided where the
+/// view was formed over a written place, which is the caller that supplied
+/// it — the origin ceiling carries each formal origin down to that caller.
 struct CallAccessClaim {
     kind: BorrowKind,
-    origin: CallClaimOrigin,
-}
-
-enum CallClaimOrigin {
-    Place(ResolvedPlace),
-    FormalSlice,
-}
-
-impl CallClaimOrigin {
-    fn overlaps(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Place(left), Self::Place(right)) => places_overlap(left, right),
-            (Self::FormalSlice, _) | (_, Self::FormalSlice) => true,
-        }
-    }
+    place: ResolvedPlace,
 }
 
 impl<'unit, 'classified, 'lexed, 'source> Checker<'unit, 'classified, 'lexed, 'source> {
@@ -1398,7 +1395,7 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
                 if left_claims.iter().any(|left| {
                     right_claims.iter().any(|right| {
                         (left.kind == BorrowKind::Unique || right.kind == BorrowKind::Unique)
-                            && left.origin.overlaps(&right.origin)
+                            && places_overlap(&left.place, &right.place)
                     })
                 }) {
                     return self.issue_node(
@@ -1417,24 +1414,25 @@ are incomparable; pass borrows whose regions are nested, or give the parameters 
         if let Some(borrow) = borrow {
             claims.push(CallAccessClaim {
                 kind: borrow.kind,
-                origin: CallClaimOrigin::Place(borrow.place.clone()),
+                place: borrow.place.clone(),
             });
         }
         if let Some(slice) = slice {
             for origin in &slice.origins {
-                let origin = match origin {
-                    CheckedSliceOrigin::SourcePlace { root, fields, .. } => {
-                        CallClaimOrigin::Place(ResolvedPlace {
-                            root: *root,
-                            fields: fields.clone(),
-                        })
-                    }
-                    CheckedSliceOrigin::FormalSlice { .. } => CallClaimOrigin::FormalSlice,
+                let place = match origin {
+                    CheckedSliceOrigin::SourcePlace { root, fields, .. } => ResolvedPlace {
+                        root: *root,
+                        fields: fields.clone(),
+                    },
+                    CheckedSliceOrigin::FormalSlice { parameter, .. } => ResolvedPlace {
+                        root: *parameter,
+                        fields: Vec::new(),
+                    },
                     CheckedSliceOrigin::ImmutableConst => continue,
                 };
                 claims.push(CallAccessClaim {
                     kind: BorrowKind::Shared,
-                    origin,
+                    place,
                 });
             }
         }

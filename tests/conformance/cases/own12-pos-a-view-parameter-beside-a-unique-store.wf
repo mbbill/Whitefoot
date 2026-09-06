@@ -1,0 +1,69 @@
+enum Node['s] {
+  Leaf(value: u64);
+  Pair(left: Box<'s, Node<'s>>, right: Box<'s, Node<'s>>);
+}
+
+fn make['s](store: &uniq Heap<'s>, input: own Slice<u8>, depth: own u64) -> result: own Option<Box<'s, Node<'s>>> reads(store, input), writes(store), allocates(store) {
+  doc "The view parameter's region is elided, so [FORM-8] gives it one region of its own, distinct from the store region. The two are incomparable inside the callee [OWN-3], so handing the view on beside a unique borrow of the store is no [OWN-12] overlap and the recursion type-checks.";
+  let done = depth == 0_u64;
+  if done {
+    let size = len_of(input);
+    let leaf = Leaf<'s>(value: size);
+    region {
+      match heap_box(store: &uniq deref(store), value: move leaf) {
+        Ok(value: cell) => {
+          return Some<Box<'s, Node<'s>>>(value: move cell);
+        }
+        Err(error: back) => {
+          return None<Box<'s, Node<'s>>>();
+        }
+      }
+    }
+  }
+  let next = depth -wrap 1_u64;
+  region {
+    match make(store: &uniq deref(store), input: input, depth: next) {
+      None() => {
+        return None<Box<'s, Node<'s>>>();
+      }
+      Some(value: first) => {
+        region {
+          match make(store: &uniq deref(store), input: input, depth: next) {
+            None() => {
+              return None<Box<'s, Node<'s>>>();
+            }
+            Some(value: second) => {
+              let pair = Pair(left: move first, right: move second);
+              region {
+                match heap_box(store: &uniq deref(store), value: move pair) {
+                  Ok(value: cell) => {
+                    return Some<Box<'s, Node<'s>>>(value: move cell);
+                  }
+                  Err(error: back) => {
+                    return None<Box<'s, Node<'s>>>();
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+command fn main(command.heap as heap: own Heap) -> status: own ExitStatus reads(heap), writes(heap), allocates(heap) {
+  let bytes = fixed_vector::<u8, 2>();
+  set bytes = place_back(vector: move bytes, value: 7_u8);
+  region {
+    let window = slice_of(&bytes);
+    match make(store: &uniq heap, input: window, depth: 2_u64) {
+      Some(value: root) => {
+        return exit_status(code: 0_u8);
+      }
+      None() => {
+        return exit_status(code: 1_u8);
+      }
+    }
+  }
+}
