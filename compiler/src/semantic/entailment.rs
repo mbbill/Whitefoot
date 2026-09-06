@@ -59,31 +59,142 @@ use super::model::{
 use super::postcondition::CheckedPostcondition;
 use crate::{DeclarationId, NodePath};
 
+/// The transport one call selects for one declared parameter [CALL-1,
+/// CALL-2, CALL-3, CALL-5].
+///
+/// [CALL-5] fixes the selector: the callee's declared parameter mode and
+/// type, and its declared contract, and nothing else. The argument
+/// expression's shape, the callee's name, and every summary derived from the
+/// callee's body are not selectors, so this value is computed once per
+/// declared parameter and is the same at every call site of it.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) enum CallTransport {
+    /// [CALL-1] A shared borrow. [OWN-5] admits no write through a shared
+    /// holder, so [EFF-2] can project no `writes` occurrence onto the
+    /// actual's place and the call is a kill event for no fact supported by
+    /// it.
+    SharedBorrow,
+    /// [CALL-2] A value delivered at an `own` parameter. An affine or linear
+    /// actual is a consuming use, which kills every fact whose support
+    /// contains that actual's root [ENT-5](c); a copy actual is a duplicate
+    /// and kills nothing. Either way the result carries exactly the callee's
+    /// declared relations.
+    Value,
+    /// [CALL-3] A parameter of loan-bearing type, own or behind a borrow: a
+    /// projected write reaches the viewed range's element storage, which for
+    /// an element type with descriptor storage of its own includes that
+    /// element's measures, and reaches no measure of the origin place itself
+    /// nor of the view.
+    ViewedRange,
+    /// [CALL-5] No transport is selected, so a projected write kills
+    /// conservatively: an ordinary descriptor-storage-overlapping [ENT-5]
+    /// event [MSR-2].
+    #[default]
+    Conservative,
+}
+
+impl CallTransport {
+    /// The transport a declared parameter selects, read from its declared
+    /// mode and type alone [CALL-5].
+    ///
+    /// The loan-bearing type is tested before the mode because [CALL-3]
+    /// classifies a view "own or behind a borrow": an owned view descriptor
+    /// is still a window onto storage the caller keeps.
+    pub(crate) const fn of_declaration(mode: CheckedMode, ty: CheckedType) -> Self {
+        match ty {
+            CheckedType::Slice { .. } => Self::ViewedRange,
+            _ => match mode {
+                CheckedMode::Shared(_) => Self::SharedBorrow,
+                CheckedMode::Own => Self::Value,
+                CheckedMode::Unique(_) => Self::Conservative,
+            },
+        }
+    }
+
+    /// The transport one declared system-operation parameter selects.
+    ///
+    /// A system operation has no body, so its [SYS-2] declaration record
+    /// together with the rules stating that record's behaviour is the whole
+    /// of its declared contract, and [CALL-5]'s selector reads that record
+    /// rather than any summary of a target. [SYS-8] declares that the
+    /// half-open `[start, end)` extent its range-bearing family names is the
+    /// complete extent such an operation may change and that the extent is
+    /// element storage; the operand class carrying that extent is the
+    /// declared type of that parameter, so the row itself selects [CALL-3]'s
+    /// transport. Every other parameter selects from its declared mode.
+    pub(crate) fn of_system_parameter(operation: &crate::SystemOperation, ordinal: usize) -> Self {
+        let Some(parameter) = operation.parameters.get(ordinal) else {
+            return Self::Conservative;
+        };
+        match parameter.ty {
+            crate::SystemTypeRef::DestinationU8 | crate::SystemTypeRef::SourceU8 => {
+                Self::ViewedRange
+            }
+            _ => match parameter.mode {
+                crate::SystemParameterMode::Borrow(_) => Self::SharedBorrow,
+                crate::SystemParameterMode::Own => Self::Value,
+                crate::SystemParameterMode::UniqueBorrow(_) => Self::Conservative,
+            },
+        }
+    }
+
+    /// The transport one declared kernel-domain parameter selects [BLK-0].
+    ///
+    /// A row has no body either, so the same reading applies: the declared
+    /// shape and mode are the whole selector [CALL-5]. A row that takes a
+    /// view takes it as a viewed range [CALL-3]; a row's `&uniq` state
+    /// operand is a run or a provider whose descriptor the row changes, so
+    /// it selects no transport and kills conservatively.
+    pub(crate) const fn of_kernel_parameter(parameter: &super::kernel::KernelParameter) -> Self {
+        match parameter.shape {
+            super::kernel::KernelShape::Slice | super::kernel::KernelShape::MutSlice => {
+                Self::ViewedRange
+            }
+            _ => match parameter.mode {
+                super::kernel::KernelMode::Shared => Self::SharedBorrow,
+                super::kernel::KernelMode::Own => Self::Value,
+                super::kernel::KernelMode::Unique => Self::Conservative,
+            },
+        }
+    }
+
+    /// Whether a write projected through this transport reaches element
+    /// storage only, so it kills the measures of the written elements and
+    /// none of the origin place's own [CALL-3, MSR-2].
+    pub(crate) const fn writes_element_storage(self) -> bool {
+        matches!(self, Self::ViewedRange)
+    }
+}
+
 /// Kill-relevant [EFF-2] projection of one callee signature: for each
 /// parameter, whether the callee's declared effect row writes the region that
 /// parameter carries, so a call kills exactly the facts whose support
-/// overlaps that actual's resolved place [ENT-5](b).
+/// overlaps that actual's resolved place [ENT-5](b), and which transport
+/// [CALL-5] selects for that parameter, which is what fixes how far such a
+/// write reaches [CALL-1, CALL-2, CALL-3].
 #[derive(Clone, Debug, Default)]
 pub(crate) struct EntailmentCallee {
     pub(crate) parameter_modes: Vec<CheckedMode>,
     pub(crate) parameter_writes: Vec<Vec<Vec<u32>>>,
+    pub(crate) parameter_transports: Vec<CallTransport>,
 }
 
 impl EntailmentCallee {
-    /// Derives the projection from one callee's parameter modes and declared
-    /// `writes` regions. A row with no `writes` kills nothing; a written
-    /// region reached only through a `&uniq` actual kills through exactly
-    /// that actual. Slice element writes have no [SET-1] target form in the
-    /// current compiler, so an owned slice parameter never projects a write.
+    /// Derives the projection from one callee's parameter modes, declared
+    /// types, and declared `writes` regions. A row with no `writes` kills
+    /// nothing; a written region reached only through a `&uniq` actual kills
+    /// through exactly that actual, and the transport that parameter's
+    /// declaration selects fixes whether such a write reaches the origin's
+    /// descriptor storage or only a viewed range's element storage.
     pub(crate) fn from_signature(
-        parameters: impl Iterator<Item = (crate::DeclarationId, CheckedMode)>,
+        parameters: impl Iterator<Item = (crate::DeclarationId, CheckedMode, CheckedType)>,
         writes: &[super::model::CheckedStatePath],
     ) -> Self {
         let parameters = parameters.collect::<Vec<_>>();
         Self {
             parameter_writes: parameters
                 .iter()
-                .map(|(declaration, _)| {
+                .map(|(declaration, _, _)| {
                     writes
                         .iter()
                         .filter(|path| path.root == *declaration)
@@ -91,7 +202,11 @@ impl EntailmentCallee {
                         .collect()
                 })
                 .collect(),
-            parameter_modes: parameters.into_iter().map(|(_, mode)| mode).collect(),
+            parameter_transports: parameters
+                .iter()
+                .map(|(_, mode, ty)| CallTransport::of_declaration(*mode, *ty))
+                .collect(),
+            parameter_modes: parameters.into_iter().map(|(_, mode, _)| mode).collect(),
         }
     }
 }

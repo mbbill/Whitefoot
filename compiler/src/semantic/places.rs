@@ -496,16 +496,21 @@ impl PlaceMap {
     }
 
     /// The resolved place a borrow-shaped call argument reads through, and
-    /// whether a callee write through it is an element write.
+    /// whether that shape is a directly transferred holder.
     ///
     /// This is the [EFF-2] boundary projection's argument half: exactly the
     /// actual shapes through which a declared `reads`/`writes` region reaches
     /// caller storage. Every other shape is unresolved here, and each caller
     /// decides what an unresolved actual means for it.
+    ///
+    /// How far such a write *reaches* is not read from these shapes: [CALL-5]
+    /// selects the transport from the callee's declared parameter mode and
+    /// type, so that classification belongs to the callee's declaration and
+    /// never to the argument's spelling [CALL-1, CALL-2, CALL-3].
     pub(crate) fn argument_referent(
         &self,
         argument: &CheckedExpression,
-    ) -> Option<(ResolvedPlace, bool, bool)> {
+    ) -> Option<(ResolvedPlace, bool)> {
         match argument {
             CheckedExpression::BorrowBuffer { root, .. } => {
                 let place = PlaceTerm {
@@ -513,7 +518,7 @@ impl PlaceMap {
                     deref: self.is_holder(root.binding),
                     fields: root.fields.clone(),
                 };
-                Some((self.resolve(&place), true, false))
+                Some((self.resolve(&place), false))
             }
             CheckedExpression::BorrowAddressed { binding, .. }
             | CheckedExpression::BorrowBox { binding, .. }
@@ -523,16 +528,14 @@ impl PlaceMap {
                     deref: self.is_holder(*binding),
                     fields: Vec::new(),
                 };
-                Some((self.resolve(&place), false, false))
+                Some((self.resolve(&place), false))
             }
             CheckedExpression::ReborrowAddressed { binding, .. } => {
-                Some((self.resolve_deref(*binding, 0), false, false))
+                Some((self.resolve_deref(*binding, 0), false))
             }
-            CheckedExpression::Binding { binding, ty, .. } if self.is_holder(*binding) => Some((
-                self.resolve_deref(*binding, 0),
-                matches!(ty, CheckedType::Buffer { .. } | CheckedType::Slice { .. }),
-                true,
-            )),
+            CheckedExpression::Binding { binding, .. } if self.is_holder(*binding) => {
+                Some((self.resolve_deref(*binding, 0), true))
+            }
             _ => None,
         }
     }

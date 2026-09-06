@@ -59,10 +59,10 @@ use super::term::{
     type_range,
 };
 use super::{
-    BoundsRequest, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CountedDerivationSet,
-    EntailmentContext, FunctionEntailment, FunctionPostconditionProof, JoinedSourceProofProvenance,
-    LoopInvariantOutcome, LoopInvariantProof, ObligationFamily, ObligationOutcome,
-    PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
+    BoundsRequest, CallGoalDisposition, CallGoalEvidence, CallGoalOutcome, CallTransport,
+    CountedDerivationSet, EntailmentContext, FunctionEntailment, FunctionPostconditionProof,
+    JoinedSourceProofProvenance, LoopInvariantOutcome, LoopInvariantProof, ObligationFamily,
+    ObligationOutcome, PostconditionAggregate, PostconditionDisposition, PostconditionEntryImage,
     PostconditionEntryImageOutcome, PostconditionExit, S7Derivation, SourceProofCertificateFailure,
     SourceProofCheck, SourceProofOutcome, VerifiedPostconditionSummary,
     VerifiedPostconditionSummaryRef, fragment_type, overflow_conjuncts_for_values,
@@ -2767,7 +2767,7 @@ impl Analyzer<'_, '_> {
         }
         if self
             .argument_referent(expression)
-            .is_some_and(|(place, _, _)| place.overlaps(receiver))
+            .is_some_and(|(place, _)| place.overlaps(receiver))
         {
             return true;
         }
@@ -5687,11 +5687,53 @@ impl Analyzer<'_, '_> {
         }
     }
 
-    fn argument_referent(
+    fn argument_referent(&self, argument: &CheckedExpression) -> Option<(ResolvedPlace, bool)> {
+        self.places.argument_referent(argument)
+    }
+
+    /// The [ENT-5] kills one call's write through a viewed range projects
+    /// [CALL-3].
+    ///
+    /// The write reaches the viewed range's element storage and no measure
+    /// term over the origin place itself, nor over the view: `len_of(origin)`
+    /// and `len_of(view)` both survive it, and a measure of a viewed element
+    /// whose type has descriptor storage of its own dies with that storage.
+    /// Today a view's element domain is flat, so no measured element reaches
+    /// this classification and the surviving half is its whole effect here.
+    fn collect_view_write_kills(
         &self,
         argument: &CheckedExpression,
-    ) -> Option<(ResolvedPlace, bool, bool)> {
-        self.places.argument_referent(argument)
+        call: &crate::NodePath,
+        events: &mut Vec<KillEvent>,
+    ) {
+        if let Some(place) = self.places.viewed_write_referent(argument) {
+            events.push(KillEvent::Write {
+                place: element_write_place(place, PlaceOffset::Opaque),
+                element: true,
+                source: call.clone(),
+            });
+            return;
+        }
+        // [SYS-8]'s range-bearing operand class has a transitional member
+        // that is a `buffer<u8>` rather than a view [VIEW-1]. The row's
+        // declared extent still makes the write a viewed-range one, and the
+        // descriptor it names is the buffer's own place.
+        if let Some((place, entry_image_only)) = self.argument_referent(argument) {
+            let place = element_write_place(place, PlaceOffset::Opaque);
+            if entry_image_only {
+                events.push(KillEvent::EntryImageHolderWrite {
+                    place,
+                    element: true,
+                    source: call.clone(),
+                });
+            } else {
+                events.push(KillEvent::Write {
+                    place,
+                    element: true,
+                    source: call.clone(),
+                });
+            }
+        }
     }
 
     /// Collects [ENT-5] kill events (b) and (c) from one expression tree.
@@ -5765,31 +5807,26 @@ impl Analyzer<'_, '_> {
                     else {
                         continue;
                     };
-                    // [CALL-3, VIEW-4] a view operand: what the callee writes
-                    // through it reaches element storage only, and the view
-                    // itself cannot be replaced through the borrow.
-                    if !writes.is_empty()
-                        && let Some(place) = self.places.viewed_write_referent(argument)
-                    {
-                        events.push(KillEvent::Write {
-                            place: element_write_place(place, PlaceOffset::Opaque),
-                            element: true,
-                            source: call.clone(),
-                        });
+                    // [CALL-5] the transport is the declared parameter's and
+                    // never the actual's spelling: a shared borrow is a kill
+                    // event for nothing [CALL-1], a view confines the write to
+                    // the range's element storage [CALL-3], and every other
+                    // parameter kills conservatively.
+                    let transport = callee
+                        .and_then(|callee| callee.parameter_transports.get(index).copied())
+                        .unwrap_or_default();
+                    if transport == CallTransport::SharedBorrow {
                         continue;
                     }
-                    if let Some((place, element, entry_image_only)) =
-                        self.argument_referent(argument)
-                    {
+                    let element = transport.writes_element_storage();
+                    if !writes.is_empty() && element {
+                        self.collect_view_write_kills(argument, call, events);
+                        continue;
+                    }
+                    if let Some((place, entry_image_only)) = self.argument_referent(argument) {
                         for fields in writes {
                             let mut written = place.clone();
                             written.extend_fields(fields);
-                            // [MSR-2] a callee's element write names no
-                            // offset, so the element it writes is the one no
-                            // relation of this document decides.
-                            if element {
-                                written = element_write_place(written, PlaceOffset::Opaque);
-                            }
                             if entry_image_only {
                                 events.push(KillEvent::EntryImageHolderWrite {
                                     place: written,
@@ -5842,12 +5879,20 @@ impl Analyzer<'_, '_> {
                 let Some(argument) = arguments.get(written as usize) else {
                     return;
                 };
-                if let Some((place, element, entry_image_only)) = self.argument_referent(argument) {
-                    let place = if element {
-                        element_write_place(place, PlaceOffset::Opaque)
-                    } else {
-                        place
-                    };
+                // [CALL-5] the row's declared parameter selects the transport.
+                let transport = signature.parameters.get(written as usize).map_or(
+                    CallTransport::Conservative,
+                    CallTransport::of_kernel_parameter,
+                );
+                if transport == CallTransport::SharedBorrow {
+                    return;
+                }
+                let element = transport.writes_element_storage();
+                if element {
+                    self.collect_view_write_kills(argument, call, events);
+                    return;
+                }
+                if let Some((place, entry_image_only)) = self.argument_referent(argument) {
                     if entry_image_only {
                         events.push(KillEvent::EntryImageHolderWrite {
                             place,
@@ -5882,26 +5927,24 @@ impl Analyzer<'_, '_> {
                     if !written {
                         continue;
                     }
-                    // [CALL-3, VIEW-4] a view operand: the callee writes
-                    // element storage through it and can replace nothing, so
-                    // the kill is that element write and the view's own
-                    // measures survive the call.
-                    if let Some(place) = self.places.viewed_write_referent(argument) {
-                        events.push(KillEvent::Write {
-                            place: element_write_place(place, PlaceOffset::Opaque),
-                            element: true,
-                            source: call.clone(),
-                        });
+                    // [CALL-5] a system operation has no body: its [SYS-2]
+                    // record is the whole of its declared contract, and
+                    // [SYS-8] declares that its range-bearing family's
+                    // `[start, end)` extent is the complete extent it may
+                    // change and is element storage, so that parameter is a
+                    // viewed range [CALL-3].
+                    let transport = operation_row.map_or(CallTransport::Conservative, |row| {
+                        CallTransport::of_system_parameter(row, index)
+                    });
+                    if transport == CallTransport::SharedBorrow {
                         continue;
                     }
-                    if let Some((place, element, entry_image_only)) =
-                        self.argument_referent(argument)
-                    {
-                        let place = if element {
-                            element_write_place(place, PlaceOffset::Opaque)
-                        } else {
-                            place
-                        };
+                    let element = transport.writes_element_storage();
+                    if element {
+                        self.collect_view_write_kills(argument, call, events);
+                        continue;
+                    }
+                    if let Some((place, entry_image_only)) = self.argument_referent(argument) {
                         if entry_image_only {
                             events.push(KillEvent::EntryImageHolderWrite {
                                 place,
