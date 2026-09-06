@@ -98,15 +98,22 @@ pub(crate) enum TermKind {
     /// statement carried that value across a naming event — a `let` or
     /// [LIV-2] `set` rebind, a construct's field operand, a destructuring
     /// binder, an element position, or an enum payload. The statement's
-    /// finalized NodePath, the placement, the ordinal within that statement
-    /// and the measure are its complete function-local identity. No place
-    /// occurs in it, so neither the consume the statement performs nor the
-    /// write it commits can kill it, which is what carries a measured
-    /// value's measures across the event.
+    /// finalized NodePath, the placement, the ordinal within that statement,
+    /// the field path from that ordinal's operand to the measured place, and
+    /// the measure are its complete function-local identity. No place occurs
+    /// in it, so neither the consume the statement performs nor the write it
+    /// commits can kill it, which is what carries a measured value's measures
+    /// across the event.
+    ///
+    /// `path` is empty where the operand is itself measured, and names the
+    /// field selections that reach the measured place where the operand is a
+    /// struct holding one: a placement carries every measured place under its
+    /// operand, so one operand mints one datum set per such place [MSR-1].
     MeasureDatum {
         statement: Vec<u32>,
         placement: MeasurePlacement,
         ordinal: u32,
+        path: Vec<u32>,
         measure: CheckedMeasure,
     },
 }

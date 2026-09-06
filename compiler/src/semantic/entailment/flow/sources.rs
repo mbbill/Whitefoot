@@ -555,35 +555,92 @@ impl Analyzer<'_, '_> {
         ty: CheckedType,
         state: &mut FactState,
     ) -> Option<MeasureCarry> {
-        let measured = super::measured_kind(ty)?;
-        let constant = super::type_constant(ty);
-        let event = self.proof_event(FlowEventKind::S5, Some(node_path));
-        let mut datums = Vec::with_capacity(4);
-        for measure in MEASURES {
-            let live = self.place_measure_term(measure, source.clone(), measured, constant);
-            let datum = self.terms.intern(TermKind::MeasureDatum {
-                statement: node_path.components().to_vec(),
-                ordinal,
-                placement,
-                measure,
+        let mut carried = Vec::new();
+        for (path, measured_type) in self.measured_paths(ty) {
+            let Some(measured) = super::measured_kind(measured_type) else {
+                continue;
+            };
+            let constant = super::type_constant(measured_type);
+            let mut place = source.clone();
+            place
+                .projections
+                .extend(path.iter().map(|field| PlaceProjection::Field(*field)));
+            let event = self.proof_event(FlowEventKind::S5, Some(node_path));
+            let mut datums = Vec::with_capacity(4);
+            for measure in MEASURES {
+                let live = self.place_measure_term(measure, place.clone(), measured, constant);
+                let datum = self.terms.intern(TermKind::MeasureDatum {
+                    statement: node_path.components().to_vec(),
+                    ordinal,
+                    path: path.clone(),
+                    placement,
+                    measure,
+                });
+                self.adopt_measure_atom(datum, live);
+                state.establish(
+                    &Relation::Equal {
+                        left: datum,
+                        right: live,
+                        difference: 0,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
+                datums.push(datum);
+            }
+            carried.push(CarriedMeasures {
+                path,
+                measured,
+                constant,
+                datums,
             });
-            self.adopt_measure_atom(datum, live);
-            state.establish(
-                &Relation::Equal {
-                    left: datum,
-                    right: live,
-                    difference: 0,
-                },
-                &mut self.derivations,
-                event,
-            );
-            datums.push(datum);
         }
-        Some(MeasureCarry {
-            measured,
-            constant,
-            datums,
-        })
+        (!carried.is_empty()).then_some(MeasureCarry { carried })
+    }
+
+    /// [MSR-1, MSR-3] every measured place one placement's operand reaches by
+    /// field selection, as its field path from the operand and the type
+    /// selected there.
+    ///
+    /// A placement is per placement, not per depth. [MSR-1] admits a measure
+    /// place formed with any number of field-selection `psuffix`es, so a
+    /// struct operand one of whose fields is itself a struct holding a run
+    /// names a measured place two levels down; the naming event renames that
+    /// place along with the operand, and without a datum for it the run
+    /// arrives at its new path with no measures at all — which is exactly
+    /// what every placement exists to prevent.
+    ///
+    /// The walk descends through source `struct` fields only. A cell, a run
+    /// element and an enum payload are reached by a step this walk does not
+    /// take — a `deref`, a subscript, and a variant selection respectively —
+    /// so none of them is a field path from the operand.
+    fn measured_paths(&self, ty: CheckedType) -> Vec<(Vec<u32>, CheckedType)> {
+        if super::measured_kind(ty).is_some() {
+            return vec![(Vec::new(), ty)];
+        }
+        let CheckedType::Nominal(nominal) = ty else {
+            return Vec::new();
+        };
+        let Some(CheckedNominalKind::Struct { fields }) = self
+            .context
+            .nominals
+            .get(nominal.0 as usize)
+            .map(|record| &record.kind)
+        else {
+            return Vec::new();
+        };
+        let fields = fields.clone();
+        let mut found = Vec::new();
+        for (ordinal, field) in fields.iter().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            for (mut path, selected) in self.measured_paths(field.ty) {
+                path.insert(0, ordinal);
+                found.push((path, selected));
+            }
+        }
+        found
     }
 
     /// [MSR-3] the rebind placement, second half: after the transfer, the
@@ -610,22 +667,31 @@ impl Analyzer<'_, '_> {
         state: &mut FactState,
     ) {
         let event = self.proof_event(FlowEventKind::S5, Some(node_path));
-        for (measure, datum) in MEASURES.into_iter().zip(&carry.datums) {
-            let left = self.place_measure_term(
-                measure,
-                destination.clone(),
-                carry.measured,
-                carry.constant,
+        for carried in &carry.carried {
+            let mut place = destination.clone();
+            place.projections.extend(
+                carried
+                    .path
+                    .iter()
+                    .map(|field| PlaceProjection::Field(*field)),
             );
-            state.establish(
-                &Relation::Equal {
-                    left,
-                    right: *datum,
-                    difference: 0,
-                },
-                &mut self.derivations,
-                event,
-            );
+            for (measure, datum) in MEASURES.into_iter().zip(&carried.datums) {
+                let left = self.place_measure_term(
+                    measure,
+                    place.clone(),
+                    carried.measured,
+                    carried.constant,
+                );
+                state.establish(
+                    &Relation::Equal {
+                        left,
+                        right: *datum,
+                        difference: 0,
+                    },
+                    &mut self.derivations,
+                    event,
+                );
+            }
         }
     }
 
@@ -1638,7 +1704,18 @@ const MEASURES: [CheckedMeasure; 4] = [
 
 /// [MSR-3] one placement's datums, held between the mint before the
 /// statement's kills and the establishment after them.
+///
+/// One placement carries one entry per measured place its operand reaches by
+/// field selection, so a struct operand carries the measures of every run
+/// beneath it and not only its own.
 pub(super) struct MeasureCarry {
+    carried: Vec<CarriedMeasures>,
+}
+
+/// The four datums of one measured place under one placement, with the field
+/// path that reaches it from the placement's source and destination.
+struct CarriedMeasures {
+    path: Vec<u32>,
     measured: MeasuredKind,
     constant: Option<CheckedConst>,
     datums: Vec<TermId>,
