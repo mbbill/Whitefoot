@@ -1,0 +1,61 @@
+# One host, alternating samples, all candidate forms built from one revision.
+# This is the temporary experiment owned by io-model/SCHEDULER-EXPERIMENT.md.
+name: io-scheduler
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['codex/io-scheduler-experiments']
+    paths:
+      - 'compiler/src/backend/sched/**'
+      - 'research/experiments/io-completion-bench/scheduler-bench.sh'
+      - '.github/workflows/io-scheduler.yml'
+
+concurrency:
+  group: io-scheduler-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  measure:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang time
+          rustup default stable
+          cargo fetch --locked --manifest-path compiler/Cargo.toml
+      - name: Measure scheduler policies on this host
+        env:
+          ROOT: ${{ github.workspace }}
+          OUT: ${{ runner.temp }}/io-scheduler
+          CARGO_TARGET_DIR: ${{ github.workspace }}/compiler/target
+          ROUNDS: '7'
+          WARMUP: '2'
+        run: bash research/experiments/io-completion-bench/scheduler-bench.sh bench
+      - name: Publish measurement summary
+        if: always()
+        run: |
+          {
+            echo '## Scheduler locality experiment'
+            echo 'Policies: 0 global FIFO; 1 parking worker; 2 enqueuing worker. Shared lock and shared ring in all three.'
+            echo '```text'
+            for file in host.txt network-summary.txt compute.txt mixed.txt; do
+              cat "$RUNNER_TEMP/io-scheduler/$file" 2>/dev/null || echo "$file was not produced"
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: io-scheduler
+          path: |
+            ${{ runner.temp }}/io-scheduler/host.txt
+            ${{ runner.temp }}/io-scheduler/*.tsv
+            ${{ runner.temp }}/io-scheduler/*.txt
+            ${{ runner.temp }}/io-scheduler/*.err
+            ${{ runner.temp }}/io-scheduler/*.plan
+            ${{ runner.temp }}/io-scheduler/observed/
+            ${{ runner.temp }}/io-scheduler/samples/

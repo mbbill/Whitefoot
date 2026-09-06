@@ -47,20 +47,32 @@ static void wf_sched_pool_push(wf_sched_core *core, wf_sched_stack *stack) {
     wf_prim_unlock();
 }
 
-/* Links one READY stack at the tail. The epoch is bumped only when the list
- * was empty, which is the one transition that could otherwise leave a thread
- * asleep beside a ready stack (§6). */
+/* Links one READY stack at the chosen tail. Only the empty-to-nonempty
+ * transition of the union bumps the epoch, keeping the original wake policy
+ * in every form. A pop scans all queues before giving up (§6). */
 static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
     int was_empty;
+    unsigned queue = 0;
+#if WF_SCHED_READY_POLICY == 1
+    queue = stack->park_thread;
+#elif WF_SCHED_READY_POLICY == 2
+    /* The target adapter's helpers have no scheduler identity and use 0.
+     * The NOTIFIED arm enqueues from the worker committing the park. */
+    queue = wf_prim_thread_index();
+#endif
+    if (queue >= core->thread_count) {
+        wf_prim_fail("a ready queue names an absent worker");
+    }
     wf_prim_lock(WF_PRIM_SECTION_READY_PUSH);
     stack->next = NULL;
-    was_empty = core->ready_head == NULL;
-    if (was_empty) {
-        core->ready_head = stack;
+    was_empty = core->ready_count == 0u;
+    if (core->ready_head[queue] == NULL) {
+        core->ready_head[queue] = stack;
     } else {
-        core->ready_tail->next = stack;
+        core->ready_tail[queue]->next = stack;
     }
-    core->ready_tail = stack;
+    core->ready_tail[queue] = stack;
+    core->ready_count += 1u;
     wf_prim_unlock();
     if (was_empty) {
         wf_prim_wake();
@@ -69,14 +81,30 @@ static void wf_sched_ready_push(wf_sched_core *core, wf_sched_stack *stack) {
 
 static wf_sched_stack *wf_sched_ready_pop(wf_sched_core *core) {
     wf_sched_stack *stack;
+    unsigned queue = 0;
     wf_prim_lock(WF_PRIM_SECTION_READY_POP);
-    stack = core->ready_head;
+#if WF_SCHED_READY_POLICY != 0
+    unsigned offset;
+    unsigned own = wf_prim_thread_index();
+    /* Prefer local work, then take another queue's oldest stack. A preference
+     * never strands ready work on an occupied worker. The fixed scan is
+     * exhaustive and is covered by the same enumerator as the global FIFO. */
+    queue = own;
+    for (offset = 0; offset < core->thread_count; offset += 1u) {
+        queue = (own + offset) % core->thread_count;
+        if (core->ready_head[queue] != NULL) {
+            break;
+        }
+    }
+#endif
+    stack = core->ready_head[queue];
     if (stack != NULL) {
-        core->ready_head = stack->next;
-        if (core->ready_head == NULL) {
-            core->ready_tail = NULL;
+        core->ready_head[queue] = stack->next;
+        if (core->ready_head[queue] == NULL) {
+            core->ready_tail[queue] = NULL;
         }
         stack->next = NULL;
+        core->ready_count -= 1u;
     }
     wf_prim_unlock();
     return stack;
@@ -328,6 +356,10 @@ static int wf_sched_park(
     wf_sched_stack *stack = thread->stack;
     unsigned expected = WF_SCHED_STACK_RUNNING;
 
+#if WF_SCHED_READY_POLICY != 0 || WF_SCHED_OBSERVE_RESUMES
+    stack->park_thread = thread->index;
+#endif
+
     /* 1. mark SUSPENDING */
     if (!wf_prim_cas_u(
             &stack->phase, &expected, WF_SCHED_STACK_SUSPENDING,
@@ -380,7 +412,11 @@ static int wf_sched_park(
     wf_sched_switch_to(core, target);
     /* Resumed: the registration is cleared on every park exit (§6). */
     wf_prim_store_p((void **)&record->waiter, NULL, WF_PRIM_RELAXED);
-    wf_sched_current_thread(core)->counts.resumes += 1u;
+    thread = wf_sched_current_thread(core);
+    thread->counts.resumes += 1u;
+#if WF_SCHED_OBSERVE_RESUMES
+    thread->counts.resume_migrations += stack->park_thread != thread->index;
+#endif
     return 1;
 }
 
@@ -871,5 +907,6 @@ void wf_sched_statistics_sum(const wf_sched_core *core, wf_sched_statistics *out
         out->exhausted_compute_waits += counts->exhausted_compute_waits;
         out->late_parks += counts->late_parks;
         out->line_one += counts->line_one;
+        out->resume_migrations += counts->resume_migrations;
     }
 }

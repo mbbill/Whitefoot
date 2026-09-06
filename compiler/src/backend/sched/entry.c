@@ -675,7 +675,8 @@ int wf__sched_report(char *buffer, size_t capacity) {
         capacity,
         "sched: threads=%u workers_started=%u parks=%llu cancels=%llu resumes=%llu "
         "steals=%llu inline_runs=%llu exhausted_io=%llu exhausted_compute=%llu "
-        "late_parks=%llu line_one=%llu spin_rounds=%u yield_rounds=%u",
+        "late_parks=%llu line_one=%llu spin_rounds=%u yield_rounds=%u "
+        "ready_policy=%u resume_observed=%u resume_migrations=%llu",
         wf__sched_threads,
         wf_prim_load_u(&wf__sched_workers, WF_PRIM_ACQUIRE),
         counts.parks,
@@ -688,7 +689,10 @@ int wf__sched_report(char *buffer, size_t capacity) {
         counts.late_parks,
         counts.line_one,
         (unsigned)WF_SCHED_IDLE_SPIN_ROUNDS,
-        (unsigned)WF_SCHED_IDLE_YIELD_ROUNDS
+        (unsigned)WF_SCHED_IDLE_YIELD_ROUNDS,
+        (unsigned)WF_SCHED_READY_POLICY,
+        (unsigned)WF_SCHED_OBSERVE_RESUMES,
+        counts.resume_migrations
     );
     return written > 0 && (size_t)written < capacity;
 }

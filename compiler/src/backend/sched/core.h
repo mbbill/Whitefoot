@@ -25,6 +25,25 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/* Temporary experiment selectors, owned by io-completion-bench/scheduler-bench.sh.
+ * 0 retains the global FIFO; 1 prefers the worker that parked the stack;
+ * 2 prefers the worker that enqueues it. All queues retain the same mutex and
+ * wake epoch. Remove the selectors when the locality experiment is settled. */
+#ifndef WF_SCHED_READY_POLICY
+#define WF_SCHED_READY_POLICY 0
+#endif
+#if WF_SCHED_READY_POLICY < 0 || WF_SCHED_READY_POLICY > 2
+#error "unknown scheduler ready policy"
+#endif
+#if WF_SCHED_READY_POLICY == 0
+#define WF_SCHED_READY_QUEUES 1u
+#else
+#define WF_SCHED_READY_QUEUES WF_SCHED_MAX_THREADS
+#endif
+#ifndef WF_SCHED_OBSERVE_RESUMES
+#define WF_SCHED_OBSERVE_RESUMES 0
+#endif
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -114,6 +133,11 @@ typedef struct wf_sched_stack {
     unsigned char *high;
     /* Its position in the reservation, so a test can name it. */
     unsigned index;
+#if WF_SCHED_READY_POLICY != 0 || WF_SCHED_OBSERVE_RESUMES
+    /* Written by the running owner before publishing SUSPENDING; the park
+     * handshake publishes it to the enqueue, then the queue mutex to pop. */
+    unsigned park_thread;
+#endif
 } wf_sched_stack;
 
 /* ------------------------------------------------------------- the lanes */
@@ -213,6 +237,7 @@ typedef struct wf_sched_statistics {
     unsigned long long late_parks;
     /* Joins that found their record DONE at line one. */
     unsigned long long line_one;
+    unsigned long long resume_migrations;
 } wf_sched_statistics;
 
 /* What one thread knows: its lane, the stack it is on, the host stack it
@@ -237,8 +262,9 @@ typedef struct wf_sched_thread {
  * primitive of `prim.h`; the lists are touched under the one mutex. */
 typedef struct wf_sched_core {
     /* Under the one mutex: the ready list and the stack free list. */
-    wf_sched_stack *ready_head;
-    wf_sched_stack *ready_tail;
+    wf_sched_stack *ready_head[WF_SCHED_READY_QUEUES];
+    wf_sched_stack *ready_tail[WF_SCHED_READY_QUEUES];
+    unsigned ready_count;
     wf_sched_stack *free_head;
     /* The reservation: `stack_count` stacks, headers at their tops. */
     unsigned char *reservation;
